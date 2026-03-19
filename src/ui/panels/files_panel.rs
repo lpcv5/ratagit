@@ -1,38 +1,32 @@
 use crate::app::App;
+use crate::ui::theme::UiTheme;
 use crate::ui::widgets::file_tree::{FileTree, FileTreeState};
 use ratatui::{
     layout::Rect,
-    style::{Color, Modifier, Style},
-    widgets::{Block, Borders, List, ListItem},
+    style::Style,
+    widgets::{List, ListItem},
     Frame,
 };
 
 pub fn render_files_panel(frame: &mut Frame, area: Rect, app: &App, is_active: bool) {
-    let border_style = if is_active {
-        Style::default().fg(Color::Green)
-    } else {
-        Style::default().fg(Color::DarkGray)
-    };
-    let title_style = if is_active {
-        Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(Color::DarkGray)
-    };
-
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title("Files")
-        .border_style(border_style)
-        .title_style(title_style);
+    let theme = UiTheme::default();
+    let block = theme.panel_block("Files", is_active);
 
     if app.file_tree_nodes.is_empty() {
-        let items = vec![ListItem::new("No changes").style(Style::default().fg(Color::DarkGray))];
+        let items = vec![ListItem::new("No changes").style(Style::default().fg(theme.text_muted))];
         let list = List::new(items).block(block);
         frame.render_widget(list, area);
         return;
     }
 
-    let widget = FileTree::new(app.file_tree_nodes.clone()).block(block);
+    let highlight = if is_active {
+        theme.active_highlight()
+    } else {
+        theme.inactive_highlight()
+    };
+    let widget = FileTree::new(app.file_tree_nodes.clone())
+        .block(block)
+        .highlight_style(highlight);
 
     let mut state = FileTreeState {
         list_state: app.files_panel.list_state,

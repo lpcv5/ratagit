@@ -120,6 +120,11 @@ impl<'a> FileTree<'a> {
         self
     }
 
+    pub fn highlight_style(mut self, style: Style) -> Self {
+        self.highlight_style = style;
+        self
+    }
+
     /// Documentation comment in English.
     #[allow(dead_code)]
     pub fn from_git_status(

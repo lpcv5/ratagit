@@ -147,12 +147,7 @@ impl App {
         if gm("commit")            { return Some(Message::StartCommitInput); }
 
         // Comment in English.
-        let panel = match self.active_panel {
-            SidePanel::Files         => "files",
-            SidePanel::LocalBranches => "branches",
-            SidePanel::Commits       => "commits",
-            SidePanel::Stash         => "stash",
-        };
+        let panel = self.active_panel_name();
         let pm = |action| self.keymap.panel_matches(panel, action, &k);
 
         if pm("toggle_stage") {
@@ -210,6 +205,85 @@ impl App {
 
     pub fn render(&self, frame: &mut Frame) {
         render_layout(frame, self);
+    }
+
+    pub fn shortcut_hints(&self) -> Vec<(String, String)> {
+        if self.input_mode.is_some() {
+            return vec![
+                ("Enter".to_string(), "Confirm".to_string()),
+                ("Esc".to_string(), "Cancel".to_string()),
+                ("Backspace".to_string(), "Delete".to_string()),
+            ];
+        }
+
+        let mut hints = vec![
+            (
+                format!(
+                    "{}/{}",
+                    self.global_key_or("panel_prev", "h"),
+                    self.global_key_or("panel_next", "l")
+                ),
+                "Panel".to_string(),
+            ),
+            (
+                format!(
+                    "{}/{}",
+                    self.global_key_or("list_up", "k"),
+                    self.global_key_or("list_down", "j")
+                ),
+                "Move".to_string(),
+            ),
+            (self.global_key_or("refresh", "r"), "Refresh".to_string()),
+            (self.global_key_or("commit", "c"), "Commit".to_string()),
+            (
+                format!(
+                    "{}/{}",
+                    self.global_key_or("diff_scroll_up", "C-u"),
+                    self.global_key_or("diff_scroll_down", "C-d")
+                ),
+                "DiffScroll".to_string(),
+            ),
+            (self.global_key_or("quit", "q"), "Quit".to_string()),
+        ];
+
+        let panel = self.active_panel_name();
+        match self.active_panel {
+            SidePanel::Files => {
+                hints.push((
+                    self.panel_key_or(panel, "toggle_stage", "Space"),
+                    "Stage".to_string(),
+                ));
+                hints.push((
+                    self.panel_key_or(panel, "toggle_dir", "Enter"),
+                    "ToggleDir".to_string(),
+                ));
+                hints.push((
+                    self.panel_key_or(panel, "collapse_all", "-"),
+                    "Collapse".to_string(),
+                ));
+                hints.push((
+                    self.panel_key_or(panel, "expand_all", "="),
+                    "Expand".to_string(),
+                ));
+            }
+            SidePanel::LocalBranches => {
+                hints.push((
+                    self.panel_key_or(panel, "checkout_branch", "Enter"),
+                    "Checkout".to_string(),
+                ));
+                hints.push((
+                    self.panel_key_or(panel, "create_branch", "n"),
+                    "NewBranch".to_string(),
+                ));
+                hints.push((
+                    self.panel_key_or(panel, "delete_branch", "d"),
+                    "Delete".to_string(),
+                ));
+            }
+            SidePanel::Commits | SidePanel::Stash => {}
+        }
+
+        hints
     }
 
     pub fn refresh_status(&mut self) -> Result<()> {
@@ -504,6 +578,27 @@ impl App {
             }
             FileTreeNodeStatus::Directory => None,
         }
+    }
+
+    fn active_panel_name(&self) -> &'static str {
+        match self.active_panel {
+            SidePanel::Files => "files",
+            SidePanel::LocalBranches => "branches",
+            SidePanel::Commits => "commits",
+            SidePanel::Stash => "stash",
+        }
+    }
+
+    fn global_key_or(&self, action: &str, fallback: &str) -> String {
+        self.keymap
+            .first_global_key(action)
+            .unwrap_or_else(|| fallback.to_string())
+    }
+
+    fn panel_key_or(&self, panel: &str, action: &str, fallback: &str) -> String {
+        self.keymap
+            .first_panel_key(panel, action)
+            .unwrap_or_else(|| fallback.to_string())
     }
 }
 

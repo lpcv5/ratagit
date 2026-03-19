@@ -1,14 +1,18 @@
 use crate::app::{App, SidePanel};
 use crate::git::DiffLineKind;
+use crate::ui::theme::UiTheme;
 use ratatui::{
     layout::Rect,
     style::{Color, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem},
+    widgets::List,
+    widgets::ListItem,
     Frame,
 };
 
 pub fn render_diff_panel(frame: &mut Frame, area: Rect, app: &App) {
+    let theme = UiTheme::default();
+
     if app.current_diff.is_empty() {
         let hint = match app.active_panel {
             SidePanel::Files => "Select a file to view diff",
@@ -17,8 +21,8 @@ pub fn render_diff_panel(frame: &mut Frame, area: Rect, app: &App) {
             SidePanel::Stash => "Select a stash entry to view diff",
         };
         let paragraph = ratatui::widgets::Paragraph::new(hint)
-            .style(Style::default().fg(Color::DarkGray))
-            .block(Block::default().borders(Borders::ALL).title("Diff"));
+            .style(Style::default().fg(theme.text_muted))
+            .block(theme.panel_block("Diff", true));
         frame.render_widget(paragraph, area);
         return;
     }
@@ -41,7 +45,7 @@ pub fn render_diff_panel(frame: &mut Frame, area: Rect, app: &App) {
     let title = format!("Diff [{}/{}]", scroll + 1, total);
 
     let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title(title));
+        .block(theme.panel_block("Diff", true).title(title));
 
     frame.render_widget(list, area);
 }

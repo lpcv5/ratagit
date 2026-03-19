@@ -1,7 +1,7 @@
 use crate::app::{App, SidePanel};
 use crate::ui::panels::{
     render_branches_panel, render_command_log, render_commits_panel, render_diff_panel,
-    render_files_panel, render_stash_panel,
+    render_files_panel, render_shortcut_bar, render_stash_panel,
 };
 use ratatui::{
     layout::{Constraint, Direction, Layout},
@@ -10,15 +10,23 @@ use ratatui::{
 
 /// Collapsed height for stash/log panels when not focused (in lines)
 const COLLAPSED_HEIGHT: u16 = 3;
+const SHORTCUT_BAR_HEIGHT: u16 = 1;
 
 pub fn render_layout(frame: &mut Frame, app: &App) {
     let size = frame.area();
+    let vertical = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(0),
+            Constraint::Length(SHORTCUT_BAR_HEIGHT),
+        ])
+        .split(size);
 
     // Horizontal split: Left (30%) | Right (70%)
     let horizontal = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
-        .split(size);
+        .split(vertical[0]);
 
     let left_h = horizontal[0].height;
     let stash_focused = app.active_panel == SidePanel::Stash;
@@ -75,4 +83,5 @@ pub fn render_layout(frame: &mut Frame, app: &App) {
 
     render_diff_panel(frame, diff_area, app);
     render_command_log(frame, log_area, app);
+    render_shortcut_bar(frame, vertical[1], app);
 }

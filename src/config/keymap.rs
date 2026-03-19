@@ -139,6 +139,26 @@ impl Keymap {
             .map(|keys| keys.iter().any(|k| k == key_str))
             .unwrap_or(false)
     }
+
+    pub fn first_global_key(&self, action: &str) -> Option<String> {
+        self.global
+            .bindings
+            .get(action)
+            .and_then(|keys| keys.first())
+            .cloned()
+    }
+
+    pub fn first_panel_key(&self, panel: &str, action: &str) -> Option<String> {
+        let map = match panel {
+            "files" => &self.files.bindings,
+            "branches" => &self.branches.bindings,
+            "commits" => &self.commits.bindings,
+            "stash" => &self.stash.bindings,
+            _ => return None,
+        };
+
+        map.get(action).and_then(|keys| keys.first()).cloned()
+    }
 }
 
 fn merge_bindings(

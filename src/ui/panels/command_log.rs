@@ -1,13 +1,15 @@
 use crate::app::{App, InputMode};
+use crate::ui::theme::UiTheme;
 use ratatui::{
     layout::Rect,
     style::{Color, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::Paragraph,
     Frame,
 };
 
 pub fn render_command_log(frame: &mut Frame, area: Rect, app: &App) {
+    let theme = UiTheme::default();
     let mut lines: Vec<Line> = Vec::new();
 
     if let Some(mode) = app.input_mode {
@@ -25,7 +27,7 @@ pub fn render_command_log(frame: &mut Frame, area: Rect, app: &App) {
         if lines.is_empty() {
             lines.push(Line::from(Span::styled(
                 "No commands yet",
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(theme.text_muted),
             )));
         }
     } else {
@@ -41,7 +43,7 @@ pub fn render_command_log(frame: &mut Frame, area: Rect, app: &App) {
     }
 
     let paragraph = Paragraph::new(lines)
-        .block(Block::default().borders(Borders::ALL).title("Command Log"));
+        .block(theme.panel_block("Command Log", false));
 
     frame.render_widget(paragraph, area);
 }
