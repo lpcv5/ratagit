@@ -48,6 +48,17 @@ pub fn update(app: &mut App, msg: Message) -> Option<Command> {
             None
         }
 
+        Message::PanelGoto(n) => {
+            app.active_panel = match n {
+                1 => SidePanel::Files,
+                2 => SidePanel::LocalBranches,
+                3 => SidePanel::Commits,
+                4 => SidePanel::Stash,
+                _ => app.active_panel,
+            };
+            None
+        }
+
         Message::ListDown => {
             app.list_down();
             app.load_diff();
@@ -57,6 +68,34 @@ pub fn update(app: &mut App, msg: Message) -> Option<Command> {
         Message::ListUp => {
             app.list_up();
             app.load_diff();
+            None
+        }
+
+        Message::ToggleDir => {
+            app.toggle_selected_dir();
+            app.load_diff();
+            None
+        }
+
+        Message::CollapseAll => {
+            app.collapse_all();
+            app.load_diff();
+            None
+        }
+
+        Message::ExpandAll => {
+            app.expand_all();
+            app.load_diff();
+            None
+        }
+
+        Message::DiffScrollUp => {
+            app.diff_scroll_up();
+            None
+        }
+
+        Message::DiffScrollDown => {
+            app.diff_scroll_down();
             None
         }
 
@@ -95,11 +134,8 @@ pub fn update(app: &mut App, msg: Message) -> Option<Command> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_update_tab_next() {
-        // 这个测试需要创建一个临时的 Git 仓库
         // Phase 2 再完善测试
     }
 }

@@ -2,104 +2,117 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## 项目概述
+## Project Overview
 
-Ratagit 是一个使用 Rust 编写的终端 Git 客户端，基于 ratatui 构建，灵感来自 lazygit。项目目前处于架构设计阶段（Phase 0），尚未开始实际代码开发。
+Ratagit is a terminal Git client written in Rust, built on ratatui, inspired by lazygit. Phase 1 (MVP) is actively under development.
 
-## 常用命令
+## Language Rules
+
+- **All code comments, documentation, and doc comments must be written in English**
+- **CLAUDE.md and all files in `docs/` must be written in English**
+- Communication with the user is in Chinese (per session instructions)
+
+## Common Commands
 
 ```bash
-# 构建项目
 cargo build
-
-# 运行项目（开发完成后）
 cargo run
-
-# 运行测试
 cargo test
-
-# 运行单个测试
 cargo test test_name
-
-# 发布构建（优化体积和性能）
 cargo build --release
-
-# 检查代码
 cargo check
-
-# 格式化代码
 cargo fmt
-
-# 代码检查
 cargo clippy
 ```
 
-## 核心架构
+## Core Architecture
 
 ### The Elm Architecture (TEA)
 
-项目采用 TEA 模式，包含单向数据流：
+Unidirectional data flow:
 
 ```
 User Input → Event → Message → Update → Model → View → Render
 ```
 
-**三大核心组件**：
+**Three core components**:
 
-1. **Model**: 应用状态（`App` 结构体）
-2. **Message**: 用户操作或系统事件（`Message` 枚举）
-3. **Update**: 纯函数，根据 Message 更新 Model（`update()` 函数）
+1. **Model**: Application state (`App` struct)
+2. **Message**: User actions or system events (`Message` enum)
+3. **Update**: Pure function that updates Model based on Message (`update()`)
 
-### 模块结构
+### Module Structure
 
 ```
 src/
-├── app/          # 应用核心（TEA 架构）
-│   ├── app.rs        # App 结构体和主循环
-│   ├── state.rs      # 应用状态定义
-│   ├── message.rs    # 消息/事件定义
-│   └── command.rs    # 命令定义
-├── git/          # Git 操作抽象层
-│   ├── repository.rs # Repository trait（重要：抽象 git2/gix）
-│   ├── status.rs     # 状态查询
-│   └── ...
-├── ui/           # UI 组件
-│   ├── views/        # 视图组件（Status, Commits, Branches, Stash）
-│   ├── widgets/      # 可复用组件（Tab, List, Popup, Input）
-│   └── renderer.rs   # 渲染器
-├── event/        # 事件处理
-│   ├── handler.rs    # 事件处理器
-│   └── keybind.rs    # 快捷键映射
-├── config/       # 配置系统
-└── utils/        # 工具函数
+├── app/
+│   ├── app.rs        # App struct, main loop, key handling
+│   ├── message.rs    # Message/event definitions
+│   ├── update.rs     # TEA update function
+│   └── command.rs    # Command definitions
+├── git/
+│   └── repository.rs # GitRepository trait + Git2Repository impl
+├── ui/
+│   ├── layout.rs     # Layout rendering
+│   ├── panels/       # Panel renderers (files, diff, branches, commits, stash, command_log)
+│   ├── widgets/      # Reusable widgets (file_tree)
+│   └── views/        # View components (unused stubs)
+├── config/
+│   └── keymap.rs     # Keymap config (global + per-panel)
+└── main.rs
 ```
 
-## 关键技术决策
+## Key Technical Decisions
 
-### GitRepository Trait 抽象层
+### GitRepository Trait Abstraction
 
-**重要**: Git 操作必须通过 `GitRepository` trait 进行，不直接调用 git2。
+**Important**: All Git operations must go through the `GitRepository` trait. Never call git2 directly.
 
 ```rust
 pub trait GitRepository {
     fn status(&self) -> Result<GitStatus, GitError>;
-    fn commit(&self, message: &str) -> Result<CommitId, GitError>;
-    // ... 其他方法
+    fn stage(&self, path: &PathBuf) -> Result<(), GitError>;
+    fn unstage(&self, path: &PathBuf) -> Result<(), GitError>;
+    fn diff_unstaged(&self, path: &PathBuf) -> Result<Vec<DiffLine>, GitError>;
+    fn diff_staged(&self, path: &PathBuf) -> Result<Vec<DiffLine>, GitError>;
+    fn diff_untracked(&self, path: &PathBuf) -> Result<Vec<DiffLine>, GitError>;
+    fn workdir(&self) -> Option<PathBuf>;
 }
 ```
 
-**原因**：
-- 初期使用 git2（成熟稳定，文档丰富）
-- 长期迁移到 gix（纯 Rust，无 C 依赖，性能更好）
-- 抽象层使迁移更容易
+Rationale: start with git2 (stable, well-documented), migrate to gix (pure Rust) in Phase 4+.
 
-实现位于 `git/repository.rs`：
-- `Git2Repository`: git2 实现（Phase 1-3）
-- `GixRepository`: gix 实现（Phase 4+，未来）
+### Keymap System
 
-### 异步 Git 操作
+Two-layer keymap stored in `~/.config/ratagit/keymap.toml`:
+- `[global]` — active in all panels
+- `[files]`, `[branches]`, `[commits]`, `[stash]` — panel-local bindings
 
-Git 操作使用 Tokio 异步执行，避免阻塞 UI：
+Default global keys (lazygit-inspired):
+- `h`/`l` or `Left`/`Right` — previous/next panel
+- `1`-`4` — jump to panel directly
+- `j`/`k` or `Up`/`Down` — list navigation
+- `q` — quit, `r` — refresh
+- `Ctrl+U`/`Ctrl+D` — scroll diff
+
+Default files-panel local keys:
+- `Enter`/`Space` — toggle directory expand/collapse
+- `-` — collapse all, `=` — expand all
+
+### File Tree Widget
+
+`src/ui/widgets/file_tree.rs` — reusable `StatefulWidget`:
+- `FileTree::from_git_status_with_expanded()` builds flat visible node list from git status + expanded dir set
+- Directories shown with `▼`/`▶` arrows, files with status icons (`✚ ✎ ● ✖ ➜ ?`)
+- Colors: green=staged/new, yellow=modified, red=deleted, gray=untracked, blue=directory
+
+### Diff Display
+
+- File node selected → show file diff (supports untracked files via full-content read)
+- Directory node selected → aggregate diff of all files under it (max 2000 lines)
+- `diff_scroll` offset in `App` controls visible window; resets to 0 on selection change
+
+### Async Git Operations (Phase 2)
 
 ```rust
 enum Command {
@@ -108,111 +121,49 @@ enum Command {
 }
 ```
 
-### 错误处理
+Currently unused — Phase 1 uses synchronous git operations only.
 
-使用 `thiserror` 定义自定义错误类型：
+## Development Roadmap
 
-```rust
-#[derive(Debug, thiserror::Error)]
-pub enum RatagitError {
-    #[error("Git error: {0}")]
-    Git(#[from] GitError),
-    // ...
-}
-```
+### Phase 1: MVP (current)
+- [x] Basic event loop
+- [x] Git status display with file tree
+- [x] Diff preview (unstaged, staged, untracked)
+- [x] File tree expand/collapse
+- [x] Configurable keymap
+- [ ] Stage/Unstage files
+- [ ] Tab bar UI
 
-## 开发路线
+### Phase 2: Core Features
+- Commit functionality
+- Commit history view
+- Branch management
+- Async git operations
 
-### Phase 1: MVP (Week 1-2)
-- 基础事件循环
-- Git status 显示
-- 文件列表和 diff 预览
-- Tab 切换
+### Phase 3: Advanced Features
+- Interactive Rebase, Cherry-pick, Stash, Remote operations
 
-### Phase 2: 核心功能 (Week 3-4)
-- Stage/Unstage 文件
-- Commit 功能
-- 提交历史查看
-- 分支管理
+### Phase 4: Polish
+- Config system, themes, performance, test coverage
 
-### Phase 3: 高级功能 (Week 5-8)
-- Interactive Rebase
-- Cherry-pick
-- Stash 管理
-- 远程操作
+## Configuration
 
-### Phase 4: 完善优化 (Week 9-12)
-- 配置系统
-- 主题系统
-- 性能优化
-- 测试覆盖
+Keymap: `~/.config/ratagit/keymap.toml` (auto-created with defaults if missing)
 
-详细计划见 `docs/ROADMAP.md`
+Future: `~/.config/ratagit/config.toml` for general config
 
-## 配置
+## Testing Strategy
 
-配置文件位置：`~/.config/ratagit/config.toml`
+- Unit tests: `#[cfg(test)]` inside modules
+- Integration tests: `tests/` directory
+- Use `tempfile` to create temporary Git repos for testing
 
-格式：TOML（使用 serde 反序列化）
+Coverage targets: Phase 1-2 > 50%, Phase 3 > 70%, release > 80%
 
-配置结构定义在 `config/config.rs`
+## Notes
 
-## 日志
-
-使用 `tracing` 库进行结构化日志记录。
-
-日志位置：`~/.local/share/ratagit/logs/ratagit.log`
-
-## 测试策略
-
-- **单元测试**: 测试独立函数和模块（`#[cfg(test)]`）
-- **集成测试**: 测试模块间交互（`tests/` 目录）
-- **测试辅助**: 使用 `tempfile` 创建临时 Git 仓库进行测试
-
-目标覆盖率：
-- Phase 1-2: > 50%
-- Phase 3: > 70%
-- 发布: > 80%
-
-## UI 组件设计
-
-每个视图实现 `View` trait：
-
-```rust
-pub trait View {
-    fn render(&self, frame: &mut Frame, area: Rect, app: &App);
-    fn handle_key(&self, key: KeyEvent) -> Option<Message>;
-}
-```
-
-组件层次：
-```
-App
-├── TabBar
-├── MainView (动态)
-│   ├── StatusView
-│   ├── CommitsView
-│   ├── BranchesView
-│   └── StashView
-└── StatusBar
-```
-
-## 性能优化
-
-- **增量更新**: 只在需要时刷新数据
-- **异步操作**: 重型 Git 操作使用 Tokio
-- **虚拟滚动**: 大型列表只渲染可见项
-
-## 文档
-
-- `docs/ARCHITECTURE.md` - 详细架构设计
-- `docs/ROADMAP.md` - 开发路线图
-- `docs/DECISIONS.md` - 技术决策记录（ADR）
-
-## 注意事项
-
-1. **Git 操作**: 始终通过 `GitRepository` trait，不直接调用 git2/gix
-2. **状态更新**: 遵循 TEA 模式，通过 Message 更新状态
-3. **异步处理**: 耗时操作使用 `Command::Async`
-4. **错误处理**: 使用 `thiserror` 定义清晰的错误类型
-5. **测试**: 为新功能编写单元测试和集成测试
+1. **Git ops**: Always via `GitRepository` trait, never call git2/gix directly
+2. **State updates**: Follow TEA — update state only through Messages
+3. **Async**: Heavy git ops use `Command::Async` (Phase 2+)
+4. **Errors**: Use `thiserror` for custom error types
+5. **Comments**: All code comments and docs in English

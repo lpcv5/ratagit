@@ -74,11 +74,17 @@ pub trait GitRepository {
     /// Unstage 文件
     fn unstage(&self, path: &PathBuf) -> Result<(), GitError>;
 
-    /// 获取工作区文件 diff（unstaged）
+    /// 获取工作区文件 diff（unstaged，已跟踪）
     fn diff_unstaged(&self, path: &PathBuf) -> Result<Vec<DiffLine>, GitError>;
 
     /// 获取暂存区文件 diff（staged）
     fn diff_staged(&self, path: &PathBuf) -> Result<Vec<DiffLine>, GitError>;
+
+    /// 获取未跟踪文件内容（全部作为新增行）
+    fn diff_untracked(&self, path: &PathBuf) -> Result<Vec<DiffLine>, GitError>;
+
+    /// 获取仓库根目录
+    fn workdir(&self) -> Option<PathBuf>;
 }
 
 /// git2 实现
@@ -189,6 +195,24 @@ impl GitRepository for Git2Repository {
 
         let diff = self.repo.diff_tree_to_index(head_tree.as_ref(), None, Some(&mut opts))?;
         Ok(parse_diff(&diff))
+    }
+
+    fn diff_untracked(&self, path: &PathBuf) -> Result<Vec<DiffLine>, GitError> {
+        let workdir = self.repo.workdir().ok_or(GitError::InvalidState)?;
+        let full_path = workdir.join(path);
+        let content = std::fs::read_to_string(&full_path)
+            .unwrap_or_else(|_| String::from("<binary file>"));
+
+        let header = format!("--- /dev/null\n+++ b/{}", path.display());
+        let mut lines = vec![DiffLine { kind: DiffLineKind::Header, content: header }];
+        for line in content.lines() {
+            lines.push(DiffLine { kind: DiffLineKind::Added, content: line.to_string() });
+        }
+        Ok(lines)
+    }
+
+    fn workdir(&self) -> Option<PathBuf> {
+        self.repo.workdir().map(|p| p.to_path_buf())
     }
 }
 

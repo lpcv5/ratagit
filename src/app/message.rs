@@ -9,10 +9,20 @@ pub enum Message {
     // 面板导航
     PanelNext,
     PanelPrev,
+    PanelGoto(usize), // 1-based
 
     // 列表导航
     ListUp,
     ListDown,
+
+    // 文件树操作
+    ToggleDir,
+    CollapseAll,
+    ExpandAll,
+
+    // Diff 滚动
+    DiffScrollUp,
+    DiffScrollDown,
 
     // Git 操作
     StageFile(std::path::PathBuf),

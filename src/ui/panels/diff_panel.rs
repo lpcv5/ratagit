@@ -23,7 +23,8 @@ pub fn render_diff_panel(frame: &mut Frame, area: Rect, app: &App) {
         return;
     }
 
-    let items: Vec<ListItem> = app.current_diff.iter().map(|line| {
+    let scroll = app.diff_scroll;
+    let items: Vec<ListItem> = app.current_diff.iter().skip(scroll).map(|line| {
         let (style, prefix) = match line.kind {
             DiffLineKind::Added   => (Style::default().fg(Color::Green),  "+"),
             DiffLineKind::Removed => (Style::default().fg(Color::Red),    "-"),
@@ -36,8 +37,11 @@ pub fn render_diff_panel(frame: &mut Frame, area: Rect, app: &App) {
         ListItem::new(text)
     }).collect();
 
+    let total = app.current_diff.len();
+    let title = format!("Diff [{}/{}]", scroll + 1, total);
+
     let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title("Diff"));
+        .block(Block::default().borders(Borders::ALL).title(title));
 
     frame.render_widget(list, area);
 }
