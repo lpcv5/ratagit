@@ -1,21 +1,31 @@
 # Ratagit Status Board
 
 > Last updated: 2026-03-20
-> Purpose: fast project inspection and goal alignment.
+> Purpose: execution tracking for rolling milestones.
 
-## North Star
+## Current Mode
 
-Ship a Rust implementation that can replace lazygit for core day-to-day and advanced Git workflows.
+- Development model: rolling milestones.
+- Active milestone: `M2 Advanced Workflow Foundation`.
+- Milestone doc: `TBD (next milestone doc to be created during M2 planning)`
 
-## Phase Status
+## Milestone Progress
 
-| Phase | Status | Notes |
+| Milestone | Status | Notes |
 |------|------|------|
-| Phase 1 (MVP Foundation) | Done | Core app loop, layout, status and diff base complete. |
-| Phase 2 (Core Workflow) | In Progress | Read-side panels done; write-side workflows incomplete. |
-| Phase 3 (Advanced Git) | Not Started | Only stash listing exists; actions missing. |
-| Phase 4 (Parity/Reliability) | Not Started | Async, perf, and parity hardening pending. |
-| Phase 5 (Release) | Not Started | CI, packaging, and release process pending. |
+| M1 Core Workflow Hardening | Done | visual selection + batch stage/unstage + commit editor + guard |
+| M2 Advanced Workflow Foundation | In Discussion | scope locking for stash/remote/history entry |
+| M3 Parity and Reliability | Planned | async path, large repo behavior, search/filter |
+| M4 Release Readiness | Planned | CI, packaging, release artifacts |
+
+## M1 Checklist
+
+- [x] Visual selection mode in Files (`v` enter/exit, `Esc` exit).
+- [x] Range-based batch stage/unstage via `Space`.
+- [x] Directory coverage behavior for full subtree selections.
+- [x] Commit guard when no staged change.
+- [x] Dedicated commit editor panel (`message + description`, `Tab` switch, multiline description).
+- [x] Stable post-commit refresh/focus behavior.
 
 ## Feature Parity Scorecard (vs lazygit core usage)
 
@@ -38,22 +48,8 @@ Scoring: 0 = none, 0.5 = partial, 1 = usable.
 
 Current parity index (simple average): 0.58
 
-## Next Milestone (Phase 2 Exit)
-
-- [x] Space on file toggles stage/unstage for current selection.
-- [x] Commit popup/input supports create commit + validation.
-- [x] Branch checkout/create/delete available with clear feedback.
-- [x] Errors and success events shown in command log.
-- [x] Tests for stage/unstage/commit happy path.
-
 ## Active Risks
 
 - Advanced operations may exceed practical `git2` coverage for full UX parity.
 - Current test coverage is low; regressions are likely during rapid feature work.
 - Async command model exists but is not yet integrated in runtime.
-
-## Mitigation Plan
-
-- Keep `GitRepository` as stable boundary and add backend adapters as needed.
-- Add workflow-focused integration tests using temp repositories early.
-- Gate phase transitions by exit criteria, not by elapsed time.

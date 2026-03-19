@@ -104,6 +104,7 @@ pub struct FileTree<'a> {
     nodes: Vec<FileTreeNode>,
     block: Option<Block<'a>>,
     highlight_style: Style,
+    selected_indices: HashSet<usize>,
 }
 
 impl<'a> FileTree<'a> {
@@ -112,6 +113,7 @@ impl<'a> FileTree<'a> {
             nodes,
             block: None,
             highlight_style: Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD),
+            selected_indices: HashSet::new(),
         }
     }
 
@@ -122,6 +124,11 @@ impl<'a> FileTree<'a> {
 
     pub fn highlight_style(mut self, style: Style) -> Self {
         self.highlight_style = style;
+        self
+    }
+
+    pub fn selected_indices(mut self, selected_indices: HashSet<usize>) -> Self {
+        self.selected_indices = selected_indices;
         self
     }
 
@@ -272,7 +279,19 @@ impl<'a> StatefulWidget for FileTree<'a> {
     type State = FileTreeState;
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
-        let items: Vec<ListItem> = self.nodes.iter().map(Self::render_node).collect();
+        let items: Vec<ListItem> = self
+            .nodes
+            .iter()
+            .enumerate()
+            .map(|(idx, node)| {
+                let item = Self::render_node(node);
+                if self.selected_indices.contains(&idx) {
+                    item.style(Style::default().bg(Color::Rgb(45, 64, 71)))
+                } else {
+                    item
+                }
+            })
+            .collect();
 
         let mut list = List::new(items).highlight_style(self.highlight_style);
 

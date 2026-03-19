@@ -94,7 +94,13 @@ pub trait GitRepository {
     fn stage(&self, path: &std::path::Path) -> Result<(), GitError>;
 
     /// Documentation comment in English.
+    fn stage_paths(&self, paths: &[PathBuf]) -> Result<(), GitError>;
+
+    /// Documentation comment in English.
     fn unstage(&self, path: &std::path::Path) -> Result<(), GitError>;
+
+    /// Documentation comment in English.
+    fn unstage_paths(&self, paths: &[PathBuf]) -> Result<(), GitError>;
 
     /// Documentation comment in English.
     fn diff_unstaged(&self, path: &std::path::Path) -> Result<Vec<DiffLine>, GitError>;
@@ -215,20 +221,40 @@ impl GitRepository for Git2Repository {
     }
 
     fn stage(&self, path: &std::path::Path) -> Result<(), GitError> {
+        self.stage_paths(&[path.to_path_buf()])
+    }
+
+    fn stage_paths(&self, paths: &[PathBuf]) -> Result<(), GitError> {
+        if paths.is_empty() {
+            return Ok(());
+        }
+
         let mut index = self.repo.index()?;
-        index.add_path(path)?;
+        let specs: Vec<&str> = paths
+            .iter()
+            .filter_map(|p| p.to_str())
+            .collect();
+        index.add_all(specs, git2::IndexAddOption::DEFAULT, None)?;
         index.write()?;
         Ok(())
     }
 
     fn unstage(&self, path: &std::path::Path) -> Result<(), GitError> {
-        // Comment in English.
+        self.unstage_paths(&[path.to_path_buf()])
+    }
+
+    fn unstage_paths(&self, paths: &[PathBuf]) -> Result<(), GitError> {
+        if paths.is_empty() {
+            return Ok(());
+        }
+
         let head = self.repo.head()?.target().ok_or(GitError::InvalidState)?;
         let commit_obj = self.repo.find_object(head, Some(git2::ObjectType::Commit))?;
-
-        // Comment in English.
-        let path_str = path.to_str().ok_or(GitError::InvalidState)?;
-        self.repo.reset_default(Some(&commit_obj), [path_str])?;
+        let specs: Vec<&str> = paths
+            .iter()
+            .filter_map(|p| p.to_str())
+            .collect();
+        self.repo.reset_default(Some(&commit_obj), specs)?;
 
         Ok(())
     }

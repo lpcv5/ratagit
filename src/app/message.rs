@@ -15,6 +15,7 @@ pub enum Message {
 
     // Comment in English.
     ToggleDir,
+    ToggleVisualSelectMode,
     CollapseAll,
     ExpandAll,
 
@@ -31,6 +32,8 @@ pub enum Message {
     CreateBranch(String),
     StageFile(std::path::PathBuf),
     UnstageFile(std::path::PathBuf),
+    ToggleStageSelection,
+    PrepareCommitFromSelection,
     RefreshStatus,
 
     // Comment in English.

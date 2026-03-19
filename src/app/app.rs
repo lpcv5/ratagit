@@ -40,8 +40,14 @@ pub struct CommandLogEntry {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum InputMode {
-    CommitMessage,
+    CommitEditor,
     CreateBranch,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum CommitFieldFocus {
+    Message,
+    Description,
 }
 
 /// Documentation comment in English.
@@ -58,6 +64,8 @@ pub struct App {
     expanded_dirs: HashSet<PathBuf>,
 
     pub files_panel: PanelState,
+    pub files_visual_mode: bool,
+    pub files_visual_anchor: Option<usize>,
     pub branches_panel: PanelState,
     pub commits_panel: PanelState,
     pub stash_panel: PanelState,
@@ -71,6 +79,9 @@ pub struct App {
     pub diff_scroll: usize,
     pub input_mode: Option<InputMode>,
     pub input_buffer: String,
+    pub commit_message_buffer: String,
+    pub commit_description_buffer: String,
+    pub commit_focus: CommitFieldFocus,
 
     keymap: Keymap,
 }
@@ -103,6 +114,8 @@ impl App {
             file_tree_nodes,
             expanded_dirs,
             files_panel: PanelState::new(),
+            files_visual_mode: false,
+            files_visual_anchor: None,
             branches_panel: PanelState::new(),
             commits_panel: PanelState::new(),
             stash_panel: PanelState::new(),
@@ -114,6 +127,9 @@ impl App {
             diff_scroll: 0,
             input_mode: None,
             input_buffer: String::new(),
+            commit_message_buffer: String::new(),
+            commit_description_buffer: String::new(),
+            commit_focus: CommitFieldFocus::Message,
             keymap,
         };
         app.load_diff();
@@ -124,6 +140,9 @@ impl App {
         use super::Message;
         if self.input_mode.is_some() {
             return self.handle_input_key(key);
+        }
+        if key.code == KeyCode::Esc && self.active_panel == SidePanel::Files && self.files_visual_mode {
+            return Some(Message::ToggleVisualSelectMode);
         }
 
         let k = key_to_string(&key);
@@ -144,17 +163,26 @@ impl App {
         if gm("panel_2")           { return Some(Message::PanelGoto(2)); }
         if gm("panel_3")           { return Some(Message::PanelGoto(3)); }
         if gm("panel_4")           { return Some(Message::PanelGoto(4)); }
-        if gm("commit")            { return Some(Message::StartCommitInput); }
+        if gm("commit") {
+            if self.active_panel == SidePanel::Files && self.files_visual_mode {
+                return Some(Message::PrepareCommitFromSelection);
+            }
+            return Some(Message::StartCommitInput);
+        }
 
         // Comment in English.
         let panel = self.active_panel_name();
         let pm = |action| self.keymap.panel_matches(panel, action, &k);
 
         if pm("toggle_stage") {
+            if self.active_panel == SidePanel::Files && self.files_visual_mode {
+                return Some(Message::ToggleStageSelection);
+            }
             if let Some(msg) = self.toggle_stage_for_selected_file() {
                 return Some(msg);
             }
         }
+        if pm("toggle_visual_select") { return Some(Message::ToggleVisualSelectMode); }
         if pm("toggle_dir")   { return Some(Message::ToggleDir); }
         if pm("collapse_all") { return Some(Message::CollapseAll); }
         if pm("expand_all")   { return Some(Message::ExpandAll); }
@@ -174,30 +202,87 @@ impl App {
                 self.cancel_input();
                 None
             }
-            KeyCode::Enter => {
-                let value = self.input_buffer.trim().to_string();
-                self.input_mode = None;
-                self.input_buffer.clear();
+            KeyCode::Tab => match mode {
+                InputMode::CommitEditor => {
+                    self.commit_focus = match self.commit_focus {
+                        CommitFieldFocus::Message => CommitFieldFocus::Description,
+                        CommitFieldFocus::Description => CommitFieldFocus::Message,
+                    };
+                    None
+                }
+                InputMode::CreateBranch => None,
+            },
+            KeyCode::Enter => match mode {
+                InputMode::CommitEditor => match self.commit_focus {
+                    CommitFieldFocus::Message => {
+                        let title = self.commit_message_buffer.trim().to_string();
+                        if title.is_empty() {
+                            self.push_log("Empty commit message ignored", false);
+                            return None;
+                        }
+                        let description = self.commit_description_buffer.trim_end();
+                        let value = if description.is_empty() {
+                            title
+                        } else {
+                            format!("{}\n\n{}", title, description)
+                        };
+                        self.input_mode = None;
+                        self.commit_message_buffer.clear();
+                        self.commit_description_buffer.clear();
+                        self.commit_focus = CommitFieldFocus::Message;
+                        Some(Message::Commit(value))
+                    }
+                    CommitFieldFocus::Description => {
+                        self.commit_description_buffer.push('\n');
+                        None
+                    }
+                },
+                InputMode::CreateBranch => {
+                    let value = self.input_buffer.trim().to_string();
+                    self.input_mode = None;
+                    self.input_buffer.clear();
 
-                if value.is_empty() {
-                    self.push_log("Empty input ignored", false);
+                    if value.is_empty() {
+                        self.push_log("Empty input ignored", false);
+                        return None;
+                    }
+                    Some(Message::CreateBranch(value))
+                }
+            },
+            KeyCode::Backspace => match mode {
+                InputMode::CommitEditor => {
+                    match self.commit_focus {
+                        CommitFieldFocus::Message => {
+                            self.commit_message_buffer.pop();
+                        }
+                        CommitFieldFocus::Description => {
+                            self.commit_description_buffer.pop();
+                        }
+                    }
+                    None
+                }
+                InputMode::CreateBranch => {
+                    self.input_buffer.pop();
+                    None
+                }
+            },
+            KeyCode::Char(c) => {
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
                     return None;
                 }
-
                 match mode {
-                    InputMode::CommitMessage => Some(Message::Commit(value)),
-                    InputMode::CreateBranch => Some(Message::CreateBranch(value)),
+                    InputMode::CommitEditor => {
+                        match self.commit_focus {
+                            CommitFieldFocus::Message => self.commit_message_buffer.push(c),
+                            CommitFieldFocus::Description => self.commit_description_buffer.push(c),
+                        }
+                        None
+                    }
+                    InputMode::CreateBranch => {
+                        self.input_buffer.push(c);
+                        None
+                    }
                 }
-            }
-            KeyCode::Backspace => {
-                self.input_buffer.pop();
-                None
-            }
-            KeyCode::Char(c) => {
-                if !key.modifiers.contains(KeyModifiers::CONTROL) {
-                    self.input_buffer.push(c);
-                }
-                None
             }
             _ => None,
         }
@@ -208,12 +293,20 @@ impl App {
     }
 
     pub fn shortcut_hints(&self) -> Vec<(String, String)> {
-        if self.input_mode.is_some() {
-            return vec![
-                ("Enter".to_string(), "Confirm".to_string()),
-                ("Esc".to_string(), "Cancel".to_string()),
-                ("Backspace".to_string(), "Delete".to_string()),
-            ];
+        if let Some(mode) = self.input_mode {
+            return match mode {
+                InputMode::CommitEditor => vec![
+                    ("Tab".to_string(), "SwitchField".to_string()),
+                    ("Enter".to_string(), "Confirm/DescNewline".to_string()),
+                    ("Esc".to_string(), "Cancel".to_string()),
+                    ("Backspace".to_string(), "Delete".to_string()),
+                ],
+                InputMode::CreateBranch => vec![
+                    ("Enter".to_string(), "Confirm".to_string()),
+                    ("Esc".to_string(), "Cancel".to_string()),
+                    ("Backspace".to_string(), "Delete".to_string()),
+                ],
+            };
         }
 
         let mut hints = vec![
@@ -250,8 +343,20 @@ impl App {
         match self.active_panel {
             SidePanel::Files => {
                 hints.push((
+                    self.panel_key_or(panel, "toggle_visual_select", "v"),
+                    if self.files_visual_mode {
+                        "VisualOn".to_string()
+                    } else {
+                        "Visual".to_string()
+                    },
+                ));
+                hints.push((
                     self.panel_key_or(panel, "toggle_stage", "Space"),
-                    "Stage".to_string(),
+                    if self.files_visual_mode {
+                        "BatchToggle".to_string()
+                    } else {
+                        "Stage".to_string()
+                    },
                 ));
                 hints.push((
                     self.panel_key_or(panel, "toggle_dir", "Enter"),
@@ -299,9 +404,20 @@ impl App {
         Ok(())
     }
 
-    pub fn start_commit_input(&mut self) {
-        self.input_mode = Some(InputMode::CommitMessage);
-        self.input_buffer.clear();
+    pub fn start_commit_editor(&mut self) {
+        self.input_mode = Some(InputMode::CommitEditor);
+        self.commit_message_buffer.clear();
+        self.commit_description_buffer.clear();
+        self.commit_focus = CommitFieldFocus::Message;
+    }
+
+    pub fn start_commit_editor_guarded(&mut self) -> bool {
+        if self.status.staged.is_empty() {
+            self.push_log("commit blocked: no staged changes", false);
+            return false;
+        }
+        self.start_commit_editor();
+        true
     }
 
     pub fn start_branch_create_input(&mut self) {
@@ -312,6 +428,23 @@ impl App {
     pub fn cancel_input(&mut self) {
         self.input_mode = None;
         self.input_buffer.clear();
+        self.commit_message_buffer.clear();
+        self.commit_description_buffer.clear();
+        self.commit_focus = CommitFieldFocus::Message;
+    }
+
+    pub fn toggle_visual_select_mode(&mut self) {
+        if self.active_panel != SidePanel::Files {
+            return;
+        }
+        if self.files_visual_mode {
+            self.files_visual_mode = false;
+            self.files_visual_anchor = None;
+            return;
+        }
+
+        self.files_visual_mode = true;
+        self.files_visual_anchor = self.files_panel.list_state.selected();
     }
 
     pub fn push_log<S: Into<String>>(&mut self, command: S, success: bool) {
@@ -408,9 +541,13 @@ impl App {
         let count = self.file_tree_nodes.len();
         if count == 0 {
             self.files_panel.list_state.select(None);
+            self.files_visual_anchor = None;
         } else {
             let idx = selected.unwrap_or(0).min(count - 1);
             self.files_panel.list_state.select(Some(idx));
+            if let Some(anchor) = self.files_visual_anchor {
+                self.files_visual_anchor = Some(anchor.min(count - 1));
+            }
         }
     }
 
@@ -446,6 +583,57 @@ impl App {
         let state = self.active_panel_state_mut();
         let prev = state.list_state.selected().map(|i| i.saturating_sub(1)).unwrap_or(0);
         state.list_state.select(Some(prev));
+    }
+
+    pub fn visual_selected_indices(&self) -> HashSet<usize> {
+        let mut set = HashSet::new();
+        if self.active_panel != SidePanel::Files || !self.files_visual_mode {
+            return set;
+        }
+        let Some(current) = self.files_panel.list_state.selected() else {
+            return set;
+        };
+        let anchor = self.files_visual_anchor.unwrap_or(current);
+        let (start, end) = if anchor <= current {
+            (anchor, current)
+        } else {
+            (current, anchor)
+        };
+        for idx in start..=end {
+            set.insert(idx);
+        }
+        set
+    }
+
+    pub fn toggle_stage_visual_selection(&mut self) -> Result<(usize, usize)> {
+        let selected = self.visual_selected_indices();
+        if selected.is_empty() {
+            return Ok((0, 0));
+        }
+
+        let (stage_paths, unstage_paths) = self.partition_toggle_targets(&selected);
+        if !stage_paths.is_empty() {
+            self.repo.stage_paths(&stage_paths)?;
+        }
+        if !unstage_paths.is_empty() {
+            self.repo.unstage_paths(&unstage_paths)?;
+        }
+        self.refresh_status()?;
+        Ok((stage_paths.len(), unstage_paths.len()))
+    }
+
+    pub fn prepare_commit_from_visual_selection(&mut self) -> Result<usize> {
+        let selected = self.visual_selected_indices();
+        let targets = self.collect_commit_targets(&selected);
+        if targets.is_empty() {
+            return Ok(0);
+        }
+
+        self.repo.stage_paths(&targets)?;
+        self.refresh_status()?;
+        self.files_visual_mode = false;
+        self.files_visual_anchor = None;
+        Ok(targets.len())
     }
 
     pub fn selected_tree_node(&self) -> Option<&FileTreeNode> {
@@ -580,6 +768,106 @@ impl App {
         }
     }
 
+    fn partition_toggle_targets(&self, selected: &HashSet<usize>) -> (Vec<PathBuf>, Vec<PathBuf>) {
+        let mut stage_paths = Vec::new();
+        let mut unstage_paths = Vec::new();
+
+        for target in self.collect_selection_targets(selected) {
+            if target.all_staged {
+                unstage_paths.push(target.path);
+            } else {
+                stage_paths.push(target.path);
+            }
+        }
+
+        (stage_paths, unstage_paths)
+    }
+
+    fn collect_commit_targets(&self, selected: &HashSet<usize>) -> Vec<PathBuf> {
+        self.collect_selection_targets(selected)
+            .into_iter()
+            .map(|t| t.path)
+            .collect()
+    }
+
+    fn collect_selection_targets(&self, selected: &HashSet<usize>) -> Vec<SelectionTarget> {
+        let mut targets = Vec::new();
+        let mut covered = HashSet::new();
+        let mut ordered: Vec<usize> = selected.iter().copied().collect();
+        ordered.sort_unstable();
+
+        for idx in ordered {
+            if covered.contains(&idx) {
+                continue;
+            }
+            let Some(node) = self.file_tree_nodes.get(idx) else {
+                continue;
+            };
+
+            if node.is_dir {
+                let end = self.subtree_end_index(idx);
+                let fully_covered = (idx..=end).all(|i| selected.contains(&i));
+                if fully_covered {
+                    let all_staged = self.selected_files_are_all_staged(selected, &node.path);
+                    targets.push(SelectionTarget {
+                        path: node.path.clone(),
+                        all_staged,
+                    });
+                    for i in idx..=end {
+                        covered.insert(i);
+                    }
+                }
+                continue;
+            }
+
+            let all_staged = matches!(node.status, FileTreeNodeStatus::Staged(_));
+            targets.push(SelectionTarget {
+                path: node.path.clone(),
+                all_staged,
+            });
+            covered.insert(idx);
+        }
+
+        dedup_targets(targets)
+    }
+
+    fn selected_files_are_all_staged(&self, selected: &HashSet<usize>, dir_path: &std::path::Path) -> bool {
+        let mut has_file = false;
+        for idx in selected {
+            let Some(node) = self.file_tree_nodes.get(*idx) else {
+                continue;
+            };
+            if node.is_dir || !node.path.starts_with(dir_path) {
+                continue;
+            }
+            has_file = true;
+            if !matches!(node.status, FileTreeNodeStatus::Staged(_)) {
+                return false;
+            }
+        }
+        has_file
+    }
+
+    fn subtree_end_index(&self, index: usize) -> usize {
+        let Some(node) = self.file_tree_nodes.get(index) else {
+            return index;
+        };
+        if !node.is_dir {
+            return index;
+        }
+
+        let base_depth = node.depth;
+        let mut end = index;
+        for i in index + 1..self.file_tree_nodes.len() {
+            let n = &self.file_tree_nodes[i];
+            if n.depth <= base_depth {
+                break;
+            }
+            end = i;
+        }
+        end
+    }
+
     fn active_panel_name(&self) -> &'static str {
         match self.active_panel {
             SidePanel::Files => "files",
@@ -600,6 +888,18 @@ impl App {
             .first_panel_key(panel, action)
             .unwrap_or_else(|| fallback.to_string())
     }
+}
+
+#[derive(Debug)]
+struct SelectionTarget {
+    path: PathBuf,
+    all_staged: bool,
+}
+
+fn dedup_targets(mut targets: Vec<SelectionTarget>) -> Vec<SelectionTarget> {
+    let mut seen = HashSet::<PathBuf>::new();
+    targets.retain(|t| seen.insert(t.path.clone()));
+    targets
 }
 
 /// Documentation comment in English.

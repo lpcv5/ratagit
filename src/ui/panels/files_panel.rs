@@ -10,7 +10,12 @@ use ratatui::{
 
 pub fn render_files_panel(frame: &mut Frame, area: Rect, app: &App, is_active: bool) {
     let theme = UiTheme::default();
-    let block = theme.panel_block("Files", is_active);
+    let title = if app.files_visual_mode {
+        "Files [VISUAL]"
+    } else {
+        "Files"
+    };
+    let block = theme.panel_block(title, is_active);
 
     if app.file_tree_nodes.is_empty() {
         let items = vec![ListItem::new("No changes").style(Style::default().fg(theme.text_muted))];
@@ -26,7 +31,8 @@ pub fn render_files_panel(frame: &mut Frame, area: Rect, app: &App, is_active: b
     };
     let widget = FileTree::new(app.file_tree_nodes.clone())
         .block(block)
-        .highlight_style(highlight);
+        .highlight_style(highlight)
+        .selected_indices(app.visual_selected_indices());
 
     let mut state = FileTreeState {
         list_state: app.files_panel.list_state,

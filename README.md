@@ -2,7 +2,7 @@
 
 > A fast, intuitive terminal UI for Git operations, inspired by lazygit
 
-**Status**: Phase 2 in progress
+**Status**: Rolling milestone execution (M1 active)
 
 ## 项目概述
 
@@ -49,7 +49,8 @@ cargo run
 | `1`-`4` | Jump to panel |
 | `j`/`↓` | Move down |
 | `k`/`↑` | Move up |
-| `Enter`/`Space` | Toggle directory expand/collapse (Files panel) |
+| `Space` | Stage/unstage selected file (Files panel) |
+| `Enter` | Toggle directory expand/collapse (Files panel) |
 | `-` / `=` | Collapse/expand all directories |
 | `Ctrl+U` / `Ctrl+D` | Scroll diff up/down |
 | `r` | Refresh |
@@ -69,17 +70,18 @@ cargo run
 - **TEA 主干**: 全局状态、消息驱动、纯函数更新
 - **Component 辅助**: View trait 封装渲染和事件处理
 
-详细设计见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+架构与路线说明见 [docs/DECISIONS.md](docs/DECISIONS.md) 与 [docs/MILESTONES.md](docs/MILESTONES.md)
 
-## Development Roadmap
+## Development Tracking
 
-See [docs/ROADMAP.md](docs/ROADMAP.md) for re-baselined phases and exit criteria, and [docs/STATUS.md](docs/STATUS.md) for the live parity scorecard.
+See [docs/DEVELOPMENT_MODEL.md](docs/DEVELOPMENT_MODEL.md) for the process model, [docs/MILESTONES.md](docs/MILESTONES.md) for milestone index, and [docs/STATUS.md](docs/STATUS.md) for live tracking.
 
 ## 文档
 
-- [架构设计](docs/ARCHITECTURE.md)
-- [开发路线图](docs/ROADMAP.md)
+- [开发模型](docs/DEVELOPMENT_MODEL.md)
+- [里程碑索引](docs/MILESTONES.md)
 - [状态看板](docs/STATUS.md)
+- [当前里程碑 M1](docs/milestones/M1_CORE_WORKFLOW_HARDENING.md)
 - [技术决策](docs/DECISIONS.md)
 
 ## 贡献

@@ -12,13 +12,9 @@ pub fn render_command_log(frame: &mut Frame, area: Rect, app: &App) {
     let theme = UiTheme::default();
     let mut lines: Vec<Line> = Vec::new();
 
-    if let Some(mode) = app.input_mode {
-        let prompt = match mode {
-            InputMode::CommitMessage => "commit>",
-            InputMode::CreateBranch => "branch>",
-        };
+    if app.input_mode == Some(InputMode::CreateBranch) {
         lines.push(Line::from(Span::styled(
-            format!("{} {}", prompt, app.input_buffer),
+            format!("branch> {}", app.input_buffer),
             Style::default().fg(Color::Yellow),
         )));
     }

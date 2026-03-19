@@ -60,6 +60,12 @@ pub fn update(app: &mut App, msg: Message) -> Option<Command> {
             None
         }
 
+        Message::ToggleVisualSelectMode => {
+            app.toggle_visual_select_mode();
+            app.load_diff();
+            None
+        }
+
         Message::CollapseAll => {
             app.collapse_all();
             app.load_diff();
@@ -93,8 +99,42 @@ pub fn update(app: &mut App, msg: Message) -> Option<Command> {
         }
 
         Message::StartCommitInput => {
-            app.start_commit_input();
-            app.push_log("commit: enter message and press Enter", true);
+            if app.start_commit_editor_guarded() {
+                app.push_log("commit: edit message/description then press Enter on message", true);
+            }
+            None
+        }
+
+        Message::PrepareCommitFromSelection => {
+            match app.prepare_commit_from_visual_selection() {
+                Ok(count) => {
+                    if count == 0 {
+                        app.push_log("commit blocked: no selected items", false);
+                        return None;
+                    }
+                    if app.start_commit_editor_guarded() {
+                        app.push_log(
+                            format!("commit: {} selected target(s) staged; edit message/description", count),
+                            true,
+                        );
+                    }
+                }
+                Err(e) => app.push_log(format!("prepare commit failed: {}", e), false),
+            }
+            None
+        }
+
+        Message::ToggleStageSelection => {
+            match app.toggle_stage_visual_selection() {
+                Ok((staged, unstaged)) => {
+                    app.push_log(
+                        format!("selection toggled: staged {}, unstaged {}", staged, unstaged),
+                        true,
+                    );
+                    app.load_diff();
+                }
+                Err(e) => app.push_log(format!("selection toggle failed: {}", e), false),
+            }
             None
         }
 
