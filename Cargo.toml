@@ -1,0 +1,56 @@
+[package]
+name = "ratagit"
+version = "0.1.0"
+edition = "2021"
+authors = ["Your Name <you@example.com>"]
+license = "MIT"
+description = "A fast, intuitive terminal UI for Git"
+repository = "https://github.com/yourusername/ratagit"
+keywords = ["git", "tui", "terminal", "ratatui"]
+categories = ["command-line-interface", "development-tools"]
+
+[dependencies]
+# UI 框架
+ratatui = "0.30"
+crossterm = "0.29"
+
+# Git 操作
+git2 = "0.19"
+
+# 异步运行时
+tokio = { version = "1.40", features = ["full"] }
+
+# 错误处理
+thiserror = "1.0"
+color-eyre = "0.6"
+
+# 序列化
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+
+# 日志
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# 工具库
+chrono = { version = "0.4", features = ["serde"] }
+dirs = "5.0"
+regex = "1.10"
+
+[dev-dependencies]
+# 测试
+tempfile = "3.10"
+pretty_assertions = "1.4"
+
+[profile.release]
+# 优化发布构建
+codegen-units = 1
+lto = true
+opt-level = "z"
+strip = true
+
+[profile.dev]
+# 开发构建优化
+opt-level = 0
+debug = true
