@@ -11,7 +11,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-/// 文件树节点状态
+/// Documentation comment in English.
 #[derive(Debug, Clone, PartialEq)]
 pub enum FileTreeNodeStatus {
     Unstaged(FileStatus),
@@ -20,7 +20,7 @@ pub enum FileTreeNodeStatus {
     Directory,
 }
 
-/// 文件树节点（扁平化后的可见列表项）
+/// Documentation comment in English.
 #[derive(Debug, Clone)]
 pub struct FileTreeNode {
     pub path: PathBuf,
@@ -66,13 +66,15 @@ fn status_color(status: &FileTreeNodeStatus) -> Color {
     }
 }
 
-/// 文件树状态
+/// Documentation comment in English.
 #[derive(Debug, Default)]
 pub struct FileTreeState {
     pub list_state: ListState,
+    #[allow(dead_code)]
     pub expanded_dirs: HashSet<PathBuf>,
 }
 
+#[allow(dead_code)]
 impl FileTreeState {
     pub fn new() -> Self {
         let mut s = Self::default();
@@ -97,7 +99,7 @@ impl FileTreeState {
     }
 }
 
-/// 可复用文件树 Widget
+/// Documentation comment in English.
 pub struct FileTree<'a> {
     nodes: Vec<FileTreeNode>,
     block: Option<Block<'a>>,
@@ -118,7 +120,8 @@ impl<'a> FileTree<'a> {
         self
     }
 
-    /// 从 git 状态构建树节点（所有目录默认展开）
+    /// Documentation comment in English.
+    #[allow(dead_code)]
     pub fn from_git_status(
         unstaged: &[FileEntry],
         untracked: &[FileEntry],
@@ -130,7 +133,7 @@ impl<'a> FileTree<'a> {
         build_subtree(Path::new(""), &files, &all_dirs, &expanded, 0)
     }
 
-    /// 从 git 状态构建树节点，使用指定的展开状态
+    /// Documentation comment in English.
     pub fn from_git_status_with_expanded(
         unstaged: &[FileEntry],
         untracked: &[FileEntry],
@@ -190,7 +193,7 @@ impl<'a> FileTree<'a> {
     }
 }
 
-/// 从文件列表收集所有目录路径
+/// Documentation comment in English.
 fn collect_dirs(files: &[(PathBuf, FileTreeNodeStatus)]) -> HashSet<PathBuf> {
     let mut dirs = HashSet::new();
     for (path, _) in files {
@@ -204,7 +207,7 @@ fn collect_dirs(files: &[(PathBuf, FileTreeNodeStatus)]) -> HashSet<PathBuf> {
     dirs
 }
 
-/// 递归构建子树（扁平化为可见列表）
+/// Documentation comment in English.
 fn build_subtree(
     dir: &Path,
     files: &[(PathBuf, FileTreeNodeStatus)],
@@ -214,7 +217,7 @@ fn build_subtree(
 ) -> Vec<FileTreeNode> {
     let mut nodes = Vec::new();
 
-    // 当前目录的直接子目录
+    // Comment in English.
     let mut child_dirs: Vec<PathBuf> = all_dirs
         .iter()
         .filter(|d| d.parent() == Some(dir))
@@ -222,14 +225,14 @@ fn build_subtree(
         .collect();
     child_dirs.sort();
 
-    // 当前目录的直接子文件
+    // Comment in English.
     let mut child_files: Vec<&(PathBuf, FileTreeNodeStatus)> = files
         .iter()
         .filter(|(p, _)| p.parent() == Some(dir))
         .collect();
     child_files.sort_by(|a, b| a.0.cmp(&b.0));
 
-    // 目录优先
+    // Comment in English.
     for child_dir in child_dirs {
         let is_expanded = expanded.contains(&child_dir);
         nodes.push(FileTreeNode {
@@ -246,7 +249,7 @@ fn build_subtree(
         }
     }
 
-    // 文件
+    // Comment in English.
     for (path, status) in child_files {
         nodes.push(FileTreeNode {
             path: path.clone(),

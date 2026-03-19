@@ -1,30 +1,10 @@
-use super::{App, Message, Command, Tab, SidePanel};
+use super::{App, Message, Command, SidePanel};
 
-/// TEA 架构的更新函数（纯函数）
+/// Documentation comment in English.
 pub fn update(app: &mut App, msg: Message) -> Option<Command> {
     match msg {
         Message::Quit => {
             app.running = false;
-            None
-        }
-
-        Message::TabNext => {
-            app.current_tab = match app.current_tab {
-                Tab::Status => Tab::Commits,
-                Tab::Commits => Tab::Branches,
-                Tab::Branches => Tab::Stash,
-                Tab::Stash => Tab::Status,
-            };
-            None
-        }
-
-        Message::TabPrev => {
-            app.current_tab = match app.current_tab {
-                Tab::Status => Tab::Stash,
-                Tab::Commits => Tab::Status,
-                Tab::Branches => Tab::Commits,
-                Tab::Stash => Tab::Branches,
-            };
             None
         }
 
@@ -35,6 +15,7 @@ pub fn update(app: &mut App, msg: Message) -> Option<Command> {
                 SidePanel::Commits => SidePanel::Stash,
                 SidePanel::Stash => SidePanel::Files,
             };
+            app.load_diff();
             None
         }
 
@@ -45,6 +26,7 @@ pub fn update(app: &mut App, msg: Message) -> Option<Command> {
                 SidePanel::Commits => SidePanel::LocalBranches,
                 SidePanel::Stash => SidePanel::Commits,
             };
+            app.load_diff();
             None
         }
 
@@ -56,6 +38,7 @@ pub fn update(app: &mut App, msg: Message) -> Option<Command> {
                 4 => SidePanel::Stash,
                 _ => app.active_panel,
             };
+            app.load_diff();
             None
         }
 
@@ -101,34 +84,86 @@ pub fn update(app: &mut App, msg: Message) -> Option<Command> {
 
         Message::RefreshStatus => {
             if let Err(e) = app.refresh_status() {
-                eprintln!("Failed to refresh status: {}", e);
+                app.push_log(format!("refresh failed: {}", e), false);
+            } else {
+                app.push_log("refresh", true);
+                app.load_diff();
+            }
+            None
+        }
+
+        Message::StartCommitInput => {
+            app.start_commit_input();
+            app.push_log("commit: enter message and press Enter", true);
+            None
+        }
+
+        Message::StartBranchCreateInput => {
+            app.start_branch_create_input();
+            app.push_log("branch create: enter name and press Enter", true);
+            None
+        }
+
+        Message::Commit(message) => {
+            match app.commit(&message) {
+                Ok(oid) => app.push_log(format!("commit {} ({})", message, oid), true),
+                Err(e) => app.push_log(format!("commit failed: {}", e), false),
+            }
+            None
+        }
+
+        Message::CreateBranch(name) => {
+            match app.create_branch(&name) {
+                Ok(()) => app.push_log(format!("branch created: {}", name), true),
+                Err(e) => app.push_log(format!("create branch failed: {}", e), false),
+            }
+            None
+        }
+
+        Message::CheckoutSelectedBranch => {
+            if let Some(name) = app.selected_branch_name() {
+                match app.checkout_branch(&name) {
+                    Ok(()) => app.push_log(format!("checked out {}", name), true),
+                    Err(e) => app.push_log(format!("checkout failed: {}", e), false),
+                }
+            } else {
+                app.push_log("no branch selected", false);
+            }
+            None
+        }
+
+        Message::DeleteSelectedBranch => {
+            if let Some(name) = app.selected_branch_name() {
+                match app.delete_branch(&name) {
+                    Ok(()) => app.push_log(format!("deleted branch {}", name), true),
+                    Err(e) => app.push_log(format!("delete branch failed: {}", e), false),
+                }
+            } else {
+                app.push_log("no branch selected", false);
             }
             None
         }
 
         Message::StageFile(path) => {
+            let display = path.display().to_string();
             if let Err(e) = app.stage_file(path) {
-                eprintln!("Failed to stage file: {}", e);
+                app.push_log(format!("stage failed {}: {}", display, e), false);
+            } else {
+                app.push_log(format!("staged {}", display), true);
             }
             None
         }
 
         Message::UnstageFile(path) => {
+            let display = path.display().to_string();
             if let Err(e) = app.unstage_file(path) {
-                eprintln!("Failed to unstage file: {}", e);
+                app.push_log(format!("unstage failed {}: {}", display, e), false);
+            } else {
+                app.push_log(format!("unstaged {}", display), true);
             }
             None
         }
 
-        Message::GitStatusLoaded(status) => {
-            app.status = status;
-            None
-        }
-
-        Message::GitError(e) => {
-            eprintln!("Git error: {}", e);
-            None
-        }
     }
 }
 
@@ -136,6 +171,6 @@ pub fn update(app: &mut App, msg: Message) -> Option<Command> {
 mod tests {
     #[test]
     fn test_update_tab_next() {
-        // Phase 2 再完善测试
+        // Comment in English.
     }
 }

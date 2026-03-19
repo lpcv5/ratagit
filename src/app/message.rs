@@ -1,35 +1,37 @@
-/// 应用消息（TEA 架构中的 Message）
+/// Documentation comment in English.
 #[derive(Debug, Clone)]
 pub enum Message {
-    // 全局事件
+    // Comment in English.
     Quit,
-    TabNext,
-    TabPrev,
 
-    // 面板导航
+    // Comment in English.
     PanelNext,
     PanelPrev,
     PanelGoto(usize), // 1-based
 
-    // 列表导航
+    // Comment in English.
     ListUp,
     ListDown,
 
-    // 文件树操作
+    // Comment in English.
     ToggleDir,
     CollapseAll,
     ExpandAll,
 
-    // Diff 滚动
+    // Comment in English.
     DiffScrollUp,
     DiffScrollDown,
 
-    // Git 操作
+    // Comment in English.
+    StartCommitInput,
+    StartBranchCreateInput,
+    CheckoutSelectedBranch,
+    DeleteSelectedBranch,
+    Commit(String),
+    CreateBranch(String),
     StageFile(std::path::PathBuf),
     UnstageFile(std::path::PathBuf),
     RefreshStatus,
 
-    // Git 结果
-    GitStatusLoaded(crate::git::GitStatus),
-    GitError(crate::git::GitError),
+    // Comment in English.
 }

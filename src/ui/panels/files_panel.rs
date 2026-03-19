@@ -35,7 +35,7 @@ pub fn render_files_panel(frame: &mut Frame, area: Rect, app: &App, is_active: b
     let widget = FileTree::new(app.file_tree_nodes.clone()).block(block);
 
     let mut state = FileTreeState {
-        list_state: app.files_panel.list_state.clone(),
+        list_state: app.files_panel.list_state,
         expanded_dirs: std::collections::HashSet::new(),
     };
 

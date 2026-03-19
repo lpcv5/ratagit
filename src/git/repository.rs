@@ -1,27 +1,24 @@
 use std::path::PathBuf;
 use thiserror::Error;
 
-/// Git 操作错误
+/// Documentation comment in English.
 #[derive(Debug, Clone, Error)]
 pub enum GitError {
     #[error("Git error: {0}")]
     Git2(String),
 
-    #[error("Repository not found: {0}")]
-    NotFound(PathBuf),
-
     #[error("Invalid repository state")]
     InvalidState,
 }
 
-// 实现从 git2::Error 转换
+// Comment in English.
 impl From<git2::Error> for GitError {
     fn from(err: git2::Error) -> Self {
         GitError::Git2(err.to_string())
     }
 }
 
-/// 文件状态
+/// Documentation comment in English.
 #[derive(Debug, Clone, PartialEq)]
 pub enum FileStatus {
     New,
@@ -31,14 +28,14 @@ pub enum FileStatus {
     TypeChange,
 }
 
-/// 文件条目
+/// Documentation comment in English.
 #[derive(Debug, Clone)]
 pub struct FileEntry {
     pub path: PathBuf,
     pub status: FileStatus,
 }
 
-/// Git 仓库状态
+/// Documentation comment in English.
 #[derive(Debug, Clone, Default)]
 pub struct GitStatus {
     pub unstaged: Vec<FileEntry>,
@@ -46,7 +43,7 @@ pub struct GitStatus {
     pub untracked: Vec<FileEntry>,
 }
 
-/// Diff 行类型
+/// Documentation comment in English.
 #[derive(Debug, Clone, PartialEq)]
 pub enum DiffLineKind {
     Added,
@@ -55,7 +52,7 @@ pub enum DiffLineKind {
     Header,
 }
 
-/// Diff 行
+/// Documentation comment in English.
 #[derive(Debug, Clone)]
 pub struct DiffLine {
     pub kind: DiffLineKind,
@@ -73,6 +70,7 @@ pub struct BranchInfo {
 #[derive(Debug, Clone)]
 pub struct CommitInfo {
     pub short_hash: String,
+    pub oid: String,
     pub message: String,
     pub author: String,
     pub time: String,
@@ -86,59 +84,72 @@ pub struct StashInfo {
     pub message: String,
 }
 
-/// Git 仓库 trait（抽象 git2/gix）
-/// Phase 1: 暂不要求 Send + Sync，Phase 2 再引入异步
+/// Documentation comment in English.
+/// Documentation comment in English.
 pub trait GitRepository {
-    /// 获取仓库状态
+    /// Documentation comment in English.
     fn status(&self) -> Result<GitStatus, GitError>;
 
-    /// Stage 文件
-    fn stage(&self, path: &PathBuf) -> Result<(), GitError>;
+    /// Documentation comment in English.
+    fn stage(&self, path: &std::path::Path) -> Result<(), GitError>;
 
-    /// Unstage 文件
-    fn unstage(&self, path: &PathBuf) -> Result<(), GitError>;
+    /// Documentation comment in English.
+    fn unstage(&self, path: &std::path::Path) -> Result<(), GitError>;
 
-    /// 获取工作区文件 diff（unstaged，已跟踪）
-    fn diff_unstaged(&self, path: &PathBuf) -> Result<Vec<DiffLine>, GitError>;
+    /// Documentation comment in English.
+    fn diff_unstaged(&self, path: &std::path::Path) -> Result<Vec<DiffLine>, GitError>;
 
-    /// 获取暂存区文件 diff（staged）
-    fn diff_staged(&self, path: &PathBuf) -> Result<Vec<DiffLine>, GitError>;
+    /// Documentation comment in English.
+    fn diff_staged(&self, path: &std::path::Path) -> Result<Vec<DiffLine>, GitError>;
 
-    /// 获取未跟踪文件内容（全部作为新增行）
-    fn diff_untracked(&self, path: &PathBuf) -> Result<Vec<DiffLine>, GitError>;
+    /// Documentation comment in English.
+    fn diff_untracked(&self, path: &std::path::Path) -> Result<Vec<DiffLine>, GitError>;
 
-    /// 获取仓库根目录
-    fn workdir(&self) -> Option<PathBuf>;
-
-    /// 获取本地分支列表
+    /// Documentation comment in English.
     fn branches(&self) -> Result<Vec<BranchInfo>, GitError>;
 
-    /// 获取当前分支的 commit 历史
+    /// Documentation comment in English.
     fn commits(&self, limit: usize) -> Result<Vec<CommitInfo>, GitError>;
 
-    /// 获取 stash 列表
+    /// Documentation comment in English.
     fn stashes(&self) -> Result<Vec<StashInfo>, GitError>;
+
+    /// Documentation comment in English.
+    fn commit_diff(&self, oid: &str) -> Result<Vec<DiffLine>, GitError>;
+
+    /// Documentation comment in English.
+    fn commit(&self, message: &str) -> Result<String, GitError>;
+
+    /// Documentation comment in English.
+    fn create_branch(&self, name: &str) -> Result<(), GitError>;
+
+    /// Documentation comment in English.
+    fn checkout_branch(&self, name: &str) -> Result<(), GitError>;
+
+    /// Documentation comment in English.
+    fn delete_branch(&self, name: &str) -> Result<(), GitError>;
 }
 
-/// git2 实现
+/// Documentation comment in English.
 pub struct Git2Repository {
     repo: git2::Repository,
 }
 
 impl Git2Repository {
-    /// 在当前目录或父目录中查找 Git 仓库
+    /// Documentation comment in English.
     pub fn discover() -> Result<Self, GitError> {
         let repo = git2::Repository::discover(".")?;
         Ok(Self { repo })
     }
 
-    /// 从路径创建
+    /// Documentation comment in English.
+    #[cfg(test)]
     pub fn open<P: AsRef<std::path::Path>>(path: P) -> Result<Self, GitError> {
         let repo = git2::Repository::open(path)?;
         Ok(Self { repo })
     }
 
-    /// 将 git2::Status 转换为 FileStatus
+    /// Documentation comment in English.
     fn convert_status(status: git2::Status) -> FileStatus {
         if status.is_index_new() || status.is_wt_new() {
             FileStatus::New
@@ -151,7 +162,17 @@ impl Git2Repository {
         } else if status.is_index_typechange() || status.is_wt_typechange() {
             FileStatus::TypeChange
         } else {
-            FileStatus::Modified // 默认
+            FileStatus::Modified // default
+        }
+    }
+
+    fn signature(&self) -> Result<git2::Signature<'_>, GitError> {
+        match self.repo.signature() {
+            Ok(sig) => Ok(sig),
+            Err(_) => {
+                Ok(git2::Signature::now("ratagit", "ratagit@localhost")
+                    .map_err(GitError::from)?)
+            }
         }
     }
 }
@@ -176,7 +197,7 @@ impl GitRepository for Git2Repository {
                 status: Self::convert_status(status),
             };
 
-            // 分类文件
+            // Comment in English.
             if status.is_wt_new() {
                 git_status.untracked.push(file_entry);
             } else if status.is_index_new()
@@ -193,25 +214,25 @@ impl GitRepository for Git2Repository {
         Ok(git_status)
     }
 
-    fn stage(&self, path: &PathBuf) -> Result<(), GitError> {
+    fn stage(&self, path: &std::path::Path) -> Result<(), GitError> {
         let mut index = self.repo.index()?;
         index.add_path(path)?;
         index.write()?;
         Ok(())
     }
 
-    fn unstage(&self, path: &PathBuf) -> Result<(), GitError> {
-        // 获取 HEAD commit
+    fn unstage(&self, path: &std::path::Path) -> Result<(), GitError> {
+        // Comment in English.
         let head = self.repo.head()?.target().ok_or(GitError::InvalidState)?;
         let commit_obj = self.repo.find_object(head, Some(git2::ObjectType::Commit))?;
 
-        // 使用 reset_default 从 HEAD 恢复文件到 index
+        // Comment in English.
         let path_str = path.to_str().ok_or(GitError::InvalidState)?;
-        self.repo.reset_default(Some(&commit_obj), &[path_str])?;
+        self.repo.reset_default(Some(&commit_obj), [path_str])?;
 
         Ok(())
     }
-    fn diff_unstaged(&self, path: &PathBuf) -> Result<Vec<DiffLine>, GitError> {
+    fn diff_unstaged(&self, path: &std::path::Path) -> Result<Vec<DiffLine>, GitError> {
         let mut opts = git2::DiffOptions::new();
         opts.pathspec(path.to_str().unwrap_or(""));
 
@@ -219,7 +240,7 @@ impl GitRepository for Git2Repository {
         Ok(parse_diff(&diff))
     }
 
-    fn diff_staged(&self, path: &PathBuf) -> Result<Vec<DiffLine>, GitError> {
+    fn diff_staged(&self, path: &std::path::Path) -> Result<Vec<DiffLine>, GitError> {
         let head_tree = self.repo.head().ok()
             .and_then(|h| h.peel_to_tree().ok());
 
@@ -230,7 +251,7 @@ impl GitRepository for Git2Repository {
         Ok(parse_diff(&diff))
     }
 
-    fn diff_untracked(&self, path: &PathBuf) -> Result<Vec<DiffLine>, GitError> {
+    fn diff_untracked(&self, path: &std::path::Path) -> Result<Vec<DiffLine>, GitError> {
         let workdir = self.repo.workdir().ok_or(GitError::InvalidState)?;
         let full_path = workdir.join(path);
         let content = std::fs::read_to_string(&full_path)
@@ -242,10 +263,6 @@ impl GitRepository for Git2Repository {
             lines.push(DiffLine { kind: DiffLineKind::Added, content: line.to_string() });
         }
         Ok(lines)
-    }
-
-    fn workdir(&self) -> Option<PathBuf> {
-        self.repo.workdir().map(|p| p.to_path_buf())
     }
 
     fn branches(&self) -> Result<Vec<BranchInfo>, GitError> {
@@ -287,6 +304,7 @@ impl GitRepository for Git2Repository {
             };
             result.push(CommitInfo {
                 short_hash,
+                oid: oid.to_string(),
                 message,
                 author,
                 time,
@@ -320,6 +338,62 @@ impl GitRepository for Git2Repository {
         }
         Ok(result)
     }
+
+    fn commit_diff(&self, oid: &str) -> Result<Vec<DiffLine>, GitError> {
+        let oid = git2::Oid::from_str(oid).map_err(|e| GitError::Git2(e.to_string()))?;
+        let commit = self.repo.find_commit(oid)?;
+        let tree = commit.tree()?;
+        let parent_tree = if commit.parent_count() > 0 {
+            Some(commit.parent(0)?.tree()?)
+        } else {
+            None
+        };
+
+        let diff = self
+            .repo
+            .diff_tree_to_tree(parent_tree.as_ref(), Some(&tree), None)?;
+        Ok(parse_diff(&diff))
+    }
+
+    fn commit(&self, message: &str) -> Result<String, GitError> {
+        let sig = self.signature()?;
+        let mut index = self.repo.index()?;
+        let tree_id = index.write_tree()?;
+        let tree = self.repo.find_tree(tree_id)?;
+
+        let commit_id = match self.repo.head() {
+            Ok(head) => {
+                let parent = head.peel_to_commit()?;
+                self.repo
+                    .commit(Some("HEAD"), &sig, &sig, message, &tree, &[&parent])?
+            }
+            Err(_) => self.repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &[])?,
+        };
+
+        Ok(commit_id.to_string())
+    }
+
+    fn create_branch(&self, name: &str) -> Result<(), GitError> {
+        let head = self.repo.head()?.peel_to_commit()?;
+        self.repo.branch(name, &head, false)?;
+        Ok(())
+    }
+
+    fn checkout_branch(&self, name: &str) -> Result<(), GitError> {
+        let branch = self.repo.find_branch(name, git2::BranchType::Local)?;
+        let obj = branch.into_reference().peel(git2::ObjectType::Commit)?;
+        let mut opts = git2::build::CheckoutBuilder::new();
+        opts.safe();
+        self.repo.checkout_tree(&obj, Some(&mut opts))?;
+        self.repo.set_head(&format!("refs/heads/{}", name))?;
+        Ok(())
+    }
+
+    fn delete_branch(&self, name: &str) -> Result<(), GitError> {
+        let mut branch = self.repo.find_branch(name, git2::BranchType::Local)?;
+        branch.delete()?;
+        Ok(())
+    }
 }
 
 fn parse_diff(diff: &git2::Diff) -> Vec<DiffLine> {
@@ -337,13 +411,114 @@ fn parse_diff(diff: &git2::Diff) -> Vec<DiffLine> {
     });
     lines
 }
+#[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use std::path::Path;
+    use tempfile::TempDir;
+
+    fn write_file(path: &Path, content: &str) {
+        fs::write(path, content).expect("write file");
+    }
+
+    fn init_repo_with_commit() -> (TempDir, Git2Repository) {
+        let dir = TempDir::new().expect("tempdir");
+        let repo = git2::Repository::init(dir.path()).expect("init repo");
+
+        let file = dir.path().join("tracked.txt");
+        write_file(&file, "v1\n");
+
+        let mut index = repo.index().expect("index");
+        index
+            .add_path(Path::new("tracked.txt"))
+            .expect("add tracked.txt");
+        index.write().expect("write index");
+        let tree_id = index.write_tree().expect("write tree");
+        let tree = repo.find_tree(tree_id).expect("find tree");
+
+        let sig = git2::Signature::now("tester", "tester@example.com").expect("signature");
+        repo.commit(Some("HEAD"), &sig, &sig, "initial", &tree, &[])
+            .expect("initial commit");
+
+        let repo = Git2Repository::open(dir.path()).expect("open git2 repo");
+        (dir, repo)
+    }
 
     #[test]
     fn test_discover_repo() {
-        // 当前目录应该是一个 Git 仓库（ratagit 项目本身）
+        // Comment in English.
         let result = Git2Repository::discover();
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_stage_unstage_roundtrip() {
+        let (dir, repo) = init_repo_with_commit();
+        write_file(&dir.path().join("tracked.txt"), "v2\n");
+
+        let status = repo.status().expect("status before stage");
+        assert!(status
+            .unstaged
+            .iter()
+            .any(|f| f.path == std::path::Path::new("tracked.txt")));
+
+        repo.stage(&PathBuf::from("tracked.txt")).expect("stage");
+        let status = repo.status().expect("status after stage");
+        assert!(status
+            .staged
+            .iter()
+            .any(|f| f.path == std::path::Path::new("tracked.txt")));
+
+        repo.unstage(&PathBuf::from("tracked.txt")).expect("unstage");
+        let status = repo.status().expect("status after unstage");
+        assert!(status
+            .unstaged
+            .iter()
+            .any(|f| f.path == std::path::Path::new("tracked.txt")));
+    }
+
+    #[test]
+    fn test_commit_happy_path() {
+        let (dir, repo) = init_repo_with_commit();
+        write_file(&dir.path().join("new.txt"), "hello\n");
+
+        repo.stage(&PathBuf::from("new.txt")).expect("stage new");
+        let oid = repo.commit("add new").expect("commit");
+        assert!(!oid.is_empty());
+
+        let commits = repo.commits(1).expect("commits");
+        assert_eq!(commits.len(), 1);
+        assert_eq!(commits[0].message, "add new");
+        assert_eq!(commits[0].oid, oid);
+
+        let patch = repo.commit_diff(&oid).expect("commit diff");
+        assert!(!patch.is_empty());
+    }
+
+    #[test]
+    fn test_branch_create_checkout_delete() {
+        let (_dir, repo) = init_repo_with_commit();
+        repo.create_branch("feature/a").expect("create branch");
+        assert!(repo
+            .branches()
+            .expect("branches")
+            .iter()
+            .any(|b| b.name == "feature/a"));
+
+        repo.checkout_branch("feature/a").expect("checkout branch");
+        assert!(repo
+            .branches()
+            .expect("branches after checkout")
+            .iter()
+            .any(|b| b.name == "feature/a" && b.is_current));
+
+        repo.checkout_branch("master").or_else(|_| repo.checkout_branch("main")).expect("checkout default branch");
+        repo.delete_branch("feature/a").expect("delete branch");
+        assert!(!repo
+            .branches()
+            .expect("branches after delete")
+            .iter()
+            .any(|b| b.name == "feature/a"));
     }
 }

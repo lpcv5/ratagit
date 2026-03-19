@@ -40,6 +40,6 @@ pub fn render_stash_panel(frame: &mut Frame, area: Rect, app: &App, is_active: b
         )
         .highlight_style(Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD));
 
-    let mut state = app.stash_panel.list_state.clone();
+    let mut state = app.stash_panel.list_state;
     frame.render_stateful_widget(list, area, &mut state);
 }

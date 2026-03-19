@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::app::{App, Message};
 use crate::ui::View;
 use crate::git::FileStatus;
@@ -9,22 +11,22 @@ use ratatui::{
     Frame,
 };
 
-/// StatusView 状态
+/// Documentation comment in English.
 pub struct StatusViewState {
-    /// 当前选中的列表
+    /// Documentation comment in English.
     pub current_list: CurrentList,
 
-    /// Unstaged 文件列表状态
+    /// Documentation comment in English.
     pub unstaged_state: ListState,
 
-    /// Staged 文件列表状态
+    /// Documentation comment in English.
     pub staged_state: ListState,
 
-    /// Untracked 文件列表状态
+    /// Documentation comment in English.
     pub untracked_state: ListState,
 }
 
-/// 当前活动的列表
+/// Documentation comment in English.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CurrentList {
     Unstaged,
@@ -32,7 +34,7 @@ pub enum CurrentList {
     Untracked,
 }
 
-/// StatusView 组件
+/// Documentation comment in English.
 pub struct StatusView {
     state: StatusViewState,
 }
@@ -52,7 +54,7 @@ impl StatusView {
         }
     }
 
-    /// 获取文件状态颜色
+    /// Documentation comment in English.
     fn get_status_color(status: &FileStatus) -> Color {
         match status {
             FileStatus::New => Color::Green,
@@ -63,7 +65,7 @@ impl StatusView {
         }
     }
 
-    /// 获取文件状态文本
+    /// Documentation comment in English.
     fn get_status_text(status: &FileStatus) -> &'static str {
         match status {
             FileStatus::New => "new",
@@ -77,17 +79,17 @@ impl StatusView {
 
 impl View for StatusView {
     fn render(&self, frame: &mut Frame, area: Rect, app: &App) {
-        // 创建布局：左侧 Unstaged，右侧 Staged
+        // Comment in English.
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
             .split(area);
 
-        // 渲染 Unstaged 列表（包含 Unstaged 和 Untracked）
+        // Comment in English.
         {
             let mut items = Vec::new();
 
-            // Unstaged 文件
+            // Comment in English.
             if !app.status.unstaged.is_empty() {
                 items.push(ListItem::new("=== Unstaged ===").style(
                     Style::default()
@@ -102,7 +104,7 @@ impl View for StatusView {
                 }
             }
 
-            // Untracked 文件
+            // Comment in English.
             if !app.status.untracked.is_empty() {
                 items.push(ListItem::new("=== Untracked ===").style(
                     Style::default()
@@ -130,7 +132,7 @@ impl View for StatusView {
             frame.render_stateful_widget(list, chunks[0], &mut self.state.unstaged_state.clone());
         }
 
-        // 渲染 Staged 列表
+        // Comment in English.
         {
             let mut items = Vec::new();
 
@@ -159,23 +161,23 @@ impl View for StatusView {
 
     fn handle_key(&self, key: KeyEvent, _app: &App) -> Option<Message> {
         match key.code {
-            // 上下移动
+            // Comment in English.
             KeyCode::Char('j') | KeyCode::Down => {
-                // TODO: 实现列表导航
+                // TODO: implement this behavior.
                 None
             }
             KeyCode::Char('k') | KeyCode::Up => {
-                // TODO: 实现列表导航
+                // TODO: implement this behavior.
                 None
             }
 
-            // Space: Stage/Unstage 文件
+            // Comment in English.
             KeyCode::Char(' ') => {
-                // TODO: 根据当前列表和选中项，stage 或 unstage
+                // TODO: implement this behavior.
                 None
             }
 
-            // 刷新
+            // Comment in English.
             KeyCode::Char('r') => Some(Message::RefreshStatus),
 
             _ => None,

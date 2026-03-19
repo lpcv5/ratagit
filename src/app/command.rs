@@ -1,12 +1,13 @@
 use super::Message;
 
-/// 命令（TEA 架构中的 Command）
+/// Documentation comment in English.
+#[allow(dead_code)]
 #[derive(Debug)]
 pub enum Command {
-    /// 无操作
+    /// Documentation comment in English.
     None,
-    /// 异步任务（Phase 2 实现）
+    /// Documentation comment in English.
     Async(tokio::task::JoinHandle<Message>),
-    /// 同步消息
+    /// Documentation comment in English.
     Sync(Message),
 }

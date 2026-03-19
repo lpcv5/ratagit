@@ -41,6 +41,6 @@ pub fn render_commits_panel(frame: &mut Frame, area: Rect, app: &App, is_active:
         )
         .highlight_style(Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD));
 
-    let mut state = app.commits_panel.list_state.clone();
+    let mut state = app.commits_panel.list_state;
     frame.render_stateful_widget(list, area, &mut state);
 }

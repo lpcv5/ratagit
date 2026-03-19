@@ -2,21 +2,21 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-/// 全局快捷键（所有面板生效）
+/// Documentation comment in English.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GlobalKeymap {
     #[serde(flatten)]
     pub bindings: HashMap<String, Vec<String>>,
 }
 
-/// 面板本地快捷键
+/// Documentation comment in English.
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct PanelKeymap {
     #[serde(flatten)]
     pub bindings: HashMap<String, Vec<String>>,
 }
 
-/// 完整 keymap 配置
+/// Documentation comment in English.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Keymap {
     pub global: GlobalKeymap,
@@ -45,6 +45,7 @@ impl Default for GlobalKeymap {
         b.insert("list_down".into(),        vec!["j".into(), "Down".into()]);
         b.insert("diff_scroll_up".into(),   vec!["C-u".into()]);
         b.insert("diff_scroll_down".into(), vec!["C-d".into()]);
+        b.insert("commit".into(),           vec!["c".into()]);
         Self { bindings: b }
     }
 }
@@ -52,14 +53,20 @@ impl Default for GlobalKeymap {
 impl Default for Keymap {
     fn default() -> Self {
         let mut files = HashMap::new();
-        files.insert("toggle_dir".into(),  vec!["Enter".into(), "Space".into()]);
+        files.insert("toggle_stage".into(), vec!["Space".into()]);
+        files.insert("toggle_dir".into(),  vec!["Enter".into()]);
         files.insert("collapse_all".into(), vec!["-".into()]);
         files.insert("expand_all".into(),   vec!["=".into()]);
+
+        let mut branches = HashMap::new();
+        branches.insert("checkout_branch".into(), vec!["Enter".into()]);
+        branches.insert("create_branch".into(), vec!["n".into()]);
+        branches.insert("delete_branch".into(), vec!["d".into()]);
 
         Self {
             global: GlobalKeymap::default(),
             files: PanelKeymap { bindings: files },
-            branches: PanelKeymap::default(),
+            branches: PanelKeymap { bindings: branches },
             commits: PanelKeymap::default(),
             stash: PanelKeymap::default(),
         }
@@ -68,18 +75,31 @@ impl Default for Keymap {
 
 impl Keymap {
     pub fn load() -> Self {
+        let defaults = Self::default();
         let path = Self::config_path();
         if path.exists() {
             let content = std::fs::read_to_string(&path).unwrap_or_default();
-            toml::from_str(&content).unwrap_or_else(|_| {
-                eprintln!("Warning: invalid keymap config, using defaults");
-                Self::default()
+            toml::from_str::<Self>(&content).map(|mut loaded| {
+                loaded.merge_missing(&defaults);
+                loaded
+            }).unwrap_or_else(|_| {
+                // Avoid printing to stderr during TUI startup; it corrupts the UI buffer.
+                defaults.save();
+                defaults
             })
         } else {
-            let default = Self::default();
+            let default = defaults;
             default.save();
             default
         }
+    }
+
+    fn merge_missing(&mut self, defaults: &Self) {
+        merge_bindings(&mut self.global.bindings, &defaults.global.bindings);
+        merge_bindings(&mut self.files.bindings, &defaults.files.bindings);
+        merge_bindings(&mut self.branches.bindings, &defaults.branches.bindings);
+        merge_bindings(&mut self.commits.bindings, &defaults.commits.bindings);
+        merge_bindings(&mut self.stash.bindings, &defaults.stash.bindings);
     }
 
     fn save(&self) {
@@ -121,7 +141,16 @@ impl Keymap {
     }
 }
 
-/// 将 crossterm KeyEvent 转换为字符串表示
+fn merge_bindings(
+    target: &mut HashMap<String, Vec<String>>,
+    defaults: &HashMap<String, Vec<String>>,
+) {
+    for (action, keys) in defaults {
+        target.entry(action.clone()).or_insert_with(|| keys.clone());
+    }
+}
+
+/// Documentation comment in English.
 pub fn key_to_string(key: &crossterm::event::KeyEvent) -> String {
     use crossterm::event::{KeyCode, KeyModifiers};
 

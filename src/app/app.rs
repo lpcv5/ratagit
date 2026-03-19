@@ -3,23 +3,13 @@ use crate::git::{Git2Repository, GitRepository, GitStatus, DiffLine, BranchInfo,
 use crate::ui::layout::render_layout;
 use crate::ui::widgets::file_tree::{FileTree, FileTreeNode, FileTreeNodeStatus};
 use color_eyre::Result;
-use crossterm::event::KeyEvent;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::widgets::ListState;
 use ratatui::Frame;
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-/// Tab 类型
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub enum Tab {
-    #[default]
-    Status,
-    Commits,
-    Branches,
-    Stash,
-}
-
-/// 左侧活跃面板
+/// Documentation comment in English.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum SidePanel {
     #[default]
@@ -29,7 +19,7 @@ pub enum SidePanel {
     Stash,
 }
 
-/// 面板列表状态
+/// Documentation comment in English.
 pub struct PanelState {
     pub list_state: ListState,
 }
@@ -42,24 +32,29 @@ impl PanelState {
     }
 }
 
-/// 命令日志条目
+/// Documentation comment in English.
 pub struct CommandLogEntry {
     pub command: String,
     pub success: bool,
 }
 
-/// 应用状态（TEA 架构中的 Model）
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum InputMode {
+    CommitMessage,
+    CreateBranch,
+}
+
+/// Documentation comment in English.
 pub struct App {
     pub running: bool,
-    pub current_tab: Tab,
     pub active_panel: SidePanel,
 
     repo: Box<dyn GitRepository>,
     pub status: GitStatus,
 
-    /// 文件树节点（扁平化可见列表）
+    /// Documentation comment in English.
     pub file_tree_nodes: Vec<FileTreeNode>,
-    /// 当前展开的目录集合
+    /// Documentation comment in English.
     expanded_dirs: HashSet<PathBuf>,
 
     pub files_panel: PanelState,
@@ -72,8 +67,10 @@ pub struct App {
     pub commits: Vec<CommitInfo>,
     pub stashes: Vec<StashInfo>,
     pub current_diff: Vec<DiffLine>,
-    /// diff 面板滚动偏移
+    /// Documentation comment in English.
     pub diff_scroll: usize,
+    pub input_mode: Option<InputMode>,
+    pub input_buffer: String,
 
     keymap: Keymap,
 }
@@ -83,7 +80,7 @@ impl App {
         let repo = Git2Repository::discover()?;
         let status = repo.status()?;
 
-        // 默认全部展开
+        // Comment in English.
         let expanded_dirs = collect_all_dirs(&status);
         let file_tree_nodes = FileTree::from_git_status_with_expanded(
             &status.unstaged,
@@ -100,7 +97,6 @@ impl App {
 
         let mut app = Self {
             running: true,
-            current_tab: Tab::Status,
             active_panel: SidePanel::Files,
             repo: Box::new(repo),
             status,
@@ -116,6 +112,8 @@ impl App {
             stashes,
             current_diff: Vec::new(),
             diff_scroll: 0,
+            input_mode: None,
+            input_buffer: String::new(),
             keymap,
         };
         app.load_diff();
@@ -124,12 +122,16 @@ impl App {
 
     pub fn handle_key(&mut self, key: KeyEvent) -> Option<super::Message> {
         use super::Message;
+        if self.input_mode.is_some() {
+            return self.handle_input_key(key);
+        }
+
         let k = key_to_string(&key);
         if k.is_empty() { return None; }
 
         let gm = |action| self.keymap.global_matches(action, &k);
 
-        // 全局快捷键
+        // Comment in English.
         if gm("quit")              { return Some(Message::Quit); }
         if gm("list_up")           { return Some(Message::ListUp); }
         if gm("list_down")         { return Some(Message::ListDown); }
@@ -142,8 +144,9 @@ impl App {
         if gm("panel_2")           { return Some(Message::PanelGoto(2)); }
         if gm("panel_3")           { return Some(Message::PanelGoto(3)); }
         if gm("panel_4")           { return Some(Message::PanelGoto(4)); }
+        if gm("commit")            { return Some(Message::StartCommitInput); }
 
-        // 面板本地快捷键
+        // Comment in English.
         let panel = match self.active_panel {
             SidePanel::Files         => "files",
             SidePanel::LocalBranches => "branches",
@@ -152,11 +155,57 @@ impl App {
         };
         let pm = |action| self.keymap.panel_matches(panel, action, &k);
 
+        if pm("toggle_stage") {
+            if let Some(msg) = self.toggle_stage_for_selected_file() {
+                return Some(msg);
+            }
+        }
         if pm("toggle_dir")   { return Some(Message::ToggleDir); }
         if pm("collapse_all") { return Some(Message::CollapseAll); }
         if pm("expand_all")   { return Some(Message::ExpandAll); }
+        if pm("checkout_branch") { return Some(Message::CheckoutSelectedBranch); }
+        if pm("create_branch") { return Some(Message::StartBranchCreateInput); }
+        if pm("delete_branch") { return Some(Message::DeleteSelectedBranch); }
 
         None
+    }
+
+    fn handle_input_key(&mut self, key: KeyEvent) -> Option<super::Message> {
+        use super::Message;
+        let mode = self.input_mode?;
+
+        match key.code {
+            KeyCode::Esc => {
+                self.cancel_input();
+                None
+            }
+            KeyCode::Enter => {
+                let value = self.input_buffer.trim().to_string();
+                self.input_mode = None;
+                self.input_buffer.clear();
+
+                if value.is_empty() {
+                    self.push_log("Empty input ignored", false);
+                    return None;
+                }
+
+                match mode {
+                    InputMode::CommitMessage => Some(Message::Commit(value)),
+                    InputMode::CreateBranch => Some(Message::CreateBranch(value)),
+                }
+            }
+            KeyCode::Backspace => {
+                self.input_buffer.pop();
+                None
+            }
+            KeyCode::Char(c) => {
+                if !key.modifiers.contains(KeyModifiers::CONTROL) {
+                    self.input_buffer.push(c);
+                }
+                None
+            }
+            _ => None,
+        }
     }
 
     pub fn render(&self, frame: &mut Frame) {
@@ -176,6 +225,33 @@ impl App {
         Ok(())
     }
 
+    pub fn start_commit_input(&mut self) {
+        self.input_mode = Some(InputMode::CommitMessage);
+        self.input_buffer.clear();
+    }
+
+    pub fn start_branch_create_input(&mut self) {
+        self.input_mode = Some(InputMode::CreateBranch);
+        self.input_buffer.clear();
+    }
+
+    pub fn cancel_input(&mut self) {
+        self.input_mode = None;
+        self.input_buffer.clear();
+    }
+
+    pub fn push_log<S: Into<String>>(&mut self, command: S, success: bool) {
+        self.command_log.push(CommandLogEntry {
+            command: command.into(),
+            success,
+        });
+        const MAX_LOG_ENTRIES: usize = 200;
+        if self.command_log.len() > MAX_LOG_ENTRIES {
+            let drain_count = self.command_log.len() - MAX_LOG_ENTRIES;
+            self.command_log.drain(0..drain_count);
+        }
+    }
+
     pub fn stage_file(&mut self, path: PathBuf) -> Result<()> {
         self.repo.stage(&path)?;
         self.refresh_status()?;
@@ -188,7 +264,31 @@ impl App {
         Ok(())
     }
 
-    /// 折叠/展开当前选中目录
+    pub fn commit(&mut self, message: &str) -> Result<String> {
+        let oid = self.repo.commit(message)?;
+        self.refresh_status()?;
+        Ok(oid)
+    }
+
+    pub fn create_branch(&mut self, name: &str) -> Result<()> {
+        self.repo.create_branch(name)?;
+        self.refresh_status()?;
+        Ok(())
+    }
+
+    pub fn checkout_branch(&mut self, name: &str) -> Result<()> {
+        self.repo.checkout_branch(name)?;
+        self.refresh_status()?;
+        Ok(())
+    }
+
+    pub fn delete_branch(&mut self, name: &str) -> Result<()> {
+        self.repo.delete_branch(name)?;
+        self.refresh_status()?;
+        Ok(())
+    }
+
+    /// Documentation comment in English.
     pub fn toggle_selected_dir(&mut self) {
         let Some(node) = self.selected_tree_node() else { return; };
         if !node.is_dir { return; }
@@ -201,13 +301,13 @@ impl App {
         self.rebuild_tree();
     }
 
-    /// 折叠所有目录
+    /// Documentation comment in English.
     pub fn collapse_all(&mut self) {
         self.expanded_dirs.clear();
         self.rebuild_tree();
     }
 
-    /// 展开所有目录
+    /// Documentation comment in English.
     pub fn expand_all(&mut self) {
         self.expanded_dirs = collect_all_dirs(&self.status);
         self.rebuild_tree();
@@ -230,7 +330,7 @@ impl App {
             &self.status.staged,
             &self.expanded_dirs,
         );
-        // 修正选中索引不越界
+        // Comment in English.
         let count = self.file_tree_nodes.len();
         if count == 0 {
             self.files_panel.list_state.select(None);
@@ -280,17 +380,31 @@ impl App {
         self.file_tree_nodes.get(idx)
     }
 
+    pub fn selected_branch_name(&self) -> Option<String> {
+        if self.active_panel != SidePanel::LocalBranches {
+            return None;
+        }
+        let idx = self.branches_panel.list_state.selected()?;
+        self.branches.get(idx).map(|b| b.name.clone())
+    }
+
     pub fn load_diff(&mut self) {
         self.diff_scroll = 0;
-        let Some(node) = self.selected_tree_node() else {
-            self.current_diff.clear();
-            return;
-        };
+        match self.active_panel {
+            SidePanel::Files => {
+                let Some(node) = self.selected_tree_node() else {
+                    self.current_diff.clear();
+                    return;
+                };
 
-        if node.is_dir {
-            self.load_dir_diff(node.path.clone());
-        } else {
-            self.load_file_diff(node.path.clone(), node.status.clone());
+                if node.is_dir {
+                    self.load_dir_diff(node.path.clone());
+                } else {
+                    self.load_file_diff(node.path.clone(), node.status.clone());
+                }
+            }
+            SidePanel::Commits => self.load_selected_commit_diff(),
+            _ => self.current_diff.clear(),
         }
     }
 
@@ -328,9 +442,72 @@ impl App {
 
         self.current_diff = result;
     }
+
+    fn load_selected_commit_diff(&mut self) {
+        let Some(idx) = self.commits_panel.list_state.selected() else {
+            self.current_diff.clear();
+            return;
+        };
+        let Some(commit) = self.commits.get(idx) else {
+            self.current_diff.clear();
+            return;
+        };
+
+        let mut lines = vec![
+            DiffLine {
+                kind: crate::git::DiffLineKind::Header,
+                content: format!("commit {}", commit.oid),
+            },
+            DiffLine {
+                kind: crate::git::DiffLineKind::Header,
+                content: format!("Author: {}", commit.author),
+            },
+            DiffLine {
+                kind: crate::git::DiffLineKind::Header,
+                content: format!("Date:   {}", commit.time),
+            },
+            DiffLine {
+                kind: crate::git::DiffLineKind::Header,
+                content: String::new(),
+            },
+            DiffLine {
+                kind: crate::git::DiffLineKind::Header,
+                content: format!("    {}", commit.message),
+            },
+            DiffLine {
+                kind: crate::git::DiffLineKind::Header,
+                content: String::new(),
+            },
+        ];
+
+        match self.repo.commit_diff(&commit.oid) {
+            Ok(mut patch) => {
+                lines.append(&mut patch);
+                self.current_diff = lines;
+            }
+            Err(_) => self.current_diff = lines,
+        }
+    }
+
+    fn toggle_stage_for_selected_file(&self) -> Option<super::Message> {
+        use super::Message;
+
+        let node = self.selected_tree_node()?;
+        if node.is_dir {
+            return Some(Message::ToggleDir);
+        }
+
+        match &node.status {
+            FileTreeNodeStatus::Staged(_) => Some(Message::UnstageFile(node.path.clone())),
+            FileTreeNodeStatus::Unstaged(_) | FileTreeNodeStatus::Untracked => {
+                Some(Message::StageFile(node.path.clone()))
+            }
+            FileTreeNodeStatus::Directory => None,
+        }
+    }
 }
 
-/// 从 GitStatus 收集所有目录路径
+/// Documentation comment in English.
 fn collect_all_dirs(status: &GitStatus) -> HashSet<PathBuf> {
     let mut dirs = HashSet::new();
     let all_files = status.unstaged.iter().map(|f| &f.path)

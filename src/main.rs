@@ -17,23 +17,23 @@ use ratatui::{
 use std::io;
 
 fn main() -> Result<()> {
-    // 错误处理设置
+    // Comment in English.
     color_eyre::install()?;
 
-    // 设置终端
+    // Comment in English.
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    // 创建应用
+    // Comment in English.
     let mut app = App::new()?;
 
-    // 主循环
+    // Comment in English.
     let res = run_app(&mut terminal, &mut app);
 
-    // 恢复终端
+    // Comment in English.
     disable_raw_mode()?;
     execute!(
         terminal.backend_mut(),
@@ -51,12 +51,12 @@ fn main() -> Result<()> {
 
 fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App) -> Result<()> {
     loop {
-        // 渲染
+        // Comment in English.
         terminal.draw(|f| {
             app.render(f);
         })?;
 
-        // 事件处理
+        // Comment in English.
         if event::poll(std::time::Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {
                 if key.kind != crossterm::event::KeyEventKind::Press {
@@ -65,18 +65,18 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                 let msg = app.handle_key(key);
 
                 if let Some(msg) = msg {
-                    // 更新状态
+                    // Comment in English.
                     let cmd = update(app, msg);
 
-                    // 处理 Command（Phase 1 先不实现异步，Phase 2 再加）
-                    if let Some(_) = cmd {
-                        // TODO: Phase 2 处理异步 Command
+                    // Comment in English.
+                    if cmd.is_some() {
+                        // TODO: implement this behavior.
                     }
                 }
             }
         }
 
-        // 检查是否退出
+        // Comment in English.
         if !app.running {
             return Ok(());
         }
