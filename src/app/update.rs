@@ -50,11 +50,13 @@ pub fn update(app: &mut App, msg: Message) -> Option<Command> {
 
         Message::ListDown => {
             app.list_down();
+            app.load_diff();
             None
         }
 
         Message::ListUp => {
             app.list_up();
+            app.load_diff();
             None
         }
 

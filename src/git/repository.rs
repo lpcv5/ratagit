@@ -46,6 +46,22 @@ pub struct GitStatus {
     pub untracked: Vec<FileEntry>,
 }
 
+/// Diff 行类型
+#[derive(Debug, Clone, PartialEq)]
+pub enum DiffLineKind {
+    Added,
+    Removed,
+    Context,
+    Header,
+}
+
+/// Diff 行
+#[derive(Debug, Clone)]
+pub struct DiffLine {
+    pub kind: DiffLineKind,
+    pub content: String,
+}
+
 /// Git 仓库 trait（抽象 git2/gix）
 /// Phase 1: 暂不要求 Send + Sync，Phase 2 再引入异步
 pub trait GitRepository {
@@ -57,6 +73,12 @@ pub trait GitRepository {
 
     /// Unstage 文件
     fn unstage(&self, path: &PathBuf) -> Result<(), GitError>;
+
+    /// 获取工作区文件 diff（unstaged）
+    fn diff_unstaged(&self, path: &PathBuf) -> Result<Vec<DiffLine>, GitError>;
+
+    /// 获取暂存区文件 diff（staged）
+    fn diff_staged(&self, path: &PathBuf) -> Result<Vec<DiffLine>, GitError>;
 }
 
 /// git2 实现
@@ -150,9 +172,41 @@ impl GitRepository for Git2Repository {
 
         Ok(())
     }
+    fn diff_unstaged(&self, path: &PathBuf) -> Result<Vec<DiffLine>, GitError> {
+        let mut opts = git2::DiffOptions::new();
+        opts.pathspec(path.to_str().unwrap_or(""));
+
+        let diff = self.repo.diff_index_to_workdir(None, Some(&mut opts))?;
+        Ok(parse_diff(&diff))
+    }
+
+    fn diff_staged(&self, path: &PathBuf) -> Result<Vec<DiffLine>, GitError> {
+        let head_tree = self.repo.head().ok()
+            .and_then(|h| h.peel_to_tree().ok());
+
+        let mut opts = git2::DiffOptions::new();
+        opts.pathspec(path.to_str().unwrap_or(""));
+
+        let diff = self.repo.diff_tree_to_index(head_tree.as_ref(), None, Some(&mut opts))?;
+        Ok(parse_diff(&diff))
+    }
 }
 
-#[cfg(test)]
+fn parse_diff(diff: &git2::Diff) -> Vec<DiffLine> {
+    let mut lines = Vec::new();
+    let _ = diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
+        let content = String::from_utf8_lossy(line.content()).trim_end_matches('\n').to_string();
+        let kind = match line.origin() {
+            '+' => DiffLineKind::Added,
+            '-' => DiffLineKind::Removed,
+            'H' | 'F' => DiffLineKind::Header,
+            _ => DiffLineKind::Context,
+        };
+        lines.push(DiffLine { kind, content });
+        true
+    });
+    lines
+}
 mod tests {
     use super::*;
 

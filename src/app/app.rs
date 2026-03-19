@@ -1,4 +1,4 @@
-use crate::git::{Git2Repository, GitRepository, GitStatus};
+use crate::git::{Git2Repository, GitRepository, GitStatus, DiffLine};
 use crate::ui::layout::render_layout;
 use color_eyre::Result;
 use crossterm::event::KeyEvent;
@@ -63,6 +63,7 @@ pub struct App {
     pub branches: Vec<String>,
     pub commits: Vec<String>,
     pub stashes: Vec<String>,
+    pub current_diff: Vec<DiffLine>,
 }
 
 impl App {
@@ -70,7 +71,7 @@ impl App {
         let repo = Git2Repository::discover()?;
         let status = repo.status()?;
 
-        Ok(Self {
+        let mut app = Self {
             running: true,
             current_tab: Tab::Status,
             active_panel: SidePanel::Files,
@@ -84,7 +85,10 @@ impl App {
             branches: Vec::new(),
             commits: Vec::new(),
             stashes: Vec::new(),
-        })
+            current_diff: Vec::new(),
+        };
+        app.load_diff();
+        Ok(app)
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> Option<super::Message> {
@@ -159,5 +163,44 @@ impl App {
         let state = self.active_panel_state_mut();
         let prev = state.list_state.selected().map(|i| i.saturating_sub(1)).unwrap_or(0);
         state.list_state.select(Some(prev));
+    }
+
+    /// 获取当前选中的文件（仅 Files 面板）
+    pub fn selected_file(&self) -> Option<&crate::git::FileEntry> {
+        if self.active_panel != SidePanel::Files {
+            return None;
+        }
+        let idx = self.files_panel.list_state.selected()?;
+        let unstaged_len = self.status.unstaged.len();
+        let untracked_len = self.status.untracked.len();
+        if idx < unstaged_len {
+            self.status.unstaged.get(idx)
+        } else if idx < unstaged_len + untracked_len {
+            self.status.untracked.get(idx - unstaged_len)
+        } else {
+            self.status.staged.get(idx - unstaged_len - untracked_len)
+        }
+    }
+
+    /// 加载当前选中文件的 diff
+    pub fn load_diff(&mut self) {
+        let Some(file) = self.selected_file() else {
+            self.current_diff.clear();
+            return;
+        };
+        let path = file.path.clone();
+        // 判断是 staged 还是 unstaged/untracked
+        let idx = self.files_panel.list_state.selected().unwrap_or(0);
+        let unstaged_len = self.status.unstaged.len();
+        let untracked_len = self.status.untracked.len();
+        let is_staged = idx >= unstaged_len + untracked_len;
+
+        let result = if is_staged {
+            self.repo.diff_staged(&path)
+        } else {
+            self.repo.diff_unstaged(&path)
+        };
+
+        self.current_diff = result.unwrap_or_default();
     }
 }

@@ -58,6 +58,9 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
         // 事件处理
         if event::poll(std::time::Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {
+                if key.kind != crossterm::event::KeyEventKind::Press {
+                    continue;
+                }
                 let msg = app.handle_key(key);
 
                 if let Some(msg) = msg {
