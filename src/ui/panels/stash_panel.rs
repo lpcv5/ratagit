@@ -23,7 +23,10 @@ pub fn render_stash_panel(frame: &mut Frame, area: Rect, app: &App, is_active: b
     } else {
         app.stashes
             .iter()
-            .map(|s| ListItem::new(s.as_str()).style(Style::default().fg(Color::Yellow)))
+            .map(|s| {
+                let text = format!("stash@{{{}}} {}", s.index, s.message);
+                ListItem::new(text).style(Style::default().fg(Color::Yellow))
+            })
             .collect()
     };
 

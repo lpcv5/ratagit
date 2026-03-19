@@ -19,11 +19,19 @@ pub fn render_branches_panel(frame: &mut Frame, area: Rect, app: &App, is_active
     };
 
     let items: Vec<ListItem> = if app.branches.is_empty() {
-        vec![ListItem::new("No branches loaded").style(Style::default().fg(Color::DarkGray))]
+        vec![ListItem::new("No branches").style(Style::default().fg(Color::DarkGray))]
     } else {
         app.branches
             .iter()
-            .map(|b| ListItem::new(b.as_str()).style(Style::default().fg(Color::Cyan)))
+            .map(|b| {
+                let (prefix, color) = if b.is_current {
+                    ("* ", Color::Green)
+                } else {
+                    ("  ", Color::Cyan)
+                };
+                ListItem::new(format!("{}{}", prefix, b.name))
+                    .style(Style::default().fg(color))
+            })
             .collect()
     };
 

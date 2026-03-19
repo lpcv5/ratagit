@@ -62,6 +62,30 @@ pub struct DiffLine {
     pub content: String,
 }
 
+/// Branch info
+#[derive(Debug, Clone)]
+pub struct BranchInfo {
+    pub name: String,
+    pub is_current: bool,
+}
+
+/// Commit info for log display
+#[derive(Debug, Clone)]
+pub struct CommitInfo {
+    pub short_hash: String,
+    pub message: String,
+    pub author: String,
+    pub time: String,
+    pub parent_count: usize,
+}
+
+/// Stash entry
+#[derive(Debug, Clone)]
+pub struct StashInfo {
+    pub index: usize,
+    pub message: String,
+}
+
 /// Git 仓库 trait（抽象 git2/gix）
 /// Phase 1: 暂不要求 Send + Sync，Phase 2 再引入异步
 pub trait GitRepository {
@@ -85,6 +109,15 @@ pub trait GitRepository {
 
     /// 获取仓库根目录
     fn workdir(&self) -> Option<PathBuf>;
+
+    /// 获取本地分支列表
+    fn branches(&self) -> Result<Vec<BranchInfo>, GitError>;
+
+    /// 获取当前分支的 commit 历史
+    fn commits(&self, limit: usize) -> Result<Vec<CommitInfo>, GitError>;
+
+    /// 获取 stash 列表
+    fn stashes(&self) -> Result<Vec<StashInfo>, GitError>;
 }
 
 /// git2 实现
@@ -213,6 +246,79 @@ impl GitRepository for Git2Repository {
 
     fn workdir(&self) -> Option<PathBuf> {
         self.repo.workdir().map(|p| p.to_path_buf())
+    }
+
+    fn branches(&self) -> Result<Vec<BranchInfo>, GitError> {
+        let head_name = self.repo.head().ok()
+            .and_then(|h| h.shorthand().map(|s| s.to_string()));
+
+        let mut result = Vec::new();
+        for branch in self.repo.branches(Some(git2::BranchType::Local))? {
+            let (branch, _) = branch?;
+            if let Some(name) = branch.name()? {
+                result.push(BranchInfo {
+                    is_current: Some(name.to_string()) == head_name,
+                    name: name.to_string(),
+                });
+            }
+        }
+        Ok(result)
+    }
+
+    fn commits(&self, limit: usize) -> Result<Vec<CommitInfo>, GitError> {
+        let mut revwalk = self.repo.revwalk()?;
+        revwalk.push_head()?;
+        revwalk.set_sorting(git2::Sort::TIME)?;
+
+        let mut result = Vec::new();
+        for oid in revwalk.take(limit) {
+            let oid = oid?;
+            let commit = self.repo.find_commit(oid)?;
+            let short_hash = format!("{:.7}", oid);
+            let message = commit.summary().unwrap_or("").to_string();
+            let author = commit.author().name().unwrap_or("").to_string();
+            let time = {
+                let t = commit.time().seconds();
+                let dt = chrono::DateTime::from_timestamp(t, 0)
+                    .unwrap_or_default()
+                    .format("%Y-%m-%d %H:%M")
+                    .to_string();
+                dt
+            };
+            result.push(CommitInfo {
+                short_hash,
+                message,
+                author,
+                time,
+                parent_count: commit.parent_count(),
+            });
+        }
+        Ok(result)
+    }
+
+    fn stashes(&self) -> Result<Vec<StashInfo>, GitError> {
+        let mut result = Vec::new();
+        // Walk stash refs: refs/stash is the tip, refs/stash@{N} for older entries
+        let mut index = 0usize;
+        loop {
+            let refname = if index == 0 {
+                "refs/stash".to_string()
+            } else {
+                format!("refs/stash@{{{}}}", index)
+            };
+            match self.repo.find_reference(&refname) {
+                Ok(r) => {
+                    let msg = r.peel_to_commit()
+                        .ok()
+                        .and_then(|c| c.summary().map(|s| s.to_string()))
+                        .unwrap_or_else(|| format!("stash@{{{}}}", index));
+                    result.push(StashInfo { index, message: msg });
+                    index += 1;
+                }
+                Err(_) => break,
+            }
+        }
+        Ok(result)
     }
 }
 

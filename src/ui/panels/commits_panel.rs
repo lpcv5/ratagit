@@ -19,11 +19,15 @@ pub fn render_commits_panel(frame: &mut Frame, area: Rect, app: &App, is_active:
     };
 
     let items: Vec<ListItem> = if app.commits.is_empty() {
-        vec![ListItem::new("No commits loaded").style(Style::default().fg(Color::DarkGray))]
+        vec![ListItem::new("No commits").style(Style::default().fg(Color::DarkGray))]
     } else {
         app.commits
             .iter()
-            .map(|c| ListItem::new(c.as_str()).style(Style::default().fg(Color::White)))
+            .map(|c| {
+                let graph = if c.parent_count > 1 { "⑂ " } else { "● " };
+                let text = format!("{}{} {} {}", graph, c.short_hash, c.message, c.author);
+                ListItem::new(text).style(Style::default().fg(Color::White))
+            })
             .collect()
     };
 

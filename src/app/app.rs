@@ -1,5 +1,5 @@
 use crate::config::keymap::{key_to_string, Keymap};
-use crate::git::{Git2Repository, GitRepository, GitStatus, DiffLine};
+use crate::git::{Git2Repository, GitRepository, GitStatus, DiffLine, BranchInfo, CommitInfo, StashInfo};
 use crate::ui::layout::render_layout;
 use crate::ui::widgets::file_tree::{FileTree, FileTreeNode, FileTreeNodeStatus};
 use color_eyre::Result;
@@ -68,9 +68,9 @@ pub struct App {
     pub stash_panel: PanelState,
 
     pub command_log: Vec<CommandLogEntry>,
-    pub branches: Vec<String>,
-    pub commits: Vec<String>,
-    pub stashes: Vec<String>,
+    pub branches: Vec<BranchInfo>,
+    pub commits: Vec<CommitInfo>,
+    pub stashes: Vec<StashInfo>,
     pub current_diff: Vec<DiffLine>,
     /// diff 面板滚动偏移
     pub diff_scroll: usize,
@@ -94,6 +94,10 @@ impl App {
 
         let keymap = Keymap::load();
 
+        let branches = repo.branches().unwrap_or_default();
+        let commits = repo.commits(200).unwrap_or_default();
+        let stashes = repo.stashes().unwrap_or_default();
+
         let mut app = Self {
             running: true,
             current_tab: Tab::Status,
@@ -107,9 +111,9 @@ impl App {
             commits_panel: PanelState::new(),
             stash_panel: PanelState::new(),
             command_log: Vec::new(),
-            branches: Vec::new(),
-            commits: Vec::new(),
-            stashes: Vec::new(),
+            branches,
+            commits,
+            stashes,
             current_diff: Vec::new(),
             diff_scroll: 0,
             keymap,
@@ -161,12 +165,14 @@ impl App {
 
     pub fn refresh_status(&mut self) -> Result<()> {
         self.status = self.repo.status()?;
-        // 保留当前展开状态，只新增目录
         let new_dirs = collect_all_dirs(&self.status);
         for d in new_dirs {
             self.expanded_dirs.insert(d);
         }
         self.rebuild_tree();
+        self.branches = self.repo.branches().unwrap_or_default();
+        self.commits = self.repo.commits(200).unwrap_or_default();
+        self.stashes = self.repo.stashes().unwrap_or_default();
         Ok(())
     }
 
