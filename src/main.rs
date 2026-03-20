@@ -6,13 +6,14 @@ mod ui;
 use app::{update, App};
 use color_eyre::Result;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyEventKind},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::io;
 use std::sync::mpsc::{Receiver, TryRecvError};
+use std::time::Duration;
 
 fn main() -> Result<()> {
     // Comment in English.
@@ -48,6 +49,8 @@ fn main() -> Result<()> {
 }
 
 fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App) -> Result<()> {
+    const MAX_EVENTS_PER_FRAME: usize = 8;
+    const DIFF_RELOAD_DEBOUNCE: Duration = Duration::from_millis(80);
     let mut async_commands: Vec<Receiver<app::Message>> = Vec::new();
 
     loop {
@@ -58,9 +61,9 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
 
         // Comment in English.
         if event::poll(std::time::Duration::from_millis(16))? {
-            loop {
+            for _ in 0..MAX_EVENTS_PER_FRAME {
                 if let Event::Key(key) = event::read()? {
-                    if key.kind == crossterm::event::KeyEventKind::Press {
+                    if matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
                         let msg = app.handle_key(key);
 
                         if let Some(msg) = msg {
@@ -93,6 +96,10 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
 
         if let Err(err) = app.flush_pending_refresh() {
             app.push_log(format!("refresh failed: {}", err), false);
+        }
+        if app.has_pending_diff_reload() && app.diff_reload_debounce_elapsed(DIFF_RELOAD_DEBOUNCE)
+        {
+            app.flush_pending_diff_reload();
         }
 
         // Comment in English.

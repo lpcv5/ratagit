@@ -69,15 +69,16 @@ pub struct BranchInfo {
     pub is_current: bool,
 }
 
-/// Commit info for log display
+/// Commit sync state for log coloring
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommitSyncState {
-    Main,
-    RemoteSynced,
+    DefaultBranch,
+    RemoteBranch,
     LocalOnly,
 }
 
 /// Commit info for log display
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct CommitInfo {
     pub short_hash: String,
@@ -113,6 +114,9 @@ pub trait GitRepository {
 
     /// Documentation comment in English.
     fn unstage_paths(&self, paths: &[PathBuf]) -> Result<(), GitError>;
+
+    /// Documentation comment in English.
+    fn discard_paths(&self, paths: &[PathBuf]) -> Result<(), GitError>;
 
     /// Documentation comment in English.
     fn diff_unstaged(&self, path: &std::path::Path) -> Result<Vec<DiffLine>, GitError>;
@@ -289,10 +293,12 @@ impl Git2Repository {
     }
 
     fn resolve_ref_oid(&self, refname: &str) -> Option<git2::Oid> {
-        self.repo
-            .find_reference(refname)
+        let reference = self.repo.find_reference(refname).ok()?;
+        reference
+            .resolve()
             .ok()
-            .and_then(|r| r.target())
+            .and_then(|resolved| resolved.target())
+            .or_else(|| reference.target())
     }
 
     fn upstream_oid(&self) -> Option<git2::Oid> {
@@ -306,20 +312,28 @@ impl Git2Repository {
         upstream.get().target()
     }
 
+    fn default_branch_oid(&self) -> Option<git2::Oid> {
+        self.resolve_ref_oid("refs/remotes/origin/HEAD")
+            .or_else(|| self.resolve_ref_oid("refs/heads/main"))
+            .or_else(|| self.resolve_ref_oid("refs/heads/master"))
+            .or_else(|| self.resolve_ref_oid("refs/remotes/origin/main"))
+            .or_else(|| self.resolve_ref_oid("refs/remotes/origin/master"))
+    }
+
     fn classify_commit_sync(
         &self,
         oid: git2::Oid,
-        main_tip: Option<git2::Oid>,
+        default_tip: Option<git2::Oid>,
         upstream_tip: Option<git2::Oid>,
     ) -> CommitSyncState {
-        if let Some(main_tip) = main_tip {
-            if main_tip == oid
+        if let Some(default_tip) = default_tip {
+            if default_tip == oid
                 || self
                     .repo
-                    .graph_descendant_of(main_tip, oid)
+                    .graph_descendant_of(default_tip, oid)
                     .unwrap_or(false)
             {
-                return CommitSyncState::Main;
+                return CommitSyncState::DefaultBranch;
             }
         }
         if let Some(upstream_tip) = upstream_tip {
@@ -329,7 +343,7 @@ impl Git2Repository {
                     .graph_descendant_of(upstream_tip, oid)
                     .unwrap_or(false)
             {
-                return CommitSyncState::RemoteSynced;
+                return CommitSyncState::RemoteBranch;
             }
         }
         CommitSyncState::LocalOnly
@@ -411,6 +425,26 @@ impl GitRepository for Git2Repository {
 
         Ok(())
     }
+
+    fn discard_paths(&self, paths: &[PathBuf]) -> Result<(), GitError> {
+        if paths.is_empty() {
+            return Ok(());
+        }
+
+        let mut args = vec![
+            "restore".to_string(),
+            "--worktree".to_string(),
+            "--".to_string(),
+        ];
+        for path in paths {
+            let spec = path
+                .to_str()
+                .ok_or_else(|| GitError::Git2("path contains invalid unicode".to_string()))?;
+            args.push(spec.to_string());
+        }
+        self.run_git_owned(&args)?;
+        Ok(())
+    }
     fn diff_unstaged(&self, path: &std::path::Path) -> Result<Vec<DiffLine>, GitError> {
         let mut opts = git2::DiffOptions::new();
         opts.pathspec(path.to_str().unwrap_or(""));
@@ -475,9 +509,7 @@ impl GitRepository for Git2Repository {
         let mut revwalk = self.repo.revwalk()?;
         revwalk.push_head()?;
         revwalk.set_sorting(git2::Sort::TIME)?;
-        let main_tip = self
-            .resolve_ref_oid("refs/heads/main")
-            .or_else(|| self.resolve_ref_oid("refs/heads/master"));
+        let default_tip = self.default_branch_oid();
         let upstream_tip = self.upstream_oid();
 
         let mut result = Vec::new();
@@ -489,11 +521,10 @@ impl GitRepository for Git2Repository {
             let author = commit.author().name().unwrap_or("").to_string();
             let time = {
                 let t = commit.time().seconds();
-                let dt = chrono::DateTime::from_timestamp(t, 0)
+                chrono::DateTime::from_timestamp(t, 0)
                     .unwrap_or_default()
                     .format("%Y-%m-%d %H:%M")
-                    .to_string();
-                dt
+                    .to_string()
             };
             result.push(CommitInfo {
                 short_hash,
@@ -502,7 +533,7 @@ impl GitRepository for Git2Repository {
                 author,
                 time,
                 parent_count: commit.parent_count(),
-                sync_state: self.classify_commit_sync(oid, main_tip, upstream_tip),
+                sync_state: self.classify_commit_sync(oid, default_tip, upstream_tip),
             });
         }
         Ok(result)
@@ -896,7 +927,7 @@ mod tests {
         assert_eq!(commits.len(), 1);
         assert_eq!(commits[0].message, "add new");
         assert_eq!(commits[0].oid, oid);
-        assert_eq!(commits[0].sync_state, CommitSyncState::Main);
+        assert_eq!(commits[0].sync_state, CommitSyncState::DefaultBranch);
 
         let patch = repo.commit_diff_scoped(&oid, None).expect("commit diff");
         assert!(!patch.is_empty());

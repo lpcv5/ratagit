@@ -59,6 +59,7 @@ impl Default for Keymap {
         files.insert("toggle_stage".into(), vec!["Space".into()]);
         files.insert("toggle_visual_select".into(), vec!["v".into()]);
         files.insert("toggle_dir".into(), vec!["Enter".into()]);
+        files.insert("discard".into(), vec!["d".into()]);
         files.insert("collapse_all".into(), vec!["-".into()]);
         files.insert("expand_all".into(), vec!["=".into()]);
         files.insert("stash_push".into(), vec!["s".into()]);

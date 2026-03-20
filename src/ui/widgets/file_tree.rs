@@ -34,17 +34,17 @@ pub struct FileTreeNode {
 fn status_icon(status: &FileTreeNodeStatus) -> &'static str {
     match status {
         FileTreeNodeStatus::Staged(s) => match s {
-            FileStatus::New => "✚",
-            FileStatus::Modified => "●",
-            FileStatus::Deleted => "✖",
-            FileStatus::Renamed => "➜",
+            FileStatus::New => "?",
+            FileStatus::Modified => "M",
+            FileStatus::Deleted => "D",
+            FileStatus::Renamed => "R",
             FileStatus::TypeChange => "T",
         },
         FileTreeNodeStatus::Unstaged(s) => match s {
-            FileStatus::New => "✚",
-            FileStatus::Modified => "✎",
-            FileStatus::Deleted => "✖",
-            FileStatus::Renamed => "➜",
+            FileStatus::New => "?",
+            FileStatus::Modified => "M",
+            FileStatus::Deleted => "D",
+            FileStatus::Renamed => "R",
             FileStatus::TypeChange => "T",
         },
         FileTreeNodeStatus::Untracked => "?",
@@ -56,13 +56,13 @@ fn status_color(status: &FileTreeNodeStatus) -> Color {
     match status {
         FileTreeNodeStatus::Staged(_) => Color::Green,
         FileTreeNodeStatus::Unstaged(s) => match s {
-            FileStatus::New => Color::Green,
+            FileStatus::New => Color::White,
             FileStatus::Modified => Color::Yellow,
             FileStatus::Deleted => Color::Red,
             FileStatus::Renamed => Color::Magenta,
             FileStatus::TypeChange => Color::Cyan,
         },
-        FileTreeNodeStatus::Untracked => Color::Gray,
+        FileTreeNodeStatus::Untracked => Color::White,
         FileTreeNodeStatus::Directory => Color::Blue,
     }
 }

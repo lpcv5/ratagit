@@ -36,6 +36,10 @@ impl GitRepository for MockRepo {
         Ok(())
     }
 
+    fn discard_paths(&self, _paths: &[PathBuf]) -> Result<(), GitError> {
+        Ok(())
+    }
+
     fn diff_unstaged(&self, _path: &Path) -> Result<Vec<DiffLine>, GitError> {
         Ok(vec![])
     }
@@ -61,7 +65,7 @@ impl GitRepository for MockRepo {
                 author: "tester".to_string(),
                 time: "2026-03-20 00:00".to_string(),
                 parent_count: 1,
-                sync_state: CommitSyncState::Main,
+                sync_state: CommitSyncState::DefaultBranch,
             },
             CommitInfo {
                 short_hash: "def5678".to_string(),
@@ -70,7 +74,7 @@ impl GitRepository for MockRepo {
                 author: "tester".to_string(),
                 time: "2026-03-20 00:01".to_string(),
                 parent_count: 1,
-                sync_state: CommitSyncState::Main,
+                sync_state: CommitSyncState::DefaultBranch,
             },
         ])
     }
@@ -200,6 +204,10 @@ impl GitRepository for CountingRepo {
         Ok(())
     }
 
+    fn discard_paths(&self, _paths: &[PathBuf]) -> Result<(), GitError> {
+        Ok(())
+    }
+
     fn diff_unstaged(&self, _path: &Path) -> Result<Vec<DiffLine>, GitError> {
         Ok(vec![])
     }
@@ -225,7 +233,7 @@ impl GitRepository for CountingRepo {
             author: "tester".to_string(),
             time: "2026-03-20 00:00".to_string(),
             parent_count: 1,
-            sync_state: CommitSyncState::Main,
+            sync_state: CommitSyncState::DefaultBranch,
         }])
     }
 
@@ -334,6 +342,10 @@ impl GitRepository for RefreshCountingRepo {
     }
 
     fn unstage_paths(&self, _paths: &[PathBuf]) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn discard_paths(&self, _paths: &[PathBuf]) -> Result<(), GitError> {
         Ok(())
     }
 
@@ -574,6 +586,104 @@ fn test_files_search_matches_tree_display_name_not_full_path() {
     app.confirm_search_input();
     update(&mut app, Message::SearchConfirm);
     assert!(app.has_search_for_active_scope());
+}
+
+#[test]
+fn test_space_on_directory_stages_directory_in_files_panel() {
+    let mut app = test_app();
+    app.active_panel = SidePanel::Files;
+    app.file_tree_nodes = vec![
+        FileTreeNode {
+            path: PathBuf::from("src"),
+            status: FileTreeNodeStatus::Directory,
+            depth: 0,
+            is_dir: true,
+            is_expanded: true,
+        },
+        FileTreeNode {
+            path: PathBuf::from("src/main.rs"),
+            status: FileTreeNodeStatus::Unstaged(FileStatus::Modified),
+            depth: 1,
+            is_dir: false,
+            is_expanded: false,
+        },
+    ];
+    app.files_panel.list_state.select(Some(0));
+
+    let msg = app.handle_key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
+    assert!(matches!(
+        msg,
+        Some(Message::StageFile(path)) if path == Path::new("src")
+    ));
+}
+
+#[test]
+fn test_space_on_staged_directory_unstages_directory_in_files_panel() {
+    let mut app = test_app();
+    app.active_panel = SidePanel::Files;
+    app.file_tree_nodes = vec![
+        FileTreeNode {
+            path: PathBuf::from("src"),
+            status: FileTreeNodeStatus::Directory,
+            depth: 0,
+            is_dir: true,
+            is_expanded: true,
+        },
+        FileTreeNode {
+            path: PathBuf::from("src/main.rs"),
+            status: FileTreeNodeStatus::Staged(FileStatus::Modified),
+            depth: 1,
+            is_dir: false,
+            is_expanded: false,
+        },
+    ];
+    app.files_panel.list_state.select(Some(0));
+
+    let msg = app.handle_key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
+    assert!(matches!(
+        msg,
+        Some(Message::UnstageFile(path)) if path == Path::new("src")
+    ));
+}
+
+#[test]
+fn test_discard_key_returns_discard_paths_for_selected_file() {
+    let mut app = test_app();
+    app.active_panel = SidePanel::Files;
+    app.file_tree_nodes = vec![FileTreeNode {
+        path: PathBuf::from("src/main.rs"),
+        status: FileTreeNodeStatus::Unstaged(FileStatus::Modified),
+        depth: 0,
+        is_dir: false,
+        is_expanded: false,
+    }];
+    app.files_panel.list_state.select(Some(0));
+
+    let msg = app.handle_key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE));
+    assert!(matches!(
+        msg,
+        Some(Message::DiscardPaths(paths))
+            if paths.len() == 1 && paths[0] == Path::new("src/main.rs")
+    ));
+}
+
+#[test]
+fn test_discard_key_in_visual_mode_returns_discard_selection() {
+    let mut app = test_app();
+    app.active_panel = SidePanel::Files;
+    app.files_visual_mode = true;
+    app.file_tree_nodes = vec![FileTreeNode {
+        path: PathBuf::from("src/main.rs"),
+        status: FileTreeNodeStatus::Unstaged(FileStatus::Modified),
+        depth: 0,
+        is_dir: false,
+        is_expanded: false,
+    }];
+    app.files_panel.list_state.select(Some(0));
+    app.files_visual_anchor = Some(0);
+
+    let msg = app.handle_key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE));
+    assert!(matches!(msg, Some(Message::DiscardSelection)));
 }
 
 #[test]

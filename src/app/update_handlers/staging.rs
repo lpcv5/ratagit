@@ -56,6 +56,33 @@ pub(crate) fn handle_staging_message(app: &mut App, msg: Message) -> Option<Comm
                 app.push_log(format!("unstaged {}", display), true);
             }
         }
+        Message::DiscardSelection => {
+            let paths = app.prepare_discard_targets_from_selection();
+            if paths.is_empty() {
+                app.push_log("discard blocked: no discardable selected items", false);
+                return None;
+            }
+            if let Err(e) = app.discard_paths(&paths) {
+                app.push_log(format!("discard failed: {}", e), false);
+            } else {
+                app.push_log(format!("discarded {} path(s)", paths.len()), true);
+                app.files_visual_mode = false;
+                app.files_visual_anchor = None;
+            }
+        }
+        Message::DiscardPaths(paths) => {
+            if paths.is_empty() {
+                app.push_log("discard blocked: no discardable selected items", false);
+                return None;
+            }
+            if let Err(e) = app.discard_paths(&paths) {
+                app.push_log(format!("discard failed: {}", e), false);
+            } else if paths.len() == 1 {
+                app.push_log(format!("discarded {}", paths[0].display()), true);
+            } else {
+                app.push_log(format!("discarded {} path(s)", paths.len()), true);
+            }
+        }
         _ => {}
     }
     None

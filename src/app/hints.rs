@@ -107,6 +107,10 @@ impl App {
                     self.panel_key_or(panel, "stash_push", "s"),
                     "Stash".to_string(),
                 ));
+                hints.push((
+                    self.panel_key_or(panel, "discard", "d"),
+                    "Discard".to_string(),
+                ));
             }
             SidePanel::LocalBranches => {
                 hints.push((

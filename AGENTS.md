@@ -1,6 +1,11 @@
 # Repository Guidelines
 
+## Tool Usage
+
+1. File and Code Retrieval: Use the serena MCP for file and code retrieval.
+
 ## Project Structure & Module Organization
+
 `ratagit` is a single-crate Rust TUI app.
 
 - `src/main.rs`: entry point, terminal setup, event loop.
@@ -14,6 +19,7 @@
 Keep new features inside the existing layer boundaries (UI -> app messages -> git trait).
 
 ## Build, Test, and Development Commands
+
 - `cargo check`: fast compile checks during iteration.
 - `cargo build`: debug build.
 - `cargo run`: run the TUI in the current Git repository.
@@ -24,25 +30,25 @@ Keep new features inside the existing layer boundaries (UI -> app messages -> gi
 - `cargo build --release`: optimized production build.
 
 ## Coding Style & Naming Conventions
+
 - Follow Rust defaults: 4-space indentation, `snake_case` for functions/modules, `PascalCase` for types/enums, `SCREAMING_SNAKE_CASE` for constants.
 - Keep modules focused and small; prefer adding methods to the relevant layer module.
 - Route all Git operations through `GitRepository`; do not call `git2` directly from UI/app code.
 - All source-code comments and doc comments must be in English.
 
 ## Testing Guidelines
+
 - Prefer unit tests near implementation (`mod tests` in the same file).
 - Use integration tests in `tests/` for cross-module workflows when added.
 - Use `tempfile` to create temporary repositories for Git behavior tests.
 - Name tests by behavior, e.g. `test_stage_file_updates_status`.
 
 ## Commit & Pull Request Guidelines
+
 - Follow Conventional Commit style seen in history: `feat: ...` (also use `fix:`, `refactor:`, `test:`, `docs:`).
 - Keep commits focused and compilable.
-- Use GitHub CLI `gh` for PR creation/review/merge operations. Do not use Graphite CLI `gt` in this repository workflow.
+- Use GitHub CLI `gh` for PR creation/review/merge operations.
 - For all commits, use the repository owner's GitHub identity via `gh`:
-  - Resolve username with `gh api user --jq ".login"` (current account: `lpcv5`).
-  - Use email `lpengcheng149@gmail.com` for author/committer.
-  - Set explicit identity in commit command when needed (`git -c user.name=... -c user.email=... commit ...`).
 - PRs should include:
   - What changed and why.
   - Linked issue/task (if any).
@@ -50,6 +56,7 @@ Keep new features inside the existing layer boundaries (UI -> app messages -> gi
   - Screenshots or terminal captures for UI changes.
 
 ## Branch Workflow
+
 - Default development branch is `dev`.
 - Implement and commit changes on `dev` unless explicitly instructed otherwise.
 - Default primary branch is `main`.
@@ -58,6 +65,7 @@ Keep new features inside the existing layer boundaries (UI -> app messages -> gi
 - Prefer rebase over merge commits when integrating `main` into `dev`.
 
 ## Agent-Specific Notes
+
 - Do not revert unrelated working-tree changes.
 - Prefer minimal, incremental patches and keep architecture docs in `docs/` in sync with behavior changes.
 - Use `.track/` as the only tracking source of truth.

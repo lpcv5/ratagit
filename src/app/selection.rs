@@ -78,10 +78,32 @@ impl App {
         vec![node.path.clone()]
     }
 
+    pub fn prepare_discard_targets_from_selection(&self) -> Vec<PathBuf> {
+        if self.active_panel != SidePanel::Files {
+            return Vec::new();
+        }
+
+        if self.files_visual_mode {
+            let selected = self.visual_selected_indices();
+            return self.collect_discard_targets(&selected);
+        }
+
+        let Some(index) = self.files_panel.list_state.selected() else {
+            return Vec::new();
+        };
+        self.collect_discard_targets_for_index(index)
+    }
+
     pub(super) fn toggle_stage_for_selected_file(&self) -> Option<Message> {
         let node = self.selected_tree_node()?;
         if node.is_dir {
-            return Some(Message::ToggleDir);
+            let index = self.files_panel.list_state.selected()?;
+            let all_staged = self.directory_files_are_all_staged(index);
+            return if all_staged {
+                Some(Message::UnstageFile(node.path.clone()))
+            } else {
+                Some(Message::StageFile(node.path.clone()))
+            };
         }
 
         match &node.status {
@@ -113,6 +135,71 @@ impl App {
             .into_iter()
             .map(|t| t.path)
             .collect()
+    }
+
+    fn collect_discard_targets(&self, selected: &HashSet<usize>) -> Vec<PathBuf> {
+        let mut targets = Vec::new();
+        let mut covered = HashSet::new();
+        let mut ordered: Vec<usize> = selected.iter().copied().collect();
+        ordered.sort_unstable();
+
+        for idx in ordered {
+            if covered.contains(&idx) {
+                continue;
+            }
+            let Some(node) = self.file_tree_nodes.get(idx) else {
+                continue;
+            };
+
+            if node.is_dir {
+                let end = self.subtree_end_index(idx);
+                let fully_covered = (idx..=end).all(|i| selected.contains(&i));
+                if fully_covered {
+                    targets.extend(self.collect_discard_targets_in_range(idx, end));
+                    for i in idx..=end {
+                        covered.insert(i);
+                    }
+                }
+                continue;
+            }
+
+            if is_discardable_status(&node.status) {
+                targets.push(node.path.clone());
+            }
+            covered.insert(idx);
+        }
+
+        dedup_paths(targets)
+    }
+
+    fn collect_discard_targets_for_index(&self, index: usize) -> Vec<PathBuf> {
+        let Some(node) = self.file_tree_nodes.get(index) else {
+            return Vec::new();
+        };
+        if node.is_dir {
+            let end = self.subtree_end_index(index);
+            return self.collect_discard_targets_in_range(index, end);
+        }
+        if is_discardable_status(&node.status) {
+            return vec![node.path.clone()];
+        }
+        Vec::new()
+    }
+
+    fn collect_discard_targets_in_range(&self, start: usize, end: usize) -> Vec<PathBuf> {
+        let mut targets = Vec::new();
+        for i in start..=end {
+            let Some(node) = self.file_tree_nodes.get(i) else {
+                continue;
+            };
+            if node.is_dir {
+                continue;
+            }
+            if is_discardable_status(&node.status) {
+                targets.push(node.path.clone());
+            }
+        }
+        dedup_paths(targets)
     }
 
     fn collect_selection_targets(&self, selected: &HashSet<usize>) -> Vec<SelectionTarget> {
@@ -192,10 +279,46 @@ impl App {
         }
         end
     }
+
+    fn directory_files_are_all_staged(&self, index: usize) -> bool {
+        let Some(node) = self.file_tree_nodes.get(index) else {
+            return false;
+        };
+        if !node.is_dir {
+            return matches!(node.status, FileTreeNodeStatus::Staged(_));
+        }
+
+        let end = self.subtree_end_index(index);
+        let mut has_file = false;
+        for i in index + 1..=end {
+            let child = &self.file_tree_nodes[i];
+            if child.is_dir {
+                continue;
+            }
+            has_file = true;
+            if !matches!(child.status, FileTreeNodeStatus::Staged(_)) {
+                return false;
+            }
+        }
+        has_file
+    }
 }
 
 fn dedup_targets(mut targets: Vec<SelectionTarget>) -> Vec<SelectionTarget> {
     let mut seen = HashSet::<PathBuf>::new();
     targets.retain(|t| seen.insert(t.path.clone()));
     targets
+}
+
+fn dedup_paths(mut paths: Vec<PathBuf>) -> Vec<PathBuf> {
+    let mut seen = HashSet::<PathBuf>::new();
+    paths.retain(|p| seen.insert(p.clone()));
+    paths
+}
+
+fn is_discardable_status(status: &FileTreeNodeStatus) -> bool {
+    matches!(
+        status,
+        FileTreeNodeStatus::Staged(_) | FileTreeNodeStatus::Unstaged(_)
+    )
 }

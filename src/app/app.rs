@@ -14,6 +14,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
 use std::thread;
+use std::time::{Duration, Instant};
 
 /// Documentation comment in English.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -125,6 +126,8 @@ pub struct App {
     pub(super) search_scope_stash_tree_mode: bool,
     pub(super) search_queries: HashMap<SearchScopeKey, String>,
     pending_refresh: Option<RefreshKind>,
+    pending_diff_reload: bool,
+    pending_diff_reload_at: Option<Instant>,
 
     keymap: Keymap,
 }
@@ -201,6 +204,8 @@ impl App {
             search_scope_stash_tree_mode: false,
             search_queries: HashMap::new(),
             pending_refresh: None,
+            pending_diff_reload: false,
+            pending_diff_reload_at: None,
             keymap,
         };
         app.load_diff();
@@ -299,6 +304,16 @@ impl App {
             if let Some(msg) = self.toggle_stage_for_selected_file() {
                 return Some(msg);
             }
+        }
+        if pm("discard") && self.active_panel == SidePanel::Files {
+            if self.files_visual_mode {
+                return Some(Message::DiscardSelection);
+            }
+            let paths = self.prepare_discard_targets_from_selection();
+            if paths.is_empty() {
+                return None;
+            }
+            return Some(Message::DiscardPaths(paths));
         }
         if pm("stash_push") {
             return Some(Message::StartStashInput);
@@ -406,6 +421,27 @@ impl App {
         Ok(true)
     }
 
+    pub fn request_diff_reload(&mut self) {
+        self.pending_diff_reload = true;
+        self.pending_diff_reload_at = Some(Instant::now());
+    }
+
+    pub fn has_pending_diff_reload(&self) -> bool {
+        self.pending_diff_reload
+    }
+
+    pub fn diff_reload_debounce_elapsed(&self, debounce: Duration) -> bool {
+        self.pending_diff_reload_at
+            .is_some_and(|requested_at| requested_at.elapsed() >= debounce)
+    }
+
+    pub fn flush_pending_diff_reload(&mut self) {
+        if !self.pending_diff_reload {
+            return;
+        }
+        self.load_diff();
+    }
+
     pub(super) fn pending_refresh_kind(&self) -> Option<RefreshKind> {
         self.pending_refresh
     }
@@ -451,6 +487,12 @@ impl App {
 
     pub fn unstage_file(&mut self, path: PathBuf) -> Result<()> {
         self.repo.unstage(&path)?;
+        self.request_refresh(RefreshKind::StatusOnly);
+        Ok(())
+    }
+
+    pub fn discard_paths(&mut self, paths: &[PathBuf]) -> Result<()> {
+        self.repo.discard_paths(paths)?;
         self.request_refresh(RefreshKind::StatusOnly);
         Ok(())
     }
@@ -638,6 +680,8 @@ impl App {
         let target = self.selected_diff_target();
         self.current_diff =
             diff_loader::load_diff(self.repo.as_ref(), &self.file_tree_nodes, target);
+        self.pending_diff_reload = false;
+        self.pending_diff_reload_at = None;
     }
 
     pub fn commit_open_tree_or_toggle_dir(&mut self) -> Result<()> {
