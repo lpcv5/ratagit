@@ -102,6 +102,15 @@ pub struct App {
 impl App {
     pub fn new() -> Result<Self> {
         let repo = Git2Repository::discover()?;
+        Self::build_with_repo(Box::new(repo), Keymap::load())
+    }
+
+    #[cfg(test)]
+    pub fn from_repo(repo: Box<dyn GitRepository>) -> Result<Self> {
+        Self::build_with_repo(repo, Keymap::default())
+    }
+
+    fn build_with_repo(repo: Box<dyn GitRepository>, keymap: Keymap) -> Result<Self> {
         let status = repo.status()?;
 
         // Comment in English.
@@ -113,8 +122,6 @@ impl App {
             &expanded_dirs,
         );
 
-        let keymap = Keymap::load();
-
         let branches = repo.branches().unwrap_or_default();
         let commits = repo.commits(200).unwrap_or_default();
         let stashes = repo.stashes().unwrap_or_default();
@@ -122,7 +129,7 @@ impl App {
         let mut app = Self {
             running: true,
             active_panel: SidePanel::Files,
-            repo: Box::new(repo),
+            repo,
             status,
             file_tree_nodes,
             expanded_dirs,
