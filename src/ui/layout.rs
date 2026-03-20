@@ -1,7 +1,7 @@
 use crate::app::{App, SidePanel};
 use crate::ui::panels::{
     render_branches_panel, render_command_log, render_commits_panel, render_diff_panel,
-    render_commit_editor, render_files_panel, render_shortcut_bar, render_stash_panel,
+    render_commit_editor, render_files_panel, render_shortcut_bar, render_stash_editor, render_stash_panel,
 };
 use ratatui::{
     layout::{Constraint, Direction, Layout},
@@ -85,4 +85,5 @@ pub fn render_layout(frame: &mut Frame, app: &App) {
     render_command_log(frame, log_area, app);
     render_shortcut_bar(frame, vertical[1], app);
     render_commit_editor(frame, app);
+    render_stash_editor(frame, app);
 }

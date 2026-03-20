@@ -34,6 +34,16 @@ pub enum Message {
     UnstageFile(std::path::PathBuf),
     ToggleStageSelection,
     PrepareCommitFromSelection,
+    StartStashInput,
+    StashPush {
+        message: String,
+        paths: Vec<std::path::PathBuf>,
+    },
+    StashOpenTreeOrToggleDir,
+    StashCloseTree,
+    StashApplySelected,
+    StashPopSelected,
+    StashDropSelected,
     RefreshStatus,
 
     // Comment in English.

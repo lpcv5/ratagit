@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::process::Command;
 use thiserror::Error;
 
 /// Documentation comment in English.
@@ -121,6 +122,24 @@ pub trait GitRepository {
     fn stashes(&self) -> Result<Vec<StashInfo>, GitError>;
 
     /// Documentation comment in English.
+    fn stash_files(&self, index: usize) -> Result<Vec<FileEntry>, GitError>;
+
+    /// Documentation comment in English.
+    fn stash_diff(&self, index: usize, path: Option<&std::path::Path>) -> Result<Vec<DiffLine>, GitError>;
+
+    /// Documentation comment in English.
+    fn stash_push_paths(&self, paths: &[PathBuf], message: &str) -> Result<usize, GitError>;
+
+    /// Documentation comment in English.
+    fn stash_apply(&self, index: usize) -> Result<(), GitError>;
+
+    /// Documentation comment in English.
+    fn stash_pop(&self, index: usize) -> Result<(), GitError>;
+
+    /// Documentation comment in English.
+    fn stash_drop(&self, index: usize) -> Result<(), GitError>;
+
+    /// Documentation comment in English.
     fn commit_diff(&self, oid: &str) -> Result<Vec<DiffLine>, GitError>;
 
     /// Documentation comment in English.
@@ -181,6 +200,52 @@ impl Git2Repository {
             }
         }
     }
+
+    fn repo_root(&self) -> Result<PathBuf, GitError> {
+        if let Some(workdir) = self.repo.workdir() {
+            return Ok(workdir.to_path_buf());
+        }
+
+        self.repo
+            .path()
+            .parent()
+            .map(|p| p.to_path_buf())
+            .ok_or(GitError::InvalidState)
+    }
+
+    fn run_git(&self, args: &[&str]) -> Result<String, GitError> {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(self.repo_root()?)
+            .output()
+            .map_err(|e| GitError::Git2(format!("failed to run git {:?}: {}", args, e)))?;
+
+        if output.status.success() {
+            return Ok(String::from_utf8_lossy(&output.stdout).trim().to_string());
+        }
+
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let detail = if stderr.is_empty() { stdout } else { stderr };
+        Err(GitError::Git2(detail))
+    }
+
+    fn run_git_owned(&self, args: &[String]) -> Result<String, GitError> {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(self.repo_root()?)
+            .output()
+            .map_err(|e| GitError::Git2(format!("failed to run git {:?}: {}", args, e)))?;
+
+        if output.status.success() {
+            return Ok(String::from_utf8_lossy(&output.stdout).trim().to_string());
+        }
+
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let detail = if stderr.is_empty() { stdout } else { stderr };
+        Err(GitError::Git2(detail))
+    }
 }
 
 impl GitRepository for Git2Repository {
@@ -190,6 +255,10 @@ impl GitRepository for Git2Repository {
         let mut opts = git2::StatusOptions::new();
         opts.include_untracked(true)
             .include_ignored(false)
+            .update_index(true)
+            .renames_head_to_index(true)
+            .renames_index_to_workdir(true)
+            .include_unmodified(false)
             .recurse_untracked_dirs(true);
 
         let statuses = self.repo.statuses(Some(&mut opts))?;
@@ -363,6 +432,116 @@ impl GitRepository for Git2Repository {
             }
         }
         Ok(result)
+    }
+
+    fn stash_files(&self, index: usize) -> Result<Vec<FileEntry>, GitError> {
+        let spec = format!("stash@{{{}}}", index);
+        let output = self.run_git(&["stash", "show", "--name-status", "--pretty=format:", &spec])?;
+        let mut files = Vec::new();
+
+        for line in output.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            let mut parts = trimmed.split_whitespace();
+            let status_str = parts.next().unwrap_or_default();
+            let path_str = parts.next().unwrap_or_default();
+            if path_str.is_empty() {
+                continue;
+            }
+
+            let status = match status_str.chars().next().unwrap_or('M') {
+                'A' => FileStatus::New,
+                'D' => FileStatus::Deleted,
+                'R' => FileStatus::Renamed,
+                'T' => FileStatus::TypeChange,
+                _ => FileStatus::Modified,
+            };
+
+            files.push(FileEntry {
+                path: PathBuf::from(path_str),
+                status,
+            });
+        }
+
+        Ok(files)
+    }
+
+    fn stash_diff(&self, index: usize, path: Option<&std::path::Path>) -> Result<Vec<DiffLine>, GitError> {
+        let spec = format!("stash@{{{}}}", index);
+        let mut args = if path.is_some() {
+            vec![
+                "show".to_string(),
+                spec,
+            ]
+        } else {
+            vec![
+                "stash".to_string(),
+                "show".to_string(),
+                "-p".to_string(),
+                spec,
+            ]
+        };
+
+        if let Some(path) = path {
+            let Some(path_str) = path.to_str() else {
+                return Err(GitError::Git2("stash path contains invalid unicode".to_string()));
+            };
+            args.push("--".to_string());
+            args.push(path_str.to_string());
+        }
+
+        let patch = self.run_git_owned(&args)?;
+        Ok(parse_patch_text(&patch))
+    }
+
+    fn stash_push_paths(&self, paths: &[PathBuf], message: &str) -> Result<usize, GitError> {
+        if paths.is_empty() {
+            return Err(GitError::Git2("no selected paths for stash".to_string()));
+        }
+
+        let before = self.stashes()?.len();
+        let mut args = vec![
+            "stash".to_string(),
+            "push".to_string(),
+            "-u".to_string(),
+            "-m".to_string(),
+            message.to_string(),
+            "--".to_string(),
+        ];
+        for path in paths {
+            let Some(path_str) = path.to_str() else {
+                return Err(GitError::Git2("stash path contains invalid unicode".to_string()));
+            };
+            args.push(path_str.to_string());
+        }
+
+        self.run_git_owned(&args)?;
+        let after = self.stashes()?;
+        if after.len() <= before {
+            return Err(GitError::Git2("no local changes in selected paths to stash".to_string()));
+        }
+        Ok(after[0].index)
+    }
+
+    fn stash_apply(&self, index: usize) -> Result<(), GitError> {
+        let spec = format!("stash@{{{}}}", index);
+        self.run_git(&["stash", "apply", &spec])?;
+        Ok(())
+    }
+
+    fn stash_pop(&self, index: usize) -> Result<(), GitError> {
+        let spec = format!("stash@{{{}}}", index);
+        self.run_git(&["stash", "pop", &spec])?;
+        Ok(())
+    }
+
+    fn stash_drop(&self, index: usize) -> Result<(), GitError> {
+        let spec = format!("stash@{{{}}}", index);
+        self.run_git(&["stash", "drop", &spec])?;
+        Ok(())
     }
 
     fn commit_diff(&self, oid: &str) -> Result<Vec<DiffLine>, GitError> {
@@ -547,4 +726,104 @@ mod tests {
             .iter()
             .any(|b| b.name == "feature/a"));
     }
+
+    #[test]
+    fn test_stash_push_apply_drop() {
+        let (dir, repo) = init_repo_with_commit();
+        write_file(&dir.path().join("tracked.txt"), "v2\n");
+
+        let created = repo
+            .stash_push_paths(&[PathBuf::from("tracked.txt")], "wip")
+            .expect("stash push");
+        assert_eq!(created, 0);
+        assert_eq!(repo.stashes().expect("stashes after push").len(), 1);
+
+        repo.stash_apply(0).expect("stash apply");
+        let status_after_apply = repo.status().expect("status after stash apply");
+        assert!(status_after_apply
+            .unstaged
+            .iter()
+            .any(|f| f.path == std::path::Path::new("tracked.txt")));
+
+        repo.stash_drop(0).expect("stash drop");
+        assert!(repo.stashes().expect("stashes after drop").is_empty());
+    }
+
+    #[test]
+    fn test_stash_pop_restores_and_removes_entry() {
+        let (dir, repo) = init_repo_with_commit();
+        write_file(&dir.path().join("tracked.txt"), "v3\n");
+
+        repo
+            .stash_push_paths(&[PathBuf::from("tracked.txt")], "wip pop")
+            .expect("stash push");
+        assert_eq!(repo.stashes().expect("stashes after push").len(), 1);
+
+        repo.stash_pop(0).expect("stash pop");
+        let status = repo.status().expect("status after stash pop");
+        assert!(status
+            .unstaged
+            .iter()
+            .any(|f| f.path == std::path::Path::new("tracked.txt")));
+        assert!(repo.stashes().expect("stashes after pop").is_empty());
+    }
+
+    #[test]
+    fn test_stash_push_only_selected_paths() {
+        let (dir, repo) = init_repo_with_commit();
+        write_file(&dir.path().join("tracked.txt"), "tracked changed\n");
+        write_file(&dir.path().join("other.txt"), "other changed\n");
+
+        repo
+            .stash_push_paths(&[PathBuf::from("tracked.txt")], "partial")
+            .expect("stash push selected path");
+
+        let status = repo.status().expect("status after partial stash");
+        assert!(!repo.stashes().expect("stashes after partial push").is_empty());
+        assert!(
+            status
+                .unstaged
+                .iter()
+                .chain(status.untracked.iter())
+                .any(|f| f.path == std::path::Path::new("other.txt"))
+        );
+    }
+
+    #[test]
+    fn test_stash_diff_for_selected_path() {
+        let (dir, repo) = init_repo_with_commit();
+        write_file(&dir.path().join("tracked.txt"), "v2\n");
+
+        repo
+            .stash_push_paths(&[PathBuf::from("tracked.txt")], "diff path")
+            .expect("stash push for diff");
+
+        let diff = repo
+            .stash_diff(0, Some(Path::new("tracked.txt")))
+            .expect("stash diff for path");
+        assert!(!diff.is_empty());
+        assert!(diff.iter().any(|l| matches!(l.kind, DiffLineKind::Header)));
+    }
+}
+
+fn parse_patch_text(text: &str) -> Vec<DiffLine> {
+    let mut lines = Vec::new();
+    for raw in text.lines() {
+        let (kind, content) = if let Some(rest) = raw.strip_prefix('+') {
+            (DiffLineKind::Added, rest.to_string())
+        } else if let Some(rest) = raw.strip_prefix('-') {
+            (DiffLineKind::Removed, rest.to_string())
+        } else if raw.starts_with("diff --git")
+            || raw.starts_with("index ")
+            || raw.starts_with("@@")
+            || raw.starts_with("--- ")
+            || raw.starts_with("+++ ")
+        {
+            (DiffLineKind::Header, raw.to_string())
+        } else {
+            (DiffLineKind::Context, raw.to_string())
+        };
+        lines.push(DiffLine { kind, content });
+    }
+    lines
 }

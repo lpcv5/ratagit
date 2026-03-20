@@ -58,18 +58,25 @@ impl Default for Keymap {
         files.insert("toggle_dir".into(),  vec!["Enter".into()]);
         files.insert("collapse_all".into(), vec!["-".into()]);
         files.insert("expand_all".into(),   vec!["=".into()]);
+        files.insert("stash_push".into(),   vec!["s".into()]);
 
         let mut branches = HashMap::new();
         branches.insert("checkout_branch".into(), vec!["Enter".into()]);
         branches.insert("create_branch".into(), vec!["n".into()]);
         branches.insert("delete_branch".into(), vec!["d".into()]);
 
+        let mut stash = HashMap::new();
+        stash.insert("open_tree".into(), vec!["Enter".into()]);
+        stash.insert("stash_apply".into(), vec!["a".into()]);
+        stash.insert("stash_pop".into(), vec!["p".into()]);
+        stash.insert("stash_drop".into(), vec!["d".into()]);
+
         Self {
             global: GlobalKeymap::default(),
             files: PanelKeymap { bindings: files },
             branches: PanelKeymap { bindings: branches },
             commits: PanelKeymap::default(),
-            stash: PanelKeymap::default(),
+            stash: PanelKeymap { bindings: stash },
         }
     }
 }

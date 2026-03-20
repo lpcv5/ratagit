@@ -1,5 +1,5 @@
 use crate::config::keymap::{key_to_string, Keymap};
-use crate::git::{Git2Repository, GitRepository, GitStatus, DiffLine, BranchInfo, CommitInfo, StashInfo};
+use crate::git::{Git2Repository, GitRepository, GitStatus, DiffLine, BranchInfo, CommitInfo, StashInfo, FileEntry};
 use crate::ui::layout::render_layout;
 use crate::ui::widgets::file_tree::{FileTree, FileTreeNode, FileTreeNodeStatus};
 use color_eyre::Result;
@@ -42,6 +42,7 @@ pub struct CommandLogEntry {
 pub enum InputMode {
     CommitEditor,
     CreateBranch,
+    StashEditor,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -74,6 +75,11 @@ pub struct App {
     pub branches: Vec<BranchInfo>,
     pub commits: Vec<CommitInfo>,
     pub stashes: Vec<StashInfo>,
+    pub stash_tree_mode: bool,
+    pub stash_tree_nodes: Vec<FileTreeNode>,
+    stash_tree_files: Vec<FileEntry>,
+    stash_tree_expanded_dirs: HashSet<PathBuf>,
+    pub stash_tree_stash_index: Option<usize>,
     pub current_diff: Vec<DiffLine>,
     /// Documentation comment in English.
     pub diff_scroll: usize,
@@ -82,6 +88,8 @@ pub struct App {
     pub commit_message_buffer: String,
     pub commit_description_buffer: String,
     pub commit_focus: CommitFieldFocus,
+    pub stash_message_buffer: String,
+    pub stash_targets: Vec<PathBuf>,
 
     keymap: Keymap,
 }
@@ -123,6 +131,11 @@ impl App {
             branches,
             commits,
             stashes,
+            stash_tree_mode: false,
+            stash_tree_nodes: Vec::new(),
+            stash_tree_files: Vec::new(),
+            stash_tree_expanded_dirs: HashSet::new(),
+            stash_tree_stash_index: None,
             current_diff: Vec::new(),
             diff_scroll: 0,
             input_mode: None,
@@ -130,6 +143,8 @@ impl App {
             commit_message_buffer: String::new(),
             commit_description_buffer: String::new(),
             commit_focus: CommitFieldFocus::Message,
+            stash_message_buffer: String::new(),
+            stash_targets: Vec::new(),
             keymap,
         };
         app.load_diff();
@@ -143,6 +158,9 @@ impl App {
         }
         if key.code == KeyCode::Esc && self.active_panel == SidePanel::Files && self.files_visual_mode {
             return Some(Message::ToggleVisualSelectMode);
+        }
+        if key.code == KeyCode::Esc && self.active_panel == SidePanel::Stash && self.stash_tree_mode {
+            return Some(Message::StashCloseTree);
         }
 
         let k = key_to_string(&key);
@@ -182,6 +200,7 @@ impl App {
                 return Some(msg);
             }
         }
+        if pm("stash_push") { return Some(Message::StartStashInput); }
         if pm("toggle_visual_select") { return Some(Message::ToggleVisualSelectMode); }
         if pm("toggle_dir")   { return Some(Message::ToggleDir); }
         if pm("collapse_all") { return Some(Message::CollapseAll); }
@@ -189,6 +208,10 @@ impl App {
         if pm("checkout_branch") { return Some(Message::CheckoutSelectedBranch); }
         if pm("create_branch") { return Some(Message::StartBranchCreateInput); }
         if pm("delete_branch") { return Some(Message::DeleteSelectedBranch); }
+        if pm("open_tree") { return Some(Message::StashOpenTreeOrToggleDir); }
+        if pm("stash_apply") { return Some(Message::StashApplySelected); }
+        if pm("stash_pop") { return Some(Message::StashPopSelected); }
+        if pm("stash_drop") { return Some(Message::StashDropSelected); }
 
         None
     }
@@ -210,7 +233,7 @@ impl App {
                     };
                     None
                 }
-                InputMode::CreateBranch => None,
+                InputMode::CreateBranch | InputMode::StashEditor => None,
             },
             KeyCode::Enter => match mode {
                 InputMode::CommitEditor => match self.commit_focus {
@@ -248,6 +271,26 @@ impl App {
                     }
                     Some(Message::CreateBranch(value))
                 }
+                InputMode::StashEditor => {
+                    let value = self.stash_message_buffer.trim().to_string();
+                    let paths = self.stash_targets.clone();
+                    self.input_mode = None;
+                    self.stash_message_buffer.clear();
+                    self.stash_targets.clear();
+
+                    if value.is_empty() {
+                        self.push_log("Empty stash title ignored", false);
+                        return None;
+                    }
+                    if paths.is_empty() {
+                        self.push_log("stash blocked: no selected items", false);
+                        return None;
+                    }
+                    Some(Message::StashPush {
+                        message: value,
+                        paths,
+                    })
+                }
             },
             KeyCode::Backspace => match mode {
                 InputMode::CommitEditor => {
@@ -265,6 +308,10 @@ impl App {
                     self.input_buffer.pop();
                     None
                 }
+                InputMode::StashEditor => {
+                    self.stash_message_buffer.pop();
+                    None
+                }
             },
             KeyCode::Char(c) => {
                 if key.modifiers.contains(KeyModifiers::CONTROL) {
@@ -280,6 +327,10 @@ impl App {
                     }
                     InputMode::CreateBranch => {
                         self.input_buffer.push(c);
+                        None
+                    }
+                    InputMode::StashEditor => {
+                        self.stash_message_buffer.push(c);
                         None
                     }
                 }
@@ -302,6 +353,11 @@ impl App {
                     ("Backspace".to_string(), "Delete".to_string()),
                 ],
                 InputMode::CreateBranch => vec![
+                    ("Enter".to_string(), "Confirm".to_string()),
+                    ("Esc".to_string(), "Cancel".to_string()),
+                    ("Backspace".to_string(), "Delete".to_string()),
+                ],
+                InputMode::StashEditor => vec![
                     ("Enter".to_string(), "Confirm".to_string()),
                     ("Esc".to_string(), "Cancel".to_string()),
                     ("Backspace".to_string(), "Delete".to_string()),
@@ -370,6 +426,10 @@ impl App {
                     self.panel_key_or(panel, "expand_all", "="),
                     "Expand".to_string(),
                 ));
+                hints.push((
+                    self.panel_key_or(panel, "stash_push", "s"),
+                    "Stash".to_string(),
+                ));
             }
             SidePanel::LocalBranches => {
                 hints.push((
@@ -385,7 +445,29 @@ impl App {
                     "Delete".to_string(),
                 ));
             }
-            SidePanel::Commits | SidePanel::Stash => {}
+            SidePanel::Stash => {
+                hints.push((
+                    self.panel_key_or(panel, "open_tree", "Enter"),
+                    if self.stash_tree_mode {
+                        "ToggleDir".to_string()
+                    } else {
+                        "Files".to_string()
+                    },
+                ));
+                hints.push((
+                    self.panel_key_or(panel, "stash_apply", "a"),
+                    "Apply".to_string(),
+                ));
+                hints.push((
+                    self.panel_key_or(panel, "stash_pop", "p"),
+                    "Pop".to_string(),
+                ));
+                hints.push((
+                    self.panel_key_or(panel, "stash_drop", "d"),
+                    "Drop".to_string(),
+                ));
+            }
+            SidePanel::Commits => {}
         }
 
         hints
@@ -401,6 +483,18 @@ impl App {
         self.branches = self.repo.branches().unwrap_or_default();
         self.commits = self.repo.commits(200).unwrap_or_default();
         self.stashes = self.repo.stashes().unwrap_or_default();
+        if self.stash_tree_mode {
+            if let Some(index) = self.stash_tree_stash_index {
+                if self.stashes.iter().any(|s| s.index == index) {
+                    self.stash_tree_files = self.repo.stash_files(index).unwrap_or_default();
+                    self.rebuild_stash_tree();
+                } else {
+                    self.stash_close_tree();
+                }
+            } else {
+                self.stash_close_tree();
+            }
+        }
         Ok(())
     }
 
@@ -431,6 +525,8 @@ impl App {
         self.commit_message_buffer.clear();
         self.commit_description_buffer.clear();
         self.commit_focus = CommitFieldFocus::Message;
+        self.stash_message_buffer.clear();
+        self.stash_targets.clear();
     }
 
     pub fn toggle_visual_select_mode(&mut self) {
@@ -491,6 +587,30 @@ impl App {
 
     pub fn delete_branch(&mut self, name: &str) -> Result<()> {
         self.repo.delete_branch(name)?;
+        self.refresh_status()?;
+        Ok(())
+    }
+
+    pub fn stash_push(&mut self, paths: &[PathBuf], message: &str) -> Result<usize> {
+        let index = self.repo.stash_push_paths(paths, message)?;
+        self.refresh_status()?;
+        Ok(index)
+    }
+
+    pub fn stash_apply(&mut self, index: usize) -> Result<()> {
+        self.repo.stash_apply(index)?;
+        self.refresh_status()?;
+        Ok(())
+    }
+
+    pub fn stash_pop(&mut self, index: usize) -> Result<()> {
+        self.repo.stash_pop(index)?;
+        self.refresh_status()?;
+        Ok(())
+    }
+
+    pub fn stash_drop(&mut self, index: usize) -> Result<()> {
+        self.repo.stash_drop(index)?;
         self.refresh_status()?;
         Ok(())
     }
@@ -556,7 +676,13 @@ impl App {
             SidePanel::Files => self.file_tree_nodes.len(),
             SidePanel::LocalBranches => self.branches.len(),
             SidePanel::Commits => self.commits.len(),
-            SidePanel::Stash => self.stashes.len(),
+            SidePanel::Stash => {
+                if self.stash_tree_mode {
+                    self.stash_tree_nodes.len()
+                } else {
+                    self.stashes.len()
+                }
+            }
         }
     }
 
@@ -636,6 +762,28 @@ impl App {
         Ok(targets.len())
     }
 
+    pub fn prepare_stash_targets_from_selection(&self) -> Vec<PathBuf> {
+        if self.active_panel != SidePanel::Files {
+            return Vec::new();
+        }
+
+        if self.files_visual_mode {
+            let selected = self.visual_selected_indices();
+            return self.collect_commit_targets(&selected);
+        }
+
+        let Some(node) = self.selected_tree_node() else {
+            return Vec::new();
+        };
+        vec![node.path.clone()]
+    }
+
+    pub fn start_stash_editor(&mut self, targets: Vec<PathBuf>) {
+        self.input_mode = Some(InputMode::StashEditor);
+        self.stash_targets = targets;
+        self.stash_message_buffer.clear();
+    }
+
     pub fn selected_tree_node(&self) -> Option<&FileTreeNode> {
         if self.active_panel != SidePanel::Files { return None; }
         let idx = self.files_panel.list_state.selected()?;
@@ -648,6 +796,78 @@ impl App {
         }
         let idx = self.branches_panel.list_state.selected()?;
         self.branches.get(idx).map(|b| b.name.clone())
+    }
+
+    pub fn selected_stash_index(&self) -> Option<usize> {
+        if self.active_panel != SidePanel::Stash {
+            return None;
+        }
+        if self.stash_tree_mode {
+            return self.stash_tree_stash_index;
+        }
+        let idx = self.stash_panel.list_state.selected()?;
+        self.stashes.get(idx).map(|s| s.index)
+    }
+
+    pub fn stash_open_tree_or_toggle_dir(&mut self) -> Result<()> {
+        if self.active_panel != SidePanel::Stash {
+            return Ok(());
+        }
+
+        if !self.stash_tree_mode {
+            let Some(index) = self.selected_stash_index() else {
+                return Ok(());
+            };
+            self.stash_tree_files = self.repo.stash_files(index)?;
+            self.stash_tree_expanded_dirs = collect_dirs_from_entries(&self.stash_tree_files);
+            self.stash_tree_stash_index = Some(index);
+            self.stash_tree_mode = true;
+            self.rebuild_stash_tree();
+            if self.stash_tree_nodes.is_empty() {
+                self.stash_panel.list_state.select(None);
+            } else {
+                self.stash_panel.list_state.select(Some(0));
+            }
+            return Ok(());
+        }
+
+        let Some(node) = self.selected_stash_tree_node() else {
+            return Ok(());
+        };
+        if !node.is_dir {
+            return Ok(());
+        }
+        let path = node.path.clone();
+        if self.stash_tree_expanded_dirs.contains(&path) {
+            self.stash_tree_expanded_dirs.remove(&path);
+        } else {
+            self.stash_tree_expanded_dirs.insert(path);
+        }
+        self.rebuild_stash_tree();
+        Ok(())
+    }
+
+    pub fn stash_close_tree(&mut self) {
+        if !self.stash_tree_mode {
+            return;
+        }
+
+        self.stash_tree_mode = false;
+        self.stash_tree_files.clear();
+        self.stash_tree_nodes.clear();
+        self.stash_tree_expanded_dirs.clear();
+
+        if let Some(stash_index) = self.stash_tree_stash_index.take() {
+            if let Some(idx) = self.stashes.iter().position(|s| s.index == stash_index) {
+                self.stash_panel.list_state.select(Some(idx));
+                return;
+            }
+        }
+        if self.stashes.is_empty() {
+            self.stash_panel.list_state.select(None);
+        } else {
+            self.stash_panel.list_state.select(Some(0));
+        }
     }
 
     pub fn load_diff(&mut self) {
@@ -666,6 +886,7 @@ impl App {
                 }
             }
             SidePanel::Commits => self.load_selected_commit_diff(),
+            SidePanel::Stash => self.load_selected_stash_diff(),
             _ => self.current_diff.clear(),
         }
     }
@@ -749,6 +970,21 @@ impl App {
             }
             Err(_) => self.current_diff = lines,
         }
+    }
+
+    fn load_selected_stash_diff(&mut self) {
+        let Some(stash_index) = self.selected_stash_index() else {
+            self.current_diff.clear();
+            return;
+        };
+
+        let path = if self.stash_tree_mode {
+            self.selected_stash_tree_node().map(|n| n.path.as_path())
+        } else {
+            None
+        };
+
+        self.current_diff = self.repo.stash_diff(stash_index, path).unwrap_or_default();
     }
 
     fn toggle_stage_for_selected_file(&self) -> Option<super::Message> {
@@ -888,6 +1124,31 @@ impl App {
             .first_panel_key(panel, action)
             .unwrap_or_else(|| fallback.to_string())
     }
+
+    fn selected_stash_tree_node(&self) -> Option<&FileTreeNode> {
+        if self.active_panel != SidePanel::Stash || !self.stash_tree_mode {
+            return None;
+        }
+        let idx = self.stash_panel.list_state.selected()?;
+        self.stash_tree_nodes.get(idx)
+    }
+
+    fn rebuild_stash_tree(&mut self) {
+        let selected = self.stash_panel.list_state.selected();
+        self.stash_tree_nodes = FileTree::from_git_status_with_expanded(
+            &self.stash_tree_files,
+            &[],
+            &[],
+            &self.stash_tree_expanded_dirs,
+        );
+        let count = self.stash_tree_nodes.len();
+        if count == 0 {
+            self.stash_panel.list_state.select(None);
+            return;
+        }
+        let idx = selected.unwrap_or(0).min(count - 1);
+        self.stash_panel.list_state.select(Some(idx));
+    }
 }
 
 #[derive(Debug)]
@@ -913,6 +1174,21 @@ fn collect_all_dirs(status: &GitStatus) -> HashSet<PathBuf> {
         let mut p = path.as_path();
         while let Some(parent) = p.parent() {
             if parent == std::path::Path::new("") { break; }
+            dirs.insert(parent.to_path_buf());
+            p = parent;
+        }
+    }
+    dirs
+}
+
+fn collect_dirs_from_entries(entries: &[FileEntry]) -> HashSet<PathBuf> {
+    let mut dirs = HashSet::new();
+    for entry in entries {
+        let mut p = entry.path.as_path();
+        while let Some(parent) = p.parent() {
+            if parent == std::path::Path::new("") {
+                break;
+            }
             dirs.insert(parent.to_path_buf());
             p = parent;
         }
