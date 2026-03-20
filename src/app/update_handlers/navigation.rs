@@ -38,11 +38,11 @@ pub(crate) fn handle_navigation_message(app: &mut App, msg: Message) -> Option<C
         }
         Message::ListDown => {
             app.list_down();
-            app.load_diff();
+            app.request_diff_reload();
         }
         Message::ListUp => {
             app.list_up();
-            app.load_diff();
+            app.request_diff_reload();
         }
         Message::ToggleDir => {
             app.toggle_selected_dir();

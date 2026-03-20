@@ -26,8 +26,10 @@ pub fn update(app: &mut App, msg: Message) -> Option<Command> {
         Message::StartCommitInput
         | Message::PrepareCommitFromSelection
         | Message::ToggleStageSelection
+        | Message::DiscardSelection
         | Message::StageFile(_)
-        | Message::UnstageFile(_) => handle_staging_message(app, msg),
+        | Message::UnstageFile(_)
+        | Message::DiscardPaths(_) => handle_staging_message(app, msg),
         Message::StartSearchInput
         | Message::SearchSetQuery(_)
         | Message::SearchConfirm

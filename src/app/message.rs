@@ -35,7 +35,9 @@ pub enum Message {
     CreateBranch(String),
     StageFile(std::path::PathBuf),
     UnstageFile(std::path::PathBuf),
+    DiscardPaths(Vec<std::path::PathBuf>),
     ToggleStageSelection,
+    DiscardSelection,
     PrepareCommitFromSelection,
     StartStashInput,
     StashPush {

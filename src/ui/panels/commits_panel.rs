@@ -21,17 +21,18 @@ pub fn render_commits_panel(frame: &mut Frame, area: Rect, app: &App, is_active:
         app.commits
             .iter()
             .map(|c| {
-                let graph = if c.parent_count > 1 { "⑂ " } else { "● " };
-                let text = format!(
-                    "{}{} {} {} {}",
-                    graph, c.short_hash, c.time, c.message, c.author
-                );
                 let color = match c.sync_state {
-                    CommitSyncState::Main => Color::Cyan,
-                    CommitSyncState::RemoteSynced => Color::Green,
-                    CommitSyncState::LocalOnly => Color::Yellow,
+                    CommitSyncState::DefaultBranch => Color::Green,
+                    CommitSyncState::RemoteBranch => Color::Yellow,
+                    CommitSyncState::LocalOnly => Color::Red,
                 };
-                let spans = highlighted_spans(&text, query, Style::default().fg(color));
+                let hash_spans = highlighted_spans(&c.short_hash, query, Style::default().fg(color));
+                let message_spans =
+                    highlighted_spans(&c.message, query, Style::default().fg(Color::White));
+                let mut spans = Vec::with_capacity(hash_spans.len() + 1 + message_spans.len());
+                spans.extend(hash_spans);
+                spans.push(ratatui::text::Span::raw(" "));
+                spans.extend(message_spans);
                 ListItem::new(Line::from(spans))
             })
             .collect()
@@ -43,7 +44,7 @@ pub fn render_commits_panel(frame: &mut Frame, area: Rect, app: &App, is_active:
             "Commit Files [Esc Back]".to_string()
         }
     } else {
-        "Commits [main:cyan synced:green local:yellow]".to_string()
+        "Commits [default:green remote:yellow local:red]".to_string()
     };
     if let Some(search) =
         app.search_match_summary_for(SidePanel::Commits, app.commit_tree_mode, false)
