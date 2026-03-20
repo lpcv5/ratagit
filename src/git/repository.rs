@@ -715,6 +715,37 @@ fn parse_diff(diff: &git2::Diff) -> Vec<DiffLine> {
     });
     lines
 }
+
+fn parse_patch_text(text: &str) -> Vec<DiffLine> {
+    let mut lines = Vec::new();
+    for raw in text.lines() {
+        let (kind, content) = if let Some(rest) = raw.strip_prefix('+') {
+            (DiffLineKind::Added, rest.to_string())
+        } else if let Some(rest) = raw.strip_prefix('-') {
+            (DiffLineKind::Removed, rest.to_string())
+        } else if raw.starts_with("diff --git")
+            || raw.starts_with("index ")
+            || raw.starts_with("@@")
+            || raw.starts_with("--- ")
+            || raw.starts_with("+++ ")
+        {
+            (DiffLineKind::Header, raw.to_string())
+        } else {
+            (DiffLineKind::Context, raw.to_string())
+        };
+        lines.push(DiffLine { kind, content });
+    }
+    lines
+}
+
+fn parse_remote_from_upstream(upstream: &str) -> Option<String> {
+    upstream
+        .split('/')
+        .next()
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| s.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -927,34 +958,4 @@ mod tests {
         );
         assert!(parse_remote_from_upstream("").is_none());
     }
-}
-
-fn parse_patch_text(text: &str) -> Vec<DiffLine> {
-    let mut lines = Vec::new();
-    for raw in text.lines() {
-        let (kind, content) = if let Some(rest) = raw.strip_prefix('+') {
-            (DiffLineKind::Added, rest.to_string())
-        } else if let Some(rest) = raw.strip_prefix('-') {
-            (DiffLineKind::Removed, rest.to_string())
-        } else if raw.starts_with("diff --git")
-            || raw.starts_with("index ")
-            || raw.starts_with("@@")
-            || raw.starts_with("--- ")
-            || raw.starts_with("+++ ")
-        {
-            (DiffLineKind::Header, raw.to_string())
-        } else {
-            (DiffLineKind::Context, raw.to_string())
-        };
-        lines.push(DiffLine { kind, content });
-    }
-    lines
-}
-
-fn parse_remote_from_upstream(upstream: &str) -> Option<String> {
-    upstream
-        .split('/')
-        .next()
-        .filter(|s| !s.trim().is_empty())
-        .map(|s| s.to_string())
 }

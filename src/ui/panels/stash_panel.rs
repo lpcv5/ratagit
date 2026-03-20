@@ -1,5 +1,5 @@
 use crate::app::App;
-use crate::ui::panels::revision_tree_panel::render_revision_tree_panel;
+use crate::ui::panels::revision_tree_panel::{render_revision_tree_panel, RevisionTreePanelProps};
 use crate::ui::theme::UiTheme;
 use ratatui::{
     layout::Rect,
@@ -34,11 +34,13 @@ pub fn render_stash_panel(frame: &mut Frame, area: Rect, app: &App, is_active: b
     render_revision_tree_panel(
         frame,
         area,
-        &title,
-        is_active,
-        app.stash_tree_mode,
-        &app.stash_tree_nodes,
-        items,
-        app.stash_panel.list_state,
+        RevisionTreePanelProps {
+            title: &title,
+            is_active,
+            tree_mode: app.stash_tree_mode,
+            tree_nodes: &app.stash_tree_nodes,
+            list_items: items,
+            list_state: app.stash_panel.list_state,
+        },
     );
 }

@@ -7,16 +7,24 @@ use ratatui::{
     Frame,
 };
 
-pub fn render_revision_tree_panel(
-    frame: &mut Frame,
-    area: Rect,
-    title: &str,
-    is_active: bool,
-    tree_mode: bool,
-    tree_nodes: &[FileTreeNode],
-    list_items: Vec<ListItem<'static>>,
-    list_state: ListState,
-) {
+pub struct RevisionTreePanelProps<'a> {
+    pub title: &'a str,
+    pub is_active: bool,
+    pub tree_mode: bool,
+    pub tree_nodes: &'a [FileTreeNode],
+    pub list_items: Vec<ListItem<'static>>,
+    pub list_state: ListState,
+}
+
+pub fn render_revision_tree_panel(frame: &mut Frame, area: Rect, props: RevisionTreePanelProps<'_>) {
+    let RevisionTreePanelProps {
+        title,
+        is_active,
+        tree_mode,
+        tree_nodes,
+        list_items,
+        list_state,
+    } = props;
     let theme = UiTheme::default();
     let highlight = if is_active {
         theme.active_highlight()

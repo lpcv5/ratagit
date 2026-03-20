@@ -2,8 +2,17 @@
 
 mod app;
 mod command;
+mod diff_loader;
+mod hints;
+mod input_mode;
 mod message;
+mod panel_nav;
+mod refresh;
+mod revision_tree;
+mod selectors;
+mod selection;
 mod update;
+mod update_handlers;
 
 pub use app::App;
 pub use app::CommitFieldFocus;

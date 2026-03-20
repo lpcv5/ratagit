@@ -1,6 +1,6 @@
 use crate::app::App;
 use crate::git::CommitSyncState;
-use crate::ui::panels::revision_tree_panel::render_revision_tree_panel;
+use crate::ui::panels::revision_tree_panel::{render_revision_tree_panel, RevisionTreePanelProps};
 use crate::ui::theme::UiTheme;
 use ratatui::{
     layout::Rect,
@@ -41,11 +41,13 @@ pub fn render_commits_panel(frame: &mut Frame, area: Rect, app: &App, is_active:
     render_revision_tree_panel(
         frame,
         area,
-        &title,
-        is_active,
-        app.commit_tree_mode,
-        &app.commit_tree_nodes,
-        items,
-        app.commits_panel.list_state,
+        RevisionTreePanelProps {
+            title: &title,
+            is_active,
+            tree_mode: app.commit_tree_mode,
+            tree_nodes: &app.commit_tree_nodes,
+            list_items: items,
+            list_state: app.commits_panel.list_state,
+        },
     );
 }

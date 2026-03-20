@@ -1,9 +1,10 @@
 use crate::config::keymap::{key_to_string, Keymap};
 use crate::git::{Git2Repository, GitRepository, GitStatus, DiffLine, BranchInfo, CommitInfo, StashInfo, FileEntry};
 use crate::ui::layout::render_layout;
-use crate::ui::widgets::file_tree::{FileTree, FileTreeNode, FileTreeNodeStatus};
+use crate::ui::widgets::file_tree::{FileTree, FileTreeNode};
+use super::{diff_loader, refresh, revision_tree};
 use color_eyre::Result;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::widgets::ListState;
 use ratatui::Frame;
 use std::collections::HashSet;
@@ -114,7 +115,7 @@ impl App {
         let status = repo.status()?;
 
         // Comment in English.
-        let expanded_dirs = collect_all_dirs(&status);
+        let expanded_dirs = refresh::collect_all_dirs(&status);
         let file_tree_nodes = FileTree::from_git_status_with_expanded(
             &status.unstaged,
             &status.untracked,
@@ -237,279 +238,13 @@ impl App {
         None
     }
 
-    fn handle_input_key(&mut self, key: KeyEvent) -> Option<super::Message> {
-        use super::Message;
-        let mode = self.input_mode?;
-
-        match key.code {
-            KeyCode::Esc => {
-                self.cancel_input();
-                None
-            }
-            KeyCode::Tab => match mode {
-                InputMode::CommitEditor => {
-                    self.commit_focus = match self.commit_focus {
-                        CommitFieldFocus::Message => CommitFieldFocus::Description,
-                        CommitFieldFocus::Description => CommitFieldFocus::Message,
-                    };
-                    None
-                }
-                InputMode::CreateBranch | InputMode::StashEditor => None,
-            },
-            KeyCode::Enter => match mode {
-                InputMode::CommitEditor => match self.commit_focus {
-                    CommitFieldFocus::Message => {
-                        let title = self.commit_message_buffer.trim().to_string();
-                        if title.is_empty() {
-                            self.push_log("Empty commit message ignored", false);
-                            return None;
-                        }
-                        let description = self.commit_description_buffer.trim_end();
-                        let value = if description.is_empty() {
-                            title
-                        } else {
-                            format!("{}\n\n{}", title, description)
-                        };
-                        self.input_mode = None;
-                        self.commit_message_buffer.clear();
-                        self.commit_description_buffer.clear();
-                        self.commit_focus = CommitFieldFocus::Message;
-                        Some(Message::Commit(value))
-                    }
-                    CommitFieldFocus::Description => {
-                        self.commit_description_buffer.push('\n');
-                        None
-                    }
-                },
-                InputMode::CreateBranch => {
-                    let value = self.input_buffer.trim().to_string();
-                    self.input_mode = None;
-                    self.input_buffer.clear();
-
-                    if value.is_empty() {
-                        self.push_log("Empty input ignored", false);
-                        return None;
-                    }
-                    Some(Message::CreateBranch(value))
-                }
-                InputMode::StashEditor => {
-                    let value = self.stash_message_buffer.trim().to_string();
-                    let paths = self.stash_targets.clone();
-                    self.input_mode = None;
-                    self.stash_message_buffer.clear();
-                    self.stash_targets.clear();
-
-                    if value.is_empty() {
-                        self.push_log("Empty stash title ignored", false);
-                        return None;
-                    }
-                    if paths.is_empty() {
-                        self.push_log("stash blocked: no selected items", false);
-                        return None;
-                    }
-                    Some(Message::StashPush {
-                        message: value,
-                        paths,
-                    })
-                }
-            },
-            KeyCode::Backspace => match mode {
-                InputMode::CommitEditor => {
-                    match self.commit_focus {
-                        CommitFieldFocus::Message => {
-                            self.commit_message_buffer.pop();
-                        }
-                        CommitFieldFocus::Description => {
-                            self.commit_description_buffer.pop();
-                        }
-                    }
-                    None
-                }
-                InputMode::CreateBranch => {
-                    self.input_buffer.pop();
-                    None
-                }
-                InputMode::StashEditor => {
-                    self.stash_message_buffer.pop();
-                    None
-                }
-            },
-            KeyCode::Char(c) => {
-                if key.modifiers.contains(KeyModifiers::CONTROL) {
-                    return None;
-                }
-                match mode {
-                    InputMode::CommitEditor => {
-                        match self.commit_focus {
-                            CommitFieldFocus::Message => self.commit_message_buffer.push(c),
-                            CommitFieldFocus::Description => self.commit_description_buffer.push(c),
-                        }
-                        None
-                    }
-                    InputMode::CreateBranch => {
-                        self.input_buffer.push(c);
-                        None
-                    }
-                    InputMode::StashEditor => {
-                        self.stash_message_buffer.push(c);
-                        None
-                    }
-                }
-            }
-            _ => None,
-        }
-    }
-
     pub fn render(&self, frame: &mut Frame) {
         render_layout(frame, self);
     }
 
-    pub fn shortcut_hints(&self) -> Vec<(String, String)> {
-        if let Some(mode) = self.input_mode {
-            return match mode {
-                InputMode::CommitEditor => vec![
-                    ("Tab".to_string(), "SwitchField".to_string()),
-                    ("Enter".to_string(), "Confirm/DescNewline".to_string()),
-                    ("Esc".to_string(), "Cancel".to_string()),
-                    ("Backspace".to_string(), "Delete".to_string()),
-                ],
-                InputMode::CreateBranch => vec![
-                    ("Enter".to_string(), "Confirm".to_string()),
-                    ("Esc".to_string(), "Cancel".to_string()),
-                    ("Backspace".to_string(), "Delete".to_string()),
-                ],
-                InputMode::StashEditor => vec![
-                    ("Enter".to_string(), "Confirm".to_string()),
-                    ("Esc".to_string(), "Cancel".to_string()),
-                    ("Backspace".to_string(), "Delete".to_string()),
-                ],
-            };
-        }
-
-        let mut hints = vec![
-            (
-                format!(
-                    "{}/{}",
-                    self.global_key_or("panel_prev", "h"),
-                    self.global_key_or("panel_next", "l")
-                ),
-                "Panel".to_string(),
-            ),
-            (
-                format!(
-                    "{}/{}",
-                    self.global_key_or("list_up", "k"),
-                    self.global_key_or("list_down", "j")
-                ),
-                "Move".to_string(),
-            ),
-            (self.global_key_or("refresh", "r"), "Refresh".to_string()),
-            (self.global_key_or("commit", "c"), "Commit".to_string()),
-            (
-                format!(
-                    "{}/{}",
-                    self.global_key_or("diff_scroll_up", "C-u"),
-                    self.global_key_or("diff_scroll_down", "C-d")
-                ),
-                "DiffScroll".to_string(),
-            ),
-            (self.global_key_or("quit", "q"), "Quit".to_string()),
-        ];
-
-        let panel = self.active_panel_name();
-        match self.active_panel {
-            SidePanel::Files => {
-                hints.push((
-                    self.panel_key_or(panel, "toggle_visual_select", "v"),
-                    if self.files_visual_mode {
-                        "VisualOn".to_string()
-                    } else {
-                        "Visual".to_string()
-                    },
-                ));
-                hints.push((
-                    self.panel_key_or(panel, "toggle_stage", "Space"),
-                    if self.files_visual_mode {
-                        "BatchToggle".to_string()
-                    } else {
-                        "Stage".to_string()
-                    },
-                ));
-                hints.push((
-                    self.panel_key_or(panel, "toggle_dir", "Enter"),
-                    "ToggleDir".to_string(),
-                ));
-                hints.push((
-                    self.panel_key_or(panel, "collapse_all", "-"),
-                    "Collapse".to_string(),
-                ));
-                hints.push((
-                    self.panel_key_or(panel, "expand_all", "="),
-                    "Expand".to_string(),
-                ));
-                hints.push((
-                    self.panel_key_or(panel, "stash_push", "s"),
-                    "Stash".to_string(),
-                ));
-            }
-            SidePanel::LocalBranches => {
-                hints.push((
-                    self.panel_key_or(panel, "checkout_branch", "Enter"),
-                    "Checkout".to_string(),
-                ));
-                hints.push((
-                    self.panel_key_or(panel, "create_branch", "n"),
-                    "NewBranch".to_string(),
-                ));
-                hints.push((
-                    self.panel_key_or(panel, "delete_branch", "d"),
-                    "Delete".to_string(),
-                ));
-                hints.push((
-                    self.panel_key_or(panel, "fetch_remote", "f"),
-                    "Fetch".to_string(),
-                ));
-            }
-            SidePanel::Stash => {
-                hints.push((
-                    self.panel_key_or(panel, "open_tree", "Enter"),
-                    if self.stash_tree_mode {
-                        "ToggleDir".to_string()
-                    } else {
-                        "Files".to_string()
-                    },
-                ));
-                hints.push((
-                    self.panel_key_or(panel, "stash_apply", "a"),
-                    "Apply".to_string(),
-                ));
-                hints.push((
-                    self.panel_key_or(panel, "stash_pop", "p"),
-                    "Pop".to_string(),
-                ));
-                hints.push((
-                    self.panel_key_or(panel, "stash_drop", "d"),
-                    "Drop".to_string(),
-                ));
-            }
-            SidePanel::Commits => {
-                hints.push((
-                    self.panel_key_or(panel, "open_tree", "Enter"),
-                    if self.commit_tree_mode {
-                        "ToggleDir".to_string()
-                    } else {
-                        "Files".to_string()
-                    },
-                ));
-            }
-        }
-
-        hints
-    }
-
     pub fn refresh_status(&mut self) -> Result<()> {
         self.status = self.repo.status()?;
-        let new_dirs = collect_all_dirs(&self.status);
+        let new_dirs = refresh::collect_all_dirs(&self.status);
         for d in new_dirs {
             self.expanded_dirs.insert(d);
         }
@@ -520,7 +255,12 @@ impl App {
             if let Some(ref oid) = self.commit_tree_commit_oid {
                 if self.commits.iter().any(|c| c.oid == *oid) {
                     self.commit_tree_files = self.repo.commit_files(oid).unwrap_or_default();
-                    self.rebuild_commit_tree();
+                    revision_tree::rebuild_tree_nodes(
+                        &self.commit_tree_files,
+                        &self.commit_tree_expanded_dirs,
+                        &mut self.commit_tree_nodes,
+                        &mut self.commits_panel.list_state,
+                    );
                 } else {
                     self.commit_close_tree();
                 }
@@ -533,7 +273,12 @@ impl App {
             if let Some(index) = self.stash_tree_stash_index {
                 if self.stashes.iter().any(|s| s.index == index) {
                     self.stash_tree_files = self.repo.stash_files(index).unwrap_or_default();
-                    self.rebuild_stash_tree();
+                    revision_tree::rebuild_tree_nodes(
+                        &self.stash_tree_files,
+                        &self.stash_tree_expanded_dirs,
+                        &mut self.stash_tree_nodes,
+                        &mut self.stash_panel.list_state,
+                    );
                 } else {
                     self.stash_close_tree();
                 }
@@ -542,37 +287,6 @@ impl App {
             }
         }
         Ok(())
-    }
-
-    pub fn start_commit_editor(&mut self) {
-        self.input_mode = Some(InputMode::CommitEditor);
-        self.commit_message_buffer.clear();
-        self.commit_description_buffer.clear();
-        self.commit_focus = CommitFieldFocus::Message;
-    }
-
-    pub fn start_commit_editor_guarded(&mut self) -> bool {
-        if self.status.staged.is_empty() {
-            self.push_log("commit blocked: no staged changes", false);
-            return false;
-        }
-        self.start_commit_editor();
-        true
-    }
-
-    pub fn start_branch_create_input(&mut self) {
-        self.input_mode = Some(InputMode::CreateBranch);
-        self.input_buffer.clear();
-    }
-
-    pub fn cancel_input(&mut self) {
-        self.input_mode = None;
-        self.input_buffer.clear();
-        self.commit_message_buffer.clear();
-        self.commit_description_buffer.clear();
-        self.commit_focus = CommitFieldFocus::Message;
-        self.stash_message_buffer.clear();
-        self.stash_targets.clear();
     }
 
     pub fn toggle_visual_select_mode(&mut self) {
@@ -610,6 +324,16 @@ impl App {
     pub fn unstage_file(&mut self, path: PathBuf) -> Result<()> {
         self.repo.unstage(&path)?;
         self.refresh_status()?;
+        Ok(())
+    }
+
+    pub(super) fn stage_paths_internal(&mut self, paths: &[PathBuf]) -> Result<()> {
+        self.repo.stage_paths(paths)?;
+        Ok(())
+    }
+
+    pub(super) fn unstage_paths_internal(&mut self, paths: &[PathBuf]) -> Result<()> {
+        self.repo.unstage_paths(paths)?;
         Ok(())
     }
 
@@ -669,26 +393,22 @@ impl App {
 
     /// Documentation comment in English.
     pub fn toggle_selected_dir(&mut self) {
-        let Some(node) = self.selected_tree_node() else { return; };
-        if !node.is_dir { return; }
-        let path = node.path.clone();
-        if self.expanded_dirs.contains(&path) {
-            self.expanded_dirs.remove(&path);
-        } else {
-            self.expanded_dirs.insert(path);
-        }
+        let selected_dir_path = self
+            .selected_tree_node()
+            .and_then(|node| if node.is_dir { Some(node.path.clone()) } else { None });
+        refresh::toggle_selected_dir(&mut self.expanded_dirs, selected_dir_path);
         self.rebuild_tree();
     }
 
     /// Documentation comment in English.
     pub fn collapse_all(&mut self) {
-        self.expanded_dirs.clear();
+        refresh::collapse_all(&mut self.expanded_dirs);
         self.rebuild_tree();
     }
 
     /// Documentation comment in English.
     pub fn expand_all(&mut self) {
-        self.expanded_dirs = collect_all_dirs(&self.status);
+        refresh::expand_all(&mut self.expanded_dirs, &self.status);
         self.rebuild_tree();
     }
 
@@ -702,180 +422,13 @@ impl App {
     }
 
     fn rebuild_tree(&mut self) {
-        let selected = self.files_panel.list_state.selected();
-        self.file_tree_nodes = FileTree::from_git_status_with_expanded(
-            &self.status.unstaged,
-            &self.status.untracked,
-            &self.status.staged,
+        refresh::rebuild_tree(
+            &self.status,
             &self.expanded_dirs,
+            &mut self.file_tree_nodes,
+            &mut self.files_panel,
+            &mut self.files_visual_anchor,
         );
-        // Comment in English.
-        let count = self.file_tree_nodes.len();
-        if count == 0 {
-            self.files_panel.list_state.select(None);
-            self.files_visual_anchor = None;
-        } else {
-            let idx = selected.unwrap_or(0).min(count - 1);
-            self.files_panel.list_state.select(Some(idx));
-            if let Some(anchor) = self.files_visual_anchor {
-                self.files_visual_anchor = Some(anchor.min(count - 1));
-            }
-        }
-    }
-
-    fn active_panel_count(&self) -> usize {
-        match self.active_panel {
-            SidePanel::Files => self.file_tree_nodes.len(),
-            SidePanel::LocalBranches => self.branches.len(),
-            SidePanel::Commits => {
-                if self.commit_tree_mode {
-                    self.commit_tree_nodes.len()
-                } else {
-                    self.commits.len()
-                }
-            }
-            SidePanel::Stash => {
-                if self.stash_tree_mode {
-                    self.stash_tree_nodes.len()
-                } else {
-                    self.stashes.len()
-                }
-            }
-        }
-    }
-
-    pub fn active_panel_state_mut(&mut self) -> &mut PanelState {
-        match self.active_panel {
-            SidePanel::Files => &mut self.files_panel,
-            SidePanel::LocalBranches => &mut self.branches_panel,
-            SidePanel::Commits => &mut self.commits_panel,
-            SidePanel::Stash => &mut self.stash_panel,
-        }
-    }
-
-    pub fn list_down(&mut self) {
-        let count = self.active_panel_count();
-        if count == 0 { return; }
-        let state = self.active_panel_state_mut();
-        let next = state.list_state.selected().map(|i| (i + 1).min(count - 1)).unwrap_or(0);
-        state.list_state.select(Some(next));
-    }
-
-    pub fn list_up(&mut self) {
-        let count = self.active_panel_count();
-        if count == 0 { return; }
-        let state = self.active_panel_state_mut();
-        let prev = state.list_state.selected().map(|i| i.saturating_sub(1)).unwrap_or(0);
-        state.list_state.select(Some(prev));
-    }
-
-    pub fn visual_selected_indices(&self) -> HashSet<usize> {
-        let mut set = HashSet::new();
-        if self.active_panel != SidePanel::Files || !self.files_visual_mode {
-            return set;
-        }
-        let Some(current) = self.files_panel.list_state.selected() else {
-            return set;
-        };
-        let anchor = self.files_visual_anchor.unwrap_or(current);
-        let (start, end) = if anchor <= current {
-            (anchor, current)
-        } else {
-            (current, anchor)
-        };
-        for idx in start..=end {
-            set.insert(idx);
-        }
-        set
-    }
-
-    pub fn toggle_stage_visual_selection(&mut self) -> Result<(usize, usize)> {
-        let selected = self.visual_selected_indices();
-        if selected.is_empty() {
-            return Ok((0, 0));
-        }
-
-        let (stage_paths, unstage_paths) = self.partition_toggle_targets(&selected);
-        if !stage_paths.is_empty() {
-            self.repo.stage_paths(&stage_paths)?;
-        }
-        if !unstage_paths.is_empty() {
-            self.repo.unstage_paths(&unstage_paths)?;
-        }
-        self.refresh_status()?;
-        Ok((stage_paths.len(), unstage_paths.len()))
-    }
-
-    pub fn prepare_commit_from_visual_selection(&mut self) -> Result<usize> {
-        let selected = self.visual_selected_indices();
-        let targets = self.collect_commit_targets(&selected);
-        if targets.is_empty() {
-            return Ok(0);
-        }
-
-        self.repo.stage_paths(&targets)?;
-        self.refresh_status()?;
-        self.files_visual_mode = false;
-        self.files_visual_anchor = None;
-        Ok(targets.len())
-    }
-
-    pub fn prepare_stash_targets_from_selection(&self) -> Vec<PathBuf> {
-        if self.active_panel != SidePanel::Files {
-            return Vec::new();
-        }
-
-        if self.files_visual_mode {
-            let selected = self.visual_selected_indices();
-            return self.collect_commit_targets(&selected);
-        }
-
-        let Some(node) = self.selected_tree_node() else {
-            return Vec::new();
-        };
-        vec![node.path.clone()]
-    }
-
-    pub fn start_stash_editor(&mut self, targets: Vec<PathBuf>) {
-        self.input_mode = Some(InputMode::StashEditor);
-        self.stash_targets = targets;
-        self.stash_message_buffer.clear();
-    }
-
-    pub fn selected_tree_node(&self) -> Option<&FileTreeNode> {
-        if self.active_panel != SidePanel::Files { return None; }
-        let idx = self.files_panel.list_state.selected()?;
-        self.file_tree_nodes.get(idx)
-    }
-
-    pub fn selected_branch_name(&self) -> Option<String> {
-        if self.active_panel != SidePanel::LocalBranches {
-            return None;
-        }
-        let idx = self.branches_panel.list_state.selected()?;
-        self.branches.get(idx).map(|b| b.name.clone())
-    }
-
-    pub fn selected_commit_oid(&self) -> Option<String> {
-        if self.active_panel != SidePanel::Commits {
-            return None;
-        }
-        if self.commit_tree_mode {
-            return self.commit_tree_commit_oid.clone();
-        }
-        let idx = self.commits_panel.list_state.selected()?;
-        self.commits.get(idx).map(|c| c.oid.clone())
-    }
-
-    pub fn selected_stash_index(&self) -> Option<usize> {
-        if self.active_panel != SidePanel::Stash {
-            return None;
-        }
-        if self.stash_tree_mode {
-            return self.stash_tree_stash_index;
-        }
-        let idx = self.stash_panel.list_state.selected()?;
-        self.stashes.get(idx).map(|s| s.index)
     }
 
     pub fn stash_open_tree_or_toggle_dir(&mut self) -> Result<()> {
@@ -887,77 +440,59 @@ impl App {
             let Some(index) = self.selected_stash_index() else {
                 return Ok(());
             };
-            self.stash_tree_files = self.repo.stash_files(index)?;
-            self.stash_tree_expanded_dirs = collect_dirs_from_entries(&self.stash_tree_files);
-            self.stash_tree_stash_index = Some(index);
-            self.stash_tree_mode = true;
-            self.rebuild_stash_tree();
-            if self.stash_tree_nodes.is_empty() {
-                self.stash_panel.list_state.select(None);
-            } else {
-                self.stash_panel.list_state.select(Some(0));
-            }
+            let files = self.repo.stash_files(index)?;
+            revision_tree::enter_tree_mode(
+                index,
+                files,
+                revision_tree::TreeModeState {
+                    tree_mode: &mut self.stash_tree_mode,
+                    tree_nodes: &mut self.stash_tree_nodes,
+                    tree_files: &mut self.stash_tree_files,
+                    expanded_dirs: &mut self.stash_tree_expanded_dirs,
+                    selected_tree_revision: &mut self.stash_tree_stash_index,
+                    list_state: &mut self.stash_panel.list_state,
+                },
+            );
             return Ok(());
         }
 
-        let Some(node) = self.selected_stash_tree_node() else {
-            return Ok(());
-        };
-        if !node.is_dir {
-            return Ok(());
-        }
-        let path = node.path.clone();
-        if self.stash_tree_expanded_dirs.contains(&path) {
-            self.stash_tree_expanded_dirs.remove(&path);
-        } else {
-            self.stash_tree_expanded_dirs.insert(path);
-        }
-        self.rebuild_stash_tree();
+        let selected_dir_path = self
+            .selected_stash_tree_node()
+            .and_then(|node| if node.is_dir { Some(node.path.clone()) } else { None });
+        revision_tree::toggle_tree_dir(
+            selected_dir_path,
+            &self.stash_tree_files,
+            &mut self.stash_tree_expanded_dirs,
+            &mut self.stash_tree_nodes,
+            &mut self.stash_panel.list_state,
+        );
         Ok(())
     }
 
     pub fn stash_close_tree(&mut self) {
-        if !self.stash_tree_mode {
-            return;
-        }
+        let selected_source_index = self
+            .stash_tree_stash_index
+            .and_then(|stash_index| self.stashes.iter().position(|s| s.index == stash_index));
 
-        self.stash_tree_mode = false;
-        self.stash_tree_files.clear();
-        self.stash_tree_nodes.clear();
-        self.stash_tree_expanded_dirs.clear();
-
-        if let Some(stash_index) = self.stash_tree_stash_index.take() {
-            if let Some(idx) = self.stashes.iter().position(|s| s.index == stash_index) {
-                self.stash_panel.list_state.select(Some(idx));
-                return;
-            }
-        }
-        if self.stashes.is_empty() {
-            self.stash_panel.list_state.select(None);
-        } else {
-            self.stash_panel.list_state.select(Some(0));
+        let was_open = self.stash_tree_mode;
+        revision_tree::close_tree_mode(
+            &mut self.stash_tree_mode,
+            &mut self.stash_tree_nodes,
+            &mut self.stash_tree_files,
+            &mut self.stash_tree_expanded_dirs,
+            &mut self.stash_panel.list_state,
+            selected_source_index,
+            self.stashes.len(),
+        );
+        if was_open {
+            self.stash_tree_stash_index = None;
         }
     }
 
     pub fn load_diff(&mut self) {
         self.diff_scroll = 0;
-        match self.active_panel {
-            SidePanel::Files => {
-                let Some(node) = self.selected_tree_node() else {
-                    self.current_diff.clear();
-                    return;
-                };
-
-                if node.is_dir {
-                    self.load_dir_diff(node.path.clone());
-                } else {
-                    self.load_file_diff(node.path.clone(), node.status.clone());
-                }
-            }
-            SidePanel::Commits => self.load_selected_commit_diff(),
-            SidePanel::Stash => self.load_selected_stash_diff(),
-            _ => self.current_diff.clear(),
-        }
+        let target = self.selected_diff_target();
+        self.current_diff = diff_loader::load_diff(self.repo.as_ref(), &self.file_tree_nodes, target);
     }
 
     pub fn commit_open_tree_or_toggle_dir(&mut self) -> Result<()> {
@@ -969,355 +504,66 @@ impl App {
             let Some(oid) = self.selected_commit_oid() else {
                 return Ok(());
             };
-            self.commit_tree_files = self.repo.commit_files(&oid)?;
-            self.commit_tree_expanded_dirs = collect_dirs_from_entries(&self.commit_tree_files);
-            self.commit_tree_commit_oid = Some(oid);
-            self.commit_tree_mode = true;
-            self.rebuild_commit_tree();
-            if self.commit_tree_nodes.is_empty() {
-                self.commits_panel.list_state.select(None);
-            } else {
-                self.commits_panel.list_state.select(Some(0));
-            }
+            let files = self.repo.commit_files(&oid)?;
+            revision_tree::enter_tree_mode(
+                oid,
+                files,
+                revision_tree::TreeModeState {
+                    tree_mode: &mut self.commit_tree_mode,
+                    tree_nodes: &mut self.commit_tree_nodes,
+                    tree_files: &mut self.commit_tree_files,
+                    expanded_dirs: &mut self.commit_tree_expanded_dirs,
+                    selected_tree_revision: &mut self.commit_tree_commit_oid,
+                    list_state: &mut self.commits_panel.list_state,
+                },
+            );
             return Ok(());
         }
 
-        let Some(node) = self.selected_commit_tree_node() else {
-            return Ok(());
-        };
-        if !node.is_dir {
-            return Ok(());
-        }
-        let path = node.path.clone();
-        if self.commit_tree_expanded_dirs.contains(&path) {
-            self.commit_tree_expanded_dirs.remove(&path);
-        } else {
-            self.commit_tree_expanded_dirs.insert(path);
-        }
-        self.rebuild_commit_tree();
+        let selected_dir_path = self
+            .selected_commit_tree_node()
+            .and_then(|node| if node.is_dir { Some(node.path.clone()) } else { None });
+        revision_tree::toggle_tree_dir(
+            selected_dir_path,
+            &self.commit_tree_files,
+            &mut self.commit_tree_expanded_dirs,
+            &mut self.commit_tree_nodes,
+            &mut self.commits_panel.list_state,
+        );
         Ok(())
     }
 
     pub fn commit_close_tree(&mut self) {
-        if !self.commit_tree_mode {
-            return;
-        }
-        self.commit_tree_mode = false;
-        self.commit_tree_files.clear();
-        self.commit_tree_nodes.clear();
-        self.commit_tree_expanded_dirs.clear();
+        let selected_source_index = self.commit_tree_commit_oid.as_ref().and_then(|oid| {
+            self.commits.iter().position(|c| c.oid == *oid)
+        });
 
-        if let Some(ref oid) = self.commit_tree_commit_oid {
-            if let Some(idx) = self.commits.iter().position(|c| c.oid == *oid) {
-                self.commits_panel.list_state.select(Some(idx));
-                self.commit_tree_commit_oid = None;
-                return;
-            }
-        }
-        self.commit_tree_commit_oid = None;
-        if self.commits.is_empty() {
-            self.commits_panel.list_state.select(None);
-        } else {
-            self.commits_panel.list_state.select(Some(0));
+        let was_open = self.commit_tree_mode;
+        revision_tree::close_tree_mode(
+            &mut self.commit_tree_mode,
+            &mut self.commit_tree_nodes,
+            &mut self.commit_tree_files,
+            &mut self.commit_tree_expanded_dirs,
+            &mut self.commits_panel.list_state,
+            selected_source_index,
+            self.commits.len(),
+        );
+        if was_open {
+            self.commit_tree_commit_oid = None;
         }
     }
 
-    fn load_file_diff(&mut self, path: PathBuf, status: FileTreeNodeStatus) {
-        self.current_diff = match &status {
-            FileTreeNodeStatus::Staged(_) => self.repo.diff_staged(&path).unwrap_or_default(),
-            FileTreeNodeStatus::Untracked => self.repo.diff_untracked(&path).unwrap_or_default(),
-            FileTreeNodeStatus::Unstaged(_) => self.repo.diff_unstaged(&path).unwrap_or_default(),
-            FileTreeNodeStatus::Directory => vec![],
-        };
-    }
-
-    fn load_dir_diff(&mut self, dir_path: PathBuf) {
-        const MAX_LINES: usize = 2000;
-        let mut result = Vec::new();
-
-        let file_nodes: Vec<(PathBuf, FileTreeNodeStatus)> = self
-            .file_tree_nodes
-            .iter()
-            .filter(|n| !n.is_dir && n.path.starts_with(&dir_path))
-            .map(|n| (n.path.clone(), n.status.clone()))
-            .collect();
-
-        for (path, status) in file_nodes {
-            if result.len() >= MAX_LINES { break; }
-            let lines = match &status {
-                FileTreeNodeStatus::Staged(_) => self.repo.diff_staged(&path).unwrap_or_default(),
-                FileTreeNodeStatus::Untracked => self.repo.diff_untracked(&path).unwrap_or_default(),
-                FileTreeNodeStatus::Unstaged(_) => self.repo.diff_unstaged(&path).unwrap_or_default(),
-                FileTreeNodeStatus::Directory => continue,
-            };
-            let remaining = MAX_LINES - result.len();
-            result.extend(lines.into_iter().take(remaining));
-        }
-
-        self.current_diff = result;
-    }
-
-    fn load_selected_commit_diff(&mut self) {
-        let Some(oid) = self.selected_commit_oid() else {
-            self.current_diff.clear();
-            return;
-        };
-        let path = if self.commit_tree_mode {
-            self.selected_commit_tree_node().map(|n| n.path.as_path())
-        } else {
-            None
-        };
-        self.current_diff = self
-            .repo
-            .commit_diff_scoped(&oid, path)
-            .unwrap_or_default();
-    }
-
-    fn load_selected_stash_diff(&mut self) {
-        let Some(stash_index) = self.selected_stash_index() else {
-            self.current_diff.clear();
-            return;
-        };
-
-        let path = if self.stash_tree_mode {
-            self.selected_stash_tree_node().map(|n| n.path.as_path())
-        } else {
-            None
-        };
-
-        self.current_diff = self.repo.stash_diff(stash_index, path).unwrap_or_default();
-    }
-
-    fn toggle_stage_for_selected_file(&self) -> Option<super::Message> {
-        use super::Message;
-
-        let node = self.selected_tree_node()?;
-        if node.is_dir {
-            return Some(Message::ToggleDir);
-        }
-
-        match &node.status {
-            FileTreeNodeStatus::Staged(_) => Some(Message::UnstageFile(node.path.clone())),
-            FileTreeNodeStatus::Unstaged(_) | FileTreeNodeStatus::Untracked => {
-                Some(Message::StageFile(node.path.clone()))
-            }
-            FileTreeNodeStatus::Directory => None,
-        }
-    }
-
-    fn partition_toggle_targets(&self, selected: &HashSet<usize>) -> (Vec<PathBuf>, Vec<PathBuf>) {
-        let mut stage_paths = Vec::new();
-        let mut unstage_paths = Vec::new();
-
-        for target in self.collect_selection_targets(selected) {
-            if target.all_staged {
-                unstage_paths.push(target.path);
-            } else {
-                stage_paths.push(target.path);
-            }
-        }
-
-        (stage_paths, unstage_paths)
-    }
-
-    fn collect_commit_targets(&self, selected: &HashSet<usize>) -> Vec<PathBuf> {
-        self.collect_selection_targets(selected)
-            .into_iter()
-            .map(|t| t.path)
-            .collect()
-    }
-
-    fn collect_selection_targets(&self, selected: &HashSet<usize>) -> Vec<SelectionTarget> {
-        let mut targets = Vec::new();
-        let mut covered = HashSet::new();
-        let mut ordered: Vec<usize> = selected.iter().copied().collect();
-        ordered.sort_unstable();
-
-        for idx in ordered {
-            if covered.contains(&idx) {
-                continue;
-            }
-            let Some(node) = self.file_tree_nodes.get(idx) else {
-                continue;
-            };
-
-            if node.is_dir {
-                let end = self.subtree_end_index(idx);
-                let fully_covered = (idx..=end).all(|i| selected.contains(&i));
-                if fully_covered {
-                    let all_staged = self.selected_files_are_all_staged(selected, &node.path);
-                    targets.push(SelectionTarget {
-                        path: node.path.clone(),
-                        all_staged,
-                    });
-                    for i in idx..=end {
-                        covered.insert(i);
-                    }
-                }
-                continue;
-            }
-
-            let all_staged = matches!(node.status, FileTreeNodeStatus::Staged(_));
-            targets.push(SelectionTarget {
-                path: node.path.clone(),
-                all_staged,
-            });
-            covered.insert(idx);
-        }
-
-        dedup_targets(targets)
-    }
-
-    fn selected_files_are_all_staged(&self, selected: &HashSet<usize>, dir_path: &std::path::Path) -> bool {
-        let mut has_file = false;
-        for idx in selected {
-            let Some(node) = self.file_tree_nodes.get(*idx) else {
-                continue;
-            };
-            if node.is_dir || !node.path.starts_with(dir_path) {
-                continue;
-            }
-            has_file = true;
-            if !matches!(node.status, FileTreeNodeStatus::Staged(_)) {
-                return false;
-            }
-        }
-        has_file
-    }
-
-    fn subtree_end_index(&self, index: usize) -> usize {
-        let Some(node) = self.file_tree_nodes.get(index) else {
-            return index;
-        };
-        if !node.is_dir {
-            return index;
-        }
-
-        let base_depth = node.depth;
-        let mut end = index;
-        for i in index + 1..self.file_tree_nodes.len() {
-            let n = &self.file_tree_nodes[i];
-            if n.depth <= base_depth {
-                break;
-            }
-            end = i;
-        }
-        end
-    }
-
-    fn active_panel_name(&self) -> &'static str {
-        match self.active_panel {
-            SidePanel::Files => "files",
-            SidePanel::LocalBranches => "branches",
-            SidePanel::Commits => "commits",
-            SidePanel::Stash => "stash",
-        }
-    }
-
-    fn global_key_or(&self, action: &str, fallback: &str) -> String {
+    pub(super) fn global_key_or(&self, action: &str, fallback: &str) -> String {
         self.keymap
             .first_global_key(action)
             .unwrap_or_else(|| fallback.to_string())
     }
 
-    fn panel_key_or(&self, panel: &str, action: &str, fallback: &str) -> String {
+    pub(super) fn panel_key_or(&self, panel: &str, action: &str, fallback: &str) -> String {
         self.keymap
             .first_panel_key(panel, action)
             .unwrap_or_else(|| fallback.to_string())
     }
 
-    fn selected_commit_tree_node(&self) -> Option<&FileTreeNode> {
-        if self.active_panel != SidePanel::Commits || !self.commit_tree_mode {
-            return None;
-        }
-        let idx = self.commits_panel.list_state.selected()?;
-        self.commit_tree_nodes.get(idx)
-    }
-
-    fn rebuild_commit_tree(&mut self) {
-        let selected = self.commits_panel.list_state.selected();
-        self.commit_tree_nodes = FileTree::from_git_status_with_expanded(
-            &self.commit_tree_files,
-            &[],
-            &[],
-            &self.commit_tree_expanded_dirs,
-        );
-        let count = self.commit_tree_nodes.len();
-        if count == 0 {
-            self.commits_panel.list_state.select(None);
-            return;
-        }
-        let idx = selected.unwrap_or(0).min(count - 1);
-        self.commits_panel.list_state.select(Some(idx));
-    }
-
-    fn selected_stash_tree_node(&self) -> Option<&FileTreeNode> {
-        if self.active_panel != SidePanel::Stash || !self.stash_tree_mode {
-            return None;
-        }
-        let idx = self.stash_panel.list_state.selected()?;
-        self.stash_tree_nodes.get(idx)
-    }
-
-    fn rebuild_stash_tree(&mut self) {
-        let selected = self.stash_panel.list_state.selected();
-        self.stash_tree_nodes = FileTree::from_git_status_with_expanded(
-            &self.stash_tree_files,
-            &[],
-            &[],
-            &self.stash_tree_expanded_dirs,
-        );
-        let count = self.stash_tree_nodes.len();
-        if count == 0 {
-            self.stash_panel.list_state.select(None);
-            return;
-        }
-        let idx = selected.unwrap_or(0).min(count - 1);
-        self.stash_panel.list_state.select(Some(idx));
-    }
 }
 
-#[derive(Debug)]
-struct SelectionTarget {
-    path: PathBuf,
-    all_staged: bool,
-}
-
-fn dedup_targets(mut targets: Vec<SelectionTarget>) -> Vec<SelectionTarget> {
-    let mut seen = HashSet::<PathBuf>::new();
-    targets.retain(|t| seen.insert(t.path.clone()));
-    targets
-}
-
-/// Documentation comment in English.
-fn collect_all_dirs(status: &GitStatus) -> HashSet<PathBuf> {
-    let mut dirs = HashSet::new();
-    let all_files = status.unstaged.iter().map(|f| &f.path)
-        .chain(status.untracked.iter().map(|f| &f.path))
-        .chain(status.staged.iter().map(|f| &f.path));
-
-    for path in all_files {
-        let mut p = path.as_path();
-        while let Some(parent) = p.parent() {
-            if parent == std::path::Path::new("") { break; }
-            dirs.insert(parent.to_path_buf());
-            p = parent;
-        }
-    }
-    dirs
-}
-
-fn collect_dirs_from_entries(entries: &[FileEntry]) -> HashSet<PathBuf> {
-    let mut dirs = HashSet::new();
-    for entry in entries {
-        let mut p = entry.path.as_path();
-        while let Some(parent) = p.parent() {
-            if parent == std::path::Path::new("") {
-                break;
-            }
-            dirs.insert(parent.to_path_buf());
-            p = parent;
-        }
-    }
-    dirs
-}
