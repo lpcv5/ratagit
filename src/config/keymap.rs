@@ -64,6 +64,7 @@ impl Default for Keymap {
         branches.insert("checkout_branch".into(), vec!["Enter".into()]);
         branches.insert("create_branch".into(), vec!["n".into()]);
         branches.insert("delete_branch".into(), vec!["d".into()]);
+        branches.insert("fetch_remote".into(), vec!["f".into()]);
 
         let mut stash = HashMap::new();
         stash.insert("open_tree".into(), vec!["Enter".into()]);

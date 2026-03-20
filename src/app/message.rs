@@ -28,6 +28,7 @@ pub enum Message {
     StartBranchCreateInput,
     CheckoutSelectedBranch,
     DeleteSelectedBranch,
+    FetchRemote,
     Commit(String),
     CreateBranch(String),
     StageFile(std::path::PathBuf),

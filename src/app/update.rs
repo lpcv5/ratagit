@@ -253,6 +253,14 @@ pub fn update(app: &mut App, msg: Message) -> Option<Command> {
             None
         }
 
+        Message::FetchRemote => {
+            match app.fetch_remote() {
+                Ok(remote) => app.push_log(format!("fetched {}", remote), true),
+                Err(e) => app.push_log(format!("fetch failed: {}", e), false),
+            }
+            None
+        }
+
         Message::StageFile(path) => {
             let display = path.display().to_string();
             if let Err(e) = app.stage_file(path) {

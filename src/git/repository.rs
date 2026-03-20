@@ -153,6 +153,9 @@ pub trait GitRepository {
 
     /// Documentation comment in English.
     fn delete_branch(&self, name: &str) -> Result<(), GitError>;
+
+    /// Documentation comment in English.
+    fn fetch_default(&self) -> Result<String, GitError>;
 }
 
 /// Documentation comment in English.
@@ -599,6 +602,17 @@ impl GitRepository for Git2Repository {
         branch.delete()?;
         Ok(())
     }
+
+    fn fetch_default(&self) -> Result<String, GitError> {
+        let upstream = self.run_git(&["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
+        let remote = match upstream {
+            Ok(name) => parse_remote_from_upstream(&name).unwrap_or_else(|| "origin".to_string()),
+            Err(_) => "origin".to_string(),
+        };
+
+        self.run_git(&["fetch", "--prune", &remote])?;
+        Ok(remote)
+    }
 }
 
 fn parse_diff(diff: &git2::Diff) -> Vec<DiffLine> {
@@ -804,6 +818,19 @@ mod tests {
         assert!(!diff.is_empty());
         assert!(diff.iter().any(|l| matches!(l.kind, DiffLineKind::Header)));
     }
+
+    #[test]
+    fn test_parse_remote_from_upstream() {
+        assert_eq!(
+            parse_remote_from_upstream("origin/main").as_deref(),
+            Some("origin")
+        );
+        assert_eq!(
+            parse_remote_from_upstream("upstream/feature/x").as_deref(),
+            Some("upstream")
+        );
+        assert!(parse_remote_from_upstream("").is_none());
+    }
 }
 
 fn parse_patch_text(text: &str) -> Vec<DiffLine> {
@@ -826,4 +853,12 @@ fn parse_patch_text(text: &str) -> Vec<DiffLine> {
         lines.push(DiffLine { kind, content });
     }
     lines
+}
+
+fn parse_remote_from_upstream(upstream: &str) -> Option<String> {
+    upstream
+        .split('/')
+        .next()
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| s.to_string())
 }

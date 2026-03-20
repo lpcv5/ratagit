@@ -208,6 +208,7 @@ impl App {
         if pm("checkout_branch") { return Some(Message::CheckoutSelectedBranch); }
         if pm("create_branch") { return Some(Message::StartBranchCreateInput); }
         if pm("delete_branch") { return Some(Message::DeleteSelectedBranch); }
+        if pm("fetch_remote") { return Some(Message::FetchRemote); }
         if pm("open_tree") { return Some(Message::StashOpenTreeOrToggleDir); }
         if pm("stash_apply") { return Some(Message::StashApplySelected); }
         if pm("stash_pop") { return Some(Message::StashPopSelected); }
@@ -444,6 +445,10 @@ impl App {
                     self.panel_key_or(panel, "delete_branch", "d"),
                     "Delete".to_string(),
                 ));
+                hints.push((
+                    self.panel_key_or(panel, "fetch_remote", "f"),
+                    "Fetch".to_string(),
+                ));
             }
             SidePanel::Stash => {
                 hints.push((
@@ -589,6 +594,12 @@ impl App {
         self.repo.delete_branch(name)?;
         self.refresh_status()?;
         Ok(())
+    }
+
+    pub fn fetch_remote(&mut self) -> Result<String> {
+        let remote = self.repo.fetch_default()?;
+        self.refresh_status()?;
+        Ok(remote)
     }
 
     pub fn stash_push(&mut self, paths: &[PathBuf], message: &str) -> Result<usize> {
