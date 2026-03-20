@@ -1,4 +1,4 @@
-use crate::app::{App, Command, Message, SidePanel};
+use crate::app::{App, Command, Message, RefreshKind, SidePanel};
 
 pub(crate) fn handle_navigation_message(app: &mut App, msg: Message) -> Option<Command> {
     match msg {
@@ -9,6 +9,8 @@ pub(crate) fn handle_navigation_message(app: &mut App, msg: Message) -> Option<C
                 SidePanel::Commits => SidePanel::Stash,
                 SidePanel::Stash => SidePanel::Files,
             };
+            app.ensure_commits_loaded_for_active_panel();
+            app.restore_search_for_active_scope();
             app.load_diff();
         }
         Message::PanelPrev => {
@@ -18,6 +20,8 @@ pub(crate) fn handle_navigation_message(app: &mut App, msg: Message) -> Option<C
                 SidePanel::Commits => SidePanel::LocalBranches,
                 SidePanel::Stash => SidePanel::Commits,
             };
+            app.ensure_commits_loaded_for_active_panel();
+            app.restore_search_for_active_scope();
             app.load_diff();
         }
         Message::PanelGoto(n) => {
@@ -28,6 +32,8 @@ pub(crate) fn handle_navigation_message(app: &mut App, msg: Message) -> Option<C
                 4 => SidePanel::Stash,
                 _ => app.active_panel,
             };
+            app.ensure_commits_loaded_for_active_panel();
+            app.restore_search_for_active_scope();
             app.load_diff();
         }
         Message::ListDown => {
@@ -57,11 +63,11 @@ pub(crate) fn handle_navigation_message(app: &mut App, msg: Message) -> Option<C
         Message::DiffScrollUp => app.diff_scroll_up(),
         Message::DiffScrollDown => app.diff_scroll_down(),
         Message::RefreshStatus => {
-            if let Err(e) = app.refresh_status() {
+            app.request_refresh(RefreshKind::Full);
+            if let Err(e) = app.flush_pending_refresh() {
                 app.push_log(format!("refresh failed: {}", e), false);
             } else {
                 app.push_log("refresh", true);
-                app.load_diff();
             }
         }
         _ => {}

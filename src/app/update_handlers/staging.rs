@@ -37,7 +37,6 @@ pub(crate) fn handle_staging_message(app: &mut App, msg: Message) -> Option<Comm
                     ),
                     true,
                 );
-                app.load_diff();
             }
             Err(e) => app.push_log(format!("selection toggle failed: {}", e), false),
         },

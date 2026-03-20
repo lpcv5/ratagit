@@ -1,4 +1,4 @@
-use crate::app::App;
+use crate::app::{App, SidePanel};
 use crate::ui::theme::UiTheme;
 use crate::ui::widgets::file_tree::{FileTree, FileTreeState};
 use ratatui::{
@@ -10,12 +10,16 @@ use ratatui::{
 
 pub fn render_files_panel(frame: &mut Frame, area: Rect, app: &App, is_active: bool) {
     let theme = UiTheme::default();
-    let title = if app.files_visual_mode {
+    let mut title = if app.files_visual_mode {
         "Files [VISUAL]"
     } else {
         "Files"
-    };
-    let block = theme.panel_block(title, is_active);
+    }
+    .to_string();
+    if let Some(search) = app.search_match_summary_for(SidePanel::Files, false, false) {
+        title = format!("{} [{}]", title, search);
+    }
+    let block = theme.panel_block(&title, is_active);
 
     if app.file_tree_nodes.is_empty() {
         let items = vec![ListItem::new("No changes").style(Style::default().fg(theme.text_muted))];
@@ -32,6 +36,7 @@ pub fn render_files_panel(frame: &mut Frame, area: Rect, app: &App, is_active: b
     let widget = FileTree::new(app.file_tree_nodes.clone())
         .block(block)
         .highlight_style(highlight)
+        .search_query(app.search_query_for_scope(SidePanel::Files, false, false))
         .selected_indices(app.visual_selected_indices());
 
     let mut state = FileTreeState {

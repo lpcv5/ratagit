@@ -1,10 +1,12 @@
-use crate::app::App;
+use crate::app::{App, SidePanel};
 use crate::git::CommitSyncState;
+use crate::ui::highlight::highlighted_spans;
 use crate::ui::panels::revision_tree_panel::{render_revision_tree_panel, RevisionTreePanelProps};
 use crate::ui::theme::UiTheme;
 use ratatui::{
     layout::Rect,
     style::{Color, Style},
+    text::Line,
     widgets::ListItem,
     Frame,
 };
@@ -15,6 +17,7 @@ pub fn render_commits_panel(frame: &mut Frame, area: Rect, app: &App, is_active:
     let items: Vec<ListItem> = if app.commits.is_empty() {
         vec![ListItem::new("No commits").style(Style::default().fg(theme.text_muted))]
     } else {
+        let query = app.search_query_for_scope(SidePanel::Commits, false, false);
         app.commits
             .iter()
             .map(|c| {
@@ -28,11 +31,12 @@ pub fn render_commits_panel(frame: &mut Frame, area: Rect, app: &App, is_active:
                     CommitSyncState::RemoteSynced => Color::Green,
                     CommitSyncState::LocalOnly => Color::Yellow,
                 };
-                ListItem::new(text).style(Style::default().fg(color))
+                let spans = highlighted_spans(&text, query, Style::default().fg(color));
+                ListItem::new(Line::from(spans))
             })
             .collect()
     };
-    let title = if app.commit_tree_mode {
+    let mut title = if app.commit_tree_mode {
         if let Some(ref oid) = app.commit_tree_commit_oid {
             format!("Commit Files {} [Esc Back]", &oid[..oid.len().min(7)])
         } else {
@@ -41,6 +45,11 @@ pub fn render_commits_panel(frame: &mut Frame, area: Rect, app: &App, is_active:
     } else {
         "Commits [main:cyan synced:green local:yellow]".to_string()
     };
+    if let Some(search) =
+        app.search_match_summary_for(SidePanel::Commits, app.commit_tree_mode, false)
+    {
+        title = format!("{} [{}]", title, search);
+    }
     render_revision_tree_panel(
         frame,
         area,
@@ -49,6 +58,7 @@ pub fn render_commits_panel(frame: &mut Frame, area: Rect, app: &App, is_active:
             is_active,
             tree_mode: app.commit_tree_mode,
             tree_nodes: &app.commit_tree_nodes,
+            tree_search_query: app.search_query_for_scope(SidePanel::Commits, true, false),
             list_items: items,
             list_state: app.commits_panel.list_state,
         },

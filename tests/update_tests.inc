@@ -1,10 +1,17 @@
 use super::*;
-use crate::app::{App, SidePanel};
+use crate::app::{App, RefreshKind, SidePanel};
 use crate::git::{
     BranchInfo, CommitInfo, CommitSyncState, DiffLine, DiffLineKind, FileEntry, FileStatus,
     GitError, GitRepository, GitStatus, StashInfo,
 };
+use crate::ui::widgets::file_tree::{FileTreeNode, FileTreeNodeStatus};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::{self, Receiver};
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 
 struct MockRepo;
 
@@ -151,13 +158,269 @@ impl GitRepository for MockRepo {
         Ok(())
     }
 
-    fn fetch_default(&self) -> Result<String, GitError> {
-        Ok("origin".to_string())
+    fn fetch_default_async(&self) -> Result<Receiver<Result<String, GitError>>, GitError> {
+        let (tx, rx) = mpsc::channel();
+        let _ = tx.send(Ok("origin".to_string()));
+        Ok(rx)
     }
 }
 
 fn test_app() -> App {
     App::from_repo(Box::new(MockRepo)).expect("app from mock repo")
+}
+
+struct CountingRepo {
+    commits_calls: Arc<AtomicUsize>,
+}
+
+impl CountingRepo {
+    fn new(commits_calls: Arc<AtomicUsize>) -> Self {
+        Self { commits_calls }
+    }
+}
+
+impl GitRepository for CountingRepo {
+    fn status(&self) -> Result<GitStatus, GitError> {
+        Ok(GitStatus::default())
+    }
+
+    fn stage(&self, _path: &Path) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn stage_paths(&self, _paths: &[PathBuf]) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn unstage(&self, _path: &Path) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn unstage_paths(&self, _paths: &[PathBuf]) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn diff_unstaged(&self, _path: &Path) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![])
+    }
+
+    fn diff_staged(&self, _path: &Path) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![])
+    }
+
+    fn diff_untracked(&self, _path: &Path) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![])
+    }
+
+    fn branches(&self) -> Result<Vec<BranchInfo>, GitError> {
+        Ok(vec![])
+    }
+
+    fn commits(&self, _limit: usize) -> Result<Vec<CommitInfo>, GitError> {
+        let calls = self.commits_calls.fetch_add(1, Ordering::SeqCst) + 1;
+        Ok(vec![CommitInfo {
+            short_hash: format!("c{}", calls),
+            oid: format!("oid{}", calls),
+            message: format!("commit {}", calls),
+            author: "tester".to_string(),
+            time: "2026-03-20 00:00".to_string(),
+            parent_count: 1,
+            sync_state: CommitSyncState::Main,
+        }])
+    }
+
+    fn commit_files(&self, _oid: &str) -> Result<Vec<FileEntry>, GitError> {
+        Ok(vec![])
+    }
+
+    fn stashes(&self) -> Result<Vec<StashInfo>, GitError> {
+        Ok(vec![])
+    }
+
+    fn stash_files(&self, _index: usize) -> Result<Vec<FileEntry>, GitError> {
+        Ok(vec![])
+    }
+
+    fn stash_diff(&self, _index: usize, _path: Option<&Path>) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![])
+    }
+
+    fn stash_push_paths(&self, _paths: &[PathBuf], _message: &str) -> Result<usize, GitError> {
+        Ok(0)
+    }
+
+    fn stash_apply(&self, _index: usize) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn stash_pop(&self, _index: usize) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn stash_drop(&self, _index: usize) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn commit_diff_scoped(
+        &self,
+        _oid: &str,
+        _path: Option<&Path>,
+    ) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![])
+    }
+
+    fn commit(&self, _message: &str) -> Result<String, GitError> {
+        Ok("oid".to_string())
+    }
+
+    fn create_branch(&self, _name: &str) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn checkout_branch(&self, _name: &str) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn delete_branch(&self, _name: &str) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn fetch_default_async(&self) -> Result<Receiver<Result<String, GitError>>, GitError> {
+        let (tx, rx) = mpsc::channel();
+        let _ = tx.send(Ok("origin".to_string()));
+        Ok(rx)
+    }
+}
+
+struct RefreshCountingRepo {
+    status_calls: Arc<AtomicUsize>,
+    branches_calls: Arc<AtomicUsize>,
+    stashes_calls: Arc<AtomicUsize>,
+    commits_calls: Arc<AtomicUsize>,
+}
+
+impl RefreshCountingRepo {
+    fn new(
+        status_calls: Arc<AtomicUsize>,
+        branches_calls: Arc<AtomicUsize>,
+        stashes_calls: Arc<AtomicUsize>,
+        commits_calls: Arc<AtomicUsize>,
+    ) -> Self {
+        Self {
+            status_calls,
+            branches_calls,
+            stashes_calls,
+            commits_calls,
+        }
+    }
+}
+
+impl GitRepository for RefreshCountingRepo {
+    fn status(&self) -> Result<GitStatus, GitError> {
+        self.status_calls.fetch_add(1, Ordering::SeqCst);
+        Ok(GitStatus::default())
+    }
+
+    fn stage(&self, _path: &Path) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn stage_paths(&self, _paths: &[PathBuf]) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn unstage(&self, _path: &Path) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn unstage_paths(&self, _paths: &[PathBuf]) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn diff_unstaged(&self, _path: &Path) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![])
+    }
+
+    fn diff_staged(&self, _path: &Path) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![])
+    }
+
+    fn diff_untracked(&self, _path: &Path) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![])
+    }
+
+    fn branches(&self) -> Result<Vec<BranchInfo>, GitError> {
+        self.branches_calls.fetch_add(1, Ordering::SeqCst);
+        Ok(vec![])
+    }
+
+    fn commits(&self, _limit: usize) -> Result<Vec<CommitInfo>, GitError> {
+        self.commits_calls.fetch_add(1, Ordering::SeqCst);
+        Ok(vec![])
+    }
+
+    fn commit_files(&self, _oid: &str) -> Result<Vec<FileEntry>, GitError> {
+        Ok(vec![])
+    }
+
+    fn stashes(&self) -> Result<Vec<StashInfo>, GitError> {
+        self.stashes_calls.fetch_add(1, Ordering::SeqCst);
+        Ok(vec![])
+    }
+
+    fn stash_files(&self, _index: usize) -> Result<Vec<FileEntry>, GitError> {
+        Ok(vec![])
+    }
+
+    fn stash_diff(&self, _index: usize, _path: Option<&Path>) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![])
+    }
+
+    fn stash_push_paths(&self, _paths: &[PathBuf], _message: &str) -> Result<usize, GitError> {
+        Ok(0)
+    }
+
+    fn stash_apply(&self, _index: usize) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn stash_pop(&self, _index: usize) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn stash_drop(&self, _index: usize) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn commit_diff_scoped(
+        &self,
+        _oid: &str,
+        _path: Option<&Path>,
+    ) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![])
+    }
+
+    fn commit(&self, _message: &str) -> Result<String, GitError> {
+        Ok("oid".to_string())
+    }
+
+    fn create_branch(&self, _name: &str) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn checkout_branch(&self, _name: &str) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn delete_branch(&self, _name: &str) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn fetch_default_async(&self) -> Result<Receiver<Result<String, GitError>>, GitError> {
+        let (tx, rx) = mpsc::channel();
+        let _ = tx.send(Ok("origin".to_string()));
+        Ok(rx)
+    }
 }
 
 #[test]
@@ -248,4 +511,240 @@ fn test_stash_close_tree_restores_list_selection() {
     update(&mut app, Message::RevisionCloseTree);
     assert!(!app.stash_tree_mode);
     assert_eq!(app.stash_panel.list_state.selected(), Some(1));
+}
+
+#[test]
+fn test_search_query_and_vim_navigation_for_commits() {
+    let mut app = test_app();
+    app.active_panel = SidePanel::Commits;
+    app.commits_panel.list_state.select(Some(0));
+
+    update(&mut app, Message::StartSearchInput);
+    update(&mut app, Message::SearchSetQuery("test commit".to_string()));
+    assert!(app.has_search_for_active_scope());
+
+    update(&mut app, Message::SearchNext);
+    assert_eq!(app.commits_panel.list_state.selected(), Some(1));
+
+    update(&mut app, Message::SearchPrev);
+    assert_eq!(app.commits_panel.list_state.selected(), Some(0));
+}
+
+#[test]
+fn test_search_keybindings_slash_n_and_shift_n() {
+    let mut app = test_app();
+    app.active_panel = SidePanel::Commits;
+
+    let msg = app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
+    assert!(matches!(msg, Some(Message::StartSearchInput)));
+
+    update(&mut app, Message::StartSearchInput);
+    update(&mut app, Message::SearchSetQuery("test commit".to_string()));
+    app.confirm_search_input();
+    update(&mut app, Message::SearchConfirm);
+
+    let next = app.handle_key(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE));
+    assert!(matches!(next, Some(Message::SearchNext)));
+
+    let prev = app.handle_key(KeyEvent::new(KeyCode::Char('N'), KeyModifiers::SHIFT));
+    assert!(matches!(prev, Some(Message::SearchPrev)));
+}
+
+#[test]
+fn test_files_search_matches_tree_display_name_not_full_path() {
+    let mut app = test_app();
+    app.active_panel = SidePanel::Files;
+    app.file_tree_nodes = vec![FileTreeNode {
+        path: PathBuf::from("src/main.rs"),
+        status: FileTreeNodeStatus::Unstaged(FileStatus::Modified),
+        depth: 0,
+        is_dir: false,
+        is_expanded: false,
+    }];
+    app.files_panel.list_state.select(Some(0));
+
+    update(&mut app, Message::StartSearchInput);
+    update(&mut app, Message::SearchSetQuery("src".to_string()));
+    app.confirm_search_input();
+    update(&mut app, Message::SearchConfirm);
+    assert!(!app.has_search_for_active_scope());
+
+    update(&mut app, Message::StartSearchInput);
+    update(&mut app, Message::SearchSetQuery("main".to_string()));
+    app.confirm_search_input();
+    update(&mut app, Message::SearchConfirm);
+    assert!(app.has_search_for_active_scope());
+}
+
+#[test]
+fn test_search_input_esc_clears_query_and_highlight() {
+    let mut app = test_app();
+    app.active_panel = SidePanel::Commits;
+
+    update(&mut app, Message::StartSearchInput);
+    update(&mut app, Message::SearchSetQuery("test".to_string()));
+    assert_eq!(app.search_query, "test");
+
+    let esc = app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    assert!(esc.is_none());
+    assert!(app.search_query.is_empty());
+    assert!(!app.has_search_query_for_active_scope());
+}
+
+#[test]
+fn test_commits_tree_esc_clears_search_before_closing_tree() {
+    let mut app = test_app();
+    app.active_panel = SidePanel::Commits;
+    app.commits_panel.list_state.select(Some(0));
+
+    update(&mut app, Message::RevisionOpenTreeOrToggleDir);
+    assert!(app.commit_tree_mode);
+
+    update(&mut app, Message::StartSearchInput);
+    update(&mut app, Message::SearchSetQuery("main".to_string()));
+    app.confirm_search_input();
+    update(&mut app, Message::SearchConfirm);
+    assert!(!app.search_query.is_empty());
+
+    let first_esc = app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    assert!(matches!(first_esc, Some(Message::SearchClear)));
+    update(&mut app, first_esc.expect("search clear message"));
+    assert!(app.commit_tree_mode);
+    assert!(app.search_query.is_empty());
+
+    let second_esc = app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    assert!(matches!(second_esc, Some(Message::RevisionCloseTree)));
+}
+
+#[test]
+fn test_fetch_remote_returns_async_command_and_finishes() {
+    let mut app = test_app();
+    app.active_panel = SidePanel::LocalBranches;
+
+    let cmd = update(&mut app, Message::FetchRemote);
+    assert!(matches!(cmd, Some(Command::Async(_))));
+    assert!(app.is_fetching_remote);
+
+    update(
+        &mut app,
+        Message::FetchRemoteFinished(Ok("origin".to_string())),
+    );
+    assert!(!app.is_fetching_remote);
+}
+
+#[test]
+fn test_full_refresh_defers_commit_reload_until_commits_panel_active() {
+    let commits_calls = Arc::new(AtomicUsize::new(0));
+    let repo = CountingRepo::new(commits_calls.clone());
+    let mut app = App::from_repo(Box::new(repo)).expect("app from counting repo");
+    assert_eq!(commits_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(app.active_panel, SidePanel::Files);
+
+    app.request_refresh(RefreshKind::Full);
+    app.flush_pending_refresh().expect("flush full refresh");
+    assert_eq!(commits_calls.load(Ordering::SeqCst), 1);
+
+    update(&mut app, Message::PanelGoto(3));
+    assert_eq!(app.active_panel, SidePanel::Commits);
+    assert_eq!(commits_calls.load(Ordering::SeqCst), 2);
+}
+
+#[test]
+fn test_refresh_requests_coalesce_to_highest_priority_with_single_flush() {
+    let status_calls = Arc::new(AtomicUsize::new(0));
+    let branches_calls = Arc::new(AtomicUsize::new(0));
+    let stashes_calls = Arc::new(AtomicUsize::new(0));
+    let commits_calls = Arc::new(AtomicUsize::new(0));
+    let repo = RefreshCountingRepo::new(
+        status_calls.clone(),
+        branches_calls.clone(),
+        stashes_calls.clone(),
+        commits_calls.clone(),
+    );
+    let mut app = App::from_repo(Box::new(repo)).expect("app from refresh counting repo");
+
+    // from_repo initial load happens once
+    assert_eq!(status_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(branches_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(stashes_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(commits_calls.load(Ordering::SeqCst), 1);
+
+    app.request_refresh(RefreshKind::StatusOnly);
+    app.request_refresh(RefreshKind::StatusAndRefs);
+    app.flush_pending_refresh()
+        .expect("flush coalesced refresh");
+
+    // single flush: status + refs once, commits unchanged
+    assert_eq!(status_calls.load(Ordering::SeqCst), 2);
+    assert_eq!(branches_calls.load(Ordering::SeqCst), 2);
+    assert_eq!(stashes_calls.load(Ordering::SeqCst), 2);
+    assert_eq!(commits_calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn test_fetch_finished_queues_full_refresh_without_immediate_flush() {
+    let mut app = test_app();
+    app.active_panel = SidePanel::LocalBranches;
+    app.is_fetching_remote = true;
+
+    update(
+        &mut app,
+        Message::FetchRemoteFinished(Ok("origin".to_string())),
+    );
+
+    assert!(!app.is_fetching_remote);
+    assert_eq!(app.pending_refresh_kind(), Some(RefreshKind::Full));
+}
+
+#[test]
+fn test_search_query_is_restored_per_panel_scope() {
+    let mut app = test_app();
+
+    app.active_panel = SidePanel::Commits;
+    update(&mut app, Message::StartSearchInput);
+    update(&mut app, Message::SearchSetQuery("test".to_string()));
+    app.confirm_search_input();
+    update(&mut app, Message::SearchConfirm);
+    assert_eq!(app.search_query, "test");
+
+    update(&mut app, Message::PanelGoto(1));
+    assert_eq!(app.active_panel, SidePanel::Files);
+    assert!(app.search_query.is_empty());
+
+    update(&mut app, Message::StartSearchInput);
+    update(&mut app, Message::SearchSetQuery("main".to_string()));
+    app.confirm_search_input();
+    update(&mut app, Message::SearchConfirm);
+    assert_eq!(app.search_query, "main");
+
+    update(&mut app, Message::PanelGoto(3));
+    assert_eq!(app.active_panel, SidePanel::Commits);
+    assert_eq!(app.search_query, "test");
+}
+
+#[test]
+fn test_search_query_is_restored_between_commit_list_and_tree_scope() {
+    let mut app = test_app();
+    app.active_panel = SidePanel::Commits;
+    app.commits_panel.list_state.select(Some(0));
+
+    update(&mut app, Message::StartSearchInput);
+    update(&mut app, Message::SearchSetQuery("test".to_string()));
+    app.confirm_search_input();
+    update(&mut app, Message::SearchConfirm);
+    assert_eq!(app.search_query, "test");
+
+    update(&mut app, Message::RevisionOpenTreeOrToggleDir);
+    assert!(app.commit_tree_mode);
+    assert!(app.search_query.is_empty());
+
+    update(&mut app, Message::StartSearchInput);
+    update(&mut app, Message::SearchSetQuery("main".to_string()));
+    app.confirm_search_input();
+    update(&mut app, Message::SearchConfirm);
+    assert_eq!(app.search_query, "main");
+
+    update(&mut app, Message::RevisionCloseTree);
+    assert!(!app.commit_tree_mode);
+    assert_eq!(app.search_query, "test");
 }

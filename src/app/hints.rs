@@ -20,6 +20,11 @@ impl App {
                     ("Esc".to_string(), "Cancel".to_string()),
                     ("Backspace".to_string(), "Delete".to_string()),
                 ],
+                InputMode::Search => vec![
+                    ("Enter".to_string(), "Confirm".to_string()),
+                    ("Esc".to_string(), "Cancel".to_string()),
+                    ("Backspace".to_string(), "Delete".to_string()),
+                ],
             };
         }
 
@@ -50,8 +55,22 @@ impl App {
                 ),
                 "DiffScroll".to_string(),
             ),
+            (
+                self.global_key_or("search_start", "/"),
+                "Search".to_string(),
+            ),
             (self.global_key_or("quit", "q"), "Quit".to_string()),
         ];
+        if self.has_search_for_active_scope() {
+            hints.push((
+                format!(
+                    "{}/{}",
+                    self.global_key_or("search_next", "n"),
+                    self.global_key_or("search_prev", "N")
+                ),
+                "Next/Prev".to_string(),
+            ));
+        }
 
         let panel = self.active_panel_name();
         match self.active_panel {

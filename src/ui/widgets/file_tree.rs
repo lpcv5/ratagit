@@ -1,4 +1,5 @@
 use crate::git::{FileEntry, FileStatus};
+use crate::ui::highlight::highlighted_spans;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -105,6 +106,7 @@ pub struct FileTree<'a> {
     block: Option<Block<'a>>,
     highlight_style: Style,
     selected_indices: HashSet<usize>,
+    search_query: Option<String>,
 }
 
 impl<'a> FileTree<'a> {
@@ -116,6 +118,7 @@ impl<'a> FileTree<'a> {
                 .bg(Color::DarkGray)
                 .add_modifier(Modifier::BOLD),
             selected_indices: HashSet::new(),
+            search_query: None,
         }
     }
 
@@ -131,6 +134,11 @@ impl<'a> FileTree<'a> {
 
     pub fn selected_indices(mut self, selected_indices: HashSet<usize>) -> Self {
         self.selected_indices = selected_indices;
+        self
+    }
+
+    pub fn search_query(mut self, query: Option<&str>) -> Self {
+        self.search_query = query.map(|q| q.to_string());
         self
     }
 
@@ -180,9 +188,10 @@ impl<'a> FileTree<'a> {
         files
     }
 
-    fn render_node(node: &FileTreeNode) -> ListItem<'static> {
+    fn render_node(node: &FileTreeNode, search_query: Option<&str>) -> ListItem<'static> {
         let indent = "  ".repeat(node.depth);
         let color = status_color(&node.status);
+        let base = Style::default().fg(color);
 
         let name = node
             .path
@@ -192,18 +201,19 @@ impl<'a> FileTree<'a> {
 
         let line = if node.is_dir {
             let arrow = if node.is_expanded { "▼ " } else { "▶ " };
-            Line::from(vec![
-                Span::raw(indent),
-                Span::styled(format!("{}{}/", arrow, name), Style::default().fg(color)),
-            ])
+            let mut spans = vec![Span::raw(indent), Span::styled(arrow.to_string(), base)];
+            let dir_name = format!("{}/", name);
+            spans.extend(highlighted_spans(&dir_name, search_query, base));
+            Line::from(spans)
         } else {
             let icon = status_icon(&node.status);
-            Line::from(vec![
+            let mut spans = vec![
                 Span::raw(indent),
-                Span::styled(icon, Style::default().fg(color)),
+                Span::styled(icon.to_string(), base),
                 Span::raw(" "),
-                Span::styled(name, Style::default().fg(color)),
-            ])
+            ];
+            spans.extend(highlighted_spans(&name, search_query, base));
+            Line::from(spans)
         };
 
         ListItem::new(line)
@@ -295,7 +305,7 @@ impl<'a> StatefulWidget for FileTree<'a> {
             .iter()
             .enumerate()
             .map(|(idx, node)| {
-                let item = Self::render_node(node);
+                let item = Self::render_node(node, self.search_query.as_deref());
                 if self.selected_indices.contains(&idx) {
                     item.style(Style::default().bg(Color::Rgb(45, 64, 71)))
                 } else {

@@ -12,6 +12,7 @@ pub struct RevisionTreePanelProps<'a> {
     pub is_active: bool,
     pub tree_mode: bool,
     pub tree_nodes: &'a [FileTreeNode],
+    pub tree_search_query: Option<&'a str>,
     pub list_items: Vec<ListItem<'static>>,
     pub list_state: ListState,
 }
@@ -26,6 +27,7 @@ pub fn render_revision_tree_panel(
         is_active,
         tree_mode,
         tree_nodes,
+        tree_search_query,
         list_items,
         list_state,
     } = props;
@@ -50,6 +52,7 @@ pub fn render_revision_tree_panel(
 
         let widget = FileTree::new(tree_nodes.to_vec())
             .block(theme.panel_block(title, is_active))
+            .search_query(tree_search_query)
             .highlight_style(highlight);
         let mut state = FileTreeState {
             list_state,

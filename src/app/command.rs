@@ -1,4 +1,5 @@
 use super::Message;
+use std::sync::mpsc::Receiver;
 
 /// Documentation comment in English.
 #[allow(dead_code)]
@@ -7,7 +8,7 @@ pub enum Command {
     /// Documentation comment in English.
     None,
     /// Documentation comment in English.
-    Async(tokio::task::JoinHandle<Message>),
+    Async(Receiver<Message>),
     /// Documentation comment in English.
     Sync(Message),
 }

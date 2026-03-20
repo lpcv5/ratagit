@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::mpsc::{self, Receiver};
+use std::thread;
 use thiserror::Error;
 
 /// Documentation comment in English.
@@ -175,7 +177,7 @@ pub trait GitRepository {
     fn delete_branch(&self, name: &str) -> Result<(), GitError>;
 
     /// Documentation comment in English.
-    fn fetch_default(&self) -> Result<String, GitError>;
+    fn fetch_default_async(&self) -> Result<Receiver<Result<String, GitError>>, GitError>;
 }
 
 /// Documentation comment in English.
@@ -256,6 +258,23 @@ impl Git2Repository {
         let output = Command::new("git")
             .args(args)
             .current_dir(self.repo_root()?)
+            .output()
+            .map_err(|e| GitError::Git2(format!("failed to run git {:?}: {}", args, e)))?;
+
+        if output.status.success() {
+            return Ok(String::from_utf8_lossy(&output.stdout).trim().to_string());
+        }
+
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let detail = if stderr.is_empty() { stdout } else { stderr };
+        Err(GitError::Git2(detail))
+    }
+
+    fn run_git_in_dir(repo_root: PathBuf, args: &[String]) -> Result<String, GitError> {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(repo_root)
             .output()
             .map_err(|e| GitError::Git2(format!("failed to run git {:?}: {}", args, e)))?;
 
@@ -730,15 +749,21 @@ impl GitRepository for Git2Repository {
         Ok(())
     }
 
-    fn fetch_default(&self) -> Result<String, GitError> {
+    fn fetch_default_async(&self) -> Result<Receiver<Result<String, GitError>>, GitError> {
+        let repo_root = self.repo_root()?;
         let upstream = self.run_git(&["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
         let remote = match upstream {
             Ok(name) => parse_remote_from_upstream(&name).unwrap_or_else(|| "origin".to_string()),
             Err(_) => "origin".to_string(),
         };
 
-        self.run_git(&["fetch", "--prune", &remote])?;
-        Ok(remote)
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            let args = vec!["fetch".to_string(), "--prune".to_string(), remote.clone()];
+            let result = Self::run_git_in_dir(repo_root, &args).map(|_| remote);
+            let _ = tx.send(result);
+        });
+        Ok(rx)
     }
 }
 

@@ -1,4 +1,4 @@
-use crate::app::{App, Message, SidePanel};
+use crate::app::{App, Message, RefreshKind, SidePanel};
 use crate::ui::widgets::file_tree::FileTreeNodeStatus;
 use color_eyre::Result;
 use std::collections::HashSet;
@@ -44,7 +44,7 @@ impl App {
         if !unstage_paths.is_empty() {
             self.unstage_paths_internal(&unstage_paths)?;
         }
-        self.refresh_status()?;
+        self.request_refresh(RefreshKind::StatusOnly);
         Ok((stage_paths.len(), unstage_paths.len()))
     }
 
@@ -56,7 +56,7 @@ impl App {
         }
 
         self.stage_paths_internal(&targets)?;
-        self.refresh_status()?;
+        self.request_refresh(RefreshKind::StatusOnly);
         self.files_visual_mode = false;
         self.files_visual_anchor = None;
         Ok(targets.len())

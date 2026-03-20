@@ -46,6 +46,9 @@ impl Default for GlobalKeymap {
         b.insert("diff_scroll_up".into(), vec!["C-u".into()]);
         b.insert("diff_scroll_down".into(), vec!["C-d".into()]);
         b.insert("commit".into(), vec!["c".into()]);
+        b.insert("search_start".into(), vec!["/".into()]);
+        b.insert("search_next".into(), vec!["n".into()]);
+        b.insert("search_prev".into(), vec!["N".into()]);
         Self { bindings: b }
     }
 }
