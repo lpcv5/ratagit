@@ -5,6 +5,7 @@ pub(crate) fn handle_search_message(app: &mut App, msg: Message) -> Option<Comma
         Message::StartSearchInput => {
             app.start_search_input();
             app.push_log("search: type query, Enter confirm, Esc cancel", true);
+            app.dirty.mark();
         }
         Message::SearchSetQuery(query) => {
             let count = app.apply_search_query(query);
@@ -12,6 +13,7 @@ pub(crate) fn handle_search_message(app: &mut App, msg: Message) -> Option<Comma
                 app.search_select_initial_match();
             }
             app.load_diff();
+            app.dirty.mark();
         }
         Message::SearchConfirm => {
             let count = app.apply_search_query(app.search_query.clone());
@@ -24,21 +26,25 @@ pub(crate) fn handle_search_message(app: &mut App, msg: Message) -> Option<Comma
                 );
             }
             app.load_diff();
+            app.dirty.mark();
         }
         Message::SearchClear => {
             app.clear_search();
             app.cancel_input();
             app.push_log("search cleared", true);
             app.load_diff();
+            app.dirty.mark();
         }
         Message::SearchNext => {
             if app.search_jump_next() {
                 app.load_diff();
+                app.dirty.mark();
             }
         }
         Message::SearchPrev => {
             if app.search_jump_prev() {
                 app.load_diff();
+                app.dirty.mark();
             }
         }
         _ => {}

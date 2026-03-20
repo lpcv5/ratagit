@@ -12,6 +12,7 @@ pub(crate) fn handle_revision_message(app: &mut App, msg: Message) -> Option<Com
                 Ok(()) => {
                     app.restore_search_for_active_scope();
                     app.load_diff();
+                    app.dirty.mark();
                 }
                 Err(e) => app.push_log(format!("revision files failed: {}", e), false),
             }
@@ -24,6 +25,7 @@ pub(crate) fn handle_revision_message(app: &mut App, msg: Message) -> Option<Com
             }
             app.restore_search_for_active_scope();
             app.load_diff();
+            app.dirty.mark();
         }
         _ => {}
     }

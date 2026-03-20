@@ -1,5 +1,6 @@
 use crate::git::{FileEntry, FileStatus};
 use crate::ui::highlight::highlighted_spans;
+use crate::ui::theme::UiTheme;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -34,36 +35,34 @@ pub struct FileTreeNode {
 fn status_icon(status: &FileTreeNodeStatus) -> &'static str {
     match status {
         FileTreeNodeStatus::Staged(s) => match s {
-            FileStatus::New => "?",
-            FileStatus::Modified => "M",
-            FileStatus::Deleted => "D",
-            FileStatus::Renamed => "R",
-            FileStatus::TypeChange => "T",
+            FileStatus::New => "✚",
+            FileStatus::Modified => "●",
+            FileStatus::Deleted => "✖",
+            FileStatus::Renamed => "➜",
+            FileStatus::TypeChange => "◆",
         },
         FileTreeNodeStatus::Unstaged(s) => match s {
-            FileStatus::New => "?",
-            FileStatus::Modified => "M",
-            FileStatus::Deleted => "D",
-            FileStatus::Renamed => "R",
-            FileStatus::TypeChange => "T",
+            FileStatus::New => "✚",
+            FileStatus::Modified => "✎",
+            FileStatus::Deleted => "✖",
+            FileStatus::Renamed => "➜",
+            FileStatus::TypeChange => "◆",
         },
         FileTreeNodeStatus::Untracked => "?",
         FileTreeNodeStatus::Directory => " ",
     }
 }
 
-fn status_color(status: &FileTreeNodeStatus) -> Color {
+fn status_color(status: &FileTreeNodeStatus, theme: &UiTheme) -> Color {
     match status {
-        FileTreeNodeStatus::Staged(_) => Color::Green,
+        FileTreeNodeStatus::Staged(_) => theme.success,
         FileTreeNodeStatus::Unstaged(s) => match s {
-            FileStatus::New => Color::White,
-            FileStatus::Modified => Color::Yellow,
-            FileStatus::Deleted => Color::Red,
-            FileStatus::Renamed => Color::Magenta,
-            FileStatus::TypeChange => Color::Cyan,
+            FileStatus::Modified => theme.warning,
+            FileStatus::Deleted => theme.error,
+            _ => theme.text_primary,
         },
-        FileTreeNodeStatus::Untracked => Color::White,
-        FileTreeNodeStatus::Directory => Color::Blue,
+        FileTreeNodeStatus::Untracked => theme.text_muted,
+        FileTreeNodeStatus::Directory => theme.info,
     }
 }
 
@@ -107,6 +106,7 @@ pub struct FileTree<'a> {
     highlight_style: Style,
     selected_indices: HashSet<usize>,
     search_query: Option<String>,
+    theme: UiTheme,
 }
 
 impl<'a> FileTree<'a> {
@@ -119,6 +119,7 @@ impl<'a> FileTree<'a> {
                 .add_modifier(Modifier::BOLD),
             selected_indices: HashSet::new(),
             search_query: None,
+            theme: UiTheme::default(),
         }
     }
 
@@ -188,9 +189,9 @@ impl<'a> FileTree<'a> {
         files
     }
 
-    fn render_node(node: &FileTreeNode, search_query: Option<&str>) -> ListItem<'static> {
+    fn render_node(node: &FileTreeNode, search_query: Option<&str>, theme: &UiTheme) -> ListItem<'static> {
         let indent = "  ".repeat(node.depth);
-        let color = status_color(&node.status);
+        let color = status_color(&node.status, theme);
         let base = Style::default().fg(color);
 
         let name = node
@@ -305,9 +306,9 @@ impl<'a> StatefulWidget for FileTree<'a> {
             .iter()
             .enumerate()
             .map(|(idx, node)| {
-                let item = Self::render_node(node, self.search_query.as_deref());
+                let item = Self::render_node(node, self.search_query.as_deref(), &self.theme);
                 if self.selected_indices.contains(&idx) {
-                    item.style(Style::default().bg(Color::Rgb(45, 64, 71)))
+                    item.style(Style::default().bg(self.theme.visual_selection_bg))
                 } else {
                     item
                 }

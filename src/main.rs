@@ -54,10 +54,13 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
     let mut async_commands: Vec<Receiver<app::Message>> = Vec::new();
 
     loop {
-        // Comment in English.
-        terminal.draw(|f| {
-            app.render(f);
-        })?;
+        // Render only if dirty
+        if app.dirty.is_dirty() {
+            terminal.draw(|f| {
+                app.render(f);
+            })?;
+            app.dirty.clear();
+        }
 
         // Comment in English.
         if event::poll(std::time::Duration::from_millis(16))? {

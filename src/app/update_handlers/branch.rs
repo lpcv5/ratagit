@@ -5,15 +5,22 @@ pub(crate) fn handle_branch_message(app: &mut App, msg: Message) -> Option<Comma
         Message::StartBranchCreateInput => {
             app.start_branch_create_input();
             app.push_log("branch create: enter name and press Enter", true);
+            app.dirty.mark();
         }
         Message::CreateBranch(name) => match app.create_branch(&name) {
-            Ok(()) => app.push_log(format!("branch created: {}", name), true),
+            Ok(()) => {
+                app.push_log(format!("branch created: {}", name), true);
+                app.dirty.mark();
+            }
             Err(e) => app.push_log(format!("create branch failed: {}", e), false),
         },
         Message::CheckoutSelectedBranch => {
             if let Some(name) = app.selected_branch_name() {
                 match app.checkout_branch(&name) {
-                    Ok(()) => app.push_log(format!("checked out {}", name), true),
+                    Ok(()) => {
+                        app.push_log(format!("checked out {}", name), true);
+                        app.dirty.mark();
+                    }
                     Err(e) => app.push_log(format!("checkout failed: {}", e), false),
                 }
             } else {
@@ -23,7 +30,10 @@ pub(crate) fn handle_branch_message(app: &mut App, msg: Message) -> Option<Comma
         Message::DeleteSelectedBranch => {
             if let Some(name) = app.selected_branch_name() {
                 match app.delete_branch(&name) {
-                    Ok(()) => app.push_log(format!("deleted branch {}", name), true),
+                    Ok(()) => {
+                        app.push_log(format!("deleted branch {}", name), true);
+                        app.dirty.mark();
+                    }
                     Err(e) => app.push_log(format!("delete branch failed: {}", e), false),
                 }
             } else {
@@ -39,6 +49,7 @@ pub(crate) fn handle_branch_message(app: &mut App, msg: Message) -> Option<Comma
                 Ok(rx) => {
                     app.is_fetching_remote = true;
                     app.push_log("fetch started", true);
+                    app.dirty.mark();
                     return Some(Command::Async(rx));
                 }
                 Err(e) => app.push_log(format!("fetch start failed: {}", e), false),
@@ -50,6 +61,7 @@ pub(crate) fn handle_branch_message(app: &mut App, msg: Message) -> Option<Comma
                 Ok(remote) => {
                     app.request_refresh(RefreshKind::Full);
                     app.push_log(format!("fetched {}", remote), true);
+                    app.dirty.mark();
                 }
                 Err(e) => app.push_log(format!("fetch failed: {}", e), false),
             }
