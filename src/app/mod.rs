@@ -9,8 +9,8 @@ mod message;
 mod panel_nav;
 mod refresh;
 mod revision_tree;
-mod selectors;
 mod selection;
+mod selectors;
 mod update;
 mod update_handlers;
 

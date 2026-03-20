@@ -45,7 +45,7 @@ impl GitRepository for MockRepo {
         Ok(vec![])
     }
 
-fn commits(&self, _limit: usize) -> Result<Vec<CommitInfo>, GitError> {
+    fn commits(&self, _limit: usize) -> Result<Vec<CommitInfo>, GitError> {
         Ok(vec![
             CommitInfo {
                 short_hash: "abc1234".to_string(),
@@ -75,7 +75,7 @@ fn commits(&self, _limit: usize) -> Result<Vec<CommitInfo>, GitError> {
         }])
     }
 
-fn stashes(&self) -> Result<Vec<StashInfo>, GitError> {
+    fn stashes(&self) -> Result<Vec<StashInfo>, GitError> {
         Ok(vec![
             StashInfo {
                 index: 0,
@@ -121,7 +121,11 @@ fn stashes(&self) -> Result<Vec<StashInfo>, GitError> {
         Ok(())
     }
 
-    fn commit_diff_scoped(&self, _oid: &str, path: Option<&Path>) -> Result<Vec<DiffLine>, GitError> {
+    fn commit_diff_scoped(
+        &self,
+        _oid: &str,
+        path: Option<&Path>,
+    ) -> Result<Vec<DiffLine>, GitError> {
         let scoped = path
             .map(|p| p.display().to_string())
             .unwrap_or_else(|| "<none>".to_string());

@@ -84,7 +84,10 @@ impl App {
                     self.panel_key_or(panel, "expand_all", "="),
                     "Expand".to_string(),
                 ));
-                hints.push((self.panel_key_or(panel, "stash_push", "s"), "Stash".to_string()));
+                hints.push((
+                    self.panel_key_or(panel, "stash_push", "s"),
+                    "Stash".to_string(),
+                ));
             }
             SidePanel::LocalBranches => {
                 hints.push((
@@ -95,8 +98,14 @@ impl App {
                     self.panel_key_or(panel, "create_branch", "n"),
                     "NewBranch".to_string(),
                 ));
-                hints.push((self.panel_key_or(panel, "delete_branch", "d"), "Delete".to_string()));
-                hints.push((self.panel_key_or(panel, "fetch_remote", "f"), "Fetch".to_string()));
+                hints.push((
+                    self.panel_key_or(panel, "delete_branch", "d"),
+                    "Delete".to_string(),
+                ));
+                hints.push((
+                    self.panel_key_or(panel, "fetch_remote", "f"),
+                    "Fetch".to_string(),
+                ));
             }
             SidePanel::Stash => {
                 hints.push((
@@ -107,9 +116,18 @@ impl App {
                         "Files".to_string()
                     },
                 ));
-                hints.push((self.panel_key_or(panel, "stash_apply", "a"), "Apply".to_string()));
-                hints.push((self.panel_key_or(panel, "stash_pop", "p"), "Pop".to_string()));
-                hints.push((self.panel_key_or(panel, "stash_drop", "d"), "Drop".to_string()));
+                hints.push((
+                    self.panel_key_or(panel, "stash_apply", "a"),
+                    "Apply".to_string(),
+                ));
+                hints.push((
+                    self.panel_key_or(panel, "stash_pop", "p"),
+                    "Pop".to_string(),
+                ));
+                hints.push((
+                    self.panel_key_or(panel, "stash_drop", "d"),
+                    "Drop".to_string(),
+                ));
             }
             SidePanel::Commits => {
                 hints.push((

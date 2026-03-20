@@ -46,6 +46,5 @@ pub enum Message {
     StashPopSelected,
     StashDropSelected,
     RefreshStatus,
-
     // Comment in English.
 }

@@ -1,8 +1,11 @@
+use super::{diff_loader, refresh, revision_tree};
 use crate::config::keymap::{key_to_string, Keymap};
-use crate::git::{Git2Repository, GitRepository, GitStatus, DiffLine, BranchInfo, CommitInfo, StashInfo, FileEntry};
+use crate::git::{
+    BranchInfo, CommitInfo, DiffLine, FileEntry, Git2Repository, GitRepository, GitStatus,
+    StashInfo,
+};
 use crate::ui::layout::render_layout;
 use crate::ui::widgets::file_tree::{FileTree, FileTreeNode};
-use super::{diff_loader, refresh, revision_tree};
 use color_eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::widgets::ListState;
@@ -174,7 +177,10 @@ impl App {
         if self.input_mode.is_some() {
             return self.handle_input_key(key);
         }
-        if key.code == KeyCode::Esc && self.active_panel == SidePanel::Files && self.files_visual_mode {
+        if key.code == KeyCode::Esc
+            && self.active_panel == SidePanel::Files
+            && self.files_visual_mode
+        {
             return Some(Message::ToggleVisualSelectMode);
         }
         if key.code == KeyCode::Esc
@@ -185,23 +191,49 @@ impl App {
         }
 
         let k = key_to_string(&key);
-        if k.is_empty() { return None; }
+        if k.is_empty() {
+            return None;
+        }
 
         let gm = |action| self.keymap.global_matches(action, &k);
 
         // Comment in English.
-        if gm("quit")              { return Some(Message::Quit); }
-        if gm("list_up")           { return Some(Message::ListUp); }
-        if gm("list_down")         { return Some(Message::ListDown); }
-        if gm("panel_next")        { return Some(Message::PanelNext); }
-        if gm("panel_prev")        { return Some(Message::PanelPrev); }
-        if gm("refresh")           { return Some(Message::RefreshStatus); }
-        if gm("diff_scroll_up")    { return Some(Message::DiffScrollUp); }
-        if gm("diff_scroll_down")  { return Some(Message::DiffScrollDown); }
-        if gm("panel_1")           { return Some(Message::PanelGoto(1)); }
-        if gm("panel_2")           { return Some(Message::PanelGoto(2)); }
-        if gm("panel_3")           { return Some(Message::PanelGoto(3)); }
-        if gm("panel_4")           { return Some(Message::PanelGoto(4)); }
+        if gm("quit") {
+            return Some(Message::Quit);
+        }
+        if gm("list_up") {
+            return Some(Message::ListUp);
+        }
+        if gm("list_down") {
+            return Some(Message::ListDown);
+        }
+        if gm("panel_next") {
+            return Some(Message::PanelNext);
+        }
+        if gm("panel_prev") {
+            return Some(Message::PanelPrev);
+        }
+        if gm("refresh") {
+            return Some(Message::RefreshStatus);
+        }
+        if gm("diff_scroll_up") {
+            return Some(Message::DiffScrollUp);
+        }
+        if gm("diff_scroll_down") {
+            return Some(Message::DiffScrollDown);
+        }
+        if gm("panel_1") {
+            return Some(Message::PanelGoto(1));
+        }
+        if gm("panel_2") {
+            return Some(Message::PanelGoto(2));
+        }
+        if gm("panel_3") {
+            return Some(Message::PanelGoto(3));
+        }
+        if gm("panel_4") {
+            return Some(Message::PanelGoto(4));
+        }
         if gm("commit") {
             if self.active_panel == SidePanel::Files && self.files_visual_mode {
                 return Some(Message::PrepareCommitFromSelection);
@@ -221,19 +253,45 @@ impl App {
                 return Some(msg);
             }
         }
-        if pm("stash_push") { return Some(Message::StartStashInput); }
-        if pm("toggle_visual_select") { return Some(Message::ToggleVisualSelectMode); }
-        if pm("toggle_dir")   { return Some(Message::ToggleDir); }
-        if pm("collapse_all") { return Some(Message::CollapseAll); }
-        if pm("expand_all")   { return Some(Message::ExpandAll); }
-        if pm("checkout_branch") { return Some(Message::CheckoutSelectedBranch); }
-        if pm("create_branch") { return Some(Message::StartBranchCreateInput); }
-        if pm("delete_branch") { return Some(Message::DeleteSelectedBranch); }
-        if pm("fetch_remote") { return Some(Message::FetchRemote); }
-        if pm("open_tree") { return Some(Message::RevisionOpenTreeOrToggleDir); }
-        if pm("stash_apply") { return Some(Message::StashApplySelected); }
-        if pm("stash_pop") { return Some(Message::StashPopSelected); }
-        if pm("stash_drop") { return Some(Message::StashDropSelected); }
+        if pm("stash_push") {
+            return Some(Message::StartStashInput);
+        }
+        if pm("toggle_visual_select") {
+            return Some(Message::ToggleVisualSelectMode);
+        }
+        if pm("toggle_dir") {
+            return Some(Message::ToggleDir);
+        }
+        if pm("collapse_all") {
+            return Some(Message::CollapseAll);
+        }
+        if pm("expand_all") {
+            return Some(Message::ExpandAll);
+        }
+        if pm("checkout_branch") {
+            return Some(Message::CheckoutSelectedBranch);
+        }
+        if pm("create_branch") {
+            return Some(Message::StartBranchCreateInput);
+        }
+        if pm("delete_branch") {
+            return Some(Message::DeleteSelectedBranch);
+        }
+        if pm("fetch_remote") {
+            return Some(Message::FetchRemote);
+        }
+        if pm("open_tree") {
+            return Some(Message::RevisionOpenTreeOrToggleDir);
+        }
+        if pm("stash_apply") {
+            return Some(Message::StashApplySelected);
+        }
+        if pm("stash_pop") {
+            return Some(Message::StashPopSelected);
+        }
+        if pm("stash_drop") {
+            return Some(Message::StashDropSelected);
+        }
 
         None
     }
@@ -393,9 +451,13 @@ impl App {
 
     /// Documentation comment in English.
     pub fn toggle_selected_dir(&mut self) {
-        let selected_dir_path = self
-            .selected_tree_node()
-            .and_then(|node| if node.is_dir { Some(node.path.clone()) } else { None });
+        let selected_dir_path = self.selected_tree_node().and_then(|node| {
+            if node.is_dir {
+                Some(node.path.clone())
+            } else {
+                None
+            }
+        });
         refresh::toggle_selected_dir(&mut self.expanded_dirs, selected_dir_path);
         self.rebuild_tree();
     }
@@ -456,9 +518,13 @@ impl App {
             return Ok(());
         }
 
-        let selected_dir_path = self
-            .selected_stash_tree_node()
-            .and_then(|node| if node.is_dir { Some(node.path.clone()) } else { None });
+        let selected_dir_path = self.selected_stash_tree_node().and_then(|node| {
+            if node.is_dir {
+                Some(node.path.clone())
+            } else {
+                None
+            }
+        });
         revision_tree::toggle_tree_dir(
             selected_dir_path,
             &self.stash_tree_files,
@@ -492,7 +558,8 @@ impl App {
     pub fn load_diff(&mut self) {
         self.diff_scroll = 0;
         let target = self.selected_diff_target();
-        self.current_diff = diff_loader::load_diff(self.repo.as_ref(), &self.file_tree_nodes, target);
+        self.current_diff =
+            diff_loader::load_diff(self.repo.as_ref(), &self.file_tree_nodes, target);
     }
 
     pub fn commit_open_tree_or_toggle_dir(&mut self) -> Result<()> {
@@ -520,9 +587,13 @@ impl App {
             return Ok(());
         }
 
-        let selected_dir_path = self
-            .selected_commit_tree_node()
-            .and_then(|node| if node.is_dir { Some(node.path.clone()) } else { None });
+        let selected_dir_path = self.selected_commit_tree_node().and_then(|node| {
+            if node.is_dir {
+                Some(node.path.clone())
+            } else {
+                None
+            }
+        });
         revision_tree::toggle_tree_dir(
             selected_dir_path,
             &self.commit_tree_files,
@@ -534,9 +605,10 @@ impl App {
     }
 
     pub fn commit_close_tree(&mut self) {
-        let selected_source_index = self.commit_tree_commit_oid.as_ref().and_then(|oid| {
-            self.commits.iter().position(|c| c.oid == *oid)
-        });
+        let selected_source_index = self
+            .commit_tree_commit_oid
+            .as_ref()
+            .and_then(|oid| self.commits.iter().position(|c| c.oid == *oid));
 
         let was_open = self.commit_tree_mode;
         revision_tree::close_tree_mode(
@@ -564,6 +636,4 @@ impl App {
             .first_panel_key(panel, action)
             .unwrap_or_else(|| fallback.to_string())
     }
-
 }
-

@@ -19,7 +19,10 @@ pub fn render_commits_panel(frame: &mut Frame, area: Rect, app: &App, is_active:
             .iter()
             .map(|c| {
                 let graph = if c.parent_count > 1 { "⑂ " } else { "● " };
-                let text = format!("{}{} {} {} {}", graph, c.short_hash, c.time, c.message, c.author);
+                let text = format!(
+                    "{}{} {} {} {}",
+                    graph, c.short_hash, c.time, c.message, c.author
+                );
                 let color = match c.sync_state {
                     CommitSyncState::Main => Color::Cyan,
                     CommitSyncState::RemoteSynced => Color::Green,

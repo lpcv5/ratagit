@@ -65,8 +65,10 @@ pub fn render_commit_editor(frame: &mut Frame, app: &App) {
         .block(theme.panel_block(desc_title, desc_active));
     frame.render_widget(description, sections[1]);
 
-    let help = Paragraph::new(Line::from("Tab switch field | Enter confirm/newline | Esc cancel"))
-        .style(Style::default().fg(theme.text_muted));
+    let help = Paragraph::new(Line::from(
+        "Tab switch field | Enter confirm/newline | Esc cancel",
+    ))
+    .style(Style::default().fg(theme.text_muted));
     let help_area = Rect {
         x: inner.x,
         y: inner.y + inner.height.saturating_sub(1),

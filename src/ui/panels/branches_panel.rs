@@ -1,12 +1,6 @@
 use crate::app::App;
 use crate::ui::theme::UiTheme;
-use ratatui::{
-    layout::Rect,
-    style::Style,
-    widgets::List,
-    widgets::ListItem,
-    Frame,
-};
+use ratatui::{layout::Rect, style::Style, widgets::List, widgets::ListItem, Frame};
 
 pub fn render_branches_panel(frame: &mut Frame, area: Rect, app: &App, is_active: bool) {
     let theme = UiTheme::default();
@@ -22,8 +16,7 @@ pub fn render_branches_panel(frame: &mut Frame, area: Rect, app: &App, is_active
                 } else {
                     ("  ", theme.text_primary)
                 };
-                ListItem::new(format!("{}{}", prefix, b.name))
-                    .style(Style::default().fg(color))
+                ListItem::new(format!("{}{}", prefix, b.name)).style(Style::default().fg(color))
             })
             .collect()
     };

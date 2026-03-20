@@ -28,24 +28,29 @@ pub fn render_diff_panel(frame: &mut Frame, area: Rect, app: &App) {
     }
 
     let scroll = app.diff_scroll;
-    let items: Vec<ListItem> = app.current_diff.iter().skip(scroll).map(|line| {
-        let (style, prefix) = match line.kind {
-            DiffLineKind::Added   => (Style::default().fg(Color::Green),  "+"),
-            DiffLineKind::Removed => (Style::default().fg(Color::Red),    "-"),
-            DiffLineKind::Header  => (Style::default().fg(Color::Cyan),   ""),
-            DiffLineKind::Context => (Style::default().fg(Color::Gray),   " "),
-        };
-        let text = Line::from(vec![
-            Span::styled(format!("{}{}", prefix, line.content), style),
-        ]);
-        ListItem::new(text)
-    }).collect();
+    let items: Vec<ListItem> = app
+        .current_diff
+        .iter()
+        .skip(scroll)
+        .map(|line| {
+            let (style, prefix) = match line.kind {
+                DiffLineKind::Added => (Style::default().fg(Color::Green), "+"),
+                DiffLineKind::Removed => (Style::default().fg(Color::Red), "-"),
+                DiffLineKind::Header => (Style::default().fg(Color::Cyan), ""),
+                DiffLineKind::Context => (Style::default().fg(Color::Gray), " "),
+            };
+            let text = Line::from(vec![Span::styled(
+                format!("{}{}", prefix, line.content),
+                style,
+            )]);
+            ListItem::new(text)
+        })
+        .collect();
 
     let total = app.current_diff.len();
     let title = format!("Diff [{}/{}]", scroll + 1, total);
 
-    let list = List::new(items)
-        .block(theme.panel_block("Diff", true).title(title));
+    let list = List::new(items).block(theme.panel_block("Diff", true).title(title));
 
     frame.render_widget(list, area);
 }

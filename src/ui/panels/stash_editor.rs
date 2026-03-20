@@ -26,7 +26,11 @@ pub fn render_stash_editor(frame: &mut Frame, app: &App) {
 
     let sections = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(3), Constraint::Length(1), Constraint::Length(1)])
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Length(1),
+            Constraint::Length(1),
+        ])
         .split(inner);
 
     let title = format!(
@@ -40,8 +44,10 @@ pub fn render_stash_editor(frame: &mut Frame, app: &App) {
         .style(Style::default().fg(theme.text_primary));
     frame.render_widget(message, sections[0]);
 
-    let help = Paragraph::new(Line::from("Use visual mode (v) for batch stash, or current cursor item"))
-        .style(Style::default().fg(theme.text_muted));
+    let help = Paragraph::new(Line::from(
+        "Use visual mode (v) for batch stash, or current cursor item",
+    ))
+    .style(Style::default().fg(theme.text_muted));
     frame.render_widget(help, sections[1]);
 
     let targets = Paragraph::new(Line::from(format!(

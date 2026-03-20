@@ -112,7 +112,9 @@ impl<'a> FileTree<'a> {
         Self {
             nodes,
             block: None,
-            highlight_style: Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD),
+            highlight_style: Style::default()
+                .bg(Color::DarkGray)
+                .add_modifier(Modifier::BOLD),
             selected_indices: HashSet::new(),
         }
     }
@@ -164,7 +166,10 @@ impl<'a> FileTree<'a> {
     ) -> Vec<(PathBuf, FileTreeNodeStatus)> {
         let mut files = Vec::new();
         for f in unstaged {
-            files.push((f.path.clone(), FileTreeNodeStatus::Unstaged(f.status.clone())));
+            files.push((
+                f.path.clone(),
+                FileTreeNodeStatus::Unstaged(f.status.clone()),
+            ));
         }
         for f in untracked {
             files.push((f.path.clone(), FileTreeNodeStatus::Untracked));
@@ -211,7 +216,9 @@ fn collect_dirs(files: &[(PathBuf, FileTreeNodeStatus)]) -> HashSet<PathBuf> {
     for (path, _) in files {
         let mut p = path.as_path();
         while let Some(parent) = p.parent() {
-            if parent == Path::new("") { break; }
+            if parent == Path::new("") {
+                break;
+            }
             dirs.insert(parent.to_path_buf());
             p = parent;
         }
@@ -256,7 +263,11 @@ fn build_subtree(
         });
         if is_expanded {
             nodes.extend(build_subtree(
-                &child_dir, files, all_dirs, expanded, depth + 1,
+                &child_dir,
+                files,
+                all_dirs,
+                expanded,
+                depth + 1,
             ));
         }
     }

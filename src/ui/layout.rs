@@ -1,7 +1,8 @@
 use crate::app::{App, SidePanel};
 use crate::ui::panels::{
-    render_branches_panel, render_command_log, render_commits_panel, render_diff_panel,
-    render_commit_editor, render_files_panel, render_shortcut_bar, render_stash_editor, render_stash_panel,
+    render_branches_panel, render_command_log, render_commit_editor, render_commits_panel,
+    render_diff_panel, render_files_panel, render_shortcut_bar, render_stash_editor,
+    render_stash_panel,
 };
 use ratatui::{
     layout::{Constraint, Direction, Layout},
@@ -16,10 +17,7 @@ pub fn render_layout(frame: &mut Frame, app: &App) {
     let size = frame.area();
     let vertical = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Min(0),
-            Constraint::Length(SHORTCUT_BAR_HEIGHT),
-        ])
+        .constraints([Constraint::Min(0), Constraint::Length(SHORTCUT_BAR_HEIGHT)])
         .split(size);
 
     // Horizontal split: Left (30%) | Right (70%)
@@ -60,9 +58,24 @@ pub fn render_layout(frame: &mut Frame, app: &App) {
         ..horizontal[0]
     };
 
-    render_files_panel(frame, left_panels[0], app, app.active_panel == SidePanel::Files);
-    render_branches_panel(frame, left_panels[1], app, app.active_panel == SidePanel::LocalBranches);
-    render_commits_panel(frame, left_panels[2], app, app.active_panel == SidePanel::Commits);
+    render_files_panel(
+        frame,
+        left_panels[0],
+        app,
+        app.active_panel == SidePanel::Files,
+    );
+    render_branches_panel(
+        frame,
+        left_panels[1],
+        app,
+        app.active_panel == SidePanel::LocalBranches,
+    );
+    render_commits_panel(
+        frame,
+        left_panels[2],
+        app,
+        app.active_panel == SidePanel::Commits,
+    );
     render_stash_panel(frame, stash_area, app, stash_focused);
 
     // Right side: diff + command log

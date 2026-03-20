@@ -16,7 +16,11 @@ pub struct RevisionTreePanelProps<'a> {
     pub list_state: ListState,
 }
 
-pub fn render_revision_tree_panel(frame: &mut Frame, area: Rect, props: RevisionTreePanelProps<'_>) {
+pub fn render_revision_tree_panel(
+    frame: &mut Frame,
+    area: Rect,
+    props: RevisionTreePanelProps<'_>,
+) {
     let RevisionTreePanelProps {
         title,
         is_active,
@@ -34,7 +38,8 @@ pub fn render_revision_tree_panel(frame: &mut Frame, area: Rect, props: Revision
 
     if tree_mode {
         if tree_nodes.is_empty() {
-            let items = vec![ListItem::new("No files").style(Style::default().fg(theme.text_muted))];
+            let items =
+                vec![ListItem::new("No files").style(Style::default().fg(theme.text_muted))];
             let list = List::new(items)
                 .block(theme.panel_block(title, is_active))
                 .highlight_style(highlight);

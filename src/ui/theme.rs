@@ -34,7 +34,9 @@ impl UiTheme {
                 Style::default().fg(self.border_inactive)
             })
             .title_style(if is_active {
-                Style::default().fg(self.accent).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(self.accent)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(self.border_inactive)
             })
