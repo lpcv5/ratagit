@@ -68,6 +68,14 @@ pub struct BranchInfo {
 }
 
 /// Commit info for log display
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommitSyncState {
+    Main,
+    RemoteSynced,
+    LocalOnly,
+}
+
+/// Commit info for log display
 #[derive(Debug, Clone)]
 pub struct CommitInfo {
     pub short_hash: String,
@@ -76,6 +84,7 @@ pub struct CommitInfo {
     pub author: String,
     pub time: String,
     pub parent_count: usize,
+    pub sync_state: CommitSyncState,
 }
 
 /// Stash entry
@@ -119,6 +128,9 @@ pub trait GitRepository {
     fn commits(&self, limit: usize) -> Result<Vec<CommitInfo>, GitError>;
 
     /// Documentation comment in English.
+    fn commit_files(&self, oid: &str) -> Result<Vec<FileEntry>, GitError>;
+
+    /// Documentation comment in English.
     fn stashes(&self) -> Result<Vec<StashInfo>, GitError>;
 
     /// Documentation comment in English.
@@ -140,7 +152,7 @@ pub trait GitRepository {
     fn stash_drop(&self, index: usize) -> Result<(), GitError>;
 
     /// Documentation comment in English.
-    fn commit_diff(&self, oid: &str) -> Result<Vec<DiffLine>, GitError>;
+    fn commit_diff_scoped(&self, oid: &str, path: Option<&std::path::Path>) -> Result<Vec<DiffLine>, GitError>;
 
     /// Documentation comment in English.
     fn commit(&self, message: &str) -> Result<String, GitError>;
@@ -248,6 +260,44 @@ impl Git2Repository {
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
         let detail = if stderr.is_empty() { stdout } else { stderr };
         Err(GitError::Git2(detail))
+    }
+
+    fn resolve_ref_oid(&self, refname: &str) -> Option<git2::Oid> {
+        self.repo
+            .find_reference(refname)
+            .ok()
+            .and_then(|r| r.target())
+    }
+
+    fn upstream_oid(&self) -> Option<git2::Oid> {
+        let head = self.repo.head().ok()?;
+        let local_name = head.shorthand()?;
+        let local = self.repo.find_branch(local_name, git2::BranchType::Local).ok()?;
+        let upstream = local.upstream().ok()?;
+        upstream.get().target()
+    }
+
+    fn classify_commit_sync(
+        &self,
+        oid: git2::Oid,
+        main_tip: Option<git2::Oid>,
+        upstream_tip: Option<git2::Oid>,
+    ) -> CommitSyncState {
+        if let Some(main_tip) = main_tip {
+            if main_tip == oid || self.repo.graph_descendant_of(main_tip, oid).unwrap_or(false) {
+                return CommitSyncState::Main;
+            }
+        }
+        if let Some(upstream_tip) = upstream_tip {
+            if upstream_tip == oid || self
+                .repo
+                .graph_descendant_of(upstream_tip, oid)
+                .unwrap_or(false)
+            {
+                return CommitSyncState::RemoteSynced;
+            }
+        }
+        CommitSyncState::LocalOnly
     }
 }
 
@@ -384,6 +434,10 @@ impl GitRepository for Git2Repository {
         let mut revwalk = self.repo.revwalk()?;
         revwalk.push_head()?;
         revwalk.set_sorting(git2::Sort::TIME)?;
+        let main_tip = self
+            .resolve_ref_oid("refs/heads/main")
+            .or_else(|| self.resolve_ref_oid("refs/heads/master"));
+        let upstream_tip = self.upstream_oid();
 
         let mut result = Vec::new();
         for oid in revwalk.take(limit) {
@@ -407,9 +461,39 @@ impl GitRepository for Git2Repository {
                 author,
                 time,
                 parent_count: commit.parent_count(),
+                sync_state: self.classify_commit_sync(oid, main_tip, upstream_tip),
             });
         }
         Ok(result)
+    }
+
+    fn commit_files(&self, oid: &str) -> Result<Vec<FileEntry>, GitError> {
+        let output = self.run_git(&["show", "--name-status", "--pretty=format:", oid])?;
+        let mut files = Vec::new();
+        for line in output.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let mut parts = trimmed.split_whitespace();
+            let status_str = parts.next().unwrap_or_default();
+            let path_str = parts.next().unwrap_or_default();
+            if path_str.is_empty() {
+                continue;
+            }
+            let status = match status_str.chars().next().unwrap_or('M') {
+                'A' => FileStatus::New,
+                'D' => FileStatus::Deleted,
+                'R' => FileStatus::Renamed,
+                'T' => FileStatus::TypeChange,
+                _ => FileStatus::Modified,
+            };
+            files.push(FileEntry {
+                path: PathBuf::from(path_str),
+                status,
+            });
+        }
+        Ok(files)
     }
 
     fn stashes(&self) -> Result<Vec<StashInfo>, GitError> {
@@ -547,20 +631,21 @@ impl GitRepository for Git2Repository {
         Ok(())
     }
 
-    fn commit_diff(&self, oid: &str) -> Result<Vec<DiffLine>, GitError> {
-        let oid = git2::Oid::from_str(oid).map_err(|e| GitError::Git2(e.to_string()))?;
-        let commit = self.repo.find_commit(oid)?;
-        let tree = commit.tree()?;
-        let parent_tree = if commit.parent_count() > 0 {
-            Some(commit.parent(0)?.tree()?)
-        } else {
-            None
-        };
-
-        let diff = self
-            .repo
-            .diff_tree_to_tree(parent_tree.as_ref(), Some(&tree), None)?;
-        Ok(parse_diff(&diff))
+    fn commit_diff_scoped(&self, oid: &str, path: Option<&std::path::Path>) -> Result<Vec<DiffLine>, GitError> {
+        let mut args = vec![
+            "show".to_string(),
+            "--pretty=format:".to_string(),
+            oid.to_string(),
+        ];
+        if let Some(path) = path {
+            let Some(path_str) = path.to_str() else {
+                return Err(GitError::Git2("commit path contains invalid unicode".to_string()));
+            };
+            args.push("--".to_string());
+            args.push(path_str.to_string());
+        }
+        let patch = self.run_git_owned(&args)?;
+        Ok(parse_patch_text(&patch))
     }
 
     fn commit(&self, message: &str) -> Result<String, GitError> {
@@ -710,9 +795,20 @@ mod tests {
         assert_eq!(commits.len(), 1);
         assert_eq!(commits[0].message, "add new");
         assert_eq!(commits[0].oid, oid);
+        assert_eq!(commits[0].sync_state, CommitSyncState::Main);
 
-        let patch = repo.commit_diff(&oid).expect("commit diff");
+        let patch = repo
+            .commit_diff_scoped(&oid, None)
+            .expect("commit diff");
         assert!(!patch.is_empty());
+
+        let files = repo.commit_files(&oid).expect("commit files");
+        assert!(files.iter().any(|f| f.path == std::path::Path::new("new.txt")));
+
+        let scoped = repo
+            .commit_diff_scoped(&oid, Some(std::path::Path::new("new.txt")))
+            .expect("commit scoped diff");
+        assert!(!scoped.is_empty());
     }
 
     #[test]

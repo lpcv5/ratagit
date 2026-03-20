@@ -17,7 +17,7 @@ pub fn render_diff_panel(frame: &mut Frame, area: Rect, app: &App) {
         let hint = match app.active_panel {
             SidePanel::Files => "Select a file to view diff",
             SidePanel::LocalBranches => "Select a branch to view details",
-            SidePanel::Commits => "Select a commit to view diff",
+            SidePanel::Commits => "Select a commit/file to view diff",
             SidePanel::Stash => "Select a stash entry/file to view diff",
         };
         let paragraph = ratatui::widgets::Paragraph::new(hint)

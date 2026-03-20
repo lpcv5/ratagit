@@ -74,6 +74,11 @@ pub struct App {
     pub command_log: Vec<CommandLogEntry>,
     pub branches: Vec<BranchInfo>,
     pub commits: Vec<CommitInfo>,
+    pub commit_tree_mode: bool,
+    pub commit_tree_nodes: Vec<FileTreeNode>,
+    commit_tree_files: Vec<FileEntry>,
+    commit_tree_expanded_dirs: HashSet<PathBuf>,
+    pub commit_tree_commit_oid: Option<String>,
     pub stashes: Vec<StashInfo>,
     pub stash_tree_mode: bool,
     pub stash_tree_nodes: Vec<FileTreeNode>,
@@ -130,6 +135,11 @@ impl App {
             command_log: Vec::new(),
             branches,
             commits,
+            commit_tree_mode: false,
+            commit_tree_nodes: Vec::new(),
+            commit_tree_files: Vec::new(),
+            commit_tree_expanded_dirs: HashSet::new(),
+            commit_tree_commit_oid: None,
             stashes,
             stash_tree_mode: false,
             stash_tree_nodes: Vec::new(),
@@ -159,8 +169,11 @@ impl App {
         if key.code == KeyCode::Esc && self.active_panel == SidePanel::Files && self.files_visual_mode {
             return Some(Message::ToggleVisualSelectMode);
         }
-        if key.code == KeyCode::Esc && self.active_panel == SidePanel::Stash && self.stash_tree_mode {
-            return Some(Message::StashCloseTree);
+        if key.code == KeyCode::Esc
+            && ((self.active_panel == SidePanel::Stash && self.stash_tree_mode)
+                || (self.active_panel == SidePanel::Commits && self.commit_tree_mode))
+        {
+            return Some(Message::RevisionCloseTree);
         }
 
         let k = key_to_string(&key);
@@ -209,7 +222,7 @@ impl App {
         if pm("create_branch") { return Some(Message::StartBranchCreateInput); }
         if pm("delete_branch") { return Some(Message::DeleteSelectedBranch); }
         if pm("fetch_remote") { return Some(Message::FetchRemote); }
-        if pm("open_tree") { return Some(Message::StashOpenTreeOrToggleDir); }
+        if pm("open_tree") { return Some(Message::RevisionOpenTreeOrToggleDir); }
         if pm("stash_apply") { return Some(Message::StashApplySelected); }
         if pm("stash_pop") { return Some(Message::StashPopSelected); }
         if pm("stash_drop") { return Some(Message::StashDropSelected); }
@@ -472,7 +485,16 @@ impl App {
                     "Drop".to_string(),
                 ));
             }
-            SidePanel::Commits => {}
+            SidePanel::Commits => {
+                hints.push((
+                    self.panel_key_or(panel, "open_tree", "Enter"),
+                    if self.commit_tree_mode {
+                        "ToggleDir".to_string()
+                    } else {
+                        "Files".to_string()
+                    },
+                ));
+            }
         }
 
         hints
@@ -487,6 +509,18 @@ impl App {
         self.rebuild_tree();
         self.branches = self.repo.branches().unwrap_or_default();
         self.commits = self.repo.commits(200).unwrap_or_default();
+        if self.commit_tree_mode {
+            if let Some(ref oid) = self.commit_tree_commit_oid {
+                if self.commits.iter().any(|c| c.oid == *oid) {
+                    self.commit_tree_files = self.repo.commit_files(oid).unwrap_or_default();
+                    self.rebuild_commit_tree();
+                } else {
+                    self.commit_close_tree();
+                }
+            } else {
+                self.commit_close_tree();
+            }
+        }
         self.stashes = self.repo.stashes().unwrap_or_default();
         if self.stash_tree_mode {
             if let Some(index) = self.stash_tree_stash_index {
@@ -686,7 +720,13 @@ impl App {
         match self.active_panel {
             SidePanel::Files => self.file_tree_nodes.len(),
             SidePanel::LocalBranches => self.branches.len(),
-            SidePanel::Commits => self.commits.len(),
+            SidePanel::Commits => {
+                if self.commit_tree_mode {
+                    self.commit_tree_nodes.len()
+                } else {
+                    self.commits.len()
+                }
+            }
             SidePanel::Stash => {
                 if self.stash_tree_mode {
                     self.stash_tree_nodes.len()
@@ -809,6 +849,17 @@ impl App {
         self.branches.get(idx).map(|b| b.name.clone())
     }
 
+    pub fn selected_commit_oid(&self) -> Option<String> {
+        if self.active_panel != SidePanel::Commits {
+            return None;
+        }
+        if self.commit_tree_mode {
+            return self.commit_tree_commit_oid.clone();
+        }
+        let idx = self.commits_panel.list_state.selected()?;
+        self.commits.get(idx).map(|c| c.oid.clone())
+    }
+
     pub fn selected_stash_index(&self) -> Option<usize> {
         if self.active_panel != SidePanel::Stash {
             return None;
@@ -902,6 +953,68 @@ impl App {
         }
     }
 
+    pub fn commit_open_tree_or_toggle_dir(&mut self) -> Result<()> {
+        if self.active_panel != SidePanel::Commits {
+            return Ok(());
+        }
+
+        if !self.commit_tree_mode {
+            let Some(oid) = self.selected_commit_oid() else {
+                return Ok(());
+            };
+            self.commit_tree_files = self.repo.commit_files(&oid)?;
+            self.commit_tree_expanded_dirs = collect_dirs_from_entries(&self.commit_tree_files);
+            self.commit_tree_commit_oid = Some(oid);
+            self.commit_tree_mode = true;
+            self.rebuild_commit_tree();
+            if self.commit_tree_nodes.is_empty() {
+                self.commits_panel.list_state.select(None);
+            } else {
+                self.commits_panel.list_state.select(Some(0));
+            }
+            return Ok(());
+        }
+
+        let Some(node) = self.selected_commit_tree_node() else {
+            return Ok(());
+        };
+        if !node.is_dir {
+            return Ok(());
+        }
+        let path = node.path.clone();
+        if self.commit_tree_expanded_dirs.contains(&path) {
+            self.commit_tree_expanded_dirs.remove(&path);
+        } else {
+            self.commit_tree_expanded_dirs.insert(path);
+        }
+        self.rebuild_commit_tree();
+        Ok(())
+    }
+
+    pub fn commit_close_tree(&mut self) {
+        if !self.commit_tree_mode {
+            return;
+        }
+        self.commit_tree_mode = false;
+        self.commit_tree_files.clear();
+        self.commit_tree_nodes.clear();
+        self.commit_tree_expanded_dirs.clear();
+
+        if let Some(ref oid) = self.commit_tree_commit_oid {
+            if let Some(idx) = self.commits.iter().position(|c| c.oid == *oid) {
+                self.commits_panel.list_state.select(Some(idx));
+                self.commit_tree_commit_oid = None;
+                return;
+            }
+        }
+        self.commit_tree_commit_oid = None;
+        if self.commits.is_empty() {
+            self.commits_panel.list_state.select(None);
+        } else {
+            self.commits_panel.list_state.select(Some(0));
+        }
+    }
+
     fn load_file_diff(&mut self, path: PathBuf, status: FileTreeNodeStatus) {
         self.current_diff = match &status {
             FileTreeNodeStatus::Staged(_) => self.repo.diff_staged(&path).unwrap_or_default(),
@@ -938,49 +1051,19 @@ impl App {
     }
 
     fn load_selected_commit_diff(&mut self) {
-        let Some(idx) = self.commits_panel.list_state.selected() else {
+        let Some(oid) = self.selected_commit_oid() else {
             self.current_diff.clear();
             return;
         };
-        let Some(commit) = self.commits.get(idx) else {
-            self.current_diff.clear();
-            return;
+        let path = if self.commit_tree_mode {
+            self.selected_commit_tree_node().map(|n| n.path.as_path())
+        } else {
+            None
         };
-
-        let mut lines = vec![
-            DiffLine {
-                kind: crate::git::DiffLineKind::Header,
-                content: format!("commit {}", commit.oid),
-            },
-            DiffLine {
-                kind: crate::git::DiffLineKind::Header,
-                content: format!("Author: {}", commit.author),
-            },
-            DiffLine {
-                kind: crate::git::DiffLineKind::Header,
-                content: format!("Date:   {}", commit.time),
-            },
-            DiffLine {
-                kind: crate::git::DiffLineKind::Header,
-                content: String::new(),
-            },
-            DiffLine {
-                kind: crate::git::DiffLineKind::Header,
-                content: format!("    {}", commit.message),
-            },
-            DiffLine {
-                kind: crate::git::DiffLineKind::Header,
-                content: String::new(),
-            },
-        ];
-
-        match self.repo.commit_diff(&commit.oid) {
-            Ok(mut patch) => {
-                lines.append(&mut patch);
-                self.current_diff = lines;
-            }
-            Err(_) => self.current_diff = lines,
-        }
+        self.current_diff = self
+            .repo
+            .commit_diff_scoped(&oid, path)
+            .unwrap_or_default();
     }
 
     fn load_selected_stash_diff(&mut self) {
@@ -1134,6 +1217,31 @@ impl App {
         self.keymap
             .first_panel_key(panel, action)
             .unwrap_or_else(|| fallback.to_string())
+    }
+
+    fn selected_commit_tree_node(&self) -> Option<&FileTreeNode> {
+        if self.active_panel != SidePanel::Commits || !self.commit_tree_mode {
+            return None;
+        }
+        let idx = self.commits_panel.list_state.selected()?;
+        self.commit_tree_nodes.get(idx)
+    }
+
+    fn rebuild_commit_tree(&mut self) {
+        let selected = self.commits_panel.list_state.selected();
+        self.commit_tree_nodes = FileTree::from_git_status_with_expanded(
+            &self.commit_tree_files,
+            &[],
+            &[],
+            &self.commit_tree_expanded_dirs,
+        );
+        let count = self.commit_tree_nodes.len();
+        if count == 0 {
+            self.commits_panel.list_state.select(None);
+            return;
+        }
+        let idx = selected.unwrap_or(0).min(count - 1);
+        self.commits_panel.list_state.select(Some(idx));
     }
 
     fn selected_stash_tree_node(&self) -> Option<&FileTreeNode> {

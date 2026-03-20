@@ -71,12 +71,14 @@ impl Default for Keymap {
         stash.insert("stash_apply".into(), vec!["a".into()]);
         stash.insert("stash_pop".into(), vec!["p".into()]);
         stash.insert("stash_drop".into(), vec!["d".into()]);
+        let mut commits = HashMap::new();
+        commits.insert("open_tree".into(), vec!["Enter".into()]);
 
         Self {
             global: GlobalKeymap::default(),
             files: PanelKeymap { bindings: files },
             branches: PanelKeymap { bindings: branches },
-            commits: PanelKeymap::default(),
+            commits: PanelKeymap { bindings: commits },
             stash: PanelKeymap { bindings: stash },
         }
     }

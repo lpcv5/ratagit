@@ -157,16 +157,25 @@ pub fn update(app: &mut App, msg: Message) -> Option<Command> {
             None
         }
 
-        Message::StashOpenTreeOrToggleDir => {
-            match app.stash_open_tree_or_toggle_dir() {
+        Message::RevisionOpenTreeOrToggleDir => {
+            let result = match app.active_panel {
+                SidePanel::Stash => app.stash_open_tree_or_toggle_dir(),
+                SidePanel::Commits => app.commit_open_tree_or_toggle_dir(),
+                _ => Ok(()),
+            };
+            match result {
                 Ok(()) => app.load_diff(),
-                Err(e) => app.push_log(format!("stash files failed: {}", e), false),
+                Err(e) => app.push_log(format!("revision files failed: {}", e), false),
             }
             None
         }
 
-        Message::StashCloseTree => {
-            app.stash_close_tree();
+        Message::RevisionCloseTree => {
+            match app.active_panel {
+                SidePanel::Stash => app.stash_close_tree(),
+                SidePanel::Commits => app.commit_close_tree(),
+                _ => {}
+            }
             app.load_diff();
             None
         }

@@ -7,6 +7,7 @@ pub mod command_log;
 pub mod shortcut_bar;
 pub mod commit_editor;
 pub mod stash_editor;
+pub mod revision_tree_panel;
 
 pub use files_panel::render_files_panel;
 pub use branches_panel::render_branches_panel;
