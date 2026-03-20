@@ -12,6 +12,7 @@ pub(crate) fn handle_navigation_message(app: &mut App, msg: Message) -> Option<C
             app.ensure_commits_loaded_for_active_panel();
             app.restore_search_for_active_scope();
             app.load_diff();
+            app.dirty.mark();
         }
         Message::PanelPrev => {
             app.active_panel = match app.active_panel {
@@ -23,6 +24,7 @@ pub(crate) fn handle_navigation_message(app: &mut App, msg: Message) -> Option<C
             app.ensure_commits_loaded_for_active_panel();
             app.restore_search_for_active_scope();
             app.load_diff();
+            app.dirty.mark();
         }
         Message::PanelGoto(n) => {
             app.active_panel = match n {
@@ -35,33 +37,46 @@ pub(crate) fn handle_navigation_message(app: &mut App, msg: Message) -> Option<C
             app.ensure_commits_loaded_for_active_panel();
             app.restore_search_for_active_scope();
             app.load_diff();
+            app.dirty.mark();
         }
         Message::ListDown => {
             app.list_down();
             app.request_diff_reload();
+            app.dirty.mark();
         }
         Message::ListUp => {
             app.list_up();
             app.request_diff_reload();
+            app.dirty.mark();
         }
         Message::ToggleDir => {
             app.toggle_selected_dir();
             app.load_diff();
+            app.dirty.mark();
         }
         Message::ToggleVisualSelectMode => {
             app.toggle_visual_select_mode();
             app.load_diff();
+            app.dirty.mark();
         }
         Message::CollapseAll => {
             app.collapse_all();
             app.load_diff();
+            app.dirty.mark();
         }
         Message::ExpandAll => {
             app.expand_all();
             app.load_diff();
+            app.dirty.mark();
         }
-        Message::DiffScrollUp => app.diff_scroll_up(),
-        Message::DiffScrollDown => app.diff_scroll_down(),
+        Message::DiffScrollUp => {
+            app.diff_scroll_up();
+            app.dirty.mark();
+        }
+        Message::DiffScrollDown => {
+            app.diff_scroll_down();
+            app.dirty.mark();
+        }
         Message::RefreshStatus => {
             app.request_refresh(RefreshKind::Full);
             if let Err(e) = app.flush_pending_refresh() {
@@ -69,6 +84,7 @@ pub(crate) fn handle_navigation_message(app: &mut App, msg: Message) -> Option<C
             } else {
                 app.push_log("refresh", true);
             }
+            app.dirty.mark();
         }
         _ => {}
     }

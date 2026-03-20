@@ -2,7 +2,9 @@
 
 mod app;
 mod command;
+mod diff_cache;
 mod diff_loader;
+mod dirty_flags;
 mod hints;
 mod input_mode;
 mod message;

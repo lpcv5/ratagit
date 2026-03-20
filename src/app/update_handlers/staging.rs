@@ -8,6 +8,7 @@ pub(crate) fn handle_staging_message(app: &mut App, msg: Message) -> Option<Comm
                     "commit: edit message/description then press Enter on message",
                     true,
                 );
+                app.dirty.mark();
             }
         }
         Message::PrepareCommitFromSelection => match app.prepare_commit_from_visual_selection() {
@@ -24,6 +25,7 @@ pub(crate) fn handle_staging_message(app: &mut App, msg: Message) -> Option<Comm
                         ),
                         true,
                     );
+                    app.dirty.mark();
                 }
             }
             Err(e) => app.push_log(format!("prepare commit failed: {}", e), false),
@@ -37,6 +39,7 @@ pub(crate) fn handle_staging_message(app: &mut App, msg: Message) -> Option<Comm
                     ),
                     true,
                 );
+                app.dirty.mark();
             }
             Err(e) => app.push_log(format!("selection toggle failed: {}", e), false),
         },
@@ -46,6 +49,7 @@ pub(crate) fn handle_staging_message(app: &mut App, msg: Message) -> Option<Comm
                 app.push_log(format!("stage failed {}: {}", display, e), false);
             } else {
                 app.push_log(format!("staged {}", display), true);
+                app.dirty.mark();
             }
         }
         Message::UnstageFile(path) => {
@@ -54,6 +58,7 @@ pub(crate) fn handle_staging_message(app: &mut App, msg: Message) -> Option<Comm
                 app.push_log(format!("unstage failed {}: {}", display, e), false);
             } else {
                 app.push_log(format!("unstaged {}", display), true);
+                app.dirty.mark();
             }
         }
         Message::DiscardSelection => {
@@ -68,6 +73,7 @@ pub(crate) fn handle_staging_message(app: &mut App, msg: Message) -> Option<Comm
                 app.push_log(format!("discarded {} path(s)", paths.len()), true);
                 app.files_visual_mode = false;
                 app.files_visual_anchor = None;
+                app.dirty.mark();
             }
         }
         Message::DiscardPaths(paths) => {
@@ -79,8 +85,10 @@ pub(crate) fn handle_staging_message(app: &mut App, msg: Message) -> Option<Comm
                 app.push_log(format!("discard failed: {}", e), false);
             } else if paths.len() == 1 {
                 app.push_log(format!("discarded {}", paths[0].display()), true);
+                app.dirty.mark();
             } else {
                 app.push_log(format!("discarded {} path(s)", paths.len()), true);
+                app.dirty.mark();
             }
         }
         _ => {}

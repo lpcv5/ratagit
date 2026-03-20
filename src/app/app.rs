@@ -1,4 +1,4 @@
-use super::{diff_loader, refresh, revision_tree};
+use super::{diff_cache, diff_loader, dirty_flags, refresh, revision_tree};
 use crate::config::keymap::{key_to_string, Keymap};
 use crate::git::{
     BranchInfo, CommitInfo, DiffLine, FileEntry, Git2Repository, GitRepository, GitStatus,
@@ -129,6 +129,10 @@ pub struct App {
     pending_diff_reload: bool,
     pending_diff_reload_at: Option<Instant>,
 
+    diff_cache: diff_cache::DiffCache,
+    last_diff_key: Option<diff_cache::DiffCacheKey>,
+    pub dirty: dirty_flags::DirtyFlags,
+
     keymap: Keymap,
 }
 
@@ -206,8 +210,12 @@ impl App {
             pending_refresh: None,
             pending_diff_reload: false,
             pending_diff_reload_at: None,
+            diff_cache: diff_cache::DiffCache::new(),
+            last_diff_key: None,
+            dirty: dirty_flags::DirtyFlags::default(),
             keymap,
         };
+        app.dirty.mark();
         app.load_diff();
         Ok(app)
     }
@@ -406,6 +414,8 @@ impl App {
         if matches!(kind, RefreshKind::Full) {
             self.commits_dirty = true;
         }
+        self.diff_cache.invalidate_files();
+        self.last_diff_key = None;
         self.pending_refresh = Some(match self.pending_refresh {
             None => kind,
             Some(existing) => Self::max_refresh_kind(existing, kind),
@@ -676,12 +686,70 @@ impl App {
     }
 
     pub fn load_diff(&mut self) {
-        self.diff_scroll = 0;
         let target = self.selected_diff_target();
-        self.current_diff =
-            diff_loader::load_diff(self.repo.as_ref(), &self.file_tree_nodes, target);
+        let key = self.diff_target_to_cache_key(&target);
+
+        // Check if same as last load
+        if let Some(ref last) = self.last_diff_key {
+            if last == &key {
+                return;
+            }
+        }
+
+        self.diff_scroll = 0;
+
+        // Try cache first
+        if let Some(cached) = self.diff_cache.get(&key) {
+            self.current_diff = cached.clone();
+        } else {
+            let diff = diff_loader::load_diff(self.repo.as_ref(), &self.file_tree_nodes, target);
+            self.diff_cache.insert(key.clone(), diff.clone());
+            self.current_diff = diff;
+        }
+
+        self.last_diff_key = Some(key);
         self.pending_diff_reload = false;
         self.pending_diff_reload_at = None;
+    }
+
+    fn diff_target_to_cache_key(&self, target: &diff_loader::DiffTarget) -> diff_cache::DiffCacheKey {
+        use diff_loader::DiffTarget;
+        use crate::ui::widgets::file_tree::FileTreeNodeStatus;
+
+        match target {
+            DiffTarget::File { path, status } => {
+                let is_staged = matches!(status, FileTreeNodeStatus::Staged(_));
+                diff_cache::DiffCacheKey::File {
+                    path: path.clone(),
+                    is_staged,
+                }
+            }
+            DiffTarget::Directory { path } => {
+                let hash = self.file_tree_nodes.iter()
+                    .filter(|n| n.path.starts_with(path))
+                    .map(|n| n.path.to_string_lossy().to_string())
+                    .collect::<Vec<_>>()
+                    .join("|")
+                    .bytes()
+                    .fold(0u64, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u64));
+                diff_cache::DiffCacheKey::Directory {
+                    path: path.clone(),
+                    files_hash: hash,
+                }
+            }
+            DiffTarget::Commit { oid, path } => diff_cache::DiffCacheKey::Commit {
+                oid: oid.clone(),
+                path: path.clone(),
+            },
+            DiffTarget::Stash { index, path } => diff_cache::DiffCacheKey::Stash {
+                index: *index,
+                path: path.clone(),
+            },
+            DiffTarget::None => diff_cache::DiffCacheKey::File {
+                path: PathBuf::new(),
+                is_staged: false,
+            },
+        }
     }
 
     pub fn commit_open_tree_or_toggle_dir(&mut self) -> Result<()> {
