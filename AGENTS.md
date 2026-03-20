@@ -38,6 +38,7 @@ Keep new features inside the existing layer boundaries (UI -> app messages -> gi
 ## Commit & Pull Request Guidelines
 - Follow Conventional Commit style seen in history: `feat: ...` (also use `fix:`, `refactor:`, `test:`, `docs:`).
 - Keep commits focused and compilable.
+- Use GitHub CLI `gh` for PR creation/review/merge operations. Do not use Graphite CLI `gt` in this repository workflow.
 - For all commits, use the repository owner's GitHub identity via `gh`:
   - Resolve username with `gh api user --jq ".login"` (current account: `lpcv5`).
   - Use email `lpengcheng149@gmail.com` for author/committer.
