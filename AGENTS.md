@@ -47,3 +47,5 @@ Keep new features inside the existing layer boundaries (UI -> app messages -> gi
 ## Agent-Specific Notes
 - Do not revert unrelated working-tree changes.
 - Prefer minimal, incremental patches and keep architecture docs in `docs/` in sync with behavior changes.
+- Use `.track/` as the only tracking source of truth.
+- For milestone planning/execution, always use the `project-tracker` skill workflow.

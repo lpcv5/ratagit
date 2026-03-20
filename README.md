@@ -2,7 +2,7 @@
 
 > A fast, intuitive terminal UI for Git operations, inspired by lazygit
 
-**Status**: Rolling milestone execution (M1 active)
+**Status**: Milestone execution tracked in `.track/`
 
 ## 项目概述
 
@@ -70,18 +70,16 @@ cargo run
 - **TEA 主干**: 全局状态、消息驱动、纯函数更新
 - **Component 辅助**: View trait 封装渲染和事件处理
 
-架构与路线说明见 [docs/DECISIONS.md](docs/DECISIONS.md) 与 [docs/MILESTONES.md](docs/MILESTONES.md)
+架构与路线说明见 [docs/DECISIONS.md](docs/DECISIONS.md) 与 [docs/DEVELOPMENT_MODEL.md](docs/DEVELOPMENT_MODEL.md)
 
 ## Development Tracking
 
-See [docs/DEVELOPMENT_MODEL.md](docs/DEVELOPMENT_MODEL.md) for the process model, [docs/MILESTONES.md](docs/MILESTONES.md) for milestone index, and [docs/STATUS.md](docs/STATUS.md) for live tracking.
+Use the `.track/` workspace and the `project-tracker` skill for all planning/execution tracking.
+See [docs/DEVELOPMENT_MODEL.md](docs/DEVELOPMENT_MODEL.md) for the process model.
 
 ## 文档
 
 - [开发模型](docs/DEVELOPMENT_MODEL.md)
-- [里程碑索引](docs/MILESTONES.md)
-- [状态看板](docs/STATUS.md)
-- [当前里程碑 M1](docs/milestones/M1_CORE_WORKFLOW_HARDENING.md)
 - [技术决策](docs/DECISIONS.md)
 
 ## 贡献
