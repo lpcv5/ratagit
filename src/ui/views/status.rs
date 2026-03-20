@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 
 use crate::app::{App, Message};
-use crate::ui::View;
 use crate::git::FileStatus;
+use crate::ui::View;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -91,11 +91,13 @@ impl View for StatusView {
 
             // Comment in English.
             if !app.status.unstaged.is_empty() {
-                items.push(ListItem::new("=== Unstaged ===").style(
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD),
-                ));
+                items.push(
+                    ListItem::new("=== Unstaged ===").style(
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                );
                 for file in &app.status.unstaged {
                     let status_text = Self::get_status_text(&file.status);
                     let color = Self::get_status_color(&file.status);
@@ -106,11 +108,13 @@ impl View for StatusView {
 
             // Comment in English.
             if !app.status.untracked.is_empty() {
-                items.push(ListItem::new("=== Untracked ===").style(
-                    Style::default()
-                        .fg(Color::Gray)
-                        .add_modifier(Modifier::BOLD),
-                ));
+                items.push(
+                    ListItem::new("=== Untracked ===").style(
+                        Style::default()
+                            .fg(Color::Gray)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                );
                 for file in &app.status.untracked {
                     let text = format!("??? {}", file.path.display());
                     items.push(ListItem::new(text).style(Style::default().fg(Color::Gray)));

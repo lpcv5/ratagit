@@ -13,6 +13,7 @@ This folder is organized so new contributors can find behavior quickly.
 - `panel_nav.rs`: active panel counting and list navigation behavior.
 - `input_mode.rs`: commit/branch/stash editor input state transitions.
 - `selection.rs`: visual selection, batch stage/unstage target extraction, and selection-scoped commit/stash helpers.
+- `search.rs`: in-panel search scope, query matching, and vim-style next/prev jumps.
 - `selectors.rs`: active-panel selection helpers (selected file/branch/commit/stash and diff target selection).
 - `hints.rs`: shortcut hint composition and key-display mapping.
 - `refresh.rs`: status refresh and file-tree rebuild/expand-collapse helpers.

@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::mpsc::{self, Receiver};
+use std::thread;
 use thiserror::Error;
 
 /// Documentation comment in English.
@@ -137,7 +139,11 @@ pub trait GitRepository {
     fn stash_files(&self, index: usize) -> Result<Vec<FileEntry>, GitError>;
 
     /// Documentation comment in English.
-    fn stash_diff(&self, index: usize, path: Option<&std::path::Path>) -> Result<Vec<DiffLine>, GitError>;
+    fn stash_diff(
+        &self,
+        index: usize,
+        path: Option<&std::path::Path>,
+    ) -> Result<Vec<DiffLine>, GitError>;
 
     /// Documentation comment in English.
     fn stash_push_paths(&self, paths: &[PathBuf], message: &str) -> Result<usize, GitError>;
@@ -152,7 +158,11 @@ pub trait GitRepository {
     fn stash_drop(&self, index: usize) -> Result<(), GitError>;
 
     /// Documentation comment in English.
-    fn commit_diff_scoped(&self, oid: &str, path: Option<&std::path::Path>) -> Result<Vec<DiffLine>, GitError>;
+    fn commit_diff_scoped(
+        &self,
+        oid: &str,
+        path: Option<&std::path::Path>,
+    ) -> Result<Vec<DiffLine>, GitError>;
 
     /// Documentation comment in English.
     fn commit(&self, message: &str) -> Result<String, GitError>;
@@ -167,7 +177,7 @@ pub trait GitRepository {
     fn delete_branch(&self, name: &str) -> Result<(), GitError>;
 
     /// Documentation comment in English.
-    fn fetch_default(&self) -> Result<String, GitError>;
+    fn fetch_default_async(&self) -> Result<Receiver<Result<String, GitError>>, GitError>;
 }
 
 /// Documentation comment in English.
@@ -210,8 +220,7 @@ impl Git2Repository {
         match self.repo.signature() {
             Ok(sig) => Ok(sig),
             Err(_) => {
-                Ok(git2::Signature::now("ratagit", "ratagit@localhost")
-                    .map_err(GitError::from)?)
+                Ok(git2::Signature::now("ratagit", "ratagit@localhost").map_err(GitError::from)?)
             }
         }
     }
@@ -262,6 +271,23 @@ impl Git2Repository {
         Err(GitError::Git2(detail))
     }
 
+    fn run_git_in_dir(repo_root: PathBuf, args: &[String]) -> Result<String, GitError> {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(repo_root)
+            .output()
+            .map_err(|e| GitError::Git2(format!("failed to run git {:?}: {}", args, e)))?;
+
+        if output.status.success() {
+            return Ok(String::from_utf8_lossy(&output.stdout).trim().to_string());
+        }
+
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let detail = if stderr.is_empty() { stdout } else { stderr };
+        Err(GitError::Git2(detail))
+    }
+
     fn resolve_ref_oid(&self, refname: &str) -> Option<git2::Oid> {
         self.repo
             .find_reference(refname)
@@ -272,7 +298,10 @@ impl Git2Repository {
     fn upstream_oid(&self) -> Option<git2::Oid> {
         let head = self.repo.head().ok()?;
         let local_name = head.shorthand()?;
-        let local = self.repo.find_branch(local_name, git2::BranchType::Local).ok()?;
+        let local = self
+            .repo
+            .find_branch(local_name, git2::BranchType::Local)
+            .ok()?;
         let upstream = local.upstream().ok()?;
         upstream.get().target()
     }
@@ -284,15 +313,21 @@ impl Git2Repository {
         upstream_tip: Option<git2::Oid>,
     ) -> CommitSyncState {
         if let Some(main_tip) = main_tip {
-            if main_tip == oid || self.repo.graph_descendant_of(main_tip, oid).unwrap_or(false) {
+            if main_tip == oid
+                || self
+                    .repo
+                    .graph_descendant_of(main_tip, oid)
+                    .unwrap_or(false)
+            {
                 return CommitSyncState::Main;
             }
         }
         if let Some(upstream_tip) = upstream_tip {
-            if upstream_tip == oid || self
-                .repo
-                .graph_descendant_of(upstream_tip, oid)
-                .unwrap_or(false)
+            if upstream_tip == oid
+                || self
+                    .repo
+                    .graph_descendant_of(upstream_tip, oid)
+                    .unwrap_or(false)
             {
                 return CommitSyncState::RemoteSynced;
             }
@@ -352,10 +387,7 @@ impl GitRepository for Git2Repository {
         }
 
         let mut index = self.repo.index()?;
-        let specs: Vec<&str> = paths
-            .iter()
-            .filter_map(|p| p.to_str())
-            .collect();
+        let specs: Vec<&str> = paths.iter().filter_map(|p| p.to_str()).collect();
         index.add_all(specs, git2::IndexAddOption::DEFAULT, None)?;
         index.write()?;
         Ok(())
@@ -371,11 +403,10 @@ impl GitRepository for Git2Repository {
         }
 
         let head = self.repo.head()?.target().ok_or(GitError::InvalidState)?;
-        let commit_obj = self.repo.find_object(head, Some(git2::ObjectType::Commit))?;
-        let specs: Vec<&str> = paths
-            .iter()
-            .filter_map(|p| p.to_str())
-            .collect();
+        let commit_obj = self
+            .repo
+            .find_object(head, Some(git2::ObjectType::Commit))?;
+        let specs: Vec<&str> = paths.iter().filter_map(|p| p.to_str()).collect();
         self.repo.reset_default(Some(&commit_obj), specs)?;
 
         Ok(())
@@ -389,32 +420,42 @@ impl GitRepository for Git2Repository {
     }
 
     fn diff_staged(&self, path: &std::path::Path) -> Result<Vec<DiffLine>, GitError> {
-        let head_tree = self.repo.head().ok()
-            .and_then(|h| h.peel_to_tree().ok());
+        let head_tree = self.repo.head().ok().and_then(|h| h.peel_to_tree().ok());
 
         let mut opts = git2::DiffOptions::new();
         opts.pathspec(path.to_str().unwrap_or(""));
 
-        let diff = self.repo.diff_tree_to_index(head_tree.as_ref(), None, Some(&mut opts))?;
+        let diff = self
+            .repo
+            .diff_tree_to_index(head_tree.as_ref(), None, Some(&mut opts))?;
         Ok(parse_diff(&diff))
     }
 
     fn diff_untracked(&self, path: &std::path::Path) -> Result<Vec<DiffLine>, GitError> {
         let workdir = self.repo.workdir().ok_or(GitError::InvalidState)?;
         let full_path = workdir.join(path);
-        let content = std::fs::read_to_string(&full_path)
-            .unwrap_or_else(|_| String::from("<binary file>"));
+        let content =
+            std::fs::read_to_string(&full_path).unwrap_or_else(|_| String::from("<binary file>"));
 
         let header = format!("--- /dev/null\n+++ b/{}", path.display());
-        let mut lines = vec![DiffLine { kind: DiffLineKind::Header, content: header }];
+        let mut lines = vec![DiffLine {
+            kind: DiffLineKind::Header,
+            content: header,
+        }];
         for line in content.lines() {
-            lines.push(DiffLine { kind: DiffLineKind::Added, content: line.to_string() });
+            lines.push(DiffLine {
+                kind: DiffLineKind::Added,
+                content: line.to_string(),
+            });
         }
         Ok(lines)
     }
 
     fn branches(&self) -> Result<Vec<BranchInfo>, GitError> {
-        let head_name = self.repo.head().ok()
+        let head_name = self
+            .repo
+            .head()
+            .ok()
             .and_then(|h| h.shorthand().map(|s| s.to_string()));
 
         let mut result = Vec::new();
@@ -508,11 +549,15 @@ impl GitRepository for Git2Repository {
             };
             match self.repo.find_reference(&refname) {
                 Ok(r) => {
-                    let msg = r.peel_to_commit()
+                    let msg = r
+                        .peel_to_commit()
                         .ok()
                         .and_then(|c| c.summary().map(|s| s.to_string()))
                         .unwrap_or_else(|| format!("stash@{{{}}}", index));
-                    result.push(StashInfo { index, message: msg });
+                    result.push(StashInfo {
+                        index,
+                        message: msg,
+                    });
                     index += 1;
                 }
                 Err(_) => break,
@@ -523,7 +568,8 @@ impl GitRepository for Git2Repository {
 
     fn stash_files(&self, index: usize) -> Result<Vec<FileEntry>, GitError> {
         let spec = format!("stash@{{{}}}", index);
-        let output = self.run_git(&["stash", "show", "--name-status", "--pretty=format:", &spec])?;
+        let output =
+            self.run_git(&["stash", "show", "--name-status", "--pretty=format:", &spec])?;
         let mut files = Vec::new();
 
         for line in output.lines() {
@@ -556,13 +602,14 @@ impl GitRepository for Git2Repository {
         Ok(files)
     }
 
-    fn stash_diff(&self, index: usize, path: Option<&std::path::Path>) -> Result<Vec<DiffLine>, GitError> {
+    fn stash_diff(
+        &self,
+        index: usize,
+        path: Option<&std::path::Path>,
+    ) -> Result<Vec<DiffLine>, GitError> {
         let spec = format!("stash@{{{}}}", index);
         let mut args = if path.is_some() {
-            vec![
-                "show".to_string(),
-                spec,
-            ]
+            vec!["show".to_string(), spec]
         } else {
             vec![
                 "stash".to_string(),
@@ -574,7 +621,9 @@ impl GitRepository for Git2Repository {
 
         if let Some(path) = path {
             let Some(path_str) = path.to_str() else {
-                return Err(GitError::Git2("stash path contains invalid unicode".to_string()));
+                return Err(GitError::Git2(
+                    "stash path contains invalid unicode".to_string(),
+                ));
             };
             args.push("--".to_string());
             args.push(path_str.to_string());
@@ -600,7 +649,9 @@ impl GitRepository for Git2Repository {
         ];
         for path in paths {
             let Some(path_str) = path.to_str() else {
-                return Err(GitError::Git2("stash path contains invalid unicode".to_string()));
+                return Err(GitError::Git2(
+                    "stash path contains invalid unicode".to_string(),
+                ));
             };
             args.push(path_str.to_string());
         }
@@ -608,7 +659,9 @@ impl GitRepository for Git2Repository {
         self.run_git_owned(&args)?;
         let after = self.stashes()?;
         if after.len() <= before {
-            return Err(GitError::Git2("no local changes in selected paths to stash".to_string()));
+            return Err(GitError::Git2(
+                "no local changes in selected paths to stash".to_string(),
+            ));
         }
         Ok(after[0].index)
     }
@@ -631,7 +684,11 @@ impl GitRepository for Git2Repository {
         Ok(())
     }
 
-    fn commit_diff_scoped(&self, oid: &str, path: Option<&std::path::Path>) -> Result<Vec<DiffLine>, GitError> {
+    fn commit_diff_scoped(
+        &self,
+        oid: &str,
+        path: Option<&std::path::Path>,
+    ) -> Result<Vec<DiffLine>, GitError> {
         let mut args = vec![
             "show".to_string(),
             "--pretty=format:".to_string(),
@@ -639,7 +696,9 @@ impl GitRepository for Git2Repository {
         ];
         if let Some(path) = path {
             let Some(path_str) = path.to_str() else {
-                return Err(GitError::Git2("commit path contains invalid unicode".to_string()));
+                return Err(GitError::Git2(
+                    "commit path contains invalid unicode".to_string(),
+                ));
             };
             args.push("--".to_string());
             args.push(path_str.to_string());
@@ -660,7 +719,9 @@ impl GitRepository for Git2Repository {
                 self.repo
                     .commit(Some("HEAD"), &sig, &sig, message, &tree, &[&parent])?
             }
-            Err(_) => self.repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &[])?,
+            Err(_) => self
+                .repo
+                .commit(Some("HEAD"), &sig, &sig, message, &tree, &[])?,
         };
 
         Ok(commit_id.to_string())
@@ -688,22 +749,30 @@ impl GitRepository for Git2Repository {
         Ok(())
     }
 
-    fn fetch_default(&self) -> Result<String, GitError> {
+    fn fetch_default_async(&self) -> Result<Receiver<Result<String, GitError>>, GitError> {
+        let repo_root = self.repo_root()?;
         let upstream = self.run_git(&["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
         let remote = match upstream {
             Ok(name) => parse_remote_from_upstream(&name).unwrap_or_else(|| "origin".to_string()),
             Err(_) => "origin".to_string(),
         };
 
-        self.run_git(&["fetch", "--prune", &remote])?;
-        Ok(remote)
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            let args = vec!["fetch".to_string(), "--prune".to_string(), remote.clone()];
+            let result = Self::run_git_in_dir(repo_root, &args).map(|_| remote);
+            let _ = tx.send(result);
+        });
+        Ok(rx)
     }
 }
 
 fn parse_diff(diff: &git2::Diff) -> Vec<DiffLine> {
     let mut lines = Vec::new();
     let _ = diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
-        let content = String::from_utf8_lossy(line.content()).trim_end_matches('\n').to_string();
+        let content = String::from_utf8_lossy(line.content())
+            .trim_end_matches('\n')
+            .to_string();
         let kind = match line.origin() {
             '+' => DiffLineKind::Added,
             '-' => DiffLineKind::Removed,
@@ -805,7 +874,8 @@ mod tests {
             .iter()
             .any(|f| f.path == std::path::Path::new("tracked.txt")));
 
-        repo.unstage(&PathBuf::from("tracked.txt")).expect("unstage");
+        repo.unstage(&PathBuf::from("tracked.txt"))
+            .expect("unstage");
         let status = repo.status().expect("status after unstage");
         assert!(status
             .unstaged
@@ -828,13 +898,13 @@ mod tests {
         assert_eq!(commits[0].oid, oid);
         assert_eq!(commits[0].sync_state, CommitSyncState::Main);
 
-        let patch = repo
-            .commit_diff_scoped(&oid, None)
-            .expect("commit diff");
+        let patch = repo.commit_diff_scoped(&oid, None).expect("commit diff");
         assert!(!patch.is_empty());
 
         let files = repo.commit_files(&oid).expect("commit files");
-        assert!(files.iter().any(|f| f.path == std::path::Path::new("new.txt")));
+        assert!(files
+            .iter()
+            .any(|f| f.path == std::path::Path::new("new.txt")));
 
         let scoped = repo
             .commit_diff_scoped(&oid, Some(std::path::Path::new("new.txt")))
@@ -859,7 +929,9 @@ mod tests {
             .iter()
             .any(|b| b.name == "feature/a" && b.is_current));
 
-        repo.checkout_branch("master").or_else(|_| repo.checkout_branch("main")).expect("checkout default branch");
+        repo.checkout_branch("master")
+            .or_else(|_| repo.checkout_branch("main"))
+            .expect("checkout default branch");
         repo.delete_branch("feature/a").expect("delete branch");
         assert!(!repo
             .branches()
@@ -895,8 +967,7 @@ mod tests {
         let (dir, repo) = init_repo_with_commit();
         write_file(&dir.path().join("tracked.txt"), "v3\n");
 
-        repo
-            .stash_push_paths(&[PathBuf::from("tracked.txt")], "wip pop")
+        repo.stash_push_paths(&[PathBuf::from("tracked.txt")], "wip pop")
             .expect("stash push");
         assert_eq!(repo.stashes().expect("stashes after push").len(), 1);
 
@@ -915,19 +986,19 @@ mod tests {
         write_file(&dir.path().join("tracked.txt"), "tracked changed\n");
         write_file(&dir.path().join("other.txt"), "other changed\n");
 
-        repo
-            .stash_push_paths(&[PathBuf::from("tracked.txt")], "partial")
+        repo.stash_push_paths(&[PathBuf::from("tracked.txt")], "partial")
             .expect("stash push selected path");
 
         let status = repo.status().expect("status after partial stash");
-        assert!(!repo.stashes().expect("stashes after partial push").is_empty());
-        assert!(
-            status
-                .unstaged
-                .iter()
-                .chain(status.untracked.iter())
-                .any(|f| f.path == std::path::Path::new("other.txt"))
-        );
+        assert!(!repo
+            .stashes()
+            .expect("stashes after partial push")
+            .is_empty());
+        assert!(status
+            .unstaged
+            .iter()
+            .chain(status.untracked.iter())
+            .any(|f| f.path == std::path::Path::new("other.txt")));
     }
 
     #[test]
@@ -935,8 +1006,7 @@ mod tests {
         let (dir, repo) = init_repo_with_commit();
         write_file(&dir.path().join("tracked.txt"), "v2\n");
 
-        repo
-            .stash_push_paths(&[PathBuf::from("tracked.txt")], "diff path")
+        repo.stash_push_paths(&[PathBuf::from("tracked.txt")], "diff path")
             .expect("stash push for diff");
 
         let diff = repo

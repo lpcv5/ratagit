@@ -25,10 +25,12 @@ pub enum Message {
 
     // Comment in English.
     StartCommitInput,
+    StartSearchInput,
     StartBranchCreateInput,
     CheckoutSelectedBranch,
     DeleteSelectedBranch,
     FetchRemote,
+    FetchRemoteFinished(Result<String, String>),
     Commit(String),
     CreateBranch(String),
     StageFile(std::path::PathBuf),
@@ -46,6 +48,10 @@ pub enum Message {
     StashPopSelected,
     StashDropSelected,
     RefreshStatus,
-
+    SearchSetQuery(String),
+    SearchConfirm,
+    SearchClear,
+    SearchNext,
+    SearchPrev,
     // Comment in English.
 }

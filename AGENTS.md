@@ -38,11 +38,22 @@ Keep new features inside the existing layer boundaries (UI -> app messages -> gi
 ## Commit & Pull Request Guidelines
 - Follow Conventional Commit style seen in history: `feat: ...` (also use `fix:`, `refactor:`, `test:`, `docs:`).
 - Keep commits focused and compilable.
+- Use GitHub CLI `gh` for PR creation/review/merge operations. Do not use Graphite CLI `gt` in this repository workflow.
+- For all commits, use the repository owner's GitHub identity via `gh`:
+  - Resolve username with `gh api user --jq ".login"` (current account: `lpcv5`).
+  - Use email `lpengcheng149@gmail.com` for author/committer.
+  - Set explicit identity in commit command when needed (`git -c user.name=... -c user.email=... commit ...`).
 - PRs should include:
   - What changed and why.
   - Linked issue/task (if any).
   - Verification steps (`cargo check`, `cargo test`, `cargo clippy`).
   - Screenshots or terminal captures for UI changes.
+
+## Branch Workflow
+- Default development branch is `dev`.
+- Implement and commit changes on `dev` unless explicitly instructed otherwise.
+- Sync `master` into `dev` using rebase flow (`git checkout dev` -> `git fetch origin` -> `git rebase origin/master`).
+- Prefer rebase over merge commits when integrating `master` into `dev`.
 
 ## Agent-Specific Notes
 - Do not revert unrelated working-tree changes.

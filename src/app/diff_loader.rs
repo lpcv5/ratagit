@@ -36,9 +36,9 @@ pub fn load_diff(
         DiffTarget::Commit { oid, path } => repo
             .commit_diff_scoped(&oid, path.as_deref())
             .unwrap_or_default(),
-        DiffTarget::Stash { index, path } => repo
-            .stash_diff(index, path.as_deref())
-            .unwrap_or_default(),
+        DiffTarget::Stash { index, path } => {
+            repo.stash_diff(index, path.as_deref()).unwrap_or_default()
+        }
     }
 }
 

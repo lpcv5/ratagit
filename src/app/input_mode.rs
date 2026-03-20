@@ -1,4 +1,4 @@
-use crate::app::{App, CommitFieldFocus, InputMode, Message};
+use crate::app::{App, CommitFieldFocus, InputMode, Message, RefreshKind};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::path::PathBuf;
 
@@ -8,6 +8,9 @@ impl App {
 
         match key.code {
             KeyCode::Esc => {
+                if mode == InputMode::Search {
+                    self.clear_search();
+                }
                 self.cancel_input();
                 None
             }
@@ -20,6 +23,7 @@ impl App {
                     None
                 }
                 InputMode::CreateBranch | InputMode::StashEditor => None,
+                InputMode::Search => None,
             },
             KeyCode::Enter => match mode {
                 InputMode::CommitEditor => match self.commit_focus {
@@ -77,6 +81,10 @@ impl App {
                         paths,
                     })
                 }
+                InputMode::Search => {
+                    self.confirm_search_input();
+                    Some(Message::SearchConfirm)
+                }
             },
             KeyCode::Backspace => match mode {
                 InputMode::CommitEditor => {
@@ -97,6 +105,10 @@ impl App {
                 InputMode::StashEditor => {
                     self.stash_message_buffer.pop();
                     None
+                }
+                InputMode::Search => {
+                    self.input_buffer.pop();
+                    Some(Message::SearchSetQuery(self.input_buffer.clone()))
                 }
             },
             KeyCode::Char(c) => {
@@ -119,6 +131,10 @@ impl App {
                         self.stash_message_buffer.push(c);
                         None
                     }
+                    InputMode::Search => {
+                        self.input_buffer.push(c);
+                        Some(Message::SearchSetQuery(self.input_buffer.clone()))
+                    }
                 }
             }
             _ => None,
@@ -134,8 +150,17 @@ impl App {
 
     pub fn start_commit_editor_guarded(&mut self) -> bool {
         if self.status.staged.is_empty() {
-            self.push_log("nothing staged to commit", false);
-            return false;
+            if self.pending_refresh_kind().is_some() {
+                self.request_refresh(RefreshKind::StatusOnly);
+                if let Err(e) = self.flush_pending_refresh() {
+                    self.push_log(format!("refresh failed: {}", e), false);
+                    return false;
+                }
+            }
+            if self.status.staged.is_empty() {
+                self.push_log("nothing staged to commit", false);
+                return false;
+            }
         }
         self.start_commit_editor();
         true

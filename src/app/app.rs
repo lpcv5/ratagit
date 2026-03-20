@@ -1,17 +1,22 @@
+use super::{diff_loader, refresh, revision_tree};
 use crate::config::keymap::{key_to_string, Keymap};
-use crate::git::{Git2Repository, GitRepository, GitStatus, DiffLine, BranchInfo, CommitInfo, StashInfo, FileEntry};
+use crate::git::{
+    BranchInfo, CommitInfo, DiffLine, FileEntry, Git2Repository, GitRepository, GitStatus,
+    StashInfo,
+};
 use crate::ui::layout::render_layout;
 use crate::ui::widgets::file_tree::{FileTree, FileTreeNode};
-use super::{diff_loader, refresh, revision_tree};
 use color_eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::widgets::ListState;
 use ratatui::Frame;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::mpsc::Receiver;
+use std::thread;
 
 /// Documentation comment in English.
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum SidePanel {
     #[default]
     Files,
@@ -44,12 +49,27 @@ pub enum InputMode {
     CommitEditor,
     CreateBranch,
     StashEditor,
+    Search,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CommitFieldFocus {
     Message,
     Description,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RefreshKind {
+    StatusOnly,
+    StatusAndRefs,
+    Full,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct SearchScopeKey {
+    pub panel: SidePanel,
+    pub commit_tree_mode: bool,
+    pub stash_tree_mode: bool,
 }
 
 /// Documentation comment in English.
@@ -71,10 +91,12 @@ pub struct App {
     pub branches_panel: PanelState,
     pub commits_panel: PanelState,
     pub stash_panel: PanelState,
+    pub is_fetching_remote: bool,
 
     pub command_log: Vec<CommandLogEntry>,
     pub branches: Vec<BranchInfo>,
     pub commits: Vec<CommitInfo>,
+    commits_dirty: bool,
     pub commit_tree_mode: bool,
     pub commit_tree_nodes: Vec<FileTreeNode>,
     commit_tree_files: Vec<FileEntry>,
@@ -96,6 +118,13 @@ pub struct App {
     pub commit_focus: CommitFieldFocus,
     pub stash_message_buffer: String,
     pub stash_targets: Vec<PathBuf>,
+    pub search_query: String,
+    pub(super) search_matches: Vec<usize>,
+    pub(super) search_scope_panel: SidePanel,
+    pub(super) search_scope_commit_tree_mode: bool,
+    pub(super) search_scope_stash_tree_mode: bool,
+    pub(super) search_queries: HashMap<SearchScopeKey, String>,
+    pending_refresh: Option<RefreshKind>,
 
     keymap: Keymap,
 }
@@ -124,7 +153,7 @@ impl App {
         );
 
         let branches = repo.branches().unwrap_or_default();
-        let commits = repo.commits(200).unwrap_or_default();
+        let commits = repo.commits(100).unwrap_or_default();
         let stashes = repo.stashes().unwrap_or_default();
 
         let mut app = Self {
@@ -140,9 +169,11 @@ impl App {
             branches_panel: PanelState::new(),
             commits_panel: PanelState::new(),
             stash_panel: PanelState::new(),
+            is_fetching_remote: false,
             command_log: Vec::new(),
             branches,
             commits,
+            commits_dirty: false,
             commit_tree_mode: false,
             commit_tree_nodes: Vec::new(),
             commit_tree_files: Vec::new(),
@@ -163,6 +194,13 @@ impl App {
             commit_focus: CommitFieldFocus::Message,
             stash_message_buffer: String::new(),
             stash_targets: Vec::new(),
+            search_query: String::new(),
+            search_matches: Vec::new(),
+            search_scope_panel: SidePanel::Files,
+            search_scope_commit_tree_mode: false,
+            search_scope_stash_tree_mode: false,
+            search_queries: HashMap::new(),
+            pending_refresh: None,
             keymap,
         };
         app.load_diff();
@@ -174,7 +212,13 @@ impl App {
         if self.input_mode.is_some() {
             return self.handle_input_key(key);
         }
-        if key.code == KeyCode::Esc && self.active_panel == SidePanel::Files && self.files_visual_mode {
+        if key.code == KeyCode::Esc && self.has_search_query_for_active_scope() {
+            return Some(Message::SearchClear);
+        }
+        if key.code == KeyCode::Esc
+            && self.active_panel == SidePanel::Files
+            && self.files_visual_mode
+        {
             return Some(Message::ToggleVisualSelectMode);
         }
         if key.code == KeyCode::Esc
@@ -185,28 +229,63 @@ impl App {
         }
 
         let k = key_to_string(&key);
-        if k.is_empty() { return None; }
+        if k.is_empty() {
+            return None;
+        }
 
         let gm = |action| self.keymap.global_matches(action, &k);
 
         // Comment in English.
-        if gm("quit")              { return Some(Message::Quit); }
-        if gm("list_up")           { return Some(Message::ListUp); }
-        if gm("list_down")         { return Some(Message::ListDown); }
-        if gm("panel_next")        { return Some(Message::PanelNext); }
-        if gm("panel_prev")        { return Some(Message::PanelPrev); }
-        if gm("refresh")           { return Some(Message::RefreshStatus); }
-        if gm("diff_scroll_up")    { return Some(Message::DiffScrollUp); }
-        if gm("diff_scroll_down")  { return Some(Message::DiffScrollDown); }
-        if gm("panel_1")           { return Some(Message::PanelGoto(1)); }
-        if gm("panel_2")           { return Some(Message::PanelGoto(2)); }
-        if gm("panel_3")           { return Some(Message::PanelGoto(3)); }
-        if gm("panel_4")           { return Some(Message::PanelGoto(4)); }
+        if gm("quit") {
+            return Some(Message::Quit);
+        }
+        if gm("list_up") {
+            return Some(Message::ListUp);
+        }
+        if gm("list_down") {
+            return Some(Message::ListDown);
+        }
+        if gm("panel_next") {
+            return Some(Message::PanelNext);
+        }
+        if gm("panel_prev") {
+            return Some(Message::PanelPrev);
+        }
+        if gm("refresh") {
+            return Some(Message::RefreshStatus);
+        }
+        if gm("diff_scroll_up") {
+            return Some(Message::DiffScrollUp);
+        }
+        if gm("diff_scroll_down") {
+            return Some(Message::DiffScrollDown);
+        }
+        if gm("panel_1") {
+            return Some(Message::PanelGoto(1));
+        }
+        if gm("panel_2") {
+            return Some(Message::PanelGoto(2));
+        }
+        if gm("panel_3") {
+            return Some(Message::PanelGoto(3));
+        }
+        if gm("panel_4") {
+            return Some(Message::PanelGoto(4));
+        }
         if gm("commit") {
             if self.active_panel == SidePanel::Files && self.files_visual_mode {
                 return Some(Message::PrepareCommitFromSelection);
             }
             return Some(Message::StartCommitInput);
+        }
+        if gm("search_start") {
+            return Some(Message::StartSearchInput);
+        }
+        if gm("search_next") && self.has_search_for_active_scope() {
+            return Some(Message::SearchNext);
+        }
+        if gm("search_prev") && self.has_search_for_active_scope() {
+            return Some(Message::SearchPrev);
         }
 
         // Comment in English.
@@ -221,19 +300,45 @@ impl App {
                 return Some(msg);
             }
         }
-        if pm("stash_push") { return Some(Message::StartStashInput); }
-        if pm("toggle_visual_select") { return Some(Message::ToggleVisualSelectMode); }
-        if pm("toggle_dir")   { return Some(Message::ToggleDir); }
-        if pm("collapse_all") { return Some(Message::CollapseAll); }
-        if pm("expand_all")   { return Some(Message::ExpandAll); }
-        if pm("checkout_branch") { return Some(Message::CheckoutSelectedBranch); }
-        if pm("create_branch") { return Some(Message::StartBranchCreateInput); }
-        if pm("delete_branch") { return Some(Message::DeleteSelectedBranch); }
-        if pm("fetch_remote") { return Some(Message::FetchRemote); }
-        if pm("open_tree") { return Some(Message::RevisionOpenTreeOrToggleDir); }
-        if pm("stash_apply") { return Some(Message::StashApplySelected); }
-        if pm("stash_pop") { return Some(Message::StashPopSelected); }
-        if pm("stash_drop") { return Some(Message::StashDropSelected); }
+        if pm("stash_push") {
+            return Some(Message::StartStashInput);
+        }
+        if pm("toggle_visual_select") {
+            return Some(Message::ToggleVisualSelectMode);
+        }
+        if pm("toggle_dir") {
+            return Some(Message::ToggleDir);
+        }
+        if pm("collapse_all") {
+            return Some(Message::CollapseAll);
+        }
+        if pm("expand_all") {
+            return Some(Message::ExpandAll);
+        }
+        if pm("checkout_branch") {
+            return Some(Message::CheckoutSelectedBranch);
+        }
+        if pm("create_branch") {
+            return Some(Message::StartBranchCreateInput);
+        }
+        if pm("delete_branch") {
+            return Some(Message::DeleteSelectedBranch);
+        }
+        if pm("fetch_remote") {
+            return Some(Message::FetchRemote);
+        }
+        if pm("open_tree") {
+            return Some(Message::RevisionOpenTreeOrToggleDir);
+        }
+        if pm("stash_apply") {
+            return Some(Message::StashApplySelected);
+        }
+        if pm("stash_pop") {
+            return Some(Message::StashPopSelected);
+        }
+        if pm("stash_drop") {
+            return Some(Message::StashDropSelected);
+        }
 
         None
     }
@@ -242,51 +347,74 @@ impl App {
         render_layout(frame, self);
     }
 
-    pub fn refresh_status(&mut self) -> Result<()> {
+    fn apply_refresh(&mut self, kind: RefreshKind) -> Result<()> {
         self.status = self.repo.status()?;
         let new_dirs = refresh::collect_all_dirs(&self.status);
         for d in new_dirs {
             self.expanded_dirs.insert(d);
         }
         self.rebuild_tree();
-        self.branches = self.repo.branches().unwrap_or_default();
-        self.commits = self.repo.commits(200).unwrap_or_default();
-        if self.commit_tree_mode {
-            if let Some(ref oid) = self.commit_tree_commit_oid {
-                if self.commits.iter().any(|c| c.oid == *oid) {
-                    self.commit_tree_files = self.repo.commit_files(oid).unwrap_or_default();
-                    revision_tree::rebuild_tree_nodes(
-                        &self.commit_tree_files,
-                        &self.commit_tree_expanded_dirs,
-                        &mut self.commit_tree_nodes,
-                        &mut self.commits_panel.list_state,
-                    );
-                } else {
-                    self.commit_close_tree();
-                }
-            } else {
-                self.commit_close_tree();
-            }
-        }
-        self.stashes = self.repo.stashes().unwrap_or_default();
-        if self.stash_tree_mode {
-            if let Some(index) = self.stash_tree_stash_index {
-                if self.stashes.iter().any(|s| s.index == index) {
-                    self.stash_tree_files = self.repo.stash_files(index).unwrap_or_default();
-                    revision_tree::rebuild_tree_nodes(
-                        &self.stash_tree_files,
-                        &self.stash_tree_expanded_dirs,
-                        &mut self.stash_tree_nodes,
-                        &mut self.stash_panel.list_state,
-                    );
+
+        if matches!(kind, RefreshKind::StatusAndRefs | RefreshKind::Full) {
+            self.branches = self.repo.branches().unwrap_or_default();
+            self.stashes = self.repo.stashes().unwrap_or_default();
+            if self.stash_tree_mode {
+                if let Some(index) = self.stash_tree_stash_index {
+                    if self.stashes.iter().any(|s| s.index == index) {
+                        self.stash_tree_files = self.repo.stash_files(index).unwrap_or_default();
+                        revision_tree::rebuild_tree_nodes(
+                            &self.stash_tree_files,
+                            &self.stash_tree_expanded_dirs,
+                            &mut self.stash_tree_nodes,
+                            &mut self.stash_panel.list_state,
+                        );
+                    } else {
+                        self.stash_close_tree();
+                    }
                 } else {
                     self.stash_close_tree();
                 }
-            } else {
-                self.stash_close_tree();
             }
         }
+
+        if matches!(kind, RefreshKind::Full) {
+            self.commits_dirty = true;
+            if self.should_load_commits_now() {
+                self.reload_commits_now();
+            }
+        }
+
         Ok(())
+    }
+
+    pub fn request_refresh(&mut self, kind: RefreshKind) {
+        if matches!(kind, RefreshKind::Full) {
+            self.commits_dirty = true;
+        }
+        self.pending_refresh = Some(match self.pending_refresh {
+            None => kind,
+            Some(existing) => Self::max_refresh_kind(existing, kind),
+        });
+    }
+
+    pub fn flush_pending_refresh(&mut self) -> Result<bool> {
+        let Some(kind) = self.pending_refresh.take() else {
+            return Ok(false);
+        };
+        self.apply_refresh(kind)?;
+        self.load_diff();
+        Ok(true)
+    }
+
+    pub(super) fn pending_refresh_kind(&self) -> Option<RefreshKind> {
+        self.pending_refresh
+    }
+
+    pub fn ensure_commits_loaded_for_active_panel(&mut self) {
+        if self.active_panel == SidePanel::Commits && self.commits_dirty {
+            self.reload_commits_now();
+            self.load_diff();
+        }
     }
 
     pub fn toggle_visual_select_mode(&mut self) {
@@ -317,13 +445,13 @@ impl App {
 
     pub fn stage_file(&mut self, path: PathBuf) -> Result<()> {
         self.repo.stage(&path)?;
-        self.refresh_status()?;
+        self.request_refresh(RefreshKind::StatusOnly);
         Ok(())
     }
 
     pub fn unstage_file(&mut self, path: PathBuf) -> Result<()> {
         self.repo.unstage(&path)?;
-        self.refresh_status()?;
+        self.request_refresh(RefreshKind::StatusOnly);
         Ok(())
     }
 
@@ -339,63 +467,75 @@ impl App {
 
     pub fn commit(&mut self, message: &str) -> Result<String> {
         let oid = self.repo.commit(message)?;
-        self.refresh_status()?;
+        self.request_refresh(RefreshKind::Full);
         Ok(oid)
     }
 
     pub fn create_branch(&mut self, name: &str) -> Result<()> {
         self.repo.create_branch(name)?;
-        self.refresh_status()?;
+        self.request_refresh(RefreshKind::StatusAndRefs);
         Ok(())
     }
 
     pub fn checkout_branch(&mut self, name: &str) -> Result<()> {
         self.repo.checkout_branch(name)?;
-        self.refresh_status()?;
+        self.request_refresh(RefreshKind::Full);
         Ok(())
     }
 
     pub fn delete_branch(&mut self, name: &str) -> Result<()> {
         self.repo.delete_branch(name)?;
-        self.refresh_status()?;
+        self.request_refresh(RefreshKind::StatusAndRefs);
         Ok(())
     }
 
-    pub fn fetch_remote(&mut self) -> Result<String> {
-        let remote = self.repo.fetch_default()?;
-        self.refresh_status()?;
-        Ok(remote)
+    pub fn fetch_remote_async(&self) -> Result<Receiver<super::Message>> {
+        let repo_rx = self.repo.fetch_default_async()?;
+        let (msg_tx, msg_rx) = std::sync::mpsc::channel();
+        thread::spawn(move || {
+            let message = match repo_rx.recv() {
+                Ok(Ok(remote)) => super::Message::FetchRemoteFinished(Ok(remote)),
+                Ok(Err(err)) => super::Message::FetchRemoteFinished(Err(err.to_string())),
+                Err(err) => super::Message::FetchRemoteFinished(Err(err.to_string())),
+            };
+            let _ = msg_tx.send(message);
+        });
+        Ok(msg_rx)
     }
 
     pub fn stash_push(&mut self, paths: &[PathBuf], message: &str) -> Result<usize> {
         let index = self.repo.stash_push_paths(paths, message)?;
-        self.refresh_status()?;
+        self.request_refresh(RefreshKind::StatusAndRefs);
         Ok(index)
     }
 
     pub fn stash_apply(&mut self, index: usize) -> Result<()> {
         self.repo.stash_apply(index)?;
-        self.refresh_status()?;
+        self.request_refresh(RefreshKind::StatusAndRefs);
         Ok(())
     }
 
     pub fn stash_pop(&mut self, index: usize) -> Result<()> {
         self.repo.stash_pop(index)?;
-        self.refresh_status()?;
+        self.request_refresh(RefreshKind::StatusAndRefs);
         Ok(())
     }
 
     pub fn stash_drop(&mut self, index: usize) -> Result<()> {
         self.repo.stash_drop(index)?;
-        self.refresh_status()?;
+        self.request_refresh(RefreshKind::StatusAndRefs);
         Ok(())
     }
 
     /// Documentation comment in English.
     pub fn toggle_selected_dir(&mut self) {
-        let selected_dir_path = self
-            .selected_tree_node()
-            .and_then(|node| if node.is_dir { Some(node.path.clone()) } else { None });
+        let selected_dir_path = self.selected_tree_node().and_then(|node| {
+            if node.is_dir {
+                Some(node.path.clone())
+            } else {
+                None
+            }
+        });
         refresh::toggle_selected_dir(&mut self.expanded_dirs, selected_dir_path);
         self.rebuild_tree();
     }
@@ -456,9 +596,13 @@ impl App {
             return Ok(());
         }
 
-        let selected_dir_path = self
-            .selected_stash_tree_node()
-            .and_then(|node| if node.is_dir { Some(node.path.clone()) } else { None });
+        let selected_dir_path = self.selected_stash_tree_node().and_then(|node| {
+            if node.is_dir {
+                Some(node.path.clone())
+            } else {
+                None
+            }
+        });
         revision_tree::toggle_tree_dir(
             selected_dir_path,
             &self.stash_tree_files,
@@ -492,12 +636,16 @@ impl App {
     pub fn load_diff(&mut self) {
         self.diff_scroll = 0;
         let target = self.selected_diff_target();
-        self.current_diff = diff_loader::load_diff(self.repo.as_ref(), &self.file_tree_nodes, target);
+        self.current_diff =
+            diff_loader::load_diff(self.repo.as_ref(), &self.file_tree_nodes, target);
     }
 
     pub fn commit_open_tree_or_toggle_dir(&mut self) -> Result<()> {
         if self.active_panel != SidePanel::Commits {
             return Ok(());
+        }
+        if self.commits_dirty {
+            self.reload_commits_now();
         }
 
         if !self.commit_tree_mode {
@@ -520,9 +668,13 @@ impl App {
             return Ok(());
         }
 
-        let selected_dir_path = self
-            .selected_commit_tree_node()
-            .and_then(|node| if node.is_dir { Some(node.path.clone()) } else { None });
+        let selected_dir_path = self.selected_commit_tree_node().and_then(|node| {
+            if node.is_dir {
+                Some(node.path.clone())
+            } else {
+                None
+            }
+        });
         revision_tree::toggle_tree_dir(
             selected_dir_path,
             &self.commit_tree_files,
@@ -534,9 +686,10 @@ impl App {
     }
 
     pub fn commit_close_tree(&mut self) {
-        let selected_source_index = self.commit_tree_commit_oid.as_ref().and_then(|oid| {
-            self.commits.iter().position(|c| c.oid == *oid)
-        });
+        let selected_source_index = self
+            .commit_tree_commit_oid
+            .as_ref()
+            .and_then(|oid| self.commits.iter().position(|c| c.oid == *oid));
 
         let was_open = self.commit_tree_mode;
         revision_tree::close_tree_mode(
@@ -565,5 +718,38 @@ impl App {
             .unwrap_or_else(|| fallback.to_string())
     }
 
-}
+    fn max_refresh_kind(a: RefreshKind, b: RefreshKind) -> RefreshKind {
+        use RefreshKind::*;
+        match (a, b) {
+            (Full, _) | (_, Full) => Full,
+            (StatusAndRefs, _) | (_, StatusAndRefs) => StatusAndRefs,
+            _ => StatusOnly,
+        }
+    }
 
+    fn should_load_commits_now(&self) -> bool {
+        self.active_panel == SidePanel::Commits || self.commit_tree_mode
+    }
+
+    fn reload_commits_now(&mut self) {
+        self.commits = self.repo.commits(100).unwrap_or_default();
+        self.commits_dirty = false;
+        if self.commit_tree_mode {
+            if let Some(ref oid) = self.commit_tree_commit_oid {
+                if self.commits.iter().any(|c| c.oid == *oid) {
+                    self.commit_tree_files = self.repo.commit_files(oid).unwrap_or_default();
+                    revision_tree::rebuild_tree_nodes(
+                        &self.commit_tree_files,
+                        &self.commit_tree_expanded_dirs,
+                        &mut self.commit_tree_nodes,
+                        &mut self.commits_panel.list_state,
+                    );
+                } else {
+                    self.commit_close_tree();
+                }
+            } else {
+                self.commit_close_tree();
+            }
+        }
+    }
+}

@@ -1,8 +1,8 @@
-use super::{App, Command, Message};
 use super::update_handlers::{
     handle_branch_message, handle_commit_message, handle_navigation_message, handle_quit,
-    handle_revision_message, handle_staging_message, handle_stash_message,
+    handle_revision_message, handle_search_message, handle_staging_message, handle_stash_message,
 };
+use super::{App, Command, Message};
 
 /// Documentation comment in English.
 pub fn update(app: &mut App, msg: Message) -> Option<Command> {
@@ -28,6 +28,12 @@ pub fn update(app: &mut App, msg: Message) -> Option<Command> {
         | Message::ToggleStageSelection
         | Message::StageFile(_)
         | Message::UnstageFile(_) => handle_staging_message(app, msg),
+        Message::StartSearchInput
+        | Message::SearchSetQuery(_)
+        | Message::SearchConfirm
+        | Message::SearchClear
+        | Message::SearchNext
+        | Message::SearchPrev => handle_search_message(app, msg),
         Message::StartStashInput
         | Message::StashPush { .. }
         | Message::StashApplySelected
@@ -37,7 +43,8 @@ pub fn update(app: &mut App, msg: Message) -> Option<Command> {
         | Message::CreateBranch(_)
         | Message::CheckoutSelectedBranch
         | Message::DeleteSelectedBranch
-        | Message::FetchRemote => handle_branch_message(app, msg),
+        | Message::FetchRemote
+        | Message::FetchRemoteFinished(_) => handle_branch_message(app, msg),
         Message::Commit(message) => handle_commit_message(app, message),
     }
 }

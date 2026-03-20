@@ -9,14 +9,17 @@ mod message;
 mod panel_nav;
 mod refresh;
 mod revision_tree;
-mod selectors;
+mod search;
 mod selection;
+mod selectors;
 mod update;
 mod update_handlers;
 
 pub use app::App;
 pub use app::CommitFieldFocus;
 pub use app::InputMode;
+pub use app::RefreshKind;
+pub use app::SearchScopeKey;
 pub use app::SidePanel;
 pub use command::Command;
 pub use message::Message;

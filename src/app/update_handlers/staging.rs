@@ -4,7 +4,10 @@ pub(crate) fn handle_staging_message(app: &mut App, msg: Message) -> Option<Comm
     match msg {
         Message::StartCommitInput => {
             if app.start_commit_editor_guarded() {
-                app.push_log("commit: edit message/description then press Enter on message", true);
+                app.push_log(
+                    "commit: edit message/description then press Enter on message",
+                    true,
+                );
             }
         }
         Message::PrepareCommitFromSelection => match app.prepare_commit_from_visual_selection() {
@@ -15,7 +18,10 @@ pub(crate) fn handle_staging_message(app: &mut App, msg: Message) -> Option<Comm
                 }
                 if app.start_commit_editor_guarded() {
                     app.push_log(
-                        format!("commit: {} selected target(s) staged; edit message/description", count),
+                        format!(
+                            "commit: {} selected target(s) staged; edit message/description",
+                            count
+                        ),
                         true,
                     );
                 }
@@ -25,10 +31,12 @@ pub(crate) fn handle_staging_message(app: &mut App, msg: Message) -> Option<Comm
         Message::ToggleStageSelection => match app.toggle_stage_visual_selection() {
             Ok((staged, unstaged)) => {
                 app.push_log(
-                    format!("selection toggled: staged {}, unstaged {}", staged, unstaged),
+                    format!(
+                        "selection toggled: staged {}, unstaged {}",
+                        staged, unstaged
+                    ),
                     true,
                 );
-                app.load_diff();
             }
             Err(e) => app.push_log(format!("selection toggle failed: {}", e), false),
         },

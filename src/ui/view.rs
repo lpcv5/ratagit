@@ -2,7 +2,7 @@
 
 use crate::app::App;
 use crossterm::event::KeyEvent;
-use ratatui::{Frame, layout::Rect};
+use ratatui::{layout::Rect, Frame};
 
 /// Documentation comment in English.
 pub trait View {

@@ -33,19 +33,22 @@ pub struct Keymap {
 impl Default for GlobalKeymap {
     fn default() -> Self {
         let mut b = HashMap::new();
-        b.insert("quit".into(),             vec!["q".into()]);
-        b.insert("refresh".into(),          vec!["r".into()]);
-        b.insert("panel_next".into(),       vec!["l".into(), "Right".into()]);
-        b.insert("panel_prev".into(),       vec!["h".into(), "Left".into()]);
-        b.insert("panel_1".into(),          vec!["1".into()]);
-        b.insert("panel_2".into(),          vec!["2".into()]);
-        b.insert("panel_3".into(),          vec!["3".into()]);
-        b.insert("panel_4".into(),          vec!["4".into()]);
-        b.insert("list_up".into(),          vec!["k".into(), "Up".into()]);
-        b.insert("list_down".into(),        vec!["j".into(), "Down".into()]);
-        b.insert("diff_scroll_up".into(),   vec!["C-u".into()]);
+        b.insert("quit".into(), vec!["q".into()]);
+        b.insert("refresh".into(), vec!["r".into()]);
+        b.insert("panel_next".into(), vec!["l".into(), "Right".into()]);
+        b.insert("panel_prev".into(), vec!["h".into(), "Left".into()]);
+        b.insert("panel_1".into(), vec!["1".into()]);
+        b.insert("panel_2".into(), vec!["2".into()]);
+        b.insert("panel_3".into(), vec!["3".into()]);
+        b.insert("panel_4".into(), vec!["4".into()]);
+        b.insert("list_up".into(), vec!["k".into(), "Up".into()]);
+        b.insert("list_down".into(), vec!["j".into(), "Down".into()]);
+        b.insert("diff_scroll_up".into(), vec!["C-u".into()]);
         b.insert("diff_scroll_down".into(), vec!["C-d".into()]);
-        b.insert("commit".into(),           vec!["c".into()]);
+        b.insert("commit".into(), vec!["c".into()]);
+        b.insert("search_start".into(), vec!["/".into()]);
+        b.insert("search_next".into(), vec!["n".into()]);
+        b.insert("search_prev".into(), vec!["N".into()]);
         Self { bindings: b }
     }
 }
@@ -55,10 +58,10 @@ impl Default for Keymap {
         let mut files = HashMap::new();
         files.insert("toggle_stage".into(), vec!["Space".into()]);
         files.insert("toggle_visual_select".into(), vec!["v".into()]);
-        files.insert("toggle_dir".into(),  vec!["Enter".into()]);
+        files.insert("toggle_dir".into(), vec!["Enter".into()]);
         files.insert("collapse_all".into(), vec!["-".into()]);
-        files.insert("expand_all".into(),   vec!["=".into()]);
-        files.insert("stash_push".into(),   vec!["s".into()]);
+        files.insert("expand_all".into(), vec!["=".into()]);
+        files.insert("stash_push".into(), vec!["s".into()]);
 
         let mut branches = HashMap::new();
         branches.insert("checkout_branch".into(), vec!["Enter".into()]);
@@ -90,14 +93,16 @@ impl Keymap {
         let path = Self::config_path();
         if path.exists() {
             let content = std::fs::read_to_string(&path).unwrap_or_default();
-            toml::from_str::<Self>(&content).map(|mut loaded| {
-                loaded.merge_missing(&defaults);
-                loaded
-            }).unwrap_or_else(|_| {
-                // Avoid printing to stderr during TUI startup; it corrupts the UI buffer.
-                defaults.save();
-                defaults
-            })
+            toml::from_str::<Self>(&content)
+                .map(|mut loaded| {
+                    loaded.merge_missing(&defaults);
+                    loaded
+                })
+                .unwrap_or_else(|_| {
+                    // Avoid printing to stderr during TUI startup; it corrupts the UI buffer.
+                    defaults.save();
+                    defaults
+                })
         } else {
             let default = defaults;
             default.save();
@@ -131,7 +136,8 @@ impl Keymap {
     }
 
     pub fn global_matches(&self, action: &str, key_str: &str) -> bool {
-        self.global.bindings
+        self.global
+            .bindings
             .get(action)
             .map(|keys| keys.iter().any(|k| k == key_str))
             .unwrap_or(false)
@@ -139,10 +145,10 @@ impl Keymap {
 
     pub fn panel_matches(&self, panel: &str, action: &str, key_str: &str) -> bool {
         let map = match panel {
-            "files"    => &self.files,
+            "files" => &self.files,
             "branches" => &self.branches,
-            "commits"  => &self.commits,
-            "stash"    => &self.stash,
+            "commits" => &self.commits,
+            "stash" => &self.stash,
             _ => return false,
         };
         map.bindings
@@ -190,22 +196,26 @@ pub fn key_to_string(key: &crossterm::event::KeyEvent) -> String {
     let base = match key.code {
         KeyCode::Char(' ') => "Space".into(),
         KeyCode::Char(c) => c.to_string(),
-        KeyCode::Enter    => "Enter".into(),
-        KeyCode::Tab      => "Tab".into(),
-        KeyCode::BackTab  => "BackTab".into(),
-        KeyCode::Up       => "Up".into(),
-        KeyCode::Down     => "Down".into(),
-        KeyCode::Left     => "Left".into(),
-        KeyCode::Right    => "Right".into(),
-        KeyCode::Esc      => "Esc".into(),
+        KeyCode::Enter => "Enter".into(),
+        KeyCode::Tab => "Tab".into(),
+        KeyCode::BackTab => "BackTab".into(),
+        KeyCode::Up => "Up".into(),
+        KeyCode::Down => "Down".into(),
+        KeyCode::Left => "Left".into(),
+        KeyCode::Right => "Right".into(),
+        KeyCode::Esc => "Esc".into(),
         KeyCode::Backspace => "Backspace".into(),
-        KeyCode::Delete   => "Delete".into(),
-        KeyCode::PageUp   => "PageUp".into(),
+        KeyCode::Delete => "Delete".into(),
+        KeyCode::PageUp => "PageUp".into(),
         KeyCode::PageDown => "PageDown".into(),
-        KeyCode::Home     => "Home".into(),
-        KeyCode::End      => "End".into(),
+        KeyCode::Home => "Home".into(),
+        KeyCode::End => "End".into(),
         _ => return String::new(),
     };
 
-    if ctrl { format!("C-{}", base) } else { base }
+    if ctrl {
+        format!("C-{}", base)
+    } else {
+        base
+    }
 }

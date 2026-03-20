@@ -1,4 +1,4 @@
-use crate::app::{App, Command, Message};
+use crate::app::{App, Command, Message, RefreshKind};
 
 pub(crate) fn handle_branch_message(app: &mut App, msg: Message) -> Option<Command> {
     match msg {
@@ -30,10 +30,30 @@ pub(crate) fn handle_branch_message(app: &mut App, msg: Message) -> Option<Comma
                 app.push_log("no branch selected", false);
             }
         }
-        Message::FetchRemote => match app.fetch_remote() {
-            Ok(remote) => app.push_log(format!("fetched {}", remote), true),
-            Err(e) => app.push_log(format!("fetch failed: {}", e), false),
-        },
+        Message::FetchRemote => {
+            if app.is_fetching_remote {
+                app.push_log("fetch already running", false);
+                return None;
+            }
+            match app.fetch_remote_async() {
+                Ok(rx) => {
+                    app.is_fetching_remote = true;
+                    app.push_log("fetch started", true);
+                    return Some(Command::Async(rx));
+                }
+                Err(e) => app.push_log(format!("fetch start failed: {}", e), false),
+            }
+        }
+        Message::FetchRemoteFinished(result) => {
+            app.is_fetching_remote = false;
+            match result {
+                Ok(remote) => {
+                    app.request_refresh(RefreshKind::Full);
+                    app.push_log(format!("fetched {}", remote), true);
+                }
+                Err(e) => app.push_log(format!("fetch failed: {}", e), false),
+            }
+        }
         _ => {}
     }
     None

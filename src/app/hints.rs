@@ -20,6 +20,11 @@ impl App {
                     ("Esc".to_string(), "Cancel".to_string()),
                     ("Backspace".to_string(), "Delete".to_string()),
                 ],
+                InputMode::Search => vec![
+                    ("Enter".to_string(), "Confirm".to_string()),
+                    ("Esc".to_string(), "Cancel".to_string()),
+                    ("Backspace".to_string(), "Delete".to_string()),
+                ],
             };
         }
 
@@ -50,8 +55,22 @@ impl App {
                 ),
                 "DiffScroll".to_string(),
             ),
+            (
+                self.global_key_or("search_start", "/"),
+                "Search".to_string(),
+            ),
             (self.global_key_or("quit", "q"), "Quit".to_string()),
         ];
+        if self.has_search_for_active_scope() {
+            hints.push((
+                format!(
+                    "{}/{}",
+                    self.global_key_or("search_next", "n"),
+                    self.global_key_or("search_prev", "N")
+                ),
+                "Next/Prev".to_string(),
+            ));
+        }
 
         let panel = self.active_panel_name();
         match self.active_panel {
@@ -84,7 +103,10 @@ impl App {
                     self.panel_key_or(panel, "expand_all", "="),
                     "Expand".to_string(),
                 ));
-                hints.push((self.panel_key_or(panel, "stash_push", "s"), "Stash".to_string()));
+                hints.push((
+                    self.panel_key_or(panel, "stash_push", "s"),
+                    "Stash".to_string(),
+                ));
             }
             SidePanel::LocalBranches => {
                 hints.push((
@@ -95,8 +117,14 @@ impl App {
                     self.panel_key_or(panel, "create_branch", "n"),
                     "NewBranch".to_string(),
                 ));
-                hints.push((self.panel_key_or(panel, "delete_branch", "d"), "Delete".to_string()));
-                hints.push((self.panel_key_or(panel, "fetch_remote", "f"), "Fetch".to_string()));
+                hints.push((
+                    self.panel_key_or(panel, "delete_branch", "d"),
+                    "Delete".to_string(),
+                ));
+                hints.push((
+                    self.panel_key_or(panel, "fetch_remote", "f"),
+                    "Fetch".to_string(),
+                ));
             }
             SidePanel::Stash => {
                 hints.push((
@@ -107,9 +135,18 @@ impl App {
                         "Files".to_string()
                     },
                 ));
-                hints.push((self.panel_key_or(panel, "stash_apply", "a"), "Apply".to_string()));
-                hints.push((self.panel_key_or(panel, "stash_pop", "p"), "Pop".to_string()));
-                hints.push((self.panel_key_or(panel, "stash_drop", "d"), "Drop".to_string()));
+                hints.push((
+                    self.panel_key_or(panel, "stash_apply", "a"),
+                    "Apply".to_string(),
+                ));
+                hints.push((
+                    self.panel_key_or(panel, "stash_pop", "p"),
+                    "Pop".to_string(),
+                ));
+                hints.push((
+                    self.panel_key_or(panel, "stash_drop", "d"),
+                    "Drop".to_string(),
+                ));
             }
             SidePanel::Commits => {
                 hints.push((
