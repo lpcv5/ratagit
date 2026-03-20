@@ -52,8 +52,10 @@ Keep new features inside the existing layer boundaries (UI -> app messages -> gi
 ## Branch Workflow
 - Default development branch is `dev`.
 - Implement and commit changes on `dev` unless explicitly instructed otherwise.
-- Sync `master` into `dev` using rebase flow (`git checkout dev` -> `git fetch origin` -> `git rebase origin/master`).
-- Prefer rebase over merge commits when integrating `master` into `dev`.
+- Default primary branch is `main`.
+- Open and merge PRs from `dev` into `main`.
+- Sync `main` into `dev` using rebase flow (`git checkout dev` -> `git fetch origin` -> `git rebase origin/main`).
+- Prefer rebase over merge commits when integrating `main` into `dev`.
 
 ## Agent-Specific Notes
 - Do not revert unrelated working-tree changes.

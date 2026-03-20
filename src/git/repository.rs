@@ -929,8 +929,8 @@ mod tests {
             .iter()
             .any(|b| b.name == "feature/a" && b.is_current));
 
-        repo.checkout_branch("master")
-            .or_else(|_| repo.checkout_branch("main"))
+        repo.checkout_branch("main")
+            .or_else(|_| repo.checkout_branch("master"))
             .expect("checkout default branch");
         repo.delete_branch("feature/a").expect("delete branch");
         assert!(!repo
