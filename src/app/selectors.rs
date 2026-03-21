@@ -80,7 +80,12 @@ impl App {
                 };
                 diff_loader::DiffTarget::Stash { index, path }
             }
-            SidePanel::LocalBranches => diff_loader::DiffTarget::None,
+            SidePanel::LocalBranches => {
+                let Some(name) = self.selected_branch_name() else {
+                    return diff_loader::DiffTarget::None;
+                };
+                diff_loader::DiffTarget::Branch { name }
+            }
         }
     }
 
