@@ -87,6 +87,7 @@ pub struct CommitsPanelState {
     pub items: Vec<CommitInfo>,
     pub dirty: bool,
     pub tree_mode: TreeModeState<String>,
+    pub highlighted_oids: HashSet<String>,
 }
 
 #[derive(Default)]
@@ -228,6 +229,7 @@ impl App {
                 items: commits,
                 dirty: false,
                 tree_mode: TreeModeState::default(),
+                highlighted_oids: HashSet::new(),
             },
             stash: StashPanelState {
                 panel: PanelState::new(),

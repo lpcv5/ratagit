@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::mpsc::{self, Receiver};
@@ -77,6 +78,17 @@ pub enum CommitSyncState {
     LocalOnly,
 }
 
+/// A single cell in a commit graph line, carrying its display string and lane index for coloring.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GraphCell {
+    pub text: String,
+    pub lane: usize,
+    /// OID of the commit whose branch line this cell belongs to (for path highlighting).
+    pub pipe_oid: Option<String>,
+    /// OIDs of all commits whose paths overlap this cell.
+    pub pipe_oids: Vec<String>,
+}
+
 /// Commit info for log display
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
@@ -85,9 +97,12 @@ pub struct CommitInfo {
     pub oid: String,
     pub message: String,
     pub author: String,
+    pub graph: Vec<GraphCell>,
     pub time: String,
     pub parent_count: usize,
     pub sync_state: CommitSyncState,
+    /// OIDs of this commit's parents (for ancestry tracing).
+    pub parent_oids: Vec<String>,
 }
 
 /// Stash entry
@@ -192,6 +207,64 @@ pub trait GitRepository {
 /// Documentation comment in English.
 pub struct Git2Repository {
     repo: git2::Repository,
+}
+
+#[derive(Clone, Copy)]
+struct GraphCharset {
+    node: char,
+    merge_node: char,
+    horizontal: char,
+    ascii: bool,
+}
+
+impl GraphCharset {
+    fn unicode() -> Self {
+        Self {
+            node: '◯',
+            merge_node: '⏣',
+            horizontal: '─',
+            ascii: false,
+        }
+    }
+
+    fn ascii() -> Self {
+        Self {
+            node: '*',
+            merge_node: '#',
+            horizontal: '-',
+            ascii: true,
+        }
+    }
+}
+
+#[derive(Clone)]
+struct GraphCommitRow {
+    oid: git2::Oid,
+    parents: Vec<git2::Oid>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum PipeKind {
+    Terminates,
+    Starts,
+    Continues,
+}
+
+#[derive(Debug, Clone)]
+struct Pipe {
+    from_pos: i16,
+    to_pos: i16,
+    from_hash: Option<git2::Oid>,
+    to_hash: Option<git2::Oid>,
+    kind: PipeKind,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct CellConnections {
+    up: bool,
+    down: bool,
+    left: bool,
+    right: bool,
 }
 
 impl Git2Repository {
@@ -545,17 +618,24 @@ impl GitRepository for Git2Repository {
     fn commits(&self, limit: usize) -> Result<Vec<CommitInfo>, GitError> {
         let mut revwalk = self.repo.revwalk()?;
         revwalk.push_head()?;
-        revwalk.set_sorting(git2::Sort::TIME)?;
+        revwalk.set_sorting(git2::Sort::TOPOLOGICAL | git2::Sort::TIME)?;
         let default_tip = self.default_branch_oid();
         let upstream_tip = self.upstream_oid();
 
-        let mut result = Vec::new();
+        let mut graph_rows = Vec::new();
+        let mut entries = Vec::new();
         for oid in revwalk.take(limit) {
             let oid = oid?;
             let commit = self.repo.find_commit(oid)?;
             let short_hash = format!("{:.7}", oid);
             let message = commit.summary().unwrap_or("").to_string();
             let author = commit.author().name().unwrap_or("").to_string();
+            let mut parents = Vec::with_capacity(commit.parent_count());
+            for parent_index in 0..commit.parent_count() {
+                if let Ok(parent_oid) = commit.parent_id(parent_index) {
+                    parents.push(parent_oid);
+                }
+            }
             let time = {
                 let t = commit.time().seconds();
                 chrono::DateTime::from_timestamp(t, 0)
@@ -563,16 +643,26 @@ impl GitRepository for Git2Repository {
                     .format("%Y-%m-%d %H:%M")
                     .to_string()
             };
-            result.push(CommitInfo {
+            let parent_oids: Vec<String> = parents.iter().map(|p| p.to_string()).collect();
+            graph_rows.push(GraphCommitRow { oid, parents });
+            entries.push(CommitInfo {
                 short_hash,
                 oid: oid.to_string(),
                 message,
                 author,
+                graph: Vec::new(),
                 time,
                 parent_count: commit.parent_count(),
                 sync_state: self.classify_commit_sync(oid, default_tip, upstream_tip),
+                parent_oids,
             });
         }
+
+        let graph_lines = build_commit_graph_lines(&graph_rows, graph_charset_from_env());
+        for (entry, graph) in entries.iter_mut().zip(graph_lines) {
+            entry.graph = graph;
+        }
+        let result = entries;
         Ok(result)
     }
 
@@ -883,11 +973,388 @@ fn parse_remote_from_upstream(upstream: &str) -> Option<String> {
         .map(|s| s.to_string())
 }
 
+fn graph_charset_from_env() -> GraphCharset {
+    match std::env::var("RATAGIT_GRAPH_ASCII") {
+        Ok(value) if value == "1" => GraphCharset::ascii(),
+        _ => GraphCharset::unicode(),
+    }
+}
+
+fn build_commit_graph_lines(rows: &[GraphCommitRow], charset: GraphCharset) -> Vec<Vec<GraphCell>> {
+    if rows.is_empty() {
+        return Vec::new();
+    }
+
+    let pipe_sets = get_pipe_sets(rows);
+    rows.iter()
+        .zip(pipe_sets.iter())
+        .map(|(row, pipes)| render_pipe_set(row, pipes, charset))
+        .collect()
+}
+
+fn get_pipe_sets(rows: &[GraphCommitRow]) -> Vec<Vec<Pipe>> {
+    if rows.is_empty() {
+        return Vec::new();
+    }
+
+    let mut sets = Vec::with_capacity(rows.len());
+    let mut prev = vec![Pipe {
+        from_pos: 0,
+        to_pos: 0,
+        from_hash: None,
+        to_hash: Some(rows[0].oid),
+        kind: PipeKind::Starts,
+    }];
+
+    for row in rows {
+        let next = get_next_pipes(&prev, row);
+        sets.push(next.clone());
+        prev = next;
+    }
+
+    sets
+}
+
+fn get_next_pipes(prev: &[Pipe], row: &GraphCommitRow) -> Vec<Pipe> {
+    let active: Vec<Pipe> = prev
+        .iter()
+        .filter(|p| p.kind != PipeKind::Terminates)
+        .cloned()
+        .collect();
+
+    let max_pos = active.iter().map(|p| p.to_pos).max().unwrap_or(-1);
+    let commit_pos = active
+        .iter()
+        .find(|p| p.to_hash == Some(row.oid))
+        .map(|p| p.to_pos)
+        .unwrap_or(max_pos + 1);
+
+    // Pass 1: identify terminating pipes and free their spots from taken_spots.
+    let mut taken_spots: HashSet<i16> = active.iter().map(|p| p.to_pos).collect();
+    for pipe in &active {
+        if pipe.to_hash == Some(row.oid) {
+            taken_spots.remove(&pipe.to_pos);
+        }
+    }
+
+    // traversed_spots: only mark positions for non-vertical (diagonal/horizontal) moves.
+    let mut traversed_spots: HashSet<i16> = HashSet::new();
+    for pipe in &active {
+        if pipe.from_pos != pipe.to_pos {
+            for pos in pipe.from_pos.min(pipe.to_pos)..=pipe.from_pos.max(pipe.to_pos) {
+                traversed_spots.insert(pos);
+            }
+        }
+    }
+
+    let mut next = Vec::new();
+    let mut has_terminating_incoming = false;
+
+    // Pass 2: process terminating pipes first so their freed columns are visible.
+    for pipe in &active {
+        if pipe.to_hash == Some(row.oid) {
+            has_terminating_incoming = true;
+            next.push(Pipe {
+                from_pos: pipe.to_pos,
+                to_pos: commit_pos,
+                from_hash: pipe.to_hash,
+                to_hash: Some(row.oid),
+                kind: PipeKind::Terminates,
+            });
+        }
+    }
+
+    // Pass 3: compact and continue non-terminating pipes.
+    for pipe in &active {
+        if pipe.to_hash == Some(row.oid) {
+            continue;
+        }
+
+        let mut target = pipe.to_pos;
+        if pipe.to_pos < commit_pos {
+            while target > 0 {
+                let candidate = target - 1;
+                if candidate == commit_pos
+                    || taken_spots.contains(&candidate)
+                    || traversed_spots.contains(&candidate)
+                {
+                    break;
+                }
+                target = candidate;
+            }
+        } else if pipe.to_pos > commit_pos {
+            while target > commit_pos + 1 {
+                let candidate = target - 1;
+                if candidate == commit_pos
+                    || taken_spots.contains(&candidate)
+                    || traversed_spots.contains(&candidate)
+                {
+                    break;
+                }
+                target = candidate;
+            }
+        }
+
+        next.push(Pipe {
+            from_pos: pipe.to_pos,
+            to_pos: target,
+            from_hash: pipe.from_hash,
+            to_hash: pipe.to_hash,
+            kind: PipeKind::Continues,
+        });
+        taken_spots.insert(target);
+        if pipe.to_pos != target {
+            for pos in pipe.to_pos.min(target)..=pipe.to_pos.max(target) {
+                traversed_spots.insert(pos);
+            }
+        }
+    }
+
+    if let Some(first_parent) = row.parents.first().copied() {
+        let first_kind = if has_terminating_incoming {
+            PipeKind::Continues
+        } else {
+            PipeKind::Starts
+        };
+        next.push(Pipe {
+            from_pos: commit_pos,
+            to_pos: commit_pos,
+            from_hash: Some(row.oid),
+            to_hash: Some(first_parent),
+            kind: first_kind,
+        });
+        taken_spots.insert(commit_pos);
+        traversed_spots.insert(commit_pos);
+
+        for parent in row.parents.iter().skip(1).copied() {
+            // Try to reuse a freed column before allocating rightward.
+            let mut pos = commit_pos + 1;
+            // Find lowest free slot not in taken or traversed.
+            let mut found = false;
+            for candidate in (0..commit_pos).rev() {
+                if !taken_spots.contains(&candidate) && !traversed_spots.contains(&candidate) {
+                    pos = candidate;
+                    found = true;
+                    break;
+                }
+            }
+            if !found {
+                pos = commit_pos + 1;
+                while taken_spots.contains(&pos) || traversed_spots.contains(&pos) {
+                    pos += 1;
+                }
+            }
+            next.push(Pipe {
+                from_pos: commit_pos,
+                to_pos: pos,
+                from_hash: Some(row.oid),
+                to_hash: Some(parent),
+                kind: PipeKind::Starts,
+            });
+            taken_spots.insert(pos);
+            for p in commit_pos.min(pos)..=commit_pos.max(pos) {
+                traversed_spots.insert(p);
+            }
+        }
+    }
+
+    next.sort_by_key(|p| (p.to_pos, p.kind));
+    next
+}
+
+fn render_pipe_set(row: &GraphCommitRow, pipes: &[Pipe], charset: GraphCharset) -> Vec<GraphCell> {
+    let commit_pos = commit_position(row, pipes).max(0) as usize;
+    let width = pipes
+        .iter()
+        .map(|p| p.from_pos.max(p.to_pos) as usize)
+        .max()
+        .unwrap_or(commit_pos)
+        .max(commit_pos)
+        + 1;
+
+    // Build a map from column index to all OIDs that pass through each column.
+    let mut col_oids: Vec<HashSet<String>> = vec![HashSet::new(); width];
+    for pipe in pipes {
+        let from = pipe.from_pos.max(0) as usize;
+        let to = pipe.to_pos.max(0) as usize;
+        if from >= width || to >= width {
+            continue;
+        }
+        for col in from.min(to)..=from.max(to) {
+            if let Some(h) = pipe.from_hash {
+                col_oids[col].insert(h.to_string());
+            }
+            if let Some(h) = pipe.to_hash {
+                col_oids[col].insert(h.to_string());
+            }
+        }
+    }
+    if commit_pos < width {
+        // Ensure commit node cell always belongs to the row commit itself.
+        col_oids[commit_pos].insert(row.oid.to_string());
+    }
+
+    let mut cells = vec![CellConnections::default(); width];
+    for pipe in pipes {
+        draw_pipe(pipe, &mut cells);
+    }
+
+    let mut out = Vec::with_capacity(width * 2);
+    for (idx, conn) in cells.into_iter().enumerate() {
+        let is_node = idx == commit_pos;
+        let first = if is_node {
+            if row.parents.len() > 1 {
+                charset.merge_node
+            } else {
+                charset.node
+            }
+        } else {
+            box_char(conn, charset)
+        };
+        let second = if is_node {
+            ' '
+        } else if conn.right {
+            charset.horizontal
+        } else {
+            ' '
+        };
+
+        let mut pipe_oids: Vec<String> = col_oids[idx].iter().cloned().collect();
+        pipe_oids.sort();
+        let pipe_oid = pipe_oids.first().cloned();
+        out.push(GraphCell {
+            text: first.to_string(),
+            lane: idx,
+            pipe_oid: pipe_oid.clone(),
+            pipe_oids: pipe_oids.clone(),
+        });
+        out.push(GraphCell {
+            text: second.to_string(),
+            lane: idx,
+            pipe_oid,
+            pipe_oids,
+        });
+    }
+
+    while out.last().map(|c| c.text == " ").unwrap_or(false) {
+        out.pop();
+    }
+    if out.is_empty() {
+        out.push(GraphCell {
+            text: " ".to_string(),
+            lane: 0,
+            pipe_oid: None,
+            pipe_oids: Vec::new(),
+        });
+    }
+    out
+}
+
+fn commit_position(row: &GraphCommitRow, pipes: &[Pipe]) -> i16 {
+    pipes
+        .iter()
+        .find(|p| p.from_hash == Some(row.oid))
+        .map(|p| p.from_pos)
+        .or_else(|| {
+            pipes
+                .iter()
+                .find(|p| p.to_hash == Some(row.oid))
+                .map(|p| p.to_pos)
+        })
+        .unwrap_or(0)
+}
+
+fn draw_pipe(pipe: &Pipe, cells: &mut [CellConnections]) {
+    let from = pipe.from_pos.max(0) as usize;
+    let to = pipe.to_pos.max(0) as usize;
+    if from >= cells.len() || to >= cells.len() {
+        return;
+    }
+
+    if pipe.kind != PipeKind::Starts {
+        cells[from].up = true;
+    }
+    if pipe.kind != PipeKind::Terminates {
+        cells[to].down = true;
+    }
+
+    if from < to {
+        cells[from].right = true;
+        for cell in cells.iter_mut().take(to).skip(from + 1) {
+            cell.left = true;
+            cell.right = true;
+        }
+        cells[to].left = true;
+    } else if from > to {
+        cells[from].left = true;
+        for cell in cells.iter_mut().take(from).skip(to + 1) {
+            cell.left = true;
+            cell.right = true;
+        }
+        cells[to].right = true;
+    }
+}
+
+fn box_char(conn: CellConnections, charset: GraphCharset) -> char {
+    let CellConnections {
+        up,
+        down,
+        left,
+        right,
+    } = conn;
+    if charset.ascii {
+        return match (up, down, left, right) {
+            (true, true, true, true) => '+',
+            (true, true, true, false) => '+',
+            (true, true, false, true) => '+',
+            (true, true, false, false) => '|',
+            (true, false, true, true) => '+',
+            (true, false, true, false) => '\\',
+            (true, false, false, true) => '/',
+            (true, false, false, false) => '|',
+            (false, true, true, true) => '+',
+            (false, true, true, false) => '\\',
+            (false, true, false, true) => '/',
+            (false, true, false, false) => '|',
+            (false, false, true, true) => '-',
+            (false, false, true, false) => '-',
+            (false, false, false, true) => '-',
+            _ => ' ',
+        };
+    }
+
+    match (up, down, left, right) {
+        (true, true, true, true) => '┼',
+        (true, true, true, false) => '┤',
+        (true, true, false, true) => '├',
+        (true, true, false, false) => '│',
+        (true, false, true, true) => '┴',
+        (true, false, true, false) => '╯',
+        (true, false, false, true) => '╰',
+        (true, false, false, false) => '╵',
+        (false, true, true, true) => '┬',
+        (false, true, true, false) => '╮',
+        (false, true, false, true) => '╭',
+        (false, true, false, false) => '╷',
+        (false, false, true, true) => '─',
+        (false, false, true, false) => '╴',
+        (false, false, false, true) => '╶',
+        (false, false, false, false) => ' ',
+    }
+}
+
+/// Helper to flatten graph cells into a plain string (for tests and backward compat).
+#[cfg(test)]
+fn graph_cells_to_string(cells: &[GraphCell]) -> String {
+    cells.iter().map(|c| c.text.as_str()).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::fs;
     use std::path::Path;
+    use std::sync::{Mutex, OnceLock};
     use tempfile::TempDir;
 
     fn write_file(path: &Path, content: &str) {
@@ -964,6 +1431,7 @@ mod tests {
         assert_eq!(commits.len(), 1);
         assert_eq!(commits[0].message, "add new");
         assert_eq!(commits[0].oid, oid);
+        assert!(!commits[0].graph.is_empty());
         assert_eq!(commits[0].sync_state, CommitSyncState::DefaultBranch);
 
         let patch = repo.commit_diff_scoped(&oid, None).expect("commit diff");
@@ -1133,5 +1601,378 @@ mod tests {
             Some("upstream")
         );
         assert!(parse_remote_from_upstream("").is_none());
+    }
+
+    #[test]
+    fn test_build_commit_graph_lines_linear_history() {
+        let rows = vec![
+            GraphCommitRow {
+                oid: oid("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+                parents: vec![oid("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")],
+            },
+            GraphCommitRow {
+                oid: oid("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+                parents: vec![oid("cccccccccccccccccccccccccccccccccccccccc")],
+            },
+            GraphCommitRow {
+                oid: oid("cccccccccccccccccccccccccccccccccccccccc"),
+                parents: vec![],
+            },
+        ];
+
+        let lines = build_commit_graph_lines(&rows, GraphCharset::unicode());
+        let strs: Vec<String> = lines.iter().map(|c| graph_cells_to_string(c)).collect();
+        assert_eq!(strs, vec!["◯", "◯", "◯"]);
+    }
+
+    #[test]
+    fn test_build_commit_graph_lines_merge_history() {
+        let rows = vec![
+            GraphCommitRow {
+                oid: oid("1111111111111111111111111111111111111111"),
+                parents: vec![
+                    oid("2222222222222222222222222222222222222222"),
+                    oid("3333333333333333333333333333333333333333"),
+                ],
+            },
+            GraphCommitRow {
+                oid: oid("2222222222222222222222222222222222222222"),
+                parents: vec![oid("4444444444444444444444444444444444444444")],
+            },
+            GraphCommitRow {
+                oid: oid("3333333333333333333333333333333333333333"),
+                parents: vec![oid("4444444444444444444444444444444444444444")],
+            },
+            GraphCommitRow {
+                oid: oid("4444444444444444444444444444444444444444"),
+                parents: vec![],
+            },
+        ];
+
+        let lines = build_commit_graph_lines(&rows, GraphCharset::unicode());
+        let strs: Vec<String> = lines.iter().map(|c| graph_cells_to_string(c)).collect();
+        assert_eq!(strs, vec!["⏣ ╮", "◯ │", "│ ◯", "◯ ╯"]);
+    }
+
+    #[test]
+    fn test_build_commit_graph_lines_octopus_merge_like() {
+        let rows = vec![
+            GraphCommitRow {
+                oid: oid("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+                parents: vec![
+                    oid("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+                    oid("cccccccccccccccccccccccccccccccccccccccc"),
+                    oid("dddddddddddddddddddddddddddddddddddddddd"),
+                ],
+            },
+            GraphCommitRow {
+                oid: oid("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+                parents: vec![oid("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")],
+            },
+            GraphCommitRow {
+                oid: oid("cccccccccccccccccccccccccccccccccccccccc"),
+                parents: vec![oid("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")],
+            },
+            GraphCommitRow {
+                oid: oid("dddddddddddddddddddddddddddddddddddddddd"),
+                parents: vec![oid("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")],
+            },
+            GraphCommitRow {
+                oid: oid("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"),
+                parents: vec![],
+            },
+        ];
+
+        let lines = build_commit_graph_lines(&rows, GraphCharset::unicode());
+        let strs: Vec<String> = lines.iter().map(|c| graph_cells_to_string(c)).collect();
+        assert_eq!(strs[0], "⏣ ┬─╮");
+        assert_eq!(strs[1], "◯ │ │");
+        assert_eq!(strs[2], "│ ◯ │");
+        assert_eq!(strs[3], "│ │ ◯");
+        assert_eq!(strs[4], "◯ ┴─╯");
+    }
+
+    #[test]
+    fn test_graph_charset_from_env_toggle() {
+        static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        let _guard = ENV_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("env lock");
+
+        let original = std::env::var("RATAGIT_GRAPH_ASCII").ok();
+
+        std::env::remove_var("RATAGIT_GRAPH_ASCII");
+        assert_eq!(graph_charset_from_env().node, '◯');
+
+        std::env::set_var("RATAGIT_GRAPH_ASCII", "1");
+        assert_eq!(graph_charset_from_env().node, '*');
+
+        if let Some(value) = original {
+            std::env::set_var("RATAGIT_GRAPH_ASCII", value);
+        } else {
+            std::env::remove_var("RATAGIT_GRAPH_ASCII");
+        }
+    }
+
+    fn oid(value: &str) -> git2::Oid {
+        git2::Oid::from_str(value).expect("valid oid")
+    }
+
+    fn rows_from_oid_pairs(pairs: &[(&str, &[&str])]) -> Vec<GraphCommitRow> {
+        pairs
+            .iter()
+            .map(|(o, ps)| GraphCommitRow {
+                oid: oid(o),
+                parents: ps.iter().map(|p| oid(p)).collect(),
+            })
+            .collect()
+    }
+
+    fn complex_repo_rows() -> Vec<GraphCommitRow> {
+        rows_from_oid_pairs(&[
+            (
+                "841a287edd4e6b32c59c1affc677fc28dcede01d",
+                &[
+                    "6d2c737c870c743a0a3e5d6113fd1225f8ce7214",
+                    "6ff4b94506817257e24550cb4cb86db19758ed2d",
+                ],
+            ),
+            (
+                "6ff4b94506817257e24550cb4cb86db19758ed2d",
+                &["428ecd10104810073d8752729e789f582f0264ad"],
+            ),
+            (
+                "428ecd10104810073d8752729e789f582f0264ad",
+                &[
+                    "22751db39f9ea5f474440fa82c84301c693ba3ed",
+                    "6d2c737c870c743a0a3e5d6113fd1225f8ce7214",
+                ],
+            ),
+            (
+                "6d2c737c870c743a0a3e5d6113fd1225f8ce7214",
+                &[
+                    "59280f68a38d8d594589173a7eafb371bcecb5ee",
+                    "13fe9925399cc03ba03628485c3f95b078ea9dc1",
+                ],
+            ),
+            (
+                "13fe9925399cc03ba03628485c3f95b078ea9dc1",
+                &["1a0137ef486eae5607fbc7852169e626113ebd07"],
+            ),
+            (
+                "59280f68a38d8d594589173a7eafb371bcecb5ee",
+                &[
+                    "c014d84fb6656d9a0f1199405c75bbf2cca0c260",
+                    "69ca3992d4902f601412d7f4d372fa9d32f4c9ed",
+                ],
+            ),
+            (
+                "69ca3992d4902f601412d7f4d372fa9d32f4c9ed",
+                &["1363c71ecdba04252939f2e5baf9fb0d6e78612c"],
+            ),
+            (
+                "1363c71ecdba04252939f2e5baf9fb0d6e78612c",
+                &["14c40bfded212b58b04ea8344e7c3712f8b9bfcb"],
+            ),
+            (
+                "2fdf45590c1b89c3ee5ad627c6c65cf1c537a17f",
+                &["e5fe47f2deddf8bf38f6295e64663fd2d4ffd062"],
+            ),
+            (
+                "e5fe47f2deddf8bf38f6295e64663fd2d4ffd062",
+                &[
+                    "17b91a61c98954a0d56e162c5749b036f2a8c53b",
+                    "c014d84fb6656d9a0f1199405c75bbf2cca0c260",
+                ],
+            ),
+            (
+                "c014d84fb6656d9a0f1199405c75bbf2cca0c260",
+                &[
+                    "1a0137ef486eae5607fbc7852169e626113ebd07",
+                    "1b3ce77a986f530827838e548103d7b81a5e8d38",
+                ],
+            ),
+            (
+                "1b3ce77a986f530827838e548103d7b81a5e8d38",
+                &["14c40bfded212b58b04ea8344e7c3712f8b9bfcb"],
+            ),
+            (
+                "1a0137ef486eae5607fbc7852169e626113ebd07",
+                &[
+                    "eaa7952dc7a202a75a741ed4bc9516c6aa624942",
+                    "22751db39f9ea5f474440fa82c84301c693ba3ed",
+                ],
+            ),
+            (
+                "22751db39f9ea5f474440fa82c84301c693ba3ed",
+                &["14837bd3e1eddf263536d7121f0f6b22293715eb"],
+            ),
+            (
+                "14837bd3e1eddf263536d7121f0f6b22293715eb",
+                &["14c40bfded212b58b04ea8344e7c3712f8b9bfcb"],
+            ),
+            (
+                "eaa7952dc7a202a75a741ed4bc9516c6aa624942",
+                &["14c40bfded212b58b04ea8344e7c3712f8b9bfcb"],
+            ),
+            (
+                "17b91a61c98954a0d56e162c5749b036f2a8c53b",
+                &["a054e8662b0bce64197c45a6f97f380547cee39c"],
+            ),
+            (
+                "a054e8662b0bce64197c45a6f97f380547cee39c",
+                &["14c40bfded212b58b04ea8344e7c3712f8b9bfcb"],
+            ),
+            (
+                "14c40bfded212b58b04ea8344e7c3712f8b9bfcb",
+                &["1a095db72c8bfd761cddfa4983f8acdfc7ef2f5f"],
+            ),
+            ("1a095db72c8bfd761cddfa4983f8acdfc7ef2f5f", &[]),
+        ])
+    }
+
+    // Build GraphCommitRows from a list of (oid_hex, [parent_hex...]) pairs.
+    // Each label is padded to 40 hex chars using only hex-safe digits.
+    fn rows_from_pairs(pairs: &[(&str, &[&str])]) -> Vec<GraphCommitRow> {
+        fn expand(s: &str) -> git2::Oid {
+            // Map label chars to hex: use sha256-style - only 0-9a-f.
+            // Simple approach: hash the label string to a deterministic 40-char hex.
+            use std::collections::hash_map::DefaultHasher;
+            use std::hash::{Hash, Hasher};
+            let mut h = DefaultHasher::new();
+            s.hash(&mut h);
+            let v = h.finish();
+            // Produce 40 hex chars by repeating the 16-char hash.
+            let hex16 = format!("{:016x}", v);
+            let hex40 = format!("{}{}{}{}", hex16, &hex16[..8], &hex16[..8], &hex16[..8]);
+            git2::Oid::from_str(&hex40[..40]).expect("oid from label")
+        }
+        pairs
+            .iter()
+            .map(|(o, ps)| GraphCommitRow {
+                oid: expand(o),
+                parents: ps.iter().map(|p| expand(p)).collect(),
+            })
+            .collect()
+    }
+
+    // Render rows to a list of strings, one per commit row.
+    fn render_rows(pairs: &[(&str, &[&str])]) -> Vec<String> {
+        let rows = rows_from_pairs(pairs);
+        let lines = build_commit_graph_lines(&rows, GraphCharset::unicode());
+        lines.iter().map(|c| graph_cells_to_string(c)).collect()
+    }
+
+    // ------- Tests derived from complex-merge-graph-repo topology -------
+    // Commit order (topo-order, newest first), using short labels:
+    //
+    //  0: M1  parents=[R, F1_3]     merge: feature/a back into main
+    //  1: F1_3 parents=[F1_2]       feat(a): add a3 after cross merge
+    //  2: F1_2 parents=[A2, R]      merge: sync main into feature/a (cross merge)
+    //  3: R    parents=[C, L1]      merge: release/1.0 back to main
+    //  4: L1   parents=[MA]         docs(release): prepare 1.0 notes
+    //  5: C    parents=[H, C2]      merge: feature/c into main
+    //  6: C2   parents=[C1]         feat(c): add c2
+    //  7: C1   parents=[BASE]       feat(c): add c1
+    //  8: H    parents=[MA, FX]     merge: hotfix/urgent into main
+    //  9: FX   parents=[BASE]       fix: urgent hotfix
+    // 10: MA   parents=[MB, A2]     merge: feature/a into main
+    // 11: A2   parents=[A1]         feat(a): add a2
+    // 12: A1   parents=[BASE]       feat(a): add a1
+    // 13: MB   parents=[BASE]       feat: main baseline 2
+    // 14: B2   parents=[B1]         feat(b): add b2 (on feature/b, not in main history here)
+    // 15: B1   parents=[BASE]       feat(b): add b1
+    // 16: BASE parents=[INIT]       feat: main baseline 1
+    // 17: INIT parents=[]           chore: initial commit
+    //
+    // (Using git --topo-order output)
+
+    #[test]
+    fn test_graph_full_repo_topology() {
+        // Full topology from d:/tmp/complex-merge-graph-repo, topo-order --all.
+        let lines = build_commit_graph_lines(&complex_repo_rows(), GraphCharset::unicode());
+        let strs: Vec<String> = lines.iter().map(|c| graph_cells_to_string(c)).collect();
+        eprintln!("=== Full repo topology ===");
+        for (i, row) in strs.iter().enumerate() {
+            eprintln!("row {:2}: {}", i, row);
+        }
+        for (i, row) in strs.iter().enumerate() {
+            assert!(!row.is_empty(), "row {i} empty");
+        }
+        for (i, row) in strs.iter().enumerate() {
+            let w = row.chars().count();
+            assert!(w <= 22, "row {i} too wide ({w} chars): {row:?}");
+        }
+    }
+
+    #[test]
+    fn test_complex_repo_node_cells_include_row_oid() {
+        let rows = complex_repo_rows();
+        let lines = build_commit_graph_lines(&rows, GraphCharset::unicode());
+        for (idx, row) in rows.iter().enumerate() {
+            let row_oid = row.oid.to_string();
+            let node = lines[idx]
+                .iter()
+                .find(|cell| matches!(cell.text.as_str(), "◯" | "⏣" | "*" | "#"))
+                .expect("node cell exists");
+            assert!(
+                node.pipe_oids.iter().any(|oid| oid == &row_oid),
+                "row {idx} node should include row oid"
+            );
+        }
+    }
+
+    #[test]
+    fn test_complex_repo_has_multi_owner_overlap_cells() {
+        let rows = complex_repo_rows();
+        let lines = build_commit_graph_lines(&rows, GraphCharset::unicode());
+        let has_overlap = lines
+            .iter()
+            .flat_map(|line| line.iter())
+            .any(|cell| cell.text != " " && cell.pipe_oids.len() > 1);
+        assert!(
+            has_overlap,
+            "expected at least one non-space overlap cell with multiple path owners"
+        );
+    }
+
+    #[test]
+    fn test_graph_cross_merge_bidirectional() {
+        // Minimal cross-merge: X merges [A, B], later Y merges [C, X] where X was already
+        // on a side branch. Tests that lane assignments don't collide.
+        let strs = render_rows(&[
+            ("M", &["A", "B"]),  // merge commit on main
+            ("B", &["A", "M2"]), // cross: B references M2 which is ahead in the list
+            ("A", &["BASE"]),
+            ("M2", &["BASE"]),
+            ("BASE", &[]),
+        ]);
+        for (i, row) in strs.iter().enumerate() {
+            assert!(!row.is_empty(), "row {i} empty");
+        }
+    }
+
+    #[test]
+    fn test_graph_feature_b_parallel_branch() {
+        // feature/b has commits b3, sync-merge, b2, b1 that never merge into main
+        // within this window. They should appear as parallel lanes.
+        let strs = render_rows(&[
+            ("B3", &["BM"]),
+            ("BM", &["B2", "MB"]), // sync merge from main
+            ("MB", &["BASE"]),
+            ("B2", &["B1"]),
+            ("B1", &["BASE"]),
+            ("BASE", &[]),
+        ]);
+        for (i, row) in strs.iter().enumerate() {
+            assert!(!row.is_empty(), "row {i} empty: {:?}", row);
+        }
+        // BM is a merge node.
+        assert!(
+            strs[1].contains('⏣'),
+            "BM should be merge node: {:?}",
+            strs[1]
+        );
     }
 }

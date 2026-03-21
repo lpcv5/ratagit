@@ -63,6 +63,7 @@ pub fn render_layout(frame: &mut Frame, app: &App) {
         search_query: app.search_query_for_scope(SidePanel::Files, false, false),
         search_summary: app.render_cache.files_search_summary.as_deref(),
         visual_selected_indices: &app.render_cache.files_visual_selected_indices,
+        highlighted_oids: PanelRenderContext::empty_highlighted_oids(),
     };
     app.files.draw(frame, left_panels[0], &files_ctx);
     let branches_ctx = PanelRenderContext {
@@ -70,6 +71,7 @@ pub fn render_layout(frame: &mut Frame, app: &App) {
         search_query: app.search_query_for_scope(SidePanel::LocalBranches, false, false),
         search_summary: app.render_cache.branches_search_summary.as_deref(),
         visual_selected_indices: PanelRenderContext::empty_visual_selected_indices(),
+        highlighted_oids: PanelRenderContext::empty_highlighted_oids(),
     };
     app.branches.draw(frame, left_panels[1], &branches_ctx);
 
@@ -82,6 +84,7 @@ pub fn render_layout(frame: &mut Frame, app: &App) {
         ),
         search_summary: app.render_cache.commits_search_summary.as_deref(),
         visual_selected_indices: PanelRenderContext::empty_visual_selected_indices(),
+        highlighted_oids: &app.commits.highlighted_oids,
     };
     app.commits.draw(frame, left_panels[2], &commits_ctx);
 
@@ -94,6 +97,7 @@ pub fn render_layout(frame: &mut Frame, app: &App) {
         ),
         search_summary: app.render_cache.stash_search_summary.as_deref(),
         visual_selected_indices: PanelRenderContext::empty_visual_selected_indices(),
+        highlighted_oids: PanelRenderContext::empty_highlighted_oids(),
     };
     app.stash.draw(frame, stash_area, &stash_ctx);
 

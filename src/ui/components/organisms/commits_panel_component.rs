@@ -1,5 +1,5 @@
 use crate::app::{CommitsPanelState, SidePanel};
-use crate::git::CommitSyncState;
+use crate::git::{CommitSyncState, GraphCell};
 use crate::ui::components::organisms::{PanelComponent, PanelRenderContext};
 use crate::ui::highlight::highlighted_spans;
 use crate::ui::panels::revision_tree_panel::{render_revision_tree_panel, RevisionTreePanelProps};
@@ -7,10 +7,47 @@ use crate::ui::theme::UiTheme;
 use ratatui::{
     layout::Rect,
     style::{Color, Style},
-    text::Line,
+    text::{Line, Span},
     widgets::ListItem,
     Frame,
 };
+
+/// Render graph cells into colored Span list.
+/// When `highlighted_oids` is non-empty, cells whose owners do not intersect it are dimmed.
+fn graph_spans(
+    cells: &[GraphCell],
+    color: Color,
+    highlighted_oids: &std::collections::HashSet<String>,
+) -> Vec<Span<'static>> {
+    let has_highlight = !highlighted_oids.is_empty();
+    let mut spans = Vec::new();
+    for cell in cells {
+        let cell_color = if has_highlight {
+            let matches_highlight = if !cell.pipe_oids.is_empty() {
+                cell.pipe_oids
+                    .iter()
+                    .any(|oid| highlighted_oids.contains(oid))
+            } else {
+                cell.pipe_oid
+                    .as_ref()
+                    .map(|oid| highlighted_oids.contains(oid))
+                    .unwrap_or(false)
+            };
+            if matches_highlight {
+                color
+            } else {
+                Color::DarkGray
+            }
+        } else {
+            color
+        };
+        spans.push(Span::styled(
+            cell.text.clone(),
+            Style::default().fg(cell_color),
+        ));
+    }
+    spans
+}
 
 impl PanelComponent for CommitsPanelState {
     fn draw(&self, frame: &mut Frame, area: Rect, ctx: &PanelRenderContext<'_>) {
@@ -23,24 +60,17 @@ impl PanelComponent for CommitsPanelState {
             self.items
                 .iter()
                 .map(|c| {
-                    let color = match c.sync_state {
-                        CommitSyncState::DefaultBranch => Color::Green,
-                        CommitSyncState::RemoteBranch => Color::Yellow,
-                        CommitSyncState::LocalOnly => Color::Red,
-                    };
-                    let hash_spans = highlighted_spans(
-                        &c.short_hash,
-                        ctx.search_query,
-                        Style::default().fg(color),
-                    );
+                    let g_spans =
+                        graph_spans(&c.graph, hash_color(c.sync_state), ctx.highlighted_oids);
                     let message_spans = highlighted_spans(
                         &c.message,
                         ctx.search_query,
                         Style::default().fg(Color::White),
                     );
-                    let mut spans = Vec::with_capacity(hash_spans.len() + 1 + message_spans.len());
-                    spans.extend(hash_spans);
-                    spans.push(ratatui::text::Span::raw(" "));
+
+                    let mut spans = Vec::with_capacity(g_spans.len() + message_spans.len() + 1);
+                    spans.extend(g_spans);
+                    spans.push(Span::raw(" "));
                     spans.extend(message_spans);
                     ListItem::new(Line::from(spans))
                 })
@@ -54,7 +84,7 @@ impl PanelComponent for CommitsPanelState {
                 "Commit Files [Esc Back]".to_string()
             }
         } else {
-            "Commits [default:green remote:yellow local:red]".to_string()
+            "Commits".to_string()
         };
         if let Some(search) = &ctx.search_summary {
             title = format!("{} [{}]", title, search);
@@ -77,5 +107,42 @@ impl PanelComponent for CommitsPanelState {
                 list_state: self.panel.list_state,
             },
         );
+    }
+}
+
+fn hash_color(sync_state: CommitSyncState) -> Color {
+    match sync_state {
+        CommitSyncState::DefaultBranch => Color::Green,
+        CommitSyncState::RemoteBranch => Color::Yellow,
+        CommitSyncState::LocalOnly => Color::Red,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn test_graph_spans_prioritizes_highlight_when_cell_has_overlap_owner() {
+        let cells = vec![
+            GraphCell {
+                text: "x".to_string(),
+                lane: 0,
+                pipe_oid: Some("other".to_string()),
+                pipe_oids: vec!["other".to_string(), "focus".to_string()],
+            },
+            GraphCell {
+                text: "y".to_string(),
+                lane: 1,
+                pipe_oid: Some("other".to_string()),
+                pipe_oids: vec!["other".to_string()],
+            },
+        ];
+        let highlighted = HashSet::from([String::from("focus")]);
+        let spans = graph_spans(&cells, Color::Green, &highlighted);
+        assert_eq!(spans.len(), 2);
+        assert_eq!(spans[0].style.fg, Some(Color::Green));
+        assert_eq!(spans[1].style.fg, Some(Color::DarkGray));
     }
 }
