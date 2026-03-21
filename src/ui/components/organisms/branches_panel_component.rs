@@ -2,6 +2,7 @@ use crate::app::{BranchesPanelState, SidePanel};
 use crate::ui::components::organisms::{PanelComponent, PanelRenderContext};
 use crate::ui::highlight::highlighted_spans;
 use crate::ui::theme::UiTheme;
+use crate::ui::LIST_SCROLL_PADDING;
 use ratatui::{
     layout::Rect,
     style::Style,
@@ -46,6 +47,7 @@ impl PanelComponent for BranchesPanelState {
 
         let list = List::new(items)
             .block(theme.panel_block(&title, is_active))
+            .scroll_padding(LIST_SCROLL_PADDING)
             .highlight_style(highlight);
 
         let mut state = self.panel.list_state;

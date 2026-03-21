@@ -1,6 +1,7 @@
 use crate::git::{FileEntry, FileStatus};
 use crate::ui::highlight::highlighted_spans;
 use crate::ui::theme::UiTheme;
+use crate::ui::LIST_SCROLL_PADDING;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -325,7 +326,9 @@ impl<'a> StatefulWidget for FileTree<'a> {
             })
             .collect();
 
-        let mut list = List::new(items).highlight_style(self.highlight_style);
+        let mut list = List::new(items)
+            .scroll_padding(LIST_SCROLL_PADDING)
+            .highlight_style(self.highlight_style);
 
         if let Some(block) = self.block {
             list = list.block(block);

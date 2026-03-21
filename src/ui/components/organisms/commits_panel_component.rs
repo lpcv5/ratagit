@@ -62,14 +62,35 @@ impl PanelComponent for CommitsPanelState {
                 .map(|c| {
                     let g_spans =
                         graph_spans(&c.graph, hash_color(c.sync_state), ctx.highlighted_oids);
+                    let hash_spans = highlighted_spans(
+                        &c.short_hash,
+                        ctx.search_query,
+                        Style::default().fg(hash_color(c.sync_state)),
+                    );
+                    let author_short = author_initials(&c.author);
+                    let author_spans = highlighted_spans(
+                        &author_short,
+                        ctx.search_query,
+                        Style::default().fg(theme.text_muted),
+                    );
                     let message_spans = highlighted_spans(
                         &c.message,
                         ctx.search_query,
                         Style::default().fg(Color::White),
                     );
 
-                    let mut spans = Vec::with_capacity(g_spans.len() + message_spans.len() + 1);
+                    let mut spans = Vec::with_capacity(
+                        g_spans.len()
+                            + hash_spans.len()
+                            + author_spans.len()
+                            + message_spans.len()
+                            + 3,
+                    );
                     spans.extend(g_spans);
+                    spans.push(Span::raw(" "));
+                    spans.extend(hash_spans);
+                    spans.push(Span::raw(" "));
+                    spans.extend(author_spans);
                     spans.push(Span::raw(" "));
                     spans.extend(message_spans);
                     ListItem::new(Line::from(spans))
@@ -118,6 +139,37 @@ fn hash_color(sync_state: CommitSyncState) -> Color {
     }
 }
 
+fn author_initials(author: &str) -> String {
+    let words: Vec<&str> = author
+        .split_whitespace()
+        .filter(|word| !word.is_empty())
+        .collect();
+
+    if words.len() >= 2 {
+        let mut initials = String::new();
+        for word in words.iter().take(2) {
+            if let Some(ch) = word.chars().find(|c| c.is_alphanumeric()) {
+                initials.extend(ch.to_uppercase());
+            }
+        }
+        if !initials.is_empty() {
+            return initials;
+        }
+    }
+
+    if let Some(word) = words.first() {
+        let mut initials = String::new();
+        for ch in word.chars().filter(|c| c.is_alphanumeric()).take(2) {
+            initials.extend(ch.to_uppercase());
+        }
+        if !initials.is_empty() {
+            return initials;
+        }
+    }
+
+    "--".to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -144,5 +196,20 @@ mod tests {
         assert_eq!(spans.len(), 2);
         assert_eq!(spans[0].style.fg, Some(Color::Green));
         assert_eq!(spans[1].style.fg, Some(Color::DarkGray));
+    }
+
+    #[test]
+    fn test_author_initials_prefers_first_two_words() {
+        assert_eq!(author_initials("Linus Torvalds"), "LT");
+    }
+
+    #[test]
+    fn test_author_initials_single_word_uses_first_two_chars() {
+        assert_eq!(author_initials("alice"), "AL");
+    }
+
+    #[test]
+    fn test_author_initials_empty_falls_back() {
+        assert_eq!(author_initials("   "), "--");
     }
 }
