@@ -5,6 +5,7 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum DiffCacheKey {
     File { path: PathBuf, is_staged: bool },
+    Branch { name: String, limit: usize },
     Directory { path: PathBuf, files_hash: u64 },
     Commit { oid: String, path: Option<PathBuf> },
     Stash { index: usize, path: Option<PathBuf> },
@@ -47,8 +48,14 @@ impl DiffCache {
     }
 
     pub fn invalidate_files(&mut self) {
-        self.cache
-            .retain(|k, _| matches!(k, DiffCacheKey::Commit { .. } | DiffCacheKey::Stash { .. }));
+        self.cache.retain(|k, _| {
+            matches!(
+                k,
+                DiffCacheKey::Commit { .. }
+                    | DiffCacheKey::Stash { .. }
+                    | DiffCacheKey::Branch { .. }
+            )
+        });
         self.usage_order.retain(|k| self.cache.contains_key(k));
     }
 

@@ -70,5 +70,5 @@ pub fn update(app: &mut App, msg: Message) -> Option<Command> {
 }
 
 #[cfg(test)]
-#[path = "../../tests/update_tests.inc"]
+#[path = "update_tests.rs"]
 mod tests;

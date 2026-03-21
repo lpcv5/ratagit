@@ -781,6 +781,10 @@ impl App {
         use diff_loader::DiffTarget;
 
         match target {
+            DiffTarget::Branch { name } => diff_cache::DiffCacheKey::Branch {
+                name: name.clone(),
+                limit: 100,
+            },
             DiffTarget::File { path, status } => {
                 let is_staged = matches!(status, FileTreeNodeStatus::Staged(_));
                 diff_cache::DiffCacheKey::File {

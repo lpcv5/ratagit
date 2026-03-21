@@ -151,6 +151,11 @@ pub trait GitRepository {
     fn branches(&self) -> Result<Vec<BranchInfo>, GitError>;
 
     /// Documentation comment in English.
+    fn branch_log(&self, _name: &str, _limit: usize) -> Result<Vec<DiffLine>, GitError> {
+        Ok(Vec::new())
+    }
+
+    /// Documentation comment in English.
     fn commits(&self, limit: usize) -> Result<Vec<CommitInfo>, GitError>;
 
     /// Documentation comment in English.
@@ -613,6 +618,45 @@ impl GitRepository for Git2Repository {
             }
         }
         Ok(result)
+    }
+
+    fn branch_log(&self, name: &str, limit: usize) -> Result<Vec<DiffLine>, GitError> {
+        let limit_arg = format!("-n{}", limit.max(1));
+        let args = [
+            "--no-pager",
+            "log",
+            "--graph",
+            "--decorate=short",
+            "--color=always",
+            &limit_arg,
+            name,
+        ];
+
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(self.repo_root()?)
+            .output()
+            .map_err(|e| GitError::Git2(format!("failed to run git log for {}: {}", name, e)))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let detail = if stderr.is_empty() { stdout } else { stderr };
+            return Err(GitError::Git2(detail));
+        }
+
+        let output = String::from_utf8_lossy(&output.stdout).trim_end().to_string();
+        if output.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        Ok(output
+            .lines()
+            .map(|line| DiffLine {
+                kind: DiffLineKind::Context,
+                content: line.to_string(),
+            })
+            .collect())
     }
 
     fn commits(&self, limit: usize) -> Result<Vec<CommitInfo>, GitError> {

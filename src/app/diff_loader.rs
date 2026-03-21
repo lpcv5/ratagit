@@ -5,6 +5,9 @@ use std::path::PathBuf;
 #[derive(Debug, Clone)]
 pub enum DiffTarget {
     None,
+    Branch {
+        name: String,
+    },
     File {
         path: PathBuf,
         status: FileTreeNodeStatus,
@@ -25,6 +28,7 @@ pub enum DiffTarget {
 pub fn load_diff(repo: &dyn GitRepository, target: DiffTarget) -> Vec<DiffLine> {
     match target {
         DiffTarget::None => Vec::new(),
+        DiffTarget::Branch { name } => repo.branch_log(&name, 100).unwrap_or_default(),
         DiffTarget::File { path, status } => load_file_diff(repo, &path, &status),
         DiffTarget::Directory { path } => repo.diff_directory(&path).unwrap_or_default(),
         DiffTarget::Commit { oid, path } => repo

@@ -513,7 +513,23 @@ impl GitRepository for NavigationDiffRepo {
     }
 
     fn branches(&self) -> Result<Vec<BranchInfo>, GitError> {
-        Ok(vec![])
+        Ok(vec![
+            BranchInfo {
+                name: "main".to_string(),
+                is_current: true,
+            },
+            BranchInfo {
+                name: "feature/x".to_string(),
+                is_current: false,
+            },
+        ])
+    }
+
+    fn branch_log(&self, name: &str, _limit: usize) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![DiffLine {
+            kind: DiffLineKind::Context,
+            content: format!("branch {}", name),
+        }])
     }
 
     fn commits(&self, _limit: usize) -> Result<Vec<CommitInfo>, GitError> {
@@ -1247,5 +1263,24 @@ fn test_list_navigation_debounces_diff_in_commits_panel() {
 
     app.flush_pending_diff_reload();
     assert_eq!(app.current_diff[0].content, "commit oid2");
+    assert!(!app.has_pending_diff_reload());
+}
+
+#[test]
+fn test_list_navigation_debounces_diff_in_local_branches_panel() {
+    let mut app = App::from_repo(Box::new(NavigationDiffRepo)).expect("app from navigation repo");
+    app.active_panel = SidePanel::LocalBranches;
+    app.branches.panel.list_state.select(Some(0));
+    app.reload_diff_now();
+    assert_eq!(app.current_diff[0].content, "branch main");
+
+    update(&mut app, Message::ListDown);
+
+    assert_eq!(app.branches.panel.list_state.selected(), Some(1));
+    assert!(app.has_pending_diff_reload());
+    assert_eq!(app.current_diff[0].content, "branch main");
+
+    app.flush_pending_diff_reload();
+    assert_eq!(app.current_diff[0].content, "branch feature/x");
     assert!(!app.has_pending_diff_reload());
 }

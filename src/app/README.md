@@ -7,7 +7,7 @@ This folder is organized so new contributors can find behavior quickly.
 - `message.rs`: TEA message definitions.
 - `update.rs`: top-level message router.
 - `command.rs`: command abstraction.
-- `tests/update_tests.inc`: update-layer behavioral tests and mock repository setup (included by `update.rs` under `#[cfg(test)]`).
+- `update_tests.rs`: update-layer behavioral tests and mock repository setup (included by `update.rs` under `#[cfg(test)]`).
 
 ## Domain Modules
 - `panel_nav.rs`: active panel counting and list navigation behavior.
