@@ -7,38 +7,38 @@ impl App {
         if self.active_panel != SidePanel::Files {
             return None;
         }
-        let idx = self.files_panel.list_state.selected()?;
-        self.file_tree_nodes.get(idx)
+        let idx = self.files.panel.list_state.selected()?;
+        self.files.tree_nodes.get(idx)
     }
 
     pub fn selected_branch_name(&self) -> Option<String> {
         if self.active_panel != SidePanel::LocalBranches {
             return None;
         }
-        let idx = self.branches_panel.list_state.selected()?;
-        self.branches.get(idx).map(|b| b.name.clone())
+        let idx = self.branches.panel.list_state.selected()?;
+        self.branches.items.get(idx).map(|b| b.name.clone())
     }
 
     pub fn selected_commit_oid(&self) -> Option<String> {
         if self.active_panel != SidePanel::Commits {
             return None;
         }
-        if self.commit_tree_mode {
-            return self.commit_tree_commit_oid.clone();
+        if self.commits.tree_mode.active {
+            return self.commits.tree_mode.selected_source.clone();
         }
-        let idx = self.commits_panel.list_state.selected()?;
-        self.commits.get(idx).map(|c| c.oid.clone())
+        let idx = self.commits.panel.list_state.selected()?;
+        self.commits.items.get(idx).map(|c| c.oid.clone())
     }
 
     pub fn selected_stash_index(&self) -> Option<usize> {
         if self.active_panel != SidePanel::Stash {
             return None;
         }
-        if self.stash_tree_mode {
-            return self.stash_tree_stash_index;
+        if self.stash.tree_mode.active {
+            return self.stash.tree_mode.selected_source;
         }
-        let idx = self.stash_panel.list_state.selected()?;
-        self.stashes.get(idx).map(|s| s.index)
+        let idx = self.stash.panel.list_state.selected()?;
+        self.stash.items.get(idx).map(|s| s.index)
     }
 
     pub(super) fn selected_diff_target(&self) -> diff_loader::DiffTarget {
@@ -62,7 +62,7 @@ impl App {
                 let Some(oid) = self.selected_commit_oid() else {
                     return diff_loader::DiffTarget::None;
                 };
-                let path = if self.commit_tree_mode {
+                let path = if self.commits.tree_mode.active {
                     self.selected_commit_tree_node().map(|n| n.path.clone())
                 } else {
                     None
@@ -73,7 +73,7 @@ impl App {
                 let Some(index) = self.selected_stash_index() else {
                     return diff_loader::DiffTarget::None;
                 };
-                let path = if self.stash_tree_mode {
+                let path = if self.stash.tree_mode.active {
                     self.selected_stash_tree_node().map(|n| n.path.clone())
                 } else {
                     None
@@ -85,16 +85,17 @@ impl App {
     }
 
     pub(super) fn selected_commit_tree_node(&self) -> Option<&FileTreeNode> {
-        if self.active_panel != SidePanel::Commits || !self.commit_tree_mode {
+        if self.active_panel != SidePanel::Commits || !self.commits.tree_mode.active {
             return None;
         }
-        revision_tree::selected_tree_node(&self.commits_panel.list_state, &self.commit_tree_nodes)
+        revision_tree::selected_tree_node(&self.commits.panel.list_state, &self.commits.tree_mode.nodes)
     }
 
     pub(super) fn selected_stash_tree_node(&self) -> Option<&FileTreeNode> {
-        if self.active_panel != SidePanel::Stash || !self.stash_tree_mode {
+        if self.active_panel != SidePanel::Stash || !self.stash.tree_mode.active {
             return None;
         }
-        revision_tree::selected_tree_node(&self.stash_panel.list_state, &self.stash_tree_nodes)
+        revision_tree::selected_tree_node(&self.stash.panel.list_state, &self.stash.tree_mode.nodes)
     }
 }
+

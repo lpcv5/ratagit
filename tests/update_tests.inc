@@ -716,39 +716,39 @@ impl GitRepository for RefreshCountingRepo {
 fn test_revision_open_close_for_commits_panel() {
     let mut app = test_app();
     app.active_panel = SidePanel::Commits;
-    app.commits_panel.list_state.select(Some(0));
+    app.commits.panel.list_state.select(Some(0));
 
     update(&mut app, Message::RevisionOpenTreeOrToggleDir);
-    assert!(app.commit_tree_mode);
-    assert_eq!(app.commit_tree_commit_oid.as_deref(), Some("abc1234567890"));
-    assert!(!app.commit_tree_nodes.is_empty());
+    assert!(app.commits.tree_mode.active);
+    assert_eq!(app.commits.tree_mode.selected_source.as_deref(), Some("abc1234567890"));
+    assert!(!app.commits.tree_mode.nodes.is_empty());
 
     update(&mut app, Message::RevisionCloseTree);
-    assert!(!app.commit_tree_mode);
-    assert!(app.commit_tree_commit_oid.is_none());
+    assert!(!app.commits.tree_mode.active);
+    assert!(app.commits.tree_mode.selected_source.is_none());
 }
 
 #[test]
 fn test_revision_open_close_for_stash_panel() {
     let mut app = test_app();
     app.active_panel = SidePanel::Stash;
-    app.stash_panel.list_state.select(Some(0));
+    app.stash.panel.list_state.select(Some(0));
 
     update(&mut app, Message::RevisionOpenTreeOrToggleDir);
-    assert!(app.stash_tree_mode);
-    assert_eq!(app.stash_tree_stash_index, Some(0));
-    assert!(!app.stash_tree_nodes.is_empty());
+    assert!(app.stash.tree_mode.active);
+    assert_eq!(app.stash.tree_mode.selected_source, Some(0));
+    assert!(!app.stash.tree_mode.nodes.is_empty());
 
     update(&mut app, Message::RevisionCloseTree);
-    assert!(!app.stash_tree_mode);
-    assert!(app.stash_tree_stash_index.is_none());
+    assert!(!app.stash.tree_mode.active);
+    assert!(app.stash.tree_mode.selected_source.is_none());
 }
 
 #[test]
 fn test_commit_diff_scopes_path_in_tree_mode() {
     let mut app = test_app();
     app.active_panel = SidePanel::Commits;
-    app.commits_panel.list_state.select(Some(0));
+    app.commits.panel.list_state.select(Some(0));
 
     app.reload_diff_now();
     assert!(app.current_diff[0].content.contains("<none>"));
@@ -762,7 +762,7 @@ fn test_commit_diff_scopes_path_in_tree_mode() {
 fn test_stash_diff_scopes_path_in_tree_mode() {
     let mut app = test_app();
     app.active_panel = SidePanel::Stash;
-    app.stash_panel.list_state.select(Some(0));
+    app.stash.panel.list_state.select(Some(0));
 
     app.reload_diff_now();
     assert!(app.current_diff[0].content.contains("<none>"));
@@ -776,47 +776,47 @@ fn test_stash_diff_scopes_path_in_tree_mode() {
 fn test_commit_close_tree_restores_list_selection() {
     let mut app = test_app();
     app.active_panel = SidePanel::Commits;
-    app.commits_panel.list_state.select(Some(1));
+    app.commits.panel.list_state.select(Some(1));
 
     update(&mut app, Message::RevisionOpenTreeOrToggleDir);
-    assert!(app.commit_tree_mode);
-    assert_eq!(app.commit_tree_commit_oid.as_deref(), Some("def5678901234"));
+    assert!(app.commits.tree_mode.active);
+    assert_eq!(app.commits.tree_mode.selected_source.as_deref(), Some("def5678901234"));
 
     update(&mut app, Message::RevisionCloseTree);
-    assert!(!app.commit_tree_mode);
-    assert_eq!(app.commits_panel.list_state.selected(), Some(1));
+    assert!(!app.commits.tree_mode.active);
+    assert_eq!(app.commits.panel.list_state.selected(), Some(1));
 }
 
 #[test]
 fn test_stash_close_tree_restores_list_selection() {
     let mut app = test_app();
     app.active_panel = SidePanel::Stash;
-    app.stash_panel.list_state.select(Some(1));
+    app.stash.panel.list_state.select(Some(1));
 
     update(&mut app, Message::RevisionOpenTreeOrToggleDir);
-    assert!(app.stash_tree_mode);
-    assert_eq!(app.stash_tree_stash_index, Some(1));
+    assert!(app.stash.tree_mode.active);
+    assert_eq!(app.stash.tree_mode.selected_source, Some(1));
 
     update(&mut app, Message::RevisionCloseTree);
-    assert!(!app.stash_tree_mode);
-    assert_eq!(app.stash_panel.list_state.selected(), Some(1));
+    assert!(!app.stash.tree_mode.active);
+    assert_eq!(app.stash.panel.list_state.selected(), Some(1));
 }
 
 #[test]
 fn test_search_query_and_vim_navigation_for_commits() {
     let mut app = test_app();
     app.active_panel = SidePanel::Commits;
-    app.commits_panel.list_state.select(Some(0));
+    app.commits.panel.list_state.select(Some(0));
 
     update(&mut app, Message::StartSearchInput);
     update(&mut app, Message::SearchSetQuery("test commit".to_string()));
     assert!(app.has_search_for_active_scope());
 
     update(&mut app, Message::SearchNext);
-    assert_eq!(app.commits_panel.list_state.selected(), Some(1));
+    assert_eq!(app.commits.panel.list_state.selected(), Some(1));
 
     update(&mut app, Message::SearchPrev);
-    assert_eq!(app.commits_panel.list_state.selected(), Some(0));
+    assert_eq!(app.commits.panel.list_state.selected(), Some(0));
 }
 
 #[test]
@@ -843,14 +843,14 @@ fn test_search_keybindings_slash_n_and_shift_n() {
 fn test_files_search_matches_tree_display_name_not_full_path() {
     let mut app = test_app();
     app.active_panel = SidePanel::Files;
-    app.file_tree_nodes = vec![FileTreeNode {
+    app.files.tree_nodes = vec![FileTreeNode {
         path: PathBuf::from("src/main.rs"),
         status: FileTreeNodeStatus::Unstaged(FileStatus::Modified),
         depth: 0,
         is_dir: false,
         is_expanded: false,
     }];
-    app.files_panel.list_state.select(Some(0));
+    app.files.panel.list_state.select(Some(0));
 
     update(&mut app, Message::StartSearchInput);
     update(&mut app, Message::SearchSetQuery("src".to_string()));
@@ -869,7 +869,7 @@ fn test_files_search_matches_tree_display_name_not_full_path() {
 fn test_space_on_directory_stages_directory_in_files_panel() {
     let mut app = test_app();
     app.active_panel = SidePanel::Files;
-    app.file_tree_nodes = vec![
+    app.files.tree_nodes = vec![
         FileTreeNode {
             path: PathBuf::from("src"),
             status: FileTreeNodeStatus::Directory,
@@ -885,7 +885,7 @@ fn test_space_on_directory_stages_directory_in_files_panel() {
             is_expanded: false,
         },
     ];
-    app.files_panel.list_state.select(Some(0));
+    app.files.panel.list_state.select(Some(0));
 
     let msg = app.handle_key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
     assert!(matches!(
@@ -898,7 +898,7 @@ fn test_space_on_directory_stages_directory_in_files_panel() {
 fn test_space_on_staged_directory_unstages_directory_in_files_panel() {
     let mut app = test_app();
     app.active_panel = SidePanel::Files;
-    app.file_tree_nodes = vec![
+    app.files.tree_nodes = vec![
         FileTreeNode {
             path: PathBuf::from("src"),
             status: FileTreeNodeStatus::Directory,
@@ -914,7 +914,7 @@ fn test_space_on_staged_directory_unstages_directory_in_files_panel() {
             is_expanded: false,
         },
     ];
-    app.files_panel.list_state.select(Some(0));
+    app.files.panel.list_state.select(Some(0));
 
     let msg = app.handle_key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
     assert!(matches!(
@@ -927,14 +927,14 @@ fn test_space_on_staged_directory_unstages_directory_in_files_panel() {
 fn test_discard_key_returns_discard_paths_for_selected_file() {
     let mut app = test_app();
     app.active_panel = SidePanel::Files;
-    app.file_tree_nodes = vec![FileTreeNode {
+    app.files.tree_nodes = vec![FileTreeNode {
         path: PathBuf::from("src/main.rs"),
         status: FileTreeNodeStatus::Unstaged(FileStatus::Modified),
         depth: 0,
         is_dir: false,
         is_expanded: false,
     }];
-    app.files_panel.list_state.select(Some(0));
+    app.files.panel.list_state.select(Some(0));
 
     let msg = app.handle_key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE));
     assert!(matches!(
@@ -948,16 +948,16 @@ fn test_discard_key_returns_discard_paths_for_selected_file() {
 fn test_discard_key_in_visual_mode_returns_discard_selection() {
     let mut app = test_app();
     app.active_panel = SidePanel::Files;
-    app.files_visual_mode = true;
-    app.file_tree_nodes = vec![FileTreeNode {
+    app.files.visual_mode = true;
+    app.files.tree_nodes = vec![FileTreeNode {
         path: PathBuf::from("src/main.rs"),
         status: FileTreeNodeStatus::Unstaged(FileStatus::Modified),
         depth: 0,
         is_dir: false,
         is_expanded: false,
     }];
-    app.files_panel.list_state.select(Some(0));
-    app.files_visual_anchor = Some(0);
+    app.files.panel.list_state.select(Some(0));
+    app.files.visual_anchor = Some(0);
 
     let msg = app.handle_key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE));
     assert!(matches!(msg, Some(Message::DiscardSelection)));
@@ -982,10 +982,10 @@ fn test_search_input_esc_clears_query_and_highlight() {
 fn test_commits_tree_esc_clears_search_before_closing_tree() {
     let mut app = test_app();
     app.active_panel = SidePanel::Commits;
-    app.commits_panel.list_state.select(Some(0));
+    app.commits.panel.list_state.select(Some(0));
 
     update(&mut app, Message::RevisionOpenTreeOrToggleDir);
-    assert!(app.commit_tree_mode);
+    assert!(app.commits.tree_mode.active);
 
     update(&mut app, Message::StartSearchInput);
     update(&mut app, Message::SearchSetQuery("main".to_string()));
@@ -996,7 +996,7 @@ fn test_commits_tree_esc_clears_search_before_closing_tree() {
     let first_esc = app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
     assert!(matches!(first_esc, Some(Message::SearchClear)));
     update(&mut app, first_esc.expect("search clear message"));
-    assert!(app.commit_tree_mode);
+    assert!(app.commits.tree_mode.active);
     assert!(app.search_query.is_empty());
 
     let second_esc = app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
@@ -1010,13 +1010,13 @@ fn test_fetch_remote_returns_async_command_and_finishes() {
 
     let cmd = update(&mut app, Message::FetchRemote);
     assert!(matches!(cmd, Some(Command::Async(_))));
-    assert!(app.is_fetching_remote);
+    assert!(app.branches.is_fetching_remote);
 
     update(
         &mut app,
         Message::FetchRemoteFinished(Ok("origin".to_string())),
     );
-    assert!(!app.is_fetching_remote);
+    assert!(!app.branches.is_fetching_remote);
 }
 
 #[test]
@@ -1072,14 +1072,14 @@ fn test_refresh_requests_coalesce_to_highest_priority_with_single_flush() {
 fn test_fetch_finished_queues_full_refresh_without_immediate_flush() {
     let mut app = test_app();
     app.active_panel = SidePanel::LocalBranches;
-    app.is_fetching_remote = true;
+    app.branches.is_fetching_remote = true;
 
     update(
         &mut app,
         Message::FetchRemoteFinished(Ok("origin".to_string())),
     );
 
-    assert!(!app.is_fetching_remote);
+    assert!(!app.branches.is_fetching_remote);
     assert_eq!(app.pending_refresh_kind(), Some(RefreshKind::Full));
 }
 
@@ -1113,7 +1113,7 @@ fn test_search_query_is_restored_per_panel_scope() {
 fn test_search_query_is_restored_between_commit_list_and_tree_scope() {
     let mut app = test_app();
     app.active_panel = SidePanel::Commits;
-    app.commits_panel.list_state.select(Some(0));
+    app.commits.panel.list_state.select(Some(0));
 
     update(&mut app, Message::StartSearchInput);
     update(&mut app, Message::SearchSetQuery("test".to_string()));
@@ -1122,7 +1122,7 @@ fn test_search_query_is_restored_between_commit_list_and_tree_scope() {
     assert_eq!(app.search_query, "test");
 
     update(&mut app, Message::RevisionOpenTreeOrToggleDir);
-    assert!(app.commit_tree_mode);
+    assert!(app.commits.tree_mode.active);
     assert!(app.search_query.is_empty());
 
     update(&mut app, Message::StartSearchInput);
@@ -1132,7 +1132,7 @@ fn test_search_query_is_restored_between_commit_list_and_tree_scope() {
     assert_eq!(app.search_query, "main");
 
     update(&mut app, Message::RevisionCloseTree);
-    assert!(!app.commit_tree_mode);
+    assert!(!app.commits.tree_mode.active);
     assert_eq!(app.search_query, "test");
 }
 
@@ -1140,16 +1140,16 @@ fn test_search_query_is_restored_between_commit_list_and_tree_scope() {
 fn test_refresh_keeps_selected_duplicate_status_entry_and_diff_in_sync() {
     let mut app = App::from_repo(Box::new(DuplicateStatusRepo)).expect("app from duplicate repo");
     app.active_panel = SidePanel::Files;
-    assert_eq!(app.file_tree_nodes.len(), 3);
+    assert_eq!(app.files.tree_nodes.len(), 3);
 
-    app.files_panel.list_state.select(Some(2));
+    app.files.panel.list_state.select(Some(2));
     app.reload_diff_now();
     assert_eq!(app.current_diff[0].content, "staged");
 
     app.request_refresh(RefreshKind::StatusOnly);
     app.flush_pending_refresh().expect("flush refresh");
 
-    assert_eq!(app.files_panel.list_state.selected(), Some(2));
+    assert_eq!(app.files.panel.list_state.selected(), Some(2));
     assert_eq!(app.current_diff[0].content, "staged");
 }
 
@@ -1157,13 +1157,13 @@ fn test_refresh_keeps_selected_duplicate_status_entry_and_diff_in_sync() {
 fn test_list_navigation_debounces_diff_in_files_panel() {
     let mut app = App::from_repo(Box::new(NavigationDiffRepo)).expect("app from navigation repo");
     app.active_panel = SidePanel::Files;
-    app.files_panel.list_state.select(Some(0));
+    app.files.panel.list_state.select(Some(0));
     app.reload_diff_now();
     assert_eq!(app.current_diff[0].content, "file a.txt");
 
     update(&mut app, Message::ListDown);
 
-    assert_eq!(app.files_panel.list_state.selected(), Some(1));
+    assert_eq!(app.files.panel.list_state.selected(), Some(1));
     assert!(app.has_pending_diff_reload());
     assert_eq!(app.current_diff[0].content, "file a.txt");
 
@@ -1176,13 +1176,13 @@ fn test_list_navigation_debounces_diff_in_files_panel() {
 fn test_list_navigation_debounces_diff_in_commits_panel() {
     let mut app = App::from_repo(Box::new(NavigationDiffRepo)).expect("app from navigation repo");
     app.active_panel = SidePanel::Commits;
-    app.commits_panel.list_state.select(Some(0));
+    app.commits.panel.list_state.select(Some(0));
     app.reload_diff_now();
     assert_eq!(app.current_diff[0].content, "commit oid1");
 
     update(&mut app, Message::ListDown);
 
-    assert_eq!(app.commits_panel.list_state.selected(), Some(1));
+    assert_eq!(app.commits.panel.list_state.selected(), Some(1));
     assert!(app.has_pending_diff_reload());
     assert_eq!(app.current_diff[0].content, "commit oid1");
 
@@ -1190,3 +1190,5 @@ fn test_list_navigation_debounces_diff_in_commits_panel() {
     assert_eq!(app.current_diff[0].content, "commit oid2");
     assert!(!app.has_pending_diff_reload());
 }
+
+

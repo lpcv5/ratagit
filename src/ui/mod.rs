@@ -1,3 +1,4 @@
+pub mod components;
 mod highlight;
 pub mod layout;
 pub mod panels;

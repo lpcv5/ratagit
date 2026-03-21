@@ -4,10 +4,10 @@ use crate::app::{App, SidePanel};
 impl App {
     pub fn active_panel_state_mut(&mut self) -> &mut PanelState {
         match self.active_panel {
-            SidePanel::Files => &mut self.files_panel,
-            SidePanel::LocalBranches => &mut self.branches_panel,
-            SidePanel::Commits => &mut self.commits_panel,
-            SidePanel::Stash => &mut self.stash_panel,
+            SidePanel::Files => &mut self.files.panel,
+            SidePanel::LocalBranches => &mut self.branches.panel,
+            SidePanel::Commits => &mut self.commits.panel,
+            SidePanel::Stash => &mut self.stash.panel,
         }
     }
 
@@ -41,20 +41,20 @@ impl App {
 
     pub(super) fn active_panel_count(&self) -> usize {
         match self.active_panel {
-            SidePanel::Files => self.file_tree_nodes.len(),
-            SidePanel::LocalBranches => self.branches.len(),
+            SidePanel::Files => self.files.tree_nodes.len(),
+            SidePanel::LocalBranches => self.branches.items.len(),
             SidePanel::Commits => {
-                if self.commit_tree_mode {
-                    self.commit_tree_nodes.len()
+                if self.commits.tree_mode.active {
+                    self.commits.tree_mode.nodes.len()
                 } else {
-                    self.commits.len()
+                    self.commits.items.len()
                 }
             }
             SidePanel::Stash => {
-                if self.stash_tree_mode {
-                    self.stash_tree_nodes.len()
+                if self.stash.tree_mode.active {
+                    self.stash.tree_mode.nodes.len()
                 } else {
-                    self.stashes.len()
+                    self.stash.items.len()
                 }
             }
         }
@@ -69,3 +69,4 @@ impl App {
         }
     }
 }
+

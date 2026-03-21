@@ -1,8 +1,8 @@
 use crate::app::{App, SidePanel};
+use crate::ui::components::organisms::{PanelComponent, PanelRenderContext};
 use crate::ui::panels::{
-    render_branches_panel, render_command_log, render_commit_editor, render_commits_panel,
-    render_diff_panel, render_files_panel, render_shortcut_bar, render_stash_editor,
-    render_stash_panel, DiffViewProps,
+    render_command_log, render_commit_editor, render_diff_panel, render_shortcut_bar,
+    render_stash_editor, DiffViewProps,
 };
 use ratatui::{
     layout::{Constraint, Direction, Layout},
@@ -58,25 +58,44 @@ pub fn render_layout(frame: &mut Frame, app: &App) {
         ..horizontal[0]
     };
 
-    render_files_panel(
-        frame,
-        left_panels[0],
-        app,
-        app.active_panel == SidePanel::Files,
-    );
-    render_branches_panel(
-        frame,
-        left_panels[1],
-        app,
-        app.active_panel == SidePanel::LocalBranches,
-    );
-    render_commits_panel(
-        frame,
-        left_panels[2],
-        app,
-        app.active_panel == SidePanel::Commits,
-    );
-    render_stash_panel(frame, stash_area, app, stash_focused);
+    let files_ctx = PanelRenderContext {
+        active_panel: app.active_panel,
+        search_query: app.search_query_for_scope(SidePanel::Files, false, false),
+        search_summary: app.search_match_summary_for(SidePanel::Files, false, false),
+        visual_selected_indices: app.visual_selected_indices(),
+    };
+    app.files.draw(frame, left_panels[0], &files_ctx);
+    let branches_ctx = PanelRenderContext {
+        active_panel: app.active_panel,
+        search_query: app.search_query_for_scope(SidePanel::LocalBranches, false, false),
+        search_summary: app.search_match_summary_for(SidePanel::LocalBranches, false, false),
+        visual_selected_indices: std::collections::HashSet::new(),
+    };
+    app.branches.draw(frame, left_panels[1], &branches_ctx);
+
+    let commits_ctx = PanelRenderContext {
+        active_panel: app.active_panel,
+        search_query: app.search_query_for_scope(SidePanel::Commits, app.commits.tree_mode.active, false),
+        search_summary: app.search_match_summary_for(
+            SidePanel::Commits,
+            app.commits.tree_mode.active,
+            false,
+        ),
+        visual_selected_indices: std::collections::HashSet::new(),
+    };
+    app.commits.draw(frame, left_panels[2], &commits_ctx);
+
+    let stash_ctx = PanelRenderContext {
+        active_panel: app.active_panel,
+        search_query: app.search_query_for_scope(SidePanel::Stash, false, app.stash.tree_mode.active),
+        search_summary: app.search_match_summary_for(
+            SidePanel::Stash,
+            false,
+            app.stash.tree_mode.active,
+        ),
+        visual_selected_indices: std::collections::HashSet::new(),
+    };
+    app.stash.draw(frame, stash_area, &stash_ctx);
 
     // Right side: diff + command log
     // Command log collapses to COLLAPSED_HEIGHT when stash is not the concern
@@ -101,7 +120,7 @@ pub fn render_layout(frame: &mut Frame, app: &App) {
             lines: &app.current_diff,
             scroll: app.diff_scroll,
             active_panel: app.active_panel,
-            is_loading: app.has_pending_diff_reload(),
+            is_loading: app.has_pending_diff_reload() && app.current_diff.is_empty(),
         },
     );
     render_command_log(frame, log_area, app);
@@ -109,3 +128,4 @@ pub fn render_layout(frame: &mut Frame, app: &App) {
     render_commit_editor(frame, app);
     render_stash_editor(frame, app);
 }
+

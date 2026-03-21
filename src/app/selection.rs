@@ -13,13 +13,13 @@ struct SelectionTarget {
 impl App {
     pub fn visual_selected_indices(&self) -> HashSet<usize> {
         let mut set = HashSet::new();
-        if self.active_panel != SidePanel::Files || !self.files_visual_mode {
+        if self.active_panel != SidePanel::Files || !self.files.visual_mode {
             return set;
         }
-        let Some(current) = self.files_panel.list_state.selected() else {
+        let Some(current) = self.files.panel.list_state.selected() else {
             return set;
         };
-        let anchor = self.files_visual_anchor.unwrap_or(current);
+        let anchor = self.files.visual_anchor.unwrap_or(current);
         let (start, end) = if anchor <= current {
             (anchor, current)
         } else {
@@ -57,8 +57,8 @@ impl App {
 
         self.stage_paths_internal(&targets)?;
         self.request_refresh(RefreshKind::StatusOnly);
-        self.files_visual_mode = false;
-        self.files_visual_anchor = None;
+        self.files.visual_mode = false;
+        self.files.visual_anchor = None;
         Ok(targets.len())
     }
 
@@ -67,7 +67,7 @@ impl App {
             return Vec::new();
         }
 
-        if self.files_visual_mode {
+        if self.files.visual_mode {
             let selected = self.visual_selected_indices();
             return self.collect_commit_targets(&selected);
         }
@@ -83,12 +83,12 @@ impl App {
             return Vec::new();
         }
 
-        if self.files_visual_mode {
+        if self.files.visual_mode {
             let selected = self.visual_selected_indices();
             return self.collect_discard_targets(&selected);
         }
 
-        let Some(index) = self.files_panel.list_state.selected() else {
+        let Some(index) = self.files.panel.list_state.selected() else {
             return Vec::new();
         };
         self.collect_discard_targets_for_index(index)
@@ -97,7 +97,7 @@ impl App {
     pub(super) fn toggle_stage_for_selected_file(&self) -> Option<Message> {
         let node = self.selected_tree_node()?;
         if node.is_dir {
-            let index = self.files_panel.list_state.selected()?;
+            let index = self.files.panel.list_state.selected()?;
             let all_staged = self.directory_files_are_all_staged(index);
             return if all_staged {
                 Some(Message::UnstageFile(node.path.clone()))
@@ -147,7 +147,7 @@ impl App {
             if covered.contains(&idx) {
                 continue;
             }
-            let Some(node) = self.file_tree_nodes.get(idx) else {
+            let Some(node) = self.files.tree_nodes.get(idx) else {
                 continue;
             };
 
@@ -173,7 +173,7 @@ impl App {
     }
 
     fn collect_discard_targets_for_index(&self, index: usize) -> Vec<PathBuf> {
-        let Some(node) = self.file_tree_nodes.get(index) else {
+        let Some(node) = self.files.tree_nodes.get(index) else {
             return Vec::new();
         };
         if node.is_dir {
@@ -189,7 +189,7 @@ impl App {
     fn collect_discard_targets_in_range(&self, start: usize, end: usize) -> Vec<PathBuf> {
         let mut targets = Vec::new();
         for i in start..=end {
-            let Some(node) = self.file_tree_nodes.get(i) else {
+            let Some(node) = self.files.tree_nodes.get(i) else {
                 continue;
             };
             if node.is_dir {
@@ -212,7 +212,7 @@ impl App {
             if covered.contains(&idx) {
                 continue;
             }
-            let Some(node) = self.file_tree_nodes.get(idx) else {
+            let Some(node) = self.files.tree_nodes.get(idx) else {
                 continue;
             };
 
@@ -246,7 +246,7 @@ impl App {
     fn selected_files_are_all_staged(&self, selected: &HashSet<usize>, dir_path: &Path) -> bool {
         let mut has_file = false;
         for idx in selected {
-            let Some(node) = self.file_tree_nodes.get(*idx) else {
+            let Some(node) = self.files.tree_nodes.get(*idx) else {
                 continue;
             };
             if node.is_dir || !node.path.starts_with(dir_path) {
@@ -261,7 +261,7 @@ impl App {
     }
 
     fn subtree_end_index(&self, index: usize) -> usize {
-        let Some(node) = self.file_tree_nodes.get(index) else {
+        let Some(node) = self.files.tree_nodes.get(index) else {
             return index;
         };
         if !node.is_dir {
@@ -270,8 +270,8 @@ impl App {
 
         let base_depth = node.depth;
         let mut end = index;
-        for i in index + 1..self.file_tree_nodes.len() {
-            let n = &self.file_tree_nodes[i];
+        for i in index + 1..self.files.tree_nodes.len() {
+            let n = &self.files.tree_nodes[i];
             if n.depth <= base_depth {
                 break;
             }
@@ -281,7 +281,7 @@ impl App {
     }
 
     fn directory_files_are_all_staged(&self, index: usize) -> bool {
-        let Some(node) = self.file_tree_nodes.get(index) else {
+        let Some(node) = self.files.tree_nodes.get(index) else {
             return false;
         };
         if !node.is_dir {
@@ -291,7 +291,7 @@ impl App {
         let end = self.subtree_end_index(index);
         let mut has_file = false;
         for i in index + 1..=end {
-            let child = &self.file_tree_nodes[i];
+            let child = &self.files.tree_nodes[i];
             if child.is_dir {
                 continue;
             }
@@ -322,3 +322,5 @@ fn is_discardable_status(status: &FileTreeNodeStatus) -> bool {
         FileTreeNodeStatus::Staged(_) | FileTreeNodeStatus::Unstaged(_)
     )
 }
+
+
