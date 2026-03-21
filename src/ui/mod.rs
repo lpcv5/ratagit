@@ -8,3 +8,6 @@ mod views;
 pub mod widgets;
 
 pub use view::View;
+
+/// Keep some breathing room around selected rows in scrollable lists.
+pub const LIST_SCROLL_PADDING: usize = 2;

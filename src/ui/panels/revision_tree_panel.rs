@@ -1,5 +1,6 @@
 use crate::ui::theme::UiTheme;
 use crate::ui::widgets::file_tree::{FileTree, FileTreeNode, FileTreeState};
+use crate::ui::LIST_SCROLL_PADDING;
 use ratatui::{
     layout::Rect,
     style::Style,
@@ -44,6 +45,7 @@ pub fn render_revision_tree_panel(
                 vec![ListItem::new("No files").style(Style::default().fg(theme.text_muted))];
             let list = List::new(items)
                 .block(theme.panel_block(title, is_active))
+                .scroll_padding(LIST_SCROLL_PADDING)
                 .highlight_style(highlight);
             let mut state = list_state;
             frame.render_stateful_widget(list, area, &mut state);
@@ -64,6 +66,7 @@ pub fn render_revision_tree_panel(
 
     let list = List::new(list_items)
         .block(theme.panel_block(title, is_active))
+        .scroll_padding(LIST_SCROLL_PADDING)
         .highlight_style(highlight);
     let mut state = list_state;
     frame.render_stateful_widget(list, area, &mut state);
