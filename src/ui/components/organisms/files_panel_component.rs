@@ -20,7 +20,7 @@ impl PanelComponent for FilesPanelState {
             "Files"
         }
         .to_string();
-        if let Some(search) = &ctx.search_summary {
+        if let Some(search) = ctx.search_summary {
             title = format!("{} [{}]", title, search);
         }
         let block = theme.panel_block(&title, is_active);
@@ -42,7 +42,7 @@ impl PanelComponent for FilesPanelState {
             .block(block)
             .highlight_style(highlight)
             .search_query(ctx.search_query)
-            .selected_indices(&ctx.visual_selected_indices);
+            .selected_indices(ctx.visual_selected_indices);
 
         let mut state = FileTreeState {
             list_state: self.panel.list_state,

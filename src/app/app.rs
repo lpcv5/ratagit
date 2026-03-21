@@ -130,6 +130,15 @@ pub struct SearchScopeKey {
     pub stash_tree_mode: bool,
 }
 
+#[derive(Default)]
+pub struct RenderCache {
+    pub files_visual_selected_indices: HashSet<usize>,
+    pub files_search_summary: Option<String>,
+    pub branches_search_summary: Option<String>,
+    pub commits_search_summary: Option<String>,
+    pub stash_search_summary: Option<String>,
+}
+
 /// Documentation comment in English.
 pub struct App {
     pub running: bool,
@@ -165,6 +174,7 @@ pub struct App {
     diff_cache: diff_cache::DiffCache,
     last_diff_key: Option<diff_cache::DiffCacheKey>,
     pub dirty: dirty_flags::DirtyFlags,
+    pub render_cache: RenderCache,
 
     keymap: Keymap,
 }
@@ -248,9 +258,11 @@ impl App {
             diff_cache: diff_cache::DiffCache::new(),
             last_diff_key: None,
             dirty: dirty_flags::DirtyFlags::default(),
+            render_cache: RenderCache::default(),
             keymap,
         };
-        app.dirty.mark();
+        app.refresh_render_cache();
+        app.dirty.mark_all();
         app.reload_diff_now();
         Ok(app)
     }
@@ -281,7 +293,8 @@ impl App {
             return None;
         }
 
-        let gm = |action| self.keymap.global_matches(action, &k);
+        let global_actions = self.keymap.global_actions(&k);
+        let gm = |action: &str| global_actions.iter().any(|candidate| candidate == action);
 
         // Comment in English.
         if gm("quit") {
@@ -338,7 +351,8 @@ impl App {
 
         // Comment in English.
         let panel = self.active_panel_name();
-        let pm = |action| self.keymap.panel_matches(panel, action, &k);
+        let panel_actions = self.keymap.panel_actions(panel, &k);
+        let pm = |action: &str| panel_actions.iter().any(|candidate| candidate == action);
 
         if pm("toggle_stage") {
             if self.active_panel == SidePanel::Files && self.files.visual_mode {
@@ -401,7 +415,10 @@ impl App {
         None
     }
 
-    pub fn render(&self, frame: &mut Frame) {
+    pub fn render(&mut self, frame: &mut Frame) {
+        if self.dirty.left_panels {
+            self.refresh_render_cache();
+        }
         render_layout(frame, self);
     }
 
@@ -486,7 +503,7 @@ impl App {
             return;
         }
         self.reload_diff_now();
-        self.dirty.mark();
+        self.dirty.mark_diff();
     }
 
     pub(super) fn pending_refresh_kind(&self) -> Option<RefreshKind> {
@@ -524,6 +541,7 @@ impl App {
             let drain_count = self.command_log.len() - MAX_LOG_ENTRIES;
             self.command_log.drain(0..drain_count);
         }
+        self.dirty.mark_command_log();
     }
 
     pub fn stage_file(&mut self, path: PathBuf) -> Result<()> {
@@ -912,5 +930,17 @@ impl App {
                 self.commit_close_tree();
             }
         }
+    }
+
+    fn refresh_render_cache(&mut self) {
+        self.render_cache.files_visual_selected_indices = self.visual_selected_indices();
+        self.render_cache.files_search_summary =
+            self.search_match_summary_for(SidePanel::Files, false, false);
+        self.render_cache.branches_search_summary =
+            self.search_match_summary_for(SidePanel::LocalBranches, false, false);
+        self.render_cache.commits_search_summary =
+            self.search_match_summary_for(SidePanel::Commits, self.commits.tree_mode.active, false);
+        self.render_cache.stash_search_summary =
+            self.search_match_summary_for(SidePanel::Stash, false, self.stash.tree_mode.active);
     }
 }
