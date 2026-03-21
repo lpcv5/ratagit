@@ -12,6 +12,9 @@ use ratatui::{
 /// Collapsed height for stash/log panels when not focused (in lines)
 const COLLAPSED_HEIGHT: u16 = 3;
 const SHORTCUT_BAR_HEIGHT: u16 = 1;
+const PANEL_BORDER_ROWS: u16 = 2;
+const LEFT_PANEL_DEFAULT_SPLIT: [u16; 3] = [40, 30, 30];
+const LEFT_PANEL_FOCUS_SPLIT: [u16; 3] = [60, 20, 20];
 
 pub fn render_layout(frame: &mut Frame, app: &App) {
     let size = frame.area();
@@ -39,18 +42,88 @@ pub fn render_layout(frame: &mut Frame, app: &App) {
 
     // Files and branches/commits share the remaining height
     let top_h = left_h.saturating_sub(stash_h);
-    // Split top into files (40%) + branches (30%) + commits (30%)
-    let left_panels = Layout::default()
+    let top_rect = ratatui::layout::Rect {
+        height: top_h,
+        ..horizontal[0]
+    };
+
+    // Default split: files (40%) + branches (30%) + commits (30%)
+    let default_left_panels = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Percentage(40),
-            Constraint::Percentage(30),
-            Constraint::Percentage(30),
+            Constraint::Percentage(LEFT_PANEL_DEFAULT_SPLIT[0]),
+            Constraint::Percentage(LEFT_PANEL_DEFAULT_SPLIT[1]),
+            Constraint::Percentage(LEFT_PANEL_DEFAULT_SPLIT[2]),
         ])
-        .split(ratatui::layout::Rect {
-            height: top_h,
-            ..horizontal[0]
-        });
+        .split(top_rect);
+
+    let focus_index = match app.active_panel {
+        SidePanel::Files => Some(0usize),
+        SidePanel::LocalBranches => Some(1usize),
+        SidePanel::Commits => Some(2usize),
+        SidePanel::Stash => None,
+    };
+    let focus_item_count = match app.active_panel {
+        SidePanel::Files => app.files.tree_nodes.len(),
+        SidePanel::LocalBranches => app.branches.items.len(),
+        SidePanel::Commits => {
+            if app.commits.tree_mode.active {
+                app.commits.tree_mode.nodes.len()
+            } else {
+                app.commits.items.len()
+            }
+        }
+        SidePanel::Stash => 0,
+    };
+
+    let should_expand_focused_left_panel = focus_index
+        .map(|idx| {
+            let visible_rows = usize::from(
+                default_left_panels[idx]
+                    .height
+                    .saturating_sub(PANEL_BORDER_ROWS),
+            )
+            .max(1);
+            focus_item_count > visible_rows
+        })
+        .unwrap_or(false);
+
+    let left_constraints = if should_expand_focused_left_panel {
+        let split = match focus_index {
+            Some(0) => [
+                LEFT_PANEL_FOCUS_SPLIT[0],
+                LEFT_PANEL_FOCUS_SPLIT[1],
+                LEFT_PANEL_FOCUS_SPLIT[2],
+            ],
+            Some(1) => [
+                LEFT_PANEL_FOCUS_SPLIT[1],
+                LEFT_PANEL_FOCUS_SPLIT[0],
+                LEFT_PANEL_FOCUS_SPLIT[2],
+            ],
+            Some(2) => [
+                LEFT_PANEL_FOCUS_SPLIT[1],
+                LEFT_PANEL_FOCUS_SPLIT[2],
+                LEFT_PANEL_FOCUS_SPLIT[0],
+            ],
+            _ => LEFT_PANEL_DEFAULT_SPLIT,
+        };
+        vec![
+            Constraint::Percentage(split[0]),
+            Constraint::Percentage(split[1]),
+            Constraint::Percentage(split[2]),
+        ]
+    } else {
+        vec![
+            Constraint::Percentage(LEFT_PANEL_DEFAULT_SPLIT[0]),
+            Constraint::Percentage(LEFT_PANEL_DEFAULT_SPLIT[1]),
+            Constraint::Percentage(LEFT_PANEL_DEFAULT_SPLIT[2]),
+        ]
+    };
+
+    let left_panels = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(left_constraints)
+        .split(top_rect);
 
     let stash_area = ratatui::layout::Rect {
         y: horizontal[0].y + top_h,
