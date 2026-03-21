@@ -6,6 +6,18 @@ impl App {
     pub(super) fn handle_input_key(&mut self, key: KeyEvent) -> Option<Message> {
         let mode = self.input_mode?;
 
+        if mode == InputMode::BranchSwitchConfirm {
+            return match key.code {
+                KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
+                    Some(Message::BranchSwitchConfirm(true))
+                }
+                KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                    Some(Message::BranchSwitchConfirm(false))
+                }
+                _ => None,
+            };
+        }
+
         match key.code {
             KeyCode::Esc => {
                 if mode == InputMode::Search {
@@ -26,6 +38,7 @@ impl App {
                 }
                 InputMode::CreateBranch | InputMode::StashEditor => None,
                 InputMode::Search => None,
+                InputMode::BranchSwitchConfirm => None,
             },
             KeyCode::Enter => match mode {
                 InputMode::CommitEditor => match self.commit_focus {
@@ -91,6 +104,7 @@ impl App {
                     self.dirty.mark_overlay();
                     Some(Message::SearchConfirm)
                 }
+                InputMode::BranchSwitchConfirm => None,
             },
             KeyCode::Backspace => match mode {
                 InputMode::CommitEditor => {
@@ -119,6 +133,7 @@ impl App {
                     self.input_buffer.pop();
                     Some(Message::SearchSetQuery(self.input_buffer.clone()))
                 }
+                InputMode::BranchSwitchConfirm => None,
             },
             KeyCode::Char(c) => {
                 if key.modifiers.contains(KeyModifiers::CONTROL) {
@@ -147,6 +162,7 @@ impl App {
                         self.input_buffer.push(c);
                         Some(Message::SearchSetQuery(self.input_buffer.clone()))
                     }
+                    InputMode::BranchSwitchConfirm => None,
                 }
             }
             _ => None,
@@ -197,5 +213,6 @@ impl App {
         self.commit_focus = CommitFieldFocus::Message;
         self.stash_message_buffer.clear();
         self.stash_targets.clear();
+        self.branch_switch_target = None;
     }
 }

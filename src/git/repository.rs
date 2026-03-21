@@ -203,6 +203,11 @@ pub trait GitRepository {
     fn checkout_branch(&self, name: &str) -> Result<(), GitError>;
 
     /// Documentation comment in English.
+    fn checkout_branch_with_auto_stash(&self, name: &str) -> Result<(), GitError> {
+        self.checkout_branch(name)
+    }
+
+    /// Documentation comment in English.
     fn delete_branch(&self, name: &str) -> Result<(), GitError>;
 
     /// Documentation comment in English.
@@ -645,7 +650,9 @@ impl GitRepository for Git2Repository {
             return Err(GitError::Git2(detail));
         }
 
-        let output = String::from_utf8_lossy(&output.stdout).trim_end().to_string();
+        let output = String::from_utf8_lossy(&output.stdout)
+            .trim_end()
+            .to_string();
         if output.is_empty() {
             return Ok(Vec::new());
         }
@@ -936,12 +943,32 @@ impl GitRepository for Git2Repository {
     }
 
     fn checkout_branch(&self, name: &str) -> Result<(), GitError> {
-        let branch = self.repo.find_branch(name, git2::BranchType::Local)?;
-        let obj = branch.into_reference().peel(git2::ObjectType::Commit)?;
-        let mut opts = git2::build::CheckoutBuilder::new();
-        opts.safe();
-        self.repo.checkout_tree(&obj, Some(&mut opts))?;
-        self.repo.set_head(&format!("refs/heads/{}", name))?;
+        self.run_git(&["switch", name])?;
+        Ok(())
+    }
+
+    fn checkout_branch_with_auto_stash(&self, name: &str) -> Result<(), GitError> {
+        let before = self.stashes()?.len();
+        self.run_git(&[
+            "stash",
+            "push",
+            "-u",
+            "-m",
+            "ratagit:auto-stash-before-switch",
+        ])?;
+        let after = self.stashes()?.len();
+        let has_stashed = after > before;
+
+        if let Err(err) = self.run_git(&["switch", name]) {
+            if has_stashed {
+                let _ = self.run_git(&["stash", "pop"]);
+            }
+            return Err(err);
+        }
+
+        if has_stashed {
+            self.run_git(&["stash", "pop"])?;
+        }
         Ok(())
     }
 

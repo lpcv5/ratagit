@@ -35,6 +35,7 @@ pub enum Message {
     StartSearchInput,
     StartBranchCreateInput,
     CheckoutSelectedBranch,
+    BranchSwitchConfirm(bool),
     DeleteSelectedBranch,
     FetchRemote,
     FetchRemoteFinished(Result<String, String>),

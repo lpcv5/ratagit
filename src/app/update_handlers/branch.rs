@@ -16,15 +16,48 @@ pub(crate) fn handle_branch_message(app: &mut App, msg: Message) -> Option<Comma
         },
         Message::CheckoutSelectedBranch => {
             if let Some(name) = app.selected_branch_name() {
+                app.request_refresh(RefreshKind::StatusOnly);
+                if let Err(e) = app.flush_pending_refresh() {
+                    app.push_log(format!("refresh failed: {}", e), false);
+                    return None;
+                }
+
+                if app.has_uncommitted_changes() {
+                    app.start_branch_switch_confirm(name);
+                    app.dirty.mark_overlay();
+                    return None;
+                }
+
                 match app.checkout_branch(&name) {
                     Ok(()) => {
-                        app.push_log(format!("checked out {}", name), true);
+                        app.push_log(format!("switched to {}", name), true);
                         app.dirty.mark();
                     }
-                    Err(e) => app.push_log(format!("checkout failed: {}", e), false),
+                    Err(e) => app.push_log(format!("switch failed: {}", e), false),
                 }
             } else {
                 app.push_log("no branch selected", false);
+            }
+        }
+        Message::BranchSwitchConfirm(auto_stash) => {
+            let Some(target) = app.take_branch_switch_target() else {
+                app.cancel_input();
+                app.dirty.mark_overlay();
+                return None;
+            };
+            app.cancel_input();
+            if !auto_stash {
+                app.push_log(format!("switch canceled: {}", target), false);
+                app.dirty.mark();
+                return None;
+            }
+
+            match app.checkout_branch_with_auto_stash(&target) {
+                Ok(()) => {
+                    app.push_log(format!("switched with auto stash: {}", target), true);
+                    app.dirty.mark();
+                }
+                Err(e) => app.push_log(format!("auto-stash switch failed: {}", e), false),
             }
         }
         Message::DeleteSelectedBranch => {

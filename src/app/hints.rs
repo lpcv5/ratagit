@@ -13,6 +13,10 @@ impl App {
                     ("Enter".to_string(), "Confirm".to_string()),
                     ("Esc".to_string(), "Cancel".to_string()),
                 ],
+                InputMode::BranchSwitchConfirm => vec![
+                    ("Y".to_string(), "AutoStash+Switch".to_string()),
+                    ("N".to_string(), "Cancel".to_string()),
+                ],
             };
         }
 
@@ -38,7 +42,7 @@ impl App {
             ],
             SidePanel::LocalBranches => vec![
                 (
-                    self.panel_key_or(panel, "checkout_branch", "Enter"),
+                    self.panel_key_or(panel, "checkout_branch", "Space"),
                     "Checkout".to_string(),
                 ),
                 (

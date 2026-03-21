@@ -635,6 +635,150 @@ impl GitRepository for NavigationDiffRepo {
     }
 }
 
+struct BranchSwitchRepo {
+    checkout_calls: Arc<AtomicUsize>,
+    auto_stash_calls: Arc<AtomicUsize>,
+}
+
+impl BranchSwitchRepo {
+    fn new(checkout_calls: Arc<AtomicUsize>, auto_stash_calls: Arc<AtomicUsize>) -> Self {
+        Self {
+            checkout_calls,
+            auto_stash_calls,
+        }
+    }
+}
+
+impl GitRepository for BranchSwitchRepo {
+    fn status(&self) -> Result<GitStatus, GitError> {
+        Ok(GitStatus {
+            unstaged: vec![FileEntry {
+                path: PathBuf::from("dirty.txt"),
+                status: FileStatus::Modified,
+            }],
+            untracked: vec![],
+            staged: vec![],
+        })
+    }
+
+    fn stage(&self, _path: &Path) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn stage_paths(&self, _paths: &[PathBuf]) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn unstage(&self, _path: &Path) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn unstage_paths(&self, _paths: &[PathBuf]) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn discard_paths(&self, _paths: &[PathBuf]) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn diff_unstaged(&self, _path: &Path) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![])
+    }
+
+    fn diff_staged(&self, _path: &Path) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![])
+    }
+
+    fn diff_untracked(&self, _path: &Path) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![])
+    }
+
+    fn branches(&self) -> Result<Vec<BranchInfo>, GitError> {
+        Ok(vec![
+            BranchInfo {
+                name: "main".to_string(),
+                is_current: true,
+            },
+            BranchInfo {
+                name: "feature/switch".to_string(),
+                is_current: false,
+            },
+        ])
+    }
+
+    fn commits(&self, _limit: usize) -> Result<Vec<CommitInfo>, GitError> {
+        Ok(vec![])
+    }
+
+    fn commit_files(&self, _oid: &str) -> Result<Vec<FileEntry>, GitError> {
+        Ok(vec![])
+    }
+
+    fn stashes(&self) -> Result<Vec<StashInfo>, GitError> {
+        Ok(vec![])
+    }
+
+    fn stash_files(&self, _index: usize) -> Result<Vec<FileEntry>, GitError> {
+        Ok(vec![])
+    }
+
+    fn stash_diff(&self, _index: usize, _path: Option<&Path>) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![])
+    }
+
+    fn stash_push_paths(&self, _paths: &[PathBuf], _message: &str) -> Result<usize, GitError> {
+        Ok(0)
+    }
+
+    fn stash_apply(&self, _index: usize) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn stash_pop(&self, _index: usize) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn stash_drop(&self, _index: usize) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn commit_diff_scoped(
+        &self,
+        _oid: &str,
+        _path: Option<&Path>,
+    ) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![])
+    }
+
+    fn commit(&self, _message: &str) -> Result<String, GitError> {
+        Ok("oid".to_string())
+    }
+
+    fn create_branch(&self, _name: &str) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn checkout_branch(&self, _name: &str) -> Result<(), GitError> {
+        self.checkout_calls.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+
+    fn checkout_branch_with_auto_stash(&self, _name: &str) -> Result<(), GitError> {
+        self.auto_stash_calls.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+
+    fn delete_branch(&self, _name: &str) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn fetch_default_async(&self) -> Result<Receiver<Result<String, GitError>>, GitError> {
+        let (tx, rx) = mpsc::channel();
+        let _ = tx.send(Ok("origin".to_string()));
+        Ok(rx)
+    }
+}
+
 impl RefreshCountingRepo {
     fn new(
         status_calls: Arc<AtomicUsize>,
@@ -1283,4 +1427,68 @@ fn test_list_navigation_debounces_diff_in_local_branches_panel() {
     app.flush_pending_diff_reload();
     assert_eq!(app.current_diff[0].content, "branch feature/x");
     assert!(!app.has_pending_diff_reload());
+}
+
+#[test]
+fn test_space_key_triggers_checkout_in_branches_panel() {
+    let mut app = App::from_repo(Box::new(NavigationDiffRepo)).expect("app from navigation repo");
+    app.active_panel = SidePanel::LocalBranches;
+    app.branches.panel.list_state.select(Some(0));
+
+    let msg = app.handle_key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
+    assert!(matches!(msg, Some(Message::CheckoutSelectedBranch)));
+}
+
+#[test]
+fn test_checkout_with_dirty_changes_opens_branch_switch_confirm() {
+    let checkout_calls = Arc::new(AtomicUsize::new(0));
+    let auto_stash_calls = Arc::new(AtomicUsize::new(0));
+    let repo = BranchSwitchRepo::new(checkout_calls, auto_stash_calls);
+    let mut app = App::from_repo(Box::new(repo)).expect("app from branch switch repo");
+    app.active_panel = SidePanel::LocalBranches;
+    app.branches.panel.list_state.select(Some(1));
+
+    update(&mut app, Message::CheckoutSelectedBranch);
+
+    assert_eq!(
+        app.input_mode,
+        Some(crate::app::InputMode::BranchSwitchConfirm)
+    );
+    assert_eq!(app.pending_branch_switch_target(), Some("feature/switch"));
+}
+
+#[test]
+fn test_branch_switch_confirm_yes_uses_auto_stash_switch() {
+    let checkout_calls = Arc::new(AtomicUsize::new(0));
+    let auto_stash_calls = Arc::new(AtomicUsize::new(0));
+    let repo = BranchSwitchRepo::new(checkout_calls.clone(), auto_stash_calls.clone());
+    let mut app = App::from_repo(Box::new(repo)).expect("app from branch switch repo");
+    app.active_panel = SidePanel::LocalBranches;
+    app.branches.panel.list_state.select(Some(1));
+
+    update(&mut app, Message::CheckoutSelectedBranch);
+    update(&mut app, Message::BranchSwitchConfirm(true));
+
+    assert_eq!(app.input_mode, None);
+    assert!(app.pending_branch_switch_target().is_none());
+    assert_eq!(checkout_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(auto_stash_calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn test_branch_switch_confirm_no_cancels_operation() {
+    let checkout_calls = Arc::new(AtomicUsize::new(0));
+    let auto_stash_calls = Arc::new(AtomicUsize::new(0));
+    let repo = BranchSwitchRepo::new(checkout_calls.clone(), auto_stash_calls.clone());
+    let mut app = App::from_repo(Box::new(repo)).expect("app from branch switch repo");
+    app.active_panel = SidePanel::LocalBranches;
+    app.branches.panel.list_state.select(Some(1));
+
+    update(&mut app, Message::CheckoutSelectedBranch);
+    update(&mut app, Message::BranchSwitchConfirm(false));
+
+    assert_eq!(app.input_mode, None);
+    assert!(app.pending_branch_switch_target().is_none());
+    assert_eq!(checkout_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(auto_stash_calls.load(Ordering::SeqCst), 0);
 }
