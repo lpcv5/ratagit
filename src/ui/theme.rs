@@ -16,8 +16,6 @@ pub struct UiTheme {
 
     pub selection_bg: Color,
     pub visual_selection_bg: Color,
-    pub search_highlight_bg: Color,
-    pub search_highlight_fg: Color,
 }
 
 impl Default for UiTheme {
@@ -36,8 +34,6 @@ impl Default for UiTheme {
 
             selection_bg: Color::Rgb(34, 52, 58),
             visual_selection_bg: Color::Rgb(60, 80, 100),
-            search_highlight_bg: Color::Rgb(255, 200, 0),
-            search_highlight_fg: Color::Black,
         }
     }
 }
