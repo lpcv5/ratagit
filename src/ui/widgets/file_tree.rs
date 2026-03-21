@@ -11,7 +11,13 @@ use ratatui::{
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
+    sync::OnceLock,
 };
+
+fn empty_selected_indices() -> &'static HashSet<usize> {
+    static EMPTY: OnceLock<HashSet<usize>> = OnceLock::new();
+    EMPTY.get_or_init(HashSet::new)
+}
 
 /// Documentation comment in English.
 #[derive(Debug, Clone, PartialEq)]
@@ -101,23 +107,23 @@ impl FileTreeState {
 
 /// Documentation comment in English.
 pub struct FileTree<'a> {
-    nodes: Vec<FileTreeNode>,
+    nodes: &'a [FileTreeNode],
     block: Option<Block<'a>>,
     highlight_style: Style,
-    selected_indices: HashSet<usize>,
-    search_query: Option<String>,
+    selected_indices: &'a HashSet<usize>,
+    search_query: Option<&'a str>,
     theme: UiTheme,
 }
 
 impl<'a> FileTree<'a> {
-    pub fn new(nodes: Vec<FileTreeNode>) -> Self {
+    pub fn new(nodes: &'a [FileTreeNode]) -> Self {
         Self {
             nodes,
             block: None,
             highlight_style: Style::default()
                 .bg(Color::DarkGray)
                 .add_modifier(Modifier::BOLD),
-            selected_indices: HashSet::new(),
+            selected_indices: empty_selected_indices(),
             search_query: None,
             theme: UiTheme::default(),
         }
@@ -133,13 +139,13 @@ impl<'a> FileTree<'a> {
         self
     }
 
-    pub fn selected_indices(mut self, selected_indices: HashSet<usize>) -> Self {
+    pub fn selected_indices(mut self, selected_indices: &'a HashSet<usize>) -> Self {
         self.selected_indices = selected_indices;
         self
     }
 
-    pub fn search_query(mut self, query: Option<&str>) -> Self {
-        self.search_query = query.map(|q| q.to_string());
+    pub fn search_query(mut self, query: Option<&'a str>) -> Self {
+        self.search_query = query;
         self
     }
 

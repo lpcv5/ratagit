@@ -128,6 +128,11 @@ pub trait GitRepository {
     fn diff_untracked(&self, path: &std::path::Path) -> Result<Vec<DiffLine>, GitError>;
 
     /// Documentation comment in English.
+    fn diff_directory(&self, _path: &std::path::Path) -> Result<Vec<DiffLine>, GitError> {
+        Ok(Vec::new())
+    }
+
+    /// Documentation comment in English.
     fn branches(&self) -> Result<Vec<BranchInfo>, GitError>;
 
     /// Documentation comment in English.
@@ -348,6 +353,22 @@ impl Git2Repository {
         }
         CommitSyncState::LocalOnly
     }
+
+    fn diff_scope_with_args(
+        &self,
+        base_args: &[&str],
+        path: &std::path::Path,
+    ) -> Result<Vec<DiffLine>, GitError> {
+        let Some(path_str) = path.to_str() else {
+            return Err(GitError::Git2("path contains invalid unicode".to_string()));
+        };
+
+        let mut args: Vec<String> = base_args.iter().map(|arg| (*arg).to_string()).collect();
+        args.push("--".to_string());
+        args.push(path_str.to_string());
+        let patch = self.run_git_owned(&args)?;
+        Ok(parse_patch_text(&patch))
+    }
 }
 
 impl GitRepository for Git2Repository {
@@ -482,6 +503,22 @@ impl GitRepository for Git2Repository {
                 content: line.to_string(),
             });
         }
+        Ok(lines)
+    }
+
+    fn diff_directory(&self, path: &std::path::Path) -> Result<Vec<DiffLine>, GitError> {
+        let mut lines = self.diff_scope_with_args(&["diff", "--cached"], path)?;
+        lines.extend(self.diff_scope_with_args(&["diff"], path)?);
+
+        let untracked = self.status()?;
+        for entry in untracked
+            .untracked
+            .iter()
+            .filter(|entry| entry.path.starts_with(path))
+        {
+            lines.extend(self.diff_untracked(&entry.path)?);
+        }
+
         Ok(lines)
     }
 
@@ -1045,6 +1082,44 @@ mod tests {
             .expect("stash diff for path");
         assert!(!diff.is_empty());
         assert!(diff.iter().any(|l| matches!(l.kind, DiffLineKind::Header)));
+    }
+
+    #[test]
+    fn test_diff_directory_includes_staged_unstaged_and_untracked_changes() {
+        let (dir, repo) = init_repo_with_commit();
+        fs::create_dir_all(dir.path().join("nested")).expect("create nested dir");
+
+        write_file(
+            &dir.path().join("nested").join("tracked.txt"),
+            "tracked change\n",
+        );
+        repo.stage(&PathBuf::from("nested/tracked.txt"))
+            .expect("stage tracked path");
+        repo.commit("add nested tracked")
+            .expect("commit nested tracked");
+
+        write_file(&dir.path().join("nested").join("staged.txt"), "staged\n");
+        repo.stage(&PathBuf::from("nested/staged.txt"))
+            .expect("stage nested file");
+        write_file(
+            &dir.path().join("nested").join("tracked.txt"),
+            "tracked changed again\n",
+        );
+        write_file(&dir.path().join("nested").join("new.txt"), "new file\n");
+
+        let diff = repo
+            .diff_directory(Path::new("nested"))
+            .expect("directory diff");
+        assert!(!diff.is_empty());
+        assert!(diff
+            .iter()
+            .any(|line| line.content.contains("nested/staged.txt")));
+        assert!(diff
+            .iter()
+            .any(|line| line.content.contains("nested/tracked.txt")));
+        assert!(diff
+            .iter()
+            .any(|line| line.content.contains("nested/new.txt")));
     }
 
     #[test]

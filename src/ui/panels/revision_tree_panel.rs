@@ -50,7 +50,7 @@ pub fn render_revision_tree_panel(
             return;
         }
 
-        let widget = FileTree::new(tree_nodes.to_vec())
+        let widget = FileTree::new(tree_nodes)
             .block(theme.panel_block(title, is_active))
             .search_query(tree_search_query)
             .highlight_style(highlight);

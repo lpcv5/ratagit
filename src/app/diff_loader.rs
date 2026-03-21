@@ -1,8 +1,6 @@
 use crate::git::{DiffLine, GitRepository};
-use crate::ui::widgets::file_tree::{FileTreeNode, FileTreeNodeStatus};
+use crate::ui::widgets::file_tree::FileTreeNodeStatus;
 use std::path::PathBuf;
-
-const MAX_DIR_DIFF_LINES: usize = 2000;
 
 #[derive(Debug, Clone)]
 pub enum DiffTarget {
@@ -24,15 +22,11 @@ pub enum DiffTarget {
     },
 }
 
-pub fn load_diff(
-    repo: &dyn GitRepository,
-    file_tree_nodes: &[FileTreeNode],
-    target: DiffTarget,
-) -> Vec<DiffLine> {
+pub fn load_diff(repo: &dyn GitRepository, target: DiffTarget) -> Vec<DiffLine> {
     match target {
         DiffTarget::None => Vec::new(),
         DiffTarget::File { path, status } => load_file_diff(repo, &path, &status),
-        DiffTarget::Directory { path } => load_dir_diff(repo, file_tree_nodes, &path),
+        DiffTarget::Directory { path } => repo.diff_directory(&path).unwrap_or_default(),
         DiffTarget::Commit { oid, path } => repo
             .commit_diff_scoped(&oid, path.as_deref())
             .unwrap_or_default(),
@@ -53,24 +47,4 @@ fn load_file_diff(
         FileTreeNodeStatus::Unstaged(_) => repo.diff_unstaged(path).unwrap_or_default(),
         FileTreeNodeStatus::Directory => Vec::new(),
     }
-}
-
-fn load_dir_diff(
-    repo: &dyn GitRepository,
-    file_tree_nodes: &[FileTreeNode],
-    dir_path: &std::path::Path,
-) -> Vec<DiffLine> {
-    let mut result = Vec::new();
-    for node in file_tree_nodes
-        .iter()
-        .filter(|n| !n.is_dir && n.path.starts_with(dir_path))
-    {
-        if result.len() >= MAX_DIR_DIFF_LINES {
-            break;
-        }
-        let lines = load_file_diff(repo, &node.path, &node.status);
-        let remaining = MAX_DIR_DIFF_LINES - result.len();
-        result.extend(lines.into_iter().take(remaining));
-    }
-    result
 }
