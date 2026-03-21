@@ -88,7 +88,10 @@ impl App {
         if self.active_panel != SidePanel::Commits || !self.commits.tree_mode.active {
             return None;
         }
-        revision_tree::selected_tree_node(&self.commits.panel.list_state, &self.commits.tree_mode.nodes)
+        revision_tree::selected_tree_node(
+            &self.commits.panel.list_state,
+            &self.commits.tree_mode.nodes,
+        )
     }
 
     pub(super) fn selected_stash_tree_node(&self) -> Option<&FileTreeNode> {
@@ -98,4 +101,3 @@ impl App {
         revision_tree::selected_tree_node(&self.stash.panel.list_state, &self.stash.tree_mode.nodes)
     }
 }
-

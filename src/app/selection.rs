@@ -322,5 +322,3 @@ fn is_discardable_status(status: &FileTreeNodeStatus) -> bool {
         FileTreeNodeStatus::Staged(_) | FileTreeNodeStatus::Unstaged(_)
     )
 }
-
-

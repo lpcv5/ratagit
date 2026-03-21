@@ -90,4 +90,3 @@ pub(crate) fn handle_navigation_message(app: &mut App, msg: Message) -> Option<C
     }
     None
 }
-

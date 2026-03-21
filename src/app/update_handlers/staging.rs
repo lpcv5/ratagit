@@ -15,4 +15,3 @@ pub(crate) fn handle_staging_message(app: &mut App, msg: Message) -> Option<Comm
     }
     None
 }
-

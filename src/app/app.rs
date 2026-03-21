@@ -419,7 +419,8 @@ impl App {
             if self.stash.tree_mode.active {
                 if let Some(index) = self.stash.tree_mode.selected_source {
                     if self.stash.items.iter().any(|s| s.index == index) {
-                        self.stash.tree_mode.files = self.repo.stash_files(index).unwrap_or_default();
+                        self.stash.tree_mode.files =
+                            self.repo.stash_files(index).unwrap_or_default();
                         revision_tree::rebuild_tree_nodes(
                             &self.stash.tree_mode.files,
                             &self.stash.tree_mode.expanded_dirs,
@@ -913,5 +914,3 @@ impl App {
         }
     }
 }
-
-

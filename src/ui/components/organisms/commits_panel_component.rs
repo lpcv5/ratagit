@@ -28,8 +28,11 @@ impl PanelComponent for CommitsPanelState {
                         CommitSyncState::RemoteBranch => Color::Yellow,
                         CommitSyncState::LocalOnly => Color::Red,
                     };
-                    let hash_spans =
-                        highlighted_spans(&c.short_hash, ctx.search_query, Style::default().fg(color));
+                    let hash_spans = highlighted_spans(
+                        &c.short_hash,
+                        ctx.search_query,
+                        Style::default().fg(color),
+                    );
                     let message_spans = highlighted_spans(
                         &c.message,
                         ctx.search_query,

@@ -75,7 +75,11 @@ pub fn render_layout(frame: &mut Frame, app: &App) {
 
     let commits_ctx = PanelRenderContext {
         active_panel: app.active_panel,
-        search_query: app.search_query_for_scope(SidePanel::Commits, app.commits.tree_mode.active, false),
+        search_query: app.search_query_for_scope(
+            SidePanel::Commits,
+            app.commits.tree_mode.active,
+            false,
+        ),
         search_summary: app.search_match_summary_for(
             SidePanel::Commits,
             app.commits.tree_mode.active,
@@ -87,7 +91,11 @@ pub fn render_layout(frame: &mut Frame, app: &App) {
 
     let stash_ctx = PanelRenderContext {
         active_panel: app.active_panel,
-        search_query: app.search_query_for_scope(SidePanel::Stash, false, app.stash.tree_mode.active),
+        search_query: app.search_query_for_scope(
+            SidePanel::Stash,
+            false,
+            app.stash.tree_mode.active,
+        ),
         search_summary: app.search_match_summary_for(
             SidePanel::Stash,
             false,
@@ -128,4 +136,3 @@ pub fn render_layout(frame: &mut Frame, app: &App) {
     render_commit_editor(frame, app);
     render_stash_editor(frame, app);
 }
-
