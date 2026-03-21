@@ -307,6 +307,283 @@ struct RefreshCountingRepo {
     commits_calls: Arc<AtomicUsize>,
 }
 
+struct DuplicateStatusRepo;
+
+impl GitRepository for DuplicateStatusRepo {
+    fn status(&self) -> Result<GitStatus, GitError> {
+        Ok(GitStatus {
+            unstaged: vec![FileEntry {
+                path: PathBuf::from("src/main.rs"),
+                status: FileStatus::Modified,
+            }],
+            untracked: vec![],
+            staged: vec![FileEntry {
+                path: PathBuf::from("src/main.rs"),
+                status: FileStatus::Modified,
+            }],
+        })
+    }
+
+    fn stage(&self, _path: &Path) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn stage_paths(&self, _paths: &[PathBuf]) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn unstage(&self, _path: &Path) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn unstage_paths(&self, _paths: &[PathBuf]) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn discard_paths(&self, _paths: &[PathBuf]) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn diff_unstaged(&self, _path: &Path) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![DiffLine {
+            kind: DiffLineKind::Header,
+            content: "unstaged".to_string(),
+        }])
+    }
+
+    fn diff_staged(&self, _path: &Path) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![DiffLine {
+            kind: DiffLineKind::Header,
+            content: "staged".to_string(),
+        }])
+    }
+
+    fn diff_untracked(&self, _path: &Path) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![DiffLine {
+            kind: DiffLineKind::Header,
+            content: "untracked".to_string(),
+        }])
+    }
+
+    fn branches(&self) -> Result<Vec<BranchInfo>, GitError> {
+        Ok(vec![])
+    }
+
+    fn commits(&self, _limit: usize) -> Result<Vec<CommitInfo>, GitError> {
+        Ok(vec![])
+    }
+
+    fn commit_files(&self, _oid: &str) -> Result<Vec<FileEntry>, GitError> {
+        Ok(vec![])
+    }
+
+    fn stashes(&self) -> Result<Vec<StashInfo>, GitError> {
+        Ok(vec![])
+    }
+
+    fn stash_files(&self, _index: usize) -> Result<Vec<FileEntry>, GitError> {
+        Ok(vec![])
+    }
+
+    fn stash_diff(&self, _index: usize, _path: Option<&Path>) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![])
+    }
+
+    fn stash_push_paths(&self, _paths: &[PathBuf], _message: &str) -> Result<usize, GitError> {
+        Ok(0)
+    }
+
+    fn stash_apply(&self, _index: usize) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn stash_pop(&self, _index: usize) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn stash_drop(&self, _index: usize) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn commit_diff_scoped(
+        &self,
+        _oid: &str,
+        _path: Option<&Path>,
+    ) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![])
+    }
+
+    fn commit(&self, _message: &str) -> Result<String, GitError> {
+        Ok("oid".to_string())
+    }
+
+    fn create_branch(&self, _name: &str) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn checkout_branch(&self, _name: &str) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn delete_branch(&self, _name: &str) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn fetch_default_async(&self) -> Result<Receiver<Result<String, GitError>>, GitError> {
+        let (tx, rx) = mpsc::channel();
+        let _ = tx.send(Ok("origin".to_string()));
+        Ok(rx)
+    }
+}
+
+struct NavigationDiffRepo;
+
+impl GitRepository for NavigationDiffRepo {
+    fn status(&self) -> Result<GitStatus, GitError> {
+        Ok(GitStatus {
+            unstaged: vec![
+                FileEntry {
+                    path: PathBuf::from("a.txt"),
+                    status: FileStatus::Modified,
+                },
+                FileEntry {
+                    path: PathBuf::from("b.txt"),
+                    status: FileStatus::Modified,
+                },
+            ],
+            untracked: vec![],
+            staged: vec![],
+        })
+    }
+
+    fn stage(&self, _path: &Path) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn stage_paths(&self, _paths: &[PathBuf]) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn unstage(&self, _path: &Path) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn unstage_paths(&self, _paths: &[PathBuf]) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn discard_paths(&self, _paths: &[PathBuf]) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn diff_unstaged(&self, path: &Path) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![DiffLine {
+            kind: DiffLineKind::Header,
+            content: format!("file {}", path.display()),
+        }])
+    }
+
+    fn diff_staged(&self, _path: &Path) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![])
+    }
+
+    fn diff_untracked(&self, _path: &Path) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![])
+    }
+
+    fn branches(&self) -> Result<Vec<BranchInfo>, GitError> {
+        Ok(vec![])
+    }
+
+    fn commits(&self, _limit: usize) -> Result<Vec<CommitInfo>, GitError> {
+        Ok(vec![
+            CommitInfo {
+                short_hash: "1111111".to_string(),
+                oid: "oid1".to_string(),
+                message: "commit one".to_string(),
+                author: "tester".to_string(),
+                time: "2026-03-20 00:00".to_string(),
+                parent_count: 1,
+                sync_state: CommitSyncState::DefaultBranch,
+            },
+            CommitInfo {
+                short_hash: "2222222".to_string(),
+                oid: "oid2".to_string(),
+                message: "commit two".to_string(),
+                author: "tester".to_string(),
+                time: "2026-03-20 00:01".to_string(),
+                parent_count: 1,
+                sync_state: CommitSyncState::DefaultBranch,
+            },
+        ])
+    }
+
+    fn commit_files(&self, _oid: &str) -> Result<Vec<FileEntry>, GitError> {
+        Ok(vec![])
+    }
+
+    fn stashes(&self) -> Result<Vec<StashInfo>, GitError> {
+        Ok(vec![])
+    }
+
+    fn stash_files(&self, _index: usize) -> Result<Vec<FileEntry>, GitError> {
+        Ok(vec![])
+    }
+
+    fn stash_diff(&self, _index: usize, _path: Option<&Path>) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![])
+    }
+
+    fn stash_push_paths(&self, _paths: &[PathBuf], _message: &str) -> Result<usize, GitError> {
+        Ok(0)
+    }
+
+    fn stash_apply(&self, _index: usize) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn stash_pop(&self, _index: usize) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn stash_drop(&self, _index: usize) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn commit_diff_scoped(
+        &self,
+        oid: &str,
+        _path: Option<&Path>,
+    ) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![DiffLine {
+            kind: DiffLineKind::Header,
+            content: format!("commit {}", oid),
+        }])
+    }
+
+    fn commit(&self, _message: &str) -> Result<String, GitError> {
+        Ok("oid".to_string())
+    }
+
+    fn create_branch(&self, _name: &str) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn checkout_branch(&self, _name: &str) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn delete_branch(&self, _name: &str) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn fetch_default_async(&self) -> Result<Receiver<Result<String, GitError>>, GitError> {
+        let (tx, rx) = mpsc::channel();
+        let _ = tx.send(Ok("origin".to_string()));
+        Ok(rx)
+    }
+}
+
 impl RefreshCountingRepo {
     fn new(
         status_calls: Arc<AtomicUsize>,
@@ -473,11 +750,11 @@ fn test_commit_diff_scopes_path_in_tree_mode() {
     app.active_panel = SidePanel::Commits;
     app.commits_panel.list_state.select(Some(0));
 
-    app.load_diff();
+    app.reload_diff_now();
     assert!(app.current_diff[0].content.contains("<none>"));
 
     update(&mut app, Message::RevisionOpenTreeOrToggleDir);
-    app.load_diff();
+    app.reload_diff_now();
     assert!(!app.current_diff[0].content.contains("<none>"));
 }
 
@@ -487,11 +764,11 @@ fn test_stash_diff_scopes_path_in_tree_mode() {
     app.active_panel = SidePanel::Stash;
     app.stash_panel.list_state.select(Some(0));
 
-    app.load_diff();
+    app.reload_diff_now();
     assert!(app.current_diff[0].content.contains("<none>"));
 
     update(&mut app, Message::RevisionOpenTreeOrToggleDir);
-    app.load_diff();
+    app.reload_diff_now();
     assert!(!app.current_diff[0].content.contains("<none>"));
 }
 
@@ -857,4 +1134,59 @@ fn test_search_query_is_restored_between_commit_list_and_tree_scope() {
     update(&mut app, Message::RevisionCloseTree);
     assert!(!app.commit_tree_mode);
     assert_eq!(app.search_query, "test");
+}
+
+#[test]
+fn test_refresh_keeps_selected_duplicate_status_entry_and_diff_in_sync() {
+    let mut app = App::from_repo(Box::new(DuplicateStatusRepo)).expect("app from duplicate repo");
+    app.active_panel = SidePanel::Files;
+    assert_eq!(app.file_tree_nodes.len(), 3);
+
+    app.files_panel.list_state.select(Some(2));
+    app.reload_diff_now();
+    assert_eq!(app.current_diff[0].content, "staged");
+
+    app.request_refresh(RefreshKind::StatusOnly);
+    app.flush_pending_refresh().expect("flush refresh");
+
+    assert_eq!(app.files_panel.list_state.selected(), Some(2));
+    assert_eq!(app.current_diff[0].content, "staged");
+}
+
+#[test]
+fn test_list_navigation_debounces_diff_in_files_panel() {
+    let mut app = App::from_repo(Box::new(NavigationDiffRepo)).expect("app from navigation repo");
+    app.active_panel = SidePanel::Files;
+    app.files_panel.list_state.select(Some(0));
+    app.reload_diff_now();
+    assert_eq!(app.current_diff[0].content, "file a.txt");
+
+    update(&mut app, Message::ListDown);
+
+    assert_eq!(app.files_panel.list_state.selected(), Some(1));
+    assert!(app.has_pending_diff_reload());
+    assert_eq!(app.current_diff[0].content, "file a.txt");
+
+    app.flush_pending_diff_reload();
+    assert_eq!(app.current_diff[0].content, "file b.txt");
+    assert!(!app.has_pending_diff_reload());
+}
+
+#[test]
+fn test_list_navigation_debounces_diff_in_commits_panel() {
+    let mut app = App::from_repo(Box::new(NavigationDiffRepo)).expect("app from navigation repo");
+    app.active_panel = SidePanel::Commits;
+    app.commits_panel.list_state.select(Some(0));
+    app.reload_diff_now();
+    assert_eq!(app.current_diff[0].content, "commit oid1");
+
+    update(&mut app, Message::ListDown);
+
+    assert_eq!(app.commits_panel.list_state.selected(), Some(1));
+    assert!(app.has_pending_diff_reload());
+    assert_eq!(app.current_diff[0].content, "commit oid1");
+
+    app.flush_pending_diff_reload();
+    assert_eq!(app.current_diff[0].content, "commit oid2");
+    assert!(!app.has_pending_diff_reload());
 }

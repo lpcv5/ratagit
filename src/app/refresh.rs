@@ -1,8 +1,15 @@
 use super::app::PanelState;
 use crate::git::GitStatus;
-use crate::ui::widgets::file_tree::{FileTree, FileTreeNode};
+use crate::ui::widgets::file_tree::{FileTree, FileTreeNode, FileTreeNodeStatus};
 use std::collections::HashSet;
 use std::path::PathBuf;
+
+#[derive(Clone, PartialEq)]
+struct TreeSelectionKey {
+    path: PathBuf,
+    status: FileTreeNodeStatus,
+    is_dir: bool,
+}
 
 pub(super) fn collect_all_dirs(status: &GitStatus) -> HashSet<PathBuf> {
     let mut dirs = HashSet::new();
@@ -55,12 +62,13 @@ pub(super) fn rebuild_tree(
     files_panel: &mut PanelState,
     files_visual_anchor: &mut Option<usize>,
 ) {
-    // Remember the selected path so we can restore selection after rebuild
-    let selected_path = files_panel
+    // Remember the selected node identity so we can restore selection after rebuild.
+    let selected_node = files_panel
         .list_state
         .selected()
         .and_then(|i| file_tree_nodes.get(i))
-        .map(|n| n.path.clone());
+        .map(tree_selection_key);
+    let selected_idx = files_panel.list_state.selected();
 
     *file_tree_nodes = FileTree::from_git_status_with_expanded(
         &status.unstaged,
@@ -74,15 +82,26 @@ pub(super) fn rebuild_tree(
         files_panel.list_state.select(None);
         *files_visual_anchor = None;
     } else {
-        // Try to find the same path in the new tree; fall back to clamped index
-        let new_idx = selected_path
-            .and_then(|p| file_tree_nodes.iter().position(|n| n.path == p))
-            .unwrap_or_else(|| {
-                files_panel.list_state.selected().unwrap_or(0).min(count - 1)
-            });
+        // Try to find the same node in the new tree; fall back to clamped index.
+        let new_idx = selected_node
+            .as_ref()
+            .and_then(|selected| {
+                file_tree_nodes
+                    .iter()
+                    .position(|node| tree_selection_key(node) == *selected)
+            })
+            .unwrap_or_else(|| selected_idx.unwrap_or(0).min(count - 1));
         files_panel.list_state.select(Some(new_idx));
         if let Some(anchor) = *files_visual_anchor {
             *files_visual_anchor = Some(anchor.min(count - 1));
         }
+    }
+}
+
+fn tree_selection_key(node: &FileTreeNode) -> TreeSelectionKey {
+    TreeSelectionKey {
+        path: node.path.clone(),
+        status: node.status.clone(),
+        is_dir: node.is_dir,
     }
 }

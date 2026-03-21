@@ -1,6 +1,6 @@
+use crate::git::DiffLine;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use crate::git::DiffLine;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum DiffCacheKey {
@@ -35,8 +35,7 @@ impl DiffCache {
     }
 
     pub fn invalidate_files(&mut self) {
-        self.cache.retain(|k, _| {
-            matches!(k, DiffCacheKey::Commit{..} | DiffCacheKey::Stash{..})
-        });
+        self.cache
+            .retain(|k, _| matches!(k, DiffCacheKey::Commit { .. } | DiffCacheKey::Stash { .. }));
     }
 }

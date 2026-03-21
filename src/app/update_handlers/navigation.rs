@@ -11,7 +11,7 @@ pub(crate) fn handle_navigation_message(app: &mut App, msg: Message) -> Option<C
             };
             app.ensure_commits_loaded_for_active_panel();
             app.restore_search_for_active_scope();
-            app.load_diff();
+            app.reload_diff_now();
             app.dirty.mark();
         }
         Message::PanelPrev => {
@@ -23,7 +23,7 @@ pub(crate) fn handle_navigation_message(app: &mut App, msg: Message) -> Option<C
             };
             app.ensure_commits_loaded_for_active_panel();
             app.restore_search_for_active_scope();
-            app.load_diff();
+            app.reload_diff_now();
             app.dirty.mark();
         }
         Message::PanelGoto(n) => {
@@ -36,37 +36,37 @@ pub(crate) fn handle_navigation_message(app: &mut App, msg: Message) -> Option<C
             };
             app.ensure_commits_loaded_for_active_panel();
             app.restore_search_for_active_scope();
-            app.load_diff();
+            app.reload_diff_now();
             app.dirty.mark();
         }
         Message::ListDown => {
             app.list_down();
-            app.request_diff_reload();
+            app.schedule_diff_reload();
             app.dirty.mark();
         }
         Message::ListUp => {
             app.list_up();
-            app.request_diff_reload();
+            app.schedule_diff_reload();
             app.dirty.mark();
         }
         Message::ToggleDir => {
             app.toggle_selected_dir();
-            app.load_diff();
+            app.reload_diff_now();
             app.dirty.mark();
         }
         Message::ToggleVisualSelectMode => {
             app.toggle_visual_select_mode();
-            app.load_diff();
+            app.reload_diff_now();
             app.dirty.mark();
         }
         Message::CollapseAll => {
             app.collapse_all();
-            app.load_diff();
+            app.reload_diff_now();
             app.dirty.mark();
         }
         Message::ExpandAll => {
             app.expand_all();
-            app.load_diff();
+            app.reload_diff_now();
             app.dirty.mark();
         }
         Message::DiffScrollUp => {

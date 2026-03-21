@@ -2,7 +2,7 @@ use crate::app::{App, SidePanel};
 use crate::ui::panels::{
     render_branches_panel, render_command_log, render_commit_editor, render_commits_panel,
     render_diff_panel, render_files_panel, render_shortcut_bar, render_stash_editor,
-    render_stash_panel,
+    render_stash_panel, DiffViewProps,
 };
 use ratatui::{
     layout::{Constraint, Direction, Layout},
@@ -94,7 +94,16 @@ pub fn render_layout(frame: &mut Frame, app: &App) {
         ..horizontal[1]
     };
 
-    render_diff_panel(frame, diff_area, app);
+    render_diff_panel(
+        frame,
+        diff_area,
+        DiffViewProps {
+            lines: &app.current_diff,
+            scroll: app.diff_scroll,
+            active_panel: app.active_panel,
+            is_loading: app.has_pending_diff_reload(),
+        },
+    );
     render_command_log(frame, log_area, app);
     render_shortcut_bar(frame, vertical[1], app);
     render_commit_editor(frame, app);

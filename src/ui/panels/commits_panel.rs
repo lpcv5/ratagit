@@ -26,7 +26,8 @@ pub fn render_commits_panel(frame: &mut Frame, area: Rect, app: &App, is_active:
                     CommitSyncState::RemoteBranch => Color::Yellow,
                     CommitSyncState::LocalOnly => Color::Red,
                 };
-                let hash_spans = highlighted_spans(&c.short_hash, query, Style::default().fg(color));
+                let hash_spans =
+                    highlighted_spans(&c.short_hash, query, Style::default().fg(color));
                 let message_spans =
                     highlighted_spans(&c.message, query, Style::default().fg(Color::White));
                 let mut spans = Vec::with_capacity(hash_spans.len() + 1 + message_spans.len());

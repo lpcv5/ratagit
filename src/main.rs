@@ -100,8 +100,7 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
         if let Err(err) = app.flush_pending_refresh() {
             app.push_log(format!("refresh failed: {}", err), false);
         }
-        if app.has_pending_diff_reload() && app.diff_reload_debounce_elapsed(DIFF_RELOAD_DEBOUNCE)
-        {
+        if app.has_pending_diff_reload() && app.diff_reload_debounce_elapsed(DIFF_RELOAD_DEBOUNCE) {
             app.flush_pending_diff_reload();
         }
 
