@@ -28,6 +28,16 @@ pub struct Keymap {
     pub commits: PanelKeymap,
     #[serde(default)]
     pub stash: PanelKeymap,
+    #[serde(skip)]
+    global_key_index: HashMap<String, Vec<String>>,
+    #[serde(skip)]
+    files_key_index: HashMap<String, Vec<String>>,
+    #[serde(skip)]
+    branches_key_index: HashMap<String, Vec<String>>,
+    #[serde(skip)]
+    commits_key_index: HashMap<String, Vec<String>>,
+    #[serde(skip)]
+    stash_key_index: HashMap<String, Vec<String>>,
 }
 
 impl Default for GlobalKeymap {
@@ -78,25 +88,34 @@ impl Default for Keymap {
         let mut commits = HashMap::new();
         commits.insert("open_tree".into(), vec!["Enter".into()]);
 
-        Self {
+        let mut keymap = Self {
             global: GlobalKeymap::default(),
             files: PanelKeymap { bindings: files },
             branches: PanelKeymap { bindings: branches },
             commits: PanelKeymap { bindings: commits },
             stash: PanelKeymap { bindings: stash },
-        }
+            global_key_index: HashMap::new(),
+            files_key_index: HashMap::new(),
+            branches_key_index: HashMap::new(),
+            commits_key_index: HashMap::new(),
+            stash_key_index: HashMap::new(),
+        };
+        keymap.rebuild_indexes();
+        keymap
     }
 }
 
 impl Keymap {
     pub fn load() -> Self {
-        let defaults = Self::default();
+        let mut defaults = Self::default();
+        defaults.rebuild_indexes();
         let path = Self::config_path();
         if path.exists() {
             let content = std::fs::read_to_string(&path).unwrap_or_default();
             toml::from_str::<Self>(&content)
                 .map(|mut loaded| {
                     loaded.merge_missing(&defaults);
+                    loaded.rebuild_indexes();
                     loaded
                 })
                 .unwrap_or_else(|_| {
@@ -136,28 +155,6 @@ impl Keymap {
             .join("keymap.toml")
     }
 
-    pub fn global_matches(&self, action: &str, key_str: &str) -> bool {
-        self.global
-            .bindings
-            .get(action)
-            .map(|keys| keys.iter().any(|k| k == key_str))
-            .unwrap_or(false)
-    }
-
-    pub fn panel_matches(&self, panel: &str, action: &str, key_str: &str) -> bool {
-        let map = match panel {
-            "files" => &self.files,
-            "branches" => &self.branches,
-            "commits" => &self.commits,
-            "stash" => &self.stash,
-            _ => return false,
-        };
-        map.bindings
-            .get(action)
-            .map(|keys| keys.iter().any(|k| k == key_str))
-            .unwrap_or(false)
-    }
-
     pub fn first_global_key(&self, action: &str) -> Option<String> {
         self.global
             .bindings
@@ -177,6 +174,33 @@ impl Keymap {
 
         map.get(action).and_then(|keys| keys.first()).cloned()
     }
+
+    pub fn global_actions(&self, key_str: &str) -> &[String] {
+        self.global_key_index
+            .get(key_str)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+    }
+
+    pub fn panel_actions(&self, panel: &str, key_str: &str) -> &[String] {
+        let index = match panel {
+            "files" => &self.files_key_index,
+            "branches" => &self.branches_key_index,
+            "commits" => &self.commits_key_index,
+            "stash" => &self.stash_key_index,
+            _ => return &[],
+        };
+
+        index.get(key_str).map(Vec::as_slice).unwrap_or(&[])
+    }
+
+    fn rebuild_indexes(&mut self) {
+        self.global_key_index = build_key_index(&self.global.bindings);
+        self.files_key_index = build_key_index(&self.files.bindings);
+        self.branches_key_index = build_key_index(&self.branches.bindings);
+        self.commits_key_index = build_key_index(&self.commits.bindings);
+        self.stash_key_index = build_key_index(&self.stash.bindings);
+    }
 }
 
 fn merge_bindings(
@@ -186,6 +210,19 @@ fn merge_bindings(
     for (action, keys) in defaults {
         target.entry(action.clone()).or_insert_with(|| keys.clone());
     }
+}
+
+fn build_key_index(bindings: &HashMap<String, Vec<String>>) -> HashMap<String, Vec<String>> {
+    let mut index = HashMap::new();
+    for (action, keys) in bindings {
+        for key in keys {
+            index
+                .entry(key.clone())
+                .or_insert_with(Vec::new)
+                .push(action.clone());
+        }
+    }
+    index
 }
 
 /// Documentation comment in English.
