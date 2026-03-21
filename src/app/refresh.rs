@@ -55,7 +55,13 @@ pub(super) fn rebuild_tree(
     files_panel: &mut PanelState,
     files_visual_anchor: &mut Option<usize>,
 ) {
-    let selected = files_panel.list_state.selected();
+    // Remember the selected path so we can restore selection after rebuild
+    let selected_path = files_panel
+        .list_state
+        .selected()
+        .and_then(|i| file_tree_nodes.get(i))
+        .map(|n| n.path.clone());
+
     *file_tree_nodes = FileTree::from_git_status_with_expanded(
         &status.unstaged,
         &status.untracked,
@@ -68,8 +74,13 @@ pub(super) fn rebuild_tree(
         files_panel.list_state.select(None);
         *files_visual_anchor = None;
     } else {
-        let idx = selected.unwrap_or(0).min(count - 1);
-        files_panel.list_state.select(Some(idx));
+        // Try to find the same path in the new tree; fall back to clamped index
+        let new_idx = selected_path
+            .and_then(|p| file_tree_nodes.iter().position(|n| n.path == p))
+            .unwrap_or_else(|| {
+                files_panel.list_state.selected().unwrap_or(0).min(count - 1)
+            });
+        files_panel.list_state.select(Some(new_idx));
         if let Some(anchor) = *files_visual_anchor {
             *files_visual_anchor = Some(anchor.min(count - 1));
         }
