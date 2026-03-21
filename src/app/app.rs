@@ -216,7 +216,7 @@ impl App {
             keymap,
         };
         app.dirty.mark();
-        app.load_diff();
+        app.reload_diff_now();
         Ok(app)
     }
 
@@ -427,11 +427,11 @@ impl App {
             return Ok(false);
         };
         self.apply_refresh(kind)?;
-        self.load_diff();
+        self.reload_diff_now();
         Ok(true)
     }
 
-    pub fn request_diff_reload(&mut self) {
+    pub fn schedule_diff_reload(&mut self) {
         self.pending_diff_reload = true;
         self.pending_diff_reload_at = Some(Instant::now());
     }
@@ -449,7 +449,8 @@ impl App {
         if !self.pending_diff_reload {
             return;
         }
-        self.load_diff();
+        self.reload_diff_now();
+        self.dirty.mark();
     }
 
     pub(super) fn pending_refresh_kind(&self) -> Option<RefreshKind> {
@@ -459,7 +460,7 @@ impl App {
     pub fn ensure_commits_loaded_for_active_panel(&mut self) {
         if self.active_panel == SidePanel::Commits && self.commits_dirty {
             self.reload_commits_now();
-            self.load_diff();
+            self.reload_diff_now();
         }
     }
 
@@ -685,13 +686,15 @@ impl App {
         }
     }
 
-    pub fn load_diff(&mut self) {
+    pub fn reload_diff_now(&mut self) {
         let target = self.selected_diff_target();
         let key = self.diff_target_to_cache_key(&target);
 
         // Check if same as last load
         if let Some(ref last) = self.last_diff_key {
             if last == &key {
+                self.pending_diff_reload = false;
+                self.pending_diff_reload_at = None;
                 return;
             }
         }
@@ -712,9 +715,12 @@ impl App {
         self.pending_diff_reload_at = None;
     }
 
-    fn diff_target_to_cache_key(&self, target: &diff_loader::DiffTarget) -> diff_cache::DiffCacheKey {
-        use diff_loader::DiffTarget;
+    fn diff_target_to_cache_key(
+        &self,
+        target: &diff_loader::DiffTarget,
+    ) -> diff_cache::DiffCacheKey {
         use crate::ui::widgets::file_tree::FileTreeNodeStatus;
+        use diff_loader::DiffTarget;
 
         match target {
             DiffTarget::File { path, status } => {
@@ -725,7 +731,9 @@ impl App {
                 }
             }
             DiffTarget::Directory { path } => {
-                let hash = self.file_tree_nodes.iter()
+                let hash = self
+                    .file_tree_nodes
+                    .iter()
                     .filter(|n| n.path.starts_with(path))
                     .map(|n| n.path.to_string_lossy().to_string())
                     .collect::<Vec<_>>()

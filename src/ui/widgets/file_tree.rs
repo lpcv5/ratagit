@@ -189,7 +189,11 @@ impl<'a> FileTree<'a> {
         files
     }
 
-    fn render_node(node: &FileTreeNode, search_query: Option<&str>, theme: &UiTheme) -> ListItem<'static> {
+    fn render_node(
+        node: &FileTreeNode,
+        search_query: Option<&str>,
+        theme: &UiTheme,
+    ) -> ListItem<'static> {
         let indent = "  ".repeat(node.depth);
         let color = status_color(&node.status, theme);
         let base = Style::default().fg(color);

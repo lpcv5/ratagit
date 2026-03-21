@@ -12,7 +12,7 @@ pub(crate) fn handle_search_message(app: &mut App, msg: Message) -> Option<Comma
             if count > 0 {
                 app.search_select_initial_match();
             }
-            app.load_diff();
+            app.reload_diff_now();
             app.dirty.mark();
         }
         Message::SearchConfirm => {
@@ -25,25 +25,25 @@ pub(crate) fn handle_search_message(app: &mut App, msg: Message) -> Option<Comma
                     true,
                 );
             }
-            app.load_diff();
+            app.reload_diff_now();
             app.dirty.mark();
         }
         Message::SearchClear => {
             app.clear_search();
             app.cancel_input();
             app.push_log("search cleared", true);
-            app.load_diff();
+            app.reload_diff_now();
             app.dirty.mark();
         }
         Message::SearchNext => {
             if app.search_jump_next() {
-                app.load_diff();
+                app.reload_diff_now();
                 app.dirty.mark();
             }
         }
         Message::SearchPrev => {
             if app.search_jump_prev() {
-                app.load_diff();
+                app.reload_diff_now();
                 app.dirty.mark();
             }
         }

@@ -1,5 +1,5 @@
-use crate::app::{App, SidePanel};
-use crate::git::DiffLineKind;
+use crate::app::SidePanel;
+use crate::git::{DiffLine, DiffLineKind};
 use crate::ui::theme::UiTheme;
 use ratatui::{
     layout::Rect,
@@ -10,11 +10,26 @@ use ratatui::{
     Frame,
 };
 
-pub fn render_diff_panel(frame: &mut Frame, area: Rect, app: &App) {
+pub struct DiffViewProps<'a> {
+    pub lines: &'a [DiffLine],
+    pub scroll: usize,
+    pub active_panel: SidePanel,
+    pub is_loading: bool,
+}
+
+pub fn render_diff_panel(frame: &mut Frame, area: Rect, props: DiffViewProps<'_>) {
     let theme = UiTheme::default();
 
-    if app.current_diff.is_empty() {
-        let hint = match app.active_panel {
+    if props.is_loading {
+        let paragraph = ratatui::widgets::Paragraph::new("Loading diff...")
+            .style(Style::default().fg(theme.text_muted))
+            .block(theme.panel_block("Diff", true));
+        frame.render_widget(paragraph, area);
+        return;
+    }
+
+    if props.lines.is_empty() {
+        let hint = match props.active_panel {
             SidePanel::Files => "Select a file to view diff",
             SidePanel::LocalBranches => "Select a branch to view details",
             SidePanel::Commits => "Select a commit/file to view diff",
@@ -27,9 +42,9 @@ pub fn render_diff_panel(frame: &mut Frame, area: Rect, app: &App) {
         return;
     }
 
-    let scroll = app.diff_scroll;
-    let items: Vec<ListItem> = app
-        .current_diff
+    let scroll = props.scroll;
+    let items: Vec<ListItem> = props
+        .lines
         .iter()
         .skip(scroll)
         .map(|line| {
@@ -47,7 +62,7 @@ pub fn render_diff_panel(frame: &mut Frame, area: Rect, app: &App) {
         })
         .collect();
 
-    let total = app.current_diff.len();
+    let total = props.lines.len();
     let title = format!("Diff [{}/{}]", scroll + 1, total);
 
     let list = List::new(items).block(theme.panel_block("Diff", true).title(title));
