@@ -740,10 +740,10 @@ impl App {
         self.diff_scroll = 0;
 
         // Try cache first
-        if let Some(cached) = self.diff_cache.get(&key) {
-            self.current_diff = cached.clone();
+        if let Some(cached) = self.diff_cache.get_cloned(&key) {
+            self.current_diff = cached;
         } else {
-            let diff = diff_loader::load_diff(self.repo.as_ref(), &self.files.tree_nodes, target);
+            let diff = diff_loader::load_diff(self.repo.as_ref(), target);
             self.diff_cache.insert(key.clone(), diff.clone());
             self.current_diff = diff;
         }

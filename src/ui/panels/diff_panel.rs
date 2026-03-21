@@ -5,8 +5,7 @@ use ratatui::{
     layout::Rect,
     style::{Color, Style},
     text::{Line, Span},
-    widgets::List,
-    widgets::ListItem,
+    widgets::{List, ListItem},
     Frame,
 };
 
@@ -42,11 +41,13 @@ pub fn render_diff_panel(frame: &mut Frame, area: Rect, props: DiffViewProps<'_>
         return;
     }
 
-    let scroll = props.scroll;
+    let scroll = props.scroll.min(props.lines.len().saturating_sub(1));
+    let visible_rows = usize::from(area.height.saturating_sub(2)).max(1);
     let items: Vec<ListItem> = props
         .lines
         .iter()
         .skip(scroll)
+        .take(visible_rows)
         .map(|line| {
             let (style, prefix) = match line.kind {
                 DiffLineKind::Added => (Style::default().fg(Color::Green), "+"),
@@ -63,7 +64,8 @@ pub fn render_diff_panel(frame: &mut Frame, area: Rect, props: DiffViewProps<'_>
         .collect();
 
     let total = props.lines.len();
-    let title = format!("Diff [{}/{}]", scroll + 1, total);
+    let end = (scroll + items.len()).min(total);
+    let title = format!("Diff [{}-{} / {}]", scroll + 1, end, total);
 
     let list = List::new(items).block(theme.panel_block("Diff", true).title(title));
 

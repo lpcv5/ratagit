@@ -38,11 +38,11 @@ impl PanelComponent for FilesPanelState {
         } else {
             theme.inactive_highlight()
         };
-        let widget = FileTree::new(self.tree_nodes.clone())
+        let widget = FileTree::new(&self.tree_nodes)
             .block(block)
             .highlight_style(highlight)
             .search_query(ctx.search_query)
-            .selected_indices(ctx.visual_selected_indices.clone());
+            .selected_indices(&ctx.visual_selected_indices);
 
         let mut state = FileTreeState {
             list_state: self.panel.list_state,
