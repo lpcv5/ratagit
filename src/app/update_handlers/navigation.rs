@@ -1,4 +1,19 @@
-use crate::app::{App, Command, Message, RefreshKind, SidePanel};
+use crate::app::{
+    graph_highlight::compute_highlight_set, App, Command, Message, RefreshKind, SidePanel,
+};
+
+fn recompute_commit_highlight(app: &mut App) {
+    if app.active_panel == SidePanel::Commits && !app.commits.tree_mode.active {
+        if let Some(idx) = app.commits.panel.list_state.selected() {
+            if let Some(commit) = app.commits.items.get(idx) {
+                let oid = commit.oid.clone();
+                app.commits.highlighted_oids = compute_highlight_set(&app.commits.items, &oid);
+            }
+        }
+    } else {
+        app.commits.highlighted_oids.clear();
+    }
+}
 
 pub(crate) fn handle_navigation_message(app: &mut App, msg: Message) -> Option<Command> {
     match msg {
@@ -41,11 +56,13 @@ pub(crate) fn handle_navigation_message(app: &mut App, msg: Message) -> Option<C
         }
         Message::ListDown => {
             app.list_down();
+            recompute_commit_highlight(app);
             app.schedule_diff_reload();
             app.dirty.mark_main_content();
         }
         Message::ListUp => {
             app.list_up();
+            recompute_commit_highlight(app);
             app.schedule_diff_reload();
             app.dirty.mark_main_content();
         }

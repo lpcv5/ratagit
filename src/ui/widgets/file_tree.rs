@@ -316,7 +316,7 @@ impl<'a> StatefulWidget for FileTree<'a> {
             .iter()
             .enumerate()
             .map(|(idx, node)| {
-                let item = Self::render_node(node, self.search_query.as_deref(), &self.theme);
+                let item = Self::render_node(node, self.search_query, &self.theme);
                 if self.selected_indices.contains(&idx) {
                     item.style(Style::default().bg(self.theme.visual_selection_bg))
                 } else {

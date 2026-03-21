@@ -240,7 +240,7 @@ impl App {
                 self.commits
                     .items
                     .iter()
-                    .map(|c| format!("{} {}", c.short_hash, c.message))
+                    .map(|c| format!("{} {} {}", c.short_hash, c.author, c.message))
                     .collect()
             }
             SidePanel::Stash => {

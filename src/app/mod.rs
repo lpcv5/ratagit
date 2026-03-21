@@ -5,6 +5,7 @@ mod command;
 mod diff_cache;
 mod diff_loader;
 mod dirty_flags;
+pub mod graph_highlight;
 mod hints;
 mod input_mode;
 mod message;

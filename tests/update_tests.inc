@@ -63,18 +63,32 @@ impl GitRepository for MockRepo {
                 oid: "abc1234567890".to_string(),
                 message: "test commit".to_string(),
                 author: "tester".to_string(),
+                graph: vec![crate::git::GraphCell {
+                    text: "●".to_string(),
+                    lane: 0,
+                    pipe_oid: None,
+                    pipe_oids: vec![],
+                }],
                 time: "2026-03-20 00:00".to_string(),
                 parent_count: 1,
                 sync_state: CommitSyncState::DefaultBranch,
+                parent_oids: vec!["def5678901234".to_string()],
             },
             CommitInfo {
                 short_hash: "def5678".to_string(),
                 oid: "def5678901234".to_string(),
                 message: "test commit 2".to_string(),
                 author: "tester".to_string(),
+                graph: vec![crate::git::GraphCell {
+                    text: "●".to_string(),
+                    lane: 0,
+                    pipe_oid: None,
+                    pipe_oids: vec![],
+                }],
                 time: "2026-03-20 00:01".to_string(),
                 parent_count: 1,
                 sync_state: CommitSyncState::DefaultBranch,
+                parent_oids: vec![],
             },
         ])
     }
@@ -231,9 +245,16 @@ impl GitRepository for CountingRepo {
             oid: format!("oid{}", calls),
             message: format!("commit {}", calls),
             author: "tester".to_string(),
+            graph: vec![crate::git::GraphCell {
+                text: "●".to_string(),
+                lane: 0,
+                pipe_oid: None,
+                pipe_oids: vec![],
+            }],
             time: "2026-03-20 00:00".to_string(),
             parent_count: 1,
             sync_state: CommitSyncState::DefaultBranch,
+            parent_oids: vec![],
         }])
     }
 
@@ -502,18 +523,32 @@ impl GitRepository for NavigationDiffRepo {
                 oid: "oid1".to_string(),
                 message: "commit one".to_string(),
                 author: "tester".to_string(),
+                graph: vec![crate::git::GraphCell {
+                    text: "●".to_string(),
+                    lane: 0,
+                    pipe_oid: None,
+                    pipe_oids: vec![],
+                }],
                 time: "2026-03-20 00:00".to_string(),
                 parent_count: 1,
                 sync_state: CommitSyncState::DefaultBranch,
+                parent_oids: vec!["oid2".to_string()],
             },
             CommitInfo {
                 short_hash: "2222222".to_string(),
                 oid: "oid2".to_string(),
                 message: "commit two".to_string(),
                 author: "tester".to_string(),
+                graph: vec![crate::git::GraphCell {
+                    text: "●".to_string(),
+                    lane: 0,
+                    pipe_oid: None,
+                    pipe_oids: vec![],
+                }],
                 time: "2026-03-20 00:01".to_string(),
                 parent_count: 1,
                 sync_state: CommitSyncState::DefaultBranch,
+                parent_oids: vec![],
             },
         ])
     }
@@ -823,6 +858,24 @@ fn test_search_query_and_vim_navigation_for_commits() {
 
     update(&mut app, Message::SearchPrev);
     assert_eq!(app.commits.panel.list_state.selected(), Some(0));
+}
+
+#[test]
+fn test_search_query_matches_commit_author() {
+    let mut app = test_app();
+    app.active_panel = SidePanel::Commits;
+    app.commits.panel.list_state.select(Some(0));
+    app.commits.items[0].author = "alice".to_string();
+    app.commits.items[1].author = "bob".to_string();
+
+    update(&mut app, Message::StartSearchInput);
+    update(&mut app, Message::SearchSetQuery("bob".to_string()));
+    app.confirm_search_input();
+    update(&mut app, Message::SearchConfirm);
+    assert!(app.has_search_for_active_scope());
+
+    update(&mut app, Message::SearchNext);
+    assert_eq!(app.commits.panel.list_state.selected(), Some(1));
 }
 
 #[test]
