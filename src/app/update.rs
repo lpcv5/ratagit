@@ -41,6 +41,7 @@ pub fn update(app: &mut App, msg: Message) -> Option<Command> {
         Message::StartBranchCreateInput
         | Message::CreateBranch(_)
         | Message::CheckoutSelectedBranch
+        | Message::BranchSwitchConfirm(_)
         | Message::DeleteSelectedBranch
         | Message::FetchRemote
         | Message::FetchRemoteFinished(_) => handle_branch_message(app, msg),

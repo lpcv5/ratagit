@@ -1,3 +1,4 @@
+pub mod branch_switch_confirm;
 pub mod command_log;
 pub mod commit_editor;
 pub mod diff_panel;
@@ -5,6 +6,7 @@ pub mod revision_tree_panel;
 pub mod shortcut_bar;
 pub mod stash_editor;
 
+pub use branch_switch_confirm::render_branch_switch_confirm;
 pub use command_log::render_command_log;
 pub use commit_editor::render_commit_editor;
 pub use diff_panel::{render_diff_panel, DiffViewProps};

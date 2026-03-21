@@ -109,6 +109,7 @@ pub enum InputMode {
     CreateBranch,
     StashEditor,
     Search,
+    BranchSwitchConfirm,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -164,6 +165,7 @@ pub struct App {
     pub commit_focus: CommitFieldFocus,
     pub stash_message_buffer: String,
     pub stash_targets: Vec<PathBuf>,
+    pub branch_switch_target: Option<String>,
     pub search_query: String,
     pub(super) search_matches: Vec<usize>,
     pub(super) search_scope: SearchScopeKey,
@@ -246,6 +248,7 @@ impl App {
             commit_focus: CommitFieldFocus::Message,
             stash_message_buffer: String::new(),
             stash_targets: Vec::new(),
+            branch_switch_target: None,
             search_query: String::new(),
             search_matches: Vec::new(),
             search_scope: SearchScopeKey {
@@ -590,6 +593,31 @@ impl App {
         self.repo.checkout_branch(name)?;
         self.request_refresh(RefreshKind::Full);
         Ok(())
+    }
+
+    pub fn checkout_branch_with_auto_stash(&mut self, name: &str) -> Result<()> {
+        self.repo.checkout_branch_with_auto_stash(name)?;
+        self.request_refresh(RefreshKind::Full);
+        Ok(())
+    }
+
+    pub fn has_uncommitted_changes(&self) -> bool {
+        !self.status.staged.is_empty()
+            || !self.status.unstaged.is_empty()
+            || !self.status.untracked.is_empty()
+    }
+
+    pub fn start_branch_switch_confirm(&mut self, target: String) {
+        self.input_mode = Some(InputMode::BranchSwitchConfirm);
+        self.branch_switch_target = Some(target);
+    }
+
+    pub fn pending_branch_switch_target(&self) -> Option<&str> {
+        self.branch_switch_target.as_deref()
+    }
+
+    pub fn take_branch_switch_target(&mut self) -> Option<String> {
+        self.branch_switch_target.take()
     }
 
     pub fn delete_branch(&mut self, name: &str) -> Result<()> {
