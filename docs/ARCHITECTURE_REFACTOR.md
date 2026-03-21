@@ -129,6 +129,7 @@ Key files:
 - Location: all handlers
 - Every handler must manually call `app.dirty.mark()` after state changes.
 - Forgetting this call means the UI doesn't redraw, causing stale display bugs.
+- Current mitigation: `DirtyFlags` has been split into partitioned flags (`left_panels`, `diff`, `command_log`, `shortcut_bar`, `overlay`) and several hot paths already use narrower marks. The model is still manual, but no longer all-or-nothing.
 
 **13. Repetitive Logging Pattern**
 - Location: all handlers
@@ -139,6 +140,14 @@ Key files:
 - Location: `src/app/diff_loader.rs`
 - `files_hash` for directory diff cache keys is a SHA1 of all file paths, recomputed on every cache check.
 - No invalidation strategy for directory diffs after file changes.
+- Current mitigation: file/revision diff caching now uses an LRU-style eviction strategy, and directory diff loading has been moved into `GitRepository` so the UI layer no longer builds directory patches by iterating file-by-file.
+
+### Already Implemented Mitigations
+
+- File tree rendering now borrows node slices instead of cloning full node vectors on every draw.
+- Diff rendering only formats the visible viewport instead of the entire remaining diff.
+- Layout-level derived state such as file visual selections and search summaries is cached in `RenderCache`.
+- Key bindings are still configured as `action -> [keys]`, but startup now compiles them into `key -> [actions]` indexes for faster input handling.
 
 ---
 

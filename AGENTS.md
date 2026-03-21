@@ -1,9 +1,5 @@
 # Repository Guidelines
 
-## Tool Usage
-
-1. File and Code Retrieval: Use the serena MCP for file and code retrieval.
-
 ## Project Structure & Module Organization
 
 `ratagit` is a single-crate Rust TUI app.
