@@ -12,6 +12,7 @@ impl App {
                     self.clear_search();
                 }
                 self.cancel_input();
+                self.dirty.mark();
                 None
             }
             KeyCode::Tab => match mode {
@@ -20,6 +21,7 @@ impl App {
                         CommitFieldFocus::Message => CommitFieldFocus::Description,
                         CommitFieldFocus::Description => CommitFieldFocus::Message,
                     };
+                    self.dirty.mark();
                     None
                 }
                 InputMode::CreateBranch | InputMode::StashEditor => None,
@@ -47,6 +49,7 @@ impl App {
                     }
                     CommitFieldFocus::Description => {
                         self.commit_description_buffer.push('\n');
+                        self.dirty.mark();
                         None
                     }
                 },
@@ -54,6 +57,7 @@ impl App {
                     let value = self.input_buffer.trim().to_string();
                     self.input_mode = None;
                     self.input_buffer.clear();
+                    self.dirty.mark();
 
                     if value.is_empty() {
                         self.push_log("Empty input ignored", false);
@@ -67,6 +71,7 @@ impl App {
                     self.input_mode = None;
                     self.stash_message_buffer.clear();
                     self.stash_targets.clear();
+                    self.dirty.mark();
 
                     if value.is_empty() {
                         self.push_log("Empty stash title ignored", false);
@@ -83,6 +88,7 @@ impl App {
                 }
                 InputMode::Search => {
                     self.confirm_search_input();
+                    self.dirty.mark();
                     Some(Message::SearchConfirm)
                 }
             },
@@ -96,14 +102,17 @@ impl App {
                             self.commit_description_buffer.pop();
                         }
                     }
+                    self.dirty.mark();
                     None
                 }
                 InputMode::CreateBranch => {
                     self.input_buffer.pop();
+                    self.dirty.mark();
                     None
                 }
                 InputMode::StashEditor => {
                     self.stash_message_buffer.pop();
+                    self.dirty.mark();
                     None
                 }
                 InputMode::Search => {
@@ -121,14 +130,17 @@ impl App {
                             CommitFieldFocus::Message => self.commit_message_buffer.push(c),
                             CommitFieldFocus::Description => self.commit_description_buffer.push(c),
                         }
+                        self.dirty.mark();
                         None
                     }
                     InputMode::CreateBranch => {
                         self.input_buffer.push(c);
+                        self.dirty.mark();
                         None
                     }
                     InputMode::StashEditor => {
                         self.stash_message_buffer.push(c);
+                        self.dirty.mark();
                         None
                     }
                     InputMode::Search => {
