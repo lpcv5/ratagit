@@ -22,8 +22,11 @@ impl PanelComponent for StashPanelState {
                 .iter()
                 .map(|s| {
                     let text = format!("stash@{{{}}} {}", s.index, s.message);
-                    let spans =
-                        highlighted_spans(&text, ctx.search_query, Style::default().fg(Color::Yellow));
+                    let spans = highlighted_spans(
+                        &text,
+                        ctx.search_query,
+                        Style::default().fg(Color::Yellow),
+                    );
                     ListItem::new(Line::from(spans))
                 })
                 .collect()

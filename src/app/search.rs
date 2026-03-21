@@ -104,8 +104,7 @@ impl App {
             commit_tree_mode: Self::normalize_commit_scope(panel, commit_tree_mode),
             stash_tree_mode: Self::normalize_stash_scope(panel, stash_tree_mode),
         };
-        if scope != self.search_scope
-        {
+        if scope != self.search_scope {
             return None;
         }
         if self.search_matches.is_empty() {
@@ -137,8 +136,7 @@ impl App {
             commit_tree_mode: Self::normalize_commit_scope(panel, commit_tree_mode),
             stash_tree_mode: Self::normalize_stash_scope(panel, stash_tree_mode),
         };
-        if scope != self.search_scope
-        {
+        if scope != self.search_scope {
             return None;
         }
         Some(self.search_query.as_str())
@@ -226,7 +224,9 @@ impl App {
                 .iter()
                 .map(Self::tree_node_display_name)
                 .collect(),
-            SidePanel::LocalBranches => self.branches.items.iter().map(|b| b.name.clone()).collect(),
+            SidePanel::LocalBranches => {
+                self.branches.items.iter().map(|b| b.name.clone()).collect()
+            }
             SidePanel::Commits => {
                 if self.commits.tree_mode.active {
                     return self
@@ -237,7 +237,8 @@ impl App {
                         .map(Self::tree_node_display_name)
                         .collect();
                 }
-                self.commits.items
+                self.commits
+                    .items
                     .iter()
                     .map(|c| format!("{} {}", c.short_hash, c.message))
                     .collect()
@@ -252,7 +253,8 @@ impl App {
                         .map(Self::tree_node_display_name)
                         .collect();
                 }
-                self.stash.items
+                self.stash
+                    .items
                     .iter()
                     .map(|s| format!("stash@{{{}}} {}", s.index, s.message))
                     .collect()
@@ -307,5 +309,3 @@ impl App {
         }
     }
 }
-
-

@@ -720,7 +720,10 @@ fn test_revision_open_close_for_commits_panel() {
 
     update(&mut app, Message::RevisionOpenTreeOrToggleDir);
     assert!(app.commits.tree_mode.active);
-    assert_eq!(app.commits.tree_mode.selected_source.as_deref(), Some("abc1234567890"));
+    assert_eq!(
+        app.commits.tree_mode.selected_source.as_deref(),
+        Some("abc1234567890")
+    );
     assert!(!app.commits.tree_mode.nodes.is_empty());
 
     update(&mut app, Message::RevisionCloseTree);
@@ -780,7 +783,10 @@ fn test_commit_close_tree_restores_list_selection() {
 
     update(&mut app, Message::RevisionOpenTreeOrToggleDir);
     assert!(app.commits.tree_mode.active);
-    assert_eq!(app.commits.tree_mode.selected_source.as_deref(), Some("def5678901234"));
+    assert_eq!(
+        app.commits.tree_mode.selected_source.as_deref(),
+        Some("def5678901234")
+    );
 
     update(&mut app, Message::RevisionCloseTree);
     assert!(!app.commits.tree_mode.active);
@@ -1190,5 +1196,3 @@ fn test_list_navigation_debounces_diff_in_commits_panel() {
     assert_eq!(app.current_diff[0].content, "commit oid2");
     assert!(!app.has_pending_diff_reload());
 }
-
-

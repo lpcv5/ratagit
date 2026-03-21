@@ -79,5 +79,4 @@ impl Message {
             _ => None,
         }
     }
-
 }

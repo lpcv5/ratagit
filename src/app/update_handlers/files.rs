@@ -62,7 +62,10 @@ pub(crate) fn handle_files_message(app: &mut App, msg: Message) -> Option<Comman
         Message::ToggleStageSelection => match app.toggle_stage_visual_selection() {
             Ok((staged, unstaged)) => {
                 app.push_log(
-                    format!("selection toggled: staged {}, unstaged {}", staged, unstaged),
+                    format!(
+                        "selection toggled: staged {}, unstaged {}",
+                        staged, unstaged
+                    ),
                     true,
                 );
                 app.dirty.mark();
