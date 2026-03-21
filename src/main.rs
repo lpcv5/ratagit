@@ -65,14 +65,21 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
         // Comment in English.
         if event::poll(std::time::Duration::from_millis(16))? {
             for _ in 0..MAX_EVENTS_PER_FRAME {
-                if let Event::Key(key) = event::read()? {
-                    if matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
-                        let msg = app.handle_key(key);
+                match event::read()? {
+                    Event::Key(key) => {
+                        if matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
+                            let msg = app.handle_key(key);
 
-                        if let Some(msg) = msg {
-                            apply_message(app, msg, &mut async_commands);
+                            if let Some(msg) = msg {
+                                apply_message(app, msg, &mut async_commands);
+                            }
                         }
                     }
+                    Event::Resize(_, _) => {
+                        // Force redraw on terminal size changes.
+                        app.dirty.mark_all();
+                    }
+                    _ => {}
                 }
 
                 if !event::poll(std::time::Duration::from_millis(0))? {

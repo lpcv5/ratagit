@@ -66,13 +66,9 @@ pub fn render_layout(frame: &mut Frame, app: &App) {
     let focus_item_count = match app.active_panel {
         SidePanel::Files => app.files.tree_nodes.len(),
         SidePanel::LocalBranches => app.branches.items.len(),
-        SidePanel::Commits => {
-            if app.commits.tree_mode.active {
-                app.commits.tree_mode.nodes.len()
-            } else {
-                app.commits.items.len()
-            }
-        }
+        // Keep commit panel sizing stable when toggling between commit list and tree mode.
+        // Use the parent commit list length as the single source for overflow checks.
+        SidePanel::Commits => app.commits.items.len(),
         SidePanel::Stash => 0,
     };
 
