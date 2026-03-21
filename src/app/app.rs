@@ -39,6 +39,63 @@ impl PanelState {
     }
 }
 
+impl Default for PanelState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+pub struct TreeModeState<T> {
+    pub active: bool,
+    pub nodes: Vec<FileTreeNode>,
+    pub files: Vec<FileEntry>,
+    pub expanded_dirs: HashSet<PathBuf>,
+    pub selected_source: Option<T>,
+}
+
+impl<T> Default for TreeModeState<T> {
+    fn default() -> Self {
+        Self {
+            active: false,
+            nodes: Vec::new(),
+            files: Vec::new(),
+            expanded_dirs: HashSet::new(),
+            selected_source: None,
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct FilesPanelState {
+    pub panel: PanelState,
+    pub tree_nodes: Vec<FileTreeNode>,
+    pub expanded_dirs: HashSet<PathBuf>,
+    pub visual_mode: bool,
+    pub visual_anchor: Option<usize>,
+}
+
+#[derive(Default)]
+pub struct BranchesPanelState {
+    pub panel: PanelState,
+    pub items: Vec<BranchInfo>,
+    pub is_fetching_remote: bool,
+}
+
+#[derive(Default)]
+pub struct CommitsPanelState {
+    pub panel: PanelState,
+    pub items: Vec<CommitInfo>,
+    pub dirty: bool,
+    pub tree_mode: TreeModeState<String>,
+}
+
+#[derive(Default)]
+pub struct StashPanelState {
+    pub panel: PanelState,
+    pub items: Vec<StashInfo>,
+    pub tree_mode: TreeModeState<usize>,
+}
+
 /// Documentation comment in English.
 pub struct CommandLogEntry {
     pub command: String,
@@ -81,34 +138,12 @@ pub struct App {
     repo: Box<dyn GitRepository>,
     pub status: GitStatus,
 
-    /// Documentation comment in English.
-    pub file_tree_nodes: Vec<FileTreeNode>,
-    /// Documentation comment in English.
-    expanded_dirs: HashSet<PathBuf>,
-
-    pub files_panel: PanelState,
-    pub files_visual_mode: bool,
-    pub files_visual_anchor: Option<usize>,
-    pub branches_panel: PanelState,
-    pub commits_panel: PanelState,
-    pub stash_panel: PanelState,
-    pub is_fetching_remote: bool,
+    pub files: FilesPanelState,
+    pub branches: BranchesPanelState,
+    pub commits: CommitsPanelState,
+    pub stash: StashPanelState,
 
     pub command_log: Vec<CommandLogEntry>,
-    pub branches: Vec<BranchInfo>,
-    pub commits: Vec<CommitInfo>,
-    commits_dirty: bool,
-    pub commit_tree_mode: bool,
-    pub commit_tree_nodes: Vec<FileTreeNode>,
-    commit_tree_files: Vec<FileEntry>,
-    commit_tree_expanded_dirs: HashSet<PathBuf>,
-    pub commit_tree_commit_oid: Option<String>,
-    pub stashes: Vec<StashInfo>,
-    pub stash_tree_mode: bool,
-    pub stash_tree_nodes: Vec<FileTreeNode>,
-    stash_tree_files: Vec<FileEntry>,
-    stash_tree_expanded_dirs: HashSet<PathBuf>,
-    pub stash_tree_stash_index: Option<usize>,
     pub current_diff: Vec<DiffLine>,
     /// Documentation comment in English.
     pub diff_scroll: usize,
@@ -121,9 +156,7 @@ pub struct App {
     pub stash_targets: Vec<PathBuf>,
     pub search_query: String,
     pub(super) search_matches: Vec<usize>,
-    pub(super) search_scope_panel: SidePanel,
-    pub(super) search_scope_commit_tree_mode: bool,
-    pub(super) search_scope_stash_tree_mode: bool,
+    pub(super) search_scope: SearchScopeKey,
     pub(super) search_queries: HashMap<SearchScopeKey, String>,
     pending_refresh: Option<RefreshKind>,
     pending_diff_reload: bool,
@@ -168,30 +201,30 @@ impl App {
             active_panel: SidePanel::Files,
             repo,
             status,
-            file_tree_nodes,
-            expanded_dirs,
-            files_panel: PanelState::new(),
-            files_visual_mode: false,
-            files_visual_anchor: None,
-            branches_panel: PanelState::new(),
-            commits_panel: PanelState::new(),
-            stash_panel: PanelState::new(),
-            is_fetching_remote: false,
+            files: FilesPanelState {
+                panel: PanelState::new(),
+                tree_nodes: file_tree_nodes,
+                expanded_dirs,
+                visual_mode: false,
+                visual_anchor: None,
+            },
+            branches: BranchesPanelState {
+                panel: PanelState::new(),
+                items: branches,
+                is_fetching_remote: false,
+            },
+            commits: CommitsPanelState {
+                panel: PanelState::new(),
+                items: commits,
+                dirty: false,
+                tree_mode: TreeModeState::default(),
+            },
+            stash: StashPanelState {
+                panel: PanelState::new(),
+                items: stashes,
+                tree_mode: TreeModeState::default(),
+            },
             command_log: Vec::new(),
-            branches,
-            commits,
-            commits_dirty: false,
-            commit_tree_mode: false,
-            commit_tree_nodes: Vec::new(),
-            commit_tree_files: Vec::new(),
-            commit_tree_expanded_dirs: HashSet::new(),
-            commit_tree_commit_oid: None,
-            stashes,
-            stash_tree_mode: false,
-            stash_tree_nodes: Vec::new(),
-            stash_tree_files: Vec::new(),
-            stash_tree_expanded_dirs: HashSet::new(),
-            stash_tree_stash_index: None,
             current_diff: Vec::new(),
             diff_scroll: 0,
             input_mode: None,
@@ -203,9 +236,11 @@ impl App {
             stash_targets: Vec::new(),
             search_query: String::new(),
             search_matches: Vec::new(),
-            search_scope_panel: SidePanel::Files,
-            search_scope_commit_tree_mode: false,
-            search_scope_stash_tree_mode: false,
+            search_scope: SearchScopeKey {
+                panel: SidePanel::Files,
+                commit_tree_mode: false,
+                stash_tree_mode: false,
+            },
             search_queries: HashMap::new(),
             pending_refresh: None,
             pending_diff_reload: false,
@@ -230,13 +265,13 @@ impl App {
         }
         if key.code == KeyCode::Esc
             && self.active_panel == SidePanel::Files
-            && self.files_visual_mode
+            && self.files.visual_mode
         {
             return Some(Message::ToggleVisualSelectMode);
         }
         if key.code == KeyCode::Esc
-            && ((self.active_panel == SidePanel::Stash && self.stash_tree_mode)
-                || (self.active_panel == SidePanel::Commits && self.commit_tree_mode))
+            && ((self.active_panel == SidePanel::Stash && self.stash.tree_mode.active)
+                || (self.active_panel == SidePanel::Commits && self.commits.tree_mode.active))
         {
             return Some(Message::RevisionCloseTree);
         }
@@ -286,7 +321,7 @@ impl App {
             return Some(Message::PanelGoto(4));
         }
         if gm("commit") {
-            if self.active_panel == SidePanel::Files && self.files_visual_mode {
+            if self.active_panel == SidePanel::Files && self.files.visual_mode {
                 return Some(Message::PrepareCommitFromSelection);
             }
             return Some(Message::StartCommitInput);
@@ -306,7 +341,7 @@ impl App {
         let pm = |action| self.keymap.panel_matches(panel, action, &k);
 
         if pm("toggle_stage") {
-            if self.active_panel == SidePanel::Files && self.files_visual_mode {
+            if self.active_panel == SidePanel::Files && self.files.visual_mode {
                 return Some(Message::ToggleStageSelection);
             }
             if let Some(msg) = self.toggle_stage_for_selected_file() {
@@ -314,7 +349,7 @@ impl App {
             }
         }
         if pm("discard") && self.active_panel == SidePanel::Files {
-            if self.files_visual_mode {
+            if self.files.visual_mode {
                 return Some(Message::DiscardSelection);
             }
             let paths = self.prepare_discard_targets_from_selection();
@@ -374,22 +409,22 @@ impl App {
         self.status = self.repo.status()?;
         let new_dirs = refresh::collect_all_dirs(&self.status);
         for d in new_dirs {
-            self.expanded_dirs.insert(d);
+            self.files.expanded_dirs.insert(d);
         }
         self.rebuild_tree();
 
         if matches!(kind, RefreshKind::StatusAndRefs | RefreshKind::Full) {
-            self.branches = self.repo.branches().unwrap_or_default();
-            self.stashes = self.repo.stashes().unwrap_or_default();
-            if self.stash_tree_mode {
-                if let Some(index) = self.stash_tree_stash_index {
-                    if self.stashes.iter().any(|s| s.index == index) {
-                        self.stash_tree_files = self.repo.stash_files(index).unwrap_or_default();
+            self.branches.items = self.repo.branches().unwrap_or_default();
+            self.stash.items = self.repo.stashes().unwrap_or_default();
+            if self.stash.tree_mode.active {
+                if let Some(index) = self.stash.tree_mode.selected_source {
+                    if self.stash.items.iter().any(|s| s.index == index) {
+                        self.stash.tree_mode.files = self.repo.stash_files(index).unwrap_or_default();
                         revision_tree::rebuild_tree_nodes(
-                            &self.stash_tree_files,
-                            &self.stash_tree_expanded_dirs,
-                            &mut self.stash_tree_nodes,
-                            &mut self.stash_panel.list_state,
+                            &self.stash.tree_mode.files,
+                            &self.stash.tree_mode.expanded_dirs,
+                            &mut self.stash.tree_mode.nodes,
+                            &mut self.stash.panel.list_state,
                         );
                     } else {
                         self.stash_close_tree();
@@ -401,7 +436,7 @@ impl App {
         }
 
         if matches!(kind, RefreshKind::Full) {
-            self.commits_dirty = true;
+            self.commits.dirty = true;
             if self.should_load_commits_now() {
                 self.reload_commits_now();
             }
@@ -412,7 +447,7 @@ impl App {
 
     pub fn request_refresh(&mut self, kind: RefreshKind) {
         if matches!(kind, RefreshKind::Full) {
-            self.commits_dirty = true;
+            self.commits.dirty = true;
         }
         self.diff_cache.invalidate_files();
         self.last_diff_key = None;
@@ -458,7 +493,7 @@ impl App {
     }
 
     pub fn ensure_commits_loaded_for_active_panel(&mut self) {
-        if self.active_panel == SidePanel::Commits && self.commits_dirty {
+        if self.active_panel == SidePanel::Commits && self.commits.dirty {
             self.reload_commits_now();
             self.reload_diff_now();
         }
@@ -468,14 +503,14 @@ impl App {
         if self.active_panel != SidePanel::Files {
             return;
         }
-        if self.files_visual_mode {
-            self.files_visual_mode = false;
-            self.files_visual_anchor = None;
+        if self.files.visual_mode {
+            self.files.visual_mode = false;
+            self.files.visual_anchor = None;
             return;
         }
 
-        self.files_visual_mode = true;
-        self.files_visual_anchor = self.files_panel.list_state.selected();
+        self.files.visual_mode = true;
+        self.files.visual_anchor = self.files.panel.list_state.selected();
     }
 
     pub fn push_log<S: Into<String>>(&mut self, command: S, success: bool) {
@@ -589,19 +624,19 @@ impl App {
                 None
             }
         });
-        refresh::toggle_selected_dir(&mut self.expanded_dirs, selected_dir_path);
+        refresh::toggle_selected_dir(&mut self.files.expanded_dirs, selected_dir_path);
         self.rebuild_tree();
     }
 
     /// Documentation comment in English.
     pub fn collapse_all(&mut self) {
-        refresh::collapse_all(&mut self.expanded_dirs);
+        refresh::collapse_all(&mut self.files.expanded_dirs);
         self.rebuild_tree();
     }
 
     /// Documentation comment in English.
     pub fn expand_all(&mut self) {
-        refresh::expand_all(&mut self.expanded_dirs, &self.status);
+        refresh::expand_all(&mut self.files.expanded_dirs, &self.status);
         self.rebuild_tree();
     }
 
@@ -617,10 +652,10 @@ impl App {
     fn rebuild_tree(&mut self) {
         refresh::rebuild_tree(
             &self.status,
-            &self.expanded_dirs,
-            &mut self.file_tree_nodes,
-            &mut self.files_panel,
-            &mut self.files_visual_anchor,
+            &self.files.expanded_dirs,
+            &mut self.files.tree_nodes,
+            &mut self.files.panel,
+            &mut self.files.visual_anchor,
         );
     }
 
@@ -629,7 +664,7 @@ impl App {
             return Ok(());
         }
 
-        if !self.stash_tree_mode {
+        if !self.stash.tree_mode.active {
             let Some(index) = self.selected_stash_index() else {
                 return Ok(());
             };
@@ -638,12 +673,12 @@ impl App {
                 index,
                 files,
                 revision_tree::TreeModeState {
-                    tree_mode: &mut self.stash_tree_mode,
-                    tree_nodes: &mut self.stash_tree_nodes,
-                    tree_files: &mut self.stash_tree_files,
-                    expanded_dirs: &mut self.stash_tree_expanded_dirs,
-                    selected_tree_revision: &mut self.stash_tree_stash_index,
-                    list_state: &mut self.stash_panel.list_state,
+                    tree_mode: &mut self.stash.tree_mode.active,
+                    tree_nodes: &mut self.stash.tree_mode.nodes,
+                    tree_files: &mut self.stash.tree_mode.files,
+                    expanded_dirs: &mut self.stash.tree_mode.expanded_dirs,
+                    selected_tree_revision: &mut self.stash.tree_mode.selected_source,
+                    list_state: &mut self.stash.panel.list_state,
                 },
             );
             return Ok(());
@@ -658,31 +693,33 @@ impl App {
         });
         revision_tree::toggle_tree_dir(
             selected_dir_path,
-            &self.stash_tree_files,
-            &mut self.stash_tree_expanded_dirs,
-            &mut self.stash_tree_nodes,
-            &mut self.stash_panel.list_state,
+            &self.stash.tree_mode.files,
+            &mut self.stash.tree_mode.expanded_dirs,
+            &mut self.stash.tree_mode.nodes,
+            &mut self.stash.panel.list_state,
         );
         Ok(())
     }
 
     pub fn stash_close_tree(&mut self) {
         let selected_source_index = self
-            .stash_tree_stash_index
-            .and_then(|stash_index| self.stashes.iter().position(|s| s.index == stash_index));
+            .stash
+            .tree_mode
+            .selected_source
+            .and_then(|stash_index| self.stash.items.iter().position(|s| s.index == stash_index));
 
-        let was_open = self.stash_tree_mode;
+        let was_open = self.stash.tree_mode.active;
         revision_tree::close_tree_mode(
-            &mut self.stash_tree_mode,
-            &mut self.stash_tree_nodes,
-            &mut self.stash_tree_files,
-            &mut self.stash_tree_expanded_dirs,
-            &mut self.stash_panel.list_state,
+            &mut self.stash.tree_mode.active,
+            &mut self.stash.tree_mode.nodes,
+            &mut self.stash.tree_mode.files,
+            &mut self.stash.tree_mode.expanded_dirs,
+            &mut self.stash.panel.list_state,
             selected_source_index,
-            self.stashes.len(),
+            self.stash.items.len(),
         );
         if was_open {
-            self.stash_tree_stash_index = None;
+            self.stash.tree_mode.selected_source = None;
         }
     }
 
@@ -705,7 +742,7 @@ impl App {
         if let Some(cached) = self.diff_cache.get(&key) {
             self.current_diff = cached.clone();
         } else {
-            let diff = diff_loader::load_diff(self.repo.as_ref(), &self.file_tree_nodes, target);
+            let diff = diff_loader::load_diff(self.repo.as_ref(), &self.files.tree_nodes, target);
             self.diff_cache.insert(key.clone(), diff.clone());
             self.current_diff = diff;
         }
@@ -732,7 +769,8 @@ impl App {
             }
             DiffTarget::Directory { path } => {
                 let hash = self
-                    .file_tree_nodes
+                    .files
+                    .tree_nodes
                     .iter()
                     .filter(|n| n.path.starts_with(path))
                     .map(|n| n.path.to_string_lossy().to_string())
@@ -764,11 +802,11 @@ impl App {
         if self.active_panel != SidePanel::Commits {
             return Ok(());
         }
-        if self.commits_dirty {
+        if self.commits.dirty {
             self.reload_commits_now();
         }
 
-        if !self.commit_tree_mode {
+        if !self.commits.tree_mode.active {
             let Some(oid) = self.selected_commit_oid() else {
                 return Ok(());
             };
@@ -777,12 +815,12 @@ impl App {
                 oid,
                 files,
                 revision_tree::TreeModeState {
-                    tree_mode: &mut self.commit_tree_mode,
-                    tree_nodes: &mut self.commit_tree_nodes,
-                    tree_files: &mut self.commit_tree_files,
-                    expanded_dirs: &mut self.commit_tree_expanded_dirs,
-                    selected_tree_revision: &mut self.commit_tree_commit_oid,
-                    list_state: &mut self.commits_panel.list_state,
+                    tree_mode: &mut self.commits.tree_mode.active,
+                    tree_nodes: &mut self.commits.tree_mode.nodes,
+                    tree_files: &mut self.commits.tree_mode.files,
+                    expanded_dirs: &mut self.commits.tree_mode.expanded_dirs,
+                    selected_tree_revision: &mut self.commits.tree_mode.selected_source,
+                    list_state: &mut self.commits.panel.list_state,
                 },
             );
             return Ok(());
@@ -797,32 +835,34 @@ impl App {
         });
         revision_tree::toggle_tree_dir(
             selected_dir_path,
-            &self.commit_tree_files,
-            &mut self.commit_tree_expanded_dirs,
-            &mut self.commit_tree_nodes,
-            &mut self.commits_panel.list_state,
+            &self.commits.tree_mode.files,
+            &mut self.commits.tree_mode.expanded_dirs,
+            &mut self.commits.tree_mode.nodes,
+            &mut self.commits.panel.list_state,
         );
         Ok(())
     }
 
     pub fn commit_close_tree(&mut self) {
         let selected_source_index = self
-            .commit_tree_commit_oid
+            .commits
+            .tree_mode
+            .selected_source
             .as_ref()
-            .and_then(|oid| self.commits.iter().position(|c| c.oid == *oid));
+            .and_then(|oid| self.commits.items.iter().position(|c| c.oid == *oid));
 
-        let was_open = self.commit_tree_mode;
+        let was_open = self.commits.tree_mode.active;
         revision_tree::close_tree_mode(
-            &mut self.commit_tree_mode,
-            &mut self.commit_tree_nodes,
-            &mut self.commit_tree_files,
-            &mut self.commit_tree_expanded_dirs,
-            &mut self.commits_panel.list_state,
+            &mut self.commits.tree_mode.active,
+            &mut self.commits.tree_mode.nodes,
+            &mut self.commits.tree_mode.files,
+            &mut self.commits.tree_mode.expanded_dirs,
+            &mut self.commits.panel.list_state,
             selected_source_index,
-            self.commits.len(),
+            self.commits.items.len(),
         );
         if was_open {
-            self.commit_tree_commit_oid = None;
+            self.commits.tree_mode.selected_source = None;
         }
     }
 
@@ -848,21 +888,21 @@ impl App {
     }
 
     fn should_load_commits_now(&self) -> bool {
-        self.active_panel == SidePanel::Commits || self.commit_tree_mode
+        self.active_panel == SidePanel::Commits || self.commits.tree_mode.active
     }
 
     fn reload_commits_now(&mut self) {
-        self.commits = self.repo.commits(100).unwrap_or_default();
-        self.commits_dirty = false;
-        if self.commit_tree_mode {
-            if let Some(ref oid) = self.commit_tree_commit_oid {
-                if self.commits.iter().any(|c| c.oid == *oid) {
-                    self.commit_tree_files = self.repo.commit_files(oid).unwrap_or_default();
+        self.commits.items = self.repo.commits(100).unwrap_or_default();
+        self.commits.dirty = false;
+        if self.commits.tree_mode.active {
+            if let Some(ref oid) = self.commits.tree_mode.selected_source {
+                if self.commits.items.iter().any(|c| c.oid == *oid) {
+                    self.commits.tree_mode.files = self.repo.commit_files(oid).unwrap_or_default();
                     revision_tree::rebuild_tree_nodes(
-                        &self.commit_tree_files,
-                        &self.commit_tree_expanded_dirs,
-                        &mut self.commit_tree_nodes,
-                        &mut self.commits_panel.list_state,
+                        &self.commits.tree_mode.files,
+                        &self.commits.tree_mode.expanded_dirs,
+                        &mut self.commits.tree_mode.nodes,
+                        &mut self.commits.panel.list_state,
                     );
                 } else {
                     self.commit_close_tree();
@@ -873,3 +913,5 @@ impl App {
         }
     }
 }
+
+

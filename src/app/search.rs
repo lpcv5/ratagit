@@ -80,11 +80,7 @@ impl App {
         if self.search_query.is_empty() {
             return false;
         }
-        self.search_scope_panel == self.active_panel
-            && self.search_scope_commit_tree_mode
-                == Self::normalize_commit_scope(self.active_panel, self.commit_tree_mode)
-            && self.search_scope_stash_tree_mode
-                == Self::normalize_stash_scope(self.active_panel, self.stash_tree_mode)
+        self.search_scope == self.current_search_scope_key()
     }
 
     pub fn has_search_for_active_scope(&self) -> bool {
@@ -103,11 +99,12 @@ impl App {
         if self.search_query.is_empty() {
             return None;
         }
-        if panel != self.search_scope_panel
-            || Self::normalize_commit_scope(panel, commit_tree_mode)
-                != self.search_scope_commit_tree_mode
-            || Self::normalize_stash_scope(panel, stash_tree_mode)
-                != self.search_scope_stash_tree_mode
+        let scope = SearchScopeKey {
+            panel,
+            commit_tree_mode: Self::normalize_commit_scope(panel, commit_tree_mode),
+            stash_tree_mode: Self::normalize_stash_scope(panel, stash_tree_mode),
+        };
+        if scope != self.search_scope
         {
             return None;
         }
@@ -135,11 +132,12 @@ impl App {
         if self.search_query.is_empty() {
             return None;
         }
-        if panel != self.search_scope_panel
-            || Self::normalize_commit_scope(panel, commit_tree_mode)
-                != self.search_scope_commit_tree_mode
-            || Self::normalize_stash_scope(panel, stash_tree_mode)
-                != self.search_scope_stash_tree_mode
+        let scope = SearchScopeKey {
+            panel,
+            commit_tree_mode: Self::normalize_commit_scope(panel, commit_tree_mode),
+            stash_tree_mode: Self::normalize_stash_scope(panel, stash_tree_mode),
+        };
+        if scope != self.search_scope
         {
             return None;
         }
@@ -199,60 +197,62 @@ impl App {
     }
 
     fn capture_search_scope(&mut self) {
-        self.search_scope_panel = self.active_panel;
-        self.search_scope_commit_tree_mode =
-            Self::normalize_commit_scope(self.active_panel, self.commit_tree_mode);
-        self.search_scope_stash_tree_mode =
-            Self::normalize_stash_scope(self.active_panel, self.stash_tree_mode);
+        self.search_scope = self.current_search_scope_key();
     }
 
     fn current_search_scope_key(&self) -> SearchScopeKey {
         SearchScopeKey {
-            panel: self.search_scope_panel,
-            commit_tree_mode: self.search_scope_commit_tree_mode,
-            stash_tree_mode: self.search_scope_stash_tree_mode,
+            panel: self.active_panel,
+            commit_tree_mode: Self::normalize_commit_scope(
+                self.active_panel,
+                self.commits.tree_mode.active,
+            ),
+            stash_tree_mode: Self::normalize_stash_scope(
+                self.active_panel,
+                self.stash.tree_mode.active,
+            ),
         }
     }
 
     fn search_scope_matches_active(&self) -> bool {
-        self.search_scope_panel == self.active_panel
-            && self.search_scope_commit_tree_mode
-                == Self::normalize_commit_scope(self.active_panel, self.commit_tree_mode)
-            && self.search_scope_stash_tree_mode
-                == Self::normalize_stash_scope(self.active_panel, self.stash_tree_mode)
-            && !self.search_matches.is_empty()
+        self.search_scope == self.current_search_scope_key() && !self.search_matches.is_empty()
     }
 
     fn searchable_items_for_scope(&self) -> Vec<String> {
         match self.active_panel {
             SidePanel::Files => self
-                .file_tree_nodes
+                .files
+                .tree_nodes
                 .iter()
                 .map(Self::tree_node_display_name)
                 .collect(),
-            SidePanel::LocalBranches => self.branches.iter().map(|b| b.name.clone()).collect(),
+            SidePanel::LocalBranches => self.branches.items.iter().map(|b| b.name.clone()).collect(),
             SidePanel::Commits => {
-                if self.commit_tree_mode {
+                if self.commits.tree_mode.active {
                     return self
-                        .commit_tree_nodes
+                        .commits
+                        .tree_mode
+                        .nodes
                         .iter()
                         .map(Self::tree_node_display_name)
                         .collect();
                 }
-                self.commits
+                self.commits.items
                     .iter()
                     .map(|c| format!("{} {}", c.short_hash, c.message))
                     .collect()
             }
             SidePanel::Stash => {
-                if self.stash_tree_mode {
+                if self.stash.tree_mode.active {
                     return self
-                        .stash_tree_nodes
+                        .stash
+                        .tree_mode
+                        .nodes
                         .iter()
                         .map(Self::tree_node_display_name)
                         .collect();
                 }
-                self.stashes
+                self.stash.items
                     .iter()
                     .map(|s| format!("stash@{{{}}} {}", s.index, s.message))
                     .collect()
@@ -262,19 +262,19 @@ impl App {
 
     fn active_panel_state_selected(&self) -> Option<usize> {
         match self.active_panel {
-            SidePanel::Files => self.files_panel.list_state.selected(),
-            SidePanel::LocalBranches => self.branches_panel.list_state.selected(),
-            SidePanel::Commits => self.commits_panel.list_state.selected(),
-            SidePanel::Stash => self.stash_panel.list_state.selected(),
+            SidePanel::Files => self.files.panel.list_state.selected(),
+            SidePanel::LocalBranches => self.branches.panel.list_state.selected(),
+            SidePanel::Commits => self.commits.panel.list_state.selected(),
+            SidePanel::Stash => self.stash.panel.list_state.selected(),
         }
     }
 
     fn select_active_panel_index(&mut self, idx: usize) {
         match self.active_panel {
-            SidePanel::Files => self.files_panel.list_state.select(Some(idx)),
-            SidePanel::LocalBranches => self.branches_panel.list_state.select(Some(idx)),
-            SidePanel::Commits => self.commits_panel.list_state.select(Some(idx)),
-            SidePanel::Stash => self.stash_panel.list_state.select(Some(idx)),
+            SidePanel::Files => self.files.panel.list_state.select(Some(idx)),
+            SidePanel::LocalBranches => self.branches.panel.list_state.select(Some(idx)),
+            SidePanel::Commits => self.commits.panel.list_state.select(Some(idx)),
+            SidePanel::Stash => self.stash.panel.list_state.select(Some(idx)),
         }
     }
 
@@ -307,3 +307,5 @@ impl App {
         }
     }
 }
+
+

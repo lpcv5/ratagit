@@ -1,29 +1,36 @@
+#[derive(Debug, Clone)]
+pub enum GlobalMessage {
+    Quit,
+    PanelNext,
+    PanelPrev,
+    PanelGoto(usize),
+    ListUp,
+    ListDown,
+    DiffScrollUp,
+    DiffScrollDown,
+    RefreshStatus,
+}
+
 /// Documentation comment in English.
 #[derive(Debug, Clone)]
 pub enum Message {
-    // Comment in English.
     Quit,
 
-    // Comment in English.
     PanelNext,
     PanelPrev,
     PanelGoto(usize), // 1-based
 
-    // Comment in English.
     ListUp,
     ListDown,
 
-    // Comment in English.
     ToggleDir,
     ToggleVisualSelectMode,
     CollapseAll,
     ExpandAll,
 
-    // Comment in English.
     DiffScrollUp,
     DiffScrollDown,
 
-    // Comment in English.
     StartCommitInput,
     StartSearchInput,
     StartBranchCreateInput,
@@ -55,5 +62,22 @@ pub enum Message {
     SearchClear,
     SearchNext,
     SearchPrev,
-    // Comment in English.
+}
+
+impl Message {
+    pub fn as_global(&self) -> Option<GlobalMessage> {
+        match self {
+            Message::Quit => Some(GlobalMessage::Quit),
+            Message::PanelNext => Some(GlobalMessage::PanelNext),
+            Message::PanelPrev => Some(GlobalMessage::PanelPrev),
+            Message::PanelGoto(v) => Some(GlobalMessage::PanelGoto(*v)),
+            Message::ListUp => Some(GlobalMessage::ListUp),
+            Message::ListDown => Some(GlobalMessage::ListDown),
+            Message::DiffScrollUp => Some(GlobalMessage::DiffScrollUp),
+            Message::DiffScrollDown => Some(GlobalMessage::DiffScrollDown),
+            Message::RefreshStatus => Some(GlobalMessage::RefreshStatus),
+            _ => None,
+        }
+    }
+
 }

@@ -48,7 +48,6 @@ Keep new features inside the existing layer boundaries (UI -> app messages -> gi
 - Follow Conventional Commit style seen in history: `feat: ...` (also use `fix:`, `refactor:`, `test:`, `docs:`).
 - Keep commits focused and compilable.
 - Use GitHub CLI `gh` for PR creation/review/merge operations.
-- For all commits, use the repository owner's GitHub identity via `gh`:
 - PRs should include:
   - What changed and why.
   - Linked issue/task (if any).
@@ -68,5 +67,3 @@ Keep new features inside the existing layer boundaries (UI -> app messages -> gi
 
 - Do not revert unrelated working-tree changes.
 - Prefer minimal, incremental patches and keep architecture docs in `docs/` in sync with behavior changes.
-- Use `.track/` as the only tracking source of truth.
-- For milestone planning/execution, always use the `project-tracker` skill workflow.

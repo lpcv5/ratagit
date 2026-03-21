@@ -11,87 +11,8 @@ pub(crate) fn handle_staging_message(app: &mut App, msg: Message) -> Option<Comm
                 app.dirty.mark();
             }
         }
-        Message::PrepareCommitFromSelection => match app.prepare_commit_from_visual_selection() {
-            Ok(count) => {
-                if count == 0 {
-                    app.push_log("commit blocked: no selected items", false);
-                    return None;
-                }
-                if app.start_commit_editor_guarded() {
-                    app.push_log(
-                        format!(
-                            "commit: {} selected target(s) staged; edit message/description",
-                            count
-                        ),
-                        true,
-                    );
-                    app.dirty.mark();
-                }
-            }
-            Err(e) => app.push_log(format!("prepare commit failed: {}", e), false),
-        },
-        Message::ToggleStageSelection => match app.toggle_stage_visual_selection() {
-            Ok((staged, unstaged)) => {
-                app.push_log(
-                    format!(
-                        "selection toggled: staged {}, unstaged {}",
-                        staged, unstaged
-                    ),
-                    true,
-                );
-                app.dirty.mark();
-            }
-            Err(e) => app.push_log(format!("selection toggle failed: {}", e), false),
-        },
-        Message::StageFile(path) => {
-            let display = path.display().to_string();
-            if let Err(e) = app.stage_file(path) {
-                app.push_log(format!("stage failed {}: {}", display, e), false);
-            } else {
-                app.push_log(format!("staged {}", display), true);
-                app.dirty.mark();
-            }
-        }
-        Message::UnstageFile(path) => {
-            let display = path.display().to_string();
-            if let Err(e) = app.unstage_file(path) {
-                app.push_log(format!("unstage failed {}: {}", display, e), false);
-            } else {
-                app.push_log(format!("unstaged {}", display), true);
-                app.dirty.mark();
-            }
-        }
-        Message::DiscardSelection => {
-            let paths = app.prepare_discard_targets_from_selection();
-            if paths.is_empty() {
-                app.push_log("discard blocked: no discardable selected items", false);
-                return None;
-            }
-            if let Err(e) = app.discard_paths(&paths) {
-                app.push_log(format!("discard failed: {}", e), false);
-            } else {
-                app.push_log(format!("discarded {} path(s)", paths.len()), true);
-                app.files_visual_mode = false;
-                app.files_visual_anchor = None;
-                app.dirty.mark();
-            }
-        }
-        Message::DiscardPaths(paths) => {
-            if paths.is_empty() {
-                app.push_log("discard blocked: no discardable selected items", false);
-                return None;
-            }
-            if let Err(e) = app.discard_paths(&paths) {
-                app.push_log(format!("discard failed: {}", e), false);
-            } else if paths.len() == 1 {
-                app.push_log(format!("discarded {}", paths[0].display()), true);
-                app.dirty.mark();
-            } else {
-                app.push_log(format!("discarded {} path(s)", paths.len()), true);
-                app.dirty.mark();
-            }
-        }
         _ => {}
     }
     None
 }
+

@@ -41,13 +41,13 @@ pub(crate) fn handle_branch_message(app: &mut App, msg: Message) -> Option<Comma
             }
         }
         Message::FetchRemote => {
-            if app.is_fetching_remote {
+            if app.branches.is_fetching_remote {
                 app.push_log("fetch already running", false);
                 return None;
             }
             match app.fetch_remote_async() {
                 Ok(rx) => {
-                    app.is_fetching_remote = true;
+                    app.branches.is_fetching_remote = true;
                     app.push_log("fetch started", true);
                     app.dirty.mark();
                     return Some(Command::Async(rx));
@@ -56,7 +56,7 @@ pub(crate) fn handle_branch_message(app: &mut App, msg: Message) -> Option<Comma
             }
         }
         Message::FetchRemoteFinished(result) => {
-            app.is_fetching_remote = false;
+            app.branches.is_fetching_remote = false;
             match result {
                 Ok(remote) => {
                     app.request_refresh(RefreshKind::Full);
