@@ -25,6 +25,7 @@ pub enum DiffTarget {
     },
 }
 
+#[allow(dead_code)]
 pub fn load_diff(repo: &dyn GitRepository, target: DiffTarget) -> Vec<DiffLine> {
     match target {
         DiffTarget::None => Vec::new(),
@@ -40,6 +41,7 @@ pub fn load_diff(repo: &dyn GitRepository, target: DiffTarget) -> Vec<DiffLine> 
     }
 }
 
+#[allow(dead_code)]
 fn load_file_diff(
     repo: &dyn GitRepository,
     path: &std::path::Path,

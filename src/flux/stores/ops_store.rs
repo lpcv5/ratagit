@@ -16,7 +16,7 @@ impl Store for OpsStore {
         match &action.action {
             Action::System(SystemAction::Tick) => {
                 return ReduceOutput::from_command(Command::Effect(
-                    EffectRequest::FlushPendingRefresh { log_success: false },
+                    EffectRequest::ProcessBackgroundLoads,
                 ));
             }
             Action::System(SystemAction::AutoRefresh) => {}
@@ -27,9 +27,7 @@ impl Store for OpsStore {
         }
 
         ctx.app.request_refresh(RefreshKind::Full);
-        ReduceOutput::from_command(Command::Effect(EffectRequest::FlushPendingRefresh {
-            log_success: false,
-        }))
+        ReduceOutput::from_command(Command::Effect(EffectRequest::ProcessBackgroundLoads))
     }
 }
 

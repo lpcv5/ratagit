@@ -13,10 +13,6 @@ impl App {
         if self.status.staged.is_empty() {
             if self.pending_refresh_kind().is_some() {
                 self.request_refresh(RefreshKind::StatusOnly);
-                if let Err(e) = self.flush_pending_refresh() {
-                    self.push_log(format!("refresh failed: {}", e), false);
-                    return false;
-                }
             }
             if self.status.staged.is_empty() {
                 // Check if there are any files to commit

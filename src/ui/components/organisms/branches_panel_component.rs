@@ -17,7 +17,13 @@ impl PanelComponent for BranchesPanelState {
             let title = self
                 .commits_subview_source
                 .as_ref()
-                .map(|name| format!("Branch Commits: {} [Esc Back]", name))
+                .map(|name| {
+                    if self.commits_subview_loading {
+                        format!("Branch Commits: {} [Loading...] [Esc Back]", name)
+                    } else {
+                        format!("Branch Commits: {} [Esc Back]", name)
+                    }
+                })
                 .unwrap_or_else(|| "Branch Commits [Esc Back]".to_string());
             let commits_ctx = PanelRenderContext {
                 active_panel: SidePanel::Commits,

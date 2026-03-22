@@ -1,6 +1,10 @@
 use super::{diff_cache, diff_loader, dirty_flags, refresh, revision_tree};
 use crate::config::keymap::Keymap;
 use crate::flux::snapshot::AppStateSnapshot;
+use crate::flux::task_manager::{
+    TaskGeneration, TaskKey, TaskManager, TaskMetrics, TaskPriority, TaskRequest, TaskRequestKind,
+    TaskResult, TaskResultKind,
+};
 use crate::git::{
     BranchInfo, CommitInfo, DiffLine, FileEntry, Git2Repository, GitError, GitRepository,
     GitStatus, StashInfo,
@@ -79,9 +83,47 @@ pub struct BranchesPanelState {
     pub items: Vec<BranchInfo>,
     pub is_fetching_remote: bool,
     pub commits_subview_active: bool,
+    pub commits_subview_loading: bool,
     pub commits_subview_source: Option<String>,
     pub commits_subview: CommitsPanelState,
 }
+
+enum BackgroundReceiver {
+    Status(Receiver<Result<GitStatus, GitError>>),
+    Branches(Receiver<Result<Vec<BranchInfo>, GitError>>),
+    Stashes(Receiver<Result<Vec<StashInfo>, GitError>>),
+    Commits(Receiver<Result<Vec<CommitInfo>, GitError>>),
+    BranchCommits {
+        branch: String,
+        rx: Receiver<Result<Vec<CommitInfo>, GitError>>,
+    },
+    Diff {
+        cache_key: diff_cache::DiffCacheKey,
+        rx: Receiver<Result<Vec<DiffLine>, GitError>>,
+    },
+}
+
+enum BackgroundPayload {
+    Status(GitStatus),
+    Branches(Vec<BranchInfo>),
+    Stashes(Vec<StashInfo>),
+    Commits(Vec<CommitInfo>),
+    BranchCommits {
+        branch: String,
+        items: Vec<CommitInfo>,
+    },
+    Diff {
+        cache_key: diff_cache::DiffCacheKey,
+        diff: Vec<DiffLine>,
+    },
+}
+
+struct PendingBackgroundTask {
+    request: TaskRequest,
+    receiver: BackgroundReceiver,
+}
+
+const MAX_NORMAL_PRIORITY_TASKS: usize = 6;
 
 #[derive(Default)]
 pub struct CommitsPanelState {
@@ -177,6 +219,8 @@ pub struct App {
     pending_refresh: Option<RefreshKind>,
     pending_diff_reload: bool,
     pending_diff_reload_at: Option<Instant>,
+    task_manager: TaskManager,
+    pending_background_tasks: HashMap<TaskGeneration, PendingBackgroundTask>,
 
     diff_cache: diff_cache::DiffCache,
     last_diff_key: Option<diff_cache::DiffCacheKey>,
@@ -254,6 +298,7 @@ impl App {
                 items: branches,
                 is_fetching_remote: false,
                 commits_subview_active: false,
+                commits_subview_loading: false,
                 commits_subview_source: None,
                 commits_subview: CommitsPanelState::default(),
             },
@@ -291,6 +336,8 @@ impl App {
             pending_refresh: None,
             pending_diff_reload: false,
             pending_diff_reload_at: None,
+            task_manager: TaskManager::new(),
+            pending_background_tasks: HashMap::new(),
             diff_cache: diff_cache::DiffCache::new(),
             last_diff_key: None,
             dirty: dirty_flags::DirtyFlags::default(),
@@ -380,6 +427,518 @@ impl App {
         Ok(true)
     }
 
+    fn has_background_task(&self, key: &TaskKey) -> bool {
+        self.pending_background_tasks
+            .values()
+            .any(|task| &task.request.key == key)
+    }
+
+    fn can_start_background_task(&self, priority: TaskPriority) -> bool {
+        match priority {
+            TaskPriority::High => true,
+            TaskPriority::Normal | TaskPriority::Low => {
+                self.pending_background_tasks.len() < MAX_NORMAL_PRIORITY_TASKS
+            }
+        }
+    }
+
+    fn diff_task_key() -> TaskKey {
+        TaskKey::Diff {
+            target: "active".to_string(),
+        }
+    }
+
+    fn has_active_diff_task(&self) -> bool {
+        let key = Self::diff_task_key();
+        self.has_background_task(&key)
+    }
+
+    fn cancel_pending_diff_task(&mut self) {
+        let key = Self::diff_task_key();
+        let _ = self.task_manager.cancel(&key);
+        self.pending_background_tasks
+            .retain(|_, task| task.request.key != key);
+    }
+
+    fn start_status_load(&mut self) -> bool {
+        let key = TaskKey::Status;
+        if self.has_background_task(&key) {
+            return true;
+        }
+        let priority = TaskPriority::High;
+        if !self.can_start_background_task(priority) {
+            return false;
+        }
+        let request = self
+            .task_manager
+            .enqueue(key.clone(), priority, TaskRequestKind::LoadStatus);
+        match self.repo.status_async() {
+            Ok(rx) => {
+                self.task_manager.mark_started(&key, request.generation);
+                self.pending_background_tasks.insert(
+                    request.generation,
+                    PendingBackgroundTask {
+                        request,
+                        receiver: BackgroundReceiver::Status(rx),
+                    },
+                );
+                true
+            }
+            Err(err) => {
+                self.task_manager.mark_finished(&key, request.generation);
+                self.push_log(format!("status load failed: {}", err), false);
+                true
+            }
+        }
+    }
+
+    fn start_branches_load(&mut self) -> bool {
+        let key = TaskKey::Branches;
+        if self.has_background_task(&key) {
+            return true;
+        }
+        let priority = TaskPriority::Normal;
+        if !self.can_start_background_task(priority) {
+            return false;
+        }
+        let request =
+            self.task_manager
+                .enqueue(key.clone(), priority, TaskRequestKind::LoadBranches);
+        match self.repo.branches_async() {
+            Ok(rx) => {
+                self.task_manager.mark_started(&key, request.generation);
+                self.pending_background_tasks.insert(
+                    request.generation,
+                    PendingBackgroundTask {
+                        request,
+                        receiver: BackgroundReceiver::Branches(rx),
+                    },
+                );
+                true
+            }
+            Err(err) => {
+                self.task_manager.mark_finished(&key, request.generation);
+                self.push_log(format!("branches load failed: {}", err), false);
+                true
+            }
+        }
+    }
+
+    fn start_stashes_load(&mut self) -> bool {
+        let key = TaskKey::Stashes;
+        if self.has_background_task(&key) {
+            return true;
+        }
+        let priority = TaskPriority::Normal;
+        if !self.can_start_background_task(priority) {
+            return false;
+        }
+        let request =
+            self.task_manager
+                .enqueue(key.clone(), priority, TaskRequestKind::LoadStashes);
+        match self.repo.stashes_async() {
+            Ok(rx) => {
+                self.task_manager.mark_started(&key, request.generation);
+                self.pending_background_tasks.insert(
+                    request.generation,
+                    PendingBackgroundTask {
+                        request,
+                        receiver: BackgroundReceiver::Stashes(rx),
+                    },
+                );
+                true
+            }
+            Err(err) => {
+                self.task_manager.mark_finished(&key, request.generation);
+                self.push_log(format!("stashes load failed: {}", err), false);
+                true
+            }
+        }
+    }
+
+    fn start_commits_load(&mut self, limit: usize) -> bool {
+        let key = TaskKey::Commits;
+        if self.has_background_task(&key) {
+            return true;
+        }
+        let priority = TaskPriority::Normal;
+        if !self.can_start_background_task(priority) {
+            return false;
+        }
+        let request = self.task_manager.enqueue(
+            key.clone(),
+            priority,
+            TaskRequestKind::LoadCommits { limit },
+        );
+        match self.repo.commits_async(limit) {
+            Ok(rx) => {
+                self.task_manager.mark_started(&key, request.generation);
+                self.pending_background_tasks.insert(
+                    request.generation,
+                    PendingBackgroundTask {
+                        request,
+                        receiver: BackgroundReceiver::Commits(rx),
+                    },
+                );
+                true
+            }
+            Err(err) => {
+                self.task_manager.mark_finished(&key, request.generation);
+                self.push_log(format!("commits load failed: {}", err), false);
+                true
+            }
+        }
+    }
+
+    fn apply_status_refresh(&mut self, status: GitStatus) {
+        self.status = status;
+        let new_dirs = refresh::collect_all_dirs(&self.status);
+        for d in new_dirs {
+            self.files.expanded_dirs.insert(d);
+        }
+        self.rebuild_tree();
+    }
+
+    pub fn process_background_refresh_tick(&mut self) {
+        if let Some(kind) = self.pending_refresh.take() {
+            let mut deferred_kind = None;
+            if !self.start_status_load() {
+                deferred_kind = Some(RefreshKind::StatusOnly);
+            }
+            if matches!(kind, RefreshKind::StatusAndRefs | RefreshKind::Full)
+                && (!self.start_branches_load() || !self.start_stashes_load())
+            {
+                deferred_kind = Some(match deferred_kind {
+                    None => RefreshKind::StatusAndRefs,
+                    Some(existing) => Self::max_refresh_kind(existing, RefreshKind::StatusAndRefs),
+                });
+            }
+            if matches!(kind, RefreshKind::Full) {
+                self.commits.dirty = true;
+            }
+            if let Some(kind) = deferred_kind {
+                self.pending_refresh = Some(match self.pending_refresh {
+                    None => kind,
+                    Some(existing) => Self::max_refresh_kind(existing, kind),
+                });
+            }
+        }
+
+        if self.active_panel == SidePanel::Commits && self.commits.dirty {
+            let _ = self.start_commits_load(100);
+        }
+
+        self.start_pending_diff_load();
+
+        let mut schedule_diff = false;
+
+        let mut next_pending_background = HashMap::new();
+        let mut finished_payloads: HashMap<(TaskKey, TaskGeneration), BackgroundPayload> =
+            HashMap::new();
+        for (generation, task) in self.pending_background_tasks.drain() {
+            let PendingBackgroundTask { request, receiver } = task;
+            match receiver {
+                BackgroundReceiver::Status(rx) => match rx.try_recv() {
+                    Ok(Ok(status)) => {
+                        self.task_manager.submit_result(TaskResult {
+                            key: request.key.clone(),
+                            generation: request.generation,
+                            kind: TaskResultKind::Finished,
+                        });
+                        finished_payloads.insert(
+                            (request.key.clone(), request.generation),
+                            BackgroundPayload::Status(status),
+                        );
+                    }
+                    Ok(Err(err)) => self.task_manager.submit_result(TaskResult {
+                        key: request.key.clone(),
+                        generation: request.generation,
+                        kind: TaskResultKind::Failed {
+                            reason: format!("status load failed: {}", err),
+                        },
+                    }),
+                    Err(std::sync::mpsc::TryRecvError::Empty) => {
+                        next_pending_background.insert(
+                            generation,
+                            PendingBackgroundTask {
+                                request,
+                                receiver: BackgroundReceiver::Status(rx),
+                            },
+                        );
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        self.task_manager.submit_result(TaskResult {
+                            key: request.key.clone(),
+                            generation: request.generation,
+                            kind: TaskResultKind::Failed {
+                                reason: "status load disconnected".to_string(),
+                            },
+                        });
+                    }
+                },
+                BackgroundReceiver::Branches(rx) => match rx.try_recv() {
+                    Ok(Ok(items)) => {
+                        self.task_manager.submit_result(TaskResult {
+                            key: request.key.clone(),
+                            generation: request.generation,
+                            kind: TaskResultKind::Finished,
+                        });
+                        finished_payloads.insert(
+                            (request.key.clone(), request.generation),
+                            BackgroundPayload::Branches(items),
+                        );
+                    }
+                    Ok(Err(err)) => self.task_manager.submit_result(TaskResult {
+                        key: request.key.clone(),
+                        generation: request.generation,
+                        kind: TaskResultKind::Failed {
+                            reason: format!("branches load failed: {}", err),
+                        },
+                    }),
+                    Err(std::sync::mpsc::TryRecvError::Empty) => {
+                        next_pending_background.insert(
+                            generation,
+                            PendingBackgroundTask {
+                                request,
+                                receiver: BackgroundReceiver::Branches(rx),
+                            },
+                        );
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        self.task_manager.submit_result(TaskResult {
+                            key: request.key.clone(),
+                            generation: request.generation,
+                            kind: TaskResultKind::Failed {
+                                reason: "branches load disconnected".to_string(),
+                            },
+                        });
+                    }
+                },
+                BackgroundReceiver::Stashes(rx) => match rx.try_recv() {
+                    Ok(Ok(items)) => {
+                        self.task_manager.submit_result(TaskResult {
+                            key: request.key.clone(),
+                            generation: request.generation,
+                            kind: TaskResultKind::Finished,
+                        });
+                        finished_payloads.insert(
+                            (request.key.clone(), request.generation),
+                            BackgroundPayload::Stashes(items),
+                        );
+                    }
+                    Ok(Err(err)) => self.task_manager.submit_result(TaskResult {
+                        key: request.key.clone(),
+                        generation: request.generation,
+                        kind: TaskResultKind::Failed {
+                            reason: format!("stashes load failed: {}", err),
+                        },
+                    }),
+                    Err(std::sync::mpsc::TryRecvError::Empty) => {
+                        next_pending_background.insert(
+                            generation,
+                            PendingBackgroundTask {
+                                request,
+                                receiver: BackgroundReceiver::Stashes(rx),
+                            },
+                        );
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        self.task_manager.submit_result(TaskResult {
+                            key: request.key.clone(),
+                            generation: request.generation,
+                            kind: TaskResultKind::Failed {
+                                reason: "stashes load disconnected".to_string(),
+                            },
+                        });
+                    }
+                },
+                BackgroundReceiver::Commits(rx) => match rx.try_recv() {
+                    Ok(Ok(items)) => {
+                        self.task_manager.submit_result(TaskResult {
+                            key: request.key.clone(),
+                            generation: request.generation,
+                            kind: TaskResultKind::Finished,
+                        });
+                        finished_payloads.insert(
+                            (request.key.clone(), request.generation),
+                            BackgroundPayload::Commits(items),
+                        );
+                    }
+                    Ok(Err(err)) => self.task_manager.submit_result(TaskResult {
+                        key: request.key.clone(),
+                        generation: request.generation,
+                        kind: TaskResultKind::Failed {
+                            reason: format!("commits load failed: {}", err),
+                        },
+                    }),
+                    Err(std::sync::mpsc::TryRecvError::Empty) => {
+                        next_pending_background.insert(
+                            generation,
+                            PendingBackgroundTask {
+                                request,
+                                receiver: BackgroundReceiver::Commits(rx),
+                            },
+                        );
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        self.task_manager.submit_result(TaskResult {
+                            key: request.key.clone(),
+                            generation: request.generation,
+                            kind: TaskResultKind::Failed {
+                                reason: "commits load disconnected".to_string(),
+                            },
+                        });
+                    }
+                },
+                BackgroundReceiver::BranchCommits { branch, rx } => match rx.try_recv() {
+                    Ok(Ok(items)) => {
+                        self.task_manager.submit_result(TaskResult {
+                            key: request.key.clone(),
+                            generation: request.generation,
+                            kind: TaskResultKind::Finished,
+                        });
+                        finished_payloads.insert(
+                            (request.key.clone(), request.generation),
+                            BackgroundPayload::BranchCommits { branch, items },
+                        );
+                    }
+                    Ok(Err(err)) => self.task_manager.submit_result(TaskResult {
+                        key: request.key.clone(),
+                        generation: request.generation,
+                        kind: TaskResultKind::Failed {
+                            reason: format!("branch commits load failed: {}", err),
+                        },
+                    }),
+                    Err(std::sync::mpsc::TryRecvError::Empty) => {
+                        next_pending_background.insert(
+                            generation,
+                            PendingBackgroundTask {
+                                request,
+                                receiver: BackgroundReceiver::BranchCommits { branch, rx },
+                            },
+                        );
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        self.task_manager.submit_result(TaskResult {
+                            key: request.key.clone(),
+                            generation: request.generation,
+                            kind: TaskResultKind::Failed {
+                                reason: "branch commits load disconnected".to_string(),
+                            },
+                        });
+                    }
+                },
+                BackgroundReceiver::Diff { cache_key, rx } => match rx.try_recv() {
+                    Ok(Ok(diff)) => {
+                        self.task_manager.submit_result(TaskResult {
+                            key: request.key.clone(),
+                            generation: request.generation,
+                            kind: TaskResultKind::Finished,
+                        });
+                        finished_payloads.insert(
+                            (request.key.clone(), request.generation),
+                            BackgroundPayload::Diff { cache_key, diff },
+                        );
+                    }
+                    Ok(Err(err)) => self.task_manager.submit_result(TaskResult {
+                        key: request.key.clone(),
+                        generation: request.generation,
+                        kind: TaskResultKind::Failed {
+                            reason: format!("diff load failed: {}", err),
+                        },
+                    }),
+                    Err(std::sync::mpsc::TryRecvError::Empty) => {
+                        next_pending_background.insert(
+                            generation,
+                            PendingBackgroundTask {
+                                request,
+                                receiver: BackgroundReceiver::Diff { cache_key, rx },
+                            },
+                        );
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        self.task_manager.submit_result(TaskResult {
+                            key: request.key.clone(),
+                            generation: request.generation,
+                            kind: TaskResultKind::Failed {
+                                reason: "diff load disconnected".to_string(),
+                            },
+                        });
+                    }
+                },
+            }
+        }
+        self.pending_background_tasks = next_pending_background;
+
+        for task in self.task_manager.collect_ready() {
+            match task.kind {
+                TaskResultKind::Finished => {
+                    let Some(payload) = finished_payloads.remove(&(task.key, task.generation))
+                    else {
+                        continue;
+                    };
+                    match payload {
+                        BackgroundPayload::Status(status) => {
+                            self.apply_status_refresh(status);
+                            schedule_diff = true;
+                            self.dirty.mark_all();
+                        }
+                        BackgroundPayload::Branches(items) => {
+                            self.branches.items = items;
+                            self.dirty.mark_all();
+                        }
+                        BackgroundPayload::Stashes(items) => {
+                            self.stash.items = items;
+                            self.dirty.mark_all();
+                        }
+                        BackgroundPayload::Commits(items) => {
+                            self.commits.items = items;
+                            self.commits.dirty = false;
+                            self.dirty.mark_all();
+                            schedule_diff = true;
+                        }
+                        BackgroundPayload::BranchCommits { branch, items } => {
+                            if self.branches.commits_subview_source.as_deref()
+                                == Some(branch.as_str())
+                                && self.branches.commits_subview_active
+                            {
+                                self.branches.commits_subview.items = items;
+                                self.branches.commits_subview_loading = false;
+                                self.branches.commits_subview.panel.list_state.select(
+                                    (!self.branches.commits_subview.items.is_empty()).then_some(0),
+                                );
+                                self.dirty.mark_all();
+                                schedule_diff = true;
+                            }
+                        }
+                        BackgroundPayload::Diff { cache_key, diff } => {
+                            self.diff_cache.insert(cache_key.clone(), diff.clone());
+                            self.last_diff_key = Some(cache_key);
+                            self.current_diff = diff;
+                            if !self.pending_diff_reload {
+                                self.pending_diff_reload_at = None;
+                            }
+                            self.dirty.mark_diff();
+                        }
+                    }
+                }
+                TaskResultKind::Failed { reason } => {
+                    if matches!(task.key, TaskKey::BranchCommits { .. }) {
+                        self.branches.commits_subview_loading = false;
+                    }
+                    if matches!(task.key, TaskKey::Diff { .. }) && !self.pending_diff_reload {
+                        self.pending_diff_reload_at = None;
+                    }
+                    self.push_log(reason, false);
+                }
+            }
+        }
+
+        if schedule_diff {
+            self.schedule_diff_reload();
+        }
+    }
+
     pub fn schedule_diff_reload(&mut self) {
         self.pending_diff_reload = true;
         self.pending_diff_reload_at = Some(Instant::now());
@@ -390,7 +949,15 @@ impl App {
     }
 
     pub fn has_pending_refresh_work(&self) -> bool {
-        self.pending_refresh.is_some()
+        self.pending_refresh.is_some() || !self.pending_background_tasks.is_empty()
+    }
+
+    pub fn pending_background_task_count(&self) -> usize {
+        self.pending_background_tasks.len()
+    }
+
+    pub fn task_metrics(&self) -> TaskMetrics {
+        self.task_manager.metrics()
     }
 
     pub fn is_diff_reload_due(&self, debounce: Duration) -> bool {
@@ -403,11 +970,10 @@ impl App {
     }
 
     pub fn flush_pending_diff_reload(&mut self) {
-        if !self.pending_diff_reload {
+        if !self.pending_diff_reload && !self.has_active_diff_task() {
             return;
         }
-        self.reload_diff_now();
-        self.dirty.mark_diff();
+        self.start_pending_diff_load();
     }
 
     pub(super) fn pending_refresh_kind(&self) -> Option<RefreshKind> {
@@ -416,8 +982,124 @@ impl App {
 
     pub fn ensure_commits_loaded_for_active_panel(&mut self) {
         if self.active_panel == SidePanel::Commits && self.commits.dirty {
-            self.reload_commits_now();
-            self.schedule_diff_reload();
+            let _ = self.start_commits_load(100);
+        }
+    }
+
+    fn start_pending_diff_load(&mut self) {
+        if !self.pending_diff_reload {
+            return;
+        }
+        let target = self.selected_diff_target();
+        let key = self.diff_target_to_cache_key(&target);
+
+        if self.last_diff_key.as_ref() == Some(&key) {
+            self.cancel_pending_diff_task();
+            self.pending_diff_reload = false;
+            self.pending_diff_reload_at = None;
+            return;
+        }
+
+        self.diff_scroll = 0;
+        if let Some(cached) = self.diff_cache.get_cloned(&key) {
+            self.current_diff = cached;
+            self.last_diff_key = Some(key);
+            self.pending_diff_reload = false;
+            self.pending_diff_reload_at = None;
+            self.dirty.mark_diff();
+            return;
+        }
+
+        self.cancel_pending_diff_task();
+
+        let key_for_task = Self::diff_task_key();
+        let target_label = Self::diff_cache_key_to_task_target(&key);
+        let request = self.task_manager.enqueue(
+            key_for_task.clone(),
+            TaskPriority::High,
+            TaskRequestKind::LoadDiff {
+                target: target_label,
+            },
+        );
+
+        let rx = match target {
+            diff_loader::DiffTarget::None => {
+                self.current_diff = Vec::new();
+                self.last_diff_key = Some(key);
+                self.pending_diff_reload = false;
+                self.pending_diff_reload_at = None;
+                self.dirty.mark_diff();
+                return;
+            }
+            diff_loader::DiffTarget::Branch { name } => self.repo.branch_log_async(name, 100),
+            diff_loader::DiffTarget::File { path, status } => match status {
+                crate::ui::widgets::file_tree::FileTreeNodeStatus::Staged(_) => {
+                    self.repo.diff_staged_async(path)
+                }
+                crate::ui::widgets::file_tree::FileTreeNodeStatus::Untracked => {
+                    self.repo.diff_untracked_async(path)
+                }
+                crate::ui::widgets::file_tree::FileTreeNodeStatus::Unstaged(_) => {
+                    self.repo.diff_unstaged_async(path)
+                }
+                crate::ui::widgets::file_tree::FileTreeNodeStatus::Directory => {
+                    self.repo.diff_directory_async(path)
+                }
+            },
+            diff_loader::DiffTarget::Directory { path } => self.repo.diff_directory_async(path),
+            diff_loader::DiffTarget::Commit { oid, path } => {
+                self.repo.commit_diff_scoped_async(oid, path)
+            }
+            diff_loader::DiffTarget::Stash { index, path } => {
+                self.repo.stash_diff_async(index, path)
+            }
+        };
+
+        match rx {
+            Ok(rx) => {
+                match rx.try_recv() {
+                    Ok(Ok(diff)) => {
+                        self.diff_cache.insert(key.clone(), diff.clone());
+                        self.last_diff_key = Some(key);
+                        self.current_diff = diff;
+                        self.pending_diff_reload = false;
+                        self.pending_diff_reload_at = None;
+                        self.dirty.mark_diff();
+                        return;
+                    }
+                    Ok(Err(err)) => {
+                        self.push_log(format!("diff load failed: {}", err), false);
+                        self.pending_diff_reload = false;
+                        self.pending_diff_reload_at = None;
+                        return;
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        self.push_log("diff load disconnected".to_string(), false);
+                        self.pending_diff_reload = false;
+                        self.pending_diff_reload_at = None;
+                        return;
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                }
+                self.task_manager
+                    .mark_started(&key_for_task, request.generation);
+                self.pending_background_tasks.insert(
+                    request.generation,
+                    PendingBackgroundTask {
+                        request,
+                        receiver: BackgroundReceiver::Diff { cache_key: key, rx },
+                    },
+                );
+                self.pending_diff_reload = false;
+                self.pending_diff_reload_at = None;
+            }
+            Err(err) => {
+                self.task_manager
+                    .mark_finished(&key_for_task, request.generation);
+                self.push_log(format!("diff load failed: {}", err), false);
+                self.pending_diff_reload = false;
+                self.pending_diff_reload_at = None;
+            }
         }
     }
 
@@ -430,16 +1112,44 @@ impl App {
         };
 
         self.branches.commits_subview_active = true;
+        self.branches.commits_subview_loading = true;
         self.branches.commits_subview_source = Some(branch_name.clone());
-        self.branches.commits_subview.items = self.repo.commits_for_branch(&branch_name, limit)?;
+        self.branches.commits_subview.items.clear();
         self.branches.commits_subview.dirty = false;
         self.branches.commits_subview.highlighted_oids.clear();
         self.branches.commits_subview.tree_mode = TreeModeState::default();
-        self.branches
-            .commits_subview
-            .panel
-            .list_state
-            .select((!self.branches.commits_subview.items.is_empty()).then_some(0));
+        self.branches.commits_subview.panel.list_state.select(None);
+        let key = TaskKey::BranchCommits {
+            branch: branch_name.clone(),
+        };
+        let request = self.task_manager.enqueue(
+            key.clone(),
+            TaskPriority::High,
+            TaskRequestKind::LoadBranchCommits {
+                branch: branch_name.clone(),
+                limit,
+            },
+        );
+        match self.repo.commits_for_branch_async(&branch_name, limit) {
+            Ok(rx) => {
+                self.task_manager.mark_started(&key, request.generation);
+                self.pending_background_tasks.insert(
+                    request.generation,
+                    PendingBackgroundTask {
+                        request,
+                        receiver: BackgroundReceiver::BranchCommits {
+                            branch: branch_name.clone(),
+                            rx,
+                        },
+                    },
+                );
+            }
+            Err(err) => {
+                self.task_manager.mark_finished(&key, request.generation);
+                self.branches.commits_subview_loading = false;
+                self.push_log(format!("branch commits load failed: {}", err), false);
+            }
+        }
         self.push_log(
             format!("branch commits: {} (Esc to back)", branch_name),
             true,
@@ -454,6 +1164,7 @@ impl App {
 
         let source_branch = self.branches.commits_subview_source.take();
         self.branches.commits_subview_active = false;
+        self.branches.commits_subview_loading = false;
         self.branches.commits_subview = CommitsPanelState::default();
 
         let selected_index = source_branch.and_then(|name| {
@@ -499,18 +1210,21 @@ impl App {
         self.dirty.mark_command_log();
     }
 
+    #[allow(dead_code)]
     pub fn stage_file(&mut self, path: PathBuf) -> Result<()> {
         self.repo.stage(&path)?;
         self.request_refresh(RefreshKind::StatusOnly);
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn unstage_file(&mut self, path: PathBuf) -> Result<()> {
         self.repo.unstage(&path)?;
         self.request_refresh(RefreshKind::StatusOnly);
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn discard_paths(&mut self, paths: &[PathBuf]) -> Result<()> {
         self.repo.discard_paths(paths)?;
         self.request_refresh(RefreshKind::StatusOnly);
@@ -533,12 +1247,14 @@ impl App {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn commit(&mut self, message: &str) -> Result<String> {
         let oid = self.repo.commit(message)?;
         self.request_refresh(RefreshKind::Full);
         Ok(oid)
     }
 
+    #[allow(dead_code)]
     pub fn create_branch(&mut self, name: &str) -> Result<()> {
         self.repo.create_branch(name)?;
         self.request_refresh(RefreshKind::StatusAndRefs);
@@ -551,6 +1267,7 @@ impl App {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn checkout_branch_with_auto_stash(&mut self, name: &str) -> Result<()> {
         self.repo.checkout_branch_with_auto_stash(name)?;
         self.request_refresh(RefreshKind::Full);
@@ -576,6 +1293,7 @@ impl App {
         self.branch_switch_target.take()
     }
 
+    #[allow(dead_code)]
     pub fn delete_branch(&mut self, name: &str) -> Result<()> {
         self.repo.delete_branch(name)?;
         self.request_refresh(RefreshKind::StatusAndRefs);
@@ -586,24 +1304,87 @@ impl App {
         Ok(self.repo.fetch_default_async()?)
     }
 
+    pub fn stage_file_request(&self, path: PathBuf) -> Result<Receiver<Result<(), GitError>>> {
+        Ok(self.repo.stage_async(path)?)
+    }
+
+    pub fn unstage_file_request(&self, path: PathBuf) -> Result<Receiver<Result<(), GitError>>> {
+        Ok(self.repo.unstage_async(path)?)
+    }
+
+    pub fn discard_paths_request(
+        &self,
+        paths: Vec<PathBuf>,
+    ) -> Result<Receiver<Result<(), GitError>>> {
+        Ok(self.repo.discard_paths_async(paths)?)
+    }
+
+    pub fn commit_request(&self, message: String) -> Result<Receiver<Result<String, GitError>>> {
+        Ok(self.repo.commit_async(message)?)
+    }
+
+    pub fn create_branch_request(&self, name: String) -> Result<Receiver<Result<(), GitError>>> {
+        Ok(self.repo.create_branch_async(name)?)
+    }
+
+    pub fn checkout_branch_request(
+        &self,
+        name: String,
+        auto_stash: bool,
+    ) -> Result<Receiver<Result<(), GitError>>> {
+        if auto_stash {
+            Ok(self.repo.checkout_branch_with_auto_stash_async(name)?)
+        } else {
+            Ok(self.repo.checkout_branch_async(name)?)
+        }
+    }
+
+    pub fn delete_branch_request(&self, name: String) -> Result<Receiver<Result<(), GitError>>> {
+        Ok(self.repo.delete_branch_async(name)?)
+    }
+
+    pub fn stash_push_request(
+        &self,
+        paths: Vec<PathBuf>,
+        message: String,
+    ) -> Result<Receiver<Result<usize, GitError>>> {
+        Ok(self.repo.stash_push_paths_async(paths, message)?)
+    }
+
+    pub fn stash_apply_request(&self, index: usize) -> Result<Receiver<Result<(), GitError>>> {
+        Ok(self.repo.stash_apply_async(index)?)
+    }
+
+    pub fn stash_pop_request(&self, index: usize) -> Result<Receiver<Result<(), GitError>>> {
+        Ok(self.repo.stash_pop_async(index)?)
+    }
+
+    pub fn stash_drop_request(&self, index: usize) -> Result<Receiver<Result<(), GitError>>> {
+        Ok(self.repo.stash_drop_async(index)?)
+    }
+
+    #[allow(dead_code)]
     pub fn stash_push(&mut self, paths: &[PathBuf], message: &str) -> Result<usize> {
         let index = self.repo.stash_push_paths(paths, message)?;
         self.request_refresh(RefreshKind::StatusAndRefs);
         Ok(index)
     }
 
+    #[allow(dead_code)]
     pub fn stash_apply(&mut self, index: usize) -> Result<()> {
         self.repo.stash_apply(index)?;
         self.request_refresh(RefreshKind::StatusAndRefs);
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn stash_pop(&mut self, index: usize) -> Result<()> {
         self.repo.stash_pop(index)?;
         self.request_refresh(RefreshKind::StatusAndRefs);
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn stash_drop(&mut self, index: usize) -> Result<()> {
         self.repo.stash_drop(index)?;
         self.request_refresh(RefreshKind::StatusAndRefs);
@@ -719,32 +1500,8 @@ impl App {
     }
 
     pub fn reload_diff_now(&mut self) {
-        let target = self.selected_diff_target();
-        let key = self.diff_target_to_cache_key(&target);
-
-        // Check if same as last load
-        if let Some(ref last) = self.last_diff_key {
-            if last == &key {
-                self.pending_diff_reload = false;
-                self.pending_diff_reload_at = None;
-                return;
-            }
-        }
-
-        self.diff_scroll = 0;
-
-        // Try cache first
-        if let Some(cached) = self.diff_cache.get_cloned(&key) {
-            self.current_diff = cached;
-        } else {
-            let diff = diff_loader::load_diff(self.repo.as_ref(), target);
-            self.diff_cache.insert(key.clone(), diff.clone());
-            self.current_diff = diff;
-        }
-
-        self.last_diff_key = Some(key);
-        self.pending_diff_reload = false;
-        self.pending_diff_reload_at = None;
+        self.schedule_diff_reload();
+        self.start_pending_diff_load();
     }
 
     fn diff_target_to_cache_key(
@@ -797,12 +1554,35 @@ impl App {
         }
     }
 
+    fn diff_cache_key_to_task_target(key: &diff_cache::DiffCacheKey) -> String {
+        match key {
+            diff_cache::DiffCacheKey::File { path, is_staged } => {
+                format!("file:{}:{}", path.display(), is_staged)
+            }
+            diff_cache::DiffCacheKey::Branch { name, limit } => {
+                format!("branch:{}:{}", name, limit)
+            }
+            diff_cache::DiffCacheKey::Directory { path, files_hash } => {
+                format!("dir:{}:{}", path.display(), files_hash)
+            }
+            diff_cache::DiffCacheKey::Commit { oid, path } => match path {
+                Some(path) => format!("commit:{}:{}", oid, path.display()),
+                None => format!("commit:{}:*", oid),
+            },
+            diff_cache::DiffCacheKey::Stash { index, path } => match path {
+                Some(path) => format!("stash:{}:{}", index, path.display()),
+                None => format!("stash:{}:*", index),
+            },
+        }
+    }
+
     pub fn commit_open_tree_or_toggle_dir(&mut self) -> Result<()> {
         if self.active_panel != SidePanel::Commits {
             return Ok(());
         }
         if self.commits.dirty {
-            self.reload_commits_now();
+            let _ = self.start_commits_load(100);
+            return Ok(());
         }
 
         if !self.commits.tree_mode.active {

@@ -4,5 +4,6 @@ pub mod effects;
 pub mod input_mapper;
 pub mod snapshot;
 pub mod stores;
+pub mod task_manager;
 #[cfg(test)]
 pub mod test_runtime;

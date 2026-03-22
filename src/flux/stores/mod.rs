@@ -133,7 +133,7 @@ pub trait Store {
 
 /// Helper to flush pending refresh without logging success.
 pub(super) fn flush_refresh() -> Command {
-    Command::Effect(crate::flux::effects::EffectRequest::FlushPendingRefresh { log_success: false })
+    Command::Effect(crate::flux::effects::EffectRequest::ProcessBackgroundLoads)
 }
 
 /// Shared test utilities for all store unit tests.
