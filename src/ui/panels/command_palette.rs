@@ -1,5 +1,6 @@
 use crate::app::InputMode;
 use crate::flux::snapshot::AppStateSnapshot;
+use crate::ui::panels::centered_rect;
 use crate::ui::theme::UiTheme;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -63,24 +64,4 @@ pub fn render_command_palette(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>
     let x = sections[0].x.saturating_add(col as u16);
     let y = sections[0].y.saturating_add(1);
     frame.set_cursor_position((x, y));
-}
-
-fn centered_rect(area: Rect, percent_x: u16, percent_y: u16) -> Rect {
-    let popup_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Percentage((100 - percent_y) / 2),
-            Constraint::Percentage(percent_y),
-            Constraint::Percentage((100 - percent_y) / 2),
-        ])
-        .split(area);
-
-    Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage((100 - percent_x) / 2),
-            Constraint::Percentage(percent_x),
-            Constraint::Percentage((100 - percent_x) / 2),
-        ])
-        .split(popup_layout[1])[1]
 }

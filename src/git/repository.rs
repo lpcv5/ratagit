@@ -329,21 +329,20 @@ impl Git2Repository {
             .ok_or(GitError::InvalidState)
     }
 
+    /// Helper to format stash spec string.
+    fn stash_spec(index: usize) -> String {
+        format!("stash@{{{}}}", index)
+    }
+
+    /// Helper to validate path contains valid Unicode.
+    fn path_to_str<'a>(path: &'a std::path::Path, context: &str) -> Result<&'a str, GitError> {
+        path.to_str()
+            .ok_or_else(|| GitError::Git2(format!("{} contains invalid unicode", context)))
+    }
+
     fn run_git(&self, args: &[&str]) -> Result<String, GitError> {
-        let output = Command::new("git")
-            .args(args)
-            .current_dir(self.repo_root()?)
-            .output()
-            .map_err(|e| GitError::Git2(format!("failed to run git {:?}: {}", args, e)))?;
-
-        if output.status.success() {
-            return Ok(String::from_utf8_lossy(&output.stdout).trim().to_string());
-        }
-
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        let detail = if stderr.is_empty() { stdout } else { stderr };
-        Err(GitError::Git2(detail))
+        let owned: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+        self.run_git_owned(&owned)
     }
 
     fn run_git_owned(&self, args: &[String]) -> Result<String, GitError> {
@@ -442,9 +441,7 @@ impl Git2Repository {
         base_args: &[&str],
         path: &std::path::Path,
     ) -> Result<Vec<DiffLine>, GitError> {
-        let Some(path_str) = path.to_str() else {
-            return Err(GitError::Git2("path contains invalid unicode".to_string()));
-        };
+        let path_str = Self::path_to_str(path, "path")?;
 
         let mut args: Vec<String> = base_args.iter().map(|arg| (*arg).to_string()).collect();
         args.push("--".to_string());
@@ -541,10 +538,8 @@ impl GitRepository for Git2Repository {
             "--".to_string(),
         ];
         for path in paths {
-            let spec = path
-                .to_str()
-                .ok_or_else(|| GitError::Git2("path contains invalid unicode".to_string()))?;
-            args.push(spec.to_string());
+            let path_str = Self::path_to_str(path, "path")?;
+            args.push(path_str.to_string());
         }
         self.run_git_owned(&args)?;
         Ok(())
@@ -762,7 +757,7 @@ impl GitRepository for Git2Repository {
                         .peel_to_commit()
                         .ok()
                         .and_then(|c| c.summary().map(|s| s.to_string()))
-                        .unwrap_or_else(|| format!("stash@{{{}}}", index));
+                        .unwrap_or_else(|| Self::stash_spec(index));
                     result.push(StashInfo {
                         index,
                         message: msg,
@@ -776,7 +771,7 @@ impl GitRepository for Git2Repository {
     }
 
     fn stash_files(&self, index: usize) -> Result<Vec<FileEntry>, GitError> {
-        let spec = format!("stash@{{{}}}", index);
+        let spec = Self::stash_spec(index);
         let output =
             self.run_git(&["stash", "show", "--name-status", "--pretty=format:", &spec])?;
         let mut files = Vec::new();
@@ -816,7 +811,7 @@ impl GitRepository for Git2Repository {
         index: usize,
         path: Option<&std::path::Path>,
     ) -> Result<Vec<DiffLine>, GitError> {
-        let spec = format!("stash@{{{}}}", index);
+        let spec = Self::stash_spec(index);
         let mut args = if path.is_some() {
             vec!["show".to_string(), spec]
         } else {
@@ -829,11 +824,7 @@ impl GitRepository for Git2Repository {
         };
 
         if let Some(path) = path {
-            let Some(path_str) = path.to_str() else {
-                return Err(GitError::Git2(
-                    "stash path contains invalid unicode".to_string(),
-                ));
-            };
+            let path_str = Self::path_to_str(path, "stash path")?;
             args.push("--".to_string());
             args.push(path_str.to_string());
         }
@@ -857,11 +848,7 @@ impl GitRepository for Git2Repository {
             "--".to_string(),
         ];
         for path in paths {
-            let Some(path_str) = path.to_str() else {
-                return Err(GitError::Git2(
-                    "stash path contains invalid unicode".to_string(),
-                ));
-            };
+            let path_str = Self::path_to_str(path, "stash path")?;
             args.push(path_str.to_string());
         }
 
@@ -876,19 +863,19 @@ impl GitRepository for Git2Repository {
     }
 
     fn stash_apply(&self, index: usize) -> Result<(), GitError> {
-        let spec = format!("stash@{{{}}}", index);
+        let spec = Self::stash_spec(index);
         self.run_git(&["stash", "apply", &spec])?;
         Ok(())
     }
 
     fn stash_pop(&self, index: usize) -> Result<(), GitError> {
-        let spec = format!("stash@{{{}}}", index);
+        let spec = Self::stash_spec(index);
         self.run_git(&["stash", "pop", &spec])?;
         Ok(())
     }
 
     fn stash_drop(&self, index: usize) -> Result<(), GitError> {
-        let spec = format!("stash@{{{}}}", index);
+        let spec = Self::stash_spec(index);
         self.run_git(&["stash", "drop", &spec])?;
         Ok(())
     }
@@ -904,11 +891,7 @@ impl GitRepository for Git2Repository {
             oid.to_string(),
         ];
         if let Some(path) = path {
-            let Some(path_str) = path.to_str() else {
-                return Err(GitError::Git2(
-                    "commit path contains invalid unicode".to_string(),
-                ));
-            };
+            let path_str = Self::path_to_str(path, "commit path")?;
             args.push("--".to_string());
             args.push(path_str.to_string());
         }

@@ -1,5 +1,6 @@
 use crate::app::{CommitFieldFocus, InputMode};
 use crate::flux::snapshot::AppStateSnapshot;
+use crate::ui::panels::centered_rect;
 use crate::ui::theme::UiTheme;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -101,26 +102,6 @@ pub fn render_commit_editor(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) 
         (x, y)
     };
     frame.set_cursor_position(cursor);
-}
-
-fn centered_rect(area: Rect, percent_x: u16, percent_y: u16) -> Rect {
-    let popup_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Percentage((100 - percent_y) / 2),
-            Constraint::Percentage(percent_y),
-            Constraint::Percentage((100 - percent_y) / 2),
-        ])
-        .split(area);
-
-    Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage((100 - percent_x) / 2),
-            Constraint::Percentage(percent_x),
-            Constraint::Percentage((100 - percent_x) / 2),
-        ])
-        .split(popup_layout[1])[1]
 }
 
 fn line_col(text: &str) -> (u16, u16) {

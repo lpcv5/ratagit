@@ -130,3 +130,10 @@ impl ReduceOutput {
 pub trait Store {
     fn reduce(&mut self, action: &ActionEnvelope, ctx: &mut ReduceCtx<'_>) -> ReduceOutput;
 }
+
+/// Helper to flush pending refresh without logging success.
+pub(super) fn flush_refresh() -> Command {
+    Command::Effect(crate::flux::effects::EffectRequest::FlushPendingRefresh {
+        log_success: false,
+    })
+}
