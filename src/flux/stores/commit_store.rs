@@ -1,7 +1,7 @@
 use crate::app::Command;
 use crate::flux::action::{Action, ActionEnvelope, DomainAction};
 use crate::flux::effects::EffectRequest;
-use crate::flux::stores::{flush_refresh, ReduceCtx, ReduceOutput, Store, UiInvalidation};
+use crate::flux::stores::{tick_background_loads, ReduceCtx, ReduceOutput, Store, UiInvalidation};
 
 pub struct CommitStore;
 
@@ -26,7 +26,7 @@ impl Store for CommitStore {
                         ctx.app
                             .push_log(format!("commit {} ({})", message, oid), true);
                         return ReduceOutput {
-                            commands: vec![flush_refresh()],
+                            commands: vec![tick_background_loads()],
                             invalidation: UiInvalidation::all(),
                         };
                     }

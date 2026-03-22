@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::collections::{HashMap, VecDeque};
 
 const MAX_PENDING_REQUESTS: usize = 256;
@@ -9,6 +7,7 @@ const MAX_READY_RESULTS: usize = 512;
 pub struct TaskGeneration(pub u64);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[allow(dead_code)]
 pub enum TaskPriority {
     High,
     Normal,
@@ -16,6 +15,7 @@ pub enum TaskPriority {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[allow(dead_code)]
 pub enum TaskKey {
     Status,
     Branches,
@@ -27,6 +27,7 @@ pub enum TaskKey {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum TaskRequestKind {
     LoadStatus,
     LoadBranches,
@@ -71,15 +72,6 @@ impl TaskEntry {
             active_generation: None,
         }
     }
-}
-
-pub trait TaskBridge {
-    type Command;
-    type Message;
-
-    fn enqueue_command(request: TaskRequest) -> Self::Command;
-    fn cancel_command(key: TaskKey, generation: TaskGeneration) -> Self::Command;
-    fn ready_message(result: TaskResult) -> Self::Message;
 }
 
 #[derive(Default)]
@@ -197,6 +189,7 @@ impl TaskManager {
         }
     }
 
+    #[cfg(test)]
     pub fn take_pending(&mut self) -> Vec<TaskRequest> {
         let drained: Vec<TaskRequest> = self.pending.drain(..).collect();
         self.metrics.dequeued_total = self
@@ -242,6 +235,7 @@ impl TaskManager {
         accepted
     }
 
+    #[cfg(test)]
     pub fn latest_generation(&self, key: &TaskKey) -> Option<TaskGeneration> {
         self.registry.get(key).map(|entry| entry.latest_generation)
     }

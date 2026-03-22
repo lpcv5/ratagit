@@ -986,6 +986,11 @@ impl App {
         }
     }
 
+    fn clear_pending_diff_reload(&mut self) {
+        self.pending_diff_reload = false;
+        self.pending_diff_reload_at = None;
+    }
+
     fn start_pending_diff_load(&mut self) {
         if !self.pending_diff_reload {
             return;
@@ -995,8 +1000,7 @@ impl App {
 
         if self.last_diff_key.as_ref() == Some(&key) {
             self.cancel_pending_diff_task();
-            self.pending_diff_reload = false;
-            self.pending_diff_reload_at = None;
+            self.clear_pending_diff_reload();
             return;
         }
 
@@ -1004,8 +1008,7 @@ impl App {
         if let Some(cached) = self.diff_cache.get_cloned(&key) {
             self.current_diff = cached;
             self.last_diff_key = Some(key);
-            self.pending_diff_reload = false;
-            self.pending_diff_reload_at = None;
+            self.clear_pending_diff_reload();
             self.dirty.mark_diff();
             return;
         }
@@ -1026,8 +1029,7 @@ impl App {
             diff_loader::DiffTarget::None => {
                 self.current_diff = Vec::new();
                 self.last_diff_key = Some(key);
-                self.pending_diff_reload = false;
-                self.pending_diff_reload_at = None;
+                self.clear_pending_diff_reload();
                 self.dirty.mark_diff();
                 return;
             }
@@ -1062,21 +1064,18 @@ impl App {
                         self.diff_cache.insert(key.clone(), diff.clone());
                         self.last_diff_key = Some(key);
                         self.current_diff = diff;
-                        self.pending_diff_reload = false;
-                        self.pending_diff_reload_at = None;
+                        self.clear_pending_diff_reload();
                         self.dirty.mark_diff();
                         return;
                     }
                     Ok(Err(err)) => {
                         self.push_log(format!("diff load failed: {}", err), false);
-                        self.pending_diff_reload = false;
-                        self.pending_diff_reload_at = None;
+                        self.clear_pending_diff_reload();
                         return;
                     }
                     Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                         self.push_log("diff load disconnected".to_string(), false);
-                        self.pending_diff_reload = false;
-                        self.pending_diff_reload_at = None;
+                        self.clear_pending_diff_reload();
                         return;
                     }
                     Err(std::sync::mpsc::TryRecvError::Empty) => {}
@@ -1090,15 +1089,13 @@ impl App {
                         receiver: BackgroundReceiver::Diff { cache_key: key, rx },
                     },
                 );
-                self.pending_diff_reload = false;
-                self.pending_diff_reload_at = None;
+                self.clear_pending_diff_reload();
             }
             Err(err) => {
                 self.task_manager
                     .mark_finished(&key_for_task, request.generation);
                 self.push_log(format!("diff load failed: {}", err), false);
-                self.pending_diff_reload = false;
-                self.pending_diff_reload_at = None;
+                self.clear_pending_diff_reload();
             }
         }
     }
@@ -1210,21 +1207,21 @@ impl App {
         self.dirty.mark_command_log();
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn stage_file(&mut self, path: PathBuf) -> Result<()> {
         self.repo.stage(&path)?;
         self.request_refresh(RefreshKind::StatusOnly);
         Ok(())
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn unstage_file(&mut self, path: PathBuf) -> Result<()> {
         self.repo.unstage(&path)?;
         self.request_refresh(RefreshKind::StatusOnly);
         Ok(())
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn discard_paths(&mut self, paths: &[PathBuf]) -> Result<()> {
         self.repo.discard_paths(paths)?;
         self.request_refresh(RefreshKind::StatusOnly);
@@ -1247,14 +1244,14 @@ impl App {
         Ok(())
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn commit(&mut self, message: &str) -> Result<String> {
         let oid = self.repo.commit(message)?;
         self.request_refresh(RefreshKind::Full);
         Ok(oid)
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn create_branch(&mut self, name: &str) -> Result<()> {
         self.repo.create_branch(name)?;
         self.request_refresh(RefreshKind::StatusAndRefs);
@@ -1263,13 +1260,6 @@ impl App {
 
     pub fn checkout_branch(&mut self, name: &str) -> Result<()> {
         self.repo.checkout_branch(name)?;
-        self.request_refresh(RefreshKind::Full);
-        Ok(())
-    }
-
-    #[allow(dead_code)]
-    pub fn checkout_branch_with_auto_stash(&mut self, name: &str) -> Result<()> {
-        self.repo.checkout_branch_with_auto_stash(name)?;
         self.request_refresh(RefreshKind::Full);
         Ok(())
     }
@@ -1293,7 +1283,7 @@ impl App {
         self.branch_switch_target.take()
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn delete_branch(&mut self, name: &str) -> Result<()> {
         self.repo.delete_branch(name)?;
         self.request_refresh(RefreshKind::StatusAndRefs);
@@ -1363,28 +1353,21 @@ impl App {
         Ok(self.repo.stash_drop_async(index)?)
     }
 
-    #[allow(dead_code)]
-    pub fn stash_push(&mut self, paths: &[PathBuf], message: &str) -> Result<usize> {
-        let index = self.repo.stash_push_paths(paths, message)?;
-        self.request_refresh(RefreshKind::StatusAndRefs);
-        Ok(index)
-    }
-
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn stash_apply(&mut self, index: usize) -> Result<()> {
         self.repo.stash_apply(index)?;
         self.request_refresh(RefreshKind::StatusAndRefs);
         Ok(())
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn stash_pop(&mut self, index: usize) -> Result<()> {
         self.repo.stash_pop(index)?;
         self.request_refresh(RefreshKind::StatusAndRefs);
         Ok(())
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn stash_drop(&mut self, index: usize) -> Result<()> {
         self.repo.stash_drop(index)?;
         self.request_refresh(RefreshKind::StatusAndRefs);
