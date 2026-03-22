@@ -2,55 +2,55 @@
 name = "ratagit"
 version = "0.1.0"
 edition = "2021"
-authors = ["Your Name <you@example.com>"]
+authors = ["lpcv5 <lpengcheng149@gmail.com>"]
 license = "MIT"
 description = "A fast, intuitive terminal UI for Git"
-repository = "https://github.com/yourusername/ratagit"
+repository = "https://github.com/lpcv5/ratagit"
 keywords = ["git", "tui", "terminal", "ratatui"]
 categories = ["command-line-interface", "development-tools"]
 
 [dependencies]
-# UI 框架
+# UI framework
 ratatui = "0.30"
 crossterm = "0.29"
 
-# Git 操作
+# Git operations
 git2 = "0.19"
 
-# 异步运行时
+# Async runtime
 tokio = { version = "1.40", features = ["full"] }
 
-# 错误处理
+# Error handling
 thiserror = "1.0"
 color-eyre = "0.6"
 
-# 序列化
+# Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 toml = "0.8"
 
-# 日志
+# Logging
 tracing = "0.1"
 tracing-subscriber = "0.3"
 
-# 工具库
+# Utilities
 chrono = { version = "0.4", features = ["serde"] }
 dirs = "5.0"
 regex = "1.10"
 
 [dev-dependencies]
-# 测试
+# Testing
 tempfile = "3.10"
 pretty_assertions = "1.4"
 
 [profile.release]
-# 优化发布构建
+# Optimize release build
 codegen-units = 1
 lto = true
 opt-level = "z"
 strip = true
 
 [profile.dev]
-# 开发构建优化
+# Optimize dev build settings
 opt-level = 0
 debug = true
