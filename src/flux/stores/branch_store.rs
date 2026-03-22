@@ -1,11 +1,7 @@
 use crate::app::{Command, RefreshKind};
 use crate::flux::action::{Action, ActionEnvelope, DomainAction};
 use crate::flux::effects::EffectRequest;
-use crate::flux::stores::{ReduceCtx, ReduceOutput, Store, UiInvalidation};
-
-fn flush_refresh() -> Command {
-    Command::Effect(EffectRequest::FlushPendingRefresh { log_success: false })
-}
+use crate::flux::stores::{flush_refresh, ReduceCtx, ReduceOutput, Store, UiInvalidation};
 
 pub struct BranchStore;
 

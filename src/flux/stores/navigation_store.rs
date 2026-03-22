@@ -25,6 +25,29 @@ impl NavigationStore {
         }
         ctx.app.commits.highlighted_oids.clear();
     }
+
+    /// Common post-processing after panel switch operations.
+    fn after_panel_switch(ctx: &mut ReduceCtx<'_>) -> ReduceOutput {
+        ctx.app.restore_search_for_active_scope();
+        ctx.app.schedule_diff_reload();
+        ReduceOutput::from_command(Command::Effect(
+            EffectRequest::EnsureCommitsLoadedForActivePanel,
+        ))
+        .with_invalidation(UiInvalidation::all())
+    }
+
+    /// Common post-processing after list navigation operations.
+    fn after_list_nav(ctx: &mut ReduceCtx<'_>) -> ReduceOutput {
+        Self::recompute_commit_highlight(ctx);
+        ctx.app.schedule_diff_reload();
+        ReduceOutput::none().with_invalidation(UiInvalidation::all())
+    }
+
+    /// Common post-processing after directory operations.
+    fn after_dir_op(ctx: &mut ReduceCtx<'_>) -> ReduceOutput {
+        ctx.app.schedule_diff_reload();
+        ReduceOutput::none().with_invalidation(UiInvalidation::all())
+    }
 }
 
 impl Store for NavigationStore {
@@ -40,12 +63,7 @@ impl Store for NavigationStore {
                     SidePanel::Commits => SidePanel::Stash,
                     SidePanel::Stash => SidePanel::Files,
                 };
-                ctx.app.restore_search_for_active_scope();
-                ctx.app.schedule_diff_reload();
-                return ReduceOutput::from_command(Command::Effect(
-                    EffectRequest::EnsureCommitsLoadedForActivePanel,
-                ))
-                .with_invalidation(UiInvalidation::all());
+                Self::after_panel_switch(ctx)
             }
             DomainAction::PanelPrev => {
                 ctx.app.active_panel = match ctx.app.active_panel {
@@ -54,12 +72,7 @@ impl Store for NavigationStore {
                     SidePanel::Commits => SidePanel::LocalBranches,
                     SidePanel::Stash => SidePanel::Commits,
                 };
-                ctx.app.restore_search_for_active_scope();
-                ctx.app.schedule_diff_reload();
-                return ReduceOutput::from_command(Command::Effect(
-                    EffectRequest::EnsureCommitsLoadedForActivePanel,
-                ))
-                .with_invalidation(UiInvalidation::all());
+                Self::after_panel_switch(ctx)
             }
             DomainAction::PanelGoto(n) => {
                 ctx.app.active_panel = match n {
@@ -69,49 +82,37 @@ impl Store for NavigationStore {
                     4 => SidePanel::Stash,
                     _ => ctx.app.active_panel,
                 };
-                ctx.app.restore_search_for_active_scope();
-                ctx.app.schedule_diff_reload();
-                return ReduceOutput::from_command(Command::Effect(
-                    EffectRequest::EnsureCommitsLoadedForActivePanel,
-                ))
-                .with_invalidation(UiInvalidation::all());
+                Self::after_panel_switch(ctx)
             }
             DomainAction::ListDown => {
                 ctx.app.list_down();
-                Self::recompute_commit_highlight(ctx);
-                ctx.app.schedule_diff_reload();
-                return ReduceOutput::none().with_invalidation(UiInvalidation::all());
+                Self::after_list_nav(ctx)
             }
             DomainAction::ListUp => {
                 ctx.app.list_up();
-                Self::recompute_commit_highlight(ctx);
-                ctx.app.schedule_diff_reload();
-                return ReduceOutput::none().with_invalidation(UiInvalidation::all());
+                Self::after_list_nav(ctx)
             }
             DomainAction::ToggleDir => {
                 ctx.app.toggle_selected_dir();
-                ctx.app.schedule_diff_reload();
-                return ReduceOutput::none().with_invalidation(UiInvalidation::all());
+                Self::after_dir_op(ctx)
             }
             DomainAction::CollapseAll => {
                 ctx.app.collapse_all();
-                ctx.app.schedule_diff_reload();
-                return ReduceOutput::none().with_invalidation(UiInvalidation::all());
+                Self::after_dir_op(ctx)
             }
             DomainAction::ExpandAll => {
                 ctx.app.expand_all();
-                ctx.app.schedule_diff_reload();
-                return ReduceOutput::none().with_invalidation(UiInvalidation::all());
+                Self::after_dir_op(ctx)
             }
             DomainAction::DiffScrollUp => {
                 ctx.app.diff_scroll_up();
-                return ReduceOutput::none().with_invalidation(UiInvalidation::diff());
+                ReduceOutput::none().with_invalidation(UiInvalidation::diff())
             }
             DomainAction::DiffScrollDown => {
                 ctx.app.diff_scroll_down();
-                return ReduceOutput::none().with_invalidation(UiInvalidation::diff());
+                ReduceOutput::none().with_invalidation(UiInvalidation::diff())
             }
-            _ => return ReduceOutput::none(),
+            _ => ReduceOutput::none(),
         }
     }
 }
