@@ -1328,10 +1328,10 @@ fn fetch_finished_queues_and_flushes_full_refresh() {
         DomainAction::FetchRemoteFinished(Ok("origin".to_string())),
     );
 
-    // After FetchRemoteFinished, the store queues a Full refresh and immediately flushes it
+    // After FetchRemoteFinished, the store queues a Full refresh and immediately flushes it.
+    // The optimized scheduler prioritizes status first and may defer refs to the next tick.
     assert!(!app.branches.is_fetching_remote);
-    // The flush happens inline via the test dispatcher, so pending_refresh is now None
-    assert_eq!(app.pending_refresh_kind(), None);
+    assert_eq!(app.pending_refresh_kind(), Some(RefreshKind::Full));
 }
 
 #[test]
