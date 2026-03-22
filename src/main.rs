@@ -23,8 +23,42 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 use tokio::sync::{broadcast, mpsc, watch, Mutex};
+use tracing::{error, info};
 
 const ENABLE_DEBUG_LOG: bool = cfg!(debug_assertions);
+const APP_LOG_FILE: &str = "ratagit.log";
+
+fn init_logging(debug_mode: bool) {
+    let max_level = if debug_mode {
+        tracing::Level::DEBUG
+    } else {
+        tracing::Level::INFO
+    };
+    // TUI should never print tracing logs to terminal.
+    if let Ok(file) = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(APP_LOG_FILE)
+    {
+        let _ = tracing_subscriber::fmt()
+            .with_max_level(max_level)
+            .with_ansi(false)
+            .without_time()
+            .with_target(false)
+            .with_level(false)
+            .with_writer(file)
+            .try_init();
+    } else {
+        let _ = tracing_subscriber::fmt()
+            .with_max_level(max_level)
+            .with_ansi(false)
+            .without_time()
+            .with_target(false)
+            .with_level(false)
+            .with_writer(io::sink)
+            .try_init();
+    }
+}
 
 #[derive(Default)]
 struct PerfCounters {
@@ -160,6 +194,13 @@ impl PerfLog {
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
     color_eyre::install()?;
+    let debug_mode = std::env::args().any(|a| a == "--debug");
+    init_logging(debug_mode);
+    info!("app_start debug={}", debug_mode);
+
+    if debug_mode {
+        git::enable_git_job_log("ratagit-git-jobs.log");
+    }
 
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -179,9 +220,10 @@ async fn main() -> Result<()> {
     terminal.show_cursor()?;
 
     if let Err(err) = res {
-        eprintln!("Error: {:?}", err);
+        error!("app_error err={:?}", err);
     }
 
+    info!("app_exit ok=true");
     Ok(())
 }
 
@@ -244,7 +286,7 @@ async fn ui_loop(
     shutdown_tx: broadcast::Sender<()>,
 ) -> Result<()> {
     const MAX_EVENTS_PER_FRAME: usize = 64;
-    const DIFF_RELOAD_DEBOUNCE: Duration = Duration::from_millis(80);
+    const DIFF_RELOAD_DEBOUNCE: Duration = Duration::from_millis(180);
     const SLOW_DRAW_US: u64 = 8_000;
     let mut perf_log = if ENABLE_DEBUG_LOG {
         PerfLog::new().ok()
