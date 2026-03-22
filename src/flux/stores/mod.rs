@@ -131,8 +131,8 @@ pub trait Store {
     fn reduce(&mut self, action: &ActionEnvelope, ctx: &mut ReduceCtx<'_>) -> ReduceOutput;
 }
 
-/// Helper to flush pending refresh without logging success.
-pub(super) fn flush_refresh() -> Command {
+/// Helper command to trigger a background task processing tick.
+pub(super) fn tick_background_loads() -> Command {
     Command::Effect(crate::flux::effects::EffectRequest::ProcessBackgroundLoads)
 }
 

@@ -1,7 +1,7 @@
 use crate::app::{Command, RefreshKind};
 use crate::flux::action::{Action, ActionEnvelope, DomainAction};
 use crate::flux::effects::EffectRequest;
-use crate::flux::stores::{flush_refresh, ReduceCtx, ReduceOutput, Store, UiInvalidation};
+use crate::flux::stores::{tick_background_loads, ReduceCtx, ReduceOutput, Store, UiInvalidation};
 
 pub struct BranchStore;
 
@@ -66,7 +66,7 @@ impl Store for BranchStore {
                             ctx.app.push_log(format!("switched to {}", name), true);
                         }
                         return ReduceOutput {
-                            commands: vec![flush_refresh()],
+                            commands: vec![tick_background_loads()],
                             invalidation: UiInvalidation::all(),
                         };
                     }
@@ -119,7 +119,7 @@ impl Store for BranchStore {
                         ctx.app.request_refresh(RefreshKind::Full);
                         ctx.app.push_log(format!("fetched {}", remote), true);
                         return ReduceOutput {
-                            commands: vec![flush_refresh()],
+                            commands: vec![tick_background_loads()],
                             invalidation: UiInvalidation::all(),
                         };
                     }

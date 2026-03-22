@@ -140,17 +140,6 @@ pub trait GitRepository {
     fn stage_paths(&self, paths: &[PathBuf]) -> Result<(), GitError>;
 
     /// Documentation comment in English.
-    #[allow(dead_code)]
-    fn stage_paths_async(
-        &self,
-        paths: Vec<PathBuf>,
-    ) -> Result<Receiver<Result<(), GitError>>, GitError> {
-        let (tx, rx) = mpsc::channel();
-        let _ = tx.send(self.stage_paths(&paths));
-        Ok(rx)
-    }
-
-    /// Documentation comment in English.
     fn unstage(&self, path: &std::path::Path) -> Result<(), GitError>;
 
     /// Documentation comment in English.
@@ -162,17 +151,6 @@ pub trait GitRepository {
 
     /// Documentation comment in English.
     fn unstage_paths(&self, paths: &[PathBuf]) -> Result<(), GitError>;
-
-    /// Documentation comment in English.
-    #[allow(dead_code)]
-    fn unstage_paths_async(
-        &self,
-        paths: Vec<PathBuf>,
-    ) -> Result<Receiver<Result<(), GitError>>, GitError> {
-        let (tx, rx) = mpsc::channel();
-        let _ = tx.send(self.unstage_paths(&paths));
-        Ok(rx)
-    }
 
     /// Documentation comment in English.
     fn discard_paths(&self, paths: &[PathBuf]) -> Result<(), GitError>;
@@ -516,6 +494,12 @@ pub struct Git2Repository {
     repo: git2::Repository,
 }
 
+/// Maximum number of diff lines returned to the UI to prevent OOM on huge files.
+const MAX_DIFF_LINES: usize = 5_000;
+
+/// Maximum file size for untracked file preview, in bytes.
+const MAX_UNTRACKED_PREVIEW_BYTES: usize = 256 * 1024; // 256 KiB
+
 #[derive(Clone, Copy)]
 struct GraphCharset {
     node: char,
@@ -684,11 +668,18 @@ impl Git2Repository {
         let repo_root = self.repo_root()?;
         let (tx, rx) = mpsc::channel();
         thread::spawn(move || {
+            let t0 = std::time::Instant::now();
             let result = (|| {
                 let repo = git2::Repository::open(repo_root)?;
                 let repo = Git2Repository { repo };
                 job(repo)
             })();
+            let elapsed_ms = t0.elapsed().as_millis();
+            if elapsed_ms > 100 {
+                // Log slow git operations (>100ms) to stderr for diagnosis.
+                // Redirect stderr to a file when running ratagit to capture these logs.
+                eprintln!("[ratagit perf] git job took {}ms", elapsed_ms);
+            }
             let _ = tx.send(result);
         });
         Ok(rx)
@@ -722,35 +713,6 @@ impl Git2Repository {
             .or_else(|| self.resolve_ref_oid("refs/remotes/origin/master"))
     }
 
-    fn classify_commit_sync(
-        &self,
-        oid: git2::Oid,
-        default_tip: Option<git2::Oid>,
-        upstream_tip: Option<git2::Oid>,
-    ) -> CommitSyncState {
-        if let Some(default_tip) = default_tip {
-            if default_tip == oid
-                || self
-                    .repo
-                    .graph_descendant_of(default_tip, oid)
-                    .unwrap_or(false)
-            {
-                return CommitSyncState::DefaultBranch;
-            }
-        }
-        if let Some(upstream_tip) = upstream_tip {
-            if upstream_tip == oid
-                || self
-                    .repo
-                    .graph_descendant_of(upstream_tip, oid)
-                    .unwrap_or(false)
-            {
-                return CommitSyncState::RemoteBranch;
-            }
-        }
-        CommitSyncState::LocalOnly
-    }
-
     fn diff_scope_with_args(
         &self,
         base_args: &[&str],
@@ -773,6 +735,11 @@ impl Git2Repository {
         let default_tip = self.default_branch_oid();
         let upstream_tip = self.upstream_oid();
 
+        // Build reachability sets once via revwalk, rather than calling
+        // graph_descendant_of() per commit (O(depth) each call).
+        let default_oids = self.reachable_oids_from(default_tip, limit * 4);
+        let upstream_oids = self.reachable_oids_from(upstream_tip, limit * 4);
+
         let mut graph_rows = Vec::new();
         let mut entries = Vec::new();
         for oid in revwalk.take(limit) {
@@ -794,6 +761,13 @@ impl Git2Repository {
                     .format("%Y-%m-%d %H:%M")
                     .to_string()
             };
+            let sync_state = if default_oids.contains(&oid) {
+                CommitSyncState::DefaultBranch
+            } else if upstream_oids.contains(&oid) {
+                CommitSyncState::RemoteBranch
+            } else {
+                CommitSyncState::LocalOnly
+            };
             let parent_oids: Vec<String> = parents.iter().map(|p| p.to_string()).collect();
             graph_rows.push(GraphCommitRow { oid, parents });
             entries.push(CommitInfo {
@@ -804,7 +778,7 @@ impl Git2Repository {
                 graph: Vec::new(),
                 time,
                 parent_count: commit.parent_count(),
-                sync_state: self.classify_commit_sync(oid, default_tip, upstream_tip),
+                sync_state,
                 parent_oids,
             });
         }
@@ -815,6 +789,28 @@ impl Git2Repository {
         }
         Ok(entries)
     }
+
+    /// Walk at most `limit` commits reachable from `tip` and return their OIDs as a HashSet.
+    /// Returns an empty set if `tip` is None or if the walk fails.
+    fn reachable_oids_from(
+        &self,
+        tip: Option<git2::Oid>,
+        limit: usize,
+    ) -> std::collections::HashSet<git2::Oid> {
+        let tip = match tip {
+            Some(t) => t,
+            None => return std::collections::HashSet::new(),
+        };
+        let mut walk = match self.repo.revwalk() {
+            Ok(w) => w,
+            Err(_) => return std::collections::HashSet::new(),
+        };
+        if walk.push(tip).is_err() {
+            return std::collections::HashSet::new();
+        }
+        let _ = walk.set_sorting(git2::Sort::TOPOLOGICAL);
+        walk.take(limit).flatten().collect()
+    }
 }
 
 impl GitRepository for Git2Repository {
@@ -824,11 +820,12 @@ impl GitRepository for Git2Repository {
         let mut opts = git2::StatusOptions::new();
         opts.include_untracked(true)
             .include_ignored(false)
-            .update_index(true)
+            .update_index(false) // Performance: skip index refresh, rely on manual refresh
             .renames_head_to_index(true)
             .renames_index_to_workdir(true)
             .include_unmodified(false)
-            .recurse_untracked_dirs(true);
+            .recurse_untracked_dirs(false) // Performance: only show top-level untracked dirs
+            .recurse_ignored_dirs(false); // Performance: skip ignored directories entirely
 
         let statuses = self.repo.statuses(Some(&mut opts))?;
 
@@ -882,13 +879,6 @@ impl GitRepository for Git2Repository {
         Ok(())
     }
 
-    fn stage_paths_async(
-        &self,
-        paths: Vec<PathBuf>,
-    ) -> Result<Receiver<Result<(), GitError>>, GitError> {
-        self.spawn_repo_job(move |repo| repo.stage_paths(&paths))
-    }
-
     fn unstage(&self, path: &std::path::Path) -> Result<(), GitError> {
         self.unstage_paths(&[path.to_path_buf()])
     }
@@ -910,13 +900,6 @@ impl GitRepository for Git2Repository {
         self.repo.reset_default(Some(&commit_obj), specs)?;
 
         Ok(())
-    }
-
-    fn unstage_paths_async(
-        &self,
-        paths: Vec<PathBuf>,
-    ) -> Result<Receiver<Result<(), GitError>>, GitError> {
-        self.spawn_repo_job(move |repo| repo.unstage_paths(&paths))
     }
 
     fn discard_paths(&self, paths: &[PathBuf]) -> Result<(), GitError> {
@@ -945,7 +928,8 @@ impl GitRepository for Git2Repository {
     }
     fn diff_unstaged(&self, path: &std::path::Path) -> Result<Vec<DiffLine>, GitError> {
         let mut opts = git2::DiffOptions::new();
-        opts.pathspec(path.to_str().unwrap_or(""));
+        opts.pathspec(path.to_str().unwrap_or(""))
+            .max_size(MAX_UNTRACKED_PREVIEW_BYTES as i64); // treat files larger than limit as binary
 
         let diff = self.repo.diff_index_to_workdir(None, Some(&mut opts))?;
         Ok(parse_diff(&diff))
@@ -962,7 +946,8 @@ impl GitRepository for Git2Repository {
         let head_tree = self.repo.head().ok().and_then(|h| h.peel_to_tree().ok());
 
         let mut opts = git2::DiffOptions::new();
-        opts.pathspec(path.to_str().unwrap_or(""));
+        opts.pathspec(path.to_str().unwrap_or(""))
+            .max_size(MAX_UNTRACKED_PREVIEW_BYTES as i64); // treat files larger than limit as binary
 
         let diff = self
             .repo
@@ -980,15 +965,46 @@ impl GitRepository for Git2Repository {
     fn diff_untracked(&self, path: &std::path::Path) -> Result<Vec<DiffLine>, GitError> {
         let workdir = self.repo.workdir().ok_or(GitError::InvalidState)?;
         let full_path = workdir.join(path);
-        let content =
-            std::fs::read_to_string(&full_path).unwrap_or_else(|_| String::from("<binary file>"));
+
+        // Check file size before reading to avoid OOM on huge files
+        let file_size = std::fs::metadata(&full_path)
+            .map(|m| m.len() as usize)
+            .unwrap_or(0);
+
+        let content = if file_size == 0 {
+            String::new()
+        } else if file_size > MAX_UNTRACKED_PREVIEW_BYTES {
+            format!(
+                "<file too large to preview: {} bytes, limit {} bytes>",
+                file_size, MAX_UNTRACKED_PREVIEW_BYTES
+            )
+        } else {
+            match std::fs::read(&full_path) {
+                Ok(bytes) => {
+                    // Detect binary content by checking for null bytes
+                    if bytes.contains(&0u8) {
+                        format!("<binary file: {} bytes>", bytes.len())
+                    } else {
+                        String::from_utf8_lossy(&bytes).into_owned()
+                    }
+                }
+                Err(_) => "<unreadable file>".to_string(),
+            }
+        };
 
         let header = format!("--- /dev/null\n+++ b/{}", path.display());
         let mut lines = vec![DiffLine {
             kind: DiffLineKind::Header,
             content: header,
         }];
-        for line in content.lines() {
+        for (i, line) in content.lines().enumerate() {
+            if i >= MAX_DIFF_LINES {
+                lines.push(DiffLine {
+                    kind: DiffLineKind::Header,
+                    content: format!("... preview truncated at {} lines ...", MAX_DIFF_LINES),
+                });
+                break;
+            }
             lines.push(DiffLine {
                 kind: DiffLineKind::Added,
                 content: line.to_string(),
@@ -1006,15 +1022,29 @@ impl GitRepository for Git2Repository {
 
     fn diff_directory(&self, path: &std::path::Path) -> Result<Vec<DiffLine>, GitError> {
         let mut lines = self.diff_scope_with_args(&["diff", "--cached"], path)?;
-        lines.extend(self.diff_scope_with_args(&["diff"], path)?);
+        if lines.len() < MAX_DIFF_LINES {
+            lines.extend(self.diff_scope_with_args(&["diff"], path)?);
+        }
 
-        let untracked = self.status()?;
-        for entry in untracked
-            .untracked
-            .iter()
-            .filter(|entry| entry.path.starts_with(path))
-        {
-            lines.extend(self.diff_untracked(&entry.path)?);
+        if lines.len() < MAX_DIFF_LINES {
+            let untracked = self.status()?;
+            for entry in untracked
+                .untracked
+                .iter()
+                .filter(|entry| entry.path.starts_with(path))
+            {
+                if lines.len() >= MAX_DIFF_LINES {
+                    lines.push(DiffLine {
+                        kind: DiffLineKind::Header,
+                        content: format!(
+                            "... directory diff truncated at {} lines ...",
+                            MAX_DIFF_LINES
+                        ),
+                    });
+                    break;
+                }
+                lines.extend(self.diff_untracked(&entry.path)?);
+            }
         }
 
         Ok(lines)
@@ -1649,8 +1679,25 @@ impl AsyncGitRepository for Git2Repository {
 }
 
 fn parse_diff(diff: &git2::Diff) -> Vec<DiffLine> {
+    parse_diff_with_limit(diff, MAX_DIFF_LINES)
+}
+
+fn parse_diff_with_limit(diff: &git2::Diff, limit: usize) -> Vec<DiffLine> {
     let mut lines = Vec::new();
+    let mut truncated = false;
     let _ = diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
+        if lines.len() >= limit {
+            truncated = true;
+            return false;
+        }
+        // Skip binary content markers (origin 'B')
+        if line.origin() == 'B' {
+            lines.push(DiffLine {
+                kind: DiffLineKind::Header,
+                content: "<binary file>".to_string(),
+            });
+            return true;
+        }
         let content = String::from_utf8_lossy(line.content())
             .trim_end_matches('\n')
             .to_string();
@@ -1663,12 +1710,25 @@ fn parse_diff(diff: &git2::Diff) -> Vec<DiffLine> {
         lines.push(DiffLine { kind, content });
         true
     });
+    if truncated {
+        lines.push(DiffLine {
+            kind: DiffLineKind::Header,
+            content: format!("... diff truncated at {} lines ...", limit),
+        });
+    }
     lines
 }
 
 fn parse_patch_text(text: &str) -> Vec<DiffLine> {
     let mut lines = Vec::new();
     for raw in text.lines() {
+        if lines.len() >= MAX_DIFF_LINES {
+            lines.push(DiffLine {
+                kind: DiffLineKind::Header,
+                content: format!("... diff truncated at {} lines ...", MAX_DIFF_LINES),
+            });
+            break;
+        }
         let (kind, content) = if let Some(rest) = raw.strip_prefix('+') {
             (DiffLineKind::Added, rest.to_string())
         } else if let Some(rest) = raw.strip_prefix('-') {
