@@ -3,7 +3,7 @@ use crate::flux::action::{Action, ActionEnvelope};
 use crate::flux::stores::{
     BranchStore, CommitStore, DiffStore, FilesStore, InputStore, NavigationStore, OpsStore,
     OverlayStore, QuitStore, ReduceCtx, RevisionStore, SearchStore, SelectionStore, StashStore,
-    Store,
+    Store, UiInvalidation,
 };
 
 pub struct DispatchResult {
@@ -70,10 +70,13 @@ impl Dispatcher {
 
         let mut ctx = ReduceCtx { app };
         let mut commands = Vec::new();
+        let mut invalidation = UiInvalidation::none();
         for store in &mut self.stores {
             let mut output = store.reduce(&action, &mut ctx);
             commands.append(&mut output.commands);
+            invalidation.merge(output.invalidation);
         }
+        invalidation.apply(ctx.app);
 
         self.last_sequence = Some(action.sequence);
         self.state_version += 1;

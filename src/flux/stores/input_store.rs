@@ -1,6 +1,6 @@
 use crate::app::{Command, CommitFieldFocus, InputMode};
 use crate::flux::action::{Action, ActionEnvelope, DomainAction};
-use crate::flux::stores::{ReduceCtx, ReduceOutput, Store};
+use crate::flux::stores::{ReduceCtx, ReduceOutput, Store, UiInvalidation};
 
 pub struct InputStore;
 
@@ -36,8 +36,7 @@ impl Store for InputStore {
                     ctx.app.clear_search();
                 }
                 ctx.app.cancel_input();
-                ctx.app.dirty.mark_log_and_overlay();
-                ReduceOutput::none()
+                ReduceOutput::none().with_invalidation(UiInvalidation::log_and_overlay())
             }
             DomainAction::InputTab => match mode {
                 InputMode::CommitEditor => {
@@ -45,8 +44,7 @@ impl Store for InputStore {
                         CommitFieldFocus::Message => CommitFieldFocus::Description,
                         CommitFieldFocus::Description => CommitFieldFocus::Message,
                     };
-                    ctx.app.dirty.mark_overlay();
-                    ReduceOutput::none()
+                    ReduceOutput::none().with_invalidation(UiInvalidation::overlay())
                 }
                 InputMode::CreateBranch
                 | InputMode::StashEditor
@@ -76,36 +74,38 @@ impl Store for InputStore {
                     }
                     CommitFieldFocus::Description => {
                         ctx.app.commit_description_buffer.push('\n');
-                        ctx.app.dirty.mark_overlay();
-                        ReduceOutput::none()
+                        ReduceOutput::none().with_invalidation(UiInvalidation::overlay())
                     }
                 },
                 InputMode::CreateBranch => {
                     let value = ctx.app.input_buffer.trim().to_string();
                     ctx.app.input_mode = None;
                     ctx.app.input_buffer.clear();
-                    ctx.app.dirty.mark_overlay();
                     if value.is_empty() {
                         ctx.app.push_log("Empty input ignored", false);
-                        return ReduceOutput::none();
+                        return ReduceOutput::none()
+                            .with_invalidation(UiInvalidation::log_and_overlay());
                     }
                     ReduceOutput::from_command(Command::Sync(DomainAction::CreateBranch(value)))
+                        .with_invalidation(UiInvalidation::overlay())
                 }
                 InputMode::CommandPalette => {
                     let value = ctx.app.input_buffer.trim().to_string();
                     ctx.app.input_mode = None;
                     ctx.app.input_buffer.clear();
-                    ctx.app.dirty.mark_overlay();
                     if value.is_empty() {
                         ctx.app.push_log("command palette: empty command", false);
-                        return ReduceOutput::none();
+                        return ReduceOutput::none()
+                            .with_invalidation(UiInvalidation::log_and_overlay());
                     }
                     match ctx.app.resolve_command_palette_command(&value) {
-                        Some(action) => ReduceOutput::from_command(Command::Sync(action)),
+                        Some(action) => ReduceOutput::from_command(Command::Sync(action))
+                            .with_invalidation(UiInvalidation::overlay()),
                         None => {
                             ctx.app
                                 .push_log(format!("unknown command: {}", value), false);
                             ReduceOutput::none()
+                                .with_invalidation(UiInvalidation::log_and_overlay())
                         }
                     }
                 }
@@ -115,24 +115,26 @@ impl Store for InputStore {
                     ctx.app.input_mode = None;
                     ctx.app.stash_message_buffer.clear();
                     ctx.app.stash_targets.clear();
-                    ctx.app.dirty.mark_overlay();
                     if value.is_empty() {
                         ctx.app.push_log("Empty stash title ignored", false);
-                        return ReduceOutput::none();
+                        return ReduceOutput::none()
+                            .with_invalidation(UiInvalidation::log_and_overlay());
                     }
                     if paths.is_empty() {
                         ctx.app.push_log("stash blocked: no selected items", false);
-                        return ReduceOutput::none();
+                        return ReduceOutput::none()
+                            .with_invalidation(UiInvalidation::log_and_overlay());
                     }
                     ReduceOutput::from_command(Command::Sync(DomainAction::StashPush {
                         message: value,
                         paths,
                     }))
+                    .with_invalidation(UiInvalidation::overlay())
                 }
                 InputMode::Search => {
                     ctx.app.confirm_search_input();
-                    ctx.app.dirty.mark_overlay();
                     ReduceOutput::from_command(Command::Sync(DomainAction::SearchConfirm))
+                        .with_invalidation(UiInvalidation::overlay())
                 }
                 InputMode::BranchSwitchConfirm => ReduceOutput::none(),
             },
@@ -146,23 +148,19 @@ impl Store for InputStore {
                             ctx.app.commit_description_buffer.pop();
                         }
                     }
-                    ctx.app.dirty.mark_overlay();
-                    ReduceOutput::none()
+                    ReduceOutput::none().with_invalidation(UiInvalidation::overlay())
                 }
                 InputMode::CreateBranch => {
                     ctx.app.input_buffer.pop();
-                    ctx.app.dirty.mark_overlay();
-                    ReduceOutput::none()
+                    ReduceOutput::none().with_invalidation(UiInvalidation::overlay())
                 }
                 InputMode::CommandPalette => {
                     ctx.app.input_buffer.pop();
-                    ctx.app.dirty.mark_overlay();
-                    ReduceOutput::none()
+                    ReduceOutput::none().with_invalidation(UiInvalidation::overlay())
                 }
                 InputMode::StashEditor => {
                     ctx.app.stash_message_buffer.pop();
-                    ctx.app.dirty.mark_overlay();
-                    ReduceOutput::none()
+                    ReduceOutput::none().with_invalidation(UiInvalidation::overlay())
                 }
                 InputMode::Search => {
                     ctx.app.input_buffer.pop();
@@ -178,23 +176,19 @@ impl Store for InputStore {
                         CommitFieldFocus::Message => ctx.app.commit_message_buffer.push(*c),
                         CommitFieldFocus::Description => ctx.app.commit_description_buffer.push(*c),
                     }
-                    ctx.app.dirty.mark_overlay();
-                    ReduceOutput::none()
+                    ReduceOutput::none().with_invalidation(UiInvalidation::overlay())
                 }
                 InputMode::CreateBranch => {
                     ctx.app.input_buffer.push(*c);
-                    ctx.app.dirty.mark_overlay();
-                    ReduceOutput::none()
+                    ReduceOutput::none().with_invalidation(UiInvalidation::overlay())
                 }
                 InputMode::CommandPalette => {
                     ctx.app.input_buffer.push(*c);
-                    ctx.app.dirty.mark_overlay();
-                    ReduceOutput::none()
+                    ReduceOutput::none().with_invalidation(UiInvalidation::overlay())
                 }
                 InputMode::StashEditor => {
                     ctx.app.stash_message_buffer.push(*c);
-                    ctx.app.dirty.mark_overlay();
-                    ReduceOutput::none()
+                    ReduceOutput::none().with_invalidation(UiInvalidation::overlay())
                 }
                 InputMode::Search => {
                     ctx.app.input_buffer.push(*c);

@@ -3,7 +3,7 @@ use crate::app::Command;
 use crate::app::SidePanel;
 use crate::flux::action::{Action, ActionEnvelope, DomainAction};
 use crate::flux::effects::EffectRequest;
-use crate::flux::stores::{ReduceCtx, ReduceOutput, Store};
+use crate::flux::stores::{ReduceCtx, ReduceOutput, Store, UiInvalidation};
 
 pub struct NavigationStore;
 
@@ -42,10 +42,10 @@ impl Store for NavigationStore {
                 };
                 ctx.app.restore_search_for_active_scope();
                 ctx.app.schedule_diff_reload();
-                ctx.app.dirty.mark_main_content();
                 return ReduceOutput::from_command(Command::Effect(
                     EffectRequest::EnsureCommitsLoadedForActivePanel,
-                ));
+                ))
+                .with_invalidation(UiInvalidation::all());
             }
             DomainAction::PanelPrev => {
                 ctx.app.active_panel = match ctx.app.active_panel {
@@ -56,10 +56,10 @@ impl Store for NavigationStore {
                 };
                 ctx.app.restore_search_for_active_scope();
                 ctx.app.schedule_diff_reload();
-                ctx.app.dirty.mark_main_content();
                 return ReduceOutput::from_command(Command::Effect(
                     EffectRequest::EnsureCommitsLoadedForActivePanel,
-                ));
+                ))
+                .with_invalidation(UiInvalidation::all());
             }
             DomainAction::PanelGoto(n) => {
                 ctx.app.active_panel = match n {
@@ -71,48 +71,47 @@ impl Store for NavigationStore {
                 };
                 ctx.app.restore_search_for_active_scope();
                 ctx.app.schedule_diff_reload();
-                ctx.app.dirty.mark_main_content();
                 return ReduceOutput::from_command(Command::Effect(
                     EffectRequest::EnsureCommitsLoadedForActivePanel,
-                ));
+                ))
+                .with_invalidation(UiInvalidation::all());
             }
             DomainAction::ListDown => {
                 ctx.app.list_down();
                 Self::recompute_commit_highlight(ctx);
                 ctx.app.schedule_diff_reload();
-                ctx.app.dirty.mark_main_content();
+                return ReduceOutput::none().with_invalidation(UiInvalidation::all());
             }
             DomainAction::ListUp => {
                 ctx.app.list_up();
                 Self::recompute_commit_highlight(ctx);
                 ctx.app.schedule_diff_reload();
-                ctx.app.dirty.mark_main_content();
+                return ReduceOutput::none().with_invalidation(UiInvalidation::all());
             }
             DomainAction::ToggleDir => {
                 ctx.app.toggle_selected_dir();
                 ctx.app.schedule_diff_reload();
-                ctx.app.dirty.mark_main_content();
+                return ReduceOutput::none().with_invalidation(UiInvalidation::all());
             }
             DomainAction::CollapseAll => {
                 ctx.app.collapse_all();
                 ctx.app.schedule_diff_reload();
-                ctx.app.dirty.mark_main_content();
+                return ReduceOutput::none().with_invalidation(UiInvalidation::all());
             }
             DomainAction::ExpandAll => {
                 ctx.app.expand_all();
                 ctx.app.schedule_diff_reload();
-                ctx.app.dirty.mark_main_content();
+                return ReduceOutput::none().with_invalidation(UiInvalidation::all());
             }
             DomainAction::DiffScrollUp => {
                 ctx.app.diff_scroll_up();
-                ctx.app.dirty.mark_diff();
+                return ReduceOutput::none().with_invalidation(UiInvalidation::diff());
             }
             DomainAction::DiffScrollDown => {
                 ctx.app.diff_scroll_down();
-                ctx.app.dirty.mark_diff();
+                return ReduceOutput::none().with_invalidation(UiInvalidation::diff());
             }
             _ => return ReduceOutput::none(),
         }
-        ReduceOutput::none()
     }
 }

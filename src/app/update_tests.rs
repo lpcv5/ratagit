@@ -1,6 +1,8 @@
 use super::*;
 use crate::app::{App, RefreshKind, SidePanel};
 use crate::flux::action::DomainAction;
+use crate::flux::effects::EffectRequest;
+use crate::flux::test_runtime::run_inline_effect;
 use crate::git::{
     BranchInfo, CommitInfo, CommitSyncState, DiffLine, DiffLineKind, FileEntry, FileStatus,
     GitError, GitRepository, GitStatus, StashInfo,
@@ -1307,6 +1309,23 @@ fn test_fetch_finished_queues_full_refresh_without_immediate_flush() {
 
     assert!(!app.branches.is_fetching_remote);
     assert_eq!(app.pending_refresh_kind(), Some(RefreshKind::Full));
+}
+
+#[test]
+fn test_flush_pending_refresh_without_log_marks_ui_dirty() {
+    let mut app = test_app();
+    app.active_panel = SidePanel::Commits;
+    app.dirty.clear();
+    app.request_refresh(RefreshKind::Full);
+
+    let result = run_inline_effect(
+        &mut app,
+        EffectRequest::FlushPendingRefresh { log_success: false },
+    );
+
+    assert!(matches!(result, Some(actions) if actions.is_empty()));
+    assert_eq!(app.pending_refresh_kind(), None);
+    assert!(app.dirty.is_dirty());
 }
 
 #[test]

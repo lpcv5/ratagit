@@ -25,7 +25,6 @@ impl App {
         }
 
         let mut hints = self.panel_primary_hints();
-        hints.push((self.global_key_or("refresh", "r"), "Refresh".to_string()));
         hints.push((
             self.global_key_or("command_palette", ":"),
             "Command".to_string(),

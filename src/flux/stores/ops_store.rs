@@ -1,7 +1,7 @@
 use crate::app::{Command, RefreshKind};
-use crate::flux::action::{Action, ActionEnvelope, DomainAction, SystemAction};
+use crate::flux::action::{Action, ActionEnvelope, SystemAction};
 use crate::flux::effects::EffectRequest;
-use crate::flux::stores::{ReduceCtx, ReduceOutput, Store};
+use crate::flux::stores::{ReduceCtx, ReduceOutput, Store, UiInvalidation};
 
 pub struct OpsStore;
 
@@ -19,17 +19,16 @@ impl Store for OpsStore {
                     EffectRequest::FlushPendingRefresh { log_success: false },
                 ));
             }
+            Action::System(SystemAction::AutoRefresh) => {}
             Action::System(SystemAction::Resize { .. }) => {
-                ctx.app.dirty.mark_all();
-                return ReduceOutput::none();
+                return ReduceOutput::none().with_invalidation(UiInvalidation::all());
             }
-            Action::Domain(DomainAction::RefreshStatus) => {}
             _ => return ReduceOutput::none(),
         }
 
         ctx.app.request_refresh(RefreshKind::Full);
         ReduceOutput::from_command(Command::Effect(EffectRequest::FlushPendingRefresh {
-            log_success: true,
+            log_success: false,
         }))
     }
 }

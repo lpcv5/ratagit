@@ -316,10 +316,7 @@ impl App {
         }
 
         if matches!(kind, RefreshKind::Full) {
-            self.commits.dirty = true;
-            if self.should_load_commits_now() {
-                self.reload_commits_now();
-            }
+            self.reload_commits_now();
         }
 
         Ok(())
@@ -343,6 +340,7 @@ impl App {
         };
         self.apply_refresh(kind)?;
         self.schedule_diff_reload();
+        self.dirty.mark_all();
         Ok(true)
     }
 
@@ -793,10 +791,6 @@ impl App {
             (StatusAndRefs, _) | (_, StatusAndRefs) => StatusAndRefs,
             _ => StatusOnly,
         }
-    }
-
-    fn should_load_commits_now(&self) -> bool {
-        self.active_panel == SidePanel::Commits || self.commits.tree_mode.active
     }
 
     fn reload_commits_now(&mut self) {

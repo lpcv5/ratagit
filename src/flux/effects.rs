@@ -1,5 +1,6 @@
 use crate::app::{App, RefreshKind, SidePanel};
 use crate::flux::action::{Action, DomainAction};
+use crate::flux::stores::UiInvalidation;
 use std::path::PathBuf;
 use std::rc::Rc;
 use tokio::sync::Mutex;
@@ -49,7 +50,6 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
                 Ok(_) => {
                     if log_success {
                         app.push_log("refresh", true);
-                        app.dirty.mark_all();
                     }
                 }
                 Err(err) => app.push_log(format!("refresh failed: {}", err), false),
@@ -82,7 +82,7 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
                 Ok(()) => {
                     app.restore_search_for_active_scope();
                     app.reload_diff_now();
-                    app.dirty.mark();
+                    UiInvalidation::all().apply(&mut app);
                 }
                 Err(err) => app.push_log(format!("revision files failed: {}", err), false),
             }
@@ -95,7 +95,7 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
                     "commit: edit message/description then press Enter on message",
                     true,
                 );
-                app.dirty.mark();
+                UiInvalidation::all().apply(&mut app);
             }
             vec![]
         }
@@ -110,7 +110,8 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
                         ),
                         true,
                     );
-                    app.dirty.mark();
+                    let _ = app.flush_pending_refresh();
+                    UiInvalidation::all().apply(&mut app);
                 }
                 Err(err) => app.push_log(format!("selection toggle failed: {}", err), false),
             }
@@ -124,6 +125,7 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
                         app.push_log("commit blocked: no selected items", false);
                         return vec![];
                     }
+                    let _ = app.flush_pending_refresh();
                     if app.start_commit_editor_guarded() {
                         app.push_log(
                             format!(
@@ -132,7 +134,7 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
                             ),
                             true,
                         );
-                        app.dirty.mark();
+                        UiInvalidation::all().apply(&mut app);
                     }
                 }
                 Err(err) => app.push_log(format!("prepare commit failed: {}", err), false),
@@ -154,7 +156,7 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
 
             if app.has_uncommitted_changes() {
                 app.start_branch_switch_confirm(name);
-                app.dirty.mark_overlay();
+                UiInvalidation::overlay().apply(&mut app);
                 return vec![];
             }
 

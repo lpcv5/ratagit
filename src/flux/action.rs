@@ -14,7 +14,6 @@ pub enum DomainAction {
     CollapseAll,
     ExpandAll,
     Quit,
-    RefreshStatus,
     StartCommitInput,
     StartCommandPalette,
     StartSearchInput,
@@ -104,6 +103,7 @@ pub enum DomainAction {
 #[derive(Debug, Clone)]
 pub enum SystemAction {
     Tick,
+    AutoRefresh,
     Resize { width: u16, height: u16 },
 }
 

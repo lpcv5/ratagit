@@ -1,6 +1,7 @@
 use crate::app::{App, RefreshKind, SidePanel};
 use crate::flux::action::DomainAction;
 use crate::flux::effects::EffectRequest;
+use crate::flux::stores::UiInvalidation;
 
 /// Executes the subset of runtime effects that tests need in-process.
 /// Returns `None` for effects that should stay as real async runtime work.
@@ -11,7 +12,6 @@ pub fn run_inline_effect(app: &mut App, request: EffectRequest) -> Option<Vec<Do
                 Ok(_) => {
                     if log_success {
                         app.push_log("refresh", true);
-                        app.dirty.mark_all();
                     }
                 }
                 Err(err) => app.push_log(format!("refresh failed: {}", err), false),
@@ -40,7 +40,7 @@ pub fn run_inline_effect(app: &mut App, request: EffectRequest) -> Option<Vec<Do
                 Ok(()) => {
                     app.restore_search_for_active_scope();
                     app.reload_diff_now();
-                    app.dirty.mark();
+                    UiInvalidation::all().apply(app);
                 }
                 Err(err) => app.push_log(format!("revision files failed: {}", err), false),
             }
@@ -52,7 +52,7 @@ pub fn run_inline_effect(app: &mut App, request: EffectRequest) -> Option<Vec<Do
                     "commit: edit message/description then press Enter on message",
                     true,
                 );
-                app.dirty.mark();
+                UiInvalidation::all().apply(app);
             }
             Some(vec![])
         }
@@ -66,7 +66,7 @@ pub fn run_inline_effect(app: &mut App, request: EffectRequest) -> Option<Vec<Do
                         ),
                         true,
                     );
-                    app.dirty.mark();
+                    UiInvalidation::all().apply(app);
                 }
                 Err(err) => app.push_log(format!("selection toggle failed: {}", err), false),
             }
@@ -87,7 +87,7 @@ pub fn run_inline_effect(app: &mut App, request: EffectRequest) -> Option<Vec<Do
                             ),
                             true,
                         );
-                        app.dirty.mark();
+                        UiInvalidation::all().apply(app);
                     }
                 }
                 Err(err) => app.push_log(format!("prepare commit failed: {}", err), false),
@@ -106,7 +106,7 @@ pub fn run_inline_effect(app: &mut App, request: EffectRequest) -> Option<Vec<Do
             }
             if app.has_uncommitted_changes() {
                 app.start_branch_switch_confirm(name);
-                app.dirty.mark_overlay();
+                UiInvalidation::overlay().apply(app);
                 return Some(vec![]);
             }
             let result = app.checkout_branch(&name).map_err(|err| err.to_string());
