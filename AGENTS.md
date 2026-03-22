@@ -62,5 +62,6 @@ Keep new features inside the existing layer boundaries (UI -> Action -> Dispatch
 
 ## Agent-Specific Notes
 
+- Use Serena MCP tools by default for code exploration and edits (symbol overview/search/edit tools first); fall back to raw shell/file-wide reads only when Serena tools are not sufficient.
 - Do not revert unrelated working-tree changes.
 - Prefer minimal, incremental patches and keep architecture docs in `docs/` in sync with behavior changes.
