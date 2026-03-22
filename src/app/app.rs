@@ -189,19 +189,31 @@ pub struct App {
 impl App {
     pub fn new() -> Result<Self> {
         let repo = Git2Repository::discover()?;
-        Self::build_with_repo(Box::new(repo), Keymap::load())
+        Self::build_with_repo(Box::new(repo), Keymap::load(), false)
     }
 
     #[cfg(test)]
     pub fn from_repo(repo: Box<dyn GitRepository>) -> Result<Self> {
-        Self::build_with_repo(repo, Keymap::default())
+        Self::build_with_repo(repo, Keymap::default(), true)
     }
 
-    fn build_with_repo(repo: Box<dyn GitRepository>, keymap: Keymap) -> Result<Self> {
-        let status = repo.status()?;
+    fn build_with_repo(
+        repo: Box<dyn GitRepository>,
+        keymap: Keymap,
+        preload_commits_and_diff: bool,
+    ) -> Result<Self> {
+        let status = if preload_commits_and_diff {
+            repo.status()?
+        } else {
+            GitStatus::default()
+        };
 
         // Comment in English.
-        let expanded_dirs = refresh::collect_all_dirs(&status);
+        let expanded_dirs = if preload_commits_and_diff {
+            refresh::collect_all_dirs(&status)
+        } else {
+            HashSet::new()
+        };
         let file_tree_nodes = FileTree::from_git_status_with_expanded(
             &status.unstaged,
             &status.untracked,
@@ -209,9 +221,21 @@ impl App {
             &expanded_dirs,
         );
 
-        let branches = repo.branches().unwrap_or_default();
-        let commits = repo.commits(100).unwrap_or_default();
-        let stashes = repo.stashes().unwrap_or_default();
+        let branches = if preload_commits_and_diff {
+            repo.branches().unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        let commits = if preload_commits_and_diff {
+            repo.commits(100).unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        let stashes = if preload_commits_and_diff {
+            repo.stashes().unwrap_or_default()
+        } else {
+            Vec::new()
+        };
 
         let mut app = Self {
             running: true,
@@ -236,7 +260,7 @@ impl App {
             commits: CommitsPanelState {
                 panel: PanelState::new(),
                 items: commits,
-                dirty: false,
+                dirty: !preload_commits_and_diff,
                 tree_mode: TreeModeState::default(),
                 highlighted_oids: HashSet::new(),
             },
@@ -275,7 +299,12 @@ impl App {
         };
         app.refresh_render_cache();
         app.dirty.mark_all();
-        app.reload_diff_now();
+        if preload_commits_and_diff {
+            app.reload_diff_now();
+        } else {
+            app.request_refresh(RefreshKind::StatusAndRefs);
+            app.schedule_diff_reload();
+        }
         Ok(app)
     }
 
