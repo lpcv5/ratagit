@@ -420,8 +420,12 @@ async fn ui_loop(
                 } else {
                     0
                 };
+                let (pending_tasks, task_metrics) = {
+                    let app = app.lock().await;
+                    (app.pending_background_task_count(), app.task_metrics())
+                };
                 log.write_line(&format!(
-                    "1s ui_events={} ui_messages={} ticks={} draws={} avg_draw_us={} max_draw_us={} avg_ui_lock_wait_us={} avg_ui_key_us={} max_ui_key_us={} dispatch_actions={} avg_dispatch_us={} max_dispatch_us={} avg_dispatch_lock_wait_us={} avg_dispatch_reduce_us={} dispatch_commands={} effect_commands={} avg_effect_us={} effect_actions={} action_backlog={} action_backlog_max={} command_backlog={} command_backlog_max={}",
+                    "1s ui_events={} ui_messages={} ticks={} draws={} avg_draw_us={} max_draw_us={} avg_ui_lock_wait_us={} avg_ui_key_us={} max_ui_key_us={} dispatch_actions={} avg_dispatch_us={} max_dispatch_us={} avg_dispatch_lock_wait_us={} avg_dispatch_reduce_us={} dispatch_commands={} effect_commands={} avg_effect_us={} effect_actions={} action_backlog={} action_backlog_max={} command_backlog={} command_backlog_max={} pending_tasks={} task_enqueued={} task_dequeued={} task_ready={} task_finished={} task_failed={} task_cancelled={} task_stale_dropped={} task_queue_dropped={}",
                     delta.ui_events,
                     delta.ui_messages,
                     delta.ui_ticks_sent,
@@ -443,7 +447,16 @@ async fn ui_loop(
                     now.action_enqueued.saturating_sub(now.action_dequeued),
                     delta.action_backlog_max,
                     now.command_enqueued.saturating_sub(now.command_dequeued),
-                    delta.command_backlog_max
+                    delta.command_backlog_max,
+                    pending_tasks,
+                    task_metrics.enqueued_total,
+                    task_metrics.dequeued_total,
+                    task_metrics.ready_total,
+                    task_metrics.finished_total,
+                    task_metrics.failed_total,
+                    task_metrics.cancelled_total,
+                    task_metrics.stale_dropped_total,
+                    task_metrics.queue_dropped_total
                 ));
                 log.last_snapshot = now;
                 log.last_flush = Instant::now();

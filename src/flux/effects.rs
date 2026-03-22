@@ -5,8 +5,10 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use tokio::sync::Mutex;
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum EffectRequest {
+    ProcessBackgroundLoads,
     FlushPendingRefresh {
         log_success: bool,
     },
@@ -45,6 +47,11 @@ pub struct EffectCtx {
 
 pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
     match request {
+        EffectRequest::ProcessBackgroundLoads => {
+            let mut app = ctx.app.lock().await;
+            app.process_background_refresh_tick();
+            vec![]
+        }
         EffectRequest::FlushPendingRefresh { log_success } => {
             let mut app = ctx.app.lock().await;
             match app.flush_pending_refresh() {
@@ -120,10 +127,6 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
                 return vec![];
             }
             app.request_refresh(crate::app::RefreshKind::StatusOnly);
-            if let Err(err) = app.flush_pending_refresh() {
-                app.push_log(format!("refresh failed: {}", err), false);
-                return vec![];
-            }
             app.start_commit_editor();
             app.push_log(
                 "commit: all files staged; edit message/description then press Enter",
@@ -158,7 +161,6 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
                         app.push_log("commit blocked: no selected items", false);
                         return vec![];
                     }
-                    let _ = app.flush_pending_refresh();
                     if app.start_commit_editor_guarded() {
                         app.push_log(
                             format!(
@@ -182,10 +184,6 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
             };
 
             app.request_refresh(RefreshKind::StatusOnly);
-            if let Err(err) = app.flush_pending_refresh() {
-                app.push_log(format!("refresh failed: {}", err), false);
-                return vec![];
-            }
 
             if app.has_uncommitted_changes() {
                 app.start_branch_switch_confirm(name);
@@ -223,9 +221,27 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
             vec![Action::Domain(DomainAction::FetchRemoteFinished(result))]
         }
         EffectRequest::StageFile(path) => {
-            let result = {
-                let mut app = ctx.app.lock().await;
-                app.stage_file(path.clone()).map_err(|err| err.to_string())
+            let repo_rx = {
+                let app = ctx.app.lock().await;
+                match app.stage_file_request(path.clone()) {
+                    Ok(rx) => rx,
+                    Err(err) => {
+                        return vec![Action::Domain(DomainAction::StageFileFinished {
+                            path,
+                            result: Err(err.to_string()),
+                        })];
+                    }
+                }
+            };
+            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
+                Ok(Ok(Ok(()))) => {
+                    let mut app = ctx.app.lock().await;
+                    app.request_refresh(RefreshKind::StatusOnly);
+                    Ok(())
+                }
+                Ok(Ok(Err(err))) => Err(err.to_string()),
+                Ok(Err(err)) => Err(err.to_string()),
+                Err(err) => Err(err.to_string()),
             };
             vec![Action::Domain(DomainAction::StageFileFinished {
                 path,
@@ -233,10 +249,27 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
             })]
         }
         EffectRequest::UnstageFile(path) => {
-            let result = {
-                let mut app = ctx.app.lock().await;
-                app.unstage_file(path.clone())
-                    .map_err(|err| err.to_string())
+            let repo_rx = {
+                let app = ctx.app.lock().await;
+                match app.unstage_file_request(path.clone()) {
+                    Ok(rx) => rx,
+                    Err(err) => {
+                        return vec![Action::Domain(DomainAction::UnstageFileFinished {
+                            path,
+                            result: Err(err.to_string()),
+                        })];
+                    }
+                }
+            };
+            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
+                Ok(Ok(Ok(()))) => {
+                    let mut app = ctx.app.lock().await;
+                    app.request_refresh(RefreshKind::StatusOnly);
+                    Ok(())
+                }
+                Ok(Ok(Err(err))) => Err(err.to_string()),
+                Ok(Err(err)) => Err(err.to_string()),
+                Err(err) => Err(err.to_string()),
             };
             vec![Action::Domain(DomainAction::UnstageFileFinished {
                 path,
@@ -244,9 +277,27 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
             })]
         }
         EffectRequest::DiscardPaths(paths) => {
-            let result = {
-                let mut app = ctx.app.lock().await;
-                app.discard_paths(&paths).map_err(|err| err.to_string())
+            let repo_rx = {
+                let app = ctx.app.lock().await;
+                match app.discard_paths_request(paths.clone()) {
+                    Ok(rx) => rx,
+                    Err(err) => {
+                        return vec![Action::Domain(DomainAction::DiscardPathsFinished {
+                            paths,
+                            result: Err(err.to_string()),
+                        })];
+                    }
+                }
+            };
+            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
+                Ok(Ok(Ok(()))) => {
+                    let mut app = ctx.app.lock().await;
+                    app.request_refresh(RefreshKind::StatusOnly);
+                    Ok(())
+                }
+                Ok(Ok(Err(err))) => Err(err.to_string()),
+                Ok(Err(err)) => Err(err.to_string()),
+                Err(err) => Err(err.to_string()),
             };
             vec![Action::Domain(DomainAction::DiscardPathsFinished {
                 paths,
@@ -254,9 +305,27 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
             })]
         }
         EffectRequest::CreateBranch(name) => {
-            let result = {
-                let mut app = ctx.app.lock().await;
-                app.create_branch(&name).map_err(|err| err.to_string())
+            let repo_rx = {
+                let app = ctx.app.lock().await;
+                match app.create_branch_request(name.clone()) {
+                    Ok(rx) => rx,
+                    Err(err) => {
+                        return vec![Action::Domain(DomainAction::CreateBranchFinished {
+                            name,
+                            result: Err(err.to_string()),
+                        })];
+                    }
+                }
+            };
+            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
+                Ok(Ok(Ok(()))) => {
+                    let mut app = ctx.app.lock().await;
+                    app.request_refresh(RefreshKind::StatusAndRefs);
+                    Ok(())
+                }
+                Ok(Ok(Err(err))) => Err(err.to_string()),
+                Ok(Err(err)) => Err(err.to_string()),
+                Err(err) => Err(err.to_string()),
             };
             vec![Action::Domain(DomainAction::CreateBranchFinished {
                 name,
@@ -264,14 +333,28 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
             })]
         }
         EffectRequest::CheckoutBranch { name, auto_stash } => {
-            let result = {
-                let mut app = ctx.app.lock().await;
-                if auto_stash {
-                    app.checkout_branch_with_auto_stash(&name)
-                } else {
-                    app.checkout_branch(&name)
+            let repo_rx = {
+                let app = ctx.app.lock().await;
+                match app.checkout_branch_request(name.clone(), auto_stash) {
+                    Ok(rx) => rx,
+                    Err(err) => {
+                        return vec![Action::Domain(DomainAction::CheckoutBranchFinished {
+                            name,
+                            auto_stash,
+                            result: Err(err.to_string()),
+                        })];
+                    }
                 }
-                .map_err(|err| err.to_string())
+            };
+            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
+                Ok(Ok(Ok(()))) => {
+                    let mut app = ctx.app.lock().await;
+                    app.request_refresh(RefreshKind::Full);
+                    Ok(())
+                }
+                Ok(Ok(Err(err))) => Err(err.to_string()),
+                Ok(Err(err)) => Err(err.to_string()),
+                Err(err) => Err(err.to_string()),
             };
             vec![Action::Domain(DomainAction::CheckoutBranchFinished {
                 name,
@@ -280,9 +363,27 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
             })]
         }
         EffectRequest::DeleteBranch(name) => {
-            let result = {
-                let mut app = ctx.app.lock().await;
-                app.delete_branch(&name).map_err(|err| err.to_string())
+            let repo_rx = {
+                let app = ctx.app.lock().await;
+                match app.delete_branch_request(name.clone()) {
+                    Ok(rx) => rx,
+                    Err(err) => {
+                        return vec![Action::Domain(DomainAction::DeleteBranchFinished {
+                            name,
+                            result: Err(err.to_string()),
+                        })];
+                    }
+                }
+            };
+            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
+                Ok(Ok(Ok(()))) => {
+                    let mut app = ctx.app.lock().await;
+                    app.request_refresh(RefreshKind::StatusAndRefs);
+                    Ok(())
+                }
+                Ok(Ok(Err(err))) => Err(err.to_string()),
+                Ok(Err(err)) => Err(err.to_string()),
+                Err(err) => Err(err.to_string()),
             };
             vec![Action::Domain(DomainAction::DeleteBranchFinished {
                 name,
@@ -290,9 +391,27 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
             })]
         }
         EffectRequest::Commit(message) => {
-            let result = {
-                let mut app = ctx.app.lock().await;
-                app.commit(&message).map_err(|err| err.to_string())
+            let repo_rx = {
+                let app = ctx.app.lock().await;
+                match app.commit_request(message.clone()) {
+                    Ok(rx) => rx,
+                    Err(err) => {
+                        return vec![Action::Domain(DomainAction::CommitFinished {
+                            message,
+                            result: Err(err.to_string()),
+                        })];
+                    }
+                }
+            };
+            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
+                Ok(Ok(Ok(oid))) => {
+                    let mut app = ctx.app.lock().await;
+                    app.request_refresh(RefreshKind::Full);
+                    Ok(oid)
+                }
+                Ok(Ok(Err(err))) => Err(err.to_string()),
+                Ok(Err(err)) => Err(err.to_string()),
+                Err(err) => Err(err.to_string()),
             };
             vec![Action::Domain(DomainAction::CommitFinished {
                 message,
@@ -300,10 +419,27 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
             })]
         }
         EffectRequest::StashPush { message, paths } => {
-            let result = {
-                let mut app = ctx.app.lock().await;
-                app.stash_push(&paths, &message)
-                    .map_err(|err| err.to_string())
+            let repo_rx = {
+                let app = ctx.app.lock().await;
+                match app.stash_push_request(paths.clone(), message.clone()) {
+                    Ok(rx) => rx,
+                    Err(err) => {
+                        return vec![Action::Domain(DomainAction::StashPushFinished {
+                            message,
+                            result: Err(err.to_string()),
+                        })];
+                    }
+                }
+            };
+            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
+                Ok(Ok(Ok(index))) => {
+                    let mut app = ctx.app.lock().await;
+                    app.request_refresh(RefreshKind::StatusAndRefs);
+                    Ok(index)
+                }
+                Ok(Ok(Err(err))) => Err(err.to_string()),
+                Ok(Err(err)) => Err(err.to_string()),
+                Err(err) => Err(err.to_string()),
             };
             vec![Action::Domain(DomainAction::StashPushFinished {
                 message,
@@ -311,9 +447,27 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
             })]
         }
         EffectRequest::StashApply(index) => {
-            let result = {
-                let mut app = ctx.app.lock().await;
-                app.stash_apply(index).map_err(|err| err.to_string())
+            let repo_rx = {
+                let app = ctx.app.lock().await;
+                match app.stash_apply_request(index) {
+                    Ok(rx) => rx,
+                    Err(err) => {
+                        return vec![Action::Domain(DomainAction::StashApplyFinished {
+                            index,
+                            result: Err(err.to_string()),
+                        })];
+                    }
+                }
+            };
+            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
+                Ok(Ok(Ok(()))) => {
+                    let mut app = ctx.app.lock().await;
+                    app.request_refresh(RefreshKind::StatusAndRefs);
+                    Ok(())
+                }
+                Ok(Ok(Err(err))) => Err(err.to_string()),
+                Ok(Err(err)) => Err(err.to_string()),
+                Err(err) => Err(err.to_string()),
             };
             vec![Action::Domain(DomainAction::StashApplyFinished {
                 index,
@@ -321,9 +475,27 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
             })]
         }
         EffectRequest::StashPop(index) => {
-            let result = {
-                let mut app = ctx.app.lock().await;
-                app.stash_pop(index).map_err(|err| err.to_string())
+            let repo_rx = {
+                let app = ctx.app.lock().await;
+                match app.stash_pop_request(index) {
+                    Ok(rx) => rx,
+                    Err(err) => {
+                        return vec![Action::Domain(DomainAction::StashPopFinished {
+                            index,
+                            result: Err(err.to_string()),
+                        })];
+                    }
+                }
+            };
+            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
+                Ok(Ok(Ok(()))) => {
+                    let mut app = ctx.app.lock().await;
+                    app.request_refresh(RefreshKind::StatusAndRefs);
+                    Ok(())
+                }
+                Ok(Ok(Err(err))) => Err(err.to_string()),
+                Ok(Err(err)) => Err(err.to_string()),
+                Err(err) => Err(err.to_string()),
             };
             vec![Action::Domain(DomainAction::StashPopFinished {
                 index,
@@ -331,9 +503,27 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
             })]
         }
         EffectRequest::StashDrop(index) => {
-            let result = {
-                let mut app = ctx.app.lock().await;
-                app.stash_drop(index).map_err(|err| err.to_string())
+            let repo_rx = {
+                let app = ctx.app.lock().await;
+                match app.stash_drop_request(index) {
+                    Ok(rx) => rx,
+                    Err(err) => {
+                        return vec![Action::Domain(DomainAction::StashDropFinished {
+                            index,
+                            result: Err(err.to_string()),
+                        })];
+                    }
+                }
+            };
+            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
+                Ok(Ok(Ok(()))) => {
+                    let mut app = ctx.app.lock().await;
+                    app.request_refresh(RefreshKind::StatusAndRefs);
+                    Ok(())
+                }
+                Ok(Ok(Err(err))) => Err(err.to_string()),
+                Ok(Err(err)) => Err(err.to_string()),
+                Err(err) => Err(err.to_string()),
             };
             vec![Action::Domain(DomainAction::StashDropFinished {
                 index,
@@ -535,6 +725,7 @@ mod tests {
         }
 
         assert_no_actions(run(EffectRequest::RevisionOpenTreeOrToggleDir, &mut ctx).await);
+        assert_no_actions(run(EffectRequest::ProcessBackgroundLoads, &mut ctx).await);
         let app = ctx.app.lock().await;
         assert_eq!(app.active_panel, crate::app::SidePanel::LocalBranches);
         assert!(app.branches.commits_subview_active);

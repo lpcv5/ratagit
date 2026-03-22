@@ -5,6 +5,7 @@ use crate::flux::stores::{
     OverlayStore, QuitStore, ReduceCtx, RevisionStore, SearchStore, SelectionStore, StashStore,
     Store, UiInvalidation,
 };
+use crate::flux::task_manager::{TaskManager, TaskResult};
 
 pub struct DispatchResult {
     pub commands: Vec<Command>,
@@ -85,6 +86,13 @@ impl Dispatcher {
             commands,
             state_version: self.state_version,
         }
+    }
+
+    /// Bridge point for collecting task results from the async task manager.
+    /// Integration to Action/Store pipelines can be introduced incrementally.
+    #[allow(dead_code)]
+    pub fn collect_task_results(&mut self, task_manager: &mut TaskManager) -> Vec<TaskResult> {
+        task_manager.collect_ready()
     }
 }
 

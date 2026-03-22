@@ -7,6 +7,10 @@ use crate::flux::stores::UiInvalidation;
 /// Returns `None` for effects that should stay as real async runtime work.
 pub fn run_inline_effect(app: &mut App, request: EffectRequest) -> Option<Vec<DomainAction>> {
     match request {
+        EffectRequest::ProcessBackgroundLoads => {
+            app.process_background_refresh_tick();
+            Some(vec![])
+        }
         EffectRequest::FlushPendingRefresh { log_success } => {
             match app.flush_pending_refresh() {
                 Ok(_) => {
@@ -34,6 +38,7 @@ pub fn run_inline_effect(app: &mut App, request: EffectRequest) -> Option<Vec<Do
             let result = match app.active_panel {
                 SidePanel::Stash => app.stash_open_tree_or_toggle_dir(),
                 SidePanel::Commits => app.commit_open_tree_or_toggle_dir(),
+                SidePanel::LocalBranches => app.open_selected_branch_commits(100),
                 _ => Ok(()),
             };
             match result {
