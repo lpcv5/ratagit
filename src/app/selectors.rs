@@ -15,8 +15,23 @@ impl App {
         if self.active_panel != SidePanel::LocalBranches {
             return None;
         }
+        if self.branches.commits_subview_active {
+            return self.branches.commits_subview_source.clone();
+        }
         let idx = self.branches.panel.list_state.selected()?;
         self.branches.items.get(idx).map(|b| b.name.clone())
+    }
+
+    pub fn selected_branch_subview_commit_oid(&self) -> Option<String> {
+        if self.active_panel != SidePanel::LocalBranches || !self.branches.commits_subview_active {
+            return None;
+        }
+        let idx = self.branches.commits_subview.panel.list_state.selected()?;
+        self.branches
+            .commits_subview
+            .items
+            .get(idx)
+            .map(|c| c.oid.clone())
     }
 
     pub fn selected_commit_oid(&self) -> Option<String> {
@@ -81,6 +96,12 @@ impl App {
                 diff_loader::DiffTarget::Stash { index, path }
             }
             SidePanel::LocalBranches => {
+                if self.branches.commits_subview_active {
+                    let Some(oid) = self.selected_branch_subview_commit_oid() else {
+                        return diff_loader::DiffTarget::None;
+                    };
+                    return diff_loader::DiffTarget::Commit { oid, path: None };
+                }
                 let Some(name) = self.selected_branch_name() else {
                     return diff_loader::DiffTarget::None;
                 };

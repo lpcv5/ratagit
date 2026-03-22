@@ -18,6 +18,7 @@ pub trait PanelComponent {
 
 pub struct PanelRenderContext<'a> {
     pub active_panel: SidePanel,
+    pub panel_title_override: Option<&'a str>,
     pub search_query: Option<&'a str>,
     pub search_summary: Option<&'a str>,
     pub visual_selected_indices: &'a HashSet<usize>,
