@@ -33,9 +33,80 @@ pub struct ReduceCtx<'a> {
     pub app: &'a mut App,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct UiInvalidation(u8);
+
+impl UiInvalidation {
+    const MAIN_CONTENT: u8 = 0b0000_0001;
+    const DIFF: u8 = 0b0000_0010;
+    const COMMAND_LOG: u8 = 0b0000_0100;
+    const SHORTCUT_BAR: u8 = 0b0000_1000;
+    const OVERLAY: u8 = 0b0001_0000;
+
+    pub const fn none() -> Self {
+        Self(0)
+    }
+
+    pub const fn all() -> Self {
+        Self(
+            Self::MAIN_CONTENT
+                | Self::DIFF
+                | Self::COMMAND_LOG
+                | Self::SHORTCUT_BAR
+                | Self::OVERLAY,
+        )
+    }
+
+    pub const fn overlay() -> Self {
+        Self(Self::OVERLAY)
+    }
+
+    pub const fn diff() -> Self {
+        Self(Self::DIFF)
+    }
+
+    pub const fn log_and_overlay() -> Self {
+        Self(Self::COMMAND_LOG | Self::OVERLAY)
+    }
+
+    pub fn merge(&mut self, other: Self) {
+        self.0 |= other.0;
+    }
+
+    pub fn apply(self, app: &mut App) {
+        if self.0 == 0 {
+            return;
+        }
+        if self.0 == Self::all().0 {
+            app.dirty.mark_all();
+            return;
+        }
+        if (self.0 & (Self::MAIN_CONTENT | Self::DIFF)) == (Self::MAIN_CONTENT | Self::DIFF) {
+            app.dirty.mark_main_content();
+        } else {
+            if (self.0 & Self::MAIN_CONTENT) != 0 {
+                app.dirty.left_panels = true;
+            }
+            if (self.0 & Self::DIFF) != 0 {
+                app.dirty.mark_diff();
+            }
+        }
+        if (self.0 & Self::COMMAND_LOG) != 0 {
+            app.dirty.mark_command_log();
+        }
+        if (self.0 & Self::SHORTCUT_BAR) != 0 {
+            app.dirty.shortcut_bar = true;
+        }
+        if (self.0 & Self::OVERLAY) != 0 {
+            app.dirty.mark_overlay();
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct ReduceOutput {
     pub commands: Vec<Command>,
+    pub invalidation: UiInvalidation,
 }
 
 impl ReduceOutput {
@@ -46,7 +117,13 @@ impl ReduceOutput {
     pub fn from_command(command: Command) -> Self {
         Self {
             commands: vec![command],
+            invalidation: UiInvalidation::none(),
         }
+    }
+
+    pub fn with_invalidation(mut self, invalidation: UiInvalidation) -> Self {
+        self.invalidation.merge(invalidation);
+        self
     }
 }
 

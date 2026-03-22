@@ -8,10 +8,6 @@ pub struct DirtyFlags {
 }
 
 impl DirtyFlags {
-    pub fn mark(&mut self) {
-        self.mark_all();
-    }
-
     pub fn mark_all(&mut self) {
         self.left_panels = true;
         self.diff = true;
@@ -35,11 +31,6 @@ impl DirtyFlags {
     pub fn mark_main_content(&mut self) {
         self.left_panels = true;
         self.diff = true;
-    }
-
-    pub fn mark_log_and_overlay(&mut self) {
-        self.command_log = true;
-        self.overlay = true;
     }
 
     pub fn clear(&mut self) {

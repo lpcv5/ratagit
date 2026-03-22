@@ -1,7 +1,7 @@
 use crate::app::Command;
 use crate::flux::action::{Action, ActionEnvelope, DomainAction};
 use crate::flux::effects::EffectRequest;
-use crate::flux::stores::{ReduceCtx, ReduceOutput, Store};
+use crate::flux::stores::{ReduceCtx, ReduceOutput, Store, UiInvalidation};
 
 pub struct FilesStore;
 
@@ -38,7 +38,7 @@ impl Store for FilesStore {
                 match result {
                     Ok(()) => {
                         ctx.app.push_log(format!("staged {}", display), true);
-                        ctx.app.dirty.mark();
+                        return ReduceOutput::none().with_invalidation(UiInvalidation::all());
                     }
                     Err(err) => {
                         ctx.app
@@ -52,7 +52,7 @@ impl Store for FilesStore {
                 match result {
                     Ok(()) => {
                         ctx.app.push_log(format!("unstaged {}", display), true);
-                        ctx.app.dirty.mark();
+                        return ReduceOutput::none().with_invalidation(UiInvalidation::all());
                     }
                     Err(err) => {
                         ctx.app
@@ -71,7 +71,7 @@ impl Store for FilesStore {
                             ctx.app
                                 .push_log(format!("discarded {} path(s)", paths.len()), true);
                         }
-                        ctx.app.dirty.mark();
+                        return ReduceOutput::none().with_invalidation(UiInvalidation::all());
                     }
                     Err(err) => {
                         ctx.app.push_log(format!("discard failed: {}", err), false);

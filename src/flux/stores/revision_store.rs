@@ -2,7 +2,7 @@ use crate::app::Command;
 use crate::app::SidePanel;
 use crate::flux::action::{Action, ActionEnvelope, DomainAction};
 use crate::flux::effects::EffectRequest;
-use crate::flux::stores::{ReduceCtx, ReduceOutput, Store};
+use crate::flux::stores::{ReduceCtx, ReduceOutput, Store, UiInvalidation};
 
 pub struct RevisionStore;
 
@@ -28,8 +28,8 @@ impl Store for RevisionStore {
                     _ => {}
                 }
                 ctx.app.restore_search_for_active_scope();
-                ctx.app.dirty.mark();
                 ReduceOutput::from_command(Command::Effect(EffectRequest::ReloadDiffNow))
+                    .with_invalidation(UiInvalidation::all())
             }
             _ => ReduceOutput::none(),
         }

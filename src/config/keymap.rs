@@ -44,7 +44,6 @@ impl Default for GlobalKeymap {
     fn default() -> Self {
         let mut b = HashMap::new();
         b.insert("quit".into(), vec!["q".into()]);
-        b.insert("refresh".into(), vec!["r".into()]);
         b.insert("panel_next".into(), vec!["l".into(), "Right".into()]);
         b.insert("panel_prev".into(), vec!["h".into(), "Left".into()]);
         b.insert("panel_1".into(), vec!["1".into()]);

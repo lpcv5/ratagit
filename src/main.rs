@@ -211,6 +211,10 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: App
                 action_tx.clone(),
                 shutdown_tx.subscribe(),
             ));
+            let auto_refresh_handle = tokio::task::spawn_local(auto_refresh_loop(
+                action_tx.clone(),
+                shutdown_tx.subscribe(),
+            ));
 
             let ui_result = ui_loop(
                 terminal,
@@ -225,6 +229,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: App
             let _ = shutdown_tx.send(());
             let _ = dispatch_handle.await;
             let _ = effect_handle.await;
+            let _ = auto_refresh_handle.await;
             ui_result
         })
         .await
@@ -461,6 +466,23 @@ async fn ui_loop(
             Duration::from_millis(16)
         };
         tokio::time::sleep(frame_sleep).await;
+    }
+}
+
+async fn auto_refresh_loop(
+    action_tx: mpsc::UnboundedSender<Action>,
+    mut shutdown_rx: broadcast::Receiver<()>,
+) {
+    let mut interval = tokio::time::interval(Duration::from_secs(5));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+    loop {
+        tokio::select! {
+            _ = shutdown_rx.recv() => break,
+            _ = interval.tick() => {
+                let _ = action_tx.send(Action::System(SystemAction::AutoRefresh));
+            }
+        }
     }
 }
 

@@ -62,7 +62,6 @@ impl App {
         let normalized = input.trim().to_lowercase();
         match normalized.as_str() {
             "q" | "quit" | "exit" => Some(DomainAction::Quit),
-            "r" | "refresh" => Some(DomainAction::RefreshStatus),
             "c" | "commit" => Some(DomainAction::StartCommitInput),
             "/" | "search" => Some(DomainAction::StartSearchInput),
             "stash" | "stash push" => Some(DomainAction::StartStashInput),

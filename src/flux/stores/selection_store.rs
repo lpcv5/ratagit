@@ -1,7 +1,7 @@
 use crate::app::{Command, SidePanel};
 use crate::flux::action::{Action, ActionEnvelope, DomainAction};
 use crate::flux::effects::EffectRequest;
-use crate::flux::stores::{ReduceCtx, ReduceOutput, Store};
+use crate::flux::stores::{ReduceCtx, ReduceOutput, Store, UiInvalidation};
 
 pub struct SelectionStore;
 
@@ -33,8 +33,8 @@ impl Store for SelectionStore {
         match domain {
             DomainAction::ToggleVisualSelectMode => {
                 ctx.app.toggle_visual_select_mode();
-                ctx.app.dirty.mark();
-                return ReduceOutput::from_command(Command::Effect(EffectRequest::ReloadDiffNow));
+                return ReduceOutput::from_command(Command::Effect(EffectRequest::ReloadDiffNow))
+                    .with_invalidation(UiInvalidation::all());
             }
             DomainAction::ToggleStageSelection => {
                 return ReduceOutput::from_command(Command::Effect(
@@ -56,7 +56,7 @@ impl Store for SelectionStore {
                 if result.is_ok() {
                     ctx.app.files.visual_mode = false;
                     ctx.app.files.visual_anchor = None;
-                    ctx.app.dirty.mark();
+                    return ReduceOutput::none().with_invalidation(UiInvalidation::all());
                 }
             }
             DomainAction::PrepareCommitFromSelection => {

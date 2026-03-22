@@ -1,7 +1,11 @@
 use crate::app::{Command, RefreshKind};
 use crate::flux::action::{Action, ActionEnvelope, DomainAction};
 use crate::flux::effects::EffectRequest;
-use crate::flux::stores::{ReduceCtx, ReduceOutput, Store};
+use crate::flux::stores::{ReduceCtx, ReduceOutput, Store, UiInvalidation};
+
+fn flush_refresh() -> Command {
+    Command::Effect(EffectRequest::FlushPendingRefresh { log_success: false })
+}
 
 pub struct BranchStore;
 
@@ -24,7 +28,7 @@ impl Store for BranchStore {
                 match result {
                     Ok(()) => {
                         ctx.app.push_log(format!("branch created: {}", name), true);
-                        ctx.app.dirty.mark();
+                        return ReduceOutput::none().with_invalidation(UiInvalidation::all());
                     }
                     Err(e) => ctx
                         .app
@@ -38,15 +42,13 @@ impl Store for BranchStore {
             DomainAction::BranchSwitchConfirm(auto_stash) => {
                 let Some(target) = ctx.app.take_branch_switch_target() else {
                     ctx.app.cancel_input();
-                    ctx.app.dirty.mark_overlay();
-                    return ReduceOutput::none();
+                    return ReduceOutput::none().with_invalidation(UiInvalidation::overlay());
                 };
                 ctx.app.cancel_input();
                 if !auto_stash {
                     ctx.app
                         .push_log(format!("switch canceled: {}", target), false);
-                    ctx.app.dirty.mark();
-                    return ReduceOutput::none();
+                    return ReduceOutput::none().with_invalidation(UiInvalidation::all());
                 }
 
                 ReduceOutput::from_command(Command::Effect(EffectRequest::CheckoutBranch {
@@ -67,7 +69,10 @@ impl Store for BranchStore {
                         } else {
                             ctx.app.push_log(format!("switched to {}", name), true);
                         }
-                        ctx.app.dirty.mark();
+                        return ReduceOutput {
+                            commands: vec![flush_refresh()],
+                            invalidation: UiInvalidation::all(),
+                        };
                     }
                     Err(e) => {
                         if *auto_stash {
@@ -93,7 +98,7 @@ impl Store for BranchStore {
                 match result {
                     Ok(()) => {
                         ctx.app.push_log(format!("deleted branch {}", name), true);
-                        ctx.app.dirty.mark();
+                        return ReduceOutput::none().with_invalidation(UiInvalidation::all());
                     }
                     Err(e) => ctx
                         .app
@@ -108,8 +113,8 @@ impl Store for BranchStore {
                 }
                 ctx.app.branches.is_fetching_remote = true;
                 ctx.app.push_log("fetch started", true);
-                ctx.app.dirty.mark();
                 ReduceOutput::from_command(Command::Effect(EffectRequest::FetchRemote))
+                    .with_invalidation(UiInvalidation::all())
             }
             DomainAction::FetchRemoteFinished(result) => {
                 ctx.app.branches.is_fetching_remote = false;
@@ -117,7 +122,10 @@ impl Store for BranchStore {
                     Ok(remote) => {
                         ctx.app.request_refresh(RefreshKind::Full);
                         ctx.app.push_log(format!("fetched {}", remote), true);
-                        ctx.app.dirty.mark();
+                        return ReduceOutput {
+                            commands: vec![flush_refresh()],
+                            invalidation: UiInvalidation::all(),
+                        };
                     }
                     Err(e) => ctx.app.push_log(format!("fetch failed: {}", e), false),
                 }

@@ -91,9 +91,6 @@ pub fn map_key_to_actions(
     if gm("panel_prev") {
         return vec![Action::Domain(DomainAction::PanelPrev)];
     }
-    if gm("refresh") {
-        return vec![Action::Domain(DomainAction::RefreshStatus)];
-    }
     if gm("diff_scroll_up") {
         return vec![Action::Domain(DomainAction::DiffScrollUp)];
     }

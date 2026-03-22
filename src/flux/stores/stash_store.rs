@@ -1,7 +1,7 @@
 use crate::app::Command;
 use crate::flux::action::{Action, ActionEnvelope, DomainAction};
 use crate::flux::effects::EffectRequest;
-use crate::flux::stores::{ReduceCtx, ReduceOutput, Store};
+use crate::flux::stores::{ReduceCtx, ReduceOutput, Store, UiInvalidation};
 
 pub struct StashStore;
 
@@ -30,7 +30,7 @@ impl Store for StashStore {
                             format!("stash created stash@{{{}}}: {}", index, message),
                             true,
                         );
-                        ctx.app.dirty.mark();
+                        return ReduceOutput::none().with_invalidation(UiInvalidation::all());
                     }
                     Err(e) => ctx
                         .app
@@ -52,7 +52,7 @@ impl Store for StashStore {
                     Ok(()) => {
                         ctx.app
                             .push_log(format!("stash applied stash@{{{}}}", index), true);
-                        ctx.app.dirty.mark();
+                        return ReduceOutput::none().with_invalidation(UiInvalidation::all());
                     }
                     Err(e) => ctx.app.push_log(
                         format!("stash apply failed stash@{{{}}}: {}", index, e),
@@ -75,7 +75,7 @@ impl Store for StashStore {
                     Ok(()) => {
                         ctx.app
                             .push_log(format!("stash popped stash@{{{}}}", index), true);
-                        ctx.app.dirty.mark();
+                        return ReduceOutput::none().with_invalidation(UiInvalidation::all());
                     }
                     Err(e) => ctx.app.push_log(
                         format!("stash pop failed stash@{{{}}}: {}", index, e),
@@ -98,7 +98,7 @@ impl Store for StashStore {
                     Ok(()) => {
                         ctx.app
                             .push_log(format!("stash dropped stash@{{{}}}", index), true);
-                        ctx.app.dirty.mark();
+                        return ReduceOutput::none().with_invalidation(UiInvalidation::all());
                     }
                     Err(e) => ctx.app.push_log(
                         format!("stash drop failed stash@{{{}}}: {}", index, e),
