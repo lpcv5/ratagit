@@ -19,8 +19,16 @@ impl App {
                 }
             }
             if self.status.staged.is_empty() {
-                self.push_log("nothing staged to commit", false);
-                return false;
+                // Check if there are any files to commit
+                let total_files = self.status.unstaged.len() + self.status.untracked.len();
+                if total_files == 0 {
+                    self.push_log("nothing to commit", false);
+                    return false;
+                }
+                // Enter confirmation mode
+                self.input_mode = Some(InputMode::CommitAllConfirm);
+                self.push_log("commit all: confirm to stage all files and commit", true);
+                return true;
             }
         }
         self.start_commit_editor();

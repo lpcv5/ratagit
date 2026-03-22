@@ -15,6 +15,7 @@ pub enum EffectRequest {
     ReloadDiffNow,
     RevisionOpenTreeOrToggleDir,
     StartCommitEditorGuarded,
+    StageAllAndStartCommitEditor,
     ToggleStageSelection,
     PrepareCommitFromVisualSelection,
     CheckoutSelectedBranch,
@@ -97,6 +98,37 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
                 );
                 UiInvalidation::all().apply(&mut app);
             }
+            vec![]
+        }
+        EffectRequest::StageAllAndStartCommitEditor => {
+            let mut app = ctx.app.lock().await;
+            app.cancel_input();
+            let paths: Vec<PathBuf> = app
+                .status
+                .unstaged
+                .iter()
+                .map(|e| e.path.clone())
+                .chain(app.status.untracked.iter().map(|e| e.path.clone()))
+                .collect();
+            if paths.is_empty() {
+                app.push_log("nothing to stage", false);
+                return vec![];
+            }
+            if let Err(err) = app.stage_paths(&paths) {
+                app.push_log(format!("stage all failed: {}", err), false);
+                return vec![];
+            }
+            app.request_refresh(crate::app::RefreshKind::StatusOnly);
+            if let Err(err) = app.flush_pending_refresh() {
+                app.push_log(format!("refresh failed: {}", err), false);
+                return vec![];
+            }
+            app.start_commit_editor();
+            app.push_log(
+                "commit: all files staged; edit message/description then press Enter",
+                true,
+            );
+            UiInvalidation::all().apply(&mut app);
             vec![]
         }
         EffectRequest::ToggleStageSelection => {

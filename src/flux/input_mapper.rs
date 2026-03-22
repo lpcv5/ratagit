@@ -24,6 +24,22 @@ pub fn map_key_to_actions(
         };
     }
 
+    if snapshot.input_mode == Some(InputMode::CommitAllConfirm) {
+        return match key.code {
+            crossterm::event::KeyCode::Char('y')
+            | crossterm::event::KeyCode::Char('Y')
+            | crossterm::event::KeyCode::Enter => {
+                vec![Action::Domain(DomainAction::CommitAllConfirm(true))]
+            }
+            crossterm::event::KeyCode::Char('n')
+            | crossterm::event::KeyCode::Char('N')
+            | crossterm::event::KeyCode::Esc => {
+                vec![Action::Domain(DomainAction::CommitAllConfirm(false))]
+            }
+            _ => Vec::new(),
+        };
+    }
+
     if snapshot.input_mode.is_some() {
         return match key.code {
             crossterm::event::KeyCode::Esc => {

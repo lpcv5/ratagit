@@ -22,6 +22,17 @@ impl Store for OverlayStore {
                     EffectRequest::StartCommitEditorGuarded,
                 ));
             }
+            DomainAction::CommitAllConfirm(confirmed) => {
+                if *confirmed {
+                    return ReduceOutput::from_command(Command::Effect(
+                        EffectRequest::StageAllAndStartCommitEditor,
+                    ));
+                } else {
+                    ctx.app.cancel_input();
+                    ctx.app.push_log("commit all cancelled", false);
+                    return ReduceOutput::none().with_invalidation(UiInvalidation::all());
+                }
+            }
             DomainAction::StartCommandPalette => {
                 ctx.app.start_command_palette();
                 ctx.app

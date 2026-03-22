@@ -110,6 +110,7 @@ pub enum InputMode {
     StashEditor,
     Search,
     BranchSwitchConfirm,
+    CommitAllConfirm,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -426,6 +427,12 @@ impl App {
 
     pub fn discard_paths(&mut self, paths: &[PathBuf]) -> Result<()> {
         self.repo.discard_paths(paths)?;
+        self.request_refresh(RefreshKind::StatusOnly);
+        Ok(())
+    }
+
+    pub fn stage_paths(&mut self, paths: &[PathBuf]) -> Result<()> {
+        self.repo.stage_paths(paths)?;
         self.request_refresh(RefreshKind::StatusOnly);
         Ok(())
     }
