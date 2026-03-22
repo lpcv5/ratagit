@@ -37,3 +37,7 @@ pub fn highlighted_spans(text: &str, query: Option<&str>, base_style: Style) -> 
 
     spans
 }
+
+#[cfg(test)]
+#[path = "highlight_tests.rs"]
+mod tests;

@@ -66,3 +66,78 @@ impl Store for SearchStore {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::flux::action::{Action, DomainAction};
+    use crate::flux::stores::test_support::{make_envelope, mock_app};
+    use pretty_assertions::assert_eq;
+
+    fn reduce(store: &mut SearchStore, app: &mut crate::app::App, action: Action) -> ReduceOutput {
+        let env = make_envelope(action);
+        let mut ctx = ReduceCtx { app };
+        store.reduce(&env, &mut ctx)
+    }
+
+    #[test]
+    fn test_search_set_query_updates_buffer() {
+        let mut store = SearchStore::new();
+        let mut app = mock_app();
+        reduce(
+            &mut store,
+            &mut app,
+            Action::Domain(DomainAction::SearchSetQuery("foo".to_string())),
+        );
+        assert_eq!(app.search_query, "foo");
+    }
+
+    #[test]
+    fn test_search_clear_resets_state() {
+        let mut store = SearchStore::new();
+        let mut app = mock_app();
+        app.search_query = "foo".to_string();
+        reduce(
+            &mut store,
+            &mut app,
+            Action::Domain(DomainAction::SearchClear),
+        );
+        assert!(app.search_query.is_empty());
+    }
+
+    #[test]
+    fn test_search_next_returns_output() {
+        let mut store = SearchStore::new();
+        let mut app = mock_app();
+        // SearchNext with no matches is a no-op
+        let output = reduce(
+            &mut store,
+            &mut app,
+            Action::Domain(DomainAction::SearchNext),
+        );
+        // just verify it compiles and runs without panic
+        let _ = output;
+    }
+
+    #[test]
+    fn test_search_prev_returns_output() {
+        let mut store = SearchStore::new();
+        let mut app = mock_app();
+        // SearchPrev with no matches is a no-op
+        let output = reduce(
+            &mut store,
+            &mut app,
+            Action::Domain(DomainAction::SearchPrev),
+        );
+        let _ = output;
+    }
+
+    #[test]
+    fn test_unknown_action_does_nothing() {
+        let mut store = SearchStore::new();
+        let mut app = mock_app();
+        let output = reduce(&mut store, &mut app, Action::Domain(DomainAction::Quit));
+        assert!(output.commands.is_empty());
+        assert_eq!(output.invalidation, UiInvalidation::none());
+    }
+}

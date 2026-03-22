@@ -173,6 +173,7 @@ fn author_initials(author: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pretty_assertions::assert_eq;
     use std::collections::HashSet;
 
     #[test]

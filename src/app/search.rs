@@ -309,3 +309,114 @@ impl App {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::flux::stores::test_support::MockRepo;
+    use pretty_assertions::assert_eq;
+
+    fn mock_app() -> App {
+        App::from_repo(Box::new(MockRepo)).expect("app")
+    }
+
+    #[test]
+    fn start_search_input_sets_search_input_mode() {
+        let mut app = mock_app();
+
+        app.start_search_input();
+
+        assert_eq!(app.input_mode, Some(crate::app::InputMode::Search));
+    }
+
+    #[test]
+    fn apply_search_query_non_empty_updates_query_and_scope_presence() {
+        let mut app = mock_app();
+
+        app.apply_search_query("foo".to_string());
+
+        assert_eq!(app.search_query, "foo");
+        assert_eq!(app.has_search_query_for_active_scope(), true);
+    }
+
+    #[test]
+    fn apply_search_query_empty_clears_query_matches_and_scope_presence() {
+        let mut app = mock_app();
+        app.apply_search_query("foo".to_string());
+
+        app.apply_search_query(String::new());
+
+        assert_eq!(app.search_query, "");
+        assert_eq!(app.search_matches, Vec::new());
+        assert_eq!(app.has_search_query_for_active_scope(), false);
+    }
+
+    #[test]
+    fn clear_search_resets_query_matches_and_scope_presence() {
+        let mut app = mock_app();
+        app.apply_search_query("foo".to_string());
+
+        app.clear_search();
+
+        assert_eq!(app.search_query, "");
+        assert_eq!(app.search_matches, Vec::new());
+        assert_eq!(app.has_search_query_for_active_scope(), false);
+    }
+
+    #[test]
+    fn has_search_query_for_active_scope_returns_false_when_no_query_is_applied() {
+        let app = mock_app();
+
+        assert_eq!(app.has_search_query_for_active_scope(), false);
+    }
+
+    #[test]
+    fn has_search_query_for_active_scope_returns_true_when_query_is_applied() {
+        let mut app = mock_app();
+        app.apply_search_query("test".to_string());
+
+        assert_eq!(app.has_search_query_for_active_scope(), true);
+    }
+
+    #[test]
+    fn search_jump_next_without_matches_returns_false() {
+        let mut app = mock_app();
+
+        let jumped = app.search_jump_next();
+
+        assert_eq!(jumped, false);
+    }
+
+    #[test]
+    fn search_jump_prev_without_matches_returns_false() {
+        let mut app = mock_app();
+
+        let jumped = app.search_jump_prev();
+
+        assert_eq!(jumped, false);
+    }
+
+    #[test]
+    fn restore_search_for_active_scope_without_saved_query_clears_stale_matches() {
+        let mut app = mock_app();
+        app.search_query = "stale".to_string();
+        app.search_matches = vec![3, 5];
+
+        app.restore_search_for_active_scope();
+
+        assert_eq!(app.search_query, "");
+        assert_eq!(app.search_matches, Vec::new());
+    }
+
+    #[test]
+    fn confirm_search_input_clears_input_mode_and_input_buffer() {
+        let mut app = mock_app();
+        app.input_mode = Some(crate::app::InputMode::Search);
+        app.input_buffer = "test".to_string();
+
+        app.confirm_search_input();
+
+        assert_eq!(app.input_mode, None);
+        assert_eq!(app.input_buffer, "");
+    }
+}

@@ -133,7 +133,129 @@ pub trait Store {
 
 /// Helper to flush pending refresh without logging success.
 pub(super) fn flush_refresh() -> Command {
-    Command::Effect(crate::flux::effects::EffectRequest::FlushPendingRefresh {
-        log_success: false,
-    })
+    Command::Effect(crate::flux::effects::EffectRequest::FlushPendingRefresh { log_success: false })
+}
+
+/// Shared test utilities for all store unit tests.
+#[cfg(test)]
+pub mod test_support {
+    use crate::app::App;
+    use crate::flux::action::{Action, ActionEnvelope};
+    use crate::git::{
+        BranchInfo, CommitInfo, CommitSyncState, DiffLine, DiffLineKind, FileEntry, GitError,
+        GitRepository, GitStatus, StashInfo,
+    };
+    use std::path::{Path, PathBuf};
+    use std::sync::mpsc::{self, Receiver};
+
+    pub struct MockRepo;
+
+    impl GitRepository for MockRepo {
+        fn status(&self) -> Result<GitStatus, GitError> {
+            Ok(GitStatus::default())
+        }
+        fn stage(&self, _: &Path) -> Result<(), GitError> {
+            Ok(())
+        }
+        fn stage_paths(&self, _: &[PathBuf]) -> Result<(), GitError> {
+            Ok(())
+        }
+        fn unstage(&self, _: &Path) -> Result<(), GitError> {
+            Ok(())
+        }
+        fn unstage_paths(&self, _: &[PathBuf]) -> Result<(), GitError> {
+            Ok(())
+        }
+        fn discard_paths(&self, _: &[PathBuf]) -> Result<(), GitError> {
+            Ok(())
+        }
+        fn diff_unstaged(&self, _: &Path) -> Result<Vec<DiffLine>, GitError> {
+            Ok(vec![])
+        }
+        fn diff_staged(&self, _: &Path) -> Result<Vec<DiffLine>, GitError> {
+            Ok(vec![])
+        }
+        fn diff_untracked(&self, _: &Path) -> Result<Vec<DiffLine>, GitError> {
+            Ok(vec![])
+        }
+        fn branches(&self) -> Result<Vec<BranchInfo>, GitError> {
+            Ok(vec![])
+        }
+        fn create_branch(&self, _: &str) -> Result<(), GitError> {
+            Ok(())
+        }
+        fn checkout_branch(&self, _: &str) -> Result<(), GitError> {
+            Ok(())
+        }
+        fn delete_branch(&self, _: &str) -> Result<(), GitError> {
+            Ok(())
+        }
+        fn commits(&self, _: usize) -> Result<Vec<CommitInfo>, GitError> {
+            Ok(vec![CommitInfo {
+                short_hash: "abc1234".to_string(),
+                oid: "abc1234567890".to_string(),
+                message: "test commit".to_string(),
+                author: "tester".to_string(),
+                graph: vec![crate::git::GraphCell {
+                    text: "●".to_string(),
+                    lane: 0,
+                    pipe_oid: None,
+                    pipe_oids: vec![],
+                }],
+                time: "2026-03-20 00:00".to_string(),
+                parent_count: 1,
+                sync_state: CommitSyncState::DefaultBranch,
+                parent_oids: vec![],
+            }])
+        }
+        fn commit_files(&self, _: &str) -> Result<Vec<FileEntry>, GitError> {
+            Ok(vec![])
+        }
+        fn commit_diff_scoped(&self, _: &str, _: Option<&Path>) -> Result<Vec<DiffLine>, GitError> {
+            Ok(vec![DiffLine {
+                kind: DiffLineKind::Header,
+                content: "diff".to_string(),
+            }])
+        }
+        fn commit(&self, _: &str) -> Result<String, GitError> {
+            Ok("oid".to_string())
+        }
+        fn stashes(&self) -> Result<Vec<StashInfo>, GitError> {
+            Ok(vec![])
+        }
+        fn stash_files(&self, _: usize) -> Result<Vec<FileEntry>, GitError> {
+            Ok(vec![])
+        }
+        fn stash_diff(&self, _: usize, _: Option<&Path>) -> Result<Vec<DiffLine>, GitError> {
+            Ok(vec![])
+        }
+        fn stash_push_paths(&self, _: &[PathBuf], _: &str) -> Result<usize, GitError> {
+            Ok(0)
+        }
+        fn stash_apply(&self, _: usize) -> Result<(), GitError> {
+            Ok(())
+        }
+        fn stash_pop(&self, _: usize) -> Result<(), GitError> {
+            Ok(())
+        }
+        fn stash_drop(&self, _: usize) -> Result<(), GitError> {
+            Ok(())
+        }
+        fn fetch_default_async(&self) -> Result<Receiver<Result<String, GitError>>, GitError> {
+            let (tx, rx) = mpsc::channel();
+            drop(tx);
+            Ok(rx)
+        }
+    }
+
+    pub fn mock_app() -> App {
+        App::from_repo(Box::new(MockRepo)).expect("mock app")
+    }
+
+    pub fn make_envelope(action: Action) -> ActionEnvelope {
+        ActionEnvelope {
+            sequence: 1,
+            action,
+        }
+    }
 }

@@ -45,10 +45,8 @@ pub fn render_commit_all_confirm(frame: &mut Frame, snapshot: &AppStateSnapshot<
     .style(Style::default().fg(theme.text_primary));
     frame.render_widget(warn, sections[0]);
 
-    let detail = Paragraph::new(Line::from(
-        "Stage all files and proceed to commit editor?",
-    ))
-    .style(Style::default().fg(theme.text_muted));
+    let detail = Paragraph::new(Line::from("Stage all files and proceed to commit editor?"))
+        .style(Style::default().fg(theme.text_muted));
     frame.render_widget(detail, sections[1]);
 
     let actions = Paragraph::new(Line::from(
@@ -57,4 +55,3 @@ pub fn render_commit_all_confirm(frame: &mut Frame, snapshot: &AppStateSnapshot<
     .style(Style::default().fg(theme.accent));
     frame.render_widget(actions, sections[2]);
 }
-

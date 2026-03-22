@@ -1408,6 +1408,7 @@ fn graph_cells_to_string(cells: &[GraphCell]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pretty_assertions::assert_eq;
     use std::fs;
     use std::path::Path;
     use std::sync::{Mutex, OnceLock};

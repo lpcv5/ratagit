@@ -83,3 +83,187 @@ impl Store for FilesStore {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::flux::action::{Action, DomainAction};
+    use crate::flux::stores::test_support::{make_envelope, mock_app};
+    use std::path::PathBuf;
+
+    fn reduce(store: &mut FilesStore, app: &mut crate::app::App, action: Action) -> ReduceOutput {
+        let env = make_envelope(action);
+        let mut ctx = ReduceCtx { app };
+        store.reduce(&env, &mut ctx)
+    }
+
+    #[test]
+    fn test_stage_file_emits_effect() {
+        let mut store = FilesStore::new();
+        let mut app = mock_app();
+        let output = reduce(
+            &mut store,
+            &mut app,
+            Action::Domain(DomainAction::StageFile(PathBuf::from("foo.txt"))),
+        );
+        assert!(!output.commands.is_empty());
+    }
+
+    #[test]
+    fn test_unstage_file_emits_effect() {
+        let mut store = FilesStore::new();
+        let mut app = mock_app();
+        let output = reduce(
+            &mut store,
+            &mut app,
+            Action::Domain(DomainAction::UnstageFile(PathBuf::from("foo.txt"))),
+        );
+        assert!(!output.commands.is_empty());
+    }
+
+    #[test]
+    fn test_stage_file_finished_ok_logs_success() {
+        let mut store = FilesStore::new();
+        let mut app = mock_app();
+        let initial_logs = app.command_log.len();
+        reduce(
+            &mut store,
+            &mut app,
+            Action::Domain(DomainAction::StageFileFinished {
+                path: PathBuf::from("foo.txt"),
+                result: Ok(()),
+            }),
+        );
+        assert!(app.command_log.len() > initial_logs);
+    }
+
+    #[test]
+    fn test_unstage_file_finished_ok_logs_success() {
+        let mut store = FilesStore::new();
+        let mut app = mock_app();
+        let initial_logs = app.command_log.len();
+        reduce(
+            &mut store,
+            &mut app,
+            Action::Domain(DomainAction::UnstageFileFinished {
+                path: PathBuf::from("foo.txt"),
+                result: Ok(()),
+            }),
+        );
+        assert!(app.command_log.len() > initial_logs);
+    }
+
+    #[test]
+    fn test_discard_paths_finished_single_path_logs_name() {
+        let mut store = FilesStore::new();
+        let mut app = mock_app();
+        reduce(
+            &mut store,
+            &mut app,
+            Action::Domain(DomainAction::DiscardPathsFinished {
+                paths: vec![PathBuf::from("bar.txt")],
+                result: Ok(()),
+            }),
+        );
+        let last = app.command_log.last().unwrap();
+        assert!(last.command.contains("bar.txt"));
+    }
+
+    #[test]
+    fn test_unknown_action_does_nothing() {
+        let mut store = FilesStore::new();
+        let mut app = mock_app();
+        let output = reduce(&mut store, &mut app, Action::Domain(DomainAction::Quit));
+        assert!(output.commands.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod more_tests {
+    use super::*;
+    use crate::flux::action::{Action, DomainAction};
+    use crate::flux::stores::test_support::{make_envelope, mock_app};
+    use std::path::PathBuf;
+
+    fn reduce(store: &mut FilesStore, app: &mut crate::app::App, action: Action) -> ReduceOutput {
+        let env = make_envelope(action);
+        let mut ctx = ReduceCtx { app };
+        store.reduce(&env, &mut ctx)
+    }
+
+    #[test]
+    fn test_discard_paths_emits_effect() {
+        let mut store = FilesStore::new();
+        let mut app = mock_app();
+        let output = reduce(
+            &mut store,
+            &mut app,
+            Action::Domain(DomainAction::DiscardPaths(vec![PathBuf::from("foo.txt")])),
+        );
+        assert!(!output.commands.is_empty());
+    }
+
+    #[test]
+    fn test_stage_file_finished_err_logs_failure() {
+        let mut store = FilesStore::new();
+        let mut app = mock_app();
+        let logs_before = app.command_log.len();
+        reduce(
+            &mut store,
+            &mut app,
+            Action::Domain(DomainAction::StageFileFinished {
+                path: PathBuf::from("foo.txt"),
+                result: Err("stage failed".to_string()),
+            }),
+        );
+        assert!(app.command_log.len() > logs_before);
+    }
+
+    #[test]
+    fn test_unstage_file_finished_err_logs_failure() {
+        let mut store = FilesStore::new();
+        let mut app = mock_app();
+        let logs_before = app.command_log.len();
+        reduce(
+            &mut store,
+            &mut app,
+            Action::Domain(DomainAction::UnstageFileFinished {
+                path: PathBuf::from("foo.txt"),
+                result: Err("unstage failed".to_string()),
+            }),
+        );
+        assert!(app.command_log.len() > logs_before);
+    }
+
+    #[test]
+    fn test_discard_paths_finished_multiple_paths_logs_count() {
+        let mut store = FilesStore::new();
+        let mut app = mock_app();
+        reduce(
+            &mut store,
+            &mut app,
+            Action::Domain(DomainAction::DiscardPathsFinished {
+                paths: vec![PathBuf::from("a.txt"), PathBuf::from("b.txt")],
+                result: Ok(()),
+            }),
+        );
+        let last = app.command_log.last().unwrap();
+        assert!(last.command.contains("2"));
+    }
+
+    #[test]
+    fn test_discard_paths_finished_err_logs_failure() {
+        let mut store = FilesStore::new();
+        let mut app = mock_app();
+        let logs_before = app.command_log.len();
+        reduce(
+            &mut store,
+            &mut app,
+            Action::Domain(DomainAction::DiscardPathsFinished {
+                paths: vec![PathBuf::from("foo.txt")],
+                result: Err("discard failed".to_string()),
+            }),
+        );
+        assert!(app.command_log.len() > logs_before);
+    }
+}

@@ -92,6 +92,7 @@ impl Dispatcher {
 mod tests {
     use super::*;
     use crate::flux::stores::{ReduceOutput, Store};
+    use pretty_assertions::assert_eq;
     use std::cell::RefCell;
     use std::rc::Rc;
 

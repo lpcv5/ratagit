@@ -834,3 +834,180 @@ impl App {
             self.search_match_summary_for(SidePanel::Stash, false, self.stash.tree_mode.active);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::flux::stores::test_support::MockRepo;
+    use pretty_assertions::assert_eq;
+
+    fn mock_app() -> App {
+        App::from_repo(Box::new(MockRepo)).expect("app")
+    }
+
+    #[test]
+    fn test_from_repo_creates_app() {
+        let app = mock_app();
+        assert!(app.running);
+        assert!(app.current_diff.is_empty());
+    }
+
+    #[test]
+    fn test_push_log_adds_entry() {
+        let mut app = mock_app();
+        let before = app.command_log.len();
+        app.push_log("test", true);
+        assert_eq!(app.command_log.len(), before + 1);
+        assert_eq!(app.command_log.last().unwrap().command, "test");
+        assert!(app.command_log.last().unwrap().success);
+    }
+
+    #[test]
+    fn test_stage_file_calls_repo() {
+        let mut app = mock_app();
+        let result = app.stage_file("foo.txt".into());
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_unstage_file_calls_repo() {
+        let mut app = mock_app();
+        let result = app.unstage_file("foo.txt".into());
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_discard_paths_calls_repo() {
+        let mut app = mock_app();
+        let result = app.discard_paths(&["foo.txt".into()]);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_commit_calls_repo() {
+        let mut app = mock_app();
+        let result = app.commit("fix: test");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_create_branch_calls_repo() {
+        let mut app = mock_app();
+        let result = app.create_branch("feature");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_checkout_branch_calls_repo() {
+        let mut app = mock_app();
+        let result = app.checkout_branch("main");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_delete_branch_calls_repo() {
+        let mut app = mock_app();
+        let result = app.delete_branch("old-branch");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_stash_apply_calls_repo() {
+        let mut app = mock_app();
+        let result = app.stash_apply(0);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_stash_pop_calls_repo() {
+        let mut app = mock_app();
+        let result = app.stash_pop(0);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_stash_drop_calls_repo() {
+        let mut app = mock_app();
+        let result = app.stash_drop(0);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_has_uncommitted_changes_false_when_empty() {
+        let app = mock_app();
+        assert!(!app.has_uncommitted_changes());
+    }
+
+    #[test]
+    fn test_diff_scroll_up_and_down() {
+        let mut app = mock_app();
+        // diff_scroll_down is capped at current_diff.len()-1; with empty diff stays at 0
+        app.diff_scroll_down();
+        assert_eq!(app.diff_scroll, 0);
+        // With some diff content, scroll can increase
+        app.current_diff = vec![
+            crate::git::DiffLine {
+                kind: crate::git::DiffLineKind::Added,
+                content: "line".to_string(),
+            };
+            20
+        ];
+        app.diff_scroll_down();
+        assert!(app.diff_scroll > 0);
+        app.diff_scroll_up();
+        assert_eq!(app.diff_scroll, 0);
+    }
+
+    #[test]
+    fn test_toggle_visual_select_mode() {
+        let mut app = mock_app();
+        assert!(!app.files.visual_mode);
+        app.toggle_visual_select_mode();
+        assert!(app.files.visual_mode);
+        app.toggle_visual_select_mode();
+        assert!(!app.files.visual_mode);
+    }
+
+    #[test]
+    fn test_schedule_diff_reload_marks_pending() {
+        let mut app = mock_app();
+        assert!(!app.has_pending_diff_reload());
+        app.schedule_diff_reload();
+        assert!(app.has_pending_diff_reload());
+    }
+
+    #[test]
+    fn test_request_refresh_sets_pending() {
+        let mut app = mock_app();
+        assert!(app.pending_refresh_kind().is_none());
+        app.request_refresh(RefreshKind::StatusOnly);
+        assert_eq!(app.pending_refresh_kind(), Some(RefreshKind::StatusOnly));
+    }
+
+    #[test]
+    fn test_flush_pending_refresh_clears_pending() {
+        let mut app = mock_app();
+        app.request_refresh(RefreshKind::StatusOnly);
+        let result = app.flush_pending_refresh();
+        assert!(result.is_ok());
+        assert!(result.unwrap());
+        assert!(app.pending_refresh_kind().is_none());
+    }
+
+    #[test]
+    fn test_start_branch_switch_confirm() {
+        let mut app = mock_app();
+        app.start_branch_switch_confirm("feature".to_string());
+        assert_eq!(app.branch_switch_target, Some("feature".to_string()));
+        assert_eq!(app.input_mode, Some(InputMode::BranchSwitchConfirm));
+    }
+
+    #[test]
+    fn test_take_branch_switch_target() {
+        let mut app = mock_app();
+        app.branch_switch_target = Some("feature".to_string());
+        let target = app.take_branch_switch_target();
+        assert_eq!(target, Some("feature".to_string()));
+        assert!(app.branch_switch_target.is_none());
+    }
+}
