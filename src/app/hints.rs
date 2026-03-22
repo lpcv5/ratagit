@@ -21,6 +21,10 @@ impl App {
                     ("Y".to_string(), "AutoStash+Switch".to_string()),
                     ("N".to_string(), "Cancel".to_string()),
                 ],
+                InputMode::CommitAllConfirm => vec![
+                    ("Y".to_string(), "StageAll+Commit".to_string()),
+                    ("N".to_string(), "Cancel".to_string()),
+                ],
             };
         }
 

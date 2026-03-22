@@ -50,7 +50,8 @@ impl Store for InputStore {
                 | InputMode::StashEditor
                 | InputMode::CommandPalette
                 | InputMode::Search
-                | InputMode::BranchSwitchConfirm => ReduceOutput::none(),
+                | InputMode::BranchSwitchConfirm
+                | InputMode::CommitAllConfirm => ReduceOutput::none(),
             },
             DomainAction::InputEnter => match mode {
                 InputMode::CommitEditor => match ctx.app.commit_focus {
@@ -137,6 +138,7 @@ impl Store for InputStore {
                         .with_invalidation(UiInvalidation::overlay())
                 }
                 InputMode::BranchSwitchConfirm => ReduceOutput::none(),
+                InputMode::CommitAllConfirm => ReduceOutput::none(),
             },
             DomainAction::InputBackspace => match mode {
                 InputMode::CommitEditor => {
@@ -169,6 +171,7 @@ impl Store for InputStore {
                     )))
                 }
                 InputMode::BranchSwitchConfirm => ReduceOutput::none(),
+                InputMode::CommitAllConfirm => ReduceOutput::none(),
             },
             DomainAction::InputChar(c) => match mode {
                 InputMode::CommitEditor => {
@@ -197,6 +200,7 @@ impl Store for InputStore {
                     )))
                 }
                 InputMode::BranchSwitchConfirm => ReduceOutput::none(),
+                InputMode::CommitAllConfirm => ReduceOutput::none(),
             },
             _ => ReduceOutput::none(),
         }

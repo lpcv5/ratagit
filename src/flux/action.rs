@@ -20,6 +20,7 @@ pub enum DomainAction {
     StartBranchCreateInput,
     CheckoutSelectedBranch,
     BranchSwitchConfirm(bool),
+    CommitAllConfirm(bool),
     DeleteSelectedBranch,
     FetchRemote,
     FetchRemoteFinished(Result<String, String>),
