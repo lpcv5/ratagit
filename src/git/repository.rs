@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::mpsc::{self, Receiver};
+use std::sync::Arc;
 use std::thread;
 use thiserror::Error;
 use tokio::task;
@@ -489,9 +490,65 @@ pub trait AsyncGitRepository {
     async fn stash_drop_async(&self, index: usize) -> Result<(), GitError>;
 }
 
-/// Documentation comment in English.
-pub struct Git2Repository {
+/// Job closure sent to the repo worker thread.
+type RepoJob = Box<dyn FnOnce(&Git2RepoInner) + Send + 'static>;
+
+/// Persistent background worker that owns a single `git2::Repository` instance.
+/// All git operations that require the repo are routed through this worker,
+/// so `Repository::open` is called exactly once per ratagit session.
+struct RepoWorker {
+    tx: mpsc::SyncSender<RepoJob>,
+}
+
+impl RepoWorker {
+    /// Spawn the worker thread and return a handle.
+    fn spawn(repo_root: PathBuf) -> Result<Self, GitError> {
+        let (tx, rx) = mpsc::sync_channel::<RepoJob>(128);
+        thread::Builder::new()
+            .name("ratagit-repo-worker".to_string())
+            .spawn(move || {
+                let inner = match git2::Repository::open(&repo_root) {
+                    Ok(repo) => Git2RepoInner { repo },
+                    Err(err) => {
+                        eprintln!("[ratagit] repo worker failed to open: {}", err);
+                        return;
+                    }
+                };
+                while let Ok(job) = rx.recv() {
+                    job(&inner);
+                }
+            })
+            .map_err(|e| GitError::Git2(format!("failed to spawn repo worker: {}", e)))?;
+        Ok(Self { tx })
+    }
+
+    /// Send a job and return a receiver for its result.
+    fn run<T, F>(&self, job: F) -> Result<Receiver<Result<T, GitError>>, GitError>
+    where
+        T: Send + 'static,
+        F: FnOnce(&Git2RepoInner) -> Result<T, GitError> + Send + 'static,
+    {
+        let (result_tx, result_rx) = mpsc::channel();
+        let boxed: RepoJob = Box::new(move |inner| {
+            let _ = result_tx.send(job(inner));
+        });
+        self.tx
+            .send(boxed)
+            .map_err(|_| GitError::Git2("repo worker channel closed".to_string()))?;
+        Ok(result_rx)
+    }
+}
+
+/// Inner repository wrapper — only instantiated inside the `RepoWorker` thread.
+struct Git2RepoInner {
     repo: git2::Repository,
+}
+
+/// Public handle to the git repository.  Sends all git operations to the
+/// persistent `RepoWorker` thread so `Repository::open` is paid only once.
+pub struct Git2Repository {
+    worker: Arc<RepoWorker>,
+    repo_root: PathBuf,
 }
 
 /// Maximum number of diff lines returned to the UI to prevent OOM on huge files.
@@ -558,20 +615,7 @@ struct CellConnections {
     right: bool,
 }
 
-impl Git2Repository {
-    /// Documentation comment in English.
-    pub fn discover() -> Result<Self, GitError> {
-        let repo = git2::Repository::discover(".")?;
-        Ok(Self { repo })
-    }
-
-    /// Documentation comment in English.
-    #[cfg(test)]
-    pub fn open<P: AsRef<std::path::Path>>(path: P) -> Result<Self, GitError> {
-        let repo = git2::Repository::open(path)?;
-        Ok(Self { repo })
-    }
-
+impl Git2RepoInner {
     /// Documentation comment in English.
     fn convert_status(status: git2::Status) -> FileStatus {
         if status.is_index_new() || status.is_wt_new() {
@@ -658,31 +702,6 @@ impl Git2Repository {
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
         let detail = if stderr.is_empty() { stdout } else { stderr };
         Err(GitError::Git2(detail))
-    }
-
-    fn spawn_repo_job<T, F>(&self, job: F) -> Result<Receiver<Result<T, GitError>>, GitError>
-    where
-        T: Send + 'static,
-        F: FnOnce(Git2Repository) -> Result<T, GitError> + Send + 'static,
-    {
-        let repo_root = self.repo_root()?;
-        let (tx, rx) = mpsc::channel();
-        thread::spawn(move || {
-            let t0 = std::time::Instant::now();
-            let result = (|| {
-                let repo = git2::Repository::open(repo_root)?;
-                let repo = Git2Repository { repo };
-                job(repo)
-            })();
-            let elapsed_ms = t0.elapsed().as_millis();
-            if elapsed_ms > 100 {
-                // Log slow git operations (>100ms) to stderr for diagnosis.
-                // Redirect stderr to a file when running ratagit to capture these logs.
-                eprintln!("[ratagit perf] git job took {}ms", elapsed_ms);
-            }
-            let _ = tx.send(result);
-        });
-        Ok(rx)
     }
 
     fn resolve_ref_oid(&self, refname: &str) -> Option<git2::Oid> {
@@ -811,9 +830,7 @@ impl Git2Repository {
         let _ = walk.set_sorting(git2::Sort::TOPOLOGICAL);
         walk.take(limit).flatten().collect()
     }
-}
 
-impl GitRepository for Git2Repository {
     fn status(&self) -> Result<GitStatus, GitError> {
         let mut git_status = GitStatus::default();
 
@@ -855,16 +872,8 @@ impl GitRepository for Git2Repository {
         Ok(git_status)
     }
 
-    fn status_async(&self) -> Result<Receiver<Result<GitStatus, GitError>>, GitError> {
-        self.spawn_repo_job(|repo| repo.status())
-    }
-
     fn stage(&self, path: &std::path::Path) -> Result<(), GitError> {
         self.stage_paths(&[path.to_path_buf()])
-    }
-
-    fn stage_async(&self, path: PathBuf) -> Result<Receiver<Result<(), GitError>>, GitError> {
-        self.spawn_repo_job(move |repo| repo.stage(&path))
     }
 
     fn stage_paths(&self, paths: &[PathBuf]) -> Result<(), GitError> {
@@ -881,10 +890,6 @@ impl GitRepository for Git2Repository {
 
     fn unstage(&self, path: &std::path::Path) -> Result<(), GitError> {
         self.unstage_paths(&[path.to_path_buf()])
-    }
-
-    fn unstage_async(&self, path: PathBuf) -> Result<Receiver<Result<(), GitError>>, GitError> {
-        self.spawn_repo_job(move |repo| repo.unstage(&path))
     }
 
     fn unstage_paths(&self, paths: &[PathBuf]) -> Result<(), GitError> {
@@ -920,12 +925,6 @@ impl GitRepository for Git2Repository {
         Ok(())
     }
 
-    fn discard_paths_async(
-        &self,
-        paths: Vec<PathBuf>,
-    ) -> Result<Receiver<Result<(), GitError>>, GitError> {
-        self.spawn_repo_job(move |repo| repo.discard_paths(&paths))
-    }
     fn diff_unstaged(&self, path: &std::path::Path) -> Result<Vec<DiffLine>, GitError> {
         let mut opts = git2::DiffOptions::new();
         opts.pathspec(path.to_str().unwrap_or(""))
@@ -933,13 +932,6 @@ impl GitRepository for Git2Repository {
 
         let diff = self.repo.diff_index_to_workdir(None, Some(&mut opts))?;
         Ok(parse_diff(&diff))
-    }
-
-    fn diff_unstaged_async(
-        &self,
-        path: PathBuf,
-    ) -> Result<Receiver<Result<Vec<DiffLine>, GitError>>, GitError> {
-        self.spawn_repo_job(move |repo| repo.diff_unstaged(&path))
     }
 
     fn diff_staged(&self, path: &std::path::Path) -> Result<Vec<DiffLine>, GitError> {
@@ -953,13 +945,6 @@ impl GitRepository for Git2Repository {
             .repo
             .diff_tree_to_index(head_tree.as_ref(), None, Some(&mut opts))?;
         Ok(parse_diff(&diff))
-    }
-
-    fn diff_staged_async(
-        &self,
-        path: PathBuf,
-    ) -> Result<Receiver<Result<Vec<DiffLine>, GitError>>, GitError> {
-        self.spawn_repo_job(move |repo| repo.diff_staged(&path))
     }
 
     fn diff_untracked(&self, path: &std::path::Path) -> Result<Vec<DiffLine>, GitError> {
@@ -1013,13 +998,6 @@ impl GitRepository for Git2Repository {
         Ok(lines)
     }
 
-    fn diff_untracked_async(
-        &self,
-        path: PathBuf,
-    ) -> Result<Receiver<Result<Vec<DiffLine>, GitError>>, GitError> {
-        self.spawn_repo_job(move |repo| repo.diff_untracked(&path))
-    }
-
     fn diff_directory(&self, path: &std::path::Path) -> Result<Vec<DiffLine>, GitError> {
         let mut lines = self.diff_scope_with_args(&["diff", "--cached"], path)?;
         if lines.len() < MAX_DIFF_LINES {
@@ -1050,13 +1028,6 @@ impl GitRepository for Git2Repository {
         Ok(lines)
     }
 
-    fn diff_directory_async(
-        &self,
-        path: PathBuf,
-    ) -> Result<Receiver<Result<Vec<DiffLine>, GitError>>, GitError> {
-        self.spawn_repo_job(move |repo| repo.diff_directory(&path))
-    }
-
     fn branches(&self) -> Result<Vec<BranchInfo>, GitError> {
         let head_name = self
             .repo
@@ -1075,10 +1046,6 @@ impl GitRepository for Git2Repository {
             }
         }
         Ok(result)
-    }
-
-    fn branches_async(&self) -> Result<Receiver<Result<Vec<BranchInfo>, GitError>>, GitError> {
-        self.spawn_repo_job(|repo| repo.branches())
     }
 
     fn branch_log(&self, name: &str, limit: usize) -> Result<Vec<DiffLine>, GitError> {
@@ -1122,26 +1089,11 @@ impl GitRepository for Git2Repository {
             .collect())
     }
 
-    fn branch_log_async(
-        &self,
-        name: String,
-        limit: usize,
-    ) -> Result<Receiver<Result<Vec<DiffLine>, GitError>>, GitError> {
-        self.spawn_repo_job(move |repo| repo.branch_log(&name, limit))
-    }
-
     fn commits(&self, limit: usize) -> Result<Vec<CommitInfo>, GitError> {
         let mut revwalk = self.repo.revwalk()?;
         revwalk.push_head()?;
         revwalk.set_sorting(git2::Sort::TOPOLOGICAL | git2::Sort::TIME)?;
         self.collect_commits_from_revwalk(&mut revwalk, limit)
-    }
-
-    fn commits_async(
-        &self,
-        limit: usize,
-    ) -> Result<Receiver<Result<Vec<CommitInfo>, GitError>>, GitError> {
-        self.spawn_repo_job(move |repo| repo.commits(limit))
     }
 
     fn commits_for_branch(&self, name: &str, limit: usize) -> Result<Vec<CommitInfo>, GitError> {
@@ -1157,15 +1109,6 @@ impl GitRepository for Git2Repository {
         }
         revwalk.set_sorting(git2::Sort::TOPOLOGICAL | git2::Sort::TIME)?;
         self.collect_commits_from_revwalk(&mut revwalk, limit)
-    }
-
-    fn commits_for_branch_async(
-        &self,
-        name: &str,
-        limit: usize,
-    ) -> Result<Receiver<Result<Vec<CommitInfo>, GitError>>, GitError> {
-        let branch = name.to_string();
-        self.spawn_repo_job(move |repo| repo.commits_for_branch(&branch, limit))
     }
 
     fn commit_files(&self, oid: &str) -> Result<Vec<FileEntry>, GitError> {
@@ -1224,10 +1167,6 @@ impl GitRepository for Git2Repository {
             }
         }
         Ok(result)
-    }
-
-    fn stashes_async(&self) -> Result<Receiver<Result<Vec<StashInfo>, GitError>>, GitError> {
-        self.spawn_repo_job(|repo| repo.stashes())
     }
 
     fn stash_files(&self, index: usize) -> Result<Vec<FileEntry>, GitError> {
@@ -1293,14 +1232,6 @@ impl GitRepository for Git2Repository {
         Ok(parse_patch_text(&patch))
     }
 
-    fn stash_diff_async(
-        &self,
-        index: usize,
-        path: Option<PathBuf>,
-    ) -> Result<Receiver<Result<Vec<DiffLine>, GitError>>, GitError> {
-        self.spawn_repo_job(move |repo| repo.stash_diff(index, path.as_deref()))
-    }
-
     fn stash_push_paths(&self, paths: &[PathBuf], message: &str) -> Result<usize, GitError> {
         if paths.is_empty() {
             return Err(GitError::Git2("no selected paths for stash".to_string()));
@@ -1330,22 +1261,10 @@ impl GitRepository for Git2Repository {
         Ok(after[0].index)
     }
 
-    fn stash_push_paths_async(
-        &self,
-        paths: Vec<PathBuf>,
-        message: String,
-    ) -> Result<Receiver<Result<usize, GitError>>, GitError> {
-        self.spawn_repo_job(move |repo| repo.stash_push_paths(&paths, &message))
-    }
-
     fn stash_apply(&self, index: usize) -> Result<(), GitError> {
         let spec = Self::stash_spec(index);
         self.run_git(&["stash", "apply", &spec])?;
         Ok(())
-    }
-
-    fn stash_apply_async(&self, index: usize) -> Result<Receiver<Result<(), GitError>>, GitError> {
-        self.spawn_repo_job(move |repo| repo.stash_apply(index))
     }
 
     fn stash_pop(&self, index: usize) -> Result<(), GitError> {
@@ -1354,18 +1273,10 @@ impl GitRepository for Git2Repository {
         Ok(())
     }
 
-    fn stash_pop_async(&self, index: usize) -> Result<Receiver<Result<(), GitError>>, GitError> {
-        self.spawn_repo_job(move |repo| repo.stash_pop(index))
-    }
-
     fn stash_drop(&self, index: usize) -> Result<(), GitError> {
         let spec = Self::stash_spec(index);
         self.run_git(&["stash", "drop", &spec])?;
         Ok(())
-    }
-
-    fn stash_drop_async(&self, index: usize) -> Result<Receiver<Result<(), GitError>>, GitError> {
-        self.spawn_repo_job(move |repo| repo.stash_drop(index))
     }
 
     fn commit_diff_scoped(
@@ -1385,14 +1296,6 @@ impl GitRepository for Git2Repository {
         }
         let patch = self.run_git_owned(&args)?;
         Ok(parse_patch_text(&patch))
-    }
-
-    fn commit_diff_scoped_async(
-        &self,
-        oid: String,
-        path: Option<PathBuf>,
-    ) -> Result<Receiver<Result<Vec<DiffLine>, GitError>>, GitError> {
-        self.spawn_repo_job(move |repo| repo.commit_diff_scoped(&oid, path.as_deref()))
     }
 
     fn commit(&self, message: &str) -> Result<String, GitError> {
@@ -1415,36 +1318,15 @@ impl GitRepository for Git2Repository {
         Ok(commit_id.to_string())
     }
 
-    fn commit_async(
-        &self,
-        message: String,
-    ) -> Result<Receiver<Result<String, GitError>>, GitError> {
-        self.spawn_repo_job(move |repo| repo.commit(&message))
-    }
-
     fn create_branch(&self, name: &str) -> Result<(), GitError> {
         let head = self.repo.head()?.peel_to_commit()?;
         self.repo.branch(name, &head, false)?;
         Ok(())
     }
 
-    fn create_branch_async(
-        &self,
-        name: String,
-    ) -> Result<Receiver<Result<(), GitError>>, GitError> {
-        self.spawn_repo_job(move |repo| repo.create_branch(&name))
-    }
-
     fn checkout_branch(&self, name: &str) -> Result<(), GitError> {
         self.run_git(&["switch", name])?;
         Ok(())
-    }
-
-    fn checkout_branch_async(
-        &self,
-        name: String,
-    ) -> Result<Receiver<Result<(), GitError>>, GitError> {
-        self.spawn_repo_job(move |repo| repo.checkout_branch(&name))
     }
 
     fn checkout_branch_with_auto_stash(&self, name: &str) -> Result<(), GitError> {
@@ -1472,60 +1354,438 @@ impl GitRepository for Git2Repository {
         Ok(())
     }
 
-    fn checkout_branch_with_auto_stash_async(
-        &self,
-        name: String,
-    ) -> Result<Receiver<Result<(), GitError>>, GitError> {
-        self.spawn_repo_job(move |repo| repo.checkout_branch_with_auto_stash(&name))
-    }
-
     fn delete_branch(&self, name: &str) -> Result<(), GitError> {
         let mut branch = self.repo.find_branch(name, git2::BranchType::Local)?;
         branch.delete()?;
         Ok(())
+    }
+}
+
+impl Git2Repository {
+    /// Open (or discover) a repository and start the persistent worker thread.
+    pub fn discover() -> Result<Self, GitError> {
+        let repo = git2::Repository::discover(".")?;
+        let repo_root = if let Some(workdir) = repo.workdir() {
+            workdir.to_path_buf()
+        } else {
+            repo.path()
+                .parent()
+                .map(|p| p.to_path_buf())
+                .ok_or(GitError::InvalidState)?
+        };
+        drop(repo); // worker thread will re-open
+        let worker = Arc::new(RepoWorker::spawn(repo_root.clone())?);
+        Ok(Self { worker, repo_root })
+    }
+
+    /// Open a repository at an explicit path and start the persistent worker thread.
+    #[cfg(test)]
+    pub fn open<P: AsRef<std::path::Path>>(path: P) -> Result<Self, GitError> {
+        let repo_root = path.as_ref().to_path_buf();
+        let worker = Arc::new(RepoWorker::spawn(repo_root.clone())?);
+        Ok(Self { worker, repo_root })
+    }
+
+    /// Send a job to the persistent worker and return a receiver for the result.
+    fn spawn_repo_job<T, F>(&self, job: F) -> Result<Receiver<Result<T, GitError>>, GitError>
+    where
+        T: Send + 'static,
+        F: FnOnce(&Git2RepoInner) -> Result<T, GitError> + Send + 'static,
+    {
+        self.worker.run(job)
+    }
+
+    /// Send a job to the persistent worker and await the result on a tokio thread.
+    #[allow(dead_code)]
+    async fn spawn_repo_job_tokio<T, F>(&self, job: F) -> Result<T, GitError>
+    where
+        T: Send + 'static,
+        F: FnOnce(&Git2RepoInner) -> Result<T, GitError> + Send + 'static,
+    {
+        let rx = self.worker.run(job)?;
+        task::spawn_blocking(move || rx.recv())
+            .await
+            .map_err(|e| GitError::Git2(format!("tokio join failed: {}", e)))?
+            .map_err(|_| GitError::Git2("repo worker channel closed".to_string()))?
+    }
+
+    #[allow(dead_code)]
+    fn repo_root(&self) -> &PathBuf {
+        &self.repo_root
+    }
+}
+
+impl GitRepository for Git2Repository {
+    fn status(&self) -> Result<GitStatus, GitError> {
+        self.spawn_repo_job(|inner| inner.status())?
+            .recv()
+            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+    }
+
+    fn status_async(&self) -> Result<Receiver<Result<GitStatus, GitError>>, GitError> {
+        self.spawn_repo_job(|inner| inner.status())
+    }
+
+    fn stage(&self, path: &std::path::Path) -> Result<(), GitError> {
+        let path = path.to_path_buf();
+        self.spawn_repo_job(move |inner| inner.stage(&path))?
+            .recv()
+            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+    }
+
+    fn stage_async(&self, path: PathBuf) -> Result<Receiver<Result<(), GitError>>, GitError> {
+        self.spawn_repo_job(move |inner| inner.stage(&path))
+    }
+
+    fn stage_paths(&self, paths: &[PathBuf]) -> Result<(), GitError> {
+        let paths = paths.to_vec();
+        self.spawn_repo_job(move |inner| inner.stage_paths(&paths))?
+            .recv()
+            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+    }
+
+    fn unstage(&self, path: &std::path::Path) -> Result<(), GitError> {
+        let path = path.to_path_buf();
+        self.spawn_repo_job(move |inner| inner.unstage(&path))?
+            .recv()
+            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+    }
+
+    fn unstage_async(&self, path: PathBuf) -> Result<Receiver<Result<(), GitError>>, GitError> {
+        self.spawn_repo_job(move |inner| inner.unstage(&path))
+    }
+
+    fn unstage_paths(&self, paths: &[PathBuf]) -> Result<(), GitError> {
+        let paths = paths.to_vec();
+        self.spawn_repo_job(move |inner| inner.unstage_paths(&paths))?
+            .recv()
+            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+    }
+
+    fn discard_paths(&self, paths: &[PathBuf]) -> Result<(), GitError> {
+        let paths = paths.to_vec();
+        self.spawn_repo_job(move |inner| inner.discard_paths(&paths))?
+            .recv()
+            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+    }
+
+    fn discard_paths_async(
+        &self,
+        paths: Vec<PathBuf>,
+    ) -> Result<Receiver<Result<(), GitError>>, GitError> {
+        self.spawn_repo_job(move |inner| inner.discard_paths(&paths))
+    }
+
+    fn diff_unstaged(&self, path: &std::path::Path) -> Result<Vec<DiffLine>, GitError> {
+        let path = path.to_path_buf();
+        self.spawn_repo_job(move |inner| inner.diff_unstaged(&path))?
+            .recv()
+            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+    }
+
+    fn diff_unstaged_async(
+        &self,
+        path: PathBuf,
+    ) -> Result<Receiver<Result<Vec<DiffLine>, GitError>>, GitError> {
+        self.spawn_repo_job(move |inner| inner.diff_unstaged(&path))
+    }
+
+    fn diff_staged(&self, path: &std::path::Path) -> Result<Vec<DiffLine>, GitError> {
+        let path = path.to_path_buf();
+        self.spawn_repo_job(move |inner| inner.diff_staged(&path))?
+            .recv()
+            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+    }
+
+    fn diff_staged_async(
+        &self,
+        path: PathBuf,
+    ) -> Result<Receiver<Result<Vec<DiffLine>, GitError>>, GitError> {
+        self.spawn_repo_job(move |inner| inner.diff_staged(&path))
+    }
+
+    fn diff_untracked(&self, path: &std::path::Path) -> Result<Vec<DiffLine>, GitError> {
+        let path = path.to_path_buf();
+        self.spawn_repo_job(move |inner| inner.diff_untracked(&path))?
+            .recv()
+            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+    }
+
+    fn diff_untracked_async(
+        &self,
+        path: PathBuf,
+    ) -> Result<Receiver<Result<Vec<DiffLine>, GitError>>, GitError> {
+        self.spawn_repo_job(move |inner| inner.diff_untracked(&path))
+    }
+
+    fn diff_directory(&self, path: &std::path::Path) -> Result<Vec<DiffLine>, GitError> {
+        let path = path.to_path_buf();
+        self.spawn_repo_job(move |inner| inner.diff_directory(&path))?
+            .recv()
+            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+    }
+
+    fn diff_directory_async(
+        &self,
+        path: PathBuf,
+    ) -> Result<Receiver<Result<Vec<DiffLine>, GitError>>, GitError> {
+        self.spawn_repo_job(move |inner| inner.diff_directory(&path))
+    }
+
+    fn branches(&self) -> Result<Vec<BranchInfo>, GitError> {
+        self.spawn_repo_job(|inner| inner.branches())?
+            .recv()
+            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+    }
+
+    fn branches_async(&self) -> Result<Receiver<Result<Vec<BranchInfo>, GitError>>, GitError> {
+        self.spawn_repo_job(|inner| inner.branches())
+    }
+
+    fn branch_log(&self, name: &str, limit: usize) -> Result<Vec<DiffLine>, GitError> {
+        let name = name.to_string();
+        self.spawn_repo_job(move |inner| inner.branch_log(&name, limit))?
+            .recv()
+            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+    }
+
+    fn branch_log_async(
+        &self,
+        name: String,
+        limit: usize,
+    ) -> Result<Receiver<Result<Vec<DiffLine>, GitError>>, GitError> {
+        self.spawn_repo_job(move |inner| inner.branch_log(&name, limit))
+    }
+
+    fn commits(&self, limit: usize) -> Result<Vec<CommitInfo>, GitError> {
+        self.spawn_repo_job(move |inner| inner.commits(limit))?
+            .recv()
+            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+    }
+
+    fn commits_async(
+        &self,
+        limit: usize,
+    ) -> Result<Receiver<Result<Vec<CommitInfo>, GitError>>, GitError> {
+        self.spawn_repo_job(move |inner| inner.commits(limit))
+    }
+
+    fn commits_for_branch(&self, name: &str, limit: usize) -> Result<Vec<CommitInfo>, GitError> {
+        let name = name.to_string();
+        self.spawn_repo_job(move |inner| inner.commits_for_branch(&name, limit))?
+            .recv()
+            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+    }
+
+    fn commits_for_branch_async(
+        &self,
+        name: &str,
+        limit: usize,
+    ) -> Result<Receiver<Result<Vec<CommitInfo>, GitError>>, GitError> {
+        let name = name.to_string();
+        self.spawn_repo_job(move |inner| inner.commits_for_branch(&name, limit))
+    }
+
+    fn commit_files(&self, oid: &str) -> Result<Vec<FileEntry>, GitError> {
+        let oid = oid.to_string();
+        self.spawn_repo_job(move |inner| inner.commit_files(&oid))?
+            .recv()
+            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+    }
+
+    fn stashes(&self) -> Result<Vec<StashInfo>, GitError> {
+        self.spawn_repo_job(|inner| inner.stashes())?
+            .recv()
+            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+    }
+
+    fn stashes_async(&self) -> Result<Receiver<Result<Vec<StashInfo>, GitError>>, GitError> {
+        self.spawn_repo_job(|inner| inner.stashes())
+    }
+
+    fn stash_files(&self, index: usize) -> Result<Vec<FileEntry>, GitError> {
+        self.spawn_repo_job(move |inner| inner.stash_files(index))?
+            .recv()
+            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+    }
+
+    fn stash_diff(
+        &self,
+        index: usize,
+        path: Option<&std::path::Path>,
+    ) -> Result<Vec<DiffLine>, GitError> {
+        let path = path.map(|p| p.to_path_buf());
+        self.spawn_repo_job(move |inner| inner.stash_diff(index, path.as_deref()))?
+            .recv()
+            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+    }
+
+    fn stash_diff_async(
+        &self,
+        index: usize,
+        path: Option<PathBuf>,
+    ) -> Result<Receiver<Result<Vec<DiffLine>, GitError>>, GitError> {
+        self.spawn_repo_job(move |inner| inner.stash_diff(index, path.as_deref()))
+    }
+
+    fn stash_push_paths(&self, paths: &[PathBuf], message: &str) -> Result<usize, GitError> {
+        let paths = paths.to_vec();
+        let message = message.to_string();
+        self.spawn_repo_job(move |inner| inner.stash_push_paths(&paths, &message))?
+            .recv()
+            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+    }
+
+    fn stash_push_paths_async(
+        &self,
+        paths: Vec<PathBuf>,
+        message: String,
+    ) -> Result<Receiver<Result<usize, GitError>>, GitError> {
+        self.spawn_repo_job(move |inner| inner.stash_push_paths(&paths, &message))
+    }
+
+    fn stash_apply(&self, index: usize) -> Result<(), GitError> {
+        self.spawn_repo_job(move |inner| inner.stash_apply(index))?
+            .recv()
+            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+    }
+
+    fn stash_apply_async(&self, index: usize) -> Result<Receiver<Result<(), GitError>>, GitError> {
+        self.spawn_repo_job(move |inner| inner.stash_apply(index))
+    }
+
+    fn stash_pop(&self, index: usize) -> Result<(), GitError> {
+        self.spawn_repo_job(move |inner| inner.stash_pop(index))?
+            .recv()
+            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+    }
+
+    fn stash_pop_async(&self, index: usize) -> Result<Receiver<Result<(), GitError>>, GitError> {
+        self.spawn_repo_job(move |inner| inner.stash_pop(index))
+    }
+
+    fn stash_drop(&self, index: usize) -> Result<(), GitError> {
+        self.spawn_repo_job(move |inner| inner.stash_drop(index))?
+            .recv()
+            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+    }
+
+    fn stash_drop_async(&self, index: usize) -> Result<Receiver<Result<(), GitError>>, GitError> {
+        self.spawn_repo_job(move |inner| inner.stash_drop(index))
+    }
+
+    fn commit_diff_scoped(
+        &self,
+        oid: &str,
+        path: Option<&std::path::Path>,
+    ) -> Result<Vec<DiffLine>, GitError> {
+        let oid = oid.to_string();
+        let path = path.map(|p| p.to_path_buf());
+        self.spawn_repo_job(move |inner| inner.commit_diff_scoped(&oid, path.as_deref()))?
+            .recv()
+            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+    }
+
+    fn commit_diff_scoped_async(
+        &self,
+        oid: String,
+        path: Option<PathBuf>,
+    ) -> Result<Receiver<Result<Vec<DiffLine>, GitError>>, GitError> {
+        self.spawn_repo_job(move |inner| inner.commit_diff_scoped(&oid, path.as_deref()))
+    }
+
+    fn commit(&self, message: &str) -> Result<String, GitError> {
+        let message = message.to_string();
+        self.spawn_repo_job(move |inner| inner.commit(&message))?
+            .recv()
+            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+    }
+
+    fn commit_async(
+        &self,
+        message: String,
+    ) -> Result<Receiver<Result<String, GitError>>, GitError> {
+        self.spawn_repo_job(move |inner| inner.commit(&message))
+    }
+
+    fn create_branch(&self, name: &str) -> Result<(), GitError> {
+        let name = name.to_string();
+        self.spawn_repo_job(move |inner| inner.create_branch(&name))?
+            .recv()
+            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+    }
+
+    fn create_branch_async(
+        &self,
+        name: String,
+    ) -> Result<Receiver<Result<(), GitError>>, GitError> {
+        self.spawn_repo_job(move |inner| inner.create_branch(&name))
+    }
+
+    fn checkout_branch(&self, name: &str) -> Result<(), GitError> {
+        let name = name.to_string();
+        self.spawn_repo_job(move |inner| inner.checkout_branch(&name))?
+            .recv()
+            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+    }
+
+    fn checkout_branch_async(
+        &self,
+        name: String,
+    ) -> Result<Receiver<Result<(), GitError>>, GitError> {
+        self.spawn_repo_job(move |inner| inner.checkout_branch(&name))
+    }
+
+    fn checkout_branch_with_auto_stash(&self, name: &str) -> Result<(), GitError> {
+        let name = name.to_string();
+        self.spawn_repo_job(move |inner| inner.checkout_branch_with_auto_stash(&name))?
+            .recv()
+            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+    }
+
+    fn checkout_branch_with_auto_stash_async(
+        &self,
+        name: String,
+    ) -> Result<Receiver<Result<(), GitError>>, GitError> {
+        self.spawn_repo_job(move |inner| inner.checkout_branch_with_auto_stash(&name))
+    }
+
+    fn delete_branch(&self, name: &str) -> Result<(), GitError> {
+        let name = name.to_string();
+        self.spawn_repo_job(move |inner| inner.delete_branch(&name))?
+            .recv()
+            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
     }
 
     fn delete_branch_async(
         &self,
         name: String,
     ) -> Result<Receiver<Result<(), GitError>>, GitError> {
-        self.spawn_repo_job(move |repo| repo.delete_branch(&name))
+        self.spawn_repo_job(move |inner| inner.delete_branch(&name))
     }
 
     fn fetch_default_async(&self) -> Result<Receiver<Result<String, GitError>>, GitError> {
-        let repo_root = self.repo_root()?;
-        let upstream = self.run_git(&["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
-        let remote = match upstream {
-            Ok(name) => parse_remote_from_upstream(&name).unwrap_or_else(|| "origin".to_string()),
-            Err(_) => "origin".to_string(),
+        let repo_root = self.repo_root.clone();
+        let upstream_result = self.spawn_repo_job(|inner| {
+            inner.run_git(&["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])
+        });
+        let remote = match upstream_result.and_then(|rx| {
+            rx.recv()
+                .map_err(|_| GitError::Git2("worker disconnected".to_string()))
+        }) {
+            Ok(Ok(name)) => {
+                parse_remote_from_upstream(&name).unwrap_or_else(|| "origin".to_string())
+            }
+            _ => "origin".to_string(),
         };
 
         let (tx, rx) = mpsc::channel();
         thread::spawn(move || {
             let args = vec!["fetch".to_string(), "--prune".to_string(), remote.clone()];
-            let result = Self::run_git_in_dir(repo_root, &args).map(|_| remote);
+            let result = Git2RepoInner::run_git_in_dir(repo_root, &args).map(|_| remote);
             let _ = tx.send(result);
         });
         Ok(rx)
-    }
-}
-
-impl Git2Repository {
-    #[allow(dead_code)]
-    async fn spawn_repo_job_tokio<T, F>(&self, job: F) -> Result<T, GitError>
-    where
-        T: Send + 'static,
-        F: FnOnce(Git2Repository) -> Result<T, GitError> + Send + 'static,
-    {
-        let repo_root = self.repo_root()?;
-        let join = task::spawn_blocking(move || {
-            let repo = git2::Repository::open(repo_root)?;
-            let repo = Git2Repository { repo };
-            job(repo)
-        })
-        .await
-        .map_err(|err| GitError::Git2(format!("tokio task join failed: {}", err)))?;
-        join
     }
 }
 
