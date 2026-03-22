@@ -1,0 +1,121 @@
+use std::path::PathBuf;
+
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub enum DomainAction {
+    PanelNext,
+    PanelPrev,
+    PanelGoto(usize),
+    ListUp,
+    ListDown,
+    DiffScrollUp,
+    DiffScrollDown,
+    ToggleDir,
+    CollapseAll,
+    ExpandAll,
+    Quit,
+    RefreshStatus,
+    StartCommitInput,
+    StartCommandPalette,
+    StartSearchInput,
+    StartBranchCreateInput,
+    CheckoutSelectedBranch,
+    BranchSwitchConfirm(bool),
+    DeleteSelectedBranch,
+    FetchRemote,
+    FetchRemoteFinished(Result<String, String>),
+    CreateBranch(String),
+    CreateBranchFinished {
+        name: String,
+        result: Result<(), String>,
+    },
+    CheckoutBranchFinished {
+        name: String,
+        auto_stash: bool,
+        result: Result<(), String>,
+    },
+    DeleteBranchFinished {
+        name: String,
+        result: Result<(), String>,
+    },
+    Commit(String),
+    CommitFinished {
+        message: String,
+        result: Result<String, String>,
+    },
+    StageFile(PathBuf),
+    UnstageFile(PathBuf),
+    DiscardPaths(Vec<PathBuf>),
+    StageFileFinished {
+        path: PathBuf,
+        result: Result<(), String>,
+    },
+    UnstageFileFinished {
+        path: PathBuf,
+        result: Result<(), String>,
+    },
+    DiscardPathsFinished {
+        paths: Vec<PathBuf>,
+        result: Result<(), String>,
+    },
+    ToggleVisualSelectMode,
+    ToggleStageSelection,
+    DiscardSelection,
+    PrepareCommitFromSelection,
+    StartStashInput,
+    StashPush {
+        message: String,
+        paths: Vec<PathBuf>,
+    },
+    StashPushFinished {
+        message: String,
+        result: Result<usize, String>,
+    },
+    RevisionOpenTreeOrToggleDir,
+    RevisionCloseTree,
+    StashApplySelected,
+    StashApplyFinished {
+        index: usize,
+        result: Result<(), String>,
+    },
+    StashPopSelected,
+    StashPopFinished {
+        index: usize,
+        result: Result<(), String>,
+    },
+    StashDropSelected,
+    StashDropFinished {
+        index: usize,
+        result: Result<(), String>,
+    },
+    SearchSetQuery(String),
+    SearchConfirm,
+    SearchClear,
+    SearchNext,
+    SearchPrev,
+    InputEsc,
+    InputTab,
+    InputEnter,
+    InputBackspace,
+    InputChar(char),
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub enum SystemAction {
+    Tick,
+    Resize { width: u16, height: u16 },
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub enum Action {
+    Domain(DomainAction),
+    System(SystemAction),
+}
+
+#[derive(Debug, Clone)]
+pub struct ActionEnvelope {
+    pub sequence: u64,
+    pub action: Action,
+}

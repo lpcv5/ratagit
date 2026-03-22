@@ -1251,12 +1251,14 @@ fn render_pipe_set(row: &GraphCommitRow, pipes: &[Pipe], charset: GraphCharset) 
         if from >= width || to >= width {
             continue;
         }
-        for col in from.min(to)..=from.max(to) {
+        let start = from.min(to);
+        let end = from.max(to);
+        for oid_set in col_oids.iter_mut().take(end + 1).skip(start) {
             if let Some(h) = pipe.from_hash {
-                col_oids[col].insert(h.to_string());
+                oid_set.insert(h.to_string());
             }
             if let Some(h) = pipe.to_hash {
-                col_oids[col].insert(h.to_string());
+                oid_set.insert(h.to_string());
             }
         }
     }

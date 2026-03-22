@@ -26,20 +26,15 @@ pub fn compute_highlight_set(commits: &[CommitInfo], selected_oid: &str) -> Hash
     highlighted.insert(selected_oid.to_string());
 
     // Walk ancestors via first-parent chain.
-    let mut cur_oid = selected_oid.to_string();
-    loop {
-        let idx = match oid_to_idx.get(cur_oid.as_str()) {
-            Some(&i) => i,
-            None => break,
+    let mut cur_oid = selected_oid;
+    while let Some(&idx) = oid_to_idx.get(cur_oid) {
+        let Some(first_parent) = commits[idx].parent_oids.first().map(String::as_str) else {
+            break;
         };
-        let first_parent = match commits[idx].parent_oids.first() {
-            Some(p) => p.clone(),
-            None => break,
-        };
-        if !oid_to_idx.contains_key(first_parent.as_str()) {
+        if !oid_to_idx.contains_key(first_parent) {
             break;
         }
-        highlighted.insert(first_parent.clone());
+        highlighted.insert(first_parent.to_string());
         cur_oid = first_parent;
     }
 

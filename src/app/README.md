@@ -4,10 +4,12 @@ This folder is organized so new contributors can find behavior quickly.
 
 ## Entry Files
 - `app.rs`: `App` state model and state-manipulation methods.
-- `message.rs`: TEA message definitions.
-- `update.rs`: top-level message router.
 - `command.rs`: command abstraction.
-- `update_tests.rs`: update-layer behavioral tests and mock repository setup (included by `update.rs` under `#[cfg(test)]`).
+- `test_dispatch.rs`: test helpers:
+  - `dispatch_test_action(app, action)` dispatches one `DomainAction` through Flux.
+  - `map_test_key(app, key)` maps key input via `flux::input_mapper`.
+  - `dispatch_test_key(app, key)` maps and dispatches key input through Flux.
+- `update_tests.rs`: behavior regression tests (included by `app/mod.rs` under `#[cfg(test)]`).
 
 ## Domain Modules
 - `panel_nav.rs`: active panel counting and list navigation behavior.
@@ -19,14 +21,9 @@ This folder is organized so new contributors can find behavior quickly.
 - `refresh.rs`: status refresh and file-tree rebuild/expand-collapse helpers.
 - `revision_tree.rs`: shared commit/stash tree-mode lifecycle helpers.
 - `diff_loader.rs`: diff target selector output -> diff loading logic.
-- `update_handlers/`: message handlers grouped by domain:
-  - `navigation.rs`
-  - `revision.rs`
-  - `staging.rs`
-  - `stash.rs`
-  - `branch.rs`
-  - `commit.rs`
-  - `quit.rs`
 
 ## Data Flow
-`UI -> Message -> update.rs -> update_handlers/* -> App -> GitRepository`
+`UI Input -> Action -> Dispatcher (Flux stores) -> App -> AppStateSnapshot -> UI Render`
+
+Test input mapping follows the same runtime path via `flux::input_mapper` and test dispatch helpers.
+

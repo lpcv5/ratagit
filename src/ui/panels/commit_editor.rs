@@ -1,4 +1,5 @@
-use crate::app::{App, CommitFieldFocus, InputMode};
+use crate::app::{CommitFieldFocus, InputMode};
+use crate::flux::snapshot::AppStateSnapshot;
 use crate::ui::theme::UiTheme;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -8,8 +9,8 @@ use ratatui::{
     Frame,
 };
 
-pub fn render_commit_editor(frame: &mut Frame, app: &App) {
-    if app.input_mode != Some(InputMode::CommitEditor) {
+pub fn render_commit_editor(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
+    if snapshot.input_mode != Some(InputMode::CommitEditor) {
         return;
     }
 
@@ -29,10 +30,10 @@ pub fn render_commit_editor(frame: &mut Frame, app: &App) {
         .constraints([Constraint::Length(3), Constraint::Min(5)])
         .split(inner);
 
-    let message_active = app.commit_focus == CommitFieldFocus::Message;
-    let desc_active = app.commit_focus == CommitFieldFocus::Description;
-    let (msg_line, msg_col) = line_col(&app.commit_message_buffer);
-    let (desc_line, desc_col) = line_col(&app.commit_description_buffer);
+    let message_active = snapshot.commit_focus == CommitFieldFocus::Message;
+    let desc_active = snapshot.commit_focus == CommitFieldFocus::Description;
+    let (msg_line, msg_col) = line_col(snapshot.commit_message_buffer);
+    let (desc_line, desc_col) = line_col(snapshot.commit_description_buffer);
     let (focus_name, focus_line, focus_col) = if message_active {
         ("Message", msg_line, msg_col)
     } else {
@@ -51,7 +52,7 @@ pub fn render_commit_editor(frame: &mut Frame, app: &App) {
     } else {
         "Message (Enter to confirm commit)"
     };
-    let message = Paragraph::new(app.commit_message_buffer.as_str())
+    let message = Paragraph::new(snapshot.commit_message_buffer)
         .block(theme.panel_block(message_title, message_active));
     frame.render_widget(message, sections[0]);
 
@@ -60,7 +61,7 @@ pub fn render_commit_editor(frame: &mut Frame, app: &App) {
     } else {
         "Description (Tab switch, Enter newline)"
     };
-    let description = Paragraph::new(app.commit_description_buffer.as_str())
+    let description = Paragraph::new(snapshot.commit_description_buffer)
         .style(Style::default().fg(theme.text_primary))
         .block(theme.panel_block(desc_title, desc_active));
     frame.render_widget(description, sections[1]);

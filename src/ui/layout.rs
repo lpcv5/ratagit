@@ -1,8 +1,9 @@
-use crate::app::{App, SidePanel};
+use crate::app::SidePanel;
+use crate::flux::snapshot::AppStateSnapshot;
 use crate::ui::components::organisms::{PanelComponent, PanelRenderContext};
 use crate::ui::panels::{
-    render_branch_switch_confirm, render_command_log, render_commit_editor, render_diff_panel,
-    render_shortcut_bar, render_stash_editor, DiffViewProps,
+    render_branch_switch_confirm, render_command_log, render_command_palette, render_commit_editor,
+    render_diff_panel, render_shortcut_bar, render_stash_editor, DiffViewProps,
 };
 use ratatui::{
     layout::{Constraint, Direction, Layout},
@@ -16,7 +17,7 @@ const PANEL_BORDER_ROWS: u16 = 2;
 const LEFT_PANEL_DEFAULT_SPLIT: [u16; 3] = [40, 30, 30];
 const LEFT_PANEL_FOCUS_SPLIT: [u16; 3] = [60, 20, 20];
 
-pub fn render_layout(frame: &mut Frame, app: &App) {
+pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
     let size = frame.area();
     let vertical = Layout::default()
         .direction(Direction::Vertical)
@@ -30,7 +31,7 @@ pub fn render_layout(frame: &mut Frame, app: &App) {
         .split(vertical[0]);
 
     let left_h = horizontal[0].height;
-    let stash_focused = app.active_panel == SidePanel::Stash;
+    let stash_focused = snapshot.active_panel == SidePanel::Stash;
 
     // Stash panel: COLLAPSED_HEIGHT when not focused, else share remaining space
     let stash_h = if stash_focused {
@@ -57,18 +58,18 @@ pub fn render_layout(frame: &mut Frame, app: &App) {
         ])
         .split(top_rect);
 
-    let focus_index = match app.active_panel {
+    let focus_index = match snapshot.active_panel {
         SidePanel::Files => Some(0usize),
         SidePanel::LocalBranches => Some(1usize),
         SidePanel::Commits => Some(2usize),
         SidePanel::Stash => None,
     };
-    let focus_item_count = match app.active_panel {
-        SidePanel::Files => app.files.tree_nodes.len(),
-        SidePanel::LocalBranches => app.branches.items.len(),
+    let focus_item_count = match snapshot.active_panel {
+        SidePanel::Files => snapshot.files.tree_nodes.len(),
+        SidePanel::LocalBranches => snapshot.branches.items.len(),
         // Keep commit panel sizing stable when toggling between commit list and tree mode.
         // Use the parent commit list length as the single source for overflow checks.
-        SidePanel::Commits => app.commits.items.len(),
+        SidePanel::Commits => snapshot.commits.items.len(),
         SidePanel::Stash => 0,
     };
 
@@ -128,47 +129,39 @@ pub fn render_layout(frame: &mut Frame, app: &App) {
     };
 
     let files_ctx = PanelRenderContext {
-        active_panel: app.active_panel,
-        search_query: app.search_query_for_scope(SidePanel::Files, false, false),
-        search_summary: app.render_cache.files_search_summary.as_deref(),
-        visual_selected_indices: &app.render_cache.files_visual_selected_indices,
+        active_panel: snapshot.active_panel,
+        search_query: snapshot.files_search_query,
+        search_summary: snapshot.render_cache.files_search_summary.as_deref(),
+        visual_selected_indices: &snapshot.render_cache.files_visual_selected_indices,
         highlighted_oids: PanelRenderContext::empty_highlighted_oids(),
     };
-    app.files.draw(frame, left_panels[0], &files_ctx);
+    snapshot.files.draw(frame, left_panels[0], &files_ctx);
     let branches_ctx = PanelRenderContext {
-        active_panel: app.active_panel,
-        search_query: app.search_query_for_scope(SidePanel::LocalBranches, false, false),
-        search_summary: app.render_cache.branches_search_summary.as_deref(),
+        active_panel: snapshot.active_panel,
+        search_query: snapshot.branches_search_query,
+        search_summary: snapshot.render_cache.branches_search_summary.as_deref(),
         visual_selected_indices: PanelRenderContext::empty_visual_selected_indices(),
         highlighted_oids: PanelRenderContext::empty_highlighted_oids(),
     };
-    app.branches.draw(frame, left_panels[1], &branches_ctx);
+    snapshot.branches.draw(frame, left_panels[1], &branches_ctx);
 
     let commits_ctx = PanelRenderContext {
-        active_panel: app.active_panel,
-        search_query: app.search_query_for_scope(
-            SidePanel::Commits,
-            app.commits.tree_mode.active,
-            false,
-        ),
-        search_summary: app.render_cache.commits_search_summary.as_deref(),
+        active_panel: snapshot.active_panel,
+        search_query: snapshot.commits_search_query,
+        search_summary: snapshot.render_cache.commits_search_summary.as_deref(),
         visual_selected_indices: PanelRenderContext::empty_visual_selected_indices(),
-        highlighted_oids: &app.commits.highlighted_oids,
+        highlighted_oids: &snapshot.commits.highlighted_oids,
     };
-    app.commits.draw(frame, left_panels[2], &commits_ctx);
+    snapshot.commits.draw(frame, left_panels[2], &commits_ctx);
 
     let stash_ctx = PanelRenderContext {
-        active_panel: app.active_panel,
-        search_query: app.search_query_for_scope(
-            SidePanel::Stash,
-            false,
-            app.stash.tree_mode.active,
-        ),
-        search_summary: app.render_cache.stash_search_summary.as_deref(),
+        active_panel: snapshot.active_panel,
+        search_query: snapshot.stash_search_query,
+        search_summary: snapshot.render_cache.stash_search_summary.as_deref(),
         visual_selected_indices: PanelRenderContext::empty_visual_selected_indices(),
         highlighted_oids: PanelRenderContext::empty_highlighted_oids(),
     };
-    app.stash.draw(frame, stash_area, &stash_ctx);
+    snapshot.stash.draw(frame, stash_area, &stash_ctx);
 
     // Right side: diff + command log
     // Command log collapses to COLLAPSED_HEIGHT when stash is not the concern
@@ -190,15 +183,16 @@ pub fn render_layout(frame: &mut Frame, app: &App) {
         frame,
         diff_area,
         DiffViewProps {
-            lines: &app.current_diff,
-            scroll: app.diff_scroll,
-            active_panel: app.active_panel,
-            is_loading: app.has_pending_diff_reload() && app.current_diff.is_empty(),
+            lines: snapshot.current_diff,
+            scroll: snapshot.diff_scroll,
+            active_panel: snapshot.active_panel,
+            is_loading: snapshot.diff_loading,
         },
     );
-    render_command_log(frame, log_area, app);
-    render_shortcut_bar(frame, vertical[1], app);
-    render_commit_editor(frame, app);
-    render_stash_editor(frame, app);
-    render_branch_switch_confirm(frame, app);
+    render_command_log(frame, log_area, snapshot);
+    render_shortcut_bar(frame, vertical[1], snapshot);
+    render_commit_editor(frame, snapshot);
+    render_stash_editor(frame, snapshot);
+    render_branch_switch_confirm(frame, snapshot);
+    render_command_palette(frame, snapshot);
 }

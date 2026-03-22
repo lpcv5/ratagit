@@ -1,5 +1,5 @@
-use super::Message;
-use std::sync::mpsc::Receiver;
+use crate::flux::action::DomainAction;
+use crate::flux::effects::EffectRequest;
 
 /// Documentation comment in English.
 #[allow(dead_code)]
@@ -8,7 +8,7 @@ pub enum Command {
     /// Documentation comment in English.
     None,
     /// Documentation comment in English.
-    Async(Receiver<Message>),
+    Sync(DomainAction),
     /// Documentation comment in English.
-    Sync(Message),
+    Effect(EffectRequest),
 }
