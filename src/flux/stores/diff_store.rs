@@ -30,3 +30,33 @@ impl Store for DiffStore {
         ReduceOutput::none()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::flux::action::{Action, DomainAction, SystemAction};
+    use crate::flux::stores::test_support::{make_envelope, mock_app};
+
+    fn reduce(store: &mut DiffStore, app: &mut crate::app::App, action: Action) -> ReduceOutput {
+        let env = make_envelope(action);
+        let mut ctx = ReduceCtx { app };
+        store.reduce(&env, &mut ctx)
+    }
+
+    #[test]
+    fn test_non_tick_does_nothing() {
+        let mut store = DiffStore::new();
+        let mut app = mock_app();
+        let output = reduce(&mut store, &mut app, Action::Domain(DomainAction::Quit));
+        assert!(output.commands.is_empty());
+    }
+
+    #[test]
+    fn test_tick_without_pending_diff_does_nothing() {
+        let mut store = DiffStore::new();
+        let mut app = mock_app();
+        // No pending diff reload
+        let output = reduce(&mut store, &mut app, Action::System(SystemAction::Tick));
+        assert!(output.commands.is_empty());
+    }
+}

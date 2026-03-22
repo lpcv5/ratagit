@@ -38,3 +38,60 @@ impl Store for CommitStore {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::flux::action::{Action, DomainAction};
+    use crate::flux::stores::test_support::{make_envelope, mock_app};
+
+    fn reduce(store: &mut CommitStore, app: &mut crate::app::App, action: Action) -> ReduceOutput {
+        let env = make_envelope(action);
+        let mut ctx = ReduceCtx { app };
+        store.reduce(&env, &mut ctx)
+    }
+
+    #[test]
+    fn test_commit_emits_effect() {
+        let mut store = CommitStore::new();
+        let mut app = mock_app();
+        let output = reduce(
+            &mut store,
+            &mut app,
+            Action::Domain(DomainAction::Commit("fix: test".to_string())),
+        );
+        assert!(!output.commands.is_empty());
+    }
+
+    #[test]
+    fn test_commit_finished_ok_logs_success() {
+        let mut store = CommitStore::new();
+        let mut app = mock_app();
+        let logs_before = app.command_log.len();
+        reduce(
+            &mut store,
+            &mut app,
+            Action::Domain(DomainAction::CommitFinished {
+                message: "fix: test".to_string(),
+                result: Ok("abc1234".to_string()),
+            }),
+        );
+        assert!(app.command_log.len() > logs_before);
+    }
+
+    #[test]
+    fn test_commit_finished_err_logs_failure() {
+        let mut store = CommitStore::new();
+        let mut app = mock_app();
+        let logs_before = app.command_log.len();
+        reduce(
+            &mut store,
+            &mut app,
+            Action::Domain(DomainAction::CommitFinished {
+                message: "fix: test".to_string(),
+                result: Err("commit failed".to_string()),
+            }),
+        );
+        assert!(app.command_log.len() > logs_before);
+    }
+}

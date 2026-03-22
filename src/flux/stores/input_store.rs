@@ -206,3 +206,250 @@ impl Store for InputStore {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::InputMode;
+    use crate::flux::action::{Action, DomainAction};
+    use crate::flux::stores::test_support::{make_envelope, mock_app};
+    use pretty_assertions::assert_eq;
+
+    fn reduce(store: &mut InputStore, app: &mut crate::app::App, action: Action) -> ReduceOutput {
+        let env = make_envelope(action);
+        let mut ctx = ReduceCtx { app };
+        store.reduce(&env, &mut ctx)
+    }
+
+    #[test]
+    fn test_non_input_action_ignored() {
+        let mut store = InputStore::new();
+        let mut app = mock_app();
+        let output = reduce(&mut store, &mut app, Action::Domain(DomainAction::Quit));
+        assert!(output.commands.is_empty());
+    }
+
+    #[test]
+    fn test_no_input_mode_ignored() {
+        let mut store = InputStore::new();
+        let mut app = mock_app();
+        app.input_mode = None;
+        let output = reduce(
+            &mut store,
+            &mut app,
+            Action::Domain(DomainAction::InputEnter),
+        );
+        assert!(output.commands.is_empty());
+    }
+
+    #[test]
+    fn test_input_char_in_create_branch_mode_updates_buffer() {
+        let mut store = InputStore::new();
+        let mut app = mock_app();
+        app.input_mode = Some(InputMode::CreateBranch);
+        app.input_buffer.clear();
+        reduce(
+            &mut store,
+            &mut app,
+            Action::Domain(DomainAction::InputChar('f')),
+        );
+        assert_eq!(app.input_buffer, "f");
+    }
+
+    #[test]
+    fn test_input_backspace_in_create_branch_removes_char() {
+        let mut store = InputStore::new();
+        let mut app = mock_app();
+        app.input_mode = Some(InputMode::CreateBranch);
+        app.input_buffer = "feature".to_string();
+        reduce(
+            &mut store,
+            &mut app,
+            Action::Domain(DomainAction::InputBackspace),
+        );
+        assert_eq!(app.input_buffer, "featur");
+    }
+
+    #[test]
+    fn test_input_esc_in_search_mode_clears_and_exits() {
+        let mut store = InputStore::new();
+        let mut app = mock_app();
+        app.input_mode = Some(InputMode::Search);
+        app.search_query = "foo".to_string();
+        reduce(&mut store, &mut app, Action::Domain(DomainAction::InputEsc));
+        assert!(app.input_mode.is_none());
+        assert!(app.search_query.is_empty());
+    }
+
+    #[test]
+    fn test_input_esc_in_commit_mode_cancels() {
+        let mut store = InputStore::new();
+        let mut app = mock_app();
+        app.input_mode = Some(InputMode::CommitEditor);
+        app.commit_message_buffer = "wip".to_string();
+        reduce(&mut store, &mut app, Action::Domain(DomainAction::InputEsc));
+        assert!(app.input_mode.is_none());
+        assert!(app.commit_message_buffer.is_empty());
+    }
+
+    #[test]
+    fn test_input_enter_create_branch_emits_create_branch_command() {
+        let mut store = InputStore::new();
+        let mut app = mock_app();
+        app.input_mode = Some(InputMode::CreateBranch);
+        app.input_buffer = "feature".to_string();
+        let output = reduce(
+            &mut store,
+            &mut app,
+            Action::Domain(DomainAction::InputEnter),
+        );
+        assert!(!output.commands.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod more_tests {
+    use super::*;
+    use crate::app::{CommitFieldFocus, InputMode};
+    use crate::flux::action::{Action, DomainAction};
+    use crate::flux::stores::test_support::{make_envelope, mock_app};
+    use pretty_assertions::assert_eq;
+
+    fn reduce(store: &mut InputStore, app: &mut crate::app::App, action: Action) -> ReduceOutput {
+        let env = make_envelope(action);
+        let mut ctx = ReduceCtx { app };
+        store.reduce(&env, &mut ctx)
+    }
+
+    #[test]
+    fn test_input_char_in_commit_editor_message_focus() {
+        let mut store = InputStore::new();
+        let mut app = mock_app();
+        app.input_mode = Some(InputMode::CommitEditor);
+        app.commit_focus = CommitFieldFocus::Message;
+        reduce(
+            &mut store,
+            &mut app,
+            Action::Domain(DomainAction::InputChar('x')),
+        );
+        assert_eq!(app.commit_message_buffer, "x");
+    }
+
+    #[test]
+    fn test_input_char_in_commit_editor_description_focus() {
+        let mut store = InputStore::new();
+        let mut app = mock_app();
+        app.input_mode = Some(InputMode::CommitEditor);
+        app.commit_focus = CommitFieldFocus::Description;
+        reduce(
+            &mut store,
+            &mut app,
+            Action::Domain(DomainAction::InputChar('y')),
+        );
+        assert_eq!(app.commit_description_buffer, "y");
+    }
+
+    #[test]
+    fn test_input_tab_in_commit_editor_switches_focus() {
+        let mut store = InputStore::new();
+        let mut app = mock_app();
+        app.input_mode = Some(InputMode::CommitEditor);
+        app.commit_focus = CommitFieldFocus::Message;
+        reduce(&mut store, &mut app, Action::Domain(DomainAction::InputTab));
+        assert_eq!(app.commit_focus, CommitFieldFocus::Description);
+    }
+
+    #[test]
+    fn test_input_enter_in_commit_editor_message_with_content_emits_commit_command() {
+        let mut store = InputStore::new();
+        let mut app = mock_app();
+        app.input_mode = Some(InputMode::CommitEditor);
+        app.commit_focus = CommitFieldFocus::Message;
+        app.commit_message_buffer = "fix: test".to_string();
+        let output = reduce(
+            &mut store,
+            &mut app,
+            Action::Domain(DomainAction::InputEnter),
+        );
+        assert!(!output.commands.is_empty());
+    }
+
+    #[test]
+    fn test_input_backspace_in_commit_editor_message() {
+        let mut store = InputStore::new();
+        let mut app = mock_app();
+        app.input_mode = Some(InputMode::CommitEditor);
+        app.commit_focus = CommitFieldFocus::Message;
+        app.commit_message_buffer = "fix".to_string();
+        reduce(
+            &mut store,
+            &mut app,
+            Action::Domain(DomainAction::InputBackspace),
+        );
+        assert_eq!(app.commit_message_buffer, "fi");
+    }
+
+    #[test]
+    fn test_input_char_in_stash_editor() {
+        let mut store = InputStore::new();
+        let mut app = mock_app();
+        app.input_mode = Some(InputMode::StashEditor);
+        reduce(
+            &mut store,
+            &mut app,
+            Action::Domain(DomainAction::InputChar('w')),
+        );
+        assert_eq!(app.stash_message_buffer, "w");
+    }
+
+    #[test]
+    fn test_input_enter_in_stash_editor_emits_stash_push_command() {
+        let mut store = InputStore::new();
+        let mut app = mock_app();
+        app.input_mode = Some(InputMode::StashEditor);
+        app.stash_message_buffer = "wip".to_string();
+        app.stash_targets = vec!["foo.txt".into()];
+        let output = reduce(
+            &mut store,
+            &mut app,
+            Action::Domain(DomainAction::InputEnter),
+        );
+        assert!(!output.commands.is_empty());
+    }
+
+    #[test]
+    fn test_input_char_in_command_palette() {
+        let mut store = InputStore::new();
+        let mut app = mock_app();
+        app.input_mode = Some(InputMode::CommandPalette);
+        reduce(
+            &mut store,
+            &mut app,
+            Action::Domain(DomainAction::InputChar('q')),
+        );
+        assert_eq!(app.input_buffer, "q");
+    }
+
+    #[test]
+    fn test_input_enter_in_command_palette_with_known_command() {
+        let mut store = InputStore::new();
+        let mut app = mock_app();
+        app.input_mode = Some(InputMode::CommandPalette);
+        app.input_buffer = "quit".to_string();
+        let output = reduce(
+            &mut store,
+            &mut app,
+            Action::Domain(DomainAction::InputEnter),
+        );
+        assert!(!output.commands.is_empty());
+    }
+
+    #[test]
+    fn test_input_esc_in_branch_switch_confirm_cancels() {
+        let mut store = InputStore::new();
+        let mut app = mock_app();
+        app.input_mode = Some(InputMode::BranchSwitchConfirm);
+        reduce(&mut store, &mut app, Action::Domain(DomainAction::InputEsc));
+        assert!(app.input_mode.is_none());
+    }
+}

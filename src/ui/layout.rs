@@ -2,8 +2,9 @@ use crate::app::SidePanel;
 use crate::flux::snapshot::AppStateSnapshot;
 use crate::ui::components::organisms::{PanelComponent, PanelRenderContext};
 use crate::ui::panels::{
-    render_branch_switch_confirm, render_command_log, render_command_palette, render_commit_all_confirm,
-    render_commit_editor, render_diff_panel, render_shortcut_bar, render_stash_editor, DiffViewProps,
+    render_branch_switch_confirm, render_command_log, render_command_palette,
+    render_commit_all_confirm, render_commit_editor, render_diff_panel, render_shortcut_bar,
+    render_stash_editor, DiffViewProps,
 };
 use ratatui::{
     layout::{Constraint, Direction, Layout},

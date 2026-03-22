@@ -159,6 +159,7 @@ fn cell_has_owner(cell: &crate::git::GraphCell, oid: &str) -> bool {
 mod tests {
     use super::*;
     use crate::git::{CommitInfo, CommitSyncState, GraphCell};
+    use pretty_assertions::assert_eq;
 
     fn make_commit(oid: &str, parents: &[&str]) -> CommitInfo {
         make_commit_with_lane(oid, parents, 0)

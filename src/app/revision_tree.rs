@@ -158,6 +158,7 @@ fn tree_selection_key(node: &FileTreeNode) -> TreeSelectionKey {
 mod tests {
     use super::*;
     use crate::git::{FileEntry, FileStatus};
+    use pretty_assertions::assert_eq;
 
     #[test]
     fn test_rebuild_tree_nodes_restores_selected_path_when_new_nodes_insert_before_it() {

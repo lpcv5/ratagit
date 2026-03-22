@@ -341,3 +341,214 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::flux::stores::test_support::MockRepo;
+    use pretty_assertions::assert_eq;
+    use std::rc::Rc;
+    use tokio::sync::Mutex;
+
+    fn make_ctx() -> EffectCtx {
+        let app = App::from_repo(Box::new(MockRepo)).expect("app");
+        EffectCtx {
+            app: Rc::new(Mutex::new(app)),
+        }
+    }
+
+    async fn run_effect(request: EffectRequest) -> Vec<Action> {
+        let mut ctx = make_ctx();
+        run(request, &mut ctx).await
+    }
+
+    fn assert_single_domain_action(actions: Vec<Action>) -> DomainAction {
+        assert_eq!(actions.len(), 1);
+        match actions.into_iter().next().expect("single action") {
+            Action::Domain(action) => action,
+            other => panic!("expected domain action, got: {other:?}"),
+        }
+    }
+
+    fn assert_no_actions(actions: Vec<Action>) {
+        assert!(actions.is_empty());
+    }
+
+    #[tokio::test]
+    async fn stage_file_effect_returns_stage_file_finished_action() {
+        let action = assert_single_domain_action(
+            run_effect(EffectRequest::StageFile("foo.txt".into())).await,
+        );
+        assert!(matches!(action, DomainAction::StageFileFinished { .. }));
+    }
+
+    #[tokio::test]
+    async fn unstage_file_effect_returns_unstage_file_finished_action() {
+        let action = assert_single_domain_action(
+            run_effect(EffectRequest::UnstageFile("foo.txt".into())).await,
+        );
+        assert!(matches!(action, DomainAction::UnstageFileFinished { .. }));
+    }
+
+    #[tokio::test]
+    async fn discard_paths_effect_returns_discard_paths_finished_action() {
+        let action = assert_single_domain_action(
+            run_effect(EffectRequest::DiscardPaths(vec!["foo.txt".into()])).await,
+        );
+        assert!(matches!(action, DomainAction::DiscardPathsFinished { .. }));
+    }
+
+    #[tokio::test]
+    async fn create_branch_effect_returns_create_branch_finished_action() {
+        let action = assert_single_domain_action(
+            run_effect(EffectRequest::CreateBranch("new-branch".to_string())).await,
+        );
+        assert!(matches!(action, DomainAction::CreateBranchFinished { .. }));
+    }
+
+    #[tokio::test]
+    async fn checkout_branch_effect_returns_checkout_branch_finished_action() {
+        let action = assert_single_domain_action(
+            run_effect(EffectRequest::CheckoutBranch {
+                name: "main".to_string(),
+                auto_stash: false,
+            })
+            .await,
+        );
+        assert!(matches!(
+            action,
+            DomainAction::CheckoutBranchFinished { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn delete_branch_effect_returns_delete_branch_finished_action() {
+        let action = assert_single_domain_action(
+            run_effect(EffectRequest::DeleteBranch("old-branch".to_string())).await,
+        );
+        assert!(matches!(action, DomainAction::DeleteBranchFinished { .. }));
+    }
+
+    #[tokio::test]
+    async fn commit_effect_returns_commit_finished_action() {
+        let action = assert_single_domain_action(
+            run_effect(EffectRequest::Commit("test commit".to_string())).await,
+        );
+        assert!(matches!(action, DomainAction::CommitFinished { .. }));
+    }
+
+    #[tokio::test]
+    async fn stash_push_effect_returns_stash_push_finished_action() {
+        let action = assert_single_domain_action(
+            run_effect(EffectRequest::StashPush {
+                message: "wip".to_string(),
+                paths: vec!["foo.txt".into()],
+            })
+            .await,
+        );
+        assert!(matches!(action, DomainAction::StashPushFinished { .. }));
+    }
+
+    #[tokio::test]
+    async fn stash_apply_effect_returns_stash_apply_finished_action() {
+        let action = assert_single_domain_action(run_effect(EffectRequest::StashApply(0)).await);
+        assert!(matches!(action, DomainAction::StashApplyFinished { .. }));
+    }
+
+    #[tokio::test]
+    async fn stash_pop_effect_returns_stash_pop_finished_action() {
+        let action = assert_single_domain_action(run_effect(EffectRequest::StashPop(0)).await);
+        assert!(matches!(action, DomainAction::StashPopFinished { .. }));
+    }
+
+    #[tokio::test]
+    async fn stash_drop_effect_returns_stash_drop_finished_action() {
+        let action = assert_single_domain_action(run_effect(EffectRequest::StashDrop(0)).await);
+        assert!(matches!(action, DomainAction::StashDropFinished { .. }));
+    }
+
+    #[tokio::test]
+    async fn flush_pending_refresh_without_log_success_returns_no_actions() {
+        assert_no_actions(
+            run_effect(EffectRequest::FlushPendingRefresh { log_success: false }).await,
+        );
+    }
+
+    #[tokio::test]
+    async fn reload_diff_now_effect_returns_no_actions() {
+        assert_no_actions(run_effect(EffectRequest::ReloadDiffNow).await);
+    }
+
+    #[tokio::test]
+    async fn flush_pending_diff_reload_effect_returns_no_actions() {
+        assert_no_actions(run_effect(EffectRequest::FlushPendingDiffReload).await);
+    }
+
+    #[tokio::test]
+    async fn ensure_commits_loaded_effect_returns_no_actions() {
+        assert_no_actions(run_effect(EffectRequest::EnsureCommitsLoadedForActivePanel).await);
+    }
+
+    #[tokio::test]
+    async fn toggle_stage_selection_effect_returns_no_actions() {
+        assert_no_actions(run_effect(EffectRequest::ToggleStageSelection).await);
+    }
+
+    #[tokio::test]
+    async fn start_commit_editor_guarded_effect_returns_no_actions() {
+        assert_no_actions(run_effect(EffectRequest::StartCommitEditorGuarded).await);
+    }
+
+    #[tokio::test]
+    async fn checkout_selected_branch_effect_returns_checkout_branch_finished_action() {
+        let mut ctx = make_ctx();
+        {
+            let mut app = ctx.app.lock().await;
+            app.active_panel = crate::app::SidePanel::LocalBranches;
+            app.branches.items = vec![crate::git::BranchInfo {
+                name: "main".to_string(),
+                is_current: true,
+            }];
+            app.branches.panel.list_state.select(Some(0));
+        }
+
+        let action =
+            assert_single_domain_action(run(EffectRequest::CheckoutSelectedBranch, &mut ctx).await);
+        assert!(matches!(
+            action,
+            DomainAction::CheckoutBranchFinished { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn stage_all_and_start_commit_editor_effect_returns_no_actions() {
+        assert_no_actions(run_effect(EffectRequest::StageAllAndStartCommitEditor).await);
+    }
+
+    #[tokio::test]
+    async fn prepare_commit_from_visual_selection_effect_returns_no_actions() {
+        assert_no_actions(run_effect(EffectRequest::PrepareCommitFromVisualSelection).await);
+    }
+
+    #[tokio::test]
+    async fn checkout_branch_with_auto_stash_effect_returns_checkout_branch_finished_action() {
+        let action = assert_single_domain_action(
+            run_effect(EffectRequest::CheckoutBranch {
+                name: "feature".to_string(),
+                auto_stash: true,
+            })
+            .await,
+        );
+        assert!(matches!(
+            action,
+            DomainAction::CheckoutBranchFinished { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn flush_pending_refresh_with_log_success_returns_no_actions() {
+        assert_no_actions(
+            run_effect(EffectRequest::FlushPendingRefresh { log_success: true }).await,
+        );
+    }
+}
