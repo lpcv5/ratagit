@@ -1,5 +1,6 @@
 use super::*;
 use crate::app::{App, RefreshKind, SidePanel};
+use crate::flux::action::DomainAction;
 use crate::git::{
     BranchInfo, CommitInfo, CommitSyncState, DiffLine, DiffLineKind, FileEntry, FileStatus,
     GitError, GitRepository, GitStatus, StashInfo,
@@ -913,7 +914,7 @@ fn test_revision_open_close_for_commits_panel() {
     app.active_panel = SidePanel::Commits;
     app.commits.panel.list_state.select(Some(0));
 
-    update(&mut app, Message::RevisionOpenTreeOrToggleDir);
+    dispatch_test_action(&mut app, DomainAction::RevisionOpenTreeOrToggleDir);
     assert!(app.commits.tree_mode.active);
     assert_eq!(
         app.commits.tree_mode.selected_source.as_deref(),
@@ -921,7 +922,7 @@ fn test_revision_open_close_for_commits_panel() {
     );
     assert!(!app.commits.tree_mode.nodes.is_empty());
 
-    update(&mut app, Message::RevisionCloseTree);
+    dispatch_test_action(&mut app, DomainAction::RevisionCloseTree);
     assert!(!app.commits.tree_mode.active);
     assert!(app.commits.tree_mode.selected_source.is_none());
 }
@@ -932,12 +933,12 @@ fn test_revision_open_close_for_stash_panel() {
     app.active_panel = SidePanel::Stash;
     app.stash.panel.list_state.select(Some(0));
 
-    update(&mut app, Message::RevisionOpenTreeOrToggleDir);
+    dispatch_test_action(&mut app, DomainAction::RevisionOpenTreeOrToggleDir);
     assert!(app.stash.tree_mode.active);
     assert_eq!(app.stash.tree_mode.selected_source, Some(0));
     assert!(!app.stash.tree_mode.nodes.is_empty());
 
-    update(&mut app, Message::RevisionCloseTree);
+    dispatch_test_action(&mut app, DomainAction::RevisionCloseTree);
     assert!(!app.stash.tree_mode.active);
     assert!(app.stash.tree_mode.selected_source.is_none());
 }
@@ -951,7 +952,7 @@ fn test_commit_diff_scopes_path_in_tree_mode() {
     app.reload_diff_now();
     assert!(app.current_diff[0].content.contains("<none>"));
 
-    update(&mut app, Message::RevisionOpenTreeOrToggleDir);
+    dispatch_test_action(&mut app, DomainAction::RevisionOpenTreeOrToggleDir);
     app.reload_diff_now();
     assert!(!app.current_diff[0].content.contains("<none>"));
 }
@@ -965,7 +966,7 @@ fn test_stash_diff_scopes_path_in_tree_mode() {
     app.reload_diff_now();
     assert!(app.current_diff[0].content.contains("<none>"));
 
-    update(&mut app, Message::RevisionOpenTreeOrToggleDir);
+    dispatch_test_action(&mut app, DomainAction::RevisionOpenTreeOrToggleDir);
     app.reload_diff_now();
     assert!(!app.current_diff[0].content.contains("<none>"));
 }
@@ -976,14 +977,14 @@ fn test_commit_close_tree_restores_list_selection() {
     app.active_panel = SidePanel::Commits;
     app.commits.panel.list_state.select(Some(1));
 
-    update(&mut app, Message::RevisionOpenTreeOrToggleDir);
+    dispatch_test_action(&mut app, DomainAction::RevisionOpenTreeOrToggleDir);
     assert!(app.commits.tree_mode.active);
     assert_eq!(
         app.commits.tree_mode.selected_source.as_deref(),
         Some("def5678901234")
     );
 
-    update(&mut app, Message::RevisionCloseTree);
+    dispatch_test_action(&mut app, DomainAction::RevisionCloseTree);
     assert!(!app.commits.tree_mode.active);
     assert_eq!(app.commits.panel.list_state.selected(), Some(1));
 }
@@ -994,11 +995,11 @@ fn test_stash_close_tree_restores_list_selection() {
     app.active_panel = SidePanel::Stash;
     app.stash.panel.list_state.select(Some(1));
 
-    update(&mut app, Message::RevisionOpenTreeOrToggleDir);
+    dispatch_test_action(&mut app, DomainAction::RevisionOpenTreeOrToggleDir);
     assert!(app.stash.tree_mode.active);
     assert_eq!(app.stash.tree_mode.selected_source, Some(1));
 
-    update(&mut app, Message::RevisionCloseTree);
+    dispatch_test_action(&mut app, DomainAction::RevisionCloseTree);
     assert!(!app.stash.tree_mode.active);
     assert_eq!(app.stash.panel.list_state.selected(), Some(1));
 }
@@ -1009,14 +1010,17 @@ fn test_search_query_and_vim_navigation_for_commits() {
     app.active_panel = SidePanel::Commits;
     app.commits.panel.list_state.select(Some(0));
 
-    update(&mut app, Message::StartSearchInput);
-    update(&mut app, Message::SearchSetQuery("test commit".to_string()));
+    dispatch_test_action(&mut app, DomainAction::StartSearchInput);
+    dispatch_test_action(
+        &mut app,
+        DomainAction::SearchSetQuery("test commit".to_string()),
+    );
     assert!(app.has_search_for_active_scope());
 
-    update(&mut app, Message::SearchNext);
+    dispatch_test_action(&mut app, DomainAction::SearchNext);
     assert_eq!(app.commits.panel.list_state.selected(), Some(1));
 
-    update(&mut app, Message::SearchPrev);
+    dispatch_test_action(&mut app, DomainAction::SearchPrev);
     assert_eq!(app.commits.panel.list_state.selected(), Some(0));
 }
 
@@ -1028,13 +1032,13 @@ fn test_search_query_matches_commit_author() {
     app.commits.items[0].author = "alice".to_string();
     app.commits.items[1].author = "bob".to_string();
 
-    update(&mut app, Message::StartSearchInput);
-    update(&mut app, Message::SearchSetQuery("bob".to_string()));
+    dispatch_test_action(&mut app, DomainAction::StartSearchInput);
+    dispatch_test_action(&mut app, DomainAction::SearchSetQuery("bob".to_string()));
     app.confirm_search_input();
-    update(&mut app, Message::SearchConfirm);
+    dispatch_test_action(&mut app, DomainAction::SearchConfirm);
     assert!(app.has_search_for_active_scope());
 
-    update(&mut app, Message::SearchNext);
+    dispatch_test_action(&mut app, DomainAction::SearchNext);
     assert_eq!(app.commits.panel.list_state.selected(), Some(1));
 }
 
@@ -1043,19 +1047,22 @@ fn test_search_keybindings_slash_n_and_shift_n() {
     let mut app = test_app();
     app.active_panel = SidePanel::Commits;
 
-    let msg = app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
-    assert!(matches!(msg, Some(Message::StartSearchInput)));
+    let msg = map_test_key(&app, KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
+    assert!(matches!(msg, Some(DomainAction::StartSearchInput)));
 
-    update(&mut app, Message::StartSearchInput);
-    update(&mut app, Message::SearchSetQuery("test commit".to_string()));
+    dispatch_test_action(&mut app, DomainAction::StartSearchInput);
+    dispatch_test_action(
+        &mut app,
+        DomainAction::SearchSetQuery("test commit".to_string()),
+    );
     app.confirm_search_input();
-    update(&mut app, Message::SearchConfirm);
+    dispatch_test_action(&mut app, DomainAction::SearchConfirm);
 
-    let next = app.handle_key(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE));
-    assert!(matches!(next, Some(Message::SearchNext)));
+    let next = map_test_key(&app, KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE));
+    assert!(matches!(next, Some(DomainAction::SearchNext)));
 
-    let prev = app.handle_key(KeyEvent::new(KeyCode::Char('N'), KeyModifiers::SHIFT));
-    assert!(matches!(prev, Some(Message::SearchPrev)));
+    let prev = map_test_key(&app, KeyEvent::new(KeyCode::Char('N'), KeyModifiers::SHIFT));
+    assert!(matches!(prev, Some(DomainAction::SearchPrev)));
 }
 
 #[test]
@@ -1071,16 +1078,16 @@ fn test_files_search_matches_tree_display_name_not_full_path() {
     }];
     app.files.panel.list_state.select(Some(0));
 
-    update(&mut app, Message::StartSearchInput);
-    update(&mut app, Message::SearchSetQuery("src".to_string()));
+    dispatch_test_action(&mut app, DomainAction::StartSearchInput);
+    dispatch_test_action(&mut app, DomainAction::SearchSetQuery("src".to_string()));
     app.confirm_search_input();
-    update(&mut app, Message::SearchConfirm);
+    dispatch_test_action(&mut app, DomainAction::SearchConfirm);
     assert!(!app.has_search_for_active_scope());
 
-    update(&mut app, Message::StartSearchInput);
-    update(&mut app, Message::SearchSetQuery("main".to_string()));
+    dispatch_test_action(&mut app, DomainAction::StartSearchInput);
+    dispatch_test_action(&mut app, DomainAction::SearchSetQuery("main".to_string()));
     app.confirm_search_input();
-    update(&mut app, Message::SearchConfirm);
+    dispatch_test_action(&mut app, DomainAction::SearchConfirm);
     assert!(app.has_search_for_active_scope());
 }
 
@@ -1106,10 +1113,10 @@ fn test_space_on_directory_stages_directory_in_files_panel() {
     ];
     app.files.panel.list_state.select(Some(0));
 
-    let msg = app.handle_key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
+    let msg = map_test_key(&app, KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
     assert!(matches!(
         msg,
-        Some(Message::StageFile(path)) if path == Path::new("src")
+        Some(DomainAction::StageFile(path)) if path == Path::new("src")
     ));
 }
 
@@ -1135,10 +1142,10 @@ fn test_space_on_staged_directory_unstages_directory_in_files_panel() {
     ];
     app.files.panel.list_state.select(Some(0));
 
-    let msg = app.handle_key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
+    let msg = map_test_key(&app, KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
     assert!(matches!(
         msg,
-        Some(Message::UnstageFile(path)) if path == Path::new("src")
+        Some(DomainAction::UnstageFile(path)) if path == Path::new("src")
     ));
 }
 
@@ -1155,10 +1162,10 @@ fn test_discard_key_returns_discard_paths_for_selected_file() {
     }];
     app.files.panel.list_state.select(Some(0));
 
-    let msg = app.handle_key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE));
+    let msg = map_test_key(&app, KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE));
     assert!(matches!(
         msg,
-        Some(Message::DiscardPaths(paths))
+        Some(DomainAction::DiscardPaths(paths))
             if paths.len() == 1 && paths[0] == Path::new("src/main.rs")
     ));
 }
@@ -1178,8 +1185,8 @@ fn test_discard_key_in_visual_mode_returns_discard_selection() {
     app.files.panel.list_state.select(Some(0));
     app.files.visual_anchor = Some(0);
 
-    let msg = app.handle_key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE));
-    assert!(matches!(msg, Some(Message::DiscardSelection)));
+    let msg = map_test_key(&app, KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE));
+    assert!(matches!(msg, Some(DomainAction::DiscardSelection)));
 }
 
 #[test]
@@ -1187,12 +1194,12 @@ fn test_search_input_esc_clears_query_and_highlight() {
     let mut app = test_app();
     app.active_panel = SidePanel::Commits;
 
-    update(&mut app, Message::StartSearchInput);
-    update(&mut app, Message::SearchSetQuery("test".to_string()));
+    dispatch_test_action(&mut app, DomainAction::StartSearchInput);
+    dispatch_test_action(&mut app, DomainAction::SearchSetQuery("test".to_string()));
     assert_eq!(app.search_query, "test");
 
-    let esc = app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
-    assert!(esc.is_none());
+    let _ = dispatch_test_key(&mut app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+
     assert!(app.search_query.is_empty());
     assert!(!app.has_search_query_for_active_scope());
 }
@@ -1203,37 +1210,37 @@ fn test_commits_tree_esc_clears_search_before_closing_tree() {
     app.active_panel = SidePanel::Commits;
     app.commits.panel.list_state.select(Some(0));
 
-    update(&mut app, Message::RevisionOpenTreeOrToggleDir);
+    dispatch_test_action(&mut app, DomainAction::RevisionOpenTreeOrToggleDir);
     assert!(app.commits.tree_mode.active);
 
-    update(&mut app, Message::StartSearchInput);
-    update(&mut app, Message::SearchSetQuery("main".to_string()));
+    dispatch_test_action(&mut app, DomainAction::StartSearchInput);
+    dispatch_test_action(&mut app, DomainAction::SearchSetQuery("main".to_string()));
     app.confirm_search_input();
-    update(&mut app, Message::SearchConfirm);
+    dispatch_test_action(&mut app, DomainAction::SearchConfirm);
     assert!(!app.search_query.is_empty());
 
-    let first_esc = app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
-    assert!(matches!(first_esc, Some(Message::SearchClear)));
-    update(&mut app, first_esc.expect("search clear message"));
+    let first_esc = map_test_key(&app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    assert!(matches!(first_esc, Some(DomainAction::SearchClear)));
+    dispatch_test_action(&mut app, first_esc.expect("search clear message"));
     assert!(app.commits.tree_mode.active);
     assert!(app.search_query.is_empty());
 
-    let second_esc = app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
-    assert!(matches!(second_esc, Some(Message::RevisionCloseTree)));
+    let second_esc = map_test_key(&app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    assert!(matches!(second_esc, Some(DomainAction::RevisionCloseTree)));
 }
 
 #[test]
-fn test_fetch_remote_returns_async_command_and_finishes() {
+fn test_fetch_remote_returns_effect_command_and_finishes() {
     let mut app = test_app();
     app.active_panel = SidePanel::LocalBranches;
 
-    let cmd = update(&mut app, Message::FetchRemote);
-    assert!(matches!(cmd, Some(Command::Async(_))));
+    let cmd = dispatch_test_action(&mut app, DomainAction::FetchRemote);
+    assert!(matches!(cmd, Some(Command::Effect(_))));
     assert!(app.branches.is_fetching_remote);
 
-    update(
+    dispatch_test_action(
         &mut app,
-        Message::FetchRemoteFinished(Ok("origin".to_string())),
+        DomainAction::FetchRemoteFinished(Ok("origin".to_string())),
     );
     assert!(!app.branches.is_fetching_remote);
 }
@@ -1250,7 +1257,7 @@ fn test_full_refresh_defers_commit_reload_until_commits_panel_active() {
     app.flush_pending_refresh().expect("flush full refresh");
     assert_eq!(commits_calls.load(Ordering::SeqCst), 1);
 
-    update(&mut app, Message::PanelGoto(3));
+    dispatch_test_action(&mut app, DomainAction::PanelGoto(3));
     assert_eq!(app.active_panel, SidePanel::Commits);
     assert_eq!(commits_calls.load(Ordering::SeqCst), 2);
 }
@@ -1293,9 +1300,9 @@ fn test_fetch_finished_queues_full_refresh_without_immediate_flush() {
     app.active_panel = SidePanel::LocalBranches;
     app.branches.is_fetching_remote = true;
 
-    update(
+    dispatch_test_action(
         &mut app,
-        Message::FetchRemoteFinished(Ok("origin".to_string())),
+        DomainAction::FetchRemoteFinished(Ok("origin".to_string())),
     );
 
     assert!(!app.branches.is_fetching_remote);
@@ -1307,23 +1314,23 @@ fn test_search_query_is_restored_per_panel_scope() {
     let mut app = test_app();
 
     app.active_panel = SidePanel::Commits;
-    update(&mut app, Message::StartSearchInput);
-    update(&mut app, Message::SearchSetQuery("test".to_string()));
+    dispatch_test_action(&mut app, DomainAction::StartSearchInput);
+    dispatch_test_action(&mut app, DomainAction::SearchSetQuery("test".to_string()));
     app.confirm_search_input();
-    update(&mut app, Message::SearchConfirm);
+    dispatch_test_action(&mut app, DomainAction::SearchConfirm);
     assert_eq!(app.search_query, "test");
 
-    update(&mut app, Message::PanelGoto(1));
+    dispatch_test_action(&mut app, DomainAction::PanelGoto(1));
     assert_eq!(app.active_panel, SidePanel::Files);
     assert!(app.search_query.is_empty());
 
-    update(&mut app, Message::StartSearchInput);
-    update(&mut app, Message::SearchSetQuery("main".to_string()));
+    dispatch_test_action(&mut app, DomainAction::StartSearchInput);
+    dispatch_test_action(&mut app, DomainAction::SearchSetQuery("main".to_string()));
     app.confirm_search_input();
-    update(&mut app, Message::SearchConfirm);
+    dispatch_test_action(&mut app, DomainAction::SearchConfirm);
     assert_eq!(app.search_query, "main");
 
-    update(&mut app, Message::PanelGoto(3));
+    dispatch_test_action(&mut app, DomainAction::PanelGoto(3));
     assert_eq!(app.active_panel, SidePanel::Commits);
     assert_eq!(app.search_query, "test");
 }
@@ -1334,23 +1341,23 @@ fn test_search_query_is_restored_between_commit_list_and_tree_scope() {
     app.active_panel = SidePanel::Commits;
     app.commits.panel.list_state.select(Some(0));
 
-    update(&mut app, Message::StartSearchInput);
-    update(&mut app, Message::SearchSetQuery("test".to_string()));
+    dispatch_test_action(&mut app, DomainAction::StartSearchInput);
+    dispatch_test_action(&mut app, DomainAction::SearchSetQuery("test".to_string()));
     app.confirm_search_input();
-    update(&mut app, Message::SearchConfirm);
+    dispatch_test_action(&mut app, DomainAction::SearchConfirm);
     assert_eq!(app.search_query, "test");
 
-    update(&mut app, Message::RevisionOpenTreeOrToggleDir);
+    dispatch_test_action(&mut app, DomainAction::RevisionOpenTreeOrToggleDir);
     assert!(app.commits.tree_mode.active);
     assert!(app.search_query.is_empty());
 
-    update(&mut app, Message::StartSearchInput);
-    update(&mut app, Message::SearchSetQuery("main".to_string()));
+    dispatch_test_action(&mut app, DomainAction::StartSearchInput);
+    dispatch_test_action(&mut app, DomainAction::SearchSetQuery("main".to_string()));
     app.confirm_search_input();
-    update(&mut app, Message::SearchConfirm);
+    dispatch_test_action(&mut app, DomainAction::SearchConfirm);
     assert_eq!(app.search_query, "main");
 
-    update(&mut app, Message::RevisionCloseTree);
+    dispatch_test_action(&mut app, DomainAction::RevisionCloseTree);
     assert!(!app.commits.tree_mode.active);
     assert_eq!(app.search_query, "test");
 }
@@ -1380,7 +1387,7 @@ fn test_list_navigation_debounces_diff_in_files_panel() {
     app.reload_diff_now();
     assert_eq!(app.current_diff[0].content, "file a.txt");
 
-    update(&mut app, Message::ListDown);
+    dispatch_test_action(&mut app, DomainAction::ListDown);
 
     assert_eq!(app.files.panel.list_state.selected(), Some(1));
     assert!(app.has_pending_diff_reload());
@@ -1399,7 +1406,7 @@ fn test_list_navigation_debounces_diff_in_commits_panel() {
     app.reload_diff_now();
     assert_eq!(app.current_diff[0].content, "commit oid1");
 
-    update(&mut app, Message::ListDown);
+    dispatch_test_action(&mut app, DomainAction::ListDown);
 
     assert_eq!(app.commits.panel.list_state.selected(), Some(1));
     assert!(app.has_pending_diff_reload());
@@ -1418,7 +1425,7 @@ fn test_list_navigation_debounces_diff_in_local_branches_panel() {
     app.reload_diff_now();
     assert_eq!(app.current_diff[0].content, "branch main");
 
-    update(&mut app, Message::ListDown);
+    dispatch_test_action(&mut app, DomainAction::ListDown);
 
     assert_eq!(app.branches.panel.list_state.selected(), Some(1));
     assert!(app.has_pending_diff_reload());
@@ -1435,8 +1442,8 @@ fn test_space_key_triggers_checkout_in_branches_panel() {
     app.active_panel = SidePanel::LocalBranches;
     app.branches.panel.list_state.select(Some(0));
 
-    let msg = app.handle_key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
-    assert!(matches!(msg, Some(Message::CheckoutSelectedBranch)));
+    let msg = map_test_key(&app, KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
+    assert!(matches!(msg, Some(DomainAction::CheckoutSelectedBranch)));
 }
 
 #[test]
@@ -1448,7 +1455,7 @@ fn test_checkout_with_dirty_changes_opens_branch_switch_confirm() {
     app.active_panel = SidePanel::LocalBranches;
     app.branches.panel.list_state.select(Some(1));
 
-    update(&mut app, Message::CheckoutSelectedBranch);
+    dispatch_test_action(&mut app, DomainAction::CheckoutSelectedBranch);
 
     assert_eq!(
         app.input_mode,
@@ -1466,13 +1473,31 @@ fn test_branch_switch_confirm_yes_uses_auto_stash_switch() {
     app.active_panel = SidePanel::LocalBranches;
     app.branches.panel.list_state.select(Some(1));
 
-    update(&mut app, Message::CheckoutSelectedBranch);
-    update(&mut app, Message::BranchSwitchConfirm(true));
+    dispatch_test_action(&mut app, DomainAction::CheckoutSelectedBranch);
+    let cmd = dispatch_test_action(&mut app, DomainAction::BranchSwitchConfirm(true));
+    assert!(matches!(
+        cmd,
+        Some(Command::Effect(
+            crate::flux::effects::EffectRequest::CheckoutBranch {
+                auto_stash: true,
+                ..
+            }
+        ))
+    ));
+
+    dispatch_test_action(
+        &mut app,
+        DomainAction::CheckoutBranchFinished {
+            name: "feature/switch".to_string(),
+            auto_stash: true,
+            result: Ok(()),
+        },
+    );
 
     assert_eq!(app.input_mode, None);
     assert!(app.pending_branch_switch_target().is_none());
     assert_eq!(checkout_calls.load(Ordering::SeqCst), 0);
-    assert_eq!(auto_stash_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(auto_stash_calls.load(Ordering::SeqCst), 0);
 }
 
 #[test]
@@ -1484,11 +1509,77 @@ fn test_branch_switch_confirm_no_cancels_operation() {
     app.active_panel = SidePanel::LocalBranches;
     app.branches.panel.list_state.select(Some(1));
 
-    update(&mut app, Message::CheckoutSelectedBranch);
-    update(&mut app, Message::BranchSwitchConfirm(false));
+    dispatch_test_action(&mut app, DomainAction::CheckoutSelectedBranch);
+    dispatch_test_action(&mut app, DomainAction::BranchSwitchConfirm(false));
 
     assert_eq!(app.input_mode, None);
     assert!(app.pending_branch_switch_target().is_none());
     assert_eq!(checkout_calls.load(Ordering::SeqCst), 0);
     assert_eq!(auto_stash_calls.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn test_command_palette_keybinding_and_run_refresh() {
+    let mut app = test_app();
+
+    let open = map_test_key(&app, KeyEvent::new(KeyCode::Char(':'), KeyModifiers::NONE));
+    assert!(matches!(open, Some(DomainAction::StartCommandPalette)));
+    dispatch_test_action(&mut app, open.expect("start command palette"));
+    assert_eq!(app.input_mode, Some(crate::app::InputMode::CommandPalette));
+
+    let _ = dispatch_test_key(
+        &mut app,
+        KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE),
+    );
+    let _ = dispatch_test_key(
+        &mut app,
+        KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE),
+    );
+    let _ = dispatch_test_key(
+        &mut app,
+        KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE),
+    );
+    let _ = dispatch_test_key(
+        &mut app,
+        KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE),
+    );
+    let _ = dispatch_test_key(
+        &mut app,
+        KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE),
+    );
+    let _ = dispatch_test_key(
+        &mut app,
+        KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE),
+    );
+    let _ = dispatch_test_key(
+        &mut app,
+        KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE),
+    );
+
+    let _ = dispatch_test_key(&mut app, KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    assert_eq!(app.input_mode, None);
+}
+
+#[test]
+fn test_interaction_trace_replay_panel_search_and_selection_flow() {
+    let mut app = test_app();
+
+    crate::app::trace::replay_actions(
+        &mut app,
+        &[
+            DomainAction::PanelGoto(3),
+            DomainAction::StartSearchInput,
+            DomainAction::SearchSetQuery("test".to_string()),
+            DomainAction::SearchConfirm,
+            DomainAction::SearchNext,
+            DomainAction::PanelGoto(1),
+            DomainAction::ToggleVisualSelectMode,
+            DomainAction::ListDown,
+        ],
+    );
+
+    assert_eq!(app.active_panel, SidePanel::Files);
+    assert!(app.files.visual_mode);
+    assert_eq!(app.files.visual_anchor, Some(0));
+    assert_eq!(app.files.panel.list_state.selected(), Some(0));
 }

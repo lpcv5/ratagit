@@ -1,174 +1,7 @@
-use crate::app::{App, CommitFieldFocus, InputMode, Message, RefreshKind};
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crate::app::{App, CommitFieldFocus, InputMode, RefreshKind};
 use std::path::PathBuf;
 
 impl App {
-    pub(super) fn handle_input_key(&mut self, key: KeyEvent) -> Option<Message> {
-        let mode = self.input_mode?;
-
-        if mode == InputMode::BranchSwitchConfirm {
-            return match key.code {
-                KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
-                    Some(Message::BranchSwitchConfirm(true))
-                }
-                KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
-                    Some(Message::BranchSwitchConfirm(false))
-                }
-                _ => None,
-            };
-        }
-
-        match key.code {
-            KeyCode::Esc => {
-                if mode == InputMode::Search {
-                    self.clear_search();
-                }
-                self.cancel_input();
-                self.dirty.mark_log_and_overlay();
-                None
-            }
-            KeyCode::Tab => match mode {
-                InputMode::CommitEditor => {
-                    self.commit_focus = match self.commit_focus {
-                        CommitFieldFocus::Message => CommitFieldFocus::Description,
-                        CommitFieldFocus::Description => CommitFieldFocus::Message,
-                    };
-                    self.dirty.mark_overlay();
-                    None
-                }
-                InputMode::CreateBranch | InputMode::StashEditor => None,
-                InputMode::Search => None,
-                InputMode::BranchSwitchConfirm => None,
-            },
-            KeyCode::Enter => match mode {
-                InputMode::CommitEditor => match self.commit_focus {
-                    CommitFieldFocus::Message => {
-                        let title = self.commit_message_buffer.trim().to_string();
-                        if title.is_empty() {
-                            self.push_log("Empty commit message ignored", false);
-                            return None;
-                        }
-                        let description = self.commit_description_buffer.trim_end();
-                        let value = if description.is_empty() {
-                            title
-                        } else {
-                            format!("{}\n\n{}", title, description)
-                        };
-                        self.input_mode = None;
-                        self.commit_message_buffer.clear();
-                        self.commit_description_buffer.clear();
-                        self.commit_focus = CommitFieldFocus::Message;
-                        Some(Message::Commit(value))
-                    }
-                    CommitFieldFocus::Description => {
-                        self.commit_description_buffer.push('\n');
-                        self.dirty.mark_overlay();
-                        None
-                    }
-                },
-                InputMode::CreateBranch => {
-                    let value = self.input_buffer.trim().to_string();
-                    self.input_mode = None;
-                    self.input_buffer.clear();
-                    self.dirty.mark_overlay();
-
-                    if value.is_empty() {
-                        self.push_log("Empty input ignored", false);
-                        return None;
-                    }
-                    Some(Message::CreateBranch(value))
-                }
-                InputMode::StashEditor => {
-                    let value = self.stash_message_buffer.trim().to_string();
-                    let paths = self.stash_targets.clone();
-                    self.input_mode = None;
-                    self.stash_message_buffer.clear();
-                    self.stash_targets.clear();
-                    self.dirty.mark_overlay();
-
-                    if value.is_empty() {
-                        self.push_log("Empty stash title ignored", false);
-                        return None;
-                    }
-                    if paths.is_empty() {
-                        self.push_log("stash blocked: no selected items", false);
-                        return None;
-                    }
-                    Some(Message::StashPush {
-                        message: value,
-                        paths,
-                    })
-                }
-                InputMode::Search => {
-                    self.confirm_search_input();
-                    self.dirty.mark_overlay();
-                    Some(Message::SearchConfirm)
-                }
-                InputMode::BranchSwitchConfirm => None,
-            },
-            KeyCode::Backspace => match mode {
-                InputMode::CommitEditor => {
-                    match self.commit_focus {
-                        CommitFieldFocus::Message => {
-                            self.commit_message_buffer.pop();
-                        }
-                        CommitFieldFocus::Description => {
-                            self.commit_description_buffer.pop();
-                        }
-                    }
-                    self.dirty.mark_overlay();
-                    None
-                }
-                InputMode::CreateBranch => {
-                    self.input_buffer.pop();
-                    self.dirty.mark_overlay();
-                    None
-                }
-                InputMode::StashEditor => {
-                    self.stash_message_buffer.pop();
-                    self.dirty.mark_overlay();
-                    None
-                }
-                InputMode::Search => {
-                    self.input_buffer.pop();
-                    Some(Message::SearchSetQuery(self.input_buffer.clone()))
-                }
-                InputMode::BranchSwitchConfirm => None,
-            },
-            KeyCode::Char(c) => {
-                if key.modifiers.contains(KeyModifiers::CONTROL) {
-                    return None;
-                }
-                match mode {
-                    InputMode::CommitEditor => {
-                        match self.commit_focus {
-                            CommitFieldFocus::Message => self.commit_message_buffer.push(c),
-                            CommitFieldFocus::Description => self.commit_description_buffer.push(c),
-                        }
-                        self.dirty.mark_overlay();
-                        None
-                    }
-                    InputMode::CreateBranch => {
-                        self.input_buffer.push(c);
-                        self.dirty.mark_overlay();
-                        None
-                    }
-                    InputMode::StashEditor => {
-                        self.stash_message_buffer.push(c);
-                        self.dirty.mark_overlay();
-                        None
-                    }
-                    InputMode::Search => {
-                        self.input_buffer.push(c);
-                        Some(Message::SearchSetQuery(self.input_buffer.clone()))
-                    }
-                    InputMode::BranchSwitchConfirm => None,
-                }
-            }
-            _ => None,
-        }
-    }
-
     pub fn start_commit_editor(&mut self) {
         self.input_mode = Some(InputMode::CommitEditor);
         self.commit_message_buffer.clear();
@@ -199,6 +32,11 @@ impl App {
         self.input_buffer.clear();
     }
 
+    pub fn start_command_palette(&mut self) {
+        self.input_mode = Some(InputMode::CommandPalette);
+        self.input_buffer.clear();
+    }
+
     pub fn start_stash_editor(&mut self, targets: Vec<PathBuf>) {
         self.input_mode = Some(InputMode::StashEditor);
         self.stash_targets = targets;
@@ -214,5 +52,27 @@ impl App {
         self.stash_message_buffer.clear();
         self.stash_targets.clear();
         self.branch_switch_target = None;
+    }
+
+    pub(crate) fn resolve_command_palette_command(
+        &self,
+        input: &str,
+    ) -> Option<crate::flux::action::DomainAction> {
+        use crate::flux::action::DomainAction;
+        let normalized = input.trim().to_lowercase();
+        match normalized.as_str() {
+            "q" | "quit" | "exit" => Some(DomainAction::Quit),
+            "r" | "refresh" => Some(DomainAction::RefreshStatus),
+            "c" | "commit" => Some(DomainAction::StartCommitInput),
+            "/" | "search" => Some(DomainAction::StartSearchInput),
+            "stash" | "stash push" => Some(DomainAction::StartStashInput),
+            "branch" | "branch create" | "branch new" => Some(DomainAction::StartBranchCreateInput),
+            "fetch" | "fetch remote" => Some(DomainAction::FetchRemote),
+            "panel 1" | "panel files" | "files" => Some(DomainAction::PanelGoto(1)),
+            "panel 2" | "panel branches" | "branches" => Some(DomainAction::PanelGoto(2)),
+            "panel 3" | "panel commits" | "commits" => Some(DomainAction::PanelGoto(3)),
+            "panel 4" | "panel stash" | "stash panel" => Some(DomainAction::PanelGoto(4)),
+            _ => None,
+        }
     }
 }

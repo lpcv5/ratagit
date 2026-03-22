@@ -5,14 +5,15 @@
 `ratagit` is a single-crate Rust TUI app.
 
 - `src/main.rs`: entry point, terminal setup, event loop.
-- `src/app/`: TEA core (`App`, `Message`, `update`, `Command`).
+- `src/app/`: core app state and domain helpers (`App`, `Command`, selection/search/refresh helpers).
+- `src/flux/`: runtime architecture (`Action`, `Dispatcher`, `Stores`, `Effect Runtime`, `Snapshot`).
 - `src/git/`: Git abstraction and implementation (`GitRepository`, `Git2Repository`).
 - `src/ui/`: layout, panels, widgets, and rendering.
 - `src/config/`: keymap and config loading.
 - `docs/`: architecture, roadmap, and design decisions.
 - `target/`: build artifacts (generated).
 
-Keep new features inside the existing layer boundaries (UI -> app messages -> git trait).
+Keep new features inside the existing layer boundaries (UI -> Action -> Dispatcher/Stores -> Effect Runtime -> git trait).
 
 ## Build, Test, and Development Commands
 

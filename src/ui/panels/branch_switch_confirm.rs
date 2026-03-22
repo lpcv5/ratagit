@@ -1,4 +1,5 @@
-use crate::app::{App, InputMode};
+use crate::app::InputMode;
+use crate::flux::snapshot::AppStateSnapshot;
 use crate::ui::theme::UiTheme;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -8,8 +9,8 @@ use ratatui::{
     Frame,
 };
 
-pub fn render_branch_switch_confirm(frame: &mut Frame, app: &App) {
-    if app.input_mode != Some(InputMode::BranchSwitchConfirm) {
+pub fn render_branch_switch_confirm(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
+    if snapshot.input_mode != Some(InputMode::BranchSwitchConfirm) {
         return;
     }
 
@@ -17,9 +18,8 @@ pub fn render_branch_switch_confirm(frame: &mut Frame, app: &App) {
     let area = centered_rect(frame.area(), 62, 26);
     frame.render_widget(Clear, area);
 
-    let target = app.pending_branch_switch_target().unwrap_or("<unknown>");
-    let changed_count =
-        app.status.staged.len() + app.status.unstaged.len() + app.status.untracked.len();
+    let target = snapshot.branch_switch_target.unwrap_or("<unknown>");
+    let changed_count = snapshot.uncommitted_change_count;
     let title = format!("Switch Branch: {}", target);
     frame.render_widget(theme.panel_block(&title, true), area);
 

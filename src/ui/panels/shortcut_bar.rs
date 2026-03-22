@@ -1,4 +1,5 @@
-use crate::app::{App, InputMode};
+use crate::app::InputMode;
+use crate::flux::snapshot::AppStateSnapshot;
 use crate::ui::theme::UiTheme;
 use ratatui::{
     layout::Rect,
@@ -8,14 +9,14 @@ use ratatui::{
     Frame,
 };
 
-pub fn render_shortcut_bar(frame: &mut Frame, area: Rect, app: &App) {
+pub fn render_shortcut_bar(frame: &mut Frame, area: Rect, snapshot: &AppStateSnapshot<'_>) {
     let theme = UiTheme::default();
-    let hints = app.shortcut_hints();
+    let hints = &snapshot.shortcut_hints;
 
     let mut spans = Vec::new();
-    if app.input_mode == Some(InputMode::Search) {
+    if snapshot.input_mode == Some(InputMode::Search) {
         spans.push(Span::styled(
-            format!("/{}", app.input_buffer),
+            format!("/{}", snapshot.input_buffer),
             Style::default().fg(theme.accent),
         ));
         spans.push(Span::raw("   "));

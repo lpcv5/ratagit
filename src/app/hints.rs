@@ -13,6 +13,10 @@ impl App {
                     ("Enter".to_string(), "Confirm".to_string()),
                     ("Esc".to_string(), "Cancel".to_string()),
                 ],
+                InputMode::CommandPalette => vec![
+                    ("Enter".to_string(), "Run".to_string()),
+                    ("Esc".to_string(), "Cancel".to_string()),
+                ],
                 InputMode::BranchSwitchConfirm => vec![
                     ("Y".to_string(), "AutoStash+Switch".to_string()),
                     ("N".to_string(), "Cancel".to_string()),
@@ -22,6 +26,10 @@ impl App {
 
         let mut hints = self.panel_primary_hints();
         hints.push((self.global_key_or("refresh", "r"), "Refresh".to_string()));
+        hints.push((
+            self.global_key_or("command_palette", ":"),
+            "Command".to_string(),
+        ));
         hints.push((self.global_key_or("quit", "q"), "Quit".to_string()));
         hints
     }

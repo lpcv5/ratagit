@@ -1,4 +1,4 @@
-use crate::app::{App, Message, RefreshKind, SidePanel};
+use crate::app::{App, RefreshKind, SidePanel};
 use crate::ui::widgets::file_tree::FileTreeNodeStatus;
 use color_eyre::Result;
 use std::collections::HashSet;
@@ -92,27 +92,6 @@ impl App {
             return Vec::new();
         };
         self.collect_discard_targets_for_index(index)
-    }
-
-    pub(super) fn toggle_stage_for_selected_file(&self) -> Option<Message> {
-        let node = self.selected_tree_node()?;
-        if node.is_dir {
-            let index = self.files.panel.list_state.selected()?;
-            let all_staged = self.directory_files_are_all_staged(index);
-            return if all_staged {
-                Some(Message::UnstageFile(node.path.clone()))
-            } else {
-                Some(Message::StageFile(node.path.clone()))
-            };
-        }
-
-        match &node.status {
-            FileTreeNodeStatus::Staged(_) => Some(Message::UnstageFile(node.path.clone())),
-            FileTreeNodeStatus::Unstaged(_) | FileTreeNodeStatus::Untracked => {
-                Some(Message::StageFile(node.path.clone()))
-            }
-            FileTreeNodeStatus::Directory => None,
-        }
     }
 
     fn partition_toggle_targets(&self, selected: &HashSet<usize>) -> (Vec<PathBuf>, Vec<PathBuf>) {
@@ -278,29 +257,6 @@ impl App {
             end = i;
         }
         end
-    }
-
-    fn directory_files_are_all_staged(&self, index: usize) -> bool {
-        let Some(node) = self.files.tree_nodes.get(index) else {
-            return false;
-        };
-        if !node.is_dir {
-            return matches!(node.status, FileTreeNodeStatus::Staged(_));
-        }
-
-        let end = self.subtree_end_index(index);
-        let mut has_file = false;
-        for i in index + 1..=end {
-            let child = &self.files.tree_nodes[i];
-            if child.is_dir {
-                continue;
-            }
-            has_file = true;
-            if !matches!(child.status, FileTreeNodeStatus::Staged(_)) {
-                return false;
-            }
-        }
-        has_file
     }
 }
 

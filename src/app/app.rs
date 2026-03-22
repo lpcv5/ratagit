@@ -1,19 +1,18 @@
 use super::{diff_cache, diff_loader, dirty_flags, refresh, revision_tree};
-use crate::config::keymap::{key_to_string, Keymap};
+use crate::config::keymap::Keymap;
+use crate::flux::snapshot::AppStateSnapshot;
 use crate::git::{
-    BranchInfo, CommitInfo, DiffLine, FileEntry, Git2Repository, GitRepository, GitStatus,
-    StashInfo,
+    BranchInfo, CommitInfo, DiffLine, FileEntry, Git2Repository, GitError, GitRepository,
+    GitStatus, StashInfo,
 };
 use crate::ui::layout::render_layout;
 use crate::ui::widgets::file_tree::{FileTree, FileTreeNode};
 use color_eyre::Result;
-use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::widgets::ListState;
 use ratatui::Frame;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
-use std::thread;
 use std::time::{Duration, Instant};
 
 /// Documentation comment in English.
@@ -106,6 +105,7 @@ pub struct CommandLogEntry {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum InputMode {
     CommitEditor,
+    CommandPalette,
     CreateBranch,
     StashEditor,
     Search,
@@ -272,159 +272,16 @@ impl App {
         Ok(app)
     }
 
-    pub fn handle_key(&mut self, key: KeyEvent) -> Option<super::Message> {
-        use super::Message;
-        if self.input_mode.is_some() {
-            return self.handle_input_key(key);
-        }
-        if key.code == KeyCode::Esc && self.has_search_query_for_active_scope() {
-            return Some(Message::SearchClear);
-        }
-        if key.code == KeyCode::Esc
-            && self.active_panel == SidePanel::Files
-            && self.files.visual_mode
-        {
-            return Some(Message::ToggleVisualSelectMode);
-        }
-        if key.code == KeyCode::Esc
-            && ((self.active_panel == SidePanel::Stash && self.stash.tree_mode.active)
-                || (self.active_panel == SidePanel::Commits && self.commits.tree_mode.active))
-        {
-            return Some(Message::RevisionCloseTree);
-        }
-
-        let k = key_to_string(&key);
-        if k.is_empty() {
-            return None;
-        }
-
-        let global_actions = self.keymap.global_actions(&k);
-        let gm = |action: &str| global_actions.iter().any(|candidate| candidate == action);
-
-        // Comment in English.
-        if gm("quit") {
-            return Some(Message::Quit);
-        }
-        if gm("list_up") {
-            return Some(Message::ListUp);
-        }
-        if gm("list_down") {
-            return Some(Message::ListDown);
-        }
-        if gm("panel_next") {
-            return Some(Message::PanelNext);
-        }
-        if gm("panel_prev") {
-            return Some(Message::PanelPrev);
-        }
-        if gm("refresh") {
-            return Some(Message::RefreshStatus);
-        }
-        if gm("diff_scroll_up") {
-            return Some(Message::DiffScrollUp);
-        }
-        if gm("diff_scroll_down") {
-            return Some(Message::DiffScrollDown);
-        }
-        if gm("panel_1") {
-            return Some(Message::PanelGoto(1));
-        }
-        if gm("panel_2") {
-            return Some(Message::PanelGoto(2));
-        }
-        if gm("panel_3") {
-            return Some(Message::PanelGoto(3));
-        }
-        if gm("panel_4") {
-            return Some(Message::PanelGoto(4));
-        }
-        if gm("commit") {
-            if self.active_panel == SidePanel::Files && self.files.visual_mode {
-                return Some(Message::PrepareCommitFromSelection);
-            }
-            return Some(Message::StartCommitInput);
-        }
-        if gm("search_start") {
-            return Some(Message::StartSearchInput);
-        }
-        if gm("search_next") && self.has_search_for_active_scope() {
-            return Some(Message::SearchNext);
-        }
-        if gm("search_prev") && self.has_search_for_active_scope() {
-            return Some(Message::SearchPrev);
-        }
-
-        // Comment in English.
-        let panel = self.active_panel_name();
-        let panel_actions = self.keymap.panel_actions(panel, &k);
-        let pm = |action: &str| panel_actions.iter().any(|candidate| candidate == action);
-
-        if pm("toggle_stage") {
-            if self.active_panel == SidePanel::Files && self.files.visual_mode {
-                return Some(Message::ToggleStageSelection);
-            }
-            if let Some(msg) = self.toggle_stage_for_selected_file() {
-                return Some(msg);
-            }
-        }
-        if pm("discard") && self.active_panel == SidePanel::Files {
-            if self.files.visual_mode {
-                return Some(Message::DiscardSelection);
-            }
-            let paths = self.prepare_discard_targets_from_selection();
-            if paths.is_empty() {
-                return None;
-            }
-            return Some(Message::DiscardPaths(paths));
-        }
-        if pm("stash_push") {
-            return Some(Message::StartStashInput);
-        }
-        if pm("toggle_visual_select") {
-            return Some(Message::ToggleVisualSelectMode);
-        }
-        if pm("toggle_dir") {
-            return Some(Message::ToggleDir);
-        }
-        if pm("collapse_all") {
-            return Some(Message::CollapseAll);
-        }
-        if pm("expand_all") {
-            return Some(Message::ExpandAll);
-        }
-        if pm("checkout_branch") {
-            return Some(Message::CheckoutSelectedBranch);
-        }
-        if pm("create_branch") {
-            return Some(Message::StartBranchCreateInput);
-        }
-        if pm("delete_branch") {
-            return Some(Message::DeleteSelectedBranch);
-        }
-        if pm("fetch_remote") {
-            return Some(Message::FetchRemote);
-        }
-        if pm("open_tree") {
-            return Some(Message::RevisionOpenTreeOrToggleDir);
-        }
-        if pm("stash_apply") {
-            return Some(Message::StashApplySelected);
-        }
-        if pm("stash_pop") {
-            return Some(Message::StashPopSelected);
-        }
-        if pm("stash_drop") {
-            return Some(Message::StashDropSelected);
-        }
-
-        None
-    }
-
     pub fn render(&mut self, frame: &mut Frame) {
         if self.dirty.left_panels {
             self.refresh_render_cache();
         }
-        render_layout(frame, self);
+        let snapshot = AppStateSnapshot::from_app(self);
+        render_layout(frame, &snapshot);
+    }
+
+    pub(crate) fn keymap(&self) -> &Keymap {
+        &self.keymap
     }
 
     fn apply_refresh(&mut self, kind: RefreshKind) -> Result<()> {
@@ -485,7 +342,7 @@ impl App {
             return Ok(false);
         };
         self.apply_refresh(kind)?;
-        self.reload_diff_now();
+        self.schedule_diff_reload();
         Ok(true)
     }
 
@@ -496,6 +353,14 @@ impl App {
 
     pub fn has_pending_diff_reload(&self) -> bool {
         self.pending_diff_reload
+    }
+
+    pub fn has_pending_refresh_work(&self) -> bool {
+        self.pending_refresh.is_some()
+    }
+
+    pub fn is_diff_reload_due(&self, debounce: Duration) -> bool {
+        self.pending_diff_reload && self.diff_reload_debounce_elapsed(debounce)
     }
 
     pub fn diff_reload_debounce_elapsed(&self, debounce: Duration) -> bool {
@@ -518,7 +383,7 @@ impl App {
     pub fn ensure_commits_loaded_for_active_panel(&mut self) {
         if self.active_panel == SidePanel::Commits && self.commits.dirty {
             self.reload_commits_now();
-            self.reload_diff_now();
+            self.schedule_diff_reload();
         }
     }
 
@@ -626,18 +491,8 @@ impl App {
         Ok(())
     }
 
-    pub fn fetch_remote_async(&self) -> Result<Receiver<super::Message>> {
-        let repo_rx = self.repo.fetch_default_async()?;
-        let (msg_tx, msg_rx) = std::sync::mpsc::channel();
-        thread::spawn(move || {
-            let message = match repo_rx.recv() {
-                Ok(Ok(remote)) => super::Message::FetchRemoteFinished(Ok(remote)),
-                Ok(Err(err)) => super::Message::FetchRemoteFinished(Err(err.to_string())),
-                Err(err) => super::Message::FetchRemoteFinished(Err(err.to_string())),
-            };
-            let _ = msg_tx.send(message);
-        });
-        Ok(msg_rx)
+    pub fn fetch_remote_request(&self) -> Result<Receiver<Result<String, GitError>>> {
+        Ok(self.repo.fetch_default_async()?)
     }
 
     pub fn stash_push(&mut self, paths: &[PathBuf], message: &str) -> Result<usize> {

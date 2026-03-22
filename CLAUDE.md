@@ -27,37 +27,27 @@ cargo clippy
 
 ## Core Architecture
 
-### The Elm Architecture (TEA)
+### Flux + Tokio Architecture (ADR-015)
 
 Unidirectional data flow:
 
 ```
-User Input → Event → Message → Update → Model → View → Render
+UI → Action → Dispatcher → Stores → Effect Runtime → AppStateSnapshot → UI
 ```
 
-**Three core components**:
-
-1. **Model**: Application state (`App` struct)
-2. **Message**: User actions or system events (`Message` enum)
-3. **Update**: Pure function that updates Model based on Message (`update()`)
+**Core components**:
+1. **Action**: User input or system events (`DomainAction`, `UiAction`, `SystemAction`)
+2. **Dispatcher**: Routes `ActionEnvelope` through ordered list of `Store` reducers
+3. **Stores**: Domain-partitioned reducers in `src/flux/stores/`
+4. **Effects**: Async Git I/O via `EffectRequest` → `effects::run()` → `EffectResultAction`
+5. **AppStateSnapshot**: Read-only view of `App` passed to UI renderer
 
 ### Module Structure
 
 ```
 src/
 ├── app/
-│   ├── app.rs            # App struct, main loop, key handling
-│   ├── message.rs        # Message/event definitions
-│   ├── update.rs         # TEA update function (dispatcher)
-│   ├── update_handlers/  # Modular message handlers
-│   │   ├── navigation.rs # Panel and list navigation
-│   │   ├── staging.rs    # Stage/unstage/discard operations
-│   │   ├── commit.rs     # Commit workflow
-│   │   ├── branch.rs     # Branch operations
-│   │   ├── stash.rs      # Stash operations
-│   │   ├── revision.rs   # Commit tree navigation
-│   │   ├── search.rs     # Search functionality
-│   │   └── quit.rs       # Quit handler
+│   ├── app.rs            # App struct and state model
 │   ├── command.rs        # Command definitions
 │   ├── input_mode.rs     # Input mode state (Commit/Branch/Stash/Search)
 │   ├── selection.rs      # Selection state management
@@ -67,17 +57,23 @@ src/
 │   ├── selectors.rs      # Selector trait and implementations
 │   ├── diff_loader.rs    # Diff loading utilities
 │   ├── refresh.rs        # State refresh utilities
-│   └── hints.rs          # UI hint generation
+│   ├── hints.rs          # UI hint generation
+│   └── test_dispatch.rs  # Test-only Flux helpers for action/key dispatch
+├── flux/
+│   ├── action.rs         # Action/DomainAction/SystemAction enums
+│   ├── dispatcher.rs     # Dispatcher: routes ActionEnvelope → Stores
+│   ├── effects.rs        # EffectRequest + async run() for Git I/O
+│   ├── input_mapper.rs   # Key events → Action mapping
+│   ├── snapshot.rs       # AppStateSnapshot (read-only view for UI)
+│   └── stores/           # Domain stores (files, branches, commits, stash, etc.)
 ├── git/
 │   └── repository.rs     # GitRepository trait + Git2Repository impl
 ├── ui/
 │   ├── layout.rs         # Layout rendering
-│   ├── view.rs           # View trait
 │   ├── theme.rs          # Color theme
 │   ├── highlight.rs      # Search highlighting
 │   ├── panels/           # Panel renderers (files, diff, branches, commits, stash, revision_tree, etc.)
-│   ├── widgets/          # Reusable widgets (file_tree)
-│   └── views/            # View components (unused stubs)
+│   └── widgets/          # Reusable widgets (file_tree)
 ├── config/
 │   ├── mod.rs            # Config loading
 │   └── keymap.rs         # Keymap config (global + per-panel)
@@ -154,26 +150,22 @@ Default files-panel local keys:
 - `S` — stash selected files
 - `D` — discard selected changes
 
-### Update Handlers Architecture
+### Flux Dispatcher and Stores
 
-The `update()` function dispatches messages to modular handlers in `src/app/update_handlers/`:
-
+`Dispatcher::with_default_stores()` creates ordered stores; each `Store` implements:
 ```rust
-pub fn update(app: &mut App, msg: Message) -> Option<Command> {
-    match msg {
-        Message::Quit => quit::handle(app),
-        Message::PanelNext | Message::PanelPrev => navigation::handle(app, msg),
-        Message::StageFile(_) | Message::UnstageFile(_) => staging::handle(app, msg),
-        Message::Commit(_) => commit::handle(app, msg),
-        Message::CreateBranch(_) => branch::handle(app, msg),
-        Message::StashPush { .. } => stash::handle(app, msg),
-        Message::SearchSetQuery(_) => search::handle(app, msg),
-        // ...
-    }
+pub trait Store {
+    fn reduce(&mut self, action: &ActionEnvelope, ctx: &mut ReduceCtx<'_>) -> ReduceOutput;
 }
 ```
+Stores: `InputStore`, `QuitStore`, `OpsStore`, `RevisionStore`, `NavigationStore`,
+`SelectionStore`, `SearchStore`, `DiffStore`, `OverlayStore`, `FilesStore`,
+`BranchStore`, `StashStore`, `CommitStore`.
 
-Rationale: separates concerns, improves maintainability, makes testing easier.
+Git I/O is done exclusively in `effects.rs` via `EffectRequest` — stores must NOT do I/O.
+
+For tests, `src/app/test_dispatch.rs` provides `dispatch_test_action()` and
+`dispatch_test_key()` helpers, and key mapping must go through `flux::input_mapper`.
 
 ### Input Modes
 
@@ -226,16 +218,8 @@ Managed by `revision_tree.rs` module, stores expanded state per commit.
 
 ### Async Git Operations
 
-```rust
-enum Command {
-    Async(tokio::task::JoinHandle<Message>),
-    Sync(Message),
-}
-```
-
-**Current usage**: `fetch_default_async()` runs `git fetch` in a background thread and returns results via channel.
-
-Phase 1-3 use synchronous git operations for most tasks, with async fetch as the exception.
+Async/side-effect operations are modeled as `Command::Effect(EffectRequest)` and executed by
+the effect loop. Result actions are fed back into dispatcher as `Action::System(...)`.
 
 ## Development Roadmap
 
@@ -303,8 +287,8 @@ Coverage targets: M1-M2 > 50%, M3 > 70%, M4 (release) > 80%
 ## Notes
 
 1. **Git ops**: Always via `GitRepository` trait, never call git2/gix directly
-2. **State updates**: Follow TEA — update state only through Messages
-3. **Async**: Heavy git ops use `Command::Async` (currently only fetch)
+2. **State updates**: Follow Flux — update state only through `Action -> Dispatcher -> Stores`
+3. **Async**: Heavy git ops use `Command::Effect(EffectRequest)` via effect runtime
 4. **Errors**: Use `thiserror` for custom error types
 5. **Comments**: All code comments and docs in English
 6. **Batch operations**: Use `*_paths()` methods (e.g., `stage_paths`, `unstage_paths`, `discard_paths`) for multi-file operations
