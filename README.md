@@ -1,92 +1,104 @@
 # Ratagit
 
-> A fast, intuitive terminal UI for Git operations, inspired by lazygit
+[![CI](https://github.com/lpcv5/ratagit/actions/workflows/ci.yml/badge.svg)](https://github.com/lpcv5/ratagit/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/lpcv5/ratagit?style=social)](https://github.com/lpcv5/ratagit/stargazers)
 
-**Status**: Milestone execution tracked in `.track/`
+Ratagit is a fast, keyboard-first Git terminal UI built with Rust and `ratatui`.
+It is designed for developers who want a responsive Git workflow without leaving the terminal.
 
-## 项目概述
+## Why Ratagit
 
-Ratagit 是一个使用 Rust 编写的终端 Git 客户端，基于 ratatui 构建。目标是提供一个快速、直观、功能完整的 Git TUI 工具。
+- Fast navigation across Git status, diffs, branches, commits, and stashes
+- Predictable unidirectional data flow (Flux-style runtime)
+- Strong typing and clear architecture for safe feature growth
+- Extensible Git backend via the `GitRepository` abstraction
 
-### 核心特性
+## Current Capabilities
 
-- **Flux 架构**: 单向数据流（Action -> Dispatcher -> Stores -> Effect Runtime）
-- **类型安全**: 通过类型系统保证 Git 操作的安全性
-- **异步支持**: 使用 Tokio 处理耗时的 Git 操作
-- **可扩展**: GitRepository trait 抽象，便于迁移到 gix
+- Multi-panel TUI with focused keyboard workflow
+- Repository status view (unstaged/staged/untracked) with tree navigation
+- Diff preview with smooth scrolling
+- Branch, commit, and stash listing panels
+- Custom keymap support via `~/.config/ratagit/keymap.toml`
 
-## Current Features
+## Quick Start
 
-- TUI lifecycle and multi-panel layout
-- Git status (unstaged/staged/untracked) with file tree
-- Diff preview with scrolling
-- Branch/commit/stash listing panels
-- Configurable keymap (`~/.config/ratagit/keymap.toml`)
+### Prerequisites
 
-## 快速开始
+- Rust (stable toolchain)
+- A local Git repository to open in Ratagit
 
-### 构建
+### Build
 
 ```bash
 cargo build
 ```
 
-### 运行
+### Run
 
-在 Git 仓库目录中运行：
+Run Ratagit from inside any Git repository:
 
 ```bash
 cargo run
 ```
 
-### 快捷键
+## Default Keybindings
 
-| 按键 | 功能 |
-|------|------|
+| Key | Action |
+| --- | --- |
 | `q` | Quit |
-| `h`/`←` | Previous panel |
-| `l`/`→` | Next panel |
+| `h` / `←` | Previous panel |
+| `l` / `→` | Next panel |
 | `1`-`4` | Jump to panel |
-| `j`/`↓` | Move down |
-| `k`/`↑` | Move up |
+| `j` / `↓` | Move down |
+| `k` / `↑` | Move up |
 | `Space` | Stage/unstage selected file (Files panel) |
-| `Enter` | Toggle directory expand/collapse (Files panel) |
+| `Enter` | Expand/collapse directory (Files panel) |
 | `-` / `=` | Collapse/expand all directories |
 | `Ctrl+U` / `Ctrl+D` | Scroll diff up/down |
 | `r` | Refresh |
 
-## 技术栈
+## Architecture
 
-- **ratatui** - 终端 UI 框架
-- **crossterm** - 跨平台终端控制
-- **git2** - Git 操作库（初期）
-- **tokio** - 异步运行时
-- **thiserror** - 错误处理
+Ratagit follows a layered runtime design:
 
-## 架构
+- UI -> `Action` -> `Dispatcher`/`Stores` -> Effect Runtime -> `GitRepository`
+- Reducers remain pure; Git I/O is executed in the effect runtime
+- UI renders from immutable snapshots, keeping rendering decoupled from mutation logic
 
-采用 **Flux + Tokio 三循环架构**：
+Read more in:
 
-- **Action/Dispatcher/Stores**: 输入映射为 `Action`，由 `Dispatcher` 按序驱动各域 store
-- **Effect Runtime**: 所有 Git I/O 通过 `EffectRequest` 在运行时执行，reducer 不直接做 I/O
-- **Snapshot 渲染**: UI 只消费 `AppStateSnapshot`，渲染与状态更新解耦
+- [Architecture Decisions](docs/DECISIONS.md)
+- [Development Model](docs/DEVELOPMENT_MODEL.md)
 
-架构与路线说明见 [docs/DECISIONS.md](docs/DECISIONS.md) 与 [docs/DEVELOPMENT_MODEL.md](docs/DEVELOPMENT_MODEL.md)
+## Tech Stack
 
-## Development Tracking
+- `ratatui` and `crossterm` for terminal UI
+- `git2` for Git operations (current backend)
+- `tokio` for async runtime and task orchestration
+- `thiserror` and `color-eyre` for robust error handling
 
-Use the `.track/` workspace and the `project-tracker` skill for all planning/execution tracking.
-See [docs/DEVELOPMENT_MODEL.md](docs/DEVELOPMENT_MODEL.md) for the process model.
+## Project Status
 
-## 文档
+Ratagit is under active development.
+Milestone execution is tracked in `.track/`.
+If this project is useful to you, consider starring the repository to support visibility.
 
-- [开发模型](docs/DEVELOPMENT_MODEL.md)
-- [技术决策](docs/DECISIONS.md)
+## Contributing
 
-## 贡献
+Contributions are welcome.
+If you plan to contribute, start with the docs in `docs/` and open an issue/PR with clear reproduction and verification steps.
 
-项目目前处于早期开发阶段，欢迎贡献！
+Useful local checks:
 
-## 许可证
+```bash
+cargo fmt --check
+cargo check
+cargo test
+cargo clippy --all-targets --all-features -- -D warnings
+```
+
+## License
 
 MIT
