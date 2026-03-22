@@ -13,6 +13,24 @@ use ratatui::{
 
 impl PanelComponent for BranchesPanelState {
     fn draw(&self, frame: &mut Frame, area: Rect, ctx: &PanelRenderContext<'_>) {
+        if self.commits_subview_active {
+            let title = self
+                .commits_subview_source
+                .as_ref()
+                .map(|name| format!("Branch Commits: {} [Esc Back]", name))
+                .unwrap_or_else(|| "Branch Commits [Esc Back]".to_string());
+            let commits_ctx = PanelRenderContext {
+                active_panel: SidePanel::Commits,
+                panel_title_override: Some(title.as_str()),
+                search_query: ctx.search_query,
+                search_summary: ctx.search_summary,
+                visual_selected_indices: PanelRenderContext::empty_visual_selected_indices(),
+                highlighted_oids: &self.commits_subview.highlighted_oids,
+            };
+            self.commits_subview.draw(frame, area, &commits_ctx);
+            return;
+        }
+
         let theme = UiTheme::default();
         let is_active = ctx.active_panel == SidePanel::LocalBranches;
 

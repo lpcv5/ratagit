@@ -79,7 +79,9 @@ pub fn map_key_to_actions(
     }
     if key.code == crossterm::event::KeyCode::Esc
         && ((snapshot.active_panel == SidePanel::Stash && snapshot.stash.tree_mode.active)
-            || (snapshot.active_panel == SidePanel::Commits && snapshot.commits.tree_mode.active))
+            || (snapshot.active_panel == SidePanel::Commits && snapshot.commits.tree_mode.active)
+            || (snapshot.active_panel == SidePanel::LocalBranches
+                && snapshot.branches.commits_subview_active))
     {
         return vec![Action::Domain(DomainAction::RevisionCloseTree)];
     }
@@ -661,5 +663,26 @@ mod more_tests {
         let actions = map(&app, key(KeyCode::Char('n')));
         // In branches panel, n should map to SearchNext
         let _ = actions; // just verify no panic
+    }
+
+    #[test]
+    fn test_enter_in_branches_panel_maps_to_revision_open() {
+        let mut app = mock_app();
+        app.active_panel = crate::app::SidePanel::LocalBranches;
+        let actions = map(&app, key(KeyCode::Enter));
+        assert!(actions
+            .iter()
+            .any(|a| { matches!(a, Action::Domain(DomainAction::RevisionOpenTreeOrToggleDir)) }));
+    }
+
+    #[test]
+    fn test_esc_in_branch_commits_subview_maps_to_revision_close() {
+        let mut app = mock_app();
+        app.active_panel = crate::app::SidePanel::LocalBranches;
+        app.branches.commits_subview_active = true;
+        let actions = map(&app, key(KeyCode::Esc));
+        assert!(actions
+            .iter()
+            .any(|a| { matches!(a, Action::Domain(DomainAction::RevisionCloseTree)) }));
     }
 }

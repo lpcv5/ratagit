@@ -225,7 +225,16 @@ impl App {
                 .map(Self::tree_node_display_name)
                 .collect(),
             SidePanel::LocalBranches => {
-                self.branches.items.iter().map(|b| b.name.clone()).collect()
+                if self.branches.commits_subview_active {
+                    self.branches
+                        .commits_subview
+                        .items
+                        .iter()
+                        .map(|c| format!("{} {} {}", c.short_hash, c.author, c.message))
+                        .collect()
+                } else {
+                    self.branches.items.iter().map(|b| b.name.clone()).collect()
+                }
             }
             SidePanel::Commits => {
                 if self.commits.tree_mode.active {
@@ -265,7 +274,13 @@ impl App {
     fn active_panel_state_selected(&self) -> Option<usize> {
         match self.active_panel {
             SidePanel::Files => self.files.panel.list_state.selected(),
-            SidePanel::LocalBranches => self.branches.panel.list_state.selected(),
+            SidePanel::LocalBranches => {
+                if self.branches.commits_subview_active {
+                    self.branches.commits_subview.panel.list_state.selected()
+                } else {
+                    self.branches.panel.list_state.selected()
+                }
+            }
             SidePanel::Commits => self.commits.panel.list_state.selected(),
             SidePanel::Stash => self.stash.panel.list_state.selected(),
         }
@@ -274,7 +289,17 @@ impl App {
     fn select_active_panel_index(&mut self, idx: usize) {
         match self.active_panel {
             SidePanel::Files => self.files.panel.list_state.select(Some(idx)),
-            SidePanel::LocalBranches => self.branches.panel.list_state.select(Some(idx)),
+            SidePanel::LocalBranches => {
+                if self.branches.commits_subview_active {
+                    self.branches
+                        .commits_subview
+                        .panel
+                        .list_state
+                        .select(Some(idx));
+                } else {
+                    self.branches.panel.list_state.select(Some(idx));
+                }
+            }
             SidePanel::Commits => self.commits.panel.list_state.select(Some(idx)),
             SidePanel::Stash => self.stash.panel.list_state.select(Some(idx)),
         }

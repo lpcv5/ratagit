@@ -77,6 +77,7 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
             let result = match app.active_panel {
                 SidePanel::Stash => app.stash_open_tree_or_toggle_dir(),
                 SidePanel::Commits => app.commit_open_tree_or_toggle_dir(),
+                SidePanel::LocalBranches => app.open_selected_branch_commits(100),
                 _ => Ok(()),
             };
             match result {
@@ -518,6 +519,30 @@ mod tests {
             action,
             DomainAction::CheckoutBranchFinished { .. }
         ));
+    }
+
+    #[tokio::test]
+    async fn revision_open_from_branches_opens_commits_subview_in_branches_panel() {
+        let mut ctx = make_ctx();
+        {
+            let mut app = ctx.app.lock().await;
+            app.active_panel = crate::app::SidePanel::LocalBranches;
+            app.branches.items = vec![crate::git::BranchInfo {
+                name: "main".to_string(),
+                is_current: true,
+            }];
+            app.branches.panel.list_state.select(Some(0));
+        }
+
+        assert_no_actions(run(EffectRequest::RevisionOpenTreeOrToggleDir, &mut ctx).await);
+        let app = ctx.app.lock().await;
+        assert_eq!(app.active_panel, crate::app::SidePanel::LocalBranches);
+        assert!(app.branches.commits_subview_active);
+        assert!(!app.branches.commits_subview.items.is_empty());
+        assert_eq!(
+            app.branches.commits_subview.panel.list_state.selected(),
+            Some(0)
+        );
     }
 
     #[tokio::test]

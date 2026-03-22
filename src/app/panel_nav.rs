@@ -5,7 +5,13 @@ impl App {
     pub fn active_panel_state_mut(&mut self) -> &mut PanelState {
         match self.active_panel {
             SidePanel::Files => &mut self.files.panel,
-            SidePanel::LocalBranches => &mut self.branches.panel,
+            SidePanel::LocalBranches => {
+                if self.branches.commits_subview_active {
+                    &mut self.branches.commits_subview.panel
+                } else {
+                    &mut self.branches.panel
+                }
+            }
             SidePanel::Commits => &mut self.commits.panel,
             SidePanel::Stash => &mut self.stash.panel,
         }
@@ -42,7 +48,13 @@ impl App {
     pub(super) fn active_panel_count(&self) -> usize {
         match self.active_panel {
             SidePanel::Files => self.files.tree_nodes.len(),
-            SidePanel::LocalBranches => self.branches.items.len(),
+            SidePanel::LocalBranches => {
+                if self.branches.commits_subview_active {
+                    self.branches.commits_subview.items.len()
+                } else {
+                    self.branches.items.len()
+                }
+            }
             SidePanel::Commits => {
                 if self.commits.tree_mode.active {
                     self.commits.tree_mode.nodes.len()

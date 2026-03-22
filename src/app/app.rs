@@ -78,6 +78,9 @@ pub struct BranchesPanelState {
     pub panel: PanelState,
     pub items: Vec<BranchInfo>,
     pub is_fetching_remote: bool,
+    pub commits_subview_active: bool,
+    pub commits_subview_source: Option<String>,
+    pub commits_subview: CommitsPanelState,
 }
 
 #[derive(Default)]
@@ -226,6 +229,9 @@ impl App {
                 panel: PanelState::new(),
                 items: branches,
                 is_fetching_remote: false,
+                commits_subview_active: false,
+                commits_subview_source: None,
+                commits_subview: CommitsPanelState::default(),
             },
             commits: CommitsPanelState {
                 panel: PanelState::new(),
@@ -383,6 +389,57 @@ impl App {
         if self.active_panel == SidePanel::Commits && self.commits.dirty {
             self.reload_commits_now();
             self.schedule_diff_reload();
+        }
+    }
+
+    pub fn open_selected_branch_commits(&mut self, limit: usize) -> Result<()> {
+        if self.active_panel != SidePanel::LocalBranches {
+            return Ok(());
+        }
+        let Some(branch_name) = self.selected_branch_name() else {
+            return Ok(());
+        };
+
+        self.branches.commits_subview_active = true;
+        self.branches.commits_subview_source = Some(branch_name.clone());
+        self.branches.commits_subview.items = self.repo.commits_for_branch(&branch_name, limit)?;
+        self.branches.commits_subview.dirty = false;
+        self.branches.commits_subview.highlighted_oids.clear();
+        self.branches.commits_subview.tree_mode = TreeModeState::default();
+        self.branches
+            .commits_subview
+            .panel
+            .list_state
+            .select((!self.branches.commits_subview.items.is_empty()).then_some(0));
+        self.push_log(
+            format!("branch commits: {} (Esc to back)", branch_name),
+            true,
+        );
+        Ok(())
+    }
+
+    pub fn close_branch_commits_subview(&mut self) {
+        if !self.branches.commits_subview_active {
+            return;
+        }
+
+        let source_branch = self.branches.commits_subview_source.take();
+        self.branches.commits_subview_active = false;
+        self.branches.commits_subview = CommitsPanelState::default();
+
+        let selected_index = source_branch.and_then(|name| {
+            self.branches
+                .items
+                .iter()
+                .position(|branch| branch.name == name)
+        });
+        if self.branches.items.is_empty() {
+            self.branches.panel.list_state.select(None);
+        } else {
+            self.branches
+                .panel
+                .list_state
+                .select(selected_index.or(Some(0)));
         }
     }
 

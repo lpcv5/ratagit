@@ -159,6 +159,11 @@ pub trait GitRepository {
     fn commits(&self, limit: usize) -> Result<Vec<CommitInfo>, GitError>;
 
     /// Documentation comment in English.
+    fn commits_for_branch(&self, _name: &str, limit: usize) -> Result<Vec<CommitInfo>, GitError> {
+        self.commits(limit)
+    }
+
+    /// Documentation comment in English.
     fn commit_files(&self, oid: &str) -> Result<Vec<FileEntry>, GitError>;
 
     /// Documentation comment in English.
@@ -449,6 +454,57 @@ impl Git2Repository {
         let patch = self.run_git_owned(&args)?;
         Ok(parse_patch_text(&patch))
     }
+
+    fn collect_commits_from_revwalk(
+        &self,
+        revwalk: &mut git2::Revwalk<'_>,
+        limit: usize,
+    ) -> Result<Vec<CommitInfo>, GitError> {
+        let default_tip = self.default_branch_oid();
+        let upstream_tip = self.upstream_oid();
+
+        let mut graph_rows = Vec::new();
+        let mut entries = Vec::new();
+        for oid in revwalk.take(limit) {
+            let oid = oid?;
+            let commit = self.repo.find_commit(oid)?;
+            let short_hash = format!("{:.7}", oid);
+            let message = commit.summary().unwrap_or("").to_string();
+            let author = commit.author().name().unwrap_or("").to_string();
+            let mut parents = Vec::with_capacity(commit.parent_count());
+            for parent_index in 0..commit.parent_count() {
+                if let Ok(parent_oid) = commit.parent_id(parent_index) {
+                    parents.push(parent_oid);
+                }
+            }
+            let time = {
+                let t = commit.time().seconds();
+                chrono::DateTime::from_timestamp(t, 0)
+                    .unwrap_or_default()
+                    .format("%Y-%m-%d %H:%M")
+                    .to_string()
+            };
+            let parent_oids: Vec<String> = parents.iter().map(|p| p.to_string()).collect();
+            graph_rows.push(GraphCommitRow { oid, parents });
+            entries.push(CommitInfo {
+                short_hash,
+                oid: oid.to_string(),
+                message,
+                author,
+                graph: Vec::new(),
+                time,
+                parent_count: commit.parent_count(),
+                sync_state: self.classify_commit_sync(oid, default_tip, upstream_tip),
+                parent_oids,
+            });
+        }
+
+        let graph_lines = build_commit_graph_lines(&graph_rows, graph_charset_from_env());
+        for (entry, graph) in entries.iter_mut().zip(graph_lines) {
+            entry.graph = graph;
+        }
+        Ok(entries)
+    }
 }
 
 impl GitRepository for Git2Repository {
@@ -665,51 +721,22 @@ impl GitRepository for Git2Repository {
         let mut revwalk = self.repo.revwalk()?;
         revwalk.push_head()?;
         revwalk.set_sorting(git2::Sort::TOPOLOGICAL | git2::Sort::TIME)?;
-        let default_tip = self.default_branch_oid();
-        let upstream_tip = self.upstream_oid();
+        self.collect_commits_from_revwalk(&mut revwalk, limit)
+    }
 
-        let mut graph_rows = Vec::new();
-        let mut entries = Vec::new();
-        for oid in revwalk.take(limit) {
-            let oid = oid?;
-            let commit = self.repo.find_commit(oid)?;
-            let short_hash = format!("{:.7}", oid);
-            let message = commit.summary().unwrap_or("").to_string();
-            let author = commit.author().name().unwrap_or("").to_string();
-            let mut parents = Vec::with_capacity(commit.parent_count());
-            for parent_index in 0..commit.parent_count() {
-                if let Ok(parent_oid) = commit.parent_id(parent_index) {
-                    parents.push(parent_oid);
-                }
-            }
-            let time = {
-                let t = commit.time().seconds();
-                chrono::DateTime::from_timestamp(t, 0)
-                    .unwrap_or_default()
-                    .format("%Y-%m-%d %H:%M")
-                    .to_string()
-            };
-            let parent_oids: Vec<String> = parents.iter().map(|p| p.to_string()).collect();
-            graph_rows.push(GraphCommitRow { oid, parents });
-            entries.push(CommitInfo {
-                short_hash,
-                oid: oid.to_string(),
-                message,
-                author,
-                graph: Vec::new(),
-                time,
-                parent_count: commit.parent_count(),
-                sync_state: self.classify_commit_sync(oid, default_tip, upstream_tip),
-                parent_oids,
-            });
+    fn commits_for_branch(&self, name: &str, limit: usize) -> Result<Vec<CommitInfo>, GitError> {
+        let mut revwalk = self.repo.revwalk()?;
+        let local_ref = format!("refs/heads/{}", name);
+        if let Some(oid) = self
+            .resolve_ref_oid(&local_ref)
+            .or_else(|| self.resolve_ref_oid(name))
+        {
+            revwalk.push(oid)?;
+        } else {
+            return Ok(Vec::new());
         }
-
-        let graph_lines = build_commit_graph_lines(&graph_rows, graph_charset_from_env());
-        for (entry, graph) in entries.iter_mut().zip(graph_lines) {
-            entry.graph = graph;
-        }
-        let result = entries;
-        Ok(result)
+        revwalk.set_sorting(git2::Sort::TOPOLOGICAL | git2::Sort::TIME)?;
+        self.collect_commits_from_revwalk(&mut revwalk, limit)
     }
 
     fn commit_files(&self, oid: &str) -> Result<Vec<FileEntry>, GitError> {

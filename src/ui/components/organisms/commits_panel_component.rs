@@ -98,7 +98,9 @@ impl PanelComponent for CommitsPanelState {
                 .collect()
         };
 
-        let mut title = if self.tree_mode.active {
+        let mut title = if let Some(title_override) = ctx.panel_title_override {
+            title_override.to_string()
+        } else if self.tree_mode.active {
             if let Some(ref oid) = self.tree_mode.selected_source {
                 format!("Commit Files {} [Esc Back]", &oid[..oid.len().min(7)])
             } else {

@@ -51,20 +51,36 @@ impl App {
                 ),
                 (self.global_key_or("commit", "c"), "Commit".to_string()),
             ],
-            SidePanel::LocalBranches => vec![
-                (
-                    self.panel_key_or(panel, "checkout_branch", "Space"),
-                    "Checkout".to_string(),
-                ),
-                (
-                    self.panel_key_or(panel, "create_branch", "n"),
-                    "New".to_string(),
-                ),
-                (
-                    self.panel_key_or(panel, "fetch_remote", "f"),
-                    "Fetch".to_string(),
-                ),
-            ],
+            SidePanel::LocalBranches => {
+                if self.branches.commits_subview_active {
+                    vec![
+                        (
+                            self.panel_key_or(panel, "open_tree", "Enter"),
+                            "Refresh".to_string(),
+                        ),
+                        ("Esc".to_string(), "Back".to_string()),
+                    ]
+                } else {
+                    vec![
+                        (
+                            self.panel_key_or(panel, "checkout_branch", "Space"),
+                            "Checkout".to_string(),
+                        ),
+                        (
+                            self.panel_key_or(panel, "open_tree", "Enter"),
+                            "Commits".to_string(),
+                        ),
+                        (
+                            self.panel_key_or(panel, "create_branch", "n"),
+                            "New".to_string(),
+                        ),
+                        (
+                            self.panel_key_or(panel, "fetch_remote", "f"),
+                            "Fetch".to_string(),
+                        ),
+                    ]
+                }
+            }
             SidePanel::Commits => vec![(
                 self.panel_key_or(panel, "open_tree", "Enter"),
                 "Files".to_string(),

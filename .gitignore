@@ -49,3 +49,6 @@ Thumbs.db
 logs/
 .track
 .serena
+.agents/
+.claude/
+skills-lock.json

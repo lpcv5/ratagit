@@ -67,7 +67,13 @@ pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
     };
     let focus_item_count = match snapshot.active_panel {
         SidePanel::Files => snapshot.files.tree_nodes.len(),
-        SidePanel::LocalBranches => snapshot.branches.items.len(),
+        SidePanel::LocalBranches => {
+            if snapshot.branches.commits_subview_active {
+                snapshot.branches.commits_subview.items.len()
+            } else {
+                snapshot.branches.items.len()
+            }
+        }
         // Keep commit panel sizing stable when toggling between commit list and tree mode.
         // Use the parent commit list length as the single source for overflow checks.
         SidePanel::Commits => snapshot.commits.items.len(),
@@ -131,6 +137,7 @@ pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
 
     let files_ctx = PanelRenderContext {
         active_panel: snapshot.active_panel,
+        panel_title_override: None,
         search_query: snapshot.files_search_query,
         search_summary: snapshot.render_cache.files_search_summary.as_deref(),
         visual_selected_indices: &snapshot.render_cache.files_visual_selected_indices,
@@ -139,6 +146,7 @@ pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
     snapshot.files.draw(frame, left_panels[0], &files_ctx);
     let branches_ctx = PanelRenderContext {
         active_panel: snapshot.active_panel,
+        panel_title_override: None,
         search_query: snapshot.branches_search_query,
         search_summary: snapshot.render_cache.branches_search_summary.as_deref(),
         visual_selected_indices: PanelRenderContext::empty_visual_selected_indices(),
@@ -148,6 +156,7 @@ pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
 
     let commits_ctx = PanelRenderContext {
         active_panel: snapshot.active_panel,
+        panel_title_override: None,
         search_query: snapshot.commits_search_query,
         search_summary: snapshot.render_cache.commits_search_summary.as_deref(),
         visual_selected_indices: PanelRenderContext::empty_visual_selected_indices(),
@@ -157,6 +166,7 @@ pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
 
     let stash_ctx = PanelRenderContext {
         active_panel: snapshot.active_panel,
+        panel_title_override: None,
         search_query: snapshot.stash_search_query,
         search_summary: snapshot.render_cache.stash_search_summary.as_deref(),
         visual_selected_indices: PanelRenderContext::empty_visual_selected_indices(),
