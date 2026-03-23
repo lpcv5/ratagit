@@ -1,5 +1,7 @@
 use crate::app::{BranchesPanelState, SidePanel};
-use crate::ui::components::organisms::{PanelComponent, PanelRenderContext};
+use crate::ui::components::organisms::{
+    empty_list_item, title_with_search, PanelComponent, PanelRenderContext,
+};
 use crate::ui::highlight::highlighted_spans;
 use crate::ui::theme::UiTheme;
 use crate::ui::LIST_SCROLL_PADDING;
@@ -41,7 +43,7 @@ impl PanelComponent for BranchesPanelState {
         let is_active = ctx.active_panel == SidePanel::LocalBranches;
 
         let items: Vec<ListItem> = if self.items.is_empty() {
-            vec![ListItem::new("No branches").style(Style::default().fg(theme.text_muted))]
+            empty_list_item("No branches")
         } else {
             self.items
                 .iter()
@@ -59,15 +61,8 @@ impl PanelComponent for BranchesPanelState {
                 .collect()
         };
 
-        let highlight = if is_active {
-            theme.active_highlight()
-        } else {
-            theme.inactive_highlight()
-        };
-        let mut title = "Local Branches".to_string();
-        if let Some(search) = &ctx.search_summary {
-            title = format!("{} [{}]", title, search);
-        }
+        let highlight = theme.highlight_for(is_active);
+        let title = title_with_search("Local Branches", ctx.search_summary);
 
         let list = List::new(items)
             .block(theme.panel_block(&title, is_active))

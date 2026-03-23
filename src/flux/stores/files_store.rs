@@ -1,7 +1,7 @@
 use crate::app::Command;
 use crate::flux::action::{Action, ActionEnvelope, DomainAction};
 use crate::flux::effects::EffectRequest;
-use crate::flux::stores::{ReduceCtx, ReduceOutput, Store, UiInvalidation};
+use crate::flux::stores::{log_result, ReduceCtx, ReduceOutput, Store, UiInvalidation};
 
 pub struct FilesStore;
 
@@ -35,31 +35,15 @@ impl Store for FilesStore {
             }
             DomainAction::StageFileFinished { path, result } => {
                 let display = path.display().to_string();
-                match result {
-                    Ok(()) => {
-                        ctx.app.push_log(format!("staged {}", display), true);
-                        return ReduceOutput::none().with_invalidation(UiInvalidation::all());
-                    }
-                    Err(err) => {
-                        ctx.app
-                            .push_log(format!("stage failed {}: {}", display, err), false);
-                    }
-                }
-                ReduceOutput::none()
+                log_result(ctx, result, format!("staged {}", display), |e| {
+                    format!("stage failed {}: {}", display, e)
+                })
             }
             DomainAction::UnstageFileFinished { path, result } => {
                 let display = path.display().to_string();
-                match result {
-                    Ok(()) => {
-                        ctx.app.push_log(format!("unstaged {}", display), true);
-                        return ReduceOutput::none().with_invalidation(UiInvalidation::all());
-                    }
-                    Err(err) => {
-                        ctx.app
-                            .push_log(format!("unstage failed {}: {}", display, err), false);
-                    }
-                }
-                ReduceOutput::none()
+                log_result(ctx, result, format!("unstaged {}", display), |e| {
+                    format!("unstage failed {}: {}", display, e)
+                })
             }
             DomainAction::DiscardPathsFinished { paths, result } => {
                 match result {
@@ -88,14 +72,8 @@ impl Store for FilesStore {
 mod tests {
     use super::*;
     use crate::flux::action::{Action, DomainAction};
-    use crate::flux::stores::test_support::{make_envelope, mock_app};
+    use crate::flux::stores::test_support::{mock_app, reduce_action as reduce};
     use std::path::PathBuf;
-
-    fn reduce(store: &mut FilesStore, app: &mut crate::app::App, action: Action) -> ReduceOutput {
-        let env = make_envelope(action);
-        let mut ctx = ReduceCtx { app };
-        store.reduce(&env, &mut ctx)
-    }
 
     #[test]
     fn test_stage_file_emits_effect() {
@@ -182,14 +160,8 @@ mod tests {
 mod more_tests {
     use super::*;
     use crate::flux::action::{Action, DomainAction};
-    use crate::flux::stores::test_support::{make_envelope, mock_app};
+    use crate::flux::stores::test_support::{mock_app, reduce_action as reduce};
     use std::path::PathBuf;
-
-    fn reduce(store: &mut FilesStore, app: &mut crate::app::App, action: Action) -> ReduceOutput {
-        let env = make_envelope(action);
-        let mut ctx = ReduceCtx { app };
-        store.reduce(&env, &mut ctx)
-    }
 
     #[test]
     fn test_discard_paths_emits_effect() {

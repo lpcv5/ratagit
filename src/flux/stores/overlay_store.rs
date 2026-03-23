@@ -70,14 +70,8 @@ mod tests {
     use super::*;
     use crate::app::InputMode;
     use crate::flux::action::{Action, DomainAction};
-    use crate::flux::stores::test_support::{make_envelope, mock_app};
+    use crate::flux::stores::test_support::{mock_app, reduce_action as reduce};
     use pretty_assertions::assert_eq;
-
-    fn reduce(store: &mut OverlayStore, app: &mut crate::app::App, action: Action) -> ReduceOutput {
-        let env = make_envelope(action);
-        let mut ctx = ReduceCtx { app };
-        store.reduce(&env, &mut ctx)
-    }
 
     #[test]
     fn test_start_commit_input_emits_guarded_effect() {
@@ -142,16 +136,10 @@ mod more_tests {
     use super::*;
     use crate::app::{InputMode, SidePanel};
     use crate::flux::action::{Action, DomainAction};
-    use crate::flux::stores::test_support::{make_envelope, mock_app};
+    use crate::flux::stores::test_support::{mock_app, reduce_action as reduce};
     use crate::git::FileStatus;
     use crate::ui::widgets::file_tree::{FileTreeNode, FileTreeNodeStatus};
     use pretty_assertions::assert_eq;
-
-    fn reduce(store: &mut OverlayStore, app: &mut crate::app::App, action: Action) -> ReduceOutput {
-        let env = make_envelope(action);
-        let mut ctx = ReduceCtx { app };
-        store.reduce(&env, &mut ctx)
-    }
 
     #[test]
     fn test_commit_all_confirm_true_stages_all_and_commits() {

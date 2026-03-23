@@ -13,7 +13,7 @@ use crossterm::{
 };
 use flux::action::{Action, SystemAction};
 use flux::effects::EffectCtx;
-use flux::snapshot::AppStateSnapshot;
+use flux::snapshot::{AppStateSnapshot, AppStateSnapshotOwned};
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::fs::{File, OpenOptions};
 use std::io;
@@ -236,6 +236,11 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: App
             let (action_tx, action_rx) = mpsc::unbounded_channel::<Action>();
             let (command_tx, command_rx) = mpsc::unbounded_channel::<app::Command>();
             let (state_version_tx, mut state_version_rx) = watch::channel(0u64);
+            let initial_snapshot = Arc::new({
+                let app = shared_app.try_lock().expect("app not locked at startup");
+                AppStateSnapshotOwned::from_app(&app)
+            });
+            let (snapshot_tx, snapshot_rx) = watch::channel(initial_snapshot);
             let (shutdown_tx, _) = broadcast::channel::<()>(1);
 
             let dispatch_handle = tokio::task::spawn_local(dispatch_loop(
@@ -244,6 +249,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: App
                 action_rx,
                 command_tx,
                 state_version_tx,
+                snapshot_tx,
                 shutdown_tx.subscribe(),
             ));
             let effect_handle = tokio::task::spawn_local(effect_loop(
@@ -264,6 +270,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: App
                 perf,
                 action_tx,
                 &mut state_version_rx,
+                snapshot_rx,
                 shutdown_tx.clone(),
             )
             .await;
@@ -283,6 +290,7 @@ async fn ui_loop(
     perf: Arc<PerfCounters>,
     action_tx: mpsc::UnboundedSender<Action>,
     state_version_rx: &mut watch::Receiver<u64>,
+    mut snapshot_rx: watch::Receiver<Arc<AppStateSnapshotOwned>>,
     shutdown_tx: broadcast::Sender<()>,
 ) -> Result<()> {
     const MAX_EVENTS_PER_FRAME: usize = 64;
@@ -303,27 +311,21 @@ async fn ui_loop(
             let _ = state_version_rx.borrow_and_update();
         }
 
-        {
-            let lock_wait_started = Instant::now();
-            let mut app = app.lock().await;
-            let lock_wait_us = lock_wait_started.elapsed().as_micros() as u64;
-            perf.ui_lock_wait_us
-                .fetch_add(lock_wait_us, Ordering::Relaxed);
-            if app.dirty.is_dirty() {
-                let draw_started = Instant::now();
-                terminal.draw(|f| {
-                    app.render(f);
-                })?;
-                let draw_us = draw_started.elapsed().as_micros() as u64;
-                perf.ui_draws.fetch_add(1, Ordering::Relaxed);
-                perf.ui_draw_us.fetch_add(draw_us, Ordering::Relaxed);
-                update_max(&perf.ui_draw_max_us, draw_us);
-                if let Some(log) = perf_log.as_mut() {
-                    if draw_us >= SLOW_DRAW_US {
-                        log.write_line(&format!("slow_draw_us={}", draw_us));
-                    }
+        if snapshot_rx.has_changed().unwrap_or(false) {
+            let snapshot = snapshot_rx.borrow_and_update().clone();
+            let draw_started = Instant::now();
+            terminal.draw(|f| {
+                let view = snapshot.as_snapshot();
+                crate::ui::layout::render_layout(f, &view);
+            })?;
+            let draw_us = draw_started.elapsed().as_micros() as u64;
+            perf.ui_draws.fetch_add(1, Ordering::Relaxed);
+            perf.ui_draw_us.fetch_add(draw_us, Ordering::Relaxed);
+            update_max(&perf.ui_draw_max_us, draw_us);
+            if let Some(log) = perf_log.as_mut() {
+                if draw_us >= SLOW_DRAW_US {
+                    log.write_line(&format!("slow_draw_us={}", draw_us));
                 }
-                app.dirty.clear();
             }
         }
 
@@ -547,6 +549,7 @@ async fn dispatch_loop(
     mut action_rx: mpsc::UnboundedReceiver<Action>,
     command_tx: mpsc::UnboundedSender<app::Command>,
     state_version_tx: watch::Sender<u64>,
+    snapshot_tx: watch::Sender<Arc<AppStateSnapshotOwned>>,
     mut shutdown_rx: broadcast::Receiver<()>,
 ) {
     let mut dispatcher = flux::dispatcher::Dispatcher::with_default_stores();
@@ -571,6 +574,16 @@ async fn dispatch_loop(
                 let envelope = dispatcher.next_envelope(action);
                 let result = dispatcher.dispatch(&mut app, envelope);
                 let reduce_us = reduce_started.elapsed().as_micros() as u64;
+
+                if app.dirty.is_dirty() {
+                    if app.dirty.left_panels {
+                        app.refresh_render_cache();
+                    }
+                    let snapshot = Arc::new(AppStateSnapshotOwned::from_app(&app));
+                    app.dirty.clear();
+                    let _ = snapshot_tx.send(snapshot);
+                }
+
                 drop(app);
                 let elapsed_us = started.elapsed().as_micros() as u64;
                 perf.dispatch_actions.fetch_add(1, Ordering::Relaxed);

@@ -1,5 +1,6 @@
 use crate::app::SidePanel;
-use ratatui::{layout::Rect, Frame};
+use crate::ui::theme::UiTheme;
+use ratatui::{layout::Rect, style::Style, widgets::ListItem, Frame};
 use std::{collections::HashSet, sync::OnceLock};
 
 fn empty_visual_selected_indices() -> &'static HashSet<usize> {
@@ -10,10 +11,6 @@ fn empty_visual_selected_indices() -> &'static HashSet<usize> {
 fn empty_highlighted_oids() -> &'static HashSet<String> {
     static EMPTY: OnceLock<HashSet<String>> = OnceLock::new();
     EMPTY.get_or_init(HashSet::new)
-}
-
-pub trait PanelComponent {
-    fn draw(&self, _frame: &mut Frame, _area: Rect, _ctx: &PanelRenderContext<'_>) {}
 }
 
 pub struct PanelRenderContext<'a> {
@@ -33,4 +30,23 @@ impl<'a> PanelRenderContext<'a> {
     pub fn empty_highlighted_oids() -> &'static HashSet<String> {
         empty_highlighted_oids()
     }
+}
+
+/// Append search summary to title if present.
+pub fn title_with_search(title: &str, search_summary: Option<&str>) -> String {
+    match search_summary {
+        Some(s) => format!("{} [{}]", title, s),
+        None => title.to_string(),
+    }
+}
+
+/// Build a single-item list showing an empty-state message.
+pub fn empty_list_item(text: &str) -> Vec<ListItem<'static>> {
+    let theme = UiTheme::default();
+    vec![ListItem::new(text.to_string()).style(Style::default().fg(theme.text_muted))]
+}
+
+/// Marker trait kept for compatibility; implementations have been replaced by free functions.
+pub trait PanelComponent {
+    fn draw(&self, _frame: &mut Frame, _area: Rect, _ctx: &PanelRenderContext<'_>) {}
 }

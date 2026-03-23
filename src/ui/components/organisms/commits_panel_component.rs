@@ -1,6 +1,8 @@
 use crate::app::{CommitsPanelState, SidePanel};
 use crate::git::{CommitSyncState, GraphCell};
-use crate::ui::components::organisms::{PanelComponent, PanelRenderContext};
+use crate::ui::components::organisms::{
+    empty_list_item, title_with_search, PanelComponent, PanelRenderContext,
+};
 use crate::ui::highlight::highlighted_spans;
 use crate::ui::panels::revision_tree_panel::{render_revision_tree_panel, RevisionTreePanelProps};
 use crate::ui::theme::UiTheme;
@@ -55,7 +57,7 @@ impl PanelComponent for CommitsPanelState {
         let is_active = ctx.active_panel == SidePanel::Commits;
 
         let items: Vec<ListItem> = if self.items.is_empty() {
-            vec![ListItem::new("No commits").style(Style::default().fg(theme.text_muted))]
+            empty_list_item("No commits")
         } else {
             self.items
                 .iter()
@@ -109,9 +111,7 @@ impl PanelComponent for CommitsPanelState {
         } else {
             "Commits".to_string()
         };
-        if let Some(search) = &ctx.search_summary {
-            title = format!("{} [{}]", title, search);
-        }
+        title = title_with_search(&title, ctx.search_summary);
 
         render_revision_tree_panel(
             frame,

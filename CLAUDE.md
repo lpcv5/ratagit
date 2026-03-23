@@ -221,59 +221,11 @@ Managed by `revision_tree.rs` module, stores expanded state per commit.
 Async/side-effect operations are modeled as `Command::Effect(EffectRequest)` and executed by
 the effect loop. Result actions are fed back into dispatcher as `Action::System(...)`.
 
-## Development Roadmap
-
-### M1: Core Workflow Hardening (✅ Done)
-- [x] Basic event loop
-- [x] Git status display with file tree
-- [x] Diff preview (unstaged, staged, untracked)
-- [x] File tree expand/collapse
-- [x] Configurable keymap
-- [x] Stage/Unstage files
-- [x] Visual selection mode
-- [x] Discard changes
-
-### M2: Advanced Workflow Foundation (✅ Done)
-- [x] Commit functionality with editor
-- [x] Branch management (create, checkout, delete)
-- [x] Stash operations (push, apply, pop, drop)
-- [x] Commit history view with tree navigation
-- [x] Input modes (Commit/Branch/Stash editors)
-
-### M2.5: Pre-M3 Milestone (✅ Done)
-- [x] Search functionality across panels
-- [x] Search highlighting
-- [x] Async fetch operation
-
-### M3: Parity and Reliability (✅ Done)
-- [x] Full lazygit parity for core workflows
-- [x] Robust error handling
-- [x] UI polish and refinements
-- [x] Comprehensive keymap
-
-### M4: Release Readiness (Draft)
-- [ ] Config system
-- [ ] Themes
-- [ ] Performance optimization
-- [ ] Test coverage > 80%
-- [ ] Documentation
-- [ ] Binary releases
-
 ## Configuration
 
 Keymap: `~/.config/ratagit/keymap.toml` (auto-created with defaults if missing)
 
 Future: `~/.config/ratagit/config.toml` for general config
-
-## Development Tracking
-
-Project uses milestone-based tracking in `.track/` directory:
-- `.track/status.yaml` — current goal/milestone state
-- `.track/milestones/` — milestone definitions and checklists
-- `.track/history.jsonl` — append-only execution log
-- `.track/skill.md` — project-tracker skill documentation
-
-Use the `project-tracker` skill to manage milestones. See `docs/DEVELOPMENT_MODEL.md` for workflow details.
 
 ## Testing Strategy
 
@@ -303,13 +255,4 @@ Coverage targets: M1-M2 > 50%, M3 > 70%, M4 (release) > 80%
 - Batch operations use `*_paths()` variants for efficiency
 - Async operations use `std::sync::mpsc` channels (not tokio tasks yet)
 
-### Error Handling
-
-```rust
-// Use GitError for all git operations
-fn some_operation(&self) -> Result<T, GitError> {
-    // git2 errors auto-convert via From<git2::Error>
-    let result = self.repo.some_operation()?;
-    Ok(result)
-}
 ```

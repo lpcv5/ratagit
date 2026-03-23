@@ -1,9 +1,9 @@
+use crate::ui::components::organisms::empty_list_item;
 use crate::ui::theme::UiTheme;
 use crate::ui::widgets::file_tree::{FileTree, FileTreeNode, FileTreeState};
 use crate::ui::LIST_SCROLL_PADDING;
 use ratatui::{
     layout::Rect,
-    style::Style,
     widgets::{List, ListItem, ListState},
     Frame,
 };
@@ -33,16 +33,11 @@ pub fn render_revision_tree_panel(
         list_state,
     } = props;
     let theme = UiTheme::default();
-    let highlight = if is_active {
-        theme.active_highlight()
-    } else {
-        theme.inactive_highlight()
-    };
+    let highlight = theme.highlight_for(is_active);
 
     if tree_mode {
         if tree_nodes.is_empty() {
-            let items =
-                vec![ListItem::new("No files").style(Style::default().fg(theme.text_muted))];
+            let items = empty_list_item("No files");
             let list = List::new(items)
                 .block(theme.panel_block(title, is_active))
                 .scroll_padding(LIST_SCROLL_PADDING)

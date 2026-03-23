@@ -1,4 +1,4 @@
-use super::{diff_loader, revision_tree};
+use super::{app as app_inner, diff_loader, revision_tree};
 use crate::app::{App, SidePanel};
 use crate::ui::widgets::file_tree::FileTreeNode;
 
@@ -111,19 +111,26 @@ impl App {
     }
 
     pub(super) fn selected_commit_tree_node(&self) -> Option<&FileTreeNode> {
-        if self.active_panel != SidePanel::Commits || !self.commits.tree_mode.active {
-            return None;
-        }
-        revision_tree::selected_tree_node(
-            &self.commits.panel.list_state,
-            &self.commits.tree_mode.nodes,
+        self.selected_revision_tree_node(
+            SidePanel::Commits,
+            &self.commits.panel,
+            &self.commits.tree_mode,
         )
     }
 
     pub(super) fn selected_stash_tree_node(&self) -> Option<&FileTreeNode> {
-        if self.active_panel != SidePanel::Stash || !self.stash.tree_mode.active {
+        self.selected_revision_tree_node(SidePanel::Stash, &self.stash.panel, &self.stash.tree_mode)
+    }
+
+    fn selected_revision_tree_node<'a, T>(
+        &'a self,
+        expected: SidePanel,
+        panel: &app_inner::PanelState,
+        tree: &'a app_inner::TreeModeState<T>,
+    ) -> Option<&'a FileTreeNode> {
+        if self.active_panel != expected || !tree.active {
             return None;
         }
-        revision_tree::selected_tree_node(&self.stash.panel.list_state, &self.stash.tree_mode.nodes)
+        revision_tree::selected_tree_node(&panel.list_state, &tree.nodes)
     }
 }
