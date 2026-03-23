@@ -13,7 +13,7 @@ use crossterm::{
 };
 use flux::action::{Action, SystemAction};
 use flux::effects::EffectCtx;
-use flux::snapshot::{AppStateSnapshot, AppStateSnapshotOwned};
+use flux::snapshot::AppStateSnapshotOwned;
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::fs::{File, OpenOptions};
 use std::io;
@@ -266,7 +266,6 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: App
 
             let ui_result = ui_loop(
                 terminal,
-                shared_app,
                 perf,
                 action_tx,
                 &mut state_version_rx,
@@ -286,7 +285,6 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: App
 
 async fn ui_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    app: Rc<Mutex<App>>,
     perf: Arc<PerfCounters>,
     action_tx: mpsc::UnboundedSender<Action>,
     state_version_rx: &mut watch::Receiver<u64>,
@@ -312,9 +310,9 @@ async fn ui_loop(
         }
 
         if snapshot_rx.has_changed().unwrap_or(false) {
-            let snapshot = snapshot_rx.borrow_and_update().clone();
             let draw_started = Instant::now();
             terminal.draw(|f| {
+                let snapshot = snapshot_rx.borrow_and_update();
                 let view = snapshot.as_snapshot();
                 crate::ui::layout::render_layout(f, &view);
             })?;
@@ -337,11 +335,10 @@ async fn ui_loop(
                         perf.ui_events.fetch_add(1, Ordering::Relaxed);
                         if matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
                             let key_started = Instant::now();
-                            let mapped_actions = {
-                                let app = app.lock().await;
-                                let snapshot = AppStateSnapshot::from_app(&app);
-                                flux::input_mapper::map_key_to_actions(key, &snapshot)
-                            };
+                            let snapshot = snapshot_rx.borrow();
+                            let view = snapshot.as_snapshot();
+                            let mapped_actions =
+                                flux::input_mapper::map_key_to_actions(key, &view);
                             for action in mapped_actions {
                                 let _ = action_tx.send(action);
                                 perf.ui_messages.fetch_add(1, Ordering::Relaxed);
@@ -379,8 +376,8 @@ async fn ui_loop(
         }
 
         let should_tick = {
-            let app = app.lock().await;
-            app.has_pending_refresh_work() || app.is_diff_reload_due(DIFF_RELOAD_DEBOUNCE)
+            let snapshot = snapshot_rx.borrow();
+            snapshot.should_tick(DIFF_RELOAD_DEBOUNCE)
         };
         if should_tick {
             perf.ui_ticks_sent.fetch_add(1, Ordering::Relaxed);
@@ -464,10 +461,8 @@ async fn ui_loop(
                 } else {
                     0
                 };
-                let (pending_tasks, task_metrics) = {
-                    let app = app.lock().await;
-                    (app.pending_background_task_count(), app.task_metrics())
-                };
+                let pending_tasks = 0usize;
+                let task_metrics = crate::flux::task_manager::TaskMetrics::default();
                 log.write_line(&format!(
                     "1s ui_events={} ui_messages={} ticks={} draws={} avg_draw_us={} max_draw_us={} avg_ui_lock_wait_us={} avg_ui_key_us={} max_ui_key_us={} dispatch_actions={} avg_dispatch_us={} max_dispatch_us={} avg_dispatch_lock_wait_us={} avg_dispatch_reduce_us={} dispatch_commands={} effect_commands={} avg_effect_us={} effect_actions={} action_backlog={} action_backlog_max={} command_backlog={} command_backlog_max={} pending_tasks={} task_enqueued={} task_dequeued={} task_ready={} task_finished={} task_failed={} task_cancelled={} task_stale_dropped={} task_queue_dropped={}",
                     delta.ui_events,
@@ -508,8 +503,8 @@ async fn ui_loop(
         }
 
         let should_continue = {
-            let app = app.lock().await;
-            app.running
+            let snapshot = snapshot_rx.borrow();
+            snapshot.running
         };
 
         if !should_continue {
