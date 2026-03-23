@@ -3,21 +3,21 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 /// Documentation comment in English.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GlobalKeymap {
     #[serde(flatten)]
     pub bindings: HashMap<String, Vec<String>>,
 }
 
 /// Documentation comment in English.
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PanelKeymap {
     #[serde(flatten)]
     pub bindings: HashMap<String, Vec<String>>,
 }
 
 /// Documentation comment in English.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Keymap {
     pub global: GlobalKeymap,
     #[serde(default)]

@@ -136,6 +136,27 @@ pub(super) fn tick_background_loads() -> Command {
     Command::Effect(crate::flux::effects::EffectRequest::ProcessBackgroundLoads)
 }
 
+/// Log a completed operation's result and return the appropriate ReduceOutput.
+/// On success: logs success_msg, returns full-UI invalidation.
+/// On failure: logs the failure message, returns no-op output.
+pub(super) fn log_result(
+    ctx: &mut ReduceCtx<'_>,
+    result: &Result<(), String>,
+    success_msg: impl Into<String>,
+    fail_msg: impl FnOnce(&str) -> String,
+) -> ReduceOutput {
+    match result {
+        Ok(()) => {
+            ctx.app.push_log(success_msg, true);
+            ReduceOutput::none().with_invalidation(UiInvalidation::all())
+        }
+        Err(e) => {
+            ctx.app.push_log(fail_msg(e), false);
+            ReduceOutput::none()
+        }
+    }
+}
+
 /// Shared test utilities for all store unit tests.
 #[cfg(test)]
 pub mod test_support {
@@ -257,5 +278,15 @@ pub mod test_support {
             sequence: 1,
             action,
         }
+    }
+
+    pub fn reduce_action<S: super::Store>(
+        store: &mut S,
+        app: &mut App,
+        action: Action,
+    ) -> super::ReduceOutput {
+        let env = make_envelope(action);
+        let mut ctx = super::ReduceCtx { app };
+        store.reduce(&env, &mut ctx)
     }
 }

@@ -1,6 +1,5 @@
 use super::{diff_cache, diff_loader, dirty_flags, refresh, revision_tree};
 use crate::config::keymap::Keymap;
-use crate::flux::snapshot::AppStateSnapshot;
 use crate::flux::task_manager::{
     TaskGeneration, TaskKey, TaskManager, TaskMetrics, TaskPriority, TaskRequest, TaskRequestKind,
     TaskResult, TaskResultKind,
@@ -9,11 +8,9 @@ use crate::git::{
     BranchInfo, CommitInfo, DiffLine, FileEntry, Git2Repository, GitError, GitRepository,
     GitStatus, StashInfo,
 };
-use crate::ui::layout::render_layout;
 use crate::ui::widgets::file_tree::{FileTree, FileTreeNode};
 use color_eyre::Result;
 use ratatui::widgets::ListState;
-use ratatui::Frame;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
@@ -31,6 +28,7 @@ pub enum SidePanel {
 }
 
 /// Documentation comment in English.
+#[derive(Clone)]
 pub struct PanelState {
     pub list_state: ListState,
 }
@@ -49,6 +47,7 @@ impl Default for PanelState {
     }
 }
 
+#[derive(Clone)]
 pub struct TreeModeState<T> {
     pub active: bool,
     pub nodes: Vec<FileTreeNode>,
@@ -69,7 +68,7 @@ impl<T> Default for TreeModeState<T> {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct FilesPanelState {
     pub panel: PanelState,
     pub tree_nodes: Vec<FileTreeNode>,
@@ -78,7 +77,7 @@ pub struct FilesPanelState {
     pub visual_anchor: Option<usize>,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct BranchesPanelState {
     pub panel: PanelState,
     pub items: Vec<BranchInfo>,
@@ -109,7 +108,10 @@ enum BackgroundReceiver {
 }
 
 enum BackgroundPayload {
-    Status { status: GitStatus, fast: bool },
+    Status {
+        status: GitStatus,
+        fast: bool,
+    },
     Branches(Vec<BranchInfo>),
     Stashes(Vec<StashInfo>),
     Commits(Vec<CommitInfo>),
@@ -135,7 +137,7 @@ const COMMITS_LOAD_STEP: usize = 40;
 const COMMITS_LOAD_AHEAD_THRESHOLD: usize = 8;
 const BRANCH_LOG_DIFF_LIMIT: usize = 20;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct CommitsPanelState {
     pub panel: PanelState,
     pub items: Vec<CommitInfo>,
@@ -144,7 +146,7 @@ pub struct CommitsPanelState {
     pub highlighted_oids: HashSet<String>,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct StashPanelState {
     pub panel: PanelState,
     pub items: Vec<StashInfo>,
@@ -152,6 +154,7 @@ pub struct StashPanelState {
 }
 
 /// Documentation comment in English.
+#[derive(Clone)]
 pub struct CommandLogEntry {
     pub command: String,
     pub success: bool,
@@ -196,7 +199,7 @@ pub struct SearchScopeKey {
     pub stash_tree_mode: bool,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct RenderCache {
     pub files_visual_selected_indices: HashSet<usize>,
     pub files_search_summary: Option<String>,
@@ -379,14 +382,6 @@ impl App {
             app.schedule_diff_reload();
         }
         Ok(app)
-    }
-
-    pub fn render(&mut self, frame: &mut Frame) {
-        if self.dirty.left_panels {
-            self.refresh_render_cache();
-        }
-        let snapshot = AppStateSnapshot::from_app(self);
-        render_layout(frame, &snapshot);
     }
 
     pub(crate) fn keymap(&self) -> &Keymap {
@@ -1022,9 +1017,10 @@ impl App {
                                 } else {
                                     self.pending_refresh = Some(match self.pending_refresh {
                                         None => RefreshKind::StatusOnly,
-                                        Some(existing) => {
-                                            Self::max_refresh_kind(existing, RefreshKind::StatusOnly)
-                                        }
+                                        Some(existing) => Self::max_refresh_kind(
+                                            existing,
+                                            RefreshKind::StatusOnly,
+                                        ),
                                     });
                                 }
                             }
@@ -1087,8 +1083,7 @@ impl App {
                                     (!self.branches.commits_subview.items.is_empty()).then_some(0),
                                 );
                                 self.dirty.mark_all();
-                                if self
-                                    .should_schedule_diff_for_refresh(DiffRefreshSource::Commits)
+                                if self.should_schedule_diff_for_refresh(DiffRefreshSource::Commits)
                                 {
                                     schedule_diff = true;
                                 }
@@ -1188,7 +1183,9 @@ impl App {
         if selected + COMMITS_LOAD_AHEAD_THRESHOLD < len {
             return;
         }
-        self.commits_requested_limit = self.commits_requested_limit.saturating_add(COMMITS_LOAD_STEP);
+        self.commits_requested_limit = self
+            .commits_requested_limit
+            .saturating_add(COMMITS_LOAD_STEP);
         self.commits.dirty = true;
         debug!(
             event = "commits_extend_requested",
@@ -1911,7 +1908,7 @@ impl App {
         }
     }
 
-    fn refresh_render_cache(&mut self) {
+    pub(crate) fn refresh_render_cache(&mut self) {
         self.render_cache.files_visual_selected_indices = self.visual_selected_indices();
         self.render_cache.files_search_summary =
             self.search_match_summary_for(SidePanel::Files, false, false);

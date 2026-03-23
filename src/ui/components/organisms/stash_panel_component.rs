@@ -1,8 +1,9 @@
 use crate::app::{SidePanel, StashPanelState};
-use crate::ui::components::organisms::{PanelComponent, PanelRenderContext};
+use crate::ui::components::organisms::{
+    empty_list_item, title_with_search, PanelComponent, PanelRenderContext,
+};
 use crate::ui::highlight::highlighted_spans;
 use crate::ui::panels::revision_tree_panel::{render_revision_tree_panel, RevisionTreePanelProps};
-use crate::ui::theme::UiTheme;
 use ratatui::{
     layout::Rect,
     style::{Color, Style},
@@ -13,10 +14,9 @@ use ratatui::{
 
 impl PanelComponent for StashPanelState {
     fn draw(&self, frame: &mut Frame, area: Rect, ctx: &PanelRenderContext<'_>) {
-        let theme = UiTheme::default();
         let is_active = ctx.active_panel == SidePanel::Stash;
         let items: Vec<ListItem> = if self.items.is_empty() {
-            vec![ListItem::new("No stashes").style(Style::default().fg(theme.text_muted))]
+            empty_list_item("No stashes")
         } else {
             self.items
                 .iter()
@@ -32,7 +32,7 @@ impl PanelComponent for StashPanelState {
                 .collect()
         };
 
-        let mut title = if self.tree_mode.active {
+        let base = if self.tree_mode.active {
             if let Some(index) = self.tree_mode.selected_source {
                 format!("Stash Files stash@{{{}}} [Esc Back]", index)
             } else {
@@ -41,9 +41,7 @@ impl PanelComponent for StashPanelState {
         } else {
             "Stash".to_string()
         };
-        if let Some(search) = &ctx.search_summary {
-            title = format!("{} [{}]", title, search);
-        }
+        let title = title_with_search(&base, ctx.search_summary);
         render_revision_tree_panel(
             frame,
             area,

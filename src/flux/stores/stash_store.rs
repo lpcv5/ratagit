@@ -1,7 +1,7 @@
 use crate::app::Command;
 use crate::flux::action::{Action, ActionEnvelope, DomainAction};
 use crate::flux::effects::EffectRequest;
-use crate::flux::stores::{ReduceCtx, ReduceOutput, Store, UiInvalidation};
+use crate::flux::stores::{log_result, ReduceCtx, ReduceOutput, Store, UiInvalidation};
 
 pub struct StashStore;
 
@@ -9,6 +9,17 @@ impl StashStore {
     pub fn new() -> Self {
         Self
     }
+}
+
+fn stash_op_selected(
+    ctx: &mut ReduceCtx<'_>,
+    make_effect: fn(usize) -> EffectRequest,
+) -> ReduceOutput {
+    if let Some(index) = ctx.app.selected_stash_index() {
+        return ReduceOutput::from_command(Command::Effect(make_effect(index)));
+    }
+    ctx.app.push_log("no stash selected", false);
+    ReduceOutput::none()
 }
 
 impl Store for StashStore {
@@ -38,75 +49,27 @@ impl Store for StashStore {
                 }
                 ReduceOutput::none()
             }
-            DomainAction::StashApplySelected => {
-                if let Some(index) = ctx.app.selected_stash_index() {
-                    return ReduceOutput::from_command(Command::Effect(EffectRequest::StashApply(
-                        index,
-                    )));
-                }
-                ctx.app.push_log("no stash selected", false);
-                ReduceOutput::none()
-            }
-            DomainAction::StashApplyFinished { index, result } => {
-                match result {
-                    Ok(()) => {
-                        ctx.app
-                            .push_log(format!("stash applied stash@{{{}}}", index), true);
-                        return ReduceOutput::none().with_invalidation(UiInvalidation::all());
-                    }
-                    Err(e) => ctx.app.push_log(
-                        format!("stash apply failed stash@{{{}}}: {}", index, e),
-                        false,
-                    ),
-                }
-                ReduceOutput::none()
-            }
-            DomainAction::StashPopSelected => {
-                if let Some(index) = ctx.app.selected_stash_index() {
-                    return ReduceOutput::from_command(Command::Effect(EffectRequest::StashPop(
-                        index,
-                    )));
-                }
-                ctx.app.push_log("no stash selected", false);
-                ReduceOutput::none()
-            }
-            DomainAction::StashPopFinished { index, result } => {
-                match result {
-                    Ok(()) => {
-                        ctx.app
-                            .push_log(format!("stash popped stash@{{{}}}", index), true);
-                        return ReduceOutput::none().with_invalidation(UiInvalidation::all());
-                    }
-                    Err(e) => ctx.app.push_log(
-                        format!("stash pop failed stash@{{{}}}: {}", index, e),
-                        false,
-                    ),
-                }
-                ReduceOutput::none()
-            }
-            DomainAction::StashDropSelected => {
-                if let Some(index) = ctx.app.selected_stash_index() {
-                    return ReduceOutput::from_command(Command::Effect(EffectRequest::StashDrop(
-                        index,
-                    )));
-                }
-                ctx.app.push_log("no stash selected", false);
-                ReduceOutput::none()
-            }
-            DomainAction::StashDropFinished { index, result } => {
-                match result {
-                    Ok(()) => {
-                        ctx.app
-                            .push_log(format!("stash dropped stash@{{{}}}", index), true);
-                        return ReduceOutput::none().with_invalidation(UiInvalidation::all());
-                    }
-                    Err(e) => ctx.app.push_log(
-                        format!("stash drop failed stash@{{{}}}: {}", index, e),
-                        false,
-                    ),
-                }
-                ReduceOutput::none()
-            }
+            DomainAction::StashApplySelected => stash_op_selected(ctx, EffectRequest::StashApply),
+            DomainAction::StashApplyFinished { index, result } => log_result(
+                ctx,
+                result,
+                format!("stash applied stash@{{{}}}", index),
+                |e| format!("stash apply failed stash@{{{}}}: {}", index, e),
+            ),
+            DomainAction::StashPopSelected => stash_op_selected(ctx, EffectRequest::StashPop),
+            DomainAction::StashPopFinished { index, result } => log_result(
+                ctx,
+                result,
+                format!("stash popped stash@{{{}}}", index),
+                |e| format!("stash pop failed stash@{{{}}}: {}", index, e),
+            ),
+            DomainAction::StashDropSelected => stash_op_selected(ctx, EffectRequest::StashDrop),
+            DomainAction::StashDropFinished { index, result } => log_result(
+                ctx,
+                result,
+                format!("stash dropped stash@{{{}}}", index),
+                |e| format!("stash drop failed stash@{{{}}}: {}", index, e),
+            ),
             _ => ReduceOutput::none(),
         }
     }
@@ -116,14 +79,8 @@ impl Store for StashStore {
 mod tests {
     use super::*;
     use crate::flux::action::{Action, DomainAction};
-    use crate::flux::stores::test_support::{make_envelope, mock_app};
+    use crate::flux::stores::test_support::{mock_app, reduce_action as reduce};
     use std::path::PathBuf;
-
-    fn reduce(store: &mut StashStore, app: &mut crate::app::App, action: Action) -> ReduceOutput {
-        let env = make_envelope(action);
-        let mut ctx = ReduceCtx { app };
-        store.reduce(&env, &mut ctx)
-    }
 
     #[test]
     fn test_stash_push_emits_effect() {
@@ -203,13 +160,7 @@ mod tests {
 mod more_tests {
     use super::*;
     use crate::flux::action::{Action, DomainAction};
-    use crate::flux::stores::test_support::{make_envelope, mock_app};
-
-    fn reduce(store: &mut StashStore, app: &mut crate::app::App, action: Action) -> ReduceOutput {
-        let env = make_envelope(action);
-        let mut ctx = ReduceCtx { app };
-        store.reduce(&env, &mut ctx)
-    }
+    use crate::flux::stores::test_support::{mock_app, reduce_action as reduce};
 
     #[test]
     fn test_stash_pop_selected_emits_effect() {

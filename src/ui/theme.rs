@@ -68,4 +68,12 @@ impl UiTheme {
     pub fn inactive_highlight(&self) -> Style {
         Style::default()
     }
+
+    pub fn highlight_for(&self, is_active: bool) -> Style {
+        if is_active {
+            self.active_highlight()
+        } else {
+            self.inactive_highlight()
+        }
+    }
 }

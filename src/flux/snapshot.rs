@@ -104,3 +104,142 @@ impl<'a> AppStateSnapshot<'a> {
         }
     }
 }
+
+/// Owned version of CommandLogSnapshotEntry — no lifetime binding.
+pub struct CommandLogSnapshotEntryOwned {
+    pub command: String,
+    pub success: bool,
+}
+
+/// Owned version of AppStateSnapshot that can be sent through channels
+/// without holding the App lock. All fields are cloned/owned.
+pub struct AppStateSnapshotOwned {
+    pub keymap: Keymap,
+    pub active_panel: SidePanel,
+    pub input_mode: Option<InputMode>,
+    pub input_buffer: String,
+
+    pub files: FilesPanelState,
+    pub branches: BranchesPanelState,
+    pub commits: CommitsPanelState,
+    pub stash: StashPanelState,
+    pub render_cache: RenderCache,
+
+    pub current_diff: Vec<DiffLine>,
+    pub diff_scroll: usize,
+    pub diff_loading: bool,
+
+    pub command_log: Vec<CommandLogSnapshotEntryOwned>,
+    pub shortcut_hints: Vec<(String, String)>,
+
+    pub commit_focus: CommitFieldFocus,
+    pub commit_message_buffer: String,
+    pub commit_description_buffer: String,
+    pub stash_message_buffer: String,
+    pub stash_targets: Vec<String>,
+
+    pub branch_switch_target: Option<String>,
+    pub uncommitted_change_count: usize,
+
+    pub files_search_query: Option<String>,
+    pub branches_search_query: Option<String>,
+    pub commits_search_query: Option<String>,
+    pub stash_search_query: Option<String>,
+    pub has_search_for_active_scope: bool,
+    pub has_search_query_for_active_scope: bool,
+}
+
+impl AppStateSnapshotOwned {
+    pub fn from_app(app: &App) -> Self {
+        Self {
+            keymap: app.keymap().clone(),
+            active_panel: app.active_panel,
+            input_mode: app.input_mode,
+            input_buffer: app.input_buffer.clone(),
+            files: app.files.clone(),
+            branches: app.branches.clone(),
+            commits: app.commits.clone(),
+            stash: app.stash.clone(),
+            render_cache: app.render_cache.clone(),
+            current_diff: app.current_diff.clone(),
+            diff_scroll: app.diff_scroll,
+            diff_loading: app.has_pending_diff_reload() && app.current_diff.is_empty(),
+            command_log: app
+                .command_log
+                .iter()
+                .map(|entry| CommandLogSnapshotEntryOwned {
+                    command: entry.command.clone(),
+                    success: entry.success,
+                })
+                .collect(),
+            shortcut_hints: app.shortcut_hints(),
+            commit_focus: app.commit_focus,
+            commit_message_buffer: app.commit_message_buffer.clone(),
+            commit_description_buffer: app.commit_description_buffer.clone(),
+            stash_message_buffer: app.stash_message_buffer.clone(),
+            stash_targets: app
+                .stash_targets
+                .iter()
+                .map(|p| p.display().to_string())
+                .collect(),
+            branch_switch_target: app.pending_branch_switch_target().map(str::to_owned),
+            uncommitted_change_count: app.status.staged.len()
+                + app.status.unstaged.len()
+                + app.status.untracked.len(),
+            files_search_query: app
+                .search_query_for_scope(SidePanel::Files, false, false)
+                .map(str::to_owned),
+            branches_search_query: app
+                .search_query_for_scope(SidePanel::LocalBranches, false, false)
+                .map(str::to_owned),
+            commits_search_query: app
+                .search_query_for_scope(SidePanel::Commits, app.commits.tree_mode.active, false)
+                .map(str::to_owned),
+            stash_search_query: app
+                .search_query_for_scope(SidePanel::Stash, false, app.stash.tree_mode.active)
+                .map(str::to_owned),
+            has_search_for_active_scope: app.has_search_for_active_scope(),
+            has_search_query_for_active_scope: app.has_search_query_for_active_scope(),
+        }
+    }
+
+    /// Borrow-based view of this owned snapshot, compatible with all existing render functions.
+    pub fn as_snapshot(&self) -> AppStateSnapshot<'_> {
+        AppStateSnapshot {
+            keymap: &self.keymap,
+            active_panel: self.active_panel,
+            input_mode: self.input_mode,
+            input_buffer: &self.input_buffer,
+            files: &self.files,
+            branches: &self.branches,
+            commits: &self.commits,
+            stash: &self.stash,
+            render_cache: &self.render_cache,
+            current_diff: &self.current_diff,
+            diff_scroll: self.diff_scroll,
+            diff_loading: self.diff_loading,
+            command_log: self
+                .command_log
+                .iter()
+                .map(|entry| CommandLogSnapshotEntry {
+                    command: entry.command.as_str(),
+                    success: entry.success,
+                })
+                .collect(),
+            shortcut_hints: self.shortcut_hints.clone(),
+            commit_focus: self.commit_focus,
+            commit_message_buffer: &self.commit_message_buffer,
+            commit_description_buffer: &self.commit_description_buffer,
+            stash_message_buffer: &self.stash_message_buffer,
+            stash_targets: self.stash_targets.clone(),
+            branch_switch_target: self.branch_switch_target.as_deref(),
+            uncommitted_change_count: self.uncommitted_change_count,
+            files_search_query: self.files_search_query.as_deref(),
+            branches_search_query: self.branches_search_query.as_deref(),
+            commits_search_query: self.commits_search_query.as_deref(),
+            stash_search_query: self.stash_search_query.as_deref(),
+            has_search_for_active_scope: self.has_search_for_active_scope,
+            has_search_query_for_active_scope: self.has_search_query_for_active_scope,
+        }
+    }
+}

@@ -1,7 +1,9 @@
 use crate::app::{Command, RefreshKind};
 use crate::flux::action::{Action, ActionEnvelope, DomainAction};
 use crate::flux::effects::EffectRequest;
-use crate::flux::stores::{tick_background_loads, ReduceCtx, ReduceOutput, Store, UiInvalidation};
+use crate::flux::stores::{
+    log_result, tick_background_loads, ReduceCtx, ReduceOutput, Store, UiInvalidation,
+};
 
 pub struct BranchStore;
 
@@ -21,16 +23,9 @@ impl Store for BranchStore {
                 EffectRequest::CreateBranch(name.clone()),
             )),
             DomainAction::CreateBranchFinished { name, result } => {
-                match result {
-                    Ok(()) => {
-                        ctx.app.push_log(format!("branch created: {}", name), true);
-                        return ReduceOutput::none().with_invalidation(UiInvalidation::all());
-                    }
-                    Err(e) => ctx
-                        .app
-                        .push_log(format!("create branch failed: {}", e), false),
-                }
-                ReduceOutput::none()
+                log_result(ctx, result, format!("branch created: {}", name), |e| {
+                    format!("create branch failed: {}", e)
+                })
             }
             DomainAction::CheckoutSelectedBranch => {
                 ReduceOutput::from_command(Command::Effect(EffectRequest::CheckoutSelectedBranch))
@@ -91,16 +86,9 @@ impl Store for BranchStore {
                 ReduceOutput::none()
             }
             DomainAction::DeleteBranchFinished { name, result } => {
-                match result {
-                    Ok(()) => {
-                        ctx.app.push_log(format!("deleted branch {}", name), true);
-                        return ReduceOutput::none().with_invalidation(UiInvalidation::all());
-                    }
-                    Err(e) => ctx
-                        .app
-                        .push_log(format!("delete branch failed: {}", e), false),
-                }
-                ReduceOutput::none()
+                log_result(ctx, result, format!("deleted branch {}", name), |e| {
+                    format!("delete branch failed: {}", e)
+                })
             }
             DomainAction::FetchRemote => {
                 if ctx.app.branches.is_fetching_remote {
@@ -136,13 +124,7 @@ impl Store for BranchStore {
 mod tests {
     use super::*;
     use crate::flux::action::{Action, DomainAction};
-    use crate::flux::stores::test_support::{make_envelope, mock_app};
-
-    fn reduce(store: &mut BranchStore, app: &mut crate::app::App, action: Action) -> ReduceOutput {
-        let env = make_envelope(action);
-        let mut ctx = ReduceCtx { app };
-        store.reduce(&env, &mut ctx)
-    }
+    use crate::flux::stores::test_support::{mock_app, reduce_action as reduce};
 
     #[test]
     fn test_create_branch_emits_effect() {
@@ -240,13 +222,7 @@ mod tests {
 mod more_tests {
     use super::*;
     use crate::flux::action::{Action, DomainAction};
-    use crate::flux::stores::test_support::{make_envelope, mock_app};
-
-    fn reduce(store: &mut BranchStore, app: &mut crate::app::App, action: Action) -> ReduceOutput {
-        let env = make_envelope(action);
-        let mut ctx = ReduceCtx { app };
-        store.reduce(&env, &mut ctx)
-    }
+    use crate::flux::stores::test_support::{mock_app, reduce_action as reduce};
 
     #[test]
     fn test_checkout_branch_finished_ok_logs_success() {

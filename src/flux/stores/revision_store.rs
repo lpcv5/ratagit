@@ -41,17 +41,7 @@ impl Store for RevisionStore {
 mod tests {
     use super::*;
     use crate::flux::action::{Action, DomainAction};
-    use crate::flux::stores::test_support::{make_envelope, mock_app};
-
-    fn reduce(
-        store: &mut RevisionStore,
-        app: &mut crate::app::App,
-        action: Action,
-    ) -> ReduceOutput {
-        let env = make_envelope(action);
-        let mut ctx = ReduceCtx { app };
-        store.reduce(&env, &mut ctx)
-    }
+    use crate::flux::stores::test_support::{mock_app, reduce_action as reduce};
 
     #[test]
     fn test_revision_open_tree_emits_effect() {

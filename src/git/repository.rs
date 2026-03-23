@@ -2,8 +2,8 @@ use std::cell::RefCell;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::process::Command;
-use std::sync::mpsc::{self, Receiver};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use thiserror::Error;
@@ -617,7 +617,11 @@ impl RepoWorker {
     }
 
     /// Send a job and return a receiver for its result.
-    fn run<T, F>(&self, label: &'static str, job: F) -> Result<Receiver<Result<T, GitError>>, GitError>
+    fn run<T, F>(
+        &self,
+        label: &'static str,
+        job: F,
+    ) -> Result<Receiver<Result<T, GitError>>, GitError>
     where
         T: Send + 'static,
         F: FnOnce(&Git2RepoInner) -> Result<T, GitError> + Send + 'static,
@@ -671,13 +675,20 @@ impl RepoWorkerExternal {
                 while let Ok(job) = rx.recv() {
                     job(&inner);
                 }
-                write_git_job_log(&format!("external_repo_worker_exited worker=external-{}", id));
+                write_git_job_log(&format!(
+                    "external_repo_worker_exited worker=external-{}",
+                    id
+                ));
             })
             .map_err(|e| GitError::Git2(format!("failed to spawn external worker: {}", e)))?;
         Ok(Self { id, tx })
     }
 
-    fn run<T, F>(&self, label: &'static str, job: F) -> Result<Receiver<Result<T, GitError>>, GitError>
+    fn run<T, F>(
+        &self,
+        label: &'static str,
+        job: F,
+    ) -> Result<Receiver<Result<T, GitError>>, GitError>
     where
         T: Send + 'static,
         F: FnOnce(&Git2RepoInner) -> Result<T, GitError> + Send + 'static,
@@ -886,7 +897,6 @@ impl Git2RepoInner {
         Err(GitError::Git2(detail))
     }
 
-
     fn resolve_ref_oid(&self, refname: &str) -> Option<git2::Oid> {
         let reference = self.repo.find_reference(refname).ok()?;
         reference
@@ -916,9 +926,7 @@ impl Git2RepoInner {
             .ok()?;
         let upstream = local.upstream().ok()?;
         let name = upstream.get().name()?;
-        let trimmed = name
-            .strip_prefix("refs/remotes/")
-            .unwrap_or(name);
+        let trimmed = name.strip_prefix("refs/remotes/").unwrap_or(name);
         parse_remote_from_upstream(trimmed)
     }
 
@@ -1437,10 +1445,7 @@ impl Git2RepoInner {
             };
             let path = match delta.status() {
                 git2::Delta::Deleted => delta.old_file().path(),
-                _ => delta
-                    .new_file()
-                    .path()
-                    .or_else(|| delta.old_file().path()),
+                _ => delta.new_file().path().or_else(|| delta.old_file().path()),
             };
             if let Some(path) = path {
                 files.push(FileEntry {
@@ -1503,10 +1508,7 @@ impl Git2RepoInner {
             };
             let path = match delta.status() {
                 git2::Delta::Deleted => delta.old_file().path(),
-                _ => delta
-                    .new_file()
-                    .path()
-                    .or_else(|| delta.old_file().path()),
+                _ => delta.new_file().path().or_else(|| delta.old_file().path()),
             };
             if let Some(path) = path {
                 files.push(FileEntry {
@@ -1536,9 +1538,9 @@ impl Git2RepoInner {
             let path_str = Self::path_to_str(path, "stash path")?;
             opts.pathspec(path_str);
         }
-        let diff = self
-            .repo
-            .diff_tree_to_tree(parent_tree.as_ref(), Some(&tree), Some(&mut opts))?;
+        let diff =
+            self.repo
+                .diff_tree_to_tree(parent_tree.as_ref(), Some(&tree), Some(&mut opts))?;
         Ok(parse_diff(&diff))
     }
 
@@ -1618,18 +1620,19 @@ impl Git2RepoInner {
             let path_str = Self::path_to_str(path, "commit path")?;
             opts.pathspec(path_str);
         }
-        let diff = match self
-            .repo
-            .diff_tree_to_tree(parent_tree.as_ref(), Some(&tree), Some(&mut opts))
-        {
-            Ok(diff) => diff,
-            Err(err) => {
-                return Ok(vec![DiffLine {
-                    kind: DiffLineKind::Header,
-                    content: format!("diff unavailable: {}", err),
-                }]);
-            }
-        };
+        let diff =
+            match self
+                .repo
+                .diff_tree_to_tree(parent_tree.as_ref(), Some(&tree), Some(&mut opts))
+            {
+                Ok(diff) => diff,
+                Err(err) => {
+                    return Ok(vec![DiffLine {
+                        kind: DiffLineKind::Header,
+                        content: format!("diff unavailable: {}", err),
+                    }]);
+                }
+            };
         Ok(parse_diff(&diff))
     }
 
@@ -1759,7 +1762,11 @@ impl Git2Repository {
     }
 
     /// Send a job to the persistent worker and return a receiver for the result.
-    fn spawn_repo_job<T, F>(&self, label: &'static str, job: F) -> Result<Receiver<Result<T, GitError>>, GitError>
+    fn spawn_repo_job<T, F>(
+        &self,
+        label: &'static str,
+        job: F,
+    ) -> Result<Receiver<Result<T, GitError>>, GitError>
     where
         T: Send + 'static,
         F: FnOnce(&Git2RepoInner) -> Result<T, GitError> + Send + 'static,
@@ -1777,10 +1784,7 @@ impl Git2Repository {
         T: Send + 'static,
         F: FnOnce(&Git2RepoInner) -> Result<T, GitError> + Send + 'static,
     {
-        let idx = self
-            .external_next
-            .fetch_add(1, Ordering::Relaxed)
-            % self.external_workers.len();
+        let idx = self.external_next.fetch_add(1, Ordering::Relaxed) % self.external_workers.len();
         self.external_workers[idx].run(label, job)
     }
 
@@ -1808,10 +1812,7 @@ impl Git2Repository {
         T: Send + 'static,
         F: FnOnce(&Git2RepoInner) -> Result<T, GitError> + Send + 'static,
     {
-        let idx = self
-            .external_next
-            .fetch_add(1, Ordering::Relaxed)
-            % self.external_workers.len();
+        let idx = self.external_next.fetch_add(1, Ordering::Relaxed) % self.external_workers.len();
         let rx = self.external_workers[idx].run(label, job)?;
         task::spawn_blocking(move || rx.recv())
             .await
@@ -2008,8 +2009,8 @@ impl GitRepository for Git2Repository {
         self.spawn_repo_job_external("commits_for_branch", move |inner| {
             inner.commits_for_branch(&name, limit)
         })?
-            .recv()
-            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+        .recv()
+        .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
     }
 
     fn commits_for_branch_async(
@@ -2052,9 +2053,11 @@ impl GitRepository for Git2Repository {
         path: Option<&std::path::Path>,
     ) -> Result<Vec<DiffLine>, GitError> {
         let path = path.map(|p| p.to_path_buf());
-        self.spawn_repo_job("stash_diff", move |inner| inner.stash_diff(index, path.as_deref()))?
-            .recv()
-            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+        self.spawn_repo_job("stash_diff", move |inner| {
+            inner.stash_diff(index, path.as_deref())
+        })?
+        .recv()
+        .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
     }
 
     fn stash_diff_async(
@@ -2062,15 +2065,19 @@ impl GitRepository for Git2Repository {
         index: usize,
         path: Option<PathBuf>,
     ) -> Result<Receiver<Result<Vec<DiffLine>, GitError>>, GitError> {
-        self.spawn_repo_job("stash_diff", move |inner| inner.stash_diff(index, path.as_deref()))
+        self.spawn_repo_job("stash_diff", move |inner| {
+            inner.stash_diff(index, path.as_deref())
+        })
     }
 
     fn stash_push_paths(&self, paths: &[PathBuf], message: &str) -> Result<usize, GitError> {
         let paths = paths.to_vec();
         let message = message.to_string();
-        self.spawn_repo_job("stash_push_paths", move |inner| inner.stash_push_paths(&paths, &message))?
-            .recv()
-            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+        self.spawn_repo_job("stash_push_paths", move |inner| {
+            inner.stash_push_paths(&paths, &message)
+        })?
+        .recv()
+        .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
     }
 
     fn stash_push_paths_async(
@@ -2078,7 +2085,9 @@ impl GitRepository for Git2Repository {
         paths: Vec<PathBuf>,
         message: String,
     ) -> Result<Receiver<Result<usize, GitError>>, GitError> {
-        self.spawn_repo_job("stash_push_paths", move |inner| inner.stash_push_paths(&paths, &message))
+        self.spawn_repo_job("stash_push_paths", move |inner| {
+            inner.stash_push_paths(&paths, &message)
+        })
     }
 
     fn stash_apply(&self, index: usize) -> Result<(), GitError> {
@@ -2121,8 +2130,8 @@ impl GitRepository for Git2Repository {
         self.spawn_repo_job_external("commit_diff_scoped", move |inner| {
             inner.commit_diff_scoped(&oid, path.as_deref())
         })?
-            .recv()
-            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+        .recv()
+        .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
     }
 
     fn commit_diff_scoped_async(
@@ -2179,16 +2188,20 @@ impl GitRepository for Git2Repository {
 
     fn checkout_branch_with_auto_stash(&self, name: &str) -> Result<(), GitError> {
         let name = name.to_string();
-        self.spawn_repo_job("checkout_branch_with_auto_stash", move |inner| inner.checkout_branch_with_auto_stash(&name))?
-            .recv()
-            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+        self.spawn_repo_job("checkout_branch_with_auto_stash", move |inner| {
+            inner.checkout_branch_with_auto_stash(&name)
+        })?
+        .recv()
+        .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
     }
 
     fn checkout_branch_with_auto_stash_async(
         &self,
         name: String,
     ) -> Result<Receiver<Result<(), GitError>>, GitError> {
-        self.spawn_repo_job("checkout_branch_with_auto_stash", move |inner| inner.checkout_branch_with_auto_stash(&name))
+        self.spawn_repo_job("checkout_branch_with_auto_stash", move |inner| {
+            inner.checkout_branch_with_auto_stash(&name)
+        })
     }
 
     fn delete_branch(&self, name: &str) -> Result<(), GitError> {
@@ -2207,8 +2220,9 @@ impl GitRepository for Git2Repository {
 
     fn fetch_default_async(&self) -> Result<Receiver<Result<String, GitError>>, GitError> {
         let repo_root = self.repo_root.clone();
-        let upstream_result =
-            self.spawn_repo_job("fetch_upstream_probe", |inner| Ok(inner.upstream_remote_name()));
+        let upstream_result = self.spawn_repo_job("fetch_upstream_probe", |inner| {
+            Ok(inner.upstream_remote_name())
+        });
         let remote = match upstream_result.and_then(|rx| {
             rx.recv()
                 .map_err(|_| GitError::Git2("worker disconnected".to_string()))
@@ -2242,11 +2256,13 @@ impl AsyncGitRepository for Git2Repository {
     }
 
     async fn branches_async(&self) -> Result<Vec<BranchInfo>, GitError> {
-        self.spawn_repo_job_tokio("branches", |repo| repo.branches()).await
+        self.spawn_repo_job_tokio("branches", |repo| repo.branches())
+            .await
     }
 
     async fn stashes_async(&self) -> Result<Vec<StashInfo>, GitError> {
-        self.spawn_repo_job_tokio("stashes", |repo| repo.stashes()).await
+        self.spawn_repo_job_tokio("stashes", |repo| repo.stashes())
+            .await
     }
 
     async fn commits_async(&self, limit: usize) -> Result<Vec<CommitInfo>, GitError> {
@@ -2263,7 +2279,7 @@ impl AsyncGitRepository for Git2Repository {
         self.spawn_repo_job_external_tokio("commits_for_branch", move |repo| {
             repo.commits_for_branch(&branch, limit)
         })
-            .await
+        .await
     }
 
     async fn branch_log_async(&self, name: &str, limit: usize) -> Result<Vec<DiffLine>, GitError> {
@@ -2271,7 +2287,7 @@ impl AsyncGitRepository for Git2Repository {
         self.spawn_repo_job_external_tokio("branch_log", move |inner| {
             inner.branch_log(&branch, limit)
         })
-            .await
+        .await
     }
 
     async fn diff_unstaged_async(&self, path: PathBuf) -> Result<Vec<DiffLine>, GitError> {
@@ -2303,7 +2319,7 @@ impl AsyncGitRepository for Git2Repository {
         self.spawn_repo_job_external_tokio("commit_diff_scoped", move |inner| {
             inner.commit_diff_scoped(&oid, path.as_deref())
         })
-            .await
+        .await
     }
 
     async fn stash_diff_async(
@@ -2311,8 +2327,10 @@ impl AsyncGitRepository for Git2Repository {
         index: usize,
         path: Option<PathBuf>,
     ) -> Result<Vec<DiffLine>, GitError> {
-        self.spawn_repo_job_tokio("stash_diff", move |repo| repo.stash_diff(index, path.as_deref()))
-            .await
+        self.spawn_repo_job_tokio("stash_diff", move |repo| {
+            repo.stash_diff(index, path.as_deref())
+        })
+        .await
     }
 
     async fn stage_async(&self, path: PathBuf) -> Result<(), GitError> {
@@ -2356,8 +2374,10 @@ impl AsyncGitRepository for Git2Repository {
     }
 
     async fn checkout_branch_with_auto_stash_async(&self, name: String) -> Result<(), GitError> {
-        self.spawn_repo_job_tokio("checkout_branch_with_auto_stash", move |repo| repo.checkout_branch_with_auto_stash(&name))
-            .await
+        self.spawn_repo_job_tokio("checkout_branch_with_auto_stash", move |repo| {
+            repo.checkout_branch_with_auto_stash(&name)
+        })
+        .await
     }
 
     async fn delete_branch_async(&self, name: String) -> Result<(), GitError> {
@@ -2370,8 +2390,10 @@ impl AsyncGitRepository for Git2Repository {
         paths: Vec<PathBuf>,
         message: String,
     ) -> Result<usize, GitError> {
-        self.spawn_repo_job_tokio("stash_push_paths", move |repo| repo.stash_push_paths(&paths, &message))
-            .await
+        self.spawn_repo_job_tokio("stash_push_paths", move |repo| {
+            repo.stash_push_paths(&paths, &message)
+        })
+        .await
     }
 
     async fn stash_apply_async(&self, index: usize) -> Result<(), GitError> {
