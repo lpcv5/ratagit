@@ -147,6 +147,12 @@ pub struct AppStateSnapshotOwned {
     pub stash_search_query: Option<String>,
     pub has_search_for_active_scope: bool,
     pub has_search_query_for_active_scope: bool,
+
+    // State for tick check (Phase 4)
+    pub running: bool,
+    pub has_pending_refresh_work: bool,
+    pub pending_diff_reload: bool,
+    pub pending_diff_reload_at: Option<std::time::Instant>,
 }
 
 impl AppStateSnapshotOwned {
@@ -200,7 +206,24 @@ impl AppStateSnapshotOwned {
                 .map(str::to_owned),
             has_search_for_active_scope: app.has_search_for_active_scope(),
             has_search_query_for_active_scope: app.has_search_query_for_active_scope(),
+            running: app.running,
+            has_pending_refresh_work: app.has_pending_refresh_work(),
+            pending_diff_reload: app.has_pending_diff_reload(),
+            pending_diff_reload_at: if app.has_pending_diff_reload() {
+                Some(std::time::Instant::now())
+            } else {
+                None
+            },
         }
+    }
+
+    /// Check if a tick event should be sent to the backend.
+    pub fn should_tick(&self, debounce: std::time::Duration) -> bool {
+        self.has_pending_refresh_work
+            || (self.pending_diff_reload
+                && self
+                    .pending_diff_reload_at
+                    .is_some_and(|requested_at| requested_at.elapsed() >= debounce))
     }
 
     /// Borrow-based view of this owned snapshot, compatible with all existing render functions.

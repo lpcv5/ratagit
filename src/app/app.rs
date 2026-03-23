@@ -1,7 +1,7 @@
 use super::{diff_cache, diff_loader, dirty_flags, refresh, revision_tree};
 use crate::config::keymap::Keymap;
 use crate::flux::task_manager::{
-    TaskGeneration, TaskKey, TaskManager, TaskMetrics, TaskPriority, TaskRequest, TaskRequestKind,
+    TaskGeneration, TaskKey, TaskManager, TaskPriority, TaskRequest, TaskRequestKind,
     TaskResult, TaskResultKind,
 };
 use crate::git::{
@@ -14,7 +14,7 @@ use ratatui::widgets::ListState;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tracing::debug;
 
 /// Documentation comment in English.
@@ -1142,15 +1142,7 @@ impl App {
         self.pending_background_tasks.len()
     }
 
-    pub fn task_metrics(&self) -> TaskMetrics {
-        self.task_manager.metrics()
-    }
-
-    pub fn is_diff_reload_due(&self, debounce: Duration) -> bool {
-        self.pending_diff_reload && self.diff_reload_debounce_elapsed(debounce)
-    }
-
-    pub fn diff_reload_debounce_elapsed(&self, debounce: Duration) -> bool {
+    pub fn diff_reload_debounce_elapsed(&self, debounce: std::time::Duration) -> bool {
         self.pending_diff_reload_at
             .is_some_and(|requested_at| requested_at.elapsed() >= debounce)
     }
