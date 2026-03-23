@@ -15,6 +15,7 @@ impl Store for QuitStore {
             return ReduceOutput::none();
         }
         ctx.app.running = false;
+        ctx.app.dirty.mark_all();
         ReduceOutput::none()
     }
 }

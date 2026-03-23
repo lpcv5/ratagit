@@ -304,6 +304,16 @@ async fn ui_loop(
     }
 
     loop {
+        // Check exit status at loop start
+        {
+            let snapshot = snapshot_rx.borrow();
+            if !snapshot.running {
+                info!("ui_loop: detected running=false, exiting");
+                let _ = shutdown_tx.send(());
+                return Ok(());
+            }
+        }
+
         let mut processed_input_event = false;
         if state_version_rx.has_changed().unwrap_or(false) {
             let _ = state_version_rx.borrow_and_update();
@@ -500,16 +510,6 @@ async fn ui_loop(
                 log.last_snapshot = now;
                 log.last_flush = Instant::now();
             }
-        }
-
-        let should_continue = {
-            let snapshot = snapshot_rx.borrow();
-            snapshot.running
-        };
-
-        if !should_continue {
-            let _ = shutdown_tx.send(());
-            return Ok(());
         }
 
         let frame_sleep = if processed_input_event {
