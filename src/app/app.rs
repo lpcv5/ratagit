@@ -380,6 +380,8 @@ impl App {
         } else {
             app.request_refresh(RefreshKind::StatusAndRefs);
             app.schedule_diff_reload();
+            // Load commits immediately on startup
+            let _ = app.start_commits_load(app.commits_requested_limit);
         }
         Ok(app)
     }
