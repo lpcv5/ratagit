@@ -44,6 +44,8 @@ pub struct AppStateSnapshot<'a> {
     pub stash_search_query: Option<&'a str>,
     pub has_search_for_active_scope: bool,
     pub has_search_query_for_active_scope: bool,
+    /// True when background Git tasks are in flight.
+    pub has_background_tasks: bool,
 }
 
 impl<'a> AppStateSnapshot<'a> {
@@ -101,6 +103,7 @@ impl<'a> AppStateSnapshot<'a> {
             ),
             has_search_for_active_scope: app.has_search_for_active_scope(),
             has_search_query_for_active_scope: app.has_search_query_for_active_scope(),
+            has_background_tasks: app.has_pending_refresh_work(),
         }
     }
 }
@@ -263,6 +266,7 @@ impl AppStateSnapshotOwned {
             stash_search_query: self.stash_search_query.as_deref(),
             has_search_for_active_scope: self.has_search_for_active_scope,
             has_search_query_for_active_scope: self.has_search_query_for_active_scope,
+            has_background_tasks: self.has_pending_refresh_work,
         }
     }
 }

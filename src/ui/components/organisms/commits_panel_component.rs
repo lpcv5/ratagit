@@ -6,6 +6,7 @@ use crate::ui::components::organisms::{
 use crate::ui::highlight::highlighted_spans;
 use crate::ui::panels::revision_tree_panel::{render_revision_tree_panel, RevisionTreePanelProps};
 use crate::ui::theme::UiTheme;
+use crate::ui::traits::DynamicPanel;
 use ratatui::{
     layout::Rect,
     style::{Color, Style},
@@ -130,6 +131,21 @@ impl PanelComponent for CommitsPanelState {
                 list_state: self.panel.list_state,
             },
         );
+    }
+}
+
+impl DynamicPanel for CommitsPanelState {
+    fn default_height_percent(&self) -> u16 {
+        40
+    }
+    fn focused_height_percent(&self) -> u16 {
+        50
+    }
+    fn expand_threshold(&self) -> usize {
+        10
+    }
+    fn min_height(&self) -> u16 {
+        3
     }
 }
 

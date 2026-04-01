@@ -3,6 +3,7 @@ mod highlight;
 pub mod layout;
 pub mod panels;
 pub mod theme;
+pub mod traits;
 pub mod widgets;
 
 /// Keep some breathing room around selected rows in scrollable lists.

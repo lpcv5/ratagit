@@ -4,6 +4,7 @@ use crate::ui::components::organisms::{
 };
 use crate::ui::highlight::highlighted_spans;
 use crate::ui::panels::revision_tree_panel::{render_revision_tree_panel, RevisionTreePanelProps};
+use crate::ui::traits::DynamicPanel;
 use ratatui::{
     layout::Rect,
     style::{Color, Style},
@@ -59,5 +60,23 @@ impl PanelComponent for StashPanelState {
                 list_state: self.panel.list_state,
             },
         );
+    }
+}
+
+impl DynamicPanel for StashPanelState {
+    /// Stash collapses to min_height when unfocused; return 0 so the layout
+    /// falls back to min_height directly.
+    fn default_height_percent(&self) -> u16 {
+        0
+    }
+    fn focused_height_percent(&self) -> u16 {
+        25
+    }
+    /// Expand as soon as there is more than one stash entry.
+    fn expand_threshold(&self) -> usize {
+        1
+    }
+    fn min_height(&self) -> u16 {
+        3
     }
 }
