@@ -4,6 +4,7 @@ use crate::ui::components::organisms::{
 };
 use crate::ui::highlight::highlighted_spans;
 use crate::ui::theme::UiTheme;
+use crate::ui::traits::DynamicPanel;
 use crate::ui::LIST_SCROLL_PADDING;
 use ratatui::{
     layout::Rect,
@@ -71,5 +72,22 @@ impl PanelComponent for BranchesPanelState {
 
         let mut state = self.panel.list_state;
         frame.render_stateful_widget(list, area, &mut state);
+    }
+}
+
+impl DynamicPanel for BranchesPanelState {
+    fn default_height_percent(&self) -> u16 {
+        25
+    }
+    /// Branches panel does not expand on focus; content rarely overflows.
+    fn focused_height_percent(&self) -> u16 {
+        25
+    }
+    /// Use usize::MAX so should_expand always returns false.
+    fn expand_threshold(&self) -> usize {
+        usize::MAX
+    }
+    fn min_height(&self) -> u16 {
+        3
     }
 }

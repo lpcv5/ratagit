@@ -3,6 +3,7 @@ use crate::ui::components::organisms::{
     empty_list_item, title_with_search, PanelComponent, PanelRenderContext,
 };
 use crate::ui::theme::UiTheme;
+use crate::ui::traits::DynamicPanel;
 use crate::ui::widgets::file_tree::{FileTree, FileTreeState};
 use ratatui::{layout::Rect, Frame};
 
@@ -39,5 +40,20 @@ impl PanelComponent for FilesPanelState {
         };
 
         frame.render_stateful_widget(widget, area, &mut state);
+    }
+}
+
+impl DynamicPanel for FilesPanelState {
+    fn default_height_percent(&self) -> u16 {
+        25
+    }
+    fn focused_height_percent(&self) -> u16 {
+        40
+    }
+    fn expand_threshold(&self) -> usize {
+        10
+    }
+    fn min_height(&self) -> u16 {
+        3
     }
 }
