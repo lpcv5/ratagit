@@ -467,7 +467,7 @@ mod tests {
     #[test]
     fn test_input_mode_char_maps_to_input_char() {
         let mut app = mock_app();
-        app.input_mode = Some(crate::app::InputMode::CreateBranch);
+        app.input.mode = Some(crate::app::InputMode::CreateBranch);
         let actions = map(&app, key(KeyCode::Char('a')));
         assert!(actions
             .iter()
@@ -477,7 +477,7 @@ mod tests {
     #[test]
     fn test_input_mode_backspace_maps_to_input_backspace() {
         let mut app = mock_app();
-        app.input_mode = Some(crate::app::InputMode::CreateBranch);
+        app.input.mode = Some(crate::app::InputMode::CreateBranch);
         let actions = map(&app, key(KeyCode::Backspace));
         assert!(actions
             .iter()
@@ -487,7 +487,7 @@ mod tests {
     #[test]
     fn test_input_mode_enter_maps_to_input_enter() {
         let mut app = mock_app();
-        app.input_mode = Some(crate::app::InputMode::CreateBranch);
+        app.input.mode = Some(crate::app::InputMode::CreateBranch);
         let actions = map(&app, key(KeyCode::Enter));
         assert!(actions
             .iter()
@@ -497,7 +497,7 @@ mod tests {
     #[test]
     fn test_input_mode_esc_maps_to_input_esc() {
         let mut app = mock_app();
-        app.input_mode = Some(crate::app::InputMode::CreateBranch);
+        app.input.mode = Some(crate::app::InputMode::CreateBranch);
         let actions = map(&app, key(KeyCode::Esc));
         assert!(actions
             .iter()
@@ -529,7 +529,7 @@ mod more_tests {
     #[test]
     fn test_branch_switch_confirm_y_confirms() {
         let mut app = mock_app();
-        app.input_mode = Some(crate::app::InputMode::BranchSwitchConfirm);
+        app.input.mode = Some(crate::app::InputMode::BranchSwitchConfirm);
         let actions = map(&app, key(KeyCode::Char('y')));
         assert!(actions
             .iter()
@@ -539,7 +539,7 @@ mod more_tests {
     #[test]
     fn test_branch_switch_confirm_n_cancels() {
         let mut app = mock_app();
-        app.input_mode = Some(crate::app::InputMode::BranchSwitchConfirm);
+        app.input.mode = Some(crate::app::InputMode::BranchSwitchConfirm);
         let actions = map(&app, key(KeyCode::Char('n')));
         assert!(actions
             .iter()
@@ -549,7 +549,7 @@ mod more_tests {
     #[test]
     fn test_commit_all_confirm_y_confirms() {
         let mut app = mock_app();
-        app.input_mode = Some(crate::app::InputMode::CommitAllConfirm);
+        app.input.mode = Some(crate::app::InputMode::CommitAllConfirm);
         let actions = map(&app, key(KeyCode::Char('y')));
         assert!(actions
             .iter()
@@ -559,7 +559,7 @@ mod more_tests {
     #[test]
     fn test_commit_all_confirm_n_cancels() {
         let mut app = mock_app();
-        app.input_mode = Some(crate::app::InputMode::CommitAllConfirm);
+        app.input.mode = Some(crate::app::InputMode::CommitAllConfirm);
         let actions = map(&app, key(KeyCode::Char('n')));
         assert!(actions
             .iter()
@@ -569,7 +569,7 @@ mod more_tests {
     #[test]
     fn test_input_mode_tab_maps_to_input_tab() {
         let mut app = mock_app();
-        app.input_mode = Some(crate::app::InputMode::CommitEditor);
+        app.input.mode = Some(crate::app::InputMode::CommitEditor);
         let actions = map(&app, key(KeyCode::Tab));
         assert!(actions
             .iter()
@@ -579,7 +579,7 @@ mod more_tests {
     #[test]
     fn test_c_in_files_panel_maps_to_start_commit() {
         let mut app = mock_app();
-        app.active_panel = crate::app::SidePanel::Files;
+        app.ui.active_panel = crate::app::SidePanel::Files;
         let actions = map(&app, key(KeyCode::Char('c')));
         assert!(actions
             .iter()
@@ -589,7 +589,7 @@ mod more_tests {
     #[test]
     fn test_v_in_files_panel_maps_to_toggle_visual() {
         let mut app = mock_app();
-        app.active_panel = crate::app::SidePanel::Files;
+        app.ui.active_panel = crate::app::SidePanel::Files;
         let actions = map(&app, key(KeyCode::Char('v')));
         assert!(actions
             .iter()
@@ -599,11 +599,11 @@ mod more_tests {
     #[test]
     fn test_space_in_files_panel_visual_mode_maps_to_toggle_stage() {
         let mut app = mock_app();
-        app.active_panel = crate::app::SidePanel::Files;
+        app.ui.active_panel = crate::app::SidePanel::Files;
         // With visual mode, Space maps to ToggleStageSelection
-        app.files.visual_mode = true;
-        app.files.panel.list_state.select(Some(0));
-        app.files.visual_anchor = Some(0);
+        app.ui.files.visual_mode = true;
+        app.ui.files.panel.list_state.select(Some(0));
+        app.ui.files.visual_anchor = Some(0);
         let actions = map(&app, key(KeyCode::Char(' ')));
         assert!(actions
             .iter()
@@ -659,7 +659,7 @@ mod more_tests {
     #[test]
     fn test_n_in_branches_panel_maps_to_search_next() {
         let mut app = mock_app();
-        app.active_panel = crate::app::SidePanel::LocalBranches;
+        app.ui.active_panel = crate::app::SidePanel::LocalBranches;
         let actions = map(&app, key(KeyCode::Char('n')));
         // In branches panel, n should map to SearchNext
         let _ = actions; // just verify no panic
@@ -668,7 +668,7 @@ mod more_tests {
     #[test]
     fn test_enter_in_branches_panel_maps_to_revision_open() {
         let mut app = mock_app();
-        app.active_panel = crate::app::SidePanel::LocalBranches;
+        app.ui.active_panel = crate::app::SidePanel::LocalBranches;
         let actions = map(&app, key(KeyCode::Enter));
         assert!(actions
             .iter()
@@ -678,8 +678,8 @@ mod more_tests {
     #[test]
     fn test_esc_in_branch_commits_subview_maps_to_revision_close() {
         let mut app = mock_app();
-        app.active_panel = crate::app::SidePanel::LocalBranches;
-        app.branches.commits_subview_active = true;
+        app.ui.active_panel = crate::app::SidePanel::LocalBranches;
+        app.ui.branches.commits_subview_active = true;
         let actions = map(&app, key(KeyCode::Esc));
         assert!(actions
             .iter()

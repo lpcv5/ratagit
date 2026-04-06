@@ -97,7 +97,7 @@ mod tests {
             &mut app,
             Action::Domain(DomainAction::StartCommandPalette),
         );
-        assert_eq!(app.input_mode, Some(InputMode::CommandPalette));
+        assert_eq!(app.input.mode, Some(InputMode::CommandPalette));
     }
 
     #[test]
@@ -109,7 +109,7 @@ mod tests {
             &mut app,
             Action::Domain(DomainAction::StartBranchCreateInput),
         );
-        assert_eq!(app.input_mode, Some(InputMode::CreateBranch));
+        assert_eq!(app.input.mode, Some(InputMode::CreateBranch));
     }
 
     #[test]
@@ -121,7 +121,7 @@ mod tests {
             &mut app,
             Action::Domain(DomainAction::StartSearchInput),
         );
-        assert_eq!(app.input_mode, Some(InputMode::Search));
+        assert_eq!(app.input.mode, Some(InputMode::Search));
     }
 
     #[test]
@@ -130,7 +130,7 @@ mod tests {
         let mut app = mock_app();
         let output = reduce(&mut store, &mut app, Action::Domain(DomainAction::Quit));
         assert!(output.commands.is_empty());
-        assert_eq!(app.input_mode, None);
+        assert_eq!(app.input.mode, None);
     }
 }
 
@@ -148,9 +148,9 @@ mod more_tests {
     fn test_commit_all_confirm_true_stages_all_and_commits() {
         let mut store = OverlayStore::new();
         let mut app = mock_app();
-        app.input_mode = Some(InputMode::CommitAllConfirm);
+        app.input.mode = Some(InputMode::CommitAllConfirm);
         // Set up unstaged files to stage
-        app.status.unstaged = vec![crate::git::FileEntry {
+        app.git.status.unstaged = vec![crate::git::FileEntry {
             path: "foo.txt".into(),
             status: FileStatus::Modified,
         }];
@@ -166,33 +166,33 @@ mod more_tests {
     fn test_commit_all_confirm_false_cancels() {
         let mut store = OverlayStore::new();
         let mut app = mock_app();
-        app.input_mode = Some(InputMode::CommitAllConfirm);
+        app.input.mode = Some(InputMode::CommitAllConfirm);
         reduce(
             &mut store,
             &mut app,
             Action::Domain(DomainAction::CommitAllConfirm(false)),
         );
-        assert!(app.input_mode.is_none());
+        assert!(app.input.mode.is_none());
     }
 
     #[test]
     fn test_start_stash_input_with_selected_file() {
         let mut store = OverlayStore::new();
         let mut app = mock_app();
-        app.active_panel = SidePanel::Files;
-        app.files.tree_nodes = vec![FileTreeNode {
+        app.ui.active_panel = SidePanel::Files;
+        app.ui.files.tree_nodes = vec![FileTreeNode {
             path: "foo.txt".into(),
             status: FileTreeNodeStatus::Unstaged(FileStatus::Modified),
             depth: 0,
             is_dir: false,
             is_expanded: false,
         }];
-        app.files.panel.list_state.select(Some(0));
+        app.ui.files.panel.list_state.select(Some(0));
         reduce(
             &mut store,
             &mut app,
             Action::Domain(DomainAction::StartStashInput),
         );
-        assert_eq!(app.input_mode, Some(InputMode::StashEditor));
+        assert_eq!(app.input.mode, Some(InputMode::StashEditor));
     }
 }

@@ -3,26 +3,26 @@ use std::path::PathBuf;
 
 impl App {
     pub fn start_commit_editor(&mut self) {
-        self.input_mode = Some(InputMode::CommitEditor);
-        self.commit_message_buffer.clear();
-        self.commit_description_buffer.clear();
-        self.commit_focus = CommitFieldFocus::Message;
+        self.input.mode = Some(InputMode::CommitEditor);
+        self.input.commit_message_buffer.clear();
+        self.input.commit_description_buffer.clear();
+        self.input.commit_focus = CommitFieldFocus::Message;
     }
 
     pub fn start_commit_editor_guarded(&mut self) -> bool {
-        if self.status.staged.is_empty() {
+        if self.git.status.staged.is_empty() {
             if self.pending_refresh_kind().is_some() {
                 self.request_refresh(RefreshKind::StatusOnly);
             }
-            if self.status.staged.is_empty() {
+            if self.git.status.staged.is_empty() {
                 // Check if there are any files to commit
-                let total_files = self.status.unstaged.len() + self.status.untracked.len();
+                let total_files = self.git.status.unstaged.len() + self.git.status.untracked.len();
                 if total_files == 0 {
                     self.push_log("nothing to commit", false);
                     return false;
                 }
                 // Enter confirmation mode
-                self.input_mode = Some(InputMode::CommitAllConfirm);
+                self.input.mode = Some(InputMode::CommitAllConfirm);
                 self.push_log("commit all: confirm to stage all files and commit", true);
                 return true;
             }
@@ -32,30 +32,30 @@ impl App {
     }
 
     pub fn start_branch_create_input(&mut self) {
-        self.input_mode = Some(InputMode::CreateBranch);
-        self.input_buffer.clear();
+        self.input.mode = Some(InputMode::CreateBranch);
+        self.input.buffer.clear();
     }
 
     pub fn start_command_palette(&mut self) {
-        self.input_mode = Some(InputMode::CommandPalette);
-        self.input_buffer.clear();
+        self.input.mode = Some(InputMode::CommandPalette);
+        self.input.buffer.clear();
     }
 
     pub fn start_stash_editor(&mut self, targets: Vec<PathBuf>) {
-        self.input_mode = Some(InputMode::StashEditor);
-        self.stash_targets = targets;
-        self.stash_message_buffer.clear();
+        self.input.mode = Some(InputMode::StashEditor);
+        self.input.stash_targets = targets;
+        self.input.stash_message_buffer.clear();
     }
 
     pub fn cancel_input(&mut self) {
-        self.input_mode = None;
-        self.input_buffer.clear();
-        self.commit_message_buffer.clear();
-        self.commit_description_buffer.clear();
-        self.commit_focus = CommitFieldFocus::Message;
-        self.stash_message_buffer.clear();
-        self.stash_targets.clear();
-        self.branch_switch_target = None;
+        self.input.mode = None;
+        self.input.buffer.clear();
+        self.input.commit_message_buffer.clear();
+        self.input.commit_description_buffer.clear();
+        self.input.commit_focus = CommitFieldFocus::Message;
+        self.input.stash_message_buffer.clear();
+        self.input.stash_targets.clear();
+        self.input.branch_switch_target = None;
     }
 
     pub(crate) fn resolve_command_palette_command(
@@ -93,22 +93,22 @@ mod tests {
     #[test]
     fn test_start_commit_editor_sets_mode() {
         let mut app = mock_app();
-        assert!(app.input_mode.is_none());
+        assert!(app.input.mode.is_none());
         app.start_commit_editor();
-        assert_eq!(app.input_mode, Some(InputMode::CommitEditor));
-        assert!(app.commit_message_buffer.is_empty());
+        assert_eq!(app.input.mode, Some(InputMode::CommitEditor));
+        assert!(app.input.commit_message_buffer.is_empty());
     }
 
     #[test]
     fn test_start_commit_editor_guarded_with_staged_files() {
         let mut app = mock_app();
-        app.status.staged.push(crate::git::FileEntry {
+        app.git.status.staged.push(crate::git::FileEntry {
             path: "foo.txt".into(),
             status: crate::git::FileStatus::Modified,
         });
         let result = app.start_commit_editor_guarded();
         assert!(result);
-        assert_eq!(app.input_mode, Some(InputMode::CommitEditor));
+        assert_eq!(app.input.mode, Some(InputMode::CommitEditor));
     }
 
     #[test]
@@ -116,22 +116,22 @@ mod tests {
         let mut app = mock_app();
         let result = app.start_commit_editor_guarded();
         assert!(!result);
-        assert!(app.input_mode.is_none());
+        assert!(app.input.mode.is_none());
     }
 
     #[test]
     fn test_start_branch_create_input_sets_mode() {
         let mut app = mock_app();
         app.start_branch_create_input();
-        assert_eq!(app.input_mode, Some(InputMode::CreateBranch));
-        assert!(app.input_buffer.is_empty());
+        assert_eq!(app.input.mode, Some(InputMode::CreateBranch));
+        assert!(app.input.buffer.is_empty());
     }
 
     #[test]
     fn test_start_command_palette_sets_mode() {
         let mut app = mock_app();
         app.start_command_palette();
-        assert_eq!(app.input_mode, Some(InputMode::CommandPalette));
+        assert_eq!(app.input.mode, Some(InputMode::CommandPalette));
     }
 
     #[test]
@@ -139,26 +139,26 @@ mod tests {
         let mut app = mock_app();
         let targets = vec!["foo.txt".into(), "bar.txt".into()];
         app.start_stash_editor(targets.clone());
-        assert_eq!(app.input_mode, Some(InputMode::StashEditor));
-        assert_eq!(app.stash_targets, targets);
+        assert_eq!(app.input.mode, Some(InputMode::StashEditor));
+        assert_eq!(app.input.stash_targets, targets);
     }
 
     #[test]
     fn test_cancel_input_clears_all_state() {
         let mut app = mock_app();
-        app.input_mode = Some(InputMode::CommitEditor);
-        app.input_buffer = "test".to_string();
-        app.commit_message_buffer = "msg".to_string();
-        app.commit_description_buffer = "desc".to_string();
-        app.stash_message_buffer = "stash".to_string();
-        app.stash_targets = vec!["foo.txt".into()];
-        app.branch_switch_target = Some("main".to_string());
+        app.input.mode = Some(InputMode::CommitEditor);
+        app.input.buffer = "test".to_string();
+        app.input.commit_message_buffer = "msg".to_string();
+        app.input.commit_description_buffer = "desc".to_string();
+        app.input.stash_message_buffer = "stash".to_string();
+        app.input.stash_targets = vec!["foo.txt".into()];
+        app.input.branch_switch_target = Some("main".to_string());
         app.cancel_input();
-        assert!(app.input_mode.is_none());
-        assert!(app.input_buffer.is_empty());
-        assert!(app.commit_message_buffer.is_empty());
-        assert!(app.stash_targets.is_empty());
-        assert!(app.branch_switch_target.is_none());
+        assert!(app.input.mode.is_none());
+        assert!(app.input.buffer.is_empty());
+        assert!(app.input.commit_message_buffer.is_empty());
+        assert!(app.input.stash_targets.is_empty());
+        assert!(app.input.branch_switch_target.is_none());
     }
 
     #[test]

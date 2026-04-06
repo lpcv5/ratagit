@@ -120,26 +120,26 @@ mod tests {
     fn test_panel_next_cycles_forward() {
         let mut store = NavigationStore::new();
         let mut app = mock_app();
-        app.active_panel = SidePanel::Files;
+        app.ui.active_panel = SidePanel::Files;
         reduce(
             &mut store,
             &mut app,
             Action::Domain(DomainAction::PanelNext),
         );
-        assert_eq!(app.active_panel, SidePanel::LocalBranches);
+        assert_eq!(app.ui.active_panel, SidePanel::LocalBranches);
     }
 
     #[test]
     fn test_panel_prev_cycles_backward() {
         let mut store = NavigationStore::new();
         let mut app = mock_app();
-        app.active_panel = SidePanel::LocalBranches;
+        app.ui.active_panel = SidePanel::LocalBranches;
         reduce(
             &mut store,
             &mut app,
             Action::Domain(DomainAction::PanelPrev),
         );
-        assert_eq!(app.active_panel, SidePanel::Files);
+        assert_eq!(app.ui.active_panel, SidePanel::Files);
     }
 
     #[test]
@@ -151,20 +151,20 @@ mod tests {
             &mut app,
             Action::Domain(DomainAction::PanelGoto(3)),
         );
-        assert_eq!(app.active_panel, SidePanel::Commits);
+        assert_eq!(app.ui.active_panel, SidePanel::Commits);
     }
 
     #[test]
     fn test_diff_scroll_down_invalidates_diff() {
         let mut store = NavigationStore::new();
         let mut app = mock_app();
-        let initial_scroll = app.diff_scroll;
+        let initial_scroll = app.ui.diff_scroll;
         let output = reduce(
             &mut store,
             &mut app,
             Action::Domain(DomainAction::DiffScrollDown),
         );
-        assert!(app.diff_scroll > initial_scroll || output.invalidation != UiInvalidation::none());
+        assert!(app.ui.diff_scroll > initial_scroll || output.invalidation != UiInvalidation::none());
     }
 
     #[test]

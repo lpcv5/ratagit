@@ -570,12 +570,12 @@ async fn dispatch_loop(
                 let result = dispatcher.dispatch(&mut app, envelope);
                 let reduce_us = reduce_started.elapsed().as_micros() as u64;
 
-                if app.dirty.is_dirty() {
-                    if app.dirty.left_panels {
+                if app.ui.dirty.is_dirty() {
+                    if app.ui.dirty.left_panels {
                         app.refresh_render_cache();
                     }
                     let snapshot = Arc::new(AppStateSnapshotOwned::from_app(&app));
-                    app.dirty.clear();
+                    app.ui.dirty.clear();
                     let _ = snapshot_tx.send(snapshot);
                 }
 

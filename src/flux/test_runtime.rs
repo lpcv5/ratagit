@@ -35,7 +35,7 @@ pub fn run_inline_effect(app: &mut App, request: EffectRequest) -> Option<Vec<Do
             Some(vec![])
         }
         EffectRequest::RevisionOpenTreeOrToggleDir => {
-            let result = match app.active_panel {
+            let result = match app.ui.active_panel {
                 SidePanel::Stash => app.stash_open_tree_or_toggle_dir(),
                 SidePanel::Commits => app.commit_open_tree_or_toggle_dir(),
                 SidePanel::LocalBranches => app.open_selected_branch_commits(100),

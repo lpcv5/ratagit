@@ -52,17 +52,17 @@ impl<'a> AppStateSnapshot<'a> {
     pub fn from_app(app: &'a App) -> Self {
         Self {
             keymap: app.keymap(),
-            active_panel: app.active_panel,
-            input_mode: app.input_mode,
-            input_buffer: app.input_buffer.as_str(),
-            files: &app.files,
-            branches: &app.branches,
-            commits: &app.commits,
-            stash: &app.stash,
-            render_cache: &app.render_cache,
-            current_diff: &app.current_diff,
-            diff_scroll: app.diff_scroll,
-            diff_loading: app.has_pending_diff_reload() && app.current_diff.is_empty(),
+            active_panel: app.ui.active_panel,
+            input_mode: app.input.mode,
+            input_buffer: app.input.buffer.as_str(),
+            files: &app.ui.files,
+            branches: &app.ui.branches,
+            commits: &app.ui.commits,
+            stash: &app.ui.stash,
+            render_cache: &app.ui.render_cache,
+            current_diff: &app.git.current_diff,
+            diff_scroll: app.ui.diff_scroll,
+            diff_loading: app.has_pending_diff_reload() && app.git.current_diff.is_empty(),
             command_log: app
                 .command_log
                 .iter()
@@ -72,19 +72,20 @@ impl<'a> AppStateSnapshot<'a> {
                 })
                 .collect(),
             shortcut_hints: app.shortcut_hints(),
-            commit_focus: app.commit_focus,
-            commit_message_buffer: app.commit_message_buffer.as_str(),
-            commit_description_buffer: app.commit_description_buffer.as_str(),
-            stash_message_buffer: app.stash_message_buffer.as_str(),
+            commit_focus: app.input.commit_focus,
+            commit_message_buffer: app.input.commit_message_buffer.as_str(),
+            commit_description_buffer: app.input.commit_description_buffer.as_str(),
+            stash_message_buffer: app.input.stash_message_buffer.as_str(),
             stash_targets: app
+                .input
                 .stash_targets
                 .iter()
                 .map(|p| p.display().to_string())
                 .collect(),
             branch_switch_target: app.pending_branch_switch_target(),
-            uncommitted_change_count: app.status.staged.len()
-                + app.status.unstaged.len()
-                + app.status.untracked.len(),
+            uncommitted_change_count: app.git.status.staged.len()
+                + app.git.status.unstaged.len()
+                + app.git.status.untracked.len(),
             files_search_query: app.search_query_for_scope(SidePanel::Files, false, false),
             branches_search_query: app.search_query_for_scope(
                 SidePanel::LocalBranches,
@@ -93,13 +94,13 @@ impl<'a> AppStateSnapshot<'a> {
             ),
             commits_search_query: app.search_query_for_scope(
                 SidePanel::Commits,
-                app.commits.tree_mode.active,
+                app.ui.commits.tree_mode.active,
                 false,
             ),
             stash_search_query: app.search_query_for_scope(
                 SidePanel::Stash,
                 false,
-                app.stash.tree_mode.active,
+                app.ui.stash.tree_mode.active,
             ),
             has_search_for_active_scope: app.has_search_for_active_scope(),
             has_search_query_for_active_scope: app.has_search_query_for_active_scope(),
@@ -162,17 +163,17 @@ impl AppStateSnapshotOwned {
     pub fn from_app(app: &App) -> Self {
         Self {
             keymap: app.keymap().clone(),
-            active_panel: app.active_panel,
-            input_mode: app.input_mode,
-            input_buffer: app.input_buffer.clone(),
-            files: app.files.clone(),
-            branches: app.branches.clone(),
-            commits: app.commits.clone(),
-            stash: app.stash.clone(),
-            render_cache: app.render_cache.clone(),
-            current_diff: app.current_diff.clone(),
-            diff_scroll: app.diff_scroll,
-            diff_loading: app.has_pending_diff_reload() && app.current_diff.is_empty(),
+            active_panel: app.ui.active_panel,
+            input_mode: app.input.mode,
+            input_buffer: app.input.buffer.clone(),
+            files: app.ui.files.clone(),
+            branches: app.ui.branches.clone(),
+            commits: app.ui.commits.clone(),
+            stash: app.ui.stash.clone(),
+            render_cache: app.ui.render_cache.clone(),
+            current_diff: app.git.current_diff.clone(),
+            diff_scroll: app.ui.diff_scroll,
+            diff_loading: app.has_pending_diff_reload() && app.git.current_diff.is_empty(),
             command_log: app
                 .command_log
                 .iter()
@@ -182,19 +183,20 @@ impl AppStateSnapshotOwned {
                 })
                 .collect(),
             shortcut_hints: app.shortcut_hints(),
-            commit_focus: app.commit_focus,
-            commit_message_buffer: app.commit_message_buffer.clone(),
-            commit_description_buffer: app.commit_description_buffer.clone(),
-            stash_message_buffer: app.stash_message_buffer.clone(),
+            commit_focus: app.input.commit_focus,
+            commit_message_buffer: app.input.commit_message_buffer.clone(),
+            commit_description_buffer: app.input.commit_description_buffer.clone(),
+            stash_message_buffer: app.input.stash_message_buffer.clone(),
             stash_targets: app
+                .input
                 .stash_targets
                 .iter()
                 .map(|p| p.display().to_string())
                 .collect(),
             branch_switch_target: app.pending_branch_switch_target().map(str::to_owned),
-            uncommitted_change_count: app.status.staged.len()
-                + app.status.unstaged.len()
-                + app.status.untracked.len(),
+            uncommitted_change_count: app.git.status.staged.len()
+                + app.git.status.unstaged.len()
+                + app.git.status.untracked.len(),
             files_search_query: app
                 .search_query_for_scope(SidePanel::Files, false, false)
                 .map(str::to_owned),
@@ -202,10 +204,10 @@ impl AppStateSnapshotOwned {
                 .search_query_for_scope(SidePanel::LocalBranches, false, false)
                 .map(str::to_owned),
             commits_search_query: app
-                .search_query_for_scope(SidePanel::Commits, app.commits.tree_mode.active, false)
+                .search_query_for_scope(SidePanel::Commits, app.ui.commits.tree_mode.active, false)
                 .map(str::to_owned),
             stash_search_query: app
-                .search_query_for_scope(SidePanel::Stash, false, app.stash.tree_mode.active)
+                .search_query_for_scope(SidePanel::Stash, false, app.ui.stash.tree_mode.active)
                 .map(str::to_owned),
             has_search_for_active_scope: app.has_search_for_active_scope(),
             has_search_query_for_active_scope: app.has_search_query_for_active_scope(),
