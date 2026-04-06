@@ -14,8 +14,8 @@ impl Store for QuitStore {
         if !matches!(action.action, Action::Domain(DomainAction::Quit)) {
             return ReduceOutput::none();
         }
-        ctx.app.running = false;
-        ctx.app.dirty.mark_all();
+        ctx.state.set_running(false);
+        ctx.state.mark_all_dirty();
         ReduceOutput::none()
     }
 }
@@ -32,7 +32,7 @@ mod tests {
         let mut app = mock_app();
         assert!(app.running);
         let env = make_envelope(Action::Domain(DomainAction::Quit));
-        let mut ctx = ReduceCtx { app: &mut app };
+        let mut ctx = ReduceCtx { state: &mut app };
         store.reduce(&env, &mut ctx);
         assert!(!app.running);
     }
@@ -42,7 +42,7 @@ mod tests {
         let mut store = QuitStore::new();
         let mut app = mock_app();
         let env = make_envelope(Action::Domain(DomainAction::PanelNext));
-        let mut ctx = ReduceCtx { app: &mut app };
+        let mut ctx = ReduceCtx { state: &mut app };
         store.reduce(&env, &mut ctx);
         assert!(app.running);
     }

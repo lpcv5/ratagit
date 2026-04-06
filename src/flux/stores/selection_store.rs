@@ -26,13 +26,13 @@ impl Store for SelectionStore {
             _ => return ReduceOutput::none(),
         }
 
-        if ctx.app.active_panel != SidePanel::Files {
+        if ctx.state.active_panel() != SidePanel::Files {
             return ReduceOutput::none();
         }
 
         match domain {
             DomainAction::ToggleVisualSelectMode => {
-                ctx.app.toggle_visual_select_mode();
+                ctx.state.toggle_visual_select_mode();
                 return ReduceOutput::from_command(Command::Effect(EffectRequest::ReloadDiffNow))
                     .with_invalidation(UiInvalidation::all());
             }
@@ -42,10 +42,10 @@ impl Store for SelectionStore {
                 ));
             }
             DomainAction::DiscardSelection => {
-                let paths = ctx.app.prepare_discard_targets_from_selection();
+                let paths = ctx.state.prepare_discard_targets_from_selection();
                 if paths.is_empty() {
-                    ctx.app
-                        .push_log("discard blocked: no discardable selected items", false);
+                    ctx.state
+                        .push_log("discard blocked: no discardable selected items".to_string(), false);
                     return ReduceOutput::none();
                 }
                 return ReduceOutput::from_command(Command::Effect(EffectRequest::DiscardPaths(
@@ -54,8 +54,7 @@ impl Store for SelectionStore {
             }
             DomainAction::DiscardPathsFinished { result, .. } => {
                 if result.is_ok() {
-                    ctx.app.files.visual_mode = false;
-                    ctx.app.files.visual_anchor = None;
+                    ctx.state.clear_files_visual_selection();
                     return ReduceOutput::none().with_invalidation(UiInvalidation::all());
                 }
             }

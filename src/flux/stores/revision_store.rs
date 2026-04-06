@@ -22,13 +22,13 @@ impl Store for RevisionStore {
                 Command::Effect(EffectRequest::RevisionOpenTreeOrToggleDir),
             ),
             DomainAction::RevisionCloseTree => {
-                match ctx.app.active_panel {
-                    SidePanel::Stash => ctx.app.stash_close_tree(),
-                    SidePanel::Commits => ctx.app.commit_close_tree(),
-                    SidePanel::LocalBranches => ctx.app.close_branch_commits_subview(),
+                match ctx.state.active_panel() {
+                    SidePanel::Stash => ctx.state.stash_close_tree(),
+                    SidePanel::Commits => ctx.state.commit_close_tree(),
+                    SidePanel::LocalBranches => ctx.state.close_branch_commits_subview(),
                     _ => {}
                 }
-                ctx.app.restore_search_for_active_scope();
+                ctx.state.restore_search_for_active_scope();
                 ReduceOutput::from_command(Command::Effect(EffectRequest::ReloadDiffNow))
                     .with_invalidation(UiInvalidation::all())
             }

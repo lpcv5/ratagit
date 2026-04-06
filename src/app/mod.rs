@@ -14,6 +14,7 @@ mod revision_tree;
 mod search;
 mod selection;
 mod selectors;
+mod state_access_impl;
 #[cfg(test)]
 mod test_dispatch;
 #[cfg(test)]

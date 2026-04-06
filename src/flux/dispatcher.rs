@@ -68,7 +68,7 @@ impl Dispatcher {
             );
         }
 
-        let mut ctx = ReduceCtx { app };
+        let mut ctx = ReduceCtx { state: app };
         let mut commands = Vec::new();
         let mut invalidation = UiInvalidation::none();
         for store in &mut self.stores {
@@ -76,7 +76,7 @@ impl Dispatcher {
             commands.append(&mut output.commands);
             invalidation.merge(output.invalidation);
         }
-        invalidation.apply(ctx.app);
+        invalidation.apply(app);
 
         self.last_sequence = Some(action.sequence);
         self.state_version += 1;

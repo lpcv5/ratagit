@@ -25,8 +25,8 @@ impl Store for FilesStore {
             )),
             DomainAction::DiscardPaths(paths) => {
                 if paths.is_empty() {
-                    ctx.app
-                        .push_log("discard blocked: no discardable selected items", false);
+                    ctx.state
+                        .push_log("discard blocked: no discardable selected items".to_string(), false);
                     return ReduceOutput::none();
                 }
                 ReduceOutput::from_command(Command::Effect(EffectRequest::DiscardPaths(
@@ -49,16 +49,16 @@ impl Store for FilesStore {
                 match result {
                     Ok(()) => {
                         if paths.len() == 1 {
-                            ctx.app
+                            ctx.state
                                 .push_log(format!("discarded {}", paths[0].display()), true);
                         } else {
-                            ctx.app
+                            ctx.state
                                 .push_log(format!("discarded {} path(s)", paths.len()), true);
                         }
                         return ReduceOutput::none().with_invalidation(UiInvalidation::all());
                     }
                     Err(err) => {
-                        ctx.app.push_log(format!("discard failed: {}", err), false);
+                        ctx.state.push_log(format!("discard failed: {}", err), false);
                     }
                 }
                 ReduceOutput::none()

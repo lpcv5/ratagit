@@ -19,8 +19,8 @@ impl Store for DiffStore {
         }
 
         const DIFF_RELOAD_DEBOUNCE: Duration = Duration::from_millis(80);
-        if ctx.app.has_pending_diff_reload()
-            && ctx.app.diff_reload_debounce_elapsed(DIFF_RELOAD_DEBOUNCE)
+        if ctx.state.has_pending_diff_reload()
+            && ctx.state.diff_reload_debounce_elapsed(DIFF_RELOAD_DEBOUNCE)
         {
             return ReduceOutput::from_command(Command::Effect(
                 EffectRequest::FlushPendingDiffReload,

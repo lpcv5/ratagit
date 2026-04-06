@@ -23,14 +23,14 @@ impl Store for CommitStore {
             DomainAction::CommitFinished { message, result } => {
                 match result {
                     Ok(oid) => {
-                        ctx.app
+                        ctx.state
                             .push_log(format!("commit {} ({})", message, oid), true);
                         return ReduceOutput {
                             commands: vec![tick_background_loads()],
                             invalidation: UiInvalidation::all(),
                         };
                     }
-                    Err(e) => ctx.app.push_log(format!("commit failed: {}", e), false),
+                    Err(e) => ctx.state.push_log(format!("commit failed: {}", e), false),
                 }
                 ReduceOutput::none()
             }

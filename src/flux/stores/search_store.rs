@@ -18,36 +18,34 @@ impl Store for SearchStore {
         };
         match domain {
             DomainAction::SearchSetQuery(query) => {
-                let count = ctx.app.apply_search_query(query.clone());
+                let count = ctx.state.apply_search_query(query.clone());
                 if count > 0 {
-                    ctx.app.search_select_initial_match();
+                    ctx.state.search_select_initial_match();
                 }
                 ReduceOutput::from_command(Command::Effect(EffectRequest::ReloadDiffNow))
                     .with_invalidation(UiInvalidation::all())
             }
             DomainAction::SearchConfirm => {
-                let count = ctx.app.apply_search_query(ctx.app.search_query.clone());
+                let q = ctx.state.search_query_clone();
+                let count = ctx.state.apply_search_query(q.clone());
                 if count == 0 {
-                    ctx.app
-                        .push_log(format!("search no match: {}", ctx.app.search_query), false);
+                    ctx.state.push_log(format!("search no match: {}", q), false);
                 } else {
-                    ctx.app.push_log(
-                        format!("search match {}: {}", count, ctx.app.search_query),
-                        true,
-                    );
+                    ctx.state
+                        .push_log(format!("search match {}: {}", count, q), true);
                 }
                 ReduceOutput::from_command(Command::Effect(EffectRequest::ReloadDiffNow))
                     .with_invalidation(UiInvalidation::all())
             }
             DomainAction::SearchClear => {
-                ctx.app.clear_search();
-                ctx.app.cancel_input();
-                ctx.app.push_log("search cleared", true);
+                ctx.state.clear_search();
+                ctx.state.cancel_input();
+                ctx.state.push_log("search cleared".to_string(), true);
                 ReduceOutput::from_command(Command::Effect(EffectRequest::ReloadDiffNow))
                     .with_invalidation(UiInvalidation::all())
             }
             DomainAction::SearchNext => {
-                if ctx.app.search_jump_next() {
+                if ctx.state.search_jump_next() {
                     ReduceOutput::from_command(Command::Effect(EffectRequest::ReloadDiffNow))
                         .with_invalidation(UiInvalidation::all())
                 } else {
@@ -55,7 +53,7 @@ impl Store for SearchStore {
                 }
             }
             DomainAction::SearchPrev => {
-                if ctx.app.search_jump_prev() {
+                if ctx.state.search_jump_prev() {
                     ReduceOutput::from_command(Command::Effect(EffectRequest::ReloadDiffNow))
                         .with_invalidation(UiInvalidation::all())
                 } else {

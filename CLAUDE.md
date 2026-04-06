@@ -50,14 +50,17 @@ src/
 │   ├── app.rs            # App struct and state model
 │   ├── command.rs        # Command definitions
 │   ├── input_mode.rs     # Input mode state (Commit/Branch/Stash/Search)
-│   ├── selection.rs      # Selection state management
 │   ├── search.rs         # Search query management
 │   ├── revision_tree.rs  # Commit tree expansion state
 │   ├── panel_nav.rs      # Panel navigation utilities
 │   ├── selectors.rs      # Selector trait and implementations
 │   ├── diff_loader.rs    # Diff loading utilities
+│   ├── diff_cache.rs     # Diff result caching
+│   ├── dirty_flags.rs    # Change tracking flags
+│   ├── graph_highlight.rs # Commit graph highlight state
 │   ├── refresh.rs        # State refresh utilities
 │   ├── hints.rs          # UI hint generation
+│   ├── trace.rs          # Debug tracing utilities
 │   └── test_dispatch.rs  # Test-only Flux helpers for action/key dispatch
 ├── flux/
 │   ├── action.rs         # Action/DomainAction/SystemAction enums
@@ -65,6 +68,8 @@ src/
 │   ├── effects.rs        # EffectRequest + async run() for Git I/O
 │   ├── input_mapper.rs   # Key events → Action mapping
 │   ├── snapshot.rs       # AppStateSnapshot (read-only view for UI)
+│   ├── task_manager.rs   # Background task lifecycle management
+│   ├── test_runtime.rs   # Test-only Flux runtime helpers
 │   └── stores/           # Domain stores (files, branches, commits, stash, etc.)
 ├── git/
 │   └── repository.rs     # GitRepository trait + Git2Repository impl
@@ -72,8 +77,13 @@ src/
 │   ├── layout.rs         # Layout rendering
 │   ├── theme.rs          # Color theme
 │   ├── highlight.rs      # Search highlighting
-│   ├── panels/           # Panel renderers (files, diff, branches, commits, stash, revision_tree, etc.)
-│   └── widgets/          # Reusable widgets (file_tree)
+│   ├── traits.rs         # UI component traits (PanelComponent etc.)
+│   ├── components/       # Atomic design hierarchy
+│   │   ├── atoms/        # Primitive widgets (loading_indicator, select_list, virtual_list)
+│   │   ├── molecules/    # Composed widgets
+│   │   └── organisms/    # Full panel components (files, branches, commits, stash)
+│   ├── panels/           # Overlay/dialog renderers (diff, commit editor, stash editor, etc.)
+│   └── widgets/          # Legacy reusable widgets (file_tree)
 ├── config/
 │   ├── mod.rs            # Config loading
 │   └── keymap.rs         # Keymap config (global + per-panel)
@@ -84,50 +94,25 @@ src/
 
 ### GitRepository Trait Abstraction
 
-**Important**: All Git operations must go through the `GitRepository` trait. Never call git2 directly.
+**Important**: All Git operations must go through the `GitRepository` trait in `src/git/repository.rs`.
+Never call git2 directly from stores or components.
 
-```rust
-pub trait GitRepository {
-    // Status and staging
-    fn status(&self) -> Result<GitStatus, GitError>;
-    fn stage(&self, path: &Path) -> Result<(), GitError>;
-    fn stage_paths(&self, paths: &[PathBuf]) -> Result<(), GitError>;
-    fn unstage(&self, path: &Path) -> Result<(), GitError>;
-    fn unstage_paths(&self, paths: &[PathBuf]) -> Result<(), GitError>;
-    fn discard_paths(&self, paths: &[PathBuf]) -> Result<(), GitError>;
+Operations covered: `status`, `stage/unstage/discard` (single + batch `_paths` variants),
+`diff_unstaged/staged/untracked`, `branches/create_branch/checkout_branch/delete_branch`,
+`commits/commit_files/commit_diff_scoped/commit`, `stashes/stash_*`, `fetch_default_async`.
 
-    // Diff operations
-    fn diff_unstaged(&self, path: &Path) -> Result<Vec<DiffLine>, GitError>;
-    fn diff_staged(&self, path: &Path) -> Result<Vec<DiffLine>, GitError>;
-    fn diff_untracked(&self, path: &Path) -> Result<Vec<DiffLine>, GitError>;
+Rationale: start with git2 (stable), migrate to gix (pure Rust) in Phase 4+.
 
-    // Branch operations
-    fn branches(&self) -> Result<Vec<BranchInfo>, GitError>;
-    fn create_branch(&self, name: &str) -> Result<(), GitError>;
-    fn checkout_branch(&self, name: &str) -> Result<(), GitError>;
-    fn delete_branch(&self, name: &str) -> Result<(), GitError>;
+### UI Component Architecture (Atomic Design)
 
-    // Commit operations
-    fn commits(&self, limit: usize) -> Result<Vec<CommitInfo>, GitError>;
-    fn commit_files(&self, oid: &str) -> Result<Vec<FileEntry>, GitError>;
-    fn commit_diff_scoped(&self, oid: &str, path: Option<&Path>) -> Result<Vec<DiffLine>, GitError>;
-    fn commit(&self, message: &str) -> Result<String, GitError>;
+UI is being refactored to an atomic design hierarchy:
+- **atoms/**: Primitive, stateless widgets (`SelectList`, `VirtualList`, `LoadingIndicator`)
+- **molecules/**: Composed from atoms
+- **organisms/**: Full panel components implementing `PanelComponent` trait
+  (`FilesPanelComponent`, `BranchesPanelComponent`, `CommitsPanelComponent`, `StashPanelComponent`)
+- **panels/**: Modal overlays and dialogs (`DiffPanel`, `CommitEditor`, `StashEditor`, etc.)
 
-    // Stash operations
-    fn stashes(&self) -> Result<Vec<StashInfo>, GitError>;
-    fn stash_files(&self, index: usize) -> Result<Vec<FileEntry>, GitError>;
-    fn stash_diff(&self, index: usize, path: Option<&Path>) -> Result<Vec<DiffLine>, GitError>;
-    fn stash_push_paths(&self, paths: &[PathBuf], message: &str) -> Result<usize, GitError>;
-    fn stash_apply(&self, index: usize) -> Result<(), GitError>;
-    fn stash_pop(&self, index: usize) -> Result<(), GitError>;
-    fn stash_drop(&self, index: usize) -> Result<(), GitError>;
-
-    // Async operations
-    fn fetch_default_async(&self) -> Result<Receiver<Result<String, GitError>>, GitError>;
-}
-```
-
-Rationale: start with git2 (stable, well-documented), migrate to gix (pure Rust) in Phase 4+.
+Key trait: `src/ui/traits.rs` — `PanelComponent` trait for generic panel rendering.
 
 ### Keymap System
 

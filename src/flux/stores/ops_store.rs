@@ -26,7 +26,7 @@ impl Store for OpsStore {
             _ => return ReduceOutput::none(),
         }
 
-        ctx.app.request_refresh(RefreshKind::StatusAndRefs);
+        ctx.state.request_refresh(RefreshKind::StatusAndRefs);
         ReduceOutput::from_command(Command::Effect(EffectRequest::ProcessBackgroundLoads))
     }
 }

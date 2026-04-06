@@ -31,13 +31,13 @@ impl Store for BranchStore {
                 ReduceOutput::from_command(Command::Effect(EffectRequest::CheckoutSelectedBranch))
             }
             DomainAction::BranchSwitchConfirm(auto_stash) => {
-                let Some(target) = ctx.app.take_branch_switch_target() else {
-                    ctx.app.cancel_input();
+                let Some(target) = ctx.state.take_branch_switch_target() else {
+                    ctx.state.cancel_input();
                     return ReduceOutput::none().with_invalidation(UiInvalidation::overlay());
                 };
-                ctx.app.cancel_input();
+                ctx.state.cancel_input();
                 if !auto_stash {
-                    ctx.app
+                    ctx.state
                         .push_log(format!("switch canceled: {}", target), false);
                     return ReduceOutput::none().with_invalidation(UiInvalidation::all());
                 }
@@ -55,10 +55,10 @@ impl Store for BranchStore {
                 match result {
                     Ok(()) => {
                         if *auto_stash {
-                            ctx.app
+                            ctx.state
                                 .push_log(format!("switched with auto stash: {}", name), true);
                         } else {
-                            ctx.app.push_log(format!("switched to {}", name), true);
+                            ctx.state.push_log(format!("switched to {}", name), true);
                         }
                         return ReduceOutput {
                             commands: vec![tick_background_loads()],
@@ -67,22 +67,22 @@ impl Store for BranchStore {
                     }
                     Err(e) => {
                         if *auto_stash {
-                            ctx.app
+                            ctx.state
                                 .push_log(format!("auto-stash switch failed: {}", e), false);
                         } else {
-                            ctx.app.push_log(format!("switch failed: {}", e), false);
+                            ctx.state.push_log(format!("switch failed: {}", e), false);
                         }
                     }
                 }
                 ReduceOutput::none()
             }
             DomainAction::DeleteSelectedBranch => {
-                if let Some(name) = ctx.app.selected_branch_name() {
+                if let Some(name) = ctx.state.selected_branch_name() {
                     return ReduceOutput::from_command(Command::Effect(
                         EffectRequest::DeleteBranch(name),
                     ));
                 }
-                ctx.app.push_log("no branch selected", false);
+                ctx.state.push_log("no branch selected".to_string(), false);
                 ReduceOutput::none()
             }
             DomainAction::DeleteBranchFinished { name, result } => {
@@ -91,27 +91,27 @@ impl Store for BranchStore {
                 })
             }
             DomainAction::FetchRemote => {
-                if ctx.app.branches.is_fetching_remote {
-                    ctx.app.push_log("fetch already running", false);
+                if ctx.state.is_fetching_remote() {
+                    ctx.state.push_log("fetch already running".to_string(), false);
                     return ReduceOutput::none();
                 }
-                ctx.app.branches.is_fetching_remote = true;
-                ctx.app.push_log("fetch started", true);
+                ctx.state.set_fetching_remote(true);
+                ctx.state.push_log("fetch started".to_string(), true);
                 ReduceOutput::from_command(Command::Effect(EffectRequest::FetchRemote))
                     .with_invalidation(UiInvalidation::all())
             }
             DomainAction::FetchRemoteFinished(result) => {
-                ctx.app.branches.is_fetching_remote = false;
+                ctx.state.set_fetching_remote(false);
                 match result {
                     Ok(remote) => {
-                        ctx.app.request_refresh(RefreshKind::Full);
-                        ctx.app.push_log(format!("fetched {}", remote), true);
+                        ctx.state.request_refresh(RefreshKind::Full);
+                        ctx.state.push_log(format!("fetched {}", remote), true);
                         return ReduceOutput {
                             commands: vec![tick_background_loads()],
                             invalidation: UiInvalidation::all(),
                         };
                     }
-                    Err(e) => ctx.app.push_log(format!("fetch failed: {}", e), false),
+                    Err(e) => ctx.state.push_log(format!("fetch failed: {}", e), false),
                 }
                 ReduceOutput::none()
             }
