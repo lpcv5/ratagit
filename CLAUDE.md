@@ -39,8 +39,27 @@ UI → Action → Dispatcher → Stores → Effect Runtime → AppStateSnapshot 
 1. **Action**: User input or system events (`DomainAction`, `UiAction`, `SystemAction`)
 2. **Dispatcher**: Routes `ActionEnvelope` through ordered list of `Store` reducers
 3. **Stores**: Domain-partitioned reducers in `src/flux/stores/`
-4. **Effects**: Async Git I/O via `EffectRequest` → `effects::run()` → `EffectResultAction`
-5. **AppStateSnapshot**: Read-only view of `App` passed to UI renderer
+4. **StateAccess**: Trait abstraction between Stores and App state
+5. **Effects**: Async Git I/O via `EffectRequest` → `effects::run()` → `EffectResultAction`
+6. **AppStateSnapshot**: Read-only view of `App` passed to UI renderer
+
+### State Organization
+
+App state is organized into logical groups:
+
+```rust
+pub struct App {
+    pub git: GitState,      // Git data: status, current_diff
+    pub ui: UiState,        // UI state: panels, navigation, dirty flags
+    pub input: InputState,  // Input: buffers, search, input mode
+    // ... runtime fields (task_manager, pending_tasks, etc.)
+}
+```
+
+**Key architectural decisions**:
+- **Stores access state via StateAccess trait** - decouples stores from App implementation
+- **State grouped by concern** - git data, UI state, and input state are separated
+- **Effects hold Rc<Mutex<App>>** - enables async operations (to be refactored in future)
 
 ### Module Structure
 
@@ -48,6 +67,11 @@ UI → Action → Dispatcher → Stores → Effect Runtime → AppStateSnapshot 
 src/
 ├── app/
 │   ├── app.rs            # App struct and state model
+│   ├── states/           # State sub-structures
+│   │   ├── git_state.rs  # Git data (status, current_diff)
+│   │   ├── ui_state.rs   # UI state (panels, navigation, dirty)
+│   │   └── input_state.rs # Input state (buffers, search, mode)
+│   ├── state_access_impl.rs # StateAccess trait implementation
 │   ├── command.rs        # Command definitions
 │   ├── input_mode.rs     # Input mode state (Commit/Branch/Stash/Search)
 │   ├── search.rs         # Search query management
@@ -71,6 +95,7 @@ src/
 │   ├── task_manager.rs   # Background task lifecycle management
 │   ├── test_runtime.rs   # Test-only Flux runtime helpers
 │   └── stores/           # Domain stores (files, branches, commits, stash, etc.)
+│       └── state_access.rs # StateAccess trait definition
 ├── git/
 │   └── repository.rs     # GitRepository trait + Git2Repository impl
 ├── ui/
@@ -92,7 +117,25 @@ src/
 
 ## Key Technical Decisions
 
-### GitRepository Trait Abstraction
+### StateAccess Trait Abstraction
+
+**Important**: Stores access App state through the `StateAccess` trait in `src/flux/stores/state_access.rs`.
+This decouples stores from App's concrete implementation.
+
+```rust
+pub trait StateAccess {
+    fn push_log(&mut self, msg: String, success: bool);
+    fn request_refresh(&mut self, kind: RefreshKind);
+    fn cancel_input(&mut self);
+    // ... ~70 methods covering all Store needs
+}
+```
+
+Stores receive `ReduceCtx { state: &mut dyn StateAccess }` instead of direct App access.
+This enables:
+- Stores don't depend on App's internal structure
+- Easy to mock for testing
+- Clear interface contract between stores and state
 
 **Important**: All Git operations must go through the `GitRepository` trait in `src/git/repository.rs`.
 Never call git2 directly from stores or components.
