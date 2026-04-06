@@ -1,6 +1,6 @@
 use crate::app::{App, CommitFieldFocus, InputMode, RefreshKind, SearchScopeKey, SidePanel};
 use crate::flux::action::DomainAction;
-use crate::flux::stores::StateAccess;
+use crate::flux::stores::{DirtyHint, StateAccess};
 use crate::git::{CommitInfo, FileEntry, StashInfo};
 use std::path::PathBuf;
 use std::time::Duration;
@@ -189,6 +189,28 @@ impl StateAccess for App {
 
     fn mark_all_dirty(&mut self) {
         self.ui.dirty.mark_all();
+    }
+
+    fn mark_dirty(&mut self, hint: DirtyHint) {
+        let bits = hint.0;
+        if bits == 0 {
+            return;
+        }
+        if bits & DirtyHint::MAIN_CONTENT != 0 {
+            self.ui.dirty.left_panels = true;
+        }
+        if bits & DirtyHint::DIFF != 0 {
+            self.ui.dirty.diff = true;
+        }
+        if bits & DirtyHint::COMMAND_LOG != 0 {
+            self.ui.dirty.command_log = true;
+        }
+        if bits & DirtyHint::SHORTCUT_BAR != 0 {
+            self.ui.dirty.shortcut_bar = true;
+        }
+        if bits & DirtyHint::OVERLAY != 0 {
+            self.ui.dirty.overlay = true;
+        }
     }
 
     fn list_down(&mut self) {

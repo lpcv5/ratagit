@@ -76,7 +76,7 @@ impl Dispatcher {
             commands.append(&mut output.commands);
             invalidation.merge(output.invalidation);
         }
-        invalidation.apply(app);
+        invalidation.apply(ctx.state);
 
         self.last_sequence = Some(action.sequence);
         self.state_version += 1;
@@ -124,7 +124,7 @@ mod tests {
         ];
 
         let mut dispatcher = Dispatcher::with_stores(stores);
-        let mut app = App::new().expect("app init");
+        let mut app = crate::flux::stores::test_support::mock_app();
         let envelope =
             dispatcher.next_envelope(Action::System(crate::flux::action::SystemAction::Tick));
         let _ = dispatcher.dispatch(&mut app, envelope);

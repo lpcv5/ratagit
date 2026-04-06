@@ -1115,6 +1115,10 @@ impl App {
             .is_some_and(|requested_at| requested_at.elapsed() >= debounce)
     }
 
+    pub fn pending_diff_reload_at(&self) -> Option<Instant> {
+        self.pending_diff_reload_at
+    }
+
     pub fn flush_pending_diff_reload(&mut self) {
         if !self.pending_diff_reload && !self.has_active_diff_task() {
             return;

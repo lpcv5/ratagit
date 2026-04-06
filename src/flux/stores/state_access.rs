@@ -4,6 +4,19 @@ use crate::git::{CommitInfo, FileEntry, StashInfo};
 use std::path::PathBuf;
 use std::time::Duration;
 
+/// Dirty-region flags passed from stores to the App after reducing an action.
+/// Mirrors the bit positions in `UiInvalidation` without requiring a concrete `App` reference.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct DirtyHint(pub u8);
+
+impl DirtyHint {
+    pub const MAIN_CONTENT: u8 = 0b0000_0001;
+    pub const DIFF: u8 = 0b0000_0010;
+    pub const COMMAND_LOG: u8 = 0b0000_0100;
+    pub const SHORTCUT_BAR: u8 = 0b0000_1000;
+    pub const OVERLAY: u8 = 0b0001_0000;
+}
+
 /// StateAccess trait provides an abstraction layer between Stores and App.
 /// This decouples Stores from App's concrete implementation, making them easier to test
 /// and allowing App's internal structure to evolve independently.
@@ -67,6 +80,9 @@ pub trait StateAccess {
     // App lifecycle
     fn set_running(&mut self, running: bool);
     fn mark_all_dirty(&mut self);
+
+    // Granular dirty-region marking — use these instead of mark_all_dirty when possible.
+    fn mark_dirty(&mut self, hint: DirtyHint);
 
     // Navigation
     fn list_down(&mut self);

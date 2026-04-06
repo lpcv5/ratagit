@@ -91,7 +91,7 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
                 Ok(()) => {
                     app.restore_search_for_active_scope();
                     app.reload_diff_now();
-                    UiInvalidation::all().apply(&mut app);
+                    UiInvalidation::all().apply(&mut *app);
                 }
                 Err(err) => app.push_log(format!("revision files failed: {}", err), false),
             }
@@ -104,7 +104,7 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
                     "commit: edit message/description then press Enter on message",
                     true,
                 );
-                UiInvalidation::all().apply(&mut app);
+                UiInvalidation::all().apply(&mut *app);
             }
             vec![]
         }
@@ -133,7 +133,7 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
                 "commit: all files staged; edit message/description then press Enter",
                 true,
             );
-            UiInvalidation::all().apply(&mut app);
+            UiInvalidation::all().apply(&mut *app);
             vec![]
         }
         EffectRequest::ToggleStageSelection => {
@@ -148,7 +148,7 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
                         true,
                     );
                     let _ = app.flush_pending_refresh();
-                    UiInvalidation::all().apply(&mut app);
+                    UiInvalidation::all().apply(&mut *app);
                 }
                 Err(err) => app.push_log(format!("selection toggle failed: {}", err), false),
             }
@@ -170,7 +170,7 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
                             ),
                             true,
                         );
-                        UiInvalidation::all().apply(&mut app);
+                        UiInvalidation::all().apply(&mut *app);
                     }
                 }
                 Err(err) => app.push_log(format!("prepare commit failed: {}", err), false),
@@ -188,7 +188,7 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
 
             if app.has_uncommitted_changes() {
                 app.start_branch_switch_confirm(name);
-                UiInvalidation::overlay().apply(&mut app);
+                UiInvalidation::overlay().apply(&mut *app);
                 return vec![];
             }
 
