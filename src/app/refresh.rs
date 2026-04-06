@@ -1,4 +1,4 @@
-use super::app::PanelState;
+use super::states::PanelState;
 use crate::git::GitStatus;
 use crate::ui::widgets::file_tree::{FileTree, FileTreeNode, FileTreeNodeStatus};
 use std::collections::HashSet;

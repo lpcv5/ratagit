@@ -1,9 +1,10 @@
-use crate::app::{
-    dirty_flags::DirtyFlags, BranchesPanelState, CommitsPanelState, FilesPanelState,
-    RenderCache, SidePanel, StashPanelState,
+use super::panel_state::{
+    BranchesPanelState, CommitsPanelState, FilesPanelState, RenderCache, SidePanel,
+    StashPanelState,
 };
+use crate::app::dirty_flags::DirtyFlags;
 
-/// UI state - panel navigation, selection, visual modes, dirty tracking
+/// UI state — panel navigation, selection, visual modes, dirty tracking.
 #[derive(Clone)]
 pub struct UiState {
     pub active_panel: SidePanel,

@@ -1,4 +1,4 @@
-use super::app::PanelState;
+use super::states::PanelState;
 use crate::app::{App, SidePanel};
 
 impl App {
