@@ -117,12 +117,12 @@ mod tests {
     fn test_stash_apply_selected_emits_effect() {
         let mut store = StashStore::new();
         let mut app = mock_app();
-        app.active_panel = crate::app::SidePanel::Stash;
-        app.stash.items = vec![crate::git::StashInfo {
+        app.ui.active_panel = crate::app::SidePanel::Stash;
+        app.ui.stash.items = vec![crate::git::StashInfo {
             index: 0,
             message: "wip".to_string(),
         }];
-        app.stash.panel.list_state.select(Some(0));
+        app.ui.stash.panel.list_state.select(Some(0));
         let output = reduce(
             &mut store,
             &mut app,
@@ -166,12 +166,12 @@ mod more_tests {
     fn test_stash_pop_selected_emits_effect() {
         let mut store = StashStore::new();
         let mut app = mock_app();
-        app.active_panel = crate::app::SidePanel::Stash;
-        app.stash.items = vec![crate::git::StashInfo {
+        app.ui.active_panel = crate::app::SidePanel::Stash;
+        app.ui.stash.items = vec![crate::git::StashInfo {
             index: 0,
             message: "wip".to_string(),
         }];
-        app.stash.panel.list_state.select(Some(0));
+        app.ui.stash.panel.list_state.select(Some(0));
         let output = reduce(
             &mut store,
             &mut app,
@@ -184,12 +184,12 @@ mod more_tests {
     fn test_stash_drop_selected_emits_effect() {
         let mut store = StashStore::new();
         let mut app = mock_app();
-        app.active_panel = crate::app::SidePanel::Stash;
-        app.stash.items = vec![crate::git::StashInfo {
+        app.ui.active_panel = crate::app::SidePanel::Stash;
+        app.ui.stash.items = vec![crate::git::StashInfo {
             index: 0,
             message: "wip".to_string(),
         }];
-        app.stash.panel.list_state.select(Some(0));
+        app.ui.stash.panel.list_state.select(Some(0));
         let output = reduce(
             &mut store,
             &mut app,

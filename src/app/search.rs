@@ -3,29 +3,29 @@ use crate::ui::widgets::file_tree::FileTreeNode;
 
 impl App {
     pub fn start_search_input(&mut self) {
-        self.input_mode = Some(crate::app::InputMode::Search);
-        self.input_buffer = self.search_query.clone();
+        self.input.mode = Some(crate::app::InputMode::Search);
+        self.input.buffer = self.input.search_query.clone();
         self.capture_search_scope();
     }
 
     pub fn apply_search_query(&mut self, query: String) -> usize {
-        self.search_query = query;
+        self.input.search_query = query;
         self.capture_search_scope();
         let scope = self.current_search_scope_key();
-        if self.search_query.is_empty() {
-            self.search_matches.clear();
-            self.search_queries.remove(&scope);
+        if self.input.search_query.is_empty() {
+            self.input.search_matches.clear();
+            self.input.search_queries.remove(&scope);
             return 0;
         }
-        self.search_queries.insert(scope, self.search_query.clone());
-        self.search_matches = self
+        self.input.search_queries.insert(scope, self.input.search_query.clone());
+        self.input.search_matches = self
             .searchable_items_for_scope()
             .into_iter()
             .enumerate()
             .filter_map(|(idx, text)| {
                 if text
                     .to_lowercase()
-                    .contains(&self.search_query.to_lowercase())
+                    .contains(&self.input.search_query.to_lowercase())
                 {
                     Some(idx)
                 } else {
@@ -33,40 +33,40 @@ impl App {
                 }
             })
             .collect();
-        self.search_matches.len()
+        self.input.search_matches.len()
     }
 
     pub fn confirm_search_input(&mut self) {
-        self.input_mode = None;
-        self.input_buffer.clear();
+        self.input.mode = None;
+        self.input.buffer.clear();
     }
 
     pub fn clear_search(&mut self) {
         self.capture_search_scope();
         let scope = self.current_search_scope_key();
-        self.search_query.clear();
-        self.input_buffer.clear();
-        self.search_matches.clear();
-        self.search_queries.remove(&scope);
+        self.input.search_query.clear();
+        self.input.buffer.clear();
+        self.input.search_matches.clear();
+        self.input.search_queries.remove(&scope);
     }
 
     pub fn restore_search_for_active_scope(&mut self) {
         self.capture_search_scope();
         let scope = self.current_search_scope_key();
-        let query = self.search_queries.get(&scope).cloned().unwrap_or_default();
-        self.search_query = query;
-        if self.search_query.is_empty() {
-            self.search_matches.clear();
+        let query = self.input.search_queries.get(&scope).cloned().unwrap_or_default();
+        self.input.search_query = query;
+        if self.input.search_query.is_empty() {
+            self.input.search_matches.clear();
             return;
         }
-        self.search_matches = self
+        self.input.search_matches = self
             .searchable_items_for_scope()
             .into_iter()
             .enumerate()
             .filter_map(|(idx, text)| {
                 if text
                     .to_lowercase()
-                    .contains(&self.search_query.to_lowercase())
+                    .contains(&self.input.search_query.to_lowercase())
                 {
                     Some(idx)
                 } else {
@@ -77,14 +77,14 @@ impl App {
     }
 
     pub fn has_search_query_for_active_scope(&self) -> bool {
-        if self.search_query.is_empty() {
+        if self.input.search_query.is_empty() {
             return false;
         }
-        self.search_scope == self.current_search_scope_key()
+        self.input.search_scope == self.current_search_scope_key()
     }
 
     pub fn has_search_for_active_scope(&self) -> bool {
-        if self.search_query.is_empty() {
+        if self.input.search_query.is_empty() {
             return false;
         }
         self.search_scope_matches_active()
@@ -96,7 +96,7 @@ impl App {
         commit_tree_mode: bool,
         stash_tree_mode: bool,
     ) -> Option<String> {
-        if self.search_query.is_empty() {
+        if self.input.search_query.is_empty() {
             return None;
         }
         let scope = SearchScopeKey {
@@ -104,21 +104,21 @@ impl App {
             commit_tree_mode: Self::normalize_commit_scope(panel, commit_tree_mode),
             stash_tree_mode: Self::normalize_stash_scope(panel, stash_tree_mode),
         };
-        if scope != self.search_scope {
+        if scope != self.input.search_scope {
             return None;
         }
-        if self.search_matches.is_empty() {
-            return Some(format!("/{query} 0/0", query = self.search_query));
+        if self.input.search_matches.is_empty() {
+            return Some(format!("/{query} 0/0", query = self.input.search_query));
         }
         let selected = self.active_panel_state_selected();
         let current = selected
-            .and_then(|idx| self.search_matches.iter().position(|m| *m == idx))
+            .and_then(|idx| self.input.search_matches.iter().position(|m| *m == idx))
             .map(|pos| pos + 1)
             .unwrap_or(1);
         Some(format!(
             "/{query} {current}/{total}",
-            query = self.search_query,
-            total = self.search_matches.len()
+            query = self.input.search_query,
+            total = self.input.search_matches.len()
         ))
     }
 
@@ -128,7 +128,7 @@ impl App {
         commit_tree_mode: bool,
         stash_tree_mode: bool,
     ) -> Option<&str> {
-        if self.search_query.is_empty() {
+        if self.input.search_query.is_empty() {
             return None;
         }
         let scope = SearchScopeKey {
@@ -136,10 +136,10 @@ impl App {
             commit_tree_mode: Self::normalize_commit_scope(panel, commit_tree_mode),
             stash_tree_mode: Self::normalize_stash_scope(panel, stash_tree_mode),
         };
-        if scope != self.search_scope {
+        if scope != self.input.search_scope {
             return None;
         }
-        Some(self.search_query.as_str())
+        Some(self.input.search_query.as_str())
     }
 
     pub fn search_jump_next(&mut self) -> bool {
@@ -156,11 +156,12 @@ impl App {
         }
         let selected = self.active_panel_state_selected().unwrap_or(0);
         let next = self
+            .input
             .search_matches
             .iter()
             .copied()
             .find(|idx| *idx >= selected)
-            .or_else(|| self.search_matches.first().copied());
+            .or_else(|| self.input.search_matches.first().copied());
         let Some(target) = next else {
             return false;
         };
@@ -174,18 +175,18 @@ impl App {
         }
         let selected = self.active_panel_state_selected().unwrap_or(0);
         let next = if forward {
-            self.search_matches
+            self.input.search_matches
                 .iter()
                 .copied()
                 .find(|idx| *idx > selected)
-                .or_else(|| self.search_matches.first().copied())
+                .or_else(|| self.input.search_matches.first().copied())
         } else {
-            self.search_matches
+            self.input.search_matches
                 .iter()
                 .rev()
                 .copied()
                 .find(|idx| *idx < selected)
-                .or_else(|| self.search_matches.last().copied())
+                .or_else(|| self.input.search_matches.last().copied())
         };
         let Some(target) = next else {
             return false;
@@ -195,74 +196,74 @@ impl App {
     }
 
     fn capture_search_scope(&mut self) {
-        self.search_scope = self.current_search_scope_key();
+        self.input.search_scope = self.current_search_scope_key();
     }
 
     fn current_search_scope_key(&self) -> SearchScopeKey {
         SearchScopeKey {
-            panel: self.active_panel,
+            panel: self.ui.active_panel,
             commit_tree_mode: Self::normalize_commit_scope(
-                self.active_panel,
-                self.commits.tree_mode.active,
+                self.ui.active_panel,
+                self.ui.commits.tree_mode.active,
             ),
             stash_tree_mode: Self::normalize_stash_scope(
-                self.active_panel,
-                self.stash.tree_mode.active,
+                self.ui.active_panel,
+                self.ui.stash.tree_mode.active,
             ),
         }
     }
 
     fn search_scope_matches_active(&self) -> bool {
-        self.search_scope == self.current_search_scope_key() && !self.search_matches.is_empty()
+        self.input.search_scope == self.current_search_scope_key() && !self.input.search_matches.is_empty()
     }
 
     fn searchable_items_for_scope(&self) -> Vec<String> {
-        match self.active_panel {
+        match self.ui.active_panel {
             SidePanel::Files => self
-                .files
+                .ui.files
                 .tree_nodes
                 .iter()
                 .map(Self::tree_node_display_name)
                 .collect(),
             SidePanel::LocalBranches => {
-                if self.branches.commits_subview_active {
-                    self.branches
+                if self.ui.branches.commits_subview_active {
+                    self.ui.branches
                         .commits_subview
                         .items
                         .iter()
                         .map(|c| format!("{} {} {}", c.short_hash, c.author, c.message))
                         .collect()
                 } else {
-                    self.branches.items.iter().map(|b| b.name.clone()).collect()
+                    self.ui.branches.items.iter().map(|b| b.name.clone()).collect()
                 }
             }
             SidePanel::Commits => {
-                if self.commits.tree_mode.active {
+                if self.ui.commits.tree_mode.active {
                     return self
-                        .commits
+                        .ui.commits
                         .tree_mode
                         .nodes
                         .iter()
                         .map(Self::tree_node_display_name)
                         .collect();
                 }
-                self.commits
+                self.ui.commits
                     .items
                     .iter()
                     .map(|c| format!("{} {} {}", c.short_hash, c.author, c.message))
                     .collect()
             }
             SidePanel::Stash => {
-                if self.stash.tree_mode.active {
+                if self.ui.stash.tree_mode.active {
                     return self
-                        .stash
+                        .ui.stash
                         .tree_mode
                         .nodes
                         .iter()
                         .map(Self::tree_node_display_name)
                         .collect();
                 }
-                self.stash
+                self.ui.stash
                     .items
                     .iter()
                     .map(|s| format!("stash@{{{}}} {}", s.index, s.message))
@@ -272,36 +273,36 @@ impl App {
     }
 
     fn active_panel_state_selected(&self) -> Option<usize> {
-        match self.active_panel {
-            SidePanel::Files => self.files.panel.list_state.selected(),
+        match self.ui.active_panel {
+            SidePanel::Files => self.ui.files.panel.list_state.selected(),
             SidePanel::LocalBranches => {
-                if self.branches.commits_subview_active {
-                    self.branches.commits_subview.panel.list_state.selected()
+                if self.ui.branches.commits_subview_active {
+                    self.ui.branches.commits_subview.panel.list_state.selected()
                 } else {
-                    self.branches.panel.list_state.selected()
+                    self.ui.branches.panel.list_state.selected()
                 }
             }
-            SidePanel::Commits => self.commits.panel.list_state.selected(),
-            SidePanel::Stash => self.stash.panel.list_state.selected(),
+            SidePanel::Commits => self.ui.commits.panel.list_state.selected(),
+            SidePanel::Stash => self.ui.stash.panel.list_state.selected(),
         }
     }
 
     fn select_active_panel_index(&mut self, idx: usize) {
-        match self.active_panel {
-            SidePanel::Files => self.files.panel.list_state.select(Some(idx)),
+        match self.ui.active_panel {
+            SidePanel::Files => self.ui.files.panel.list_state.select(Some(idx)),
             SidePanel::LocalBranches => {
-                if self.branches.commits_subview_active {
-                    self.branches
+                if self.ui.branches.commits_subview_active {
+                    self.ui.branches
                         .commits_subview
                         .panel
                         .list_state
                         .select(Some(idx));
                 } else {
-                    self.branches.panel.list_state.select(Some(idx));
+                    self.ui.branches.panel.list_state.select(Some(idx));
                 }
             }
-            SidePanel::Commits => self.commits.panel.list_state.select(Some(idx)),
-            SidePanel::Stash => self.stash.panel.list_state.select(Some(idx)),
+            SidePanel::Commits => self.ui.commits.panel.list_state.select(Some(idx)),
+            SidePanel::Stash => self.ui.stash.panel.list_state.select(Some(idx)),
         }
     }
 
@@ -351,7 +352,7 @@ mod tests {
 
         app.start_search_input();
 
-        assert_eq!(app.input_mode, Some(crate::app::InputMode::Search));
+        assert_eq!(app.input.mode, Some(crate::app::InputMode::Search));
     }
 
     #[test]
@@ -360,7 +361,7 @@ mod tests {
 
         app.apply_search_query("foo".to_string());
 
-        assert_eq!(app.search_query, "foo");
+        assert_eq!(app.input.search_query, "foo");
         assert_eq!(app.has_search_query_for_active_scope(), true);
     }
 
@@ -371,8 +372,8 @@ mod tests {
 
         app.apply_search_query(String::new());
 
-        assert_eq!(app.search_query, "");
-        assert_eq!(app.search_matches, Vec::new());
+        assert_eq!(app.input.search_query, "");
+        assert_eq!(app.input.search_matches, Vec::new());
         assert_eq!(app.has_search_query_for_active_scope(), false);
     }
 
@@ -383,8 +384,8 @@ mod tests {
 
         app.clear_search();
 
-        assert_eq!(app.search_query, "");
-        assert_eq!(app.search_matches, Vec::new());
+        assert_eq!(app.input.search_query, "");
+        assert_eq!(app.input.search_matches, Vec::new());
         assert_eq!(app.has_search_query_for_active_scope(), false);
     }
 
@@ -424,24 +425,24 @@ mod tests {
     #[test]
     fn restore_search_for_active_scope_without_saved_query_clears_stale_matches() {
         let mut app = mock_app();
-        app.search_query = "stale".to_string();
-        app.search_matches = vec![3, 5];
+        app.input.search_query = "stale".to_string();
+        app.input.search_matches = vec![3, 5];
 
         app.restore_search_for_active_scope();
 
-        assert_eq!(app.search_query, "");
-        assert_eq!(app.search_matches, Vec::new());
+        assert_eq!(app.input.search_query, "");
+        assert_eq!(app.input.search_matches, Vec::new());
     }
 
     #[test]
     fn confirm_search_input_clears_input_mode_and_input_buffer() {
         let mut app = mock_app();
-        app.input_mode = Some(crate::app::InputMode::Search);
-        app.input_buffer = "test".to_string();
+        app.input.mode = Some(crate::app::InputMode::Search);
+        app.input.buffer = "test".to_string();
 
         app.confirm_search_input();
 
-        assert_eq!(app.input_mode, None);
-        assert_eq!(app.input_buffer, "");
+        assert_eq!(app.input.mode, None);
+        assert_eq!(app.input.buffer, "");
     }
 }

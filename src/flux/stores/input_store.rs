@@ -239,7 +239,7 @@ mod tests {
     fn test_no_input_mode_ignored() {
         let mut store = InputStore::new();
         let mut app = mock_app();
-        app.input_mode = None;
+        app.input.mode = None;
         let output = reduce(
             &mut store,
             &mut app,
@@ -252,58 +252,58 @@ mod tests {
     fn test_input_char_in_create_branch_mode_updates_buffer() {
         let mut store = InputStore::new();
         let mut app = mock_app();
-        app.input_mode = Some(InputMode::CreateBranch);
-        app.input_buffer.clear();
+        app.input.mode = Some(InputMode::CreateBranch);
+        app.input.buffer.clear();
         reduce(
             &mut store,
             &mut app,
             Action::Domain(DomainAction::InputChar('f')),
         );
-        assert_eq!(app.input_buffer, "f");
+        assert_eq!(app.input.buffer, "f");
     }
 
     #[test]
     fn test_input_backspace_in_create_branch_removes_char() {
         let mut store = InputStore::new();
         let mut app = mock_app();
-        app.input_mode = Some(InputMode::CreateBranch);
-        app.input_buffer = "feature".to_string();
+        app.input.mode = Some(InputMode::CreateBranch);
+        app.input.buffer = "feature".to_string();
         reduce(
             &mut store,
             &mut app,
             Action::Domain(DomainAction::InputBackspace),
         );
-        assert_eq!(app.input_buffer, "featur");
+        assert_eq!(app.input.buffer, "featur");
     }
 
     #[test]
     fn test_input_esc_in_search_mode_clears_and_exits() {
         let mut store = InputStore::new();
         let mut app = mock_app();
-        app.input_mode = Some(InputMode::Search);
-        app.search_query = "foo".to_string();
+        app.input.mode = Some(InputMode::Search);
+        app.input.search_query = "foo".to_string();
         reduce(&mut store, &mut app, Action::Domain(DomainAction::InputEsc));
-        assert!(app.input_mode.is_none());
-        assert!(app.search_query.is_empty());
+        assert!(app.input.mode.is_none());
+        assert!(app.input.search_query.is_empty());
     }
 
     #[test]
     fn test_input_esc_in_commit_mode_cancels() {
         let mut store = InputStore::new();
         let mut app = mock_app();
-        app.input_mode = Some(InputMode::CommitEditor);
-        app.commit_message_buffer = "wip".to_string();
+        app.input.mode = Some(InputMode::CommitEditor);
+        app.input.commit_message_buffer = "wip".to_string();
         reduce(&mut store, &mut app, Action::Domain(DomainAction::InputEsc));
-        assert!(app.input_mode.is_none());
-        assert!(app.commit_message_buffer.is_empty());
+        assert!(app.input.mode.is_none());
+        assert!(app.input.commit_message_buffer.is_empty());
     }
 
     #[test]
     fn test_input_enter_create_branch_emits_create_branch_command() {
         let mut store = InputStore::new();
         let mut app = mock_app();
-        app.input_mode = Some(InputMode::CreateBranch);
-        app.input_buffer = "feature".to_string();
+        app.input.mode = Some(InputMode::CreateBranch);
+        app.input.buffer = "feature".to_string();
         let output = reduce(
             &mut store,
             &mut app,
@@ -325,47 +325,47 @@ mod more_tests {
     fn test_input_char_in_commit_editor_message_focus() {
         let mut store = InputStore::new();
         let mut app = mock_app();
-        app.input_mode = Some(InputMode::CommitEditor);
-        app.commit_focus = CommitFieldFocus::Message;
+        app.input.mode = Some(InputMode::CommitEditor);
+        app.input.commit_focus = CommitFieldFocus::Message;
         reduce(
             &mut store,
             &mut app,
             Action::Domain(DomainAction::InputChar('x')),
         );
-        assert_eq!(app.commit_message_buffer, "x");
+        assert_eq!(app.input.commit_message_buffer, "x");
     }
 
     #[test]
     fn test_input_char_in_commit_editor_description_focus() {
         let mut store = InputStore::new();
         let mut app = mock_app();
-        app.input_mode = Some(InputMode::CommitEditor);
-        app.commit_focus = CommitFieldFocus::Description;
+        app.input.mode = Some(InputMode::CommitEditor);
+        app.input.commit_focus = CommitFieldFocus::Description;
         reduce(
             &mut store,
             &mut app,
             Action::Domain(DomainAction::InputChar('y')),
         );
-        assert_eq!(app.commit_description_buffer, "y");
+        assert_eq!(app.input.commit_description_buffer, "y");
     }
 
     #[test]
     fn test_input_tab_in_commit_editor_switches_focus() {
         let mut store = InputStore::new();
         let mut app = mock_app();
-        app.input_mode = Some(InputMode::CommitEditor);
-        app.commit_focus = CommitFieldFocus::Message;
+        app.input.mode = Some(InputMode::CommitEditor);
+        app.input.commit_focus = CommitFieldFocus::Message;
         reduce(&mut store, &mut app, Action::Domain(DomainAction::InputTab));
-        assert_eq!(app.commit_focus, CommitFieldFocus::Description);
+        assert_eq!(app.input.commit_focus, CommitFieldFocus::Description);
     }
 
     #[test]
     fn test_input_enter_in_commit_editor_message_with_content_emits_commit_command() {
         let mut store = InputStore::new();
         let mut app = mock_app();
-        app.input_mode = Some(InputMode::CommitEditor);
-        app.commit_focus = CommitFieldFocus::Message;
-        app.commit_message_buffer = "fix: test".to_string();
+        app.input.mode = Some(InputMode::CommitEditor);
+        app.input.commit_focus = CommitFieldFocus::Message;
+        app.input.commit_message_buffer = "fix: test".to_string();
         let output = reduce(
             &mut store,
             &mut app,
@@ -378,37 +378,37 @@ mod more_tests {
     fn test_input_backspace_in_commit_editor_message() {
         let mut store = InputStore::new();
         let mut app = mock_app();
-        app.input_mode = Some(InputMode::CommitEditor);
-        app.commit_focus = CommitFieldFocus::Message;
-        app.commit_message_buffer = "fix".to_string();
+        app.input.mode = Some(InputMode::CommitEditor);
+        app.input.commit_focus = CommitFieldFocus::Message;
+        app.input.commit_message_buffer = "fix".to_string();
         reduce(
             &mut store,
             &mut app,
             Action::Domain(DomainAction::InputBackspace),
         );
-        assert_eq!(app.commit_message_buffer, "fi");
+        assert_eq!(app.input.commit_message_buffer, "fi");
     }
 
     #[test]
     fn test_input_char_in_stash_editor() {
         let mut store = InputStore::new();
         let mut app = mock_app();
-        app.input_mode = Some(InputMode::StashEditor);
+        app.input.mode = Some(InputMode::StashEditor);
         reduce(
             &mut store,
             &mut app,
             Action::Domain(DomainAction::InputChar('w')),
         );
-        assert_eq!(app.stash_message_buffer, "w");
+        assert_eq!(app.input.stash_message_buffer, "w");
     }
 
     #[test]
     fn test_input_enter_in_stash_editor_emits_stash_push_command() {
         let mut store = InputStore::new();
         let mut app = mock_app();
-        app.input_mode = Some(InputMode::StashEditor);
-        app.stash_message_buffer = "wip".to_string();
-        app.stash_targets = vec!["foo.txt".into()];
+        app.input.mode = Some(InputMode::StashEditor);
+        app.input.stash_message_buffer = "wip".to_string();
+        app.input.stash_targets = vec!["foo.txt".into()];
         let output = reduce(
             &mut store,
             &mut app,
@@ -421,21 +421,21 @@ mod more_tests {
     fn test_input_char_in_command_palette() {
         let mut store = InputStore::new();
         let mut app = mock_app();
-        app.input_mode = Some(InputMode::CommandPalette);
+        app.input.mode = Some(InputMode::CommandPalette);
         reduce(
             &mut store,
             &mut app,
             Action::Domain(DomainAction::InputChar('q')),
         );
-        assert_eq!(app.input_buffer, "q");
+        assert_eq!(app.input.buffer, "q");
     }
 
     #[test]
     fn test_input_enter_in_command_palette_with_known_command() {
         let mut store = InputStore::new();
         let mut app = mock_app();
-        app.input_mode = Some(InputMode::CommandPalette);
-        app.input_buffer = "quit".to_string();
+        app.input.mode = Some(InputMode::CommandPalette);
+        app.input.buffer = "quit".to_string();
         let output = reduce(
             &mut store,
             &mut app,
@@ -448,8 +448,8 @@ mod more_tests {
     fn test_input_esc_in_branch_switch_confirm_cancels() {
         let mut store = InputStore::new();
         let mut app = mock_app();
-        app.input_mode = Some(InputMode::BranchSwitchConfirm);
+        app.input.mode = Some(InputMode::BranchSwitchConfirm);
         reduce(&mut store, &mut app, Action::Domain(DomainAction::InputEsc));
-        assert!(app.input_mode.is_none());
+        assert!(app.input.mode.is_none());
     }
 }

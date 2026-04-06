@@ -2,7 +2,7 @@ use crate::app::{App, InputMode, SidePanel};
 
 impl App {
     pub fn shortcut_hints(&self) -> Vec<(String, String)> {
-        if let Some(mode) = self.input_mode {
+        if let Some(mode) = self.input.mode {
             return match mode {
                 InputMode::CommitEditor => vec![
                     ("Tab".to_string(), "SwitchField".to_string()),
@@ -39,7 +39,7 @@ impl App {
 
     fn panel_primary_hints(&self) -> Vec<(String, String)> {
         let panel = self.active_panel_name();
-        match self.active_panel {
+        match self.ui.active_panel {
             SidePanel::Files => vec![
                 (
                     self.panel_key_or(panel, "toggle_stage", "Space"),
@@ -52,7 +52,7 @@ impl App {
                 (self.global_key_or("commit", "c"), "Commit".to_string()),
             ],
             SidePanel::LocalBranches => {
-                if self.branches.commits_subview_active {
+                if self.ui.branches.commits_subview_active {
                     vec![
                         (
                             self.panel_key_or(panel, "open_tree", "Enter"),

@@ -80,27 +80,27 @@ impl UiInvalidation {
             return;
         }
         if self.0 == Self::all().0 {
-            app.dirty.mark_all();
+            app.ui.dirty.mark_all();
             return;
         }
         if (self.0 & (Self::MAIN_CONTENT | Self::DIFF)) == (Self::MAIN_CONTENT | Self::DIFF) {
-            app.dirty.mark_main_content();
+            app.ui.dirty.mark_main_content();
         } else {
             if (self.0 & Self::MAIN_CONTENT) != 0 {
-                app.dirty.left_panels = true;
+                app.ui.dirty.left_panels = true;
             }
             if (self.0 & Self::DIFF) != 0 {
-                app.dirty.mark_diff();
+                app.ui.dirty.mark_diff();
             }
         }
         if (self.0 & Self::COMMAND_LOG) != 0 {
-            app.dirty.mark_command_log();
+            app.ui.dirty.mark_command_log();
         }
         if (self.0 & Self::SHORTCUT_BAR) != 0 {
-            app.dirty.shortcut_bar = true;
+            app.ui.dirty.shortcut_bar = true;
         }
         if (self.0 & Self::OVERLAY) != 0 {
-            app.dirty.mark_overlay();
+            app.ui.dirty.mark_overlay();
         }
     }
 }

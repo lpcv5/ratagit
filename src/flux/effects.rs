@@ -81,7 +81,7 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
         }
         EffectRequest::RevisionOpenTreeOrToggleDir => {
             let mut app = ctx.app.lock().await;
-            let result = match app.active_panel {
+            let result = match app.ui.active_panel {
                 SidePanel::Stash => app.stash_open_tree_or_toggle_dir(),
                 SidePanel::Commits => app.commit_open_tree_or_toggle_dir(),
                 SidePanel::LocalBranches => app.open_selected_branch_commits(100),
@@ -112,11 +112,12 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
             let mut app = ctx.app.lock().await;
             app.cancel_input();
             let paths: Vec<PathBuf> = app
+                .git
                 .status
                 .unstaged
                 .iter()
                 .map(|e| e.path.clone())
-                .chain(app.status.untracked.iter().map(|e| e.path.clone()))
+                .chain(app.git.status.untracked.iter().map(|e| e.path.clone()))
                 .collect();
             if paths.is_empty() {
                 app.push_log("nothing to stage", false);
@@ -695,12 +696,12 @@ mod tests {
         let mut ctx = make_ctx();
         {
             let mut app = ctx.app.lock().await;
-            app.active_panel = crate::app::SidePanel::LocalBranches;
-            app.branches.items = vec![crate::git::BranchInfo {
+            app.ui.active_panel = crate::app::SidePanel::LocalBranches;
+            app.ui.branches.items = vec![crate::git::BranchInfo {
                 name: "main".to_string(),
                 is_current: true,
             }];
-            app.branches.panel.list_state.select(Some(0));
+            app.ui.branches.panel.list_state.select(Some(0));
         }
 
         let action =
@@ -716,22 +717,22 @@ mod tests {
         let mut ctx = make_ctx();
         {
             let mut app = ctx.app.lock().await;
-            app.active_panel = crate::app::SidePanel::LocalBranches;
-            app.branches.items = vec![crate::git::BranchInfo {
+            app.ui.active_panel = crate::app::SidePanel::LocalBranches;
+            app.ui.branches.items = vec![crate::git::BranchInfo {
                 name: "main".to_string(),
                 is_current: true,
             }];
-            app.branches.panel.list_state.select(Some(0));
+            app.ui.branches.panel.list_state.select(Some(0));
         }
 
         assert_no_actions(run(EffectRequest::RevisionOpenTreeOrToggleDir, &mut ctx).await);
         assert_no_actions(run(EffectRequest::ProcessBackgroundLoads, &mut ctx).await);
         let app = ctx.app.lock().await;
-        assert_eq!(app.active_panel, crate::app::SidePanel::LocalBranches);
-        assert!(app.branches.commits_subview_active);
-        assert!(!app.branches.commits_subview.items.is_empty());
+        assert_eq!(app.ui.active_panel, crate::app::SidePanel::LocalBranches);
+        assert!(app.ui.branches.commits_subview_active);
+        assert!(!app.ui.branches.commits_subview.items.is_empty());
         assert_eq!(
-            app.branches.commits_subview.panel.list_state.selected(),
+            app.ui.branches.commits_subview.panel.list_state.selected(),
             Some(0)
         );
     }

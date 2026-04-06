@@ -81,20 +81,20 @@ mod tests {
             &mut app,
             Action::Domain(DomainAction::SearchSetQuery("foo".to_string())),
         );
-        assert_eq!(app.search_query, "foo");
+        assert_eq!(app.input.search_query, "foo");
     }
 
     #[test]
     fn test_search_clear_resets_state() {
         let mut store = SearchStore::new();
         let mut app = mock_app();
-        app.search_query = "foo".to_string();
+        app.input.search_query = "foo".to_string();
         reduce(
             &mut store,
             &mut app,
             Action::Domain(DomainAction::SearchClear),
         );
-        assert!(app.search_query.is_empty());
+        assert!(app.input.search_query.is_empty());
     }
 
     #[test]

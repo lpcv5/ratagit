@@ -170,12 +170,12 @@ mod tests {
     fn test_delete_selected_branch_emits_effect() {
         let mut store = BranchStore::new();
         let mut app = mock_app();
-        app.active_panel = crate::app::SidePanel::LocalBranches;
-        app.branches.items = vec![crate::git::BranchInfo {
+        app.ui.active_panel = crate::app::SidePanel::LocalBranches;
+        app.ui.branches.items = vec![crate::git::BranchInfo {
             name: "feature".to_string(),
             is_current: false,
         }];
-        app.branches.panel.list_state.select(Some(0));
+        app.ui.branches.panel.list_state.select(Some(0));
         let output = reduce(
             &mut store,
             &mut app,
@@ -200,13 +200,13 @@ mod tests {
     fn test_fetch_remote_finished_ok_clears_fetching_flag() {
         let mut store = BranchStore::new();
         let mut app = mock_app();
-        app.branches.is_fetching_remote = true;
+        app.ui.branches.is_fetching_remote = true;
         reduce(
             &mut store,
             &mut app,
             Action::Domain(DomainAction::FetchRemoteFinished(Ok("origin".to_string()))),
         );
-        assert!(!app.branches.is_fetching_remote);
+        assert!(!app.ui.branches.is_fetching_remote);
     }
 
     #[test]
@@ -278,22 +278,22 @@ mod more_tests {
     fn test_branch_switch_confirm_false_cancels() {
         let mut store = BranchStore::new();
         let mut app = mock_app();
-        app.branch_switch_target = Some("feature".to_string());
-        app.input_mode = Some(crate::app::InputMode::BranchSwitchConfirm);
+        app.input.branch_switch_target = Some("feature".to_string());
+        app.input.mode = Some(crate::app::InputMode::BranchSwitchConfirm);
         reduce(
             &mut store,
             &mut app,
             Action::Domain(DomainAction::BranchSwitchConfirm(false)),
         );
-        assert!(app.branch_switch_target.is_none());
-        assert!(app.input_mode.is_none());
+        assert!(app.input.branch_switch_target.is_none());
+        assert!(app.input.mode.is_none());
     }
 
     #[test]
     fn test_fetch_remote_finished_err_logs_failure() {
         let mut store = BranchStore::new();
         let mut app = mock_app();
-        app.branches.is_fetching_remote = true;
+        app.ui.branches.is_fetching_remote = true;
         let logs_before = app.command_log.len();
         reduce(
             &mut store,
@@ -302,7 +302,7 @@ mod more_tests {
                 "fetch failed".to_string()
             ))),
         );
-        assert!(!app.branches.is_fetching_remote);
+        assert!(!app.ui.branches.is_fetching_remote);
         assert!(app.command_log.len() > logs_before);
     }
 }
