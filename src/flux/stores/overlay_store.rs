@@ -26,38 +26,41 @@ impl Store for OverlayStore {
                         EffectRequest::StageAllAndStartCommitEditor,
                     ))
                 } else {
-                    ctx.app.cancel_input();
-                    ctx.app.push_log("commit all cancelled", false);
+                    ctx.state.cancel_input();
+                    ctx.state
+                        .push_log("commit all cancelled".to_string(), false);
                     ReduceOutput::none().with_invalidation(UiInvalidation::all())
                 }
             }
             DomainAction::StartCommandPalette => {
-                ctx.app.start_command_palette();
-                ctx.app
-                    .push_log("command palette: type command and press Enter", true);
+                ctx.state.start_command_palette();
+                ctx.state
+                    .push_log("command palette: type command and press Enter".to_string(), true);
                 ReduceOutput::none().with_invalidation(UiInvalidation::log_and_overlay())
             }
             DomainAction::StartBranchCreateInput => {
-                ctx.app.start_branch_create_input();
-                ctx.app
-                    .push_log("branch create: enter name and press Enter", true);
+                ctx.state.start_branch_create_input();
+                ctx.state
+                    .push_log("branch create: enter name and press Enter".to_string(), true);
                 ReduceOutput::none().with_invalidation(UiInvalidation::all())
             }
             DomainAction::StartStashInput => {
-                let targets = ctx.app.prepare_stash_targets_from_selection();
+                let targets = ctx.state.prepare_stash_targets_from_selection();
                 if targets.is_empty() {
-                    ctx.app.push_log("stash blocked: no selected items", false);
+                    ctx.state
+                        .push_log("stash blocked: no selected items".to_string(), false);
                     ReduceOutput::none()
                 } else {
-                    ctx.app.start_stash_editor(targets);
-                    ctx.app.push_log("stash: enter title and press Enter", true);
+                    ctx.state.start_stash_editor(targets);
+                    ctx.state
+                        .push_log("stash: enter title and press Enter".to_string(), true);
                     ReduceOutput::none().with_invalidation(UiInvalidation::all())
                 }
             }
             DomainAction::StartSearchInput => {
-                ctx.app.start_search_input();
-                ctx.app
-                    .push_log("search: type query, Enter confirm, Esc cancel", true);
+                ctx.state.start_search_input();
+                ctx.state
+                    .push_log("search: type query, Enter confirm, Esc cancel".to_string(), true);
                 ReduceOutput::none().with_invalidation(UiInvalidation::log_and_overlay())
             }
             _ => ReduceOutput::none(),

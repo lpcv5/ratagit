@@ -11,9 +11,11 @@ mod revision_store;
 mod search_store;
 mod selection_store;
 mod stash_store;
+pub mod state_access;
 
 use crate::app::{App, Command};
 use crate::flux::action::ActionEnvelope;
+pub use state_access::StateAccess;
 
 pub use branch_store::BranchStore;
 pub use commit_store::CommitStore;
@@ -30,7 +32,7 @@ pub use selection_store::SelectionStore;
 pub use stash_store::StashStore;
 
 pub struct ReduceCtx<'a> {
-    pub app: &'a mut App,
+    pub state: &'a mut dyn StateAccess,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -147,11 +149,11 @@ pub(super) fn log_result(
 ) -> ReduceOutput {
     match result {
         Ok(()) => {
-            ctx.app.push_log(success_msg, true);
+            ctx.state.push_log(success_msg.into(), true);
             ReduceOutput::none().with_invalidation(UiInvalidation::all())
         }
         Err(e) => {
-            ctx.app.push_log(fail_msg(e), false);
+            ctx.state.push_log(fail_msg(e), false);
             ReduceOutput::none()
         }
     }
@@ -286,7 +288,7 @@ pub mod test_support {
         action: Action,
     ) -> super::ReduceOutput {
         let env = make_envelope(action);
-        let mut ctx = super::ReduceCtx { app };
+        let mut ctx = super::ReduceCtx { state: app };
         store.reduce(&env, &mut ctx)
     }
 }

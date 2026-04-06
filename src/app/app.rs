@@ -1856,6 +1856,20 @@ impl App {
         }
     }
 
+    pub fn recompute_commit_highlight(&mut self) {
+        use crate::app::graph_highlight::compute_highlight_set;
+        if self.active_panel == SidePanel::Commits && !self.commits.tree_mode.active {
+            if let Some(idx) = self.commits.panel.list_state.selected() {
+                if let Some(commit) = self.commits.items.get(idx) {
+                    let oid = commit.oid.clone();
+                    self.commits.highlighted_oids = compute_highlight_set(&self.commits.items, &oid);
+                    return;
+                }
+            }
+        }
+        self.commits.highlighted_oids.clear();
+    }
+
     pub(super) fn global_key_or(&self, action: &str, fallback: &str) -> String {
         self.keymap
             .first_global_key(action)

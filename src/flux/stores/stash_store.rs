@@ -15,10 +15,10 @@ fn stash_op_selected(
     ctx: &mut ReduceCtx<'_>,
     make_effect: fn(usize) -> EffectRequest,
 ) -> ReduceOutput {
-    if let Some(index) = ctx.app.selected_stash_index() {
+    if let Some(index) = ctx.state.selected_stash_index() {
         return ReduceOutput::from_command(Command::Effect(make_effect(index)));
     }
-    ctx.app.push_log("no stash selected", false);
+    ctx.state.push_log("no stash selected".to_string(), false);
     ReduceOutput::none()
 }
 
@@ -37,14 +37,14 @@ impl Store for StashStore {
             DomainAction::StashPushFinished { message, result } => {
                 match result {
                     Ok(index) => {
-                        ctx.app.push_log(
+                        ctx.state.push_log(
                             format!("stash created stash@{{{}}}: {}", index, message),
                             true,
                         );
                         return ReduceOutput::none().with_invalidation(UiInvalidation::all());
                     }
                     Err(e) => ctx
-                        .app
+                        .state
                         .push_log(format!("stash create failed: {}", e), false),
                 }
                 ReduceOutput::none()
