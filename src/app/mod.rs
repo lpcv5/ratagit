@@ -22,18 +22,15 @@ mod test_dispatch;
 mod trace;
 
 pub use app::App;
-pub use app::BranchesPanelState;
 pub use app::CommitFieldFocus;
-pub use app::CommitsPanelState;
-pub use app::FilesPanelState;
 pub use app::InputMode;
 pub use app::RefreshKind;
-pub use app::RenderCache;
 pub use app::SearchScopeKey;
-pub use app::SidePanel;
-pub use app::StashPanelState;
 pub use command::Command;
-pub use states::{GitState, InputState, UiState};
+pub use states::{
+    BranchesPanelState, CommandLogEntry, CommitsPanelState, FilesPanelState, GitState, InputState,
+    PanelState, RenderCache, SidePanel, StashPanelState, TreeModeState, UiState,
+};
 #[cfg(test)]
 pub use test_dispatch::{dispatch_test_action, dispatch_test_key, map_test_key};
 

@@ -1,4 +1,5 @@
-use super::{app as app_inner, diff_loader, revision_tree};
+use super::{diff_loader, revision_tree};
+use super::states::{PanelState, TreeModeState};
 use crate::app::{App, SidePanel};
 use crate::ui::widgets::file_tree::FileTreeNode;
 
@@ -125,8 +126,8 @@ impl App {
     fn selected_revision_tree_node<'a, T>(
         &'a self,
         expected: SidePanel,
-        panel: &app_inner::PanelState,
-        tree: &'a app_inner::TreeModeState<T>,
+        panel: &PanelState,
+        tree: &'a TreeModeState<T>,
     ) -> Option<&'a FileTreeNode> {
         if self.ui.active_panel != expected || !tree.active {
             return None;

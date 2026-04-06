@@ -1,93 +1,24 @@
 use super::{diff_cache, diff_loader, dirty_flags, refresh, revision_tree};
-use super::states::{GitState, InputState, UiState};
+use super::states::{
+    BranchesPanelState, CommandLogEntry, CommitsPanelState, FilesPanelState, GitState, InputState,
+    PanelState, RenderCache, SidePanel, StashPanelState, TreeModeState, UiState,
+};
 use crate::config::keymap::Keymap;
 use crate::flux::task_manager::{
     TaskGeneration, TaskKey, TaskManager, TaskPriority, TaskRequest, TaskRequestKind,
     TaskResult, TaskResultKind,
 };
 use crate::git::{
-    BranchInfo, CommitInfo, DiffLine, FileEntry, Git2Repository, GitError, GitRepository,
+    BranchInfo, CommitInfo, DiffLine, Git2Repository, GitError, GitRepository,
     GitStatus, StashInfo,
 };
-use crate::ui::widgets::file_tree::{FileTree, FileTreeNode};
+use crate::ui::widgets::file_tree::FileTree;
 use color_eyre::Result;
-use ratatui::widgets::ListState;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
 use std::time::Instant;
 use tracing::debug;
-
-/// Documentation comment in English.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub enum SidePanel {
-    #[default]
-    Files,
-    LocalBranches,
-    Commits,
-    Stash,
-}
-
-/// Documentation comment in English.
-#[derive(Clone)]
-pub struct PanelState {
-    pub list_state: ListState,
-}
-
-impl PanelState {
-    pub fn new() -> Self {
-        let mut list_state = ListState::default();
-        list_state.select(Some(0));
-        Self { list_state }
-    }
-}
-
-impl Default for PanelState {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[derive(Clone)]
-pub struct TreeModeState<T> {
-    pub active: bool,
-    pub nodes: Vec<FileTreeNode>,
-    pub files: Vec<FileEntry>,
-    pub expanded_dirs: HashSet<PathBuf>,
-    pub selected_source: Option<T>,
-}
-
-impl<T> Default for TreeModeState<T> {
-    fn default() -> Self {
-        Self {
-            active: false,
-            nodes: Vec::new(),
-            files: Vec::new(),
-            expanded_dirs: HashSet::new(),
-            selected_source: None,
-        }
-    }
-}
-
-#[derive(Default, Clone)]
-pub struct FilesPanelState {
-    pub panel: PanelState,
-    pub tree_nodes: Vec<FileTreeNode>,
-    pub expanded_dirs: HashSet<PathBuf>,
-    pub visual_mode: bool,
-    pub visual_anchor: Option<usize>,
-}
-
-#[derive(Default, Clone)]
-pub struct BranchesPanelState {
-    pub panel: PanelState,
-    pub items: Vec<BranchInfo>,
-    pub is_fetching_remote: bool,
-    pub commits_subview_active: bool,
-    pub commits_subview_loading: bool,
-    pub commits_subview_source: Option<String>,
-    pub commits_subview: CommitsPanelState,
-}
 
 enum BackgroundReceiver {
     Status {
@@ -138,29 +69,6 @@ const COMMITS_LOAD_STEP: usize = 40;
 const COMMITS_LOAD_AHEAD_THRESHOLD: usize = 8;
 const BRANCH_LOG_DIFF_LIMIT: usize = 20;
 
-#[derive(Default, Clone)]
-pub struct CommitsPanelState {
-    pub panel: PanelState,
-    pub items: Vec<CommitInfo>,
-    pub dirty: bool,
-    pub tree_mode: TreeModeState<String>,
-    pub highlighted_oids: HashSet<String>,
-}
-
-#[derive(Default, Clone)]
-pub struct StashPanelState {
-    pub panel: PanelState,
-    pub items: Vec<StashInfo>,
-    pub tree_mode: TreeModeState<usize>,
-}
-
-/// Documentation comment in English.
-#[derive(Clone)]
-pub struct CommandLogEntry {
-    pub command: String,
-    pub success: bool,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum InputMode {
     CommitEditor,
@@ -198,15 +106,6 @@ pub struct SearchScopeKey {
     pub panel: SidePanel,
     pub commit_tree_mode: bool,
     pub stash_tree_mode: bool,
-}
-
-#[derive(Default, Clone)]
-pub struct RenderCache {
-    pub files_visual_selected_indices: HashSet<usize>,
-    pub files_search_summary: Option<String>,
-    pub branches_search_summary: Option<String>,
-    pub commits_search_summary: Option<String>,
-    pub stash_search_summary: Option<String>,
 }
 
 /// Documentation comment in English.
