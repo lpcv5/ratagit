@@ -1,4 +1,4 @@
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct DirtyFlags {
     pub left_panels: bool,
     pub diff: bool,

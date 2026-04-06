@@ -15,6 +15,7 @@ mod search;
 mod selection;
 mod selectors;
 mod state_access_impl;
+mod states;
 #[cfg(test)]
 mod test_dispatch;
 #[cfg(test)]
@@ -32,6 +33,7 @@ pub use app::SearchScopeKey;
 pub use app::SidePanel;
 pub use app::StashPanelState;
 pub use command::Command;
+pub use states::{GitState, InputState, UiState};
 #[cfg(test)]
 pub use test_dispatch::{dispatch_test_action, dispatch_test_key, map_test_key};
 
