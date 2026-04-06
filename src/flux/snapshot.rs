@@ -214,11 +214,7 @@ impl AppStateSnapshotOwned {
             running: app.running,
             has_pending_refresh_work: app.has_pending_refresh_work(),
             pending_diff_reload: app.has_pending_diff_reload(),
-            pending_diff_reload_at: if app.has_pending_diff_reload() {
-                Some(std::time::Instant::now())
-            } else {
-                None
-            },
+            pending_diff_reload_at: app.pending_diff_reload_at(),
         }
     }
 

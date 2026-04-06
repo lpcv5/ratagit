@@ -13,8 +13,9 @@ mod selection_store;
 mod stash_store;
 pub mod state_access;
 
-use crate::app::{App, Command};
+use crate::app::Command;
 use crate::flux::action::ActionEnvelope;
+pub use state_access::DirtyHint;
 pub use state_access::StateAccess;
 
 pub use branch_store::BranchStore;
@@ -75,33 +76,15 @@ impl UiInvalidation {
         self.0 |= other.0;
     }
 
-    pub fn apply(self, app: &mut App) {
+    pub fn apply(self, state: &mut dyn StateAccess) {
         if self.0 == 0 {
             return;
         }
         if self.0 == Self::all().0 {
-            app.ui.dirty.mark_all();
+            state.mark_all_dirty();
             return;
         }
-        if (self.0 & (Self::MAIN_CONTENT | Self::DIFF)) == (Self::MAIN_CONTENT | Self::DIFF) {
-            app.ui.dirty.mark_main_content();
-        } else {
-            if (self.0 & Self::MAIN_CONTENT) != 0 {
-                app.ui.dirty.left_panels = true;
-            }
-            if (self.0 & Self::DIFF) != 0 {
-                app.ui.dirty.mark_diff();
-            }
-        }
-        if (self.0 & Self::COMMAND_LOG) != 0 {
-            app.ui.dirty.mark_command_log();
-        }
-        if (self.0 & Self::SHORTCUT_BAR) != 0 {
-            app.ui.dirty.shortcut_bar = true;
-        }
-        if (self.0 & Self::OVERLAY) != 0 {
-            app.ui.dirty.mark_overlay();
-        }
+        state.mark_dirty(DirtyHint(self.0));
     }
 }
 
