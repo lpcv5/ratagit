@@ -1,4 +1,4 @@
-use crate::app::{App, RefreshKind, SidePanel};
+use crate::app::{App, SidePanel};
 use crate::flux::action::DomainAction;
 use crate::flux::effects::EffectRequest;
 use crate::flux::stores::UiInvalidation;
@@ -51,15 +51,21 @@ pub fn run_inline_effect(app: &mut App, request: EffectRequest) -> Option<Vec<Do
             }
             Some(vec![])
         }
-        EffectRequest::StartCommitEditorGuarded => {
-            if app.start_commit_editor_guarded() {
-                app.push_log(
-                    "commit: edit message/description then press Enter on message",
-                    true,
-                );
-                UiInvalidation::all().apply(app);
+        EffectRequest::StagePaths(paths) => {
+            match app.stage_paths_request(paths) {
+                Ok(rx) => match rx.recv() {
+                    Ok(Ok(())) => Some(vec![DomainAction::StagePathsFinished { result: Ok(()) }]),
+                    Ok(Err(e)) => Some(vec![DomainAction::StagePathsFinished {
+                        result: Err(e.to_string()),
+                    }]),
+                    Err(e) => Some(vec![DomainAction::StagePathsFinished {
+                        result: Err(e.to_string()),
+                    }]),
+                },
+                Err(e) => Some(vec![DomainAction::StagePathsFinished {
+                    result: Err(e.to_string()),
+                }]),
             }
-            Some(vec![])
         }
         EffectRequest::ToggleStageSelection => {
             match app.toggle_stage_visual_selection() {
@@ -98,28 +104,6 @@ pub fn run_inline_effect(app: &mut App, request: EffectRequest) -> Option<Vec<Do
                 Err(err) => app.push_log(format!("prepare commit failed: {}", err), false),
             }
             Some(vec![])
-        }
-        EffectRequest::CheckoutSelectedBranch => {
-            let Some(name) = app.selected_branch_name() else {
-                app.push_log("no branch selected", false);
-                return Some(vec![]);
-            };
-            app.request_refresh(RefreshKind::StatusOnly);
-            if let Err(err) = app.flush_pending_refresh() {
-                app.push_log(format!("refresh failed: {}", err), false);
-                return Some(vec![]);
-            }
-            if app.has_uncommitted_changes() {
-                app.start_branch_switch_confirm(name);
-                UiInvalidation::overlay().apply(app);
-                return Some(vec![]);
-            }
-            let result = app.checkout_branch(&name).map_err(|err| err.to_string());
-            Some(vec![DomainAction::CheckoutBranchFinished {
-                name,
-                auto_stash: false,
-                result,
-            }])
         }
         _ => None,
     }

@@ -21,9 +21,6 @@ pub trait AppEffects: StateAccess {
     fn as_any_mut(&mut self) -> &mut dyn Any;
     // --- State queries used to make decisions in effects ---
 
-    fn has_uncommitted_changes(&self) -> bool;
-    fn all_file_paths(&self) -> Vec<PathBuf>;
-
     // --- Orchestration methods that combine multiple state changes ---
 
     fn process_background_refresh_tick(&mut self);
@@ -32,13 +29,12 @@ pub trait AppEffects: StateAccess {
     fn ensure_commits_loaded_for_active_panel(&mut self);
     fn reload_diff_now(&mut self);
     fn open_selected_branch_commits(&mut self, limit: usize) -> color_eyre::Result<()>;
-    fn stage_paths(&mut self, paths: &[PathBuf]) -> color_eyre::Result<()>;
-    fn checkout_branch(&mut self, name: &str) -> color_eyre::Result<()>;
-    fn start_branch_switch_confirm(&mut self, target: String);
+    fn stage_paths_request(
+        &self,
+        paths: Vec<PathBuf>,
+    ) -> color_eyre::Result<Receiver<Result<(), GitError>>>;
     fn stash_open_tree_or_toggle_dir(&mut self) -> color_eyre::Result<()>;
     fn commit_open_tree_or_toggle_dir(&mut self) -> color_eyre::Result<()>;
-    fn start_commit_editor(&mut self);
-    fn start_commit_editor_guarded(&mut self) -> bool;
     fn toggle_stage_visual_selection(&mut self) -> color_eyre::Result<(usize, usize)>;
     fn prepare_commit_from_visual_selection(&mut self) -> color_eyre::Result<usize>;
 

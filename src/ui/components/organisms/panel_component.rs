@@ -1,6 +1,6 @@
 use crate::app::SidePanel;
 use crate::ui::theme::UiTheme;
-use ratatui::{layout::Rect, style::Style, widgets::ListItem, Frame};
+use ratatui::{style::Style, widgets::ListItem};
 use std::{collections::HashSet, sync::OnceLock};
 
 fn empty_visual_selected_indices() -> &'static HashSet<usize> {
@@ -46,7 +46,3 @@ pub fn empty_list_item(text: &str) -> Vec<ListItem<'static>> {
     vec![ListItem::new(text.to_string()).style(Style::default().fg(theme.text_muted))]
 }
 
-/// Marker trait kept for compatibility; implementations have been replaced by free functions.
-pub trait PanelComponent {
-    fn draw(&self, _frame: &mut Frame, _area: Rect, _ctx: &PanelRenderContext<'_>) {}
-}

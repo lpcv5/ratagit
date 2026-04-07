@@ -1,4 +1,30 @@
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use crate::ui::theme::UiTheme;
+use ratatui::{
+    layout::{Constraint, Direction, Layout, Rect},
+    widgets::Clear,
+    Frame,
+};
+
+/// Renders the chrome (background clear + outer border block) for a modal overlay
+/// and returns the inner content rect (1-cell inset from the border).
+///
+/// Call this after `centered_rect` to avoid repeating the same 3-line boilerplate
+/// in every overlay panel.
+pub fn render_overlay_chrome(
+    frame: &mut Frame,
+    area: Rect,
+    title: &str,
+    theme: &UiTheme,
+) -> Rect {
+    frame.render_widget(Clear, area);
+    frame.render_widget(theme.panel_block(title, true), area);
+    Rect {
+        x: area.x + 1,
+        y: area.y + 1,
+        width: area.width.saturating_sub(2),
+        height: area.height.saturating_sub(2),
+    }
+}
 
 /// Creates a centered rectangle within the given area.
 ///

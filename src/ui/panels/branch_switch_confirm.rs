@@ -1,12 +1,12 @@
 use crate::app::InputMode;
 use crate::flux::snapshot::AppStateSnapshot;
-use crate::ui::panels::centered_rect;
+use crate::ui::panels::{centered_rect, render_overlay_chrome};
 use crate::ui::theme::UiTheme;
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Direction, Layout},
     style::Style,
     text::Line,
-    widgets::{Clear, Paragraph},
+    widgets::Paragraph,
     Frame,
 };
 
@@ -17,19 +17,10 @@ pub fn render_branch_switch_confirm(frame: &mut Frame, snapshot: &AppStateSnapsh
 
     let theme = UiTheme::default();
     let area = centered_rect(frame.area(), 62, 26);
-    frame.render_widget(Clear, area);
-
     let target = snapshot.branch_switch_target.unwrap_or("<unknown>");
-    let changed_count = snapshot.uncommitted_change_count;
     let title = format!("Switch Branch: {}", target);
-    frame.render_widget(theme.panel_block(&title, true), area);
+    let inner = render_overlay_chrome(frame, area, &title, &theme);
 
-    let inner = Rect {
-        x: area.x + 1,
-        y: area.y + 1,
-        width: area.width.saturating_sub(2),
-        height: area.height.saturating_sub(2),
-    };
     let sections = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -41,7 +32,7 @@ pub fn render_branch_switch_confirm(frame: &mut Frame, snapshot: &AppStateSnapsh
 
     let warn = Paragraph::new(Line::from(format!(
         "Detected {} uncommitted file(s).",
-        changed_count
+        snapshot.uncommitted_change_count
     )))
     .style(Style::default().fg(theme.text_primary));
     frame.render_widget(warn, sections[0]);

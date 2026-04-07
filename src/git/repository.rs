@@ -187,6 +187,15 @@ pub trait GitRepository {
     /// Documentation comment in English.
     fn stage_paths(&self, paths: &[PathBuf]) -> Result<(), GitError>;
 
+    fn stage_paths_async(
+        &self,
+        paths: Vec<PathBuf>,
+    ) -> Result<Receiver<Result<(), GitError>>, GitError> {
+        let (tx, rx) = mpsc::channel();
+        let _ = tx.send(self.stage_paths(&paths));
+        Ok(rx)
+    }
+
     /// Documentation comment in English.
     fn unstage(&self, path: &std::path::Path) -> Result<(), GitError>;
 

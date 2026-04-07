@@ -1,12 +1,12 @@
 use crate::app::{CommitFieldFocus, InputMode};
 use crate::flux::snapshot::AppStateSnapshot;
-use crate::ui::panels::centered_rect;
+use crate::ui::panels::{centered_rect, render_overlay_chrome};
 use crate::ui::theme::UiTheme;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::Style,
     text::Line,
-    widgets::{Clear, Paragraph},
+    widgets::Paragraph,
     Frame,
 };
 
@@ -17,14 +17,8 @@ pub fn render_commit_editor(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) 
 
     let theme = UiTheme::default();
     let area = centered_rect(frame.area(), 70, 60);
-    frame.render_widget(Clear, area);
-
-    let inner = Rect {
-        x: area.x + 1,
-        y: area.y + 1,
-        width: area.width.saturating_sub(2),
-        height: area.height.saturating_sub(2),
-    };
+    // Render chrome with empty title first; we'll overwrite with the dynamic title below.
+    let inner = render_overlay_chrome(frame, area, "", &theme);
 
     let sections = Layout::default()
         .direction(Direction::Vertical)
@@ -41,12 +35,12 @@ pub fn render_commit_editor(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) 
         ("Description", desc_line, desc_col)
     };
 
+    // Overwrite the outer block with the dynamic title.
     let outer_title = format!(
         "Commit Editor | Focus: {} | Ln {} Col {}",
         focus_name, focus_line, focus_col
     );
-    let outer = theme.panel_block(&outer_title, true);
-    frame.render_widget(outer, area);
+    frame.render_widget(theme.panel_block(&outer_title, true), area);
 
     let message_title = if message_active {
         "Message [ACTIVE] (Enter to confirm commit)"

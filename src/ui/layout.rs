@@ -1,6 +1,8 @@
 use crate::app::SidePanel;
 use crate::flux::snapshot::AppStateSnapshot;
-use crate::ui::components::organisms::{PanelComponent, PanelRenderContext};
+use crate::ui::components::organisms::{
+    draw_branches_panel, draw_commits_panel, draw_files_panel, draw_stash_panel, PanelRenderContext,
+};
 use crate::ui::panels::{
     render_branch_switch_confirm, render_command_log, render_command_palette,
     render_commit_all_confirm, render_commit_editor, render_diff_panel, render_shortcut_bar,
@@ -143,7 +145,7 @@ pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
         visual_selected_indices: &snapshot.render_cache.files_visual_selected_indices,
         highlighted_oids: PanelRenderContext::empty_highlighted_oids(),
     };
-    snapshot.files.draw(frame, left_panels[0], &files_ctx);
+    draw_files_panel(frame, left_panels[0], snapshot.files, &files_ctx);
     let branches_ctx = PanelRenderContext {
         active_panel: snapshot.active_panel,
         panel_title_override: None,
@@ -152,7 +154,7 @@ pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
         visual_selected_indices: PanelRenderContext::empty_visual_selected_indices(),
         highlighted_oids: PanelRenderContext::empty_highlighted_oids(),
     };
-    snapshot.branches.draw(frame, left_panels[1], &branches_ctx);
+    draw_branches_panel(frame, left_panels[1], snapshot.branches, &branches_ctx);
 
     let commits_ctx = PanelRenderContext {
         active_panel: snapshot.active_panel,
@@ -162,7 +164,7 @@ pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
         visual_selected_indices: PanelRenderContext::empty_visual_selected_indices(),
         highlighted_oids: &snapshot.commits.highlighted_oids,
     };
-    snapshot.commits.draw(frame, left_panels[2], &commits_ctx);
+    draw_commits_panel(frame, left_panels[2], snapshot.commits, &commits_ctx);
 
     let stash_ctx = PanelRenderContext {
         active_panel: snapshot.active_panel,
@@ -172,7 +174,7 @@ pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
         visual_selected_indices: PanelRenderContext::empty_visual_selected_indices(),
         highlighted_oids: PanelRenderContext::empty_highlighted_oids(),
     };
-    snapshot.stash.draw(frame, stash_area, &stash_ctx);
+    draw_stash_panel(frame, stash_area, snapshot.stash, &stash_ctx);
 
     // Right side: diff + command log
     // Command log collapses to COLLAPSED_HEIGHT when stash is not the concern

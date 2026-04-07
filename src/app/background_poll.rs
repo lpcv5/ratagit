@@ -77,13 +77,13 @@ impl App {
     }
 
     pub fn process_background_refresh_tick(&mut self) {
-        if let Some(kind) = self.pending_refresh.take() {
+        if let Some(kind) = self.refresh.pending_refresh.take() {
             let mut deferred_kind = None;
             if self.has_background_task(&TaskKey::Status) {
                 deferred_kind = Some(kind);
-            } else if !self.pending_refresh_fast_done {
+            } else if !self.refresh.pending_refresh_fast_done {
                 if self.start_status_load(true) {
-                    self.pending_refresh_fast_done = true;
+                    self.refresh.pending_refresh_fast_done = true;
                     deferred_kind = Some(kind);
                 } else {
                     deferred_kind = Some(RefreshKind::StatusOnly);
@@ -103,11 +103,11 @@ impl App {
                     self.ui.commits.dirty = true;
                 }
                 if deferred_kind.is_none() {
-                    self.pending_refresh_fast_done = false;
+                    self.refresh.pending_refresh_fast_done = false;
                 }
             }
             if let Some(kind) = deferred_kind {
-                self.pending_refresh = Some(match self.pending_refresh {
+                self.refresh.pending_refresh = Some(match self.refresh.pending_refresh {
                     None => kind,
                     Some(existing) => Self::max_refresh_kind(existing, kind),
                 });
@@ -115,7 +115,7 @@ impl App {
         }
 
         if self.ui.active_panel == SidePanel::Commits && self.ui.commits.dirty {
-            let _ = self.start_commits_load(self.commits_requested_limit);
+            let _ = self.start_commits_load(self.tasks.commits_requested_limit);
         }
         self.maybe_schedule_commits_extend();
 
@@ -126,12 +126,12 @@ impl App {
         let mut next_pending_background = HashMap::new();
         let mut finished_payloads: HashMap<(TaskKey, TaskGeneration), BackgroundPayload> =
             HashMap::new();
-        for (generation, task) in self.pending_background_tasks.drain() {
+        for (generation, task) in self.tasks.pending_background_tasks.drain() {
             let PendingBackgroundTask { request, receiver } = task;
             match receiver {
                 BackgroundReceiver::Status { fast, rx } => match rx.try_recv() {
                     Ok(Ok(status)) => {
-                        self.task_manager.submit_result(TaskResult {
+                        self.tasks.task_manager.submit_result(TaskResult {
                             key: request.key.clone(),
                             generation: request.generation,
                             kind: TaskResultKind::Finished,
@@ -141,7 +141,7 @@ impl App {
                             BackgroundPayload::Status { status, fast },
                         );
                     }
-                    Ok(Err(err)) => self.task_manager.submit_result(TaskResult {
+                    Ok(Err(err)) => self.tasks.task_manager.submit_result(TaskResult {
                         key: request.key.clone(),
                         generation: request.generation,
                         kind: TaskResultKind::Failed {
@@ -158,7 +158,7 @@ impl App {
                         );
                     }
                     Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                        self.task_manager.submit_result(TaskResult {
+                        self.tasks.task_manager.submit_result(TaskResult {
                             key: request.key.clone(),
                             generation: request.generation,
                             kind: TaskResultKind::Failed {
@@ -169,7 +169,7 @@ impl App {
                 },
                 BackgroundReceiver::Branches(rx) => match rx.try_recv() {
                     Ok(Ok(items)) => {
-                        self.task_manager.submit_result(TaskResult {
+                        self.tasks.task_manager.submit_result(TaskResult {
                             key: request.key.clone(),
                             generation: request.generation,
                             kind: TaskResultKind::Finished,
@@ -179,7 +179,7 @@ impl App {
                             BackgroundPayload::Branches(items),
                         );
                     }
-                    Ok(Err(err)) => self.task_manager.submit_result(TaskResult {
+                    Ok(Err(err)) => self.tasks.task_manager.submit_result(TaskResult {
                         key: request.key.clone(),
                         generation: request.generation,
                         kind: TaskResultKind::Failed {
@@ -196,7 +196,7 @@ impl App {
                         );
                     }
                     Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                        self.task_manager.submit_result(TaskResult {
+                        self.tasks.task_manager.submit_result(TaskResult {
                             key: request.key.clone(),
                             generation: request.generation,
                             kind: TaskResultKind::Failed {
@@ -207,7 +207,7 @@ impl App {
                 },
                 BackgroundReceiver::Stashes(rx) => match rx.try_recv() {
                     Ok(Ok(items)) => {
-                        self.task_manager.submit_result(TaskResult {
+                        self.tasks.task_manager.submit_result(TaskResult {
                             key: request.key.clone(),
                             generation: request.generation,
                             kind: TaskResultKind::Finished,
@@ -217,7 +217,7 @@ impl App {
                             BackgroundPayload::Stashes(items),
                         );
                     }
-                    Ok(Err(err)) => self.task_manager.submit_result(TaskResult {
+                    Ok(Err(err)) => self.tasks.task_manager.submit_result(TaskResult {
                         key: request.key.clone(),
                         generation: request.generation,
                         kind: TaskResultKind::Failed {
@@ -234,7 +234,7 @@ impl App {
                         );
                     }
                     Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                        self.task_manager.submit_result(TaskResult {
+                        self.tasks.task_manager.submit_result(TaskResult {
                             key: request.key.clone(),
                             generation: request.generation,
                             kind: TaskResultKind::Failed {
@@ -245,7 +245,7 @@ impl App {
                 },
                 BackgroundReceiver::Commits(rx) => match rx.try_recv() {
                     Ok(Ok(items)) => {
-                        self.task_manager.submit_result(TaskResult {
+                        self.tasks.task_manager.submit_result(TaskResult {
                             key: request.key.clone(),
                             generation: request.generation,
                             kind: TaskResultKind::Finished,
@@ -255,7 +255,7 @@ impl App {
                             BackgroundPayload::Commits(items),
                         );
                     }
-                    Ok(Err(err)) => self.task_manager.submit_result(TaskResult {
+                    Ok(Err(err)) => self.tasks.task_manager.submit_result(TaskResult {
                         key: request.key.clone(),
                         generation: request.generation,
                         kind: TaskResultKind::Failed {
@@ -272,7 +272,7 @@ impl App {
                         );
                     }
                     Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                        self.task_manager.submit_result(TaskResult {
+                        self.tasks.task_manager.submit_result(TaskResult {
                             key: request.key.clone(),
                             generation: request.generation,
                             kind: TaskResultKind::Failed {
@@ -283,7 +283,7 @@ impl App {
                 },
                 BackgroundReceiver::CommitsFast(rx) => match rx.try_recv() {
                     Ok(Ok(items)) => {
-                        self.task_manager.submit_result(TaskResult {
+                        self.tasks.task_manager.submit_result(TaskResult {
                             key: request.key.clone(),
                             generation: request.generation,
                             kind: TaskResultKind::Finished,
@@ -293,7 +293,7 @@ impl App {
                             BackgroundPayload::CommitsFast(items),
                         );
                     }
-                    Ok(Err(err)) => self.task_manager.submit_result(TaskResult {
+                    Ok(Err(err)) => self.tasks.task_manager.submit_result(TaskResult {
                         key: request.key.clone(),
                         generation: request.generation,
                         kind: TaskResultKind::Failed {
@@ -310,7 +310,7 @@ impl App {
                         );
                     }
                     Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                        self.task_manager.submit_result(TaskResult {
+                        self.tasks.task_manager.submit_result(TaskResult {
                             key: request.key.clone(),
                             generation: request.generation,
                             kind: TaskResultKind::Failed {
@@ -321,7 +321,7 @@ impl App {
                 },
                 BackgroundReceiver::BranchCommits { branch, rx } => match rx.try_recv() {
                     Ok(Ok(items)) => {
-                        self.task_manager.submit_result(TaskResult {
+                        self.tasks.task_manager.submit_result(TaskResult {
                             key: request.key.clone(),
                             generation: request.generation,
                             kind: TaskResultKind::Finished,
@@ -331,7 +331,7 @@ impl App {
                             BackgroundPayload::BranchCommits { branch, items },
                         );
                     }
-                    Ok(Err(err)) => self.task_manager.submit_result(TaskResult {
+                    Ok(Err(err)) => self.tasks.task_manager.submit_result(TaskResult {
                         key: request.key.clone(),
                         generation: request.generation,
                         kind: TaskResultKind::Failed {
@@ -348,7 +348,7 @@ impl App {
                         );
                     }
                     Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                        self.task_manager.submit_result(TaskResult {
+                        self.tasks.task_manager.submit_result(TaskResult {
                             key: request.key.clone(),
                             generation: request.generation,
                             kind: TaskResultKind::Failed {
@@ -359,7 +359,7 @@ impl App {
                 },
                 BackgroundReceiver::Diff { cache_key, rx } => match rx.try_recv() {
                     Ok(Ok(diff)) => {
-                        self.task_manager.submit_result(TaskResult {
+                        self.tasks.task_manager.submit_result(TaskResult {
                             key: request.key.clone(),
                             generation: request.generation,
                             kind: TaskResultKind::Finished,
@@ -369,7 +369,7 @@ impl App {
                             BackgroundPayload::Diff { cache_key, diff },
                         );
                     }
-                    Ok(Err(err)) => self.task_manager.submit_result(TaskResult {
+                    Ok(Err(err)) => self.tasks.task_manager.submit_result(TaskResult {
                         key: request.key.clone(),
                         generation: request.generation,
                         kind: TaskResultKind::Failed {
@@ -386,7 +386,7 @@ impl App {
                         );
                     }
                     Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                        self.task_manager.submit_result(TaskResult {
+                        self.tasks.task_manager.submit_result(TaskResult {
                             key: request.key.clone(),
                             generation: request.generation,
                             kind: TaskResultKind::Failed {
@@ -397,9 +397,9 @@ impl App {
                 },
             }
         }
-        self.pending_background_tasks = next_pending_background;
+        self.tasks.pending_background_tasks = next_pending_background;
 
-        for task in self.task_manager.collect_ready() {
+        for task in self.tasks.task_manager.collect_ready() {
             match task.kind {
                 TaskResultKind::Finished => {
                     let Some(payload) = finished_payloads.remove(&(task.key, task.generation))
@@ -417,11 +417,11 @@ impl App {
                                 "status load finished"
                             );
                             self.apply_status_refresh(status);
-                            if fast && self.pending_full_status_after_fast {
+                            if fast && self.refresh.pending_full_status_after_fast {
                                 if self.start_status_load(false) {
-                                    self.pending_full_status_after_fast = false;
+                                    self.refresh.pending_full_status_after_fast = false;
                                 } else {
-                                    self.pending_refresh = Some(match self.pending_refresh {
+                                    self.refresh.pending_refresh = Some(match self.refresh.pending_refresh {
                                         None => RefreshKind::StatusOnly,
                                         Some(existing) => Self::max_refresh_kind(
                                             existing,
@@ -453,7 +453,7 @@ impl App {
                             debug!(
                                 event = "commits_load_finished",
                                 count = items.len(),
-                                requested_limit = self.commits_requested_limit,
+                                requested_limit = self.tasks.commits_requested_limit,
                                 "commits load finished"
                             );
                             self.ui.commits.items = items;
@@ -468,7 +468,7 @@ impl App {
                                 event = "commits_load_finished",
                                 mode = "fast",
                                 count = items.len(),
-                                requested_limit = self.commits_requested_limit,
+                                requested_limit = self.tasks.commits_requested_limit,
                                 "commits fast load finished"
                             );
                             self.ui.commits.items = items;
@@ -496,12 +496,12 @@ impl App {
                             }
                         }
                         BackgroundPayload::Diff { cache_key, diff } => {
-                            self.in_flight_diff_key = None;
-                            self.diff_cache.insert(cache_key.clone(), diff.clone());
-                            self.last_diff_key = Some(cache_key);
+                            self.diff_mgr.in_flight_diff_key = None;
+                            self.diff_mgr.cache.insert(cache_key.clone(), diff.clone());
+                            self.diff_mgr.last_diff_key = Some(cache_key);
                             self.git.current_diff = diff;
-                            if !self.pending_diff_reload {
-                                self.pending_diff_reload_at = None;
+                            if !self.refresh.pending_diff_reload {
+                                self.refresh.pending_diff_reload_at = None;
                             }
                             self.ui.dirty.mark_diff();
                         }
@@ -509,16 +509,16 @@ impl App {
                 }
                 TaskResultKind::Failed { reason } => {
                     if matches!(task.key, TaskKey::Status) {
-                        self.pending_refresh_fast_done = false;
+                        self.refresh.pending_refresh_fast_done = false;
                     }
                     if matches!(task.key, TaskKey::BranchCommits { .. }) {
                         self.ui.branches.commits_subview_loading = false;
                     }
                     if matches!(task.key, TaskKey::Diff { .. }) {
-                        self.in_flight_diff_key = None;
+                        self.diff_mgr.in_flight_diff_key = None;
                     }
-                    if matches!(task.key, TaskKey::Diff { .. }) && !self.pending_diff_reload {
-                        self.pending_diff_reload_at = None;
+                    if matches!(task.key, TaskKey::Diff { .. }) && !self.refresh.pending_diff_reload {
+                        self.refresh.pending_diff_reload_at = None;
                     }
                     self.push_log(reason, false);
                 }

@@ -57,6 +57,15 @@ pub enum DomainAction {
         paths: Vec<PathBuf>,
         result: Result<(), String>,
     },
+    StagePathsFinished {
+        result: Result<(), String>,
+    },
+    ToggleStageSelectionFinished {
+        result: Result<(usize, usize), String>,
+    },
+    PrepareCommitFromSelectionFinished {
+        result: Result<usize, String>,
+    },
     ToggleVisualSelectMode,
     ToggleStageSelection,
     DiscardSelection,

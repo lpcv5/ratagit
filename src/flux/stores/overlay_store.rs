@@ -1,4 +1,4 @@
-use crate::app::Command;
+use crate::app::{Command, RefreshKind};
 use crate::flux::action::{Action, ActionEnvelope, DomainAction};
 use crate::flux::effects::EffectRequest;
 use crate::flux::stores::{ReduceCtx, ReduceOutput, Store, UiInvalidation};
@@ -18,18 +18,49 @@ impl Store for OverlayStore {
         };
         match domain {
             DomainAction::StartCommitInput => {
-                ReduceOutput::from_command(Command::Effect(EffectRequest::StartCommitEditorGuarded))
+                if ctx.state.start_commit_editor_guarded() {
+                    ctx.state.push_log(
+                        "commit: edit message/description then press Enter on message".to_string(),
+                        true,
+                    );
+                    ReduceOutput::none().with_invalidation(UiInvalidation::all())
+                } else {
+                    ReduceOutput::none()
+                }
             }
             DomainAction::CommitAllConfirm(confirmed) => {
                 if *confirmed {
-                    ReduceOutput::from_command(Command::Effect(
-                        EffectRequest::StageAllAndStartCommitEditor,
-                    ))
+                    ctx.state.cancel_input();
+                    let paths = ctx.state.all_file_paths();
+                    if paths.is_empty() {
+                        ctx.state.push_log("nothing to stage".to_string(), false);
+                        return ReduceOutput::none();
+                    }
+                    ReduceOutput::from_command(Command::Effect(EffectRequest::StagePaths(paths)))
                 } else {
                     ctx.state.cancel_input();
                     ctx.state
                         .push_log("commit all cancelled".to_string(), false);
                     ReduceOutput::none().with_invalidation(UiInvalidation::all())
+                }
+            }
+            DomainAction::StagePathsFinished { result } => {
+                match result {
+                    Ok(()) => {
+                        ctx.state.request_refresh(RefreshKind::StatusOnly);
+                        ctx.state.start_commit_editor();
+                        ctx.state.push_log(
+                            "commit: all files staged; edit message/description then press Enter"
+                                .to_string(),
+                            true,
+                        );
+                        ReduceOutput::none().with_invalidation(UiInvalidation::all())
+                    }
+                    Err(e) => {
+                        ctx.state
+                            .push_log(format!("stage all failed: {}", e), false);
+                        ReduceOutput::none()
+                    }
                 }
             }
             DomainAction::StartCommandPalette => {
@@ -77,7 +108,23 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     #[test]
-    fn test_start_commit_input_emits_guarded_effect() {
+    fn test_start_commit_input_with_staged_files_opens_editor() {
+        let mut store = OverlayStore::new();
+        let mut app = mock_app();
+        app.git.status.staged.push(crate::git::FileEntry {
+            path: "foo.txt".into(),
+            status: crate::git::FileStatus::Modified,
+        });
+        reduce(
+            &mut store,
+            &mut app,
+            Action::Domain(DomainAction::StartCommitInput),
+        );
+        assert_eq!(app.input.mode, Some(InputMode::CommitEditor));
+    }
+
+    #[test]
+    fn test_start_commit_input_with_no_files_does_nothing() {
         let mut store = OverlayStore::new();
         let mut app = mock_app();
         let output = reduce(
@@ -85,7 +132,8 @@ mod tests {
             &mut app,
             Action::Domain(DomainAction::StartCommitInput),
         );
-        assert!(!output.commands.is_empty());
+        assert!(output.commands.is_empty());
+        assert!(app.input.mode.is_none());
     }
 
     #[test]

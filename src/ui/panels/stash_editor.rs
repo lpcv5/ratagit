@@ -1,12 +1,12 @@
 use crate::app::InputMode;
 use crate::flux::snapshot::AppStateSnapshot;
-use crate::ui::panels::centered_rect;
+use crate::ui::panels::{centered_rect, render_overlay_chrome};
 use crate::ui::theme::UiTheme;
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Direction, Layout},
     style::Style,
     text::Line,
-    widgets::{Clear, Paragraph},
+    widgets::Paragraph,
     Frame,
 };
 
@@ -17,14 +17,11 @@ pub fn render_stash_editor(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
 
     let theme = UiTheme::default();
     let area = centered_rect(frame.area(), 60, 25);
-    frame.render_widget(Clear, area);
-
-    let inner = Rect {
-        x: area.x + 1,
-        y: area.y + 1,
-        width: area.width.saturating_sub(2),
-        height: area.height.saturating_sub(2),
-    };
+    let title = format!(
+        "Stash Editor | Targets: {} | Enter confirm | Esc cancel",
+        snapshot.stash_targets.len()
+    );
+    let inner = render_overlay_chrome(frame, area, &title, &theme);
 
     let sections = Layout::default()
         .direction(Direction::Vertical)
@@ -34,12 +31,6 @@ pub fn render_stash_editor(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
             Constraint::Length(1),
         ])
         .split(inner);
-
-    let title = format!(
-        "Stash Editor | Targets: {} | Enter confirm | Esc cancel",
-        snapshot.stash_targets.len()
-    );
-    frame.render_widget(theme.panel_block(&title, true), area);
 
     let message = Paragraph::new(snapshot.stash_message_buffer)
         .block(theme.panel_block("Title", true))
