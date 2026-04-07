@@ -198,7 +198,6 @@ pub mod test_support {
         }
         fn commits(&self, _: usize) -> Result<Vec<CommitInfo>, GitError> {
             Ok(vec![CommitInfo {
-                short_hash: "abc1234".to_string(),
                 oid: "abc1234567890".to_string(),
                 message: "test commit".to_string(),
                 author: "tester".to_string(),

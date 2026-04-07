@@ -231,7 +231,7 @@ impl App {
                         .commits_subview
                         .items
                         .iter()
-                        .map(|c| format!("{} {} {}", c.short_hash, c.author, c.message))
+                        .map(|c| format!("{} {} {}", &c.oid[..7.min(c.oid.len())], c.author, c.message))
                         .collect()
                 } else {
                     self.ui.branches.items.iter().map(|b| b.name.clone()).collect()
@@ -250,7 +250,7 @@ impl App {
                 self.ui.commits
                     .items
                     .iter()
-                    .map(|c| format!("{} {} {}", c.short_hash, c.author, c.message))
+                    .map(|c| format!("{} {} {}", &c.oid[..7.min(c.oid.len())], c.author, c.message))
                     .collect()
             }
             SidePanel::Stash => {
