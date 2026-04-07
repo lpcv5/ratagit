@@ -4,6 +4,8 @@ use std::path::PathBuf;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum DiffCacheKey {
+    /// Represents a missing or empty diff target (no selection).
+    None,
     File { path: PathBuf, is_staged: bool },
     Branch { name: String, limit: usize },
     Directory { path: PathBuf, files_hash: u64 },
@@ -51,7 +53,8 @@ impl DiffCache {
         self.cache.retain(|k, _| {
             matches!(
                 k,
-                DiffCacheKey::Commit { .. }
+                DiffCacheKey::None
+                    | DiffCacheKey::Commit { .. }
                     | DiffCacheKey::Stash { .. }
                     | DiffCacheKey::Branch { .. }
             )

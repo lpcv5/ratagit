@@ -5,10 +5,11 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use tokio::sync::Mutex;
 
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum EffectRequest {
     ProcessBackgroundLoads,
+    /// Used in tests via `test_runtime::run_inline_effect` to force a refresh cycle.
+    #[cfg_attr(not(test), allow(dead_code))]
     FlushPendingRefresh {
         log_success: bool,
     },
