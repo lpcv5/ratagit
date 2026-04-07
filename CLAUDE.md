@@ -131,7 +131,7 @@ pub trait StateAccess {
     fn push_log(&mut self, msg: String, success: bool);
     fn request_refresh(&mut self, kind: RefreshKind);
     fn cancel_input(&mut self);
-    // ... ~70 methods covering all Store needs
+    // ... ~66 methods covering all Store needs
 }
 ```
 

@@ -593,6 +593,8 @@ impl App {
 
         let rx = match target {
             diff_loader::DiffTarget::None => {
+                self.task_manager
+                    .mark_finished(&key_for_task, request.generation);
                 self.git.current_diff = Vec::new();
                 self.last_diff_key = Some(key);
                 self.clear_pending_diff_reload();
@@ -1110,15 +1112,13 @@ impl App {
                 index: *index,
                 path: path.clone(),
             },
-            DiffTarget::None => diff_cache::DiffCacheKey::File {
-                path: PathBuf::new(),
-                is_staged: false,
-            },
+            DiffTarget::None => diff_cache::DiffCacheKey::None,
         }
     }
 
     pub(super) fn diff_cache_key_to_task_target(key: &diff_cache::DiffCacheKey) -> String {
         match key {
+            diff_cache::DiffCacheKey::None => "none".to_string(),
             diff_cache::DiffCacheKey::File { path, is_staged } => {
                 format!("file:{}:{}", path.display(), is_staged)
             }

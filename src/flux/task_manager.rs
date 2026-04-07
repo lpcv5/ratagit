@@ -7,15 +7,15 @@ const MAX_READY_RESULTS: usize = 512;
 pub struct TaskGeneration(pub u64);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[allow(dead_code)]
 pub enum TaskPriority {
     High,
     Normal,
+    /// Reserved for future use; only exercised in task ordering tests.
+    #[allow(dead_code)]
     Low,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-#[allow(dead_code)]
 pub enum TaskKey {
     Status,
     Branches,
@@ -23,11 +23,12 @@ pub enum TaskKey {
     Commits,
     BranchCommits { branch: String },
     Diff { target: String },
+    /// Reserved for future write operations; only exercised in task ordering tests.
+    #[allow(dead_code)]
     Write { op: String, scope: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code)]
 pub enum TaskRequestKind {
     LoadStatus,
     LoadBranches,
@@ -35,6 +36,8 @@ pub enum TaskRequestKind {
     LoadCommits { limit: usize },
     LoadBranchCommits { branch: String, limit: usize },
     LoadDiff { target: String },
+    /// Reserved for future write operations; only exercised in task ordering tests.
+    #[allow(dead_code)]
     Write { op: String, scope: String },
 }
 

@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum DomainAction {
     PanelNext,
@@ -100,15 +99,17 @@ pub enum DomainAction {
     InputChar(char),
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum SystemAction {
     Tick,
     AutoRefresh,
+    /// Terminal resize event. The `width` and `height` are forwarded for completeness;
+    /// stores trigger a full UI invalidation without reading the dimensions (ratatui
+    /// handles the actual resize internally).
+    #[allow(dead_code)]
     Resize { width: u16, height: u16 },
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum Action {
     Domain(DomainAction),
