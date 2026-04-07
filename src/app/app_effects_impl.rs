@@ -14,21 +14,6 @@ impl AppEffects for App {
         self
     }
 
-    fn has_uncommitted_changes(&self) -> bool {
-        App::has_uncommitted_changes(self)
-    }
-
-    fn all_file_paths(&self) -> Vec<PathBuf> {
-        self.git
-            .status
-            .staged
-            .iter()
-            .chain(self.git.status.unstaged.iter())
-            .chain(self.git.status.untracked.iter())
-            .map(|e| e.path.clone())
-            .collect()
-    }
-
     fn process_background_refresh_tick(&mut self) {
         App::process_background_refresh_tick(self);
     }
@@ -53,16 +38,11 @@ impl AppEffects for App {
         App::open_selected_branch_commits(self, limit)
     }
 
-    fn stage_paths(&mut self, paths: &[PathBuf]) -> color_eyre::Result<()> {
-        App::stage_paths(self, paths)
-    }
-
-    fn checkout_branch(&mut self, name: &str) -> color_eyre::Result<()> {
-        App::checkout_branch(self, name)
-    }
-
-    fn start_branch_switch_confirm(&mut self, target: String) {
-        App::start_branch_switch_confirm(self, target);
+    fn stage_paths_request(
+        &self,
+        paths: Vec<PathBuf>,
+    ) -> color_eyre::Result<Receiver<Result<(), GitError>>> {
+        App::stage_paths_request(self, paths)
     }
 
     fn stash_open_tree_or_toggle_dir(&mut self) -> color_eyre::Result<()> {
@@ -71,14 +51,6 @@ impl AppEffects for App {
 
     fn commit_open_tree_or_toggle_dir(&mut self) -> color_eyre::Result<()> {
         App::commit_open_tree_or_toggle_dir(self)
-    }
-
-    fn start_commit_editor(&mut self) {
-        App::start_commit_editor(self);
-    }
-
-    fn start_commit_editor_guarded(&mut self) -> bool {
-        App::start_commit_editor_guarded(self)
     }
 
     fn toggle_stage_visual_selection(&mut self) -> color_eyre::Result<(usize, usize)> {

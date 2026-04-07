@@ -15,6 +15,7 @@ pub mod state_access;
 
 use crate::app::Command;
 use crate::flux::action::ActionEnvelope;
+pub use state_access::CoreAccess;
 pub use state_access::DirtyHint;
 pub use state_access::StateAccess;
 

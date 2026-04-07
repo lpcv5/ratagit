@@ -1,4 +1,4 @@
-use crate::app::{Command, SidePanel};
+use crate::app::{Command, RefreshKind, SidePanel};
 use crate::flux::action::{Action, ActionEnvelope, DomainAction};
 use crate::flux::effects::EffectRequest;
 use crate::flux::stores::{ReduceCtx, ReduceOutput, Store, UiInvalidation};
@@ -20,9 +20,11 @@ impl Store for SelectionStore {
         match domain {
             DomainAction::ToggleVisualSelectMode
             | DomainAction::ToggleStageSelection
+            | DomainAction::ToggleStageSelectionFinished { .. }
             | DomainAction::DiscardSelection
             | DomainAction::DiscardPathsFinished { .. }
-            | DomainAction::PrepareCommitFromSelection => {}
+            | DomainAction::PrepareCommitFromSelection
+            | DomainAction::PrepareCommitFromSelectionFinished { .. } => {}
             _ => return ReduceOutput::none(),
         }
 
@@ -40,6 +42,26 @@ impl Store for SelectionStore {
                 return ReduceOutput::from_command(Command::Effect(
                     EffectRequest::ToggleStageSelection,
                 ));
+            }
+            DomainAction::ToggleStageSelectionFinished { result } => {
+                match result {
+                    Ok((staged, unstaged)) => {
+                        ctx.state.push_log(
+                            format!(
+                                "selection toggled: staged {}, unstaged {}",
+                                staged, unstaged
+                            ),
+                            true,
+                        );
+                        ctx.state.request_refresh(RefreshKind::StatusOnly);
+                        return ReduceOutput::none().with_invalidation(UiInvalidation::all());
+                    }
+                    Err(e) => {
+                        ctx.state
+                            .push_log(format!("selection toggle failed: {}", e), false);
+                        return ReduceOutput::none();
+                    }
+                }
             }
             DomainAction::DiscardSelection => {
                 let paths = ctx.state.prepare_discard_targets_from_selection();
@@ -62,6 +84,33 @@ impl Store for SelectionStore {
                 return ReduceOutput::from_command(Command::Effect(
                     EffectRequest::PrepareCommitFromVisualSelection,
                 ));
+            }
+            DomainAction::PrepareCommitFromSelectionFinished { result } => {
+                match result {
+                    Ok(count) if *count == 0 => {
+                        ctx.state
+                            .push_log("commit blocked: no selected items".to_string(), false);
+                        return ReduceOutput::none();
+                    }
+                    Ok(count) => {
+                        if ctx.state.start_commit_editor_guarded() {
+                            ctx.state.push_log(
+                                format!(
+                                    "commit: {} selected target(s) staged; edit message/description",
+                                    count
+                                ),
+                                true,
+                            );
+                            return ReduceOutput::none().with_invalidation(UiInvalidation::all());
+                        }
+                        return ReduceOutput::none();
+                    }
+                    Err(e) => {
+                        ctx.state
+                            .push_log(format!("prepare commit failed: {}", e), false);
+                        return ReduceOutput::none();
+                    }
+                }
             }
             _ => return ReduceOutput::none(),
         }

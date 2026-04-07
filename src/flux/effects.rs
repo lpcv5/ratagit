@@ -17,13 +17,11 @@ pub enum EffectRequest {
     EnsureCommitsLoadedForActivePanel,
     ReloadDiffNow,
     RevisionOpenTreeOrToggleDir,
-    StartCommitEditorGuarded,
-    StageAllAndStartCommitEditor,
     ToggleStageSelection,
     PrepareCommitFromVisualSelection,
-    CheckoutSelectedBranch,
     FetchRemote,
     StageFile(PathBuf),
+    StagePaths(Vec<PathBuf>),
     UnstageFile(PathBuf),
     DiscardPaths(Vec<PathBuf>),
     CreateBranch(String),
@@ -98,100 +96,23 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
             }
             vec![]
         }
-        EffectRequest::StartCommitEditorGuarded => {
-            let mut app = ctx.app.lock().await;
-            if app.start_commit_editor_guarded() {
-                app.push_log(
-                    "commit: edit message/description then press Enter on message".to_string(),
-                    true,
-                );
-                UiInvalidation::all().apply(&mut *app);
-            }
-            vec![]
-        }
-        EffectRequest::StageAllAndStartCommitEditor => {
-            let mut app = ctx.app.lock().await;
-            app.cancel_input();
-            let paths = app.all_file_paths();
-            if paths.is_empty() {
-                app.push_log("nothing to stage".to_string(), false);
-                return vec![];
-            }
-            if let Err(err) = app.stage_paths(&paths) {
-                app.push_log(format!("stage all failed: {}", err), false);
-                return vec![];
-            }
-            app.request_refresh(crate::app::RefreshKind::StatusOnly);
-            app.start_commit_editor();
-            app.push_log(
-                "commit: all files staged; edit message/description then press Enter".to_string(),
-                true,
-            );
-            UiInvalidation::all().apply(&mut *app);
-            vec![]
-        }
         EffectRequest::ToggleStageSelection => {
             let mut app = ctx.app.lock().await;
-            match app.toggle_stage_visual_selection() {
-                Ok((staged, unstaged)) => {
-                    app.push_log(
-                        format!(
-                            "selection toggled: staged {}, unstaged {}",
-                            staged, unstaged
-                        ),
-                        true,
-                    );
-                    let _ = app.flush_pending_refresh();
-                    UiInvalidation::all().apply(&mut *app);
-                }
-                Err(err) => app.push_log(format!("selection toggle failed: {}", err), false),
-            }
-            vec![]
+            let result = app
+                .toggle_stage_visual_selection()
+                .map_err(|e| e.to_string());
+            vec![Action::Domain(DomainAction::ToggleStageSelectionFinished {
+                result,
+            })]
         }
         EffectRequest::PrepareCommitFromVisualSelection => {
             let mut app = ctx.app.lock().await;
-            match app.prepare_commit_from_visual_selection() {
-                Ok(count) => {
-                    if count == 0 {
-                        app.push_log("commit blocked: no selected items".to_string(), false);
-                        return vec![];
-                    }
-                    if app.start_commit_editor_guarded() {
-                        app.push_log(
-                            format!(
-                                "commit: {} selected target(s) staged; edit message/description",
-                                count
-                            ),
-                            true,
-                        );
-                        UiInvalidation::all().apply(&mut *app);
-                    }
-                }
-                Err(err) => app.push_log(format!("prepare commit failed: {}", err), false),
-            }
-            vec![]
-        }
-        EffectRequest::CheckoutSelectedBranch => {
-            let mut app = ctx.app.lock().await;
-            let Some(name) = app.selected_branch_name() else {
-                app.push_log("no branch selected".to_string(), false);
-                return vec![];
-            };
-
-            app.request_refresh(RefreshKind::StatusOnly);
-
-            if app.has_uncommitted_changes() {
-                app.start_branch_switch_confirm(name);
-                UiInvalidation::overlay().apply(&mut *app);
-                return vec![];
-            }
-
-            let result = app.checkout_branch(&name).map_err(|err| err.to_string());
-            vec![Action::Domain(DomainAction::CheckoutBranchFinished {
-                name,
-                auto_stash: false,
-                result,
-            })]
+            let result = app
+                .prepare_commit_from_visual_selection()
+                .map_err(|e| e.to_string());
+            vec![Action::Domain(
+                DomainAction::PrepareCommitFromSelectionFinished { result },
+            )]
         }
         EffectRequest::FetchRemote => {
             let repo_rx = {
@@ -214,6 +135,26 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
             };
 
             vec![Action::Domain(DomainAction::FetchRemoteFinished(result))]
+        }
+        EffectRequest::StagePaths(paths) => {
+            let repo_rx = {
+                let app = ctx.app.lock().await;
+                match app.stage_paths_request(paths) {
+                    Ok(rx) => rx,
+                    Err(err) => {
+                        return vec![Action::Domain(DomainAction::StagePathsFinished {
+                            result: Err(err.to_string()),
+                        })];
+                    }
+                }
+            };
+            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
+                Ok(Ok(Ok(()))) => Ok(()),
+                Ok(Ok(Err(err))) => Err(err.to_string()),
+                Ok(Err(err)) => Err(err.to_string()),
+                Err(err) => Err(err.to_string()),
+            };
+            vec![Action::Domain(DomainAction::StagePathsFinished { result })]
         }
         EffectRequest::StageFile(path) => {
             let repo_rx = {
@@ -677,35 +618,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn toggle_stage_selection_effect_returns_no_actions() {
-        assert_no_actions(run_effect(EffectRequest::ToggleStageSelection).await);
-    }
-
-    #[tokio::test]
-    async fn start_commit_editor_guarded_effect_returns_no_actions() {
-        assert_no_actions(run_effect(EffectRequest::StartCommitEditorGuarded).await);
-    }
-
-    #[tokio::test]
-    async fn checkout_selected_branch_effect_returns_checkout_branch_finished_action() {
-        let mut ctx = make_ctx();
-        {
-            let mut app_guard = ctx.app.lock().await;
-            let app: &mut App = (&mut *app_guard).as_any_mut().downcast_mut().unwrap();
-            app.ui.active_panel = crate::app::SidePanel::LocalBranches;
-            app.ui.branches.items = vec![crate::git::BranchInfo {
-                name: "main".to_string(),
-                is_current: true,
-            }];
-            app.ui.branches.panel.list_state.select(Some(0));
-        }
-
-        let action =
-            assert_single_domain_action(run(EffectRequest::CheckoutSelectedBranch, &mut ctx).await);
-        assert!(matches!(
-            action,
-            DomainAction::CheckoutBranchFinished { .. }
-        ));
+    async fn toggle_stage_selection_effect_returns_toggle_stage_selection_finished_action() {
+        let action = assert_single_domain_action(run_effect(EffectRequest::ToggleStageSelection).await);
+        assert!(matches!(action, DomainAction::ToggleStageSelectionFinished { .. }));
     }
 
     #[tokio::test]
@@ -736,13 +651,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn stage_all_and_start_commit_editor_effect_returns_no_actions() {
-        assert_no_actions(run_effect(EffectRequest::StageAllAndStartCommitEditor).await);
-    }
-
-    #[tokio::test]
-    async fn prepare_commit_from_visual_selection_effect_returns_no_actions() {
-        assert_no_actions(run_effect(EffectRequest::PrepareCommitFromVisualSelection).await);
+    async fn prepare_commit_from_visual_selection_effect_returns_prepare_commit_finished_action() {
+        let action = assert_single_domain_action(run_effect(EffectRequest::PrepareCommitFromVisualSelection).await);
+        assert!(matches!(action, DomainAction::PrepareCommitFromSelectionFinished { .. }));
     }
 
     #[tokio::test]

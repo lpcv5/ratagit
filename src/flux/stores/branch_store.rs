@@ -28,7 +28,19 @@ impl Store for BranchStore {
                 })
             }
             DomainAction::CheckoutSelectedBranch => {
-                ReduceOutput::from_command(Command::Effect(EffectRequest::CheckoutSelectedBranch))
+                let Some(name) = ctx.state.selected_branch_name() else {
+                    ctx.state.push_log("no branch selected".to_string(), false);
+                    return ReduceOutput::none();
+                };
+                ctx.state.request_refresh(RefreshKind::StatusOnly);
+                if ctx.state.has_uncommitted_changes() {
+                    ctx.state.start_branch_switch_confirm(name);
+                    return ReduceOutput::none().with_invalidation(UiInvalidation::overlay());
+                }
+                ReduceOutput::from_command(Command::Effect(EffectRequest::CheckoutBranch {
+                    name,
+                    auto_stash: false,
+                }))
             }
             DomainAction::BranchSwitchConfirm(auto_stash) => {
                 let Some(target) = ctx.state.take_branch_switch_target() else {
@@ -155,9 +167,29 @@ mod tests {
     }
 
     #[test]
-    fn test_checkout_selected_branch_emits_effect() {
+    fn test_checkout_selected_branch_with_no_selection_logs_error() {
         let mut store = BranchStore::new();
         let mut app = mock_app();
+        let logs_before = app.command_log.len();
+        let output = reduce(
+            &mut store,
+            &mut app,
+            Action::Domain(DomainAction::CheckoutSelectedBranch),
+        );
+        assert!(output.commands.is_empty());
+        assert!(app.command_log.len() > logs_before);
+    }
+
+    #[test]
+    fn test_checkout_selected_branch_with_clean_tree_emits_checkout_effect() {
+        let mut store = BranchStore::new();
+        let mut app = mock_app();
+        app.ui.active_panel = crate::app::SidePanel::LocalBranches;
+        app.ui.branches.items = vec![crate::git::BranchInfo {
+            name: "feature".to_string(),
+            is_current: false,
+        }];
+        app.ui.branches.panel.list_state.select(Some(0));
         let output = reduce(
             &mut store,
             &mut app,

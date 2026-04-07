@@ -1,8 +1,6 @@
 use crate::app::{CommitsPanelState, SidePanel};
 use crate::git::{CommitSyncState, GraphCell};
-use crate::ui::components::organisms::{
-    empty_list_item, title_with_search, PanelComponent, PanelRenderContext,
-};
+use crate::ui::components::organisms::{empty_list_item, title_with_search, PanelRenderContext};
 use crate::ui::highlight::highlighted_spans;
 use crate::ui::panels::revision_tree_panel::{render_revision_tree_panel, RevisionTreePanelProps};
 use crate::ui::theme::UiTheme;
@@ -14,6 +12,107 @@ use ratatui::{
     widgets::ListItem,
     Frame,
 };
+
+pub fn draw_commits_panel(
+    frame: &mut Frame,
+    area: Rect,
+    state: &CommitsPanelState,
+    ctx: &PanelRenderContext<'_>,
+) {
+    let theme = UiTheme::default();
+    let is_active = ctx.active_panel == SidePanel::Commits;
+
+    let items: Vec<ListItem> = if state.items.is_empty() {
+        empty_list_item("No commits")
+    } else {
+        state
+            .items
+            .iter()
+            .map(|c| {
+                let g_spans =
+                    graph_spans(&c.graph, hash_color(c.sync_state), ctx.highlighted_oids);
+                let hash_spans = highlighted_spans(
+                    &c.oid[..7.min(c.oid.len())],
+                    ctx.search_query,
+                    Style::default().fg(hash_color(c.sync_state)),
+                );
+                let author_short = author_initials(&c.author);
+                let author_spans = highlighted_spans(
+                    &author_short,
+                    ctx.search_query,
+                    Style::default().fg(theme.text_muted),
+                );
+                let message_spans = highlighted_spans(
+                    &c.message,
+                    ctx.search_query,
+                    Style::default().fg(Color::White),
+                );
+
+                let mut spans = Vec::with_capacity(
+                    g_spans.len()
+                        + hash_spans.len()
+                        + author_spans.len()
+                        + message_spans.len()
+                        + 3,
+                );
+                spans.extend(g_spans);
+                spans.push(Span::raw(" "));
+                spans.extend(hash_spans);
+                spans.push(Span::raw(" "));
+                spans.extend(author_spans);
+                spans.push(Span::raw(" "));
+                spans.extend(message_spans);
+                ListItem::new(Line::from(spans))
+            })
+            .collect()
+    };
+
+    let mut title = if let Some(title_override) = ctx.panel_title_override {
+        title_override.to_string()
+    } else if state.tree_mode.active {
+        if let Some(ref oid) = state.tree_mode.selected_source {
+            format!("Commit Files {} [Esc Back]", &oid[..oid.len().min(7)])
+        } else {
+            "Commit Files [Esc Back]".to_string()
+        }
+    } else {
+        "Commits".to_string()
+    };
+    title = title_with_search(&title, ctx.search_summary);
+
+    render_revision_tree_panel(
+        frame,
+        area,
+        RevisionTreePanelProps {
+            title: &title,
+            is_active,
+            tree_mode: state.tree_mode.active,
+            tree_nodes: &state.tree_mode.nodes,
+            tree_search_query: if state.tree_mode.active {
+                ctx.search_query
+            } else {
+                None
+            },
+            list_items: items,
+            list_state: state.panel.list_state,
+        },
+    );
+}
+
+impl DynamicPanel for CommitsPanelState {
+    fn default_height_percent(&self) -> u16 {
+        40
+    }
+    fn focused_height_percent(&self) -> u16 {
+        50
+    }
+    fn expand_threshold(&self) -> usize {
+        10
+    }
+    fn min_height(&self) -> u16 {
+        3
+    }
+}
 
 /// Render graph cells into colored Span list.
 /// When `highlighted_oids` is non-empty, cells whose owners do not intersect it are dimmed.
@@ -50,103 +149,6 @@ fn graph_spans(
         ));
     }
     spans
-}
-
-impl PanelComponent for CommitsPanelState {
-    fn draw(&self, frame: &mut Frame, area: Rect, ctx: &PanelRenderContext<'_>) {
-        let theme = UiTheme::default();
-        let is_active = ctx.active_panel == SidePanel::Commits;
-
-        let items: Vec<ListItem> = if self.items.is_empty() {
-            empty_list_item("No commits")
-        } else {
-            self.items
-                .iter()
-                .map(|c| {
-                    let g_spans =
-                        graph_spans(&c.graph, hash_color(c.sync_state), ctx.highlighted_oids);
-                    let hash_spans = highlighted_spans(
-                        &c.oid[..7.min(c.oid.len())],
-                        ctx.search_query,
-                        Style::default().fg(hash_color(c.sync_state)),
-                    );
-                    let author_short = author_initials(&c.author);
-                    let author_spans = highlighted_spans(
-                        &author_short,
-                        ctx.search_query,
-                        Style::default().fg(theme.text_muted),
-                    );
-                    let message_spans = highlighted_spans(
-                        &c.message,
-                        ctx.search_query,
-                        Style::default().fg(Color::White),
-                    );
-
-                    let mut spans = Vec::with_capacity(
-                        g_spans.len()
-                            + hash_spans.len()
-                            + author_spans.len()
-                            + message_spans.len()
-                            + 3,
-                    );
-                    spans.extend(g_spans);
-                    spans.push(Span::raw(" "));
-                    spans.extend(hash_spans);
-                    spans.push(Span::raw(" "));
-                    spans.extend(author_spans);
-                    spans.push(Span::raw(" "));
-                    spans.extend(message_spans);
-                    ListItem::new(Line::from(spans))
-                })
-                .collect()
-        };
-
-        let mut title = if let Some(title_override) = ctx.panel_title_override {
-            title_override.to_string()
-        } else if self.tree_mode.active {
-            if let Some(ref oid) = self.tree_mode.selected_source {
-                format!("Commit Files {} [Esc Back]", &oid[..oid.len().min(7)])
-            } else {
-                "Commit Files [Esc Back]".to_string()
-            }
-        } else {
-            "Commits".to_string()
-        };
-        title = title_with_search(&title, ctx.search_summary);
-
-        render_revision_tree_panel(
-            frame,
-            area,
-            RevisionTreePanelProps {
-                title: &title,
-                is_active,
-                tree_mode: self.tree_mode.active,
-                tree_nodes: &self.tree_mode.nodes,
-                tree_search_query: if self.tree_mode.active {
-                    ctx.search_query
-                } else {
-                    None
-                },
-                list_items: items,
-                list_state: self.panel.list_state,
-            },
-        );
-    }
-}
-
-impl DynamicPanel for CommitsPanelState {
-    fn default_height_percent(&self) -> u16 {
-        40
-    }
-    fn focused_height_percent(&self) -> u16 {
-        50
-    }
-    fn expand_threshold(&self) -> usize {
-        10
-    }
-    fn min_height(&self) -> u16 {
-        3
-    }
 }
 
 fn hash_color(sync_state: CommitSyncState) -> Color {
