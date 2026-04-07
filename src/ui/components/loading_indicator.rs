@@ -42,6 +42,7 @@ impl LoadingIndicator {
     }
 
     /// Create a new indicator with the given operation `message`.
+    #[allow(dead_code)]
     pub fn with_message(message: impl Into<String>) -> Self {
         Self {
             current_frame: 0,
@@ -50,6 +51,7 @@ impl LoadingIndicator {
     }
 
     /// Set or update the operation message shown next to the spinner.
+    #[allow(dead_code)]
     pub fn set_message(&mut self, message: impl Into<String>) {
         self.message = message.into();
     }

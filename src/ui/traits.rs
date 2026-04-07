@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use ratatui::{layout::Rect, Frame};
 
 /// A key binding descriptor for introspection and help display.
