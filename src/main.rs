@@ -253,7 +253,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: App
                 shutdown_tx.subscribe(),
             ));
             let effect_handle = tokio::task::spawn_local(effect_loop(
-                shared_app.clone(),
+                shared_app.clone() as Rc<Mutex<dyn app::AppEffects>>,
                 perf.clone(),
                 command_rx,
                 action_tx.clone(),
@@ -604,7 +604,7 @@ async fn dispatch_loop(
 }
 
 async fn effect_loop(
-    app: Rc<Mutex<App>>,
+    app: Rc<Mutex<dyn app::AppEffects>>,
     perf: Arc<PerfCounters>,
     mut command_rx: mpsc::UnboundedReceiver<app::Command>,
     action_tx: mpsc::UnboundedSender<Action>,

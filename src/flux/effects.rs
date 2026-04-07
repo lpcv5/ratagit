@@ -1,4 +1,4 @@
-use crate::app::{App, RefreshKind, SidePanel};
+use crate::app::{AppEffects, RefreshKind, SidePanel};
 use crate::flux::action::{Action, DomainAction};
 use crate::flux::stores::UiInvalidation;
 use std::path::PathBuf;
@@ -42,7 +42,7 @@ pub enum EffectRequest {
 }
 
 pub struct EffectCtx {
-    pub app: Rc<Mutex<App>>,
+    pub app: Rc<Mutex<dyn AppEffects>>,
 }
 
 pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
@@ -57,7 +57,7 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
             match app.flush_pending_refresh() {
                 Ok(_) => {
                     if log_success {
-                        app.push_log("refresh", true);
+                        app.push_log("refresh".to_string(), true);
                     }
                 }
                 Err(err) => app.push_log(format!("refresh failed: {}", err), false),
@@ -81,7 +81,7 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
         }
         EffectRequest::RevisionOpenTreeOrToggleDir => {
             let mut app = ctx.app.lock().await;
-            let result = match app.ui.active_panel {
+            let result = match app.active_panel() {
                 SidePanel::Stash => app.stash_open_tree_or_toggle_dir(),
                 SidePanel::Commits => app.commit_open_tree_or_toggle_dir(),
                 SidePanel::LocalBranches => app.open_selected_branch_commits(100),
@@ -101,7 +101,7 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
             let mut app = ctx.app.lock().await;
             if app.start_commit_editor_guarded() {
                 app.push_log(
-                    "commit: edit message/description then press Enter on message",
+                    "commit: edit message/description then press Enter on message".to_string(),
                     true,
                 );
                 UiInvalidation::all().apply(&mut *app);
@@ -111,16 +111,9 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
         EffectRequest::StageAllAndStartCommitEditor => {
             let mut app = ctx.app.lock().await;
             app.cancel_input();
-            let paths: Vec<PathBuf> = app
-                .git
-                .status
-                .unstaged
-                .iter()
-                .map(|e| e.path.clone())
-                .chain(app.git.status.untracked.iter().map(|e| e.path.clone()))
-                .collect();
+            let paths = app.all_file_paths();
             if paths.is_empty() {
-                app.push_log("nothing to stage", false);
+                app.push_log("nothing to stage".to_string(), false);
                 return vec![];
             }
             if let Err(err) = app.stage_paths(&paths) {
@@ -130,7 +123,7 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
             app.request_refresh(crate::app::RefreshKind::StatusOnly);
             app.start_commit_editor();
             app.push_log(
-                "commit: all files staged; edit message/description then press Enter",
+                "commit: all files staged; edit message/description then press Enter".to_string(),
                 true,
             );
             UiInvalidation::all().apply(&mut *app);
@@ -159,7 +152,7 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
             match app.prepare_commit_from_visual_selection() {
                 Ok(count) => {
                     if count == 0 {
-                        app.push_log("commit blocked: no selected items", false);
+                        app.push_log("commit blocked: no selected items".to_string(), false);
                         return vec![];
                     }
                     if app.start_commit_editor_guarded() {
@@ -180,7 +173,7 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
         EffectRequest::CheckoutSelectedBranch => {
             let mut app = ctx.app.lock().await;
             let Some(name) = app.selected_branch_name() else {
-                app.push_log("no branch selected", false);
+                app.push_log("no branch selected".to_string(), false);
                 return vec![];
             };
 
@@ -537,6 +530,7 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::App;
     use crate::flux::stores::test_support::MockRepo;
     use pretty_assertions::assert_eq;
     use std::rc::Rc;
@@ -695,7 +689,8 @@ mod tests {
     async fn checkout_selected_branch_effect_returns_checkout_branch_finished_action() {
         let mut ctx = make_ctx();
         {
-            let mut app = ctx.app.lock().await;
+            let mut app_guard = ctx.app.lock().await;
+            let app: &mut App = (&mut *app_guard).as_any_mut().downcast_mut().unwrap();
             app.ui.active_panel = crate::app::SidePanel::LocalBranches;
             app.ui.branches.items = vec![crate::git::BranchInfo {
                 name: "main".to_string(),
@@ -716,7 +711,8 @@ mod tests {
     async fn revision_open_from_branches_opens_commits_subview_in_branches_panel() {
         let mut ctx = make_ctx();
         {
-            let mut app = ctx.app.lock().await;
+            let mut app_guard = ctx.app.lock().await;
+            let app: &mut App = (&mut *app_guard).as_any_mut().downcast_mut().unwrap();
             app.ui.active_panel = crate::app::SidePanel::LocalBranches;
             app.ui.branches.items = vec![crate::git::BranchInfo {
                 name: "main".to_string(),
@@ -727,7 +723,8 @@ mod tests {
 
         assert_no_actions(run(EffectRequest::RevisionOpenTreeOrToggleDir, &mut ctx).await);
         assert_no_actions(run(EffectRequest::ProcessBackgroundLoads, &mut ctx).await);
-        let app = ctx.app.lock().await;
+        let app_guard = ctx.app.lock().await;
+        let app: &App = (&*app_guard).as_any().downcast_ref().unwrap();
         assert_eq!(app.ui.active_panel, crate::app::SidePanel::LocalBranches);
         assert!(app.ui.branches.commits_subview_active);
         assert!(!app.ui.branches.commits_subview.items.is_empty());
