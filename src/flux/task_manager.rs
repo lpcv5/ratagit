@@ -240,6 +240,7 @@ impl TaskManager {
         self.registry.get(key).map(|entry| entry.latest_generation)
     }
 
+    #[allow(dead_code)]
     pub fn metrics(&self) -> TaskMetrics {
         self.metrics
     }

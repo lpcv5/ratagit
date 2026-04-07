@@ -111,7 +111,7 @@ impl<T> SelectList<T> {
     }
 
     /// Whether this widget has keyboard focus (affects border color).
-    pub fn is_active(mut self, active: bool) -> Self {
+    pub fn active(mut self, active: bool) -> Self {
         self.is_active = active;
         self
     }
