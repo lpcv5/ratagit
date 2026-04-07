@@ -1,7 +1,6 @@
-use crate::app::{App, CommitFieldFocus, InputMode, RefreshKind, SearchScopeKey, SidePanel};
+use crate::app::{App, CommitFieldFocus, InputMode, RefreshKind, SidePanel};
 use crate::flux::action::DomainAction;
 use crate::flux::stores::{DirtyHint, StateAccess};
-use crate::git::{CommitInfo, FileEntry, StashInfo};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -44,40 +43,6 @@ impl StateAccess for App {
 
     fn selected_branch_name(&self) -> Option<String> {
         App::selected_branch_name(self)
-    }
-
-    fn selected_file_entry(&self) -> Option<&FileEntry> {
-        if self.ui.active_panel != SidePanel::Files {
-            return None;
-        }
-        let idx = self.ui.files.panel.list_state.selected()?;
-        let node = self.ui.files.tree_nodes.get(idx)?;
-        if node.is_dir {
-            return None;
-        }
-        self.git
-            .status
-            .staged
-            .iter()
-            .chain(self.git.status.unstaged.iter())
-            .chain(self.git.status.untracked.iter())
-            .find(|e| e.path == node.path)
-    }
-
-    fn selected_commit(&self) -> Option<&CommitInfo> {
-        if self.ui.active_panel != SidePanel::Commits {
-            return None;
-        }
-        let idx = self.ui.commits.panel.list_state.selected()?;
-        self.ui.commits.items.get(idx)
-    }
-
-    fn selected_stash(&self) -> Option<&StashInfo> {
-        if self.ui.active_panel != SidePanel::Stash {
-            return None;
-        }
-        let idx = self.ui.stash.panel.list_state.selected()?;
-        self.ui.stash.items.get(idx)
     }
 
     fn selected_stash_index(&self) -> Option<usize> {
@@ -153,14 +118,6 @@ impl StateAccess for App {
 
     fn set_fetching_remote(&mut self, fetching: bool) {
         self.ui.branches.is_fetching_remote = fetching;
-    }
-
-    fn search_scope(&self) -> SearchScopeKey {
-        self.input.search_scope
-    }
-
-    fn search_query(&self) -> &str {
-        &self.input.search_query
     }
 
     fn apply_search_query(&mut self, query: String) -> usize {

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use std::ops::Range;
 
 /// A virtual scrolling list that tracks only the visible window of items.

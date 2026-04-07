@@ -24,15 +24,6 @@ impl DirtyFlags {
         self.command_log = true;
     }
 
-    pub fn mark_overlay(&mut self) {
-        self.overlay = true;
-    }
-
-    pub fn mark_main_content(&mut self) {
-        self.left_panels = true;
-        self.diff = true;
-    }
-
     pub fn clear(&mut self) {
         self.left_panels = false;
         self.diff = false;
