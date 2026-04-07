@@ -49,6 +49,7 @@ pub struct AppStateSnapshot<'a> {
 }
 
 impl<'a> AppStateSnapshot<'a> {
+    #[cfg(test)]
     pub fn from_app(app: &'a App) -> Self {
         Self {
             keymap: app.keymap(),

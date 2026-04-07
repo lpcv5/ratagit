@@ -1,6 +1,5 @@
-use crate::app::{CommitFieldFocus, InputMode, RefreshKind, SearchScopeKey, SidePanel};
+use crate::app::{CommitFieldFocus, InputMode, RefreshKind, SidePanel};
 use crate::flux::action::DomainAction;
-use crate::git::{CommitInfo, FileEntry, StashInfo};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -40,9 +39,6 @@ pub trait StateAccess {
     fn selected_branch_name(&self) -> Option<String>;
 
     // Selection queries
-    fn selected_file_entry(&self) -> Option<&FileEntry>;
-    fn selected_commit(&self) -> Option<&CommitInfo>;
-    fn selected_stash(&self) -> Option<&StashInfo>;
     fn selected_stash_index(&self) -> Option<usize>;
 
     // Input state access
@@ -69,8 +65,6 @@ pub trait StateAccess {
     fn set_fetching_remote(&mut self, fetching: bool);
 
     // Search state
-    fn search_scope(&self) -> SearchScopeKey;
-    fn search_query(&self) -> &str;
     fn apply_search_query(&mut self, query: String) -> usize;
     fn search_select_initial_match(&mut self) -> bool;
     fn search_jump_next(&mut self) -> bool;

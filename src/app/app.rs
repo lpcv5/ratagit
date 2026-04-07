@@ -490,10 +490,6 @@ impl App {
         self.pending_refresh.is_some() || !self.pending_background_tasks.is_empty()
     }
 
-    pub fn pending_background_task_count(&self) -> usize {
-        self.pending_background_tasks.len()
-    }
-
     pub fn diff_reload_debounce_elapsed(&self, debounce: std::time::Duration) -> bool {
         self.pending_diff_reload_at
             .is_some_and(|requested_at| requested_at.elapsed() >= debounce)

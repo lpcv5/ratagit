@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::ui::theme::UiTheme;
 use crate::ui::LIST_SCROLL_PADDING;
 use ratatui::{
