@@ -59,15 +59,17 @@ pub struct App {
 **Key architectural decisions**:
 - **Stores access state via StateAccess trait** - decouples stores from App implementation
 - **State grouped by concern** - git data, UI state, and input state are separated
-- **Effects hold Rc<Mutex<App>>** - enables async operations (to be refactored in future)
+- **UiInvalidation::apply() uses dyn StateAccess** - Dispatcher calls `apply(ctx.state)` so invalidation routing no longer needs `&mut App` directly
+- **Effects hold Rc<Mutex<App>>** - enables async operations (architectural debt, stores should use StateAccess instead)
 
 ### Module Structure
 
 ```
 src/
 ├── app/
-│   ├── app.rs            # App struct and state model
+│   ├── app.rs            # App struct and state model (runtime + business logic)
 │   ├── states/           # State sub-structures
+│   │   ├── panel_state.rs # Panel types: SidePanel, PanelState, *PanelState, RenderCache
 │   │   ├── git_state.rs  # Git data (status, current_diff)
 │   │   ├── ui_state.rs   # UI state (panels, navigation, dirty)
 │   │   └── input_state.rs # Input state (buffers, search, mode)

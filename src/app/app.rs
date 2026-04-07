@@ -1,16 +1,19 @@
 use super::{diff_cache, diff_loader, dirty_flags, refresh, revision_tree};
+use super::background_poll::{
+    BackgroundPayload, BackgroundReceiver, DiffRefreshSource, PendingBackgroundTask,
+};
 use super::states::{
     BranchesPanelState, CommandLogEntry, CommitsPanelState, FilesPanelState, GitState, InputState,
     PanelState, RenderCache, SidePanel, StashPanelState, TreeModeState, UiState,
 };
 use crate::config::keymap::Keymap;
 use crate::flux::task_manager::{
-    TaskGeneration, TaskKey, TaskManager, TaskPriority, TaskRequest, TaskRequestKind,
+    TaskGeneration, TaskKey, TaskManager, TaskPriority, TaskRequestKind,
     TaskResult, TaskResultKind,
 };
 use crate::git::{
-    BranchInfo, CommitInfo, DiffLine, Git2Repository, GitError, GitRepository,
-    GitStatus, StashInfo,
+    Git2Repository, GitError, GitRepository,
+    GitStatus,
 };
 use crate::ui::widgets::file_tree::FileTree;
 use color_eyre::Result;
@@ -19,49 +22,6 @@ use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
 use std::time::Instant;
 use tracing::debug;
-
-enum BackgroundReceiver {
-    Status {
-        fast: bool,
-        rx: Receiver<Result<GitStatus, GitError>>,
-    },
-    Branches(Receiver<Result<Vec<BranchInfo>, GitError>>),
-    Stashes(Receiver<Result<Vec<StashInfo>, GitError>>),
-    Commits(Receiver<Result<Vec<CommitInfo>, GitError>>),
-    CommitsFast(Receiver<Result<Vec<CommitInfo>, GitError>>),
-    BranchCommits {
-        branch: String,
-        rx: Receiver<Result<Vec<CommitInfo>, GitError>>,
-    },
-    Diff {
-        cache_key: diff_cache::DiffCacheKey,
-        rx: Receiver<Result<Vec<DiffLine>, GitError>>,
-    },
-}
-
-enum BackgroundPayload {
-    Status {
-        status: GitStatus,
-        fast: bool,
-    },
-    Branches(Vec<BranchInfo>),
-    Stashes(Vec<StashInfo>),
-    Commits(Vec<CommitInfo>),
-    CommitsFast(Vec<CommitInfo>),
-    BranchCommits {
-        branch: String,
-        items: Vec<CommitInfo>,
-    },
-    Diff {
-        cache_key: diff_cache::DiffCacheKey,
-        diff: Vec<DiffLine>,
-    },
-}
-
-struct PendingBackgroundTask {
-    request: TaskRequest,
-    receiver: BackgroundReceiver,
-}
 
 const MAX_NORMAL_PRIORITY_TASKS: usize = 6;
 const INITIAL_COMMITS_LOAD_LIMIT: usize = 30;
@@ -91,14 +51,6 @@ pub enum RefreshKind {
     StatusOnly,
     StatusAndRefs,
     Full,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DiffRefreshSource {
-    Status,
-    Branches,
-    Stashes,
-    Commits,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
