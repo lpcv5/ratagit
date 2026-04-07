@@ -1,6 +1,7 @@
 #![allow(clippy::module_inception)]
 
 mod app;
+mod background_poll;
 mod command;
 mod diff_cache;
 mod diff_loader;
@@ -28,8 +29,8 @@ pub use app::RefreshKind;
 pub use app::SearchScopeKey;
 pub use command::Command;
 pub use states::{
-    BranchesPanelState, CommandLogEntry, CommitsPanelState, FilesPanelState, GitState, InputState,
-    PanelState, RenderCache, SidePanel, StashPanelState, TreeModeState, UiState,
+    BranchesPanelState, CommitsPanelState, FilesPanelState, RenderCache, SidePanel,
+    StashPanelState,
 };
 #[cfg(test)]
 pub use test_dispatch::{dispatch_test_action, dispatch_test_key, map_test_key};
