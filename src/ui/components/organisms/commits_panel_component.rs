@@ -66,7 +66,7 @@ impl PanelComponent for CommitsPanelState {
                     let g_spans =
                         graph_spans(&c.graph, hash_color(c.sync_state), ctx.highlighted_oids);
                     let hash_spans = highlighted_spans(
-                        &c.short_hash,
+                        &c.oid[..7.min(c.oid.len())],
                         ctx.search_query,
                         Style::default().fg(hash_color(c.sync_state)),
                     );

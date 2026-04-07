@@ -131,7 +131,6 @@ pub struct GraphCell {
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct CommitInfo {
-    pub short_hash: String,
     pub oid: String,
     pub message: String,
     pub author: String,
@@ -554,9 +553,9 @@ pub trait AsyncGitRepository {
 }
 
 /// Job closure sent to the repo worker thread.
-type RepoJob = Box<dyn FnOnce(&Git2RepoInner) + Send + 'static>;
+type RepoJob = Box<dyn FnOnce(&mut Git2RepoInner) + Send + 'static>;
 /// Job closure sent to the external git worker thread.
-type ExternalRepoJob = Box<dyn FnOnce(&Git2RepoInner) + Send + 'static>;
+type ExternalRepoJob = Box<dyn FnOnce(&mut Git2RepoInner) + Send + 'static>;
 
 /// Persistent background worker that owns a single `git2::Repository` instance.
 /// All git operations that require the repo are routed through this worker,
@@ -592,7 +591,7 @@ impl RepoWorker {
             .name("ratagit-repo-worker".to_string())
             .spawn(move || {
                 let t0 = std::time::Instant::now();
-                let inner = match git2::Repository::open(&repo_root) {
+                let mut inner = match git2::Repository::open(&repo_root) {
                     Ok(repo) => Git2RepoInner {
                         repo,
                         reachability_cache: RefCell::new(ReachabilityCache::default()),
@@ -608,7 +607,7 @@ impl RepoWorker {
                     repo_root.display()
                 ));
                 while let Ok(job) = rx.recv() {
-                    job(&inner);
+                    job(&mut inner);
                 }
                 write_git_job_log("repo_worker_exited");
             })
@@ -624,7 +623,7 @@ impl RepoWorker {
     ) -> Result<Receiver<Result<T, GitError>>, GitError>
     where
         T: Send + 'static,
-        F: FnOnce(&Git2RepoInner) -> Result<T, GitError> + Send + 'static,
+        F: FnOnce(&mut Git2RepoInner) -> Result<T, GitError> + Send + 'static,
     {
         let (result_tx, result_rx) = mpsc::channel();
         let enqueue_at = std::time::Instant::now();
@@ -656,7 +655,7 @@ impl RepoWorkerExternal {
             .name(format!("ratagit-external-worker-{}", id))
             .spawn(move || {
                 let t0 = std::time::Instant::now();
-                let inner = match git2::Repository::open(&repo_root) {
+                let mut inner = match git2::Repository::open(&repo_root) {
                     Ok(repo) => Git2RepoInner {
                         repo,
                         reachability_cache: RefCell::new(ReachabilityCache::default()),
@@ -673,7 +672,7 @@ impl RepoWorkerExternal {
                     repo_root.display()
                 ));
                 while let Ok(job) = rx.recv() {
-                    job(&inner);
+                    job(&mut inner);
                 }
                 write_git_job_log(&format!(
                     "external_repo_worker_exited worker=external-{}",
@@ -691,7 +690,7 @@ impl RepoWorkerExternal {
     ) -> Result<Receiver<Result<T, GitError>>, GitError>
     where
         T: Send + 'static,
-        F: FnOnce(&Git2RepoInner) -> Result<T, GitError> + Send + 'static,
+        F: FnOnce(&mut Git2RepoInner) -> Result<T, GitError> + Send + 'static,
     {
         let worker_id = self.id;
         let (result_tx, result_rx) = mpsc::channel();
@@ -845,11 +844,6 @@ impl Git2RepoInner {
             .ok_or(GitError::InvalidState)
     }
 
-    /// Helper to format stash spec string.
-    fn stash_spec(index: usize) -> String {
-        format!("stash@{{{}}}", index)
-    }
-
     fn stash_refname(index: usize) -> String {
         if index == 0 {
             "refs/stash".to_string()
@@ -973,7 +967,6 @@ impl Git2RepoInner {
         for oid in revwalk.take(limit) {
             let oid = oid?;
             let commit = self.repo.find_commit(oid)?;
-            let short_hash = format!("{:.7}", oid);
             let message = commit.summary().unwrap_or("").to_string();
             let author = commit.author().name().unwrap_or("").to_string();
             let mut parents = Vec::with_capacity(commit.parent_count());
@@ -999,7 +992,6 @@ impl Git2RepoInner {
             let parent_oids: Vec<String> = parents.iter().map(|p| p.to_string()).collect();
             graph_rows.push(GraphCommitRow { oid, parents });
             entries.push(CommitInfo {
-                short_hash,
                 oid: oid.to_string(),
                 message,
                 author,
@@ -1027,7 +1019,6 @@ impl Git2RepoInner {
         for oid in revwalk.take(limit) {
             let oid = oid?;
             let commit = self.repo.find_commit(oid)?;
-            let short_hash = format!("{:.7}", oid);
             let message = commit.summary().unwrap_or("").to_string();
             let author = commit.author().name().unwrap_or("").to_string();
             let mut parent_oids = Vec::with_capacity(commit.parent_count());
@@ -1037,7 +1028,6 @@ impl Git2RepoInner {
                 }
             }
             entries.push(CommitInfo {
-                short_hash,
                 oid: oid.to_string(),
                 message,
                 author,
@@ -1457,32 +1447,15 @@ impl Git2RepoInner {
         Ok(files)
     }
 
-    fn stashes(&self) -> Result<Vec<StashInfo>, GitError> {
+    fn stashes(&mut self) -> Result<Vec<StashInfo>, GitError> {
         let mut result = Vec::new();
-        // Walk stash refs: refs/stash is the tip, refs/stash@{N} for older entries
-        let mut index = 0usize;
-        loop {
-            let refname = if index == 0 {
-                "refs/stash".to_string()
-            } else {
-                format!("refs/stash@{{{}}}", index)
-            };
-            match self.repo.find_reference(&refname) {
-                Ok(r) => {
-                    let msg = r
-                        .peel_to_commit()
-                        .ok()
-                        .and_then(|c| c.summary().map(|s| s.to_string()))
-                        .unwrap_or_else(|| Self::stash_spec(index));
-                    result.push(StashInfo {
-                        index,
-                        message: msg,
-                    });
-                    index += 1;
-                }
-                Err(_) => break,
-            }
-        }
+        self.repo.stash_foreach(|index, name, _oid| {
+            result.push(StashInfo {
+                index,
+                message: name.to_string(),
+            });
+            true
+        })?;
         Ok(result)
     }
 
@@ -1544,7 +1517,7 @@ impl Git2RepoInner {
         Ok(parse_diff(&diff))
     }
 
-    fn stash_push_paths(&self, paths: &[PathBuf], message: &str) -> Result<usize, GitError> {
+    fn stash_push_paths(&mut self, paths: &[PathBuf], message: &str) -> Result<usize, GitError> {
         if paths.is_empty() {
             return Err(GitError::Git2("no selected paths for stash".to_string()));
         }
@@ -1573,32 +1546,28 @@ impl Git2RepoInner {
         Ok(after[0].index)
     }
 
-    fn stash_apply(&self, index: usize) -> Result<(), GitError> {
-        let mut repo = git2::Repository::open(self.repo.path())?;
+    fn stash_apply(&mut self, index: usize) -> Result<(), GitError> {
         let mut checkout = git2::build::CheckoutBuilder::new();
         checkout.force();
         let mut apply_opts = git2::StashApplyOptions::new();
         apply_opts.checkout_options(checkout);
-        repo.stash_apply(index, Some(&mut apply_opts))?;
+        self.repo.stash_apply(index, Some(&mut apply_opts))?;
         Ok(())
     }
 
-    fn stash_pop(&self, index: usize) -> Result<(), GitError> {
-        let mut repo = git2::Repository::open(self.repo.path())?;
-
+    fn stash_pop(&mut self, index: usize) -> Result<(), GitError> {
         let mut checkout = git2::build::CheckoutBuilder::new();
         checkout.force();
         let mut apply_opts = git2::StashApplyOptions::new();
         apply_opts.checkout_options(checkout);
 
-        repo.stash_apply(index, Some(&mut apply_opts))?;
-        repo.stash_drop(index)?;
+        self.repo.stash_apply(index, Some(&mut apply_opts))?;
+        self.repo.stash_drop(index)?;
         Ok(())
     }
 
-    fn stash_drop(&self, index: usize) -> Result<(), GitError> {
-        let mut repo = git2::Repository::open(self.repo.path())?;
-        repo.stash_drop(index)?;
+    fn stash_drop(&mut self, index: usize) -> Result<(), GitError> {
+        self.repo.stash_drop(index)?;
         Ok(())
     }
 
@@ -1666,24 +1635,23 @@ impl Git2RepoInner {
         Self::checkout_branch_in_repo(&self.repo, name)
     }
 
-    fn checkout_branch_with_auto_stash(&self, name: &str) -> Result<(), GitError> {
-        let mut repo = git2::Repository::open(self.repo.path())?;
-
+    fn checkout_branch_with_auto_stash(&mut self, name: &str) -> Result<(), GitError> {
         let has_stashed = {
             let mut opts = git2::StatusOptions::new();
             opts.include_untracked(true)
                 .include_ignored(false)
                 .include_unmodified(false);
-            let statuses = repo.statuses(Some(&mut opts))?;
+            let statuses = self.repo.statuses(Some(&mut opts))?;
             let has_changes = !statuses.is_empty();
             drop(statuses);
             if !has_changes {
                 false
             } else {
-                let sig = repo
+                let sig = self
+                    .repo
                     .signature()
                     .or_else(|_| git2::Signature::now("ratagit", "ratagit@localhost"))?;
-                let _ = repo.stash_save(
+                let _ = self.repo.stash_save(
                     &sig,
                     "ratagit:auto-stash-before-switch",
                     Some(git2::StashFlags::INCLUDE_UNTRACKED),
@@ -1692,17 +1660,17 @@ impl Git2RepoInner {
             }
         };
 
-        if let Err(err) = Self::checkout_branch_in_repo(&repo, name) {
+        if let Err(err) = Self::checkout_branch_in_repo(&self.repo, name) {
             if has_stashed {
-                let _ = repo.stash_apply(0, None);
-                let _ = repo.stash_drop(0);
+                let _ = self.repo.stash_apply(0, None);
+                let _ = self.repo.stash_drop(0);
             }
             return Err(err);
         }
 
         if has_stashed {
-            repo.stash_apply(0, None)?;
-            repo.stash_drop(0)?;
+            self.repo.stash_apply(0, None)?;
+            self.repo.stash_drop(0)?;
         }
         Ok(())
     }
@@ -1769,7 +1737,7 @@ impl Git2Repository {
     ) -> Result<Receiver<Result<T, GitError>>, GitError>
     where
         T: Send + 'static,
-        F: FnOnce(&Git2RepoInner) -> Result<T, GitError> + Send + 'static,
+        F: FnOnce(&mut Git2RepoInner) -> Result<T, GitError> + Send + 'static,
     {
         self.worker.run(label, job)
     }
@@ -1782,7 +1750,7 @@ impl Git2Repository {
     ) -> Result<Receiver<Result<T, GitError>>, GitError>
     where
         T: Send + 'static,
-        F: FnOnce(&Git2RepoInner) -> Result<T, GitError> + Send + 'static,
+        F: FnOnce(&mut Git2RepoInner) -> Result<T, GitError> + Send + 'static,
     {
         let idx = self.external_next.fetch_add(1, Ordering::Relaxed) % self.external_workers.len();
         self.external_workers[idx].run(label, job)
@@ -1793,7 +1761,7 @@ impl Git2Repository {
     async fn spawn_repo_job_tokio<T, F>(&self, label: &'static str, job: F) -> Result<T, GitError>
     where
         T: Send + 'static,
-        F: FnOnce(&Git2RepoInner) -> Result<T, GitError> + Send + 'static,
+        F: FnOnce(&mut Git2RepoInner) -> Result<T, GitError> + Send + 'static,
     {
         let rx = self.worker.run(label, job)?;
         task::spawn_blocking(move || rx.recv())
@@ -1810,7 +1778,7 @@ impl Git2Repository {
     ) -> Result<T, GitError>
     where
         T: Send + 'static,
-        F: FnOnce(&Git2RepoInner) -> Result<T, GitError> + Send + 'static,
+        F: FnOnce(&mut Git2RepoInner) -> Result<T, GitError> + Send + 'static,
     {
         let idx = self.external_next.fetch_add(1, Ordering::Relaxed) % self.external_workers.len();
         let rx = self.external_workers[idx].run(label, job)?;
@@ -2219,7 +2187,6 @@ impl GitRepository for Git2Repository {
     }
 
     fn fetch_default_async(&self) -> Result<Receiver<Result<String, GitError>>, GitError> {
-        let repo_root = self.repo_root.clone();
         let upstream_result = self.spawn_repo_job("fetch_upstream_probe", |inner| {
             Ok(inner.upstream_remote_name())
         });
@@ -2231,20 +2198,13 @@ impl GitRepository for Git2Repository {
             _ => "origin".to_string(),
         };
 
-        let (tx, rx) = mpsc::channel();
-        thread::spawn(move || {
-            let remote_name = remote.clone();
-            let result = (|| {
-                let repo = git2::Repository::open(&repo_root)?;
-                let mut remote = repo.find_remote(&remote)?;
-                let mut opts = git2::FetchOptions::new();
-                opts.prune(git2::FetchPrune::On);
-                remote.fetch(&[] as &[&str], Some(&mut opts), None)?;
-                Ok(remote_name)
-            })();
-            let _ = tx.send(result);
-        });
-        Ok(rx)
+        self.spawn_repo_job_external("fetch", move |inner| {
+            let mut remote_obj = inner.repo.find_remote(&remote)?;
+            let mut opts = git2::FetchOptions::new();
+            opts.prune(git2::FetchPrune::On);
+            remote_obj.fetch(&[] as &[&str], Some(&mut opts), None)?;
+            Ok(remote)
+        })
     }
 }
 

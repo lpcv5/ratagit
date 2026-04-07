@@ -167,7 +167,6 @@ mod tests {
 
     fn make_commit_with_lane(oid: &str, parents: &[&str], lane: usize) -> CommitInfo {
         CommitInfo {
-            short_hash: oid[..7.min(oid.len())].to_string(),
             oid: oid.to_string(),
             message: format!("commit {}", oid),
             author: "test".to_string(),

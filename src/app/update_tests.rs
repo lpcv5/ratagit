@@ -63,7 +63,6 @@ impl GitRepository for MockRepo {
     fn commits(&self, _limit: usize) -> Result<Vec<CommitInfo>, GitError> {
         Ok(vec![
             CommitInfo {
-                short_hash: "abc1234".to_string(),
                 oid: "abc1234567890".to_string(),
                 message: "test commit".to_string(),
                 author: "tester".to_string(),
@@ -79,7 +78,6 @@ impl GitRepository for MockRepo {
                 parent_oids: vec!["def5678901234".to_string()],
             },
             CommitInfo {
-                short_hash: "def5678".to_string(),
                 oid: "def5678901234".to_string(),
                 message: "test commit 2".to_string(),
                 author: "tester".to_string(),
@@ -268,7 +266,6 @@ impl GitRepository for CountingRepo {
     fn commits(&self, _limit: usize) -> Result<Vec<CommitInfo>, GitError> {
         let calls = self.commits_calls.fetch_add(1, Ordering::SeqCst) + 1;
         Ok(vec![CommitInfo {
-            short_hash: format!("c{}", calls),
             oid: format!("oid{}", calls),
             message: format!("commit {}", calls),
             author: "tester".to_string(),
@@ -562,7 +559,6 @@ impl GitRepository for NavigationDiffRepo {
     fn commits(&self, _limit: usize) -> Result<Vec<CommitInfo>, GitError> {
         Ok(vec![
             CommitInfo {
-                short_hash: "1111111".to_string(),
                 oid: "oid1".to_string(),
                 message: "commit one".to_string(),
                 author: "tester".to_string(),
@@ -578,7 +574,6 @@ impl GitRepository for NavigationDiffRepo {
                 parent_oids: vec!["oid2".to_string()],
             },
             CommitInfo {
-                short_hash: "2222222".to_string(),
                 oid: "oid2".to_string(),
                 message: "commit two".to_string(),
                 author: "tester".to_string(),
