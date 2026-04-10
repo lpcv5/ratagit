@@ -20,9 +20,14 @@ pub fn render_diff_panel(frame: &mut Frame, area: Rect, props: DiffViewProps<'_>
     let theme = UiTheme::default();
 
     if props.is_loading {
-        let paragraph = ratatui::widgets::Paragraph::new("Loading diff...")
+        let panel_title = if props.active_panel == SidePanel::LocalBranches {
+            "Log"
+        } else {
+            "Diff"
+        };
+        let paragraph = ratatui::widgets::Paragraph::new("Loading...")
             .style(Style::default().fg(theme.text_muted))
-            .block(theme.panel_block("Diff", true));
+            .block(theme.panel_block(panel_title, true));
         frame.render_widget(paragraph, area);
         return;
     }
@@ -30,13 +35,18 @@ pub fn render_diff_panel(frame: &mut Frame, area: Rect, props: DiffViewProps<'_>
     if props.lines.is_empty() {
         let hint = match props.active_panel {
             SidePanel::Files => "Select a file to view diff",
-            SidePanel::LocalBranches => "Select a branch to view details",
+            SidePanel::LocalBranches => "Select a branch to view log",
             SidePanel::Commits => "Select a commit/file to view diff",
             SidePanel::Stash => "Select a stash entry/file to view diff",
         };
+        let panel_title = if props.active_panel == SidePanel::LocalBranches {
+            "Log"
+        } else {
+            "Diff"
+        };
         let paragraph = ratatui::widgets::Paragraph::new(hint)
             .style(Style::default().fg(theme.text_muted))
-            .block(theme.panel_block("Diff", true));
+            .block(theme.panel_block(panel_title, true));
         frame.render_widget(paragraph, area);
         return;
     }
@@ -69,9 +79,13 @@ pub fn render_diff_panel(frame: &mut Frame, area: Rect, props: DiffViewProps<'_>
 
     let total = props.lines.len();
     let end = (scroll + items.len()).min(total);
-    let title = format!("Diff [{}-{} / {}]", scroll + 1, end, total);
+    let (panel_label, title) = if props.active_panel == SidePanel::LocalBranches {
+        ("Log", format!("Log [{}-{} / {}]", scroll + 1, end, total))
+    } else {
+        ("Diff", format!("Diff [{}-{} / {}]", scroll + 1, end, total))
+    };
 
-    let list = List::new(items).block(theme.panel_block("Diff", true).title(title));
+    let list = List::new(items).block(theme.panel_block(panel_label, true).title(title));
 
     frame.render_widget(list, area);
 }

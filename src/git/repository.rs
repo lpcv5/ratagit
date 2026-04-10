@@ -511,6 +511,19 @@ pub trait GitRepository {
 
     /// Documentation comment in English.
     fn fetch_default_async(&self) -> Result<Receiver<Result<String, GitError>>, GitError>;
+
+    /// Returns lines of `git log --graph` output for the given branch (or HEAD if None).
+    fn git_log_graph(&self, branch: Option<&str>) -> Result<Vec<String>, GitError>;
+
+    /// Async wrapper for git_log_graph.
+    fn git_log_graph_async(
+        &self,
+        branch: Option<String>,
+    ) -> Result<Receiver<Result<Vec<String>, GitError>>, GitError> {
+        let (tx, rx) = mpsc::channel();
+        let _ = tx.send(self.git_log_graph(branch.as_deref()));
+        Ok(rx)
+    }
 }
 
 #[allow(dead_code)]
@@ -1689,6 +1702,22 @@ impl Git2RepoInner {
         branch.delete()?;
         Ok(())
     }
+
+    fn git_log_graph(&self, branch: Option<&str>) -> Result<Vec<String>, GitError> {
+        let mut args = vec![
+            "log".to_string(),
+            "--graph".to_string(),
+            "--decorate".to_string(),
+            "--color=always".to_string(),
+            "-n".to_string(),
+            "200".to_string(),
+        ];
+        if let Some(b) = branch {
+            args.push(b.to_string());
+        }
+        let raw = self.run_git_owned(&args)?;
+        Ok(raw.lines().map(str::to_owned).collect())
+    }
 }
 
 impl Git2Repository {
@@ -2213,6 +2242,24 @@ impl GitRepository for Git2Repository {
             opts.prune(git2::FetchPrune::On);
             remote_obj.fetch(&[] as &[&str], Some(&mut opts), None)?;
             Ok(remote)
+        })
+    }
+
+    fn git_log_graph(&self, branch: Option<&str>) -> Result<Vec<String>, GitError> {
+        let branch = branch.map(str::to_owned);
+        self.spawn_repo_job("git_log_graph", move |inner| {
+            inner.git_log_graph(branch.as_deref())
+        })?
+        .recv()
+        .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+    }
+
+    fn git_log_graph_async(
+        &self,
+        branch: Option<String>,
+    ) -> Result<Receiver<Result<Vec<String>, GitError>>, GitError> {
+        self.spawn_repo_job("git_log_graph", move |inner| {
+            inner.git_log_graph(branch.as_deref())
         })
     }
 }

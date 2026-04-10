@@ -183,6 +183,10 @@ impl GitRepository for MockRepo {
         let _ = tx.send(Ok("origin".to_string()));
         Ok(rx)
     }
+
+    fn git_log_graph(&self, _branch: Option<&str>) -> Result<Vec<String>, GitError> {
+        Ok(vec![])
+    }
 }
 
 fn mock_app() -> App {
@@ -343,6 +347,10 @@ impl GitRepository for CountingRepo {
         let _ = tx.send(Ok("origin".to_string()));
         Ok(rx)
     }
+
+    fn git_log_graph(&self, _branch: Option<&str>) -> Result<Vec<String>, GitError> {
+        Ok(vec![])
+    }
 }
 
 struct RefreshCountingRepo {
@@ -478,6 +486,10 @@ impl GitRepository for DuplicateStatusRepo {
         let (tx, rx) = mpsc::channel();
         let _ = tx.send(Ok("origin".to_string()));
         Ok(rx)
+    }
+
+    fn git_log_graph(&self, _branch: Option<&str>) -> Result<Vec<String>, GitError> {
+        Ok(vec![])
     }
 }
 
@@ -655,6 +667,10 @@ impl GitRepository for NavigationDiffRepo {
         let _ = tx.send(Ok("origin".to_string()));
         Ok(rx)
     }
+
+    fn git_log_graph(&self, _branch: Option<&str>) -> Result<Vec<String>, GitError> {
+        Ok(vec![])
+    }
 }
 
 struct BranchSwitchRepo {
@@ -799,6 +815,10 @@ impl GitRepository for BranchSwitchRepo {
         let _ = tx.send(Ok("origin".to_string()));
         Ok(rx)
     }
+
+    fn git_log_graph(&self, _branch: Option<&str>) -> Result<Vec<String>, GitError> {
+        Ok(vec![])
+    }
 }
 
 impl RefreshCountingRepo {
@@ -926,6 +946,10 @@ impl GitRepository for RefreshCountingRepo {
         let (tx, rx) = mpsc::channel();
         let _ = tx.send(Ok("origin".to_string()));
         Ok(rx)
+    }
+
+    fn git_log_graph(&self, _branch: Option<&str>) -> Result<Vec<String>, GitError> {
+        Ok(vec![])
     }
 }
 
@@ -1455,22 +1479,20 @@ fn commits_panel_list_navigation_keeps_diff_until_pending_reload_is_flushed() {
 }
 
 #[test]
-fn branches_panel_list_navigation_keeps_diff_until_pending_reload_is_flushed() {
+fn branches_panel_list_navigation_emits_load_branch_graph_effect() {
+    use crate::flux::effects::EffectRequest;
     let mut app = App::from_repo(Box::new(NavigationDiffRepo)).expect("app from navigation repo");
     app.ui.active_panel = SidePanel::LocalBranches;
     app.ui.branches.panel.list_state.select(Some(0));
-    app.reload_diff_now();
-    assert_eq!(first_diff_content(&app), "branch main");
 
-    dispatch_test_action(&mut app, DomainAction::ListDown);
+    let cmd = dispatch_test_action(&mut app, DomainAction::ListDown);
 
     assert_branches_selected(&app, Some(1));
-    assert!(app.has_pending_diff_reload());
-    assert_eq!(first_diff_content(&app), "branch main");
-
-    app.flush_pending_diff_reload();
-    assert_eq!(first_diff_content(&app), "branch feature/x");
-    assert!(!app.has_pending_diff_reload());
+    assert!(
+        matches!(cmd, Some(crate::app::Command::Effect(EffectRequest::LoadBranchGraph { .. }))),
+        "expected LoadBranchGraph effect after ListDown in branches panel, got: {:?}",
+        cmd
+    );
 }
 
 #[test]

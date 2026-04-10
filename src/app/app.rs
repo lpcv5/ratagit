@@ -928,6 +928,13 @@ impl App {
         Ok(self.repo.stash_drop_async(index)?)
     }
 
+    pub fn git_log_graph_request(
+        &self,
+        branch: Option<String>,
+    ) -> Result<Receiver<Result<Vec<String>, GitError>>> {
+        Ok(self.repo.git_log_graph_async(branch)?)
+    }
+
     #[cfg(test)]
     pub fn stash_apply(&mut self, index: usize) -> Result<()> {
         self.repo.stash_apply(index)?;

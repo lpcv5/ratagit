@@ -18,18 +18,34 @@ impl NavigationStore {
     /// Common post-processing after panel switch operations.
     fn after_panel_switch(ctx: &mut ReduceCtx<'_>) -> ReduceOutput {
         ctx.state.restore_search_for_active_scope();
-        ctx.state.schedule_diff_reload();
-        ReduceOutput::from_command(Command::Effect(
+        let mut output = ReduceOutput::from_command(Command::Effect(
             EffectRequest::EnsureCommitsLoadedForActivePanel,
         ))
-        .with_invalidation(UiInvalidation::all())
+        .with_invalidation(UiInvalidation::all());
+        if ctx.state.active_panel() == SidePanel::LocalBranches {
+            let branch_name = ctx.state.selected_branch_name();
+            output
+                .commands
+                .push(Command::Effect(EffectRequest::LoadBranchGraph { branch_name }));
+        } else {
+            ctx.state.schedule_diff_reload();
+        }
+        output
     }
 
     /// Common post-processing after list navigation operations.
     fn after_list_nav(ctx: &mut ReduceCtx<'_>) -> ReduceOutput {
         Self::recompute_commit_highlight(ctx);
-        ctx.state.schedule_diff_reload();
-        ReduceOutput::none().with_invalidation(UiInvalidation::all())
+        let mut output = ReduceOutput::none().with_invalidation(UiInvalidation::all());
+        if ctx.state.active_panel() == SidePanel::LocalBranches {
+            let branch_name = ctx.state.selected_branch_name();
+            output
+                .commands
+                .push(Command::Effect(EffectRequest::LoadBranchGraph { branch_name }));
+        } else {
+            ctx.state.schedule_diff_reload();
+        }
+        output
     }
 
     /// Common post-processing after directory operations.

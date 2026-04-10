@@ -21,6 +21,7 @@ impl Store for DiffStore {
         const DIFF_RELOAD_DEBOUNCE: Duration = Duration::from_millis(80);
         if ctx.state.has_pending_diff_reload()
             && ctx.state.diff_reload_debounce_elapsed(DIFF_RELOAD_DEBOUNCE)
+            && ctx.state.active_panel() != crate::app::SidePanel::LocalBranches
         {
             return ReduceOutput::from_command(Command::Effect(
                 EffectRequest::FlushPendingDiffReload,

@@ -38,6 +38,7 @@ pub enum EffectRequest {
     StashApply(usize),
     StashPop(usize),
     StashDrop(usize),
+    LoadBranchGraph { branch_name: Option<String> },
 }
 
 pub struct EffectCtx {
@@ -465,6 +466,28 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
                 index,
                 result,
             })]
+        }
+        EffectRequest::LoadBranchGraph { branch_name } => {
+            let repo_rx = {
+                let app = ctx.app.lock().await;
+                match app.git_log_graph_request(branch_name) {
+                    Ok(rx) => rx,
+                    Err(err) => {
+                        return vec![Action::Domain(DomainAction::BranchGraphLoaded(Err(
+                            err.to_string(),
+                        )))];
+                    }
+                }
+            };
+
+            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
+                Ok(Ok(Ok(lines))) => Ok(lines),
+                Ok(Ok(Err(err))) => Err(err.to_string()),
+                Ok(Err(err)) => Err(err.to_string()),
+                Err(err) => Err(err.to_string()),
+            };
+
+            vec![Action::Domain(DomainAction::BranchGraphLoaded(result))]
         }
     }
 }
