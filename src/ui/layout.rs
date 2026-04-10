@@ -145,7 +145,8 @@ pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
         visual_selected_indices: &snapshot.render_cache.files_visual_selected_indices,
         highlighted_oids: PanelRenderContext::empty_highlighted_oids(),
     };
-    draw_files_panel(frame, left_panels[0], snapshot.files, &files_ctx);
+    let files_view = snapshot.files_view_state();
+    draw_files_panel(frame, left_panels[0], &files_view, &files_ctx);
     let branches_ctx = PanelRenderContext {
         active_panel: snapshot.active_panel,
         panel_title_override: None,

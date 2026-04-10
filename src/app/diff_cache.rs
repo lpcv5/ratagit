@@ -6,11 +6,26 @@ use std::path::PathBuf;
 pub enum DiffCacheKey {
     /// Represents a missing or empty diff target (no selection).
     None,
-    File { path: PathBuf, is_staged: bool },
-    Branch { name: String, limit: usize },
-    Directory { path: PathBuf, files_hash: u64 },
-    Commit { oid: String, path: Option<PathBuf> },
-    Stash { index: usize, path: Option<PathBuf> },
+    File {
+        path: PathBuf,
+        is_staged: bool,
+    },
+    Branch {
+        name: String,
+        limit: usize,
+    },
+    Directory {
+        path: PathBuf,
+        files_hash: u64,
+    },
+    Commit {
+        oid: String,
+        path: Option<PathBuf>,
+    },
+    Stash {
+        index: usize,
+        path: Option<PathBuf>,
+    },
 }
 
 pub struct DiffCache {

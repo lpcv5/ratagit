@@ -61,8 +61,7 @@ pub fn draw_branches_panel(
                     ("  ", theme.text_primary)
                 };
                 let text = format!("{}{}", prefix, b.name);
-                let spans =
-                    highlighted_spans(&text, ctx.search_query, Style::default().fg(color));
+                let spans = highlighted_spans(&text, ctx.search_query, Style::default().fg(color));
                 ListItem::new(Line::from(spans))
             })
             .collect()

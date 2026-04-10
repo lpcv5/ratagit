@@ -347,8 +347,7 @@ async fn ui_loop(
                             let key_started = Instant::now();
                             let snapshot = snapshot_rx.borrow();
                             let view = snapshot.as_snapshot();
-                            let mapped_actions =
-                                flux::input_mapper::map_key_to_actions(key, &view);
+                            let mapped_actions = flux::input_mapper::map_key_to_actions(key, &view);
                             for action in mapped_actions {
                                 let _ = action_tx.send(action);
                                 perf.ui_messages.fetch_add(1, Ordering::Relaxed);

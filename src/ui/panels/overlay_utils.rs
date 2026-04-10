@@ -10,12 +10,7 @@ use ratatui::{
 ///
 /// Call this after `centered_rect` to avoid repeating the same 3-line boilerplate
 /// in every overlay panel.
-pub fn render_overlay_chrome(
-    frame: &mut Frame,
-    area: Rect,
-    title: &str,
-    theme: &UiTheme,
-) -> Rect {
+pub fn render_overlay_chrome(frame: &mut Frame, area: Rect, title: &str, theme: &UiTheme) -> Rect {
     frame.render_widget(Clear, area);
     frame.render_widget(theme.panel_block(title, true), area);
     Rect {

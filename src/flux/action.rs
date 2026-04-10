@@ -117,7 +117,10 @@ pub enum SystemAction {
     /// stores trigger a full UI invalidation without reading the dimensions (ratatui
     /// handles the actual resize internally).
     #[allow(dead_code)]
-    Resize { width: u16, height: u16 },
+    Resize {
+        width: u16,
+        height: u16,
+    },
 }
 
 #[derive(Debug, Clone)]

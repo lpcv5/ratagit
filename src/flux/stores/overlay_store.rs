@@ -44,35 +44,37 @@ impl Store for OverlayStore {
                     ReduceOutput::none().with_invalidation(UiInvalidation::all())
                 }
             }
-            DomainAction::StagePathsFinished { result } => {
-                match result {
-                    Ok(()) => {
-                        ctx.state.request_refresh(RefreshKind::StatusOnly);
-                        ctx.state.start_commit_editor();
-                        ctx.state.push_log(
-                            "commit: all files staged; edit message/description then press Enter"
-                                .to_string(),
-                            true,
-                        );
-                        ReduceOutput::none().with_invalidation(UiInvalidation::all())
-                    }
-                    Err(e) => {
-                        ctx.state
-                            .push_log(format!("stage all failed: {}", e), false);
-                        ReduceOutput::none()
-                    }
+            DomainAction::StagePathsFinished { result } => match result {
+                Ok(()) => {
+                    ctx.state.request_refresh(RefreshKind::StatusOnly);
+                    ctx.state.start_commit_editor();
+                    ctx.state.push_log(
+                        "commit: all files staged; edit message/description then press Enter"
+                            .to_string(),
+                        true,
+                    );
+                    ReduceOutput::none().with_invalidation(UiInvalidation::all())
                 }
-            }
+                Err(e) => {
+                    ctx.state
+                        .push_log(format!("stage all failed: {}", e), false);
+                    ReduceOutput::none()
+                }
+            },
             DomainAction::StartCommandPalette => {
                 ctx.state.start_command_palette();
-                ctx.state
-                    .push_log("command palette: type command and press Enter".to_string(), true);
+                ctx.state.push_log(
+                    "command palette: type command and press Enter".to_string(),
+                    true,
+                );
                 ReduceOutput::none().with_invalidation(UiInvalidation::log_and_overlay())
             }
             DomainAction::StartBranchCreateInput => {
                 ctx.state.start_branch_create_input();
-                ctx.state
-                    .push_log("branch create: enter name and press Enter".to_string(), true);
+                ctx.state.push_log(
+                    "branch create: enter name and press Enter".to_string(),
+                    true,
+                );
                 ReduceOutput::none().with_invalidation(UiInvalidation::all())
             }
             DomainAction::StartStashInput => {
@@ -90,8 +92,10 @@ impl Store for OverlayStore {
             }
             DomainAction::StartSearchInput => {
                 ctx.state.start_search_input();
-                ctx.state
-                    .push_log("search: type query, Enter confirm, Esc cancel".to_string(), true);
+                ctx.state.push_log(
+                    "search: type query, Enter confirm, Esc cancel".to_string(),
+                    true,
+                );
                 ReduceOutput::none().with_invalidation(UiInvalidation::log_and_overlay())
             }
             _ => ReduceOutput::none(),

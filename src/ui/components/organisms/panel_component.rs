@@ -45,4 +45,3 @@ pub fn empty_list_item(text: &str) -> Vec<ListItem<'static>> {
     let theme = UiTheme::default();
     vec![ListItem::new(text.to_string()).style(Style::default().fg(theme.text_muted))]
 }
-

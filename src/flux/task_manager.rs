@@ -21,11 +21,18 @@ pub enum TaskKey {
     Branches,
     Stashes,
     Commits,
-    BranchCommits { branch: String },
-    Diff { target: String },
+    BranchCommits {
+        branch: String,
+    },
+    Diff {
+        target: String,
+    },
     /// Reserved for future write operations; only exercised in task ordering tests.
     #[allow(dead_code)]
-    Write { op: String, scope: String },
+    Write {
+        op: String,
+        scope: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,12 +40,22 @@ pub enum TaskRequestKind {
     LoadStatus,
     LoadBranches,
     LoadStashes,
-    LoadCommits { limit: usize },
-    LoadBranchCommits { branch: String, limit: usize },
-    LoadDiff { target: String },
+    LoadCommits {
+        limit: usize,
+    },
+    LoadBranchCommits {
+        branch: String,
+        limit: usize,
+    },
+    LoadDiff {
+        target: String,
+    },
     /// Reserved for future write operations; only exercised in task ordering tests.
     #[allow(dead_code)]
-    Write { op: String, scope: String },
+    Write {
+        op: String,
+        scope: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

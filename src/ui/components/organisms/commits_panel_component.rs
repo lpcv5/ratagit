@@ -29,8 +29,7 @@ pub fn draw_commits_panel(
             .items
             .iter()
             .map(|c| {
-                let g_spans =
-                    graph_spans(&c.graph, hash_color(c.sync_state), ctx.highlighted_oids);
+                let g_spans = graph_spans(&c.graph, hash_color(c.sync_state), ctx.highlighted_oids);
                 let hash_spans = highlighted_spans(
                     &c.oid[..7.min(c.oid.len())],
                     ctx.search_query,
@@ -49,11 +48,7 @@ pub fn draw_commits_panel(
                 );
 
                 let mut spans = Vec::with_capacity(
-                    g_spans.len()
-                        + hash_spans.len()
-                        + author_spans.len()
-                        + message_spans.len()
-                        + 3,
+                    g_spans.len() + hash_spans.len() + author_spans.len() + message_spans.len() + 3,
                 );
                 spans.extend(g_spans);
                 spans.push(Span::raw(" "));

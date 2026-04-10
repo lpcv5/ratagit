@@ -184,18 +184,6 @@ impl NavigationAccess for App {
         App::list_up(self);
     }
 
-    fn toggle_selected_dir(&mut self) {
-        App::toggle_selected_dir(self);
-    }
-
-    fn collapse_all(&mut self) {
-        App::collapse_all(self);
-    }
-
-    fn expand_all(&mut self) {
-        App::expand_all(self);
-    }
-
     fn diff_scroll_up(&mut self) {
         App::diff_scroll_up(self);
     }

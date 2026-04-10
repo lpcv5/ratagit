@@ -1,6 +1,7 @@
 use crate::app::{Command, RefreshKind, SidePanel};
 use crate::flux::action::{Action, ActionEnvelope, DomainAction};
 use crate::flux::effects::EffectRequest;
+use crate::flux::files_backend::FilesBackendCommand;
 use crate::flux::stores::{ReduceCtx, ReduceOutput, Store, UiInvalidation};
 
 pub struct SelectionStore;
@@ -35,43 +36,45 @@ impl Store for SelectionStore {
         match domain {
             DomainAction::ToggleVisualSelectMode => {
                 ctx.state.toggle_visual_select_mode();
-                return ReduceOutput::from_command(Command::Effect(EffectRequest::ReloadDiffNow))
-                    .with_invalidation(UiInvalidation::all());
+                return ReduceOutput::from_command(Command::Effect(EffectRequest::FilesBackend(
+                    FilesBackendCommand::ReloadDiff,
+                )))
+                .with_invalidation(UiInvalidation::all());
             }
             DomainAction::ToggleStageSelection => {
                 return ReduceOutput::from_command(Command::Effect(
                     EffectRequest::ToggleStageSelection,
                 ));
             }
-            DomainAction::ToggleStageSelectionFinished { result } => {
-                match result {
-                    Ok((staged, unstaged)) => {
-                        ctx.state.push_log(
-                            format!(
-                                "selection toggled: staged {}, unstaged {}",
-                                staged, unstaged
-                            ),
-                            true,
-                        );
-                        ctx.state.request_refresh(RefreshKind::StatusOnly);
-                        return ReduceOutput::none().with_invalidation(UiInvalidation::all());
-                    }
-                    Err(e) => {
-                        ctx.state
-                            .push_log(format!("selection toggle failed: {}", e), false);
-                        return ReduceOutput::none();
-                    }
+            DomainAction::ToggleStageSelectionFinished { result } => match result {
+                Ok((staged, unstaged)) => {
+                    ctx.state.push_log(
+                        format!(
+                            "selection toggled: staged {}, unstaged {}",
+                            staged, unstaged
+                        ),
+                        true,
+                    );
+                    ctx.state.request_refresh(RefreshKind::StatusOnly);
+                    return ReduceOutput::none().with_invalidation(UiInvalidation::all());
                 }
-            }
+                Err(e) => {
+                    ctx.state
+                        .push_log(format!("selection toggle failed: {}", e), false);
+                    return ReduceOutput::none();
+                }
+            },
             DomainAction::DiscardSelection => {
                 let paths = ctx.state.prepare_discard_targets_from_selection();
                 if paths.is_empty() {
-                    ctx.state
-                        .push_log("discard blocked: no discardable selected items".to_string(), false);
+                    ctx.state.push_log(
+                        "discard blocked: no discardable selected items".to_string(),
+                        false,
+                    );
                     return ReduceOutput::none();
                 }
-                return ReduceOutput::from_command(Command::Effect(EffectRequest::DiscardPaths(
-                    paths,
+                return ReduceOutput::from_command(Command::Effect(EffectRequest::FilesBackend(
+                    FilesBackendCommand::DiscardPaths(paths),
                 )));
             }
             DomainAction::DiscardPathsFinished { result, .. } => {
@@ -85,33 +88,31 @@ impl Store for SelectionStore {
                     EffectRequest::PrepareCommitFromVisualSelection,
                 ));
             }
-            DomainAction::PrepareCommitFromSelectionFinished { result } => {
-                match result {
-                    Ok(count) if *count == 0 => {
-                        ctx.state
-                            .push_log("commit blocked: no selected items".to_string(), false);
-                        return ReduceOutput::none();
-                    }
-                    Ok(count) => {
-                        if ctx.state.start_commit_editor_guarded() {
-                            ctx.state.push_log(
-                                format!(
-                                    "commit: {} selected target(s) staged; edit message/description",
-                                    count
-                                ),
-                                true,
-                            );
-                            return ReduceOutput::none().with_invalidation(UiInvalidation::all());
-                        }
-                        return ReduceOutput::none();
-                    }
-                    Err(e) => {
-                        ctx.state
-                            .push_log(format!("prepare commit failed: {}", e), false);
-                        return ReduceOutput::none();
-                    }
+            DomainAction::PrepareCommitFromSelectionFinished { result } => match result {
+                Ok(count) if *count == 0 => {
+                    ctx.state
+                        .push_log("commit blocked: no selected items".to_string(), false);
+                    return ReduceOutput::none();
                 }
-            }
+                Ok(count) => {
+                    if ctx.state.start_commit_editor_guarded() {
+                        ctx.state.push_log(
+                            format!(
+                                "commit: {} selected target(s) staged; edit message/description",
+                                count
+                            ),
+                            true,
+                        );
+                        return ReduceOutput::none().with_invalidation(UiInvalidation::all());
+                    }
+                    return ReduceOutput::none();
+                }
+                Err(e) => {
+                    ctx.state
+                        .push_log(format!("prepare commit failed: {}", e), false);
+                    return ReduceOutput::none();
+                }
+            },
             _ => return ReduceOutput::none(),
         }
         ReduceOutput::none()
@@ -122,6 +123,8 @@ impl Store for SelectionStore {
 mod tests {
     use super::*;
     use crate::flux::action::{Action, DomainAction};
+    use crate::flux::effects::EffectRequest;
+    use crate::flux::files_backend::FilesBackendCommand;
     use crate::flux::stores::test_support::{mock_app, reduce_action as reduce};
 
     #[test]
@@ -194,5 +197,25 @@ mod tests {
             Action::Domain(DomainAction::PrepareCommitFromSelection),
         );
         assert!(!output.commands.is_empty());
+    }
+
+    #[test]
+    fn test_toggle_visual_mode_emits_files_backend_reload_diff() {
+        let mut store = SelectionStore::new();
+        let mut app = mock_app();
+        app.ui.active_panel = SidePanel::Files;
+
+        let output = reduce(
+            &mut store,
+            &mut app,
+            Action::Domain(DomainAction::ToggleVisualSelectMode),
+        );
+
+        assert!(matches!(
+            output.commands.as_slice(),
+            [Command::Effect(EffectRequest::FilesBackend(
+                FilesBackendCommand::ReloadDiff
+            ))]
+        ));
     }
 }

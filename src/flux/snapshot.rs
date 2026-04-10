@@ -1,8 +1,10 @@
+use crate::app::files_panel_adapter;
 use crate::app::{
     App, BranchesPanelState, CommitFieldFocus, CommitsPanelState, FilesPanelState, InputMode,
     RenderCache, SidePanel, StashPanelState,
 };
 use crate::config::keymap::Keymap;
+use crate::flux::files_backend::FilesPanelViewState;
 use crate::git::DiffLine;
 
 pub struct CommandLogSnapshotEntry<'a> {
@@ -107,6 +109,10 @@ impl<'a> AppStateSnapshot<'a> {
             has_search_query_for_active_scope: app.has_search_query_for_active_scope(),
             has_background_tasks: app.has_pending_refresh_work(),
         }
+    }
+
+    pub fn files_view_state(&self) -> FilesPanelViewState {
+        files_panel_adapter::view_state_from_shell(self.files)
     }
 }
 
@@ -267,5 +273,36 @@ impl AppStateSnapshotOwned {
             has_search_query_for_active_scope: self.has_search_query_for_active_scope,
             has_background_tasks: self.has_pending_refresh_work,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::App;
+    use crate::git::FileStatus;
+    use crate::ui::widgets::file_tree::{FileTreeNode, FileTreeNodeStatus};
+
+    #[test]
+    fn files_view_state_projects_selection_without_widget_state() {
+        let mut app =
+            App::from_repo(Box::new(crate::flux::stores::test_support::MockRepo)).unwrap();
+        app.ui.files.tree_nodes = vec![FileTreeNode {
+            path: "src/main.rs".into(),
+            status: FileTreeNodeStatus::Unstaged(FileStatus::Modified),
+            depth: 1,
+            is_dir: false,
+            is_expanded: false,
+        }];
+        app.ui.files.panel.list_state.select(Some(0));
+        app.ui.files.visual_mode = true;
+        app.ui.files.visual_anchor = Some(0);
+
+        let view = AppStateSnapshot::from_app(&app).files_view_state();
+
+        assert_eq!(view.selection.selected_index, Some(0));
+        assert!(view.selection.visual_mode);
+        assert_eq!(view.selection.visual_anchor, Some(0));
+        assert_eq!(view.nodes.len(), 1);
     }
 }

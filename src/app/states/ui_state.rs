@@ -1,6 +1,5 @@
 use super::panel_state::{
-    BranchesPanelState, CommitsPanelState, FilesPanelState, RenderCache, SidePanel,
-    StashPanelState,
+    BranchesPanelState, CommitsPanelState, FilesPanelState, RenderCache, SidePanel, StashPanelState,
 };
 use crate::app::dirty_flags::DirtyFlags;
 

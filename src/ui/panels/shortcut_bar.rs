@@ -60,4 +60,3 @@ pub fn render_shortcut_bar(frame: &mut Frame, area: Rect, snapshot: &AppStateSna
     let line = Line::from(spans).style(Style::default().bg(theme.shortcut_bg));
     frame.render_widget(Paragraph::new(line), area);
 }
-

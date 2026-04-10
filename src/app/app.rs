@@ -1,7 +1,4 @@
-use super::{diff_cache, diff_loader, dirty_flags, refresh, revision_tree};
-use super::background_poll::{
-    BackgroundReceiver, PendingBackgroundTask,
-};
+use super::background_poll::{BackgroundReceiver, PendingBackgroundTask};
 use super::background_task_runner::BackgroundTaskRunner;
 use super::diff_cache_manager::DiffCacheManager;
 use super::refresh_scheduler::RefreshScheduler;
@@ -9,14 +6,11 @@ use super::states::{
     BranchesPanelState, CommandLogEntry, CommitsPanelState, FilesPanelState, GitState, InputState,
     PanelState, RenderCache, SidePanel, StashPanelState, TreeModeState, UiState,
 };
+use super::{diff_cache, diff_loader, dirty_flags, files_panel_adapter, revision_tree};
 use crate::config::keymap::Keymap;
-use crate::flux::task_manager::{
-    TaskKey, TaskPriority, TaskRequestKind,
-};
-use crate::git::{
-    Git2Repository, GitError, GitRepository,
-    GitStatus,
-};
+use crate::flux::files_backend::{FilesBackend, FilesBackendCommand, FilesPanelViewState};
+use crate::flux::task_manager::{TaskKey, TaskPriority, TaskRequestKind};
+use crate::git::{Git2Repository, GitError, GitRepository, GitStatus};
 use crate::ui::widgets::file_tree::FileTree;
 use color_eyre::Result;
 use std::collections::HashSet;
@@ -101,7 +95,7 @@ impl App {
 
         // Comment in English.
         let expanded_dirs = if preload_commits_and_diff {
-            refresh::collect_all_dirs(&status)
+            FilesBackend::all_dirs(&status)
         } else {
             HashSet::new()
         };
@@ -176,6 +170,13 @@ impl App {
             tasks: BackgroundTaskRunner::new(INITIAL_COMMITS_LOAD_LIMIT),
             keymap,
         };
+        if preload_commits_and_diff
+            && (!app.git.status.staged.is_empty()
+                || !app.git.status.unstaged.is_empty()
+                || !app.git.status.untracked.is_empty())
+        {
+            app.sync_files_view_from_status();
+        }
         app.refresh_render_cache();
         app.ui.dirty.mark_all();
         if preload_commits_and_diff {
@@ -195,11 +196,7 @@ impl App {
 
     fn apply_refresh(&mut self, kind: RefreshKind) -> Result<()> {
         self.git.status = self.repo.status()?;
-        let new_dirs = refresh::collect_all_dirs(&self.git.status);
-        for d in new_dirs {
-            self.ui.files.expanded_dirs.insert(d);
-        }
-        self.rebuild_tree();
+        self.sync_files_view_from_status();
 
         if matches!(kind, RefreshKind::StatusAndRefs | RefreshKind::Full) {
             self.ui.branches.items = self.repo.branches().unwrap_or_default();
@@ -262,7 +259,8 @@ impl App {
     }
 
     pub(super) fn has_background_task(&self, key: &TaskKey) -> bool {
-        self.tasks.pending_background_tasks
+        self.tasks
+            .pending_background_tasks
             .values()
             .any(|task| &task.request.key == key)
     }
@@ -290,7 +288,8 @@ impl App {
     pub(super) fn cancel_pending_diff_task(&mut self) {
         let key = Self::diff_task_key();
         let _ = self.tasks.task_manager.cancel(&key);
-        self.tasks.pending_background_tasks
+        self.tasks
+            .pending_background_tasks
             .retain(|_, task| task.request.key != key);
         self.diff_mgr.in_flight_diff_key = None;
     }
@@ -304,9 +303,10 @@ impl App {
         if !self.can_start_background_task(priority) {
             return false;
         }
-        let request = self
-            .tasks.task_manager
-            .enqueue(key.clone(), priority, TaskRequestKind::LoadStatus);
+        let request =
+            self.tasks
+                .task_manager
+                .enqueue(key.clone(), priority, TaskRequestKind::LoadStatus);
         let mode = if fast { "fast" } else { "full" };
         match if fast {
             self.repo.status_fast_async()
@@ -320,7 +320,9 @@ impl App {
                     generation = request.generation.0,
                     "scheduled status load"
                 );
-                self.tasks.task_manager.mark_started(&key, request.generation);
+                self.tasks
+                    .task_manager
+                    .mark_started(&key, request.generation);
                 self.tasks.pending_background_tasks.insert(
                     request.generation,
                     PendingBackgroundTask {
@@ -331,7 +333,9 @@ impl App {
                 true
             }
             Err(err) => {
-                self.tasks.task_manager.mark_finished(&key, request.generation);
+                self.tasks
+                    .task_manager
+                    .mark_finished(&key, request.generation);
                 self.push_log(format!("status load failed: {}", err), false);
                 true
             }
@@ -348,11 +352,14 @@ impl App {
             return false;
         }
         let request =
-            self.tasks.task_manager
+            self.tasks
+                .task_manager
                 .enqueue(key.clone(), priority, TaskRequestKind::LoadBranches);
         match self.repo.branches_async() {
             Ok(rx) => {
-                self.tasks.task_manager.mark_started(&key, request.generation);
+                self.tasks
+                    .task_manager
+                    .mark_started(&key, request.generation);
                 self.tasks.pending_background_tasks.insert(
                     request.generation,
                     PendingBackgroundTask {
@@ -363,7 +370,9 @@ impl App {
                 true
             }
             Err(err) => {
-                self.tasks.task_manager.mark_finished(&key, request.generation);
+                self.tasks
+                    .task_manager
+                    .mark_finished(&key, request.generation);
                 self.push_log(format!("branches load failed: {}", err), false);
                 true
             }
@@ -380,11 +389,14 @@ impl App {
             return false;
         }
         let request =
-            self.tasks.task_manager
+            self.tasks
+                .task_manager
                 .enqueue(key.clone(), priority, TaskRequestKind::LoadStashes);
         match self.repo.stashes_async() {
             Ok(rx) => {
-                self.tasks.task_manager.mark_started(&key, request.generation);
+                self.tasks
+                    .task_manager
+                    .mark_started(&key, request.generation);
                 self.tasks.pending_background_tasks.insert(
                     request.generation,
                     PendingBackgroundTask {
@@ -395,7 +407,9 @@ impl App {
                 true
             }
             Err(err) => {
-                self.tasks.task_manager.mark_finished(&key, request.generation);
+                self.tasks
+                    .task_manager
+                    .mark_finished(&key, request.generation);
                 self.push_log(format!("stashes load failed: {}", err), false);
                 true
             }
@@ -432,7 +446,9 @@ impl App {
                     generation = request.generation.0,
                     "scheduled commits load"
                 );
-                self.tasks.task_manager.mark_started(&key, request.generation);
+                self.tasks
+                    .task_manager
+                    .mark_started(&key, request.generation);
                 self.tasks.pending_background_tasks.insert(
                     request.generation,
                     PendingBackgroundTask {
@@ -447,7 +463,9 @@ impl App {
                 true
             }
             Err(err) => {
-                self.tasks.task_manager.mark_finished(&key, request.generation);
+                self.tasks
+                    .task_manager
+                    .mark_finished(&key, request.generation);
                 self.push_log(format!("commits load failed: {}", err), false);
                 true
             }
@@ -456,11 +474,7 @@ impl App {
 
     pub(super) fn apply_status_refresh(&mut self, status: GitStatus) {
         self.git.status = status;
-        let new_dirs = refresh::collect_all_dirs(&self.git.status);
-        for d in new_dirs {
-            self.ui.files.expanded_dirs.insert(d);
-        }
-        self.rebuild_tree();
+        self.sync_files_view_from_status();
     }
 
     pub fn schedule_diff_reload(&mut self) {
@@ -478,7 +492,8 @@ impl App {
     }
 
     pub fn diff_reload_debounce_elapsed(&self, debounce: std::time::Duration) -> bool {
-        self.refresh.pending_diff_reload_at
+        self.refresh
+            .pending_diff_reload_at
             .is_some_and(|requested_at| requested_at.elapsed() >= debounce)
     }
 
@@ -514,7 +529,9 @@ impl App {
         if selected + COMMITS_LOAD_AHEAD_THRESHOLD < len {
             return;
         }
-        self.tasks.commits_requested_limit = self.tasks.commits_requested_limit
+        self.tasks.commits_requested_limit = self
+            .tasks
+            .commits_requested_limit
             .saturating_add(COMMITS_LOAD_STEP);
         self.ui.commits.dirty = true;
         debug!(
@@ -579,7 +596,8 @@ impl App {
 
         let rx = match target {
             diff_loader::DiffTarget::None => {
-                self.tasks.task_manager
+                self.tasks
+                    .task_manager
                     .mark_finished(&key_for_task, request.generation);
                 self.git.current_diff = Vec::new();
                 self.diff_mgr.last_diff_key = Some(key);
@@ -636,7 +654,8 @@ impl App {
                     }
                     Err(std::sync::mpsc::TryRecvError::Empty) => {}
                 }
-                self.tasks.task_manager
+                self.tasks
+                    .task_manager
                     .mark_started(&key_for_task, request.generation);
                 self.tasks.pending_background_tasks.insert(
                     request.generation,
@@ -658,7 +677,8 @@ impl App {
                 );
             }
             Err(err) => {
-                self.tasks.task_manager
+                self.tasks
+                    .task_manager
                     .mark_finished(&key_for_task, request.generation);
                 self.push_log(format!("diff load failed: {}", err), false);
                 self.clear_pending_diff_reload();
@@ -681,7 +701,12 @@ impl App {
         self.ui.branches.commits_subview.dirty = false;
         self.ui.branches.commits_subview.highlighted_oids.clear();
         self.ui.branches.commits_subview.tree_mode = TreeModeState::default();
-        self.ui.branches.commits_subview.panel.list_state.select(None);
+        self.ui
+            .branches
+            .commits_subview
+            .panel
+            .list_state
+            .select(None);
         let key = TaskKey::BranchCommits {
             branch: branch_name.clone(),
         };
@@ -695,7 +720,9 @@ impl App {
         );
         match self.repo.commits_for_branch_async(&branch_name, limit) {
             Ok(rx) => {
-                self.tasks.task_manager.mark_started(&key, request.generation);
+                self.tasks
+                    .task_manager
+                    .mark_started(&key, request.generation);
                 self.tasks.pending_background_tasks.insert(
                     request.generation,
                     PendingBackgroundTask {
@@ -708,7 +735,9 @@ impl App {
                 );
             }
             Err(err) => {
-                self.tasks.task_manager.mark_finished(&key, request.generation);
+                self.tasks
+                    .task_manager
+                    .mark_finished(&key, request.generation);
                 self.ui.branches.commits_subview_loading = false;
                 self.push_log(format!("branch commits load failed: {}", err), false);
             }
@@ -731,7 +760,8 @@ impl App {
         self.ui.branches.commits_subview = CommitsPanelState::default();
 
         let selected_index = source_branch.and_then(|name| {
-            self.ui.branches
+            self.ui
+                .branches
                 .items
                 .iter()
                 .position(|branch| branch.name == name)
@@ -739,7 +769,8 @@ impl App {
         if self.ui.branches.items.is_empty() {
             self.ui.branches.panel.list_state.select(None);
         } else {
-            self.ui.branches
+            self.ui
+                .branches
                 .panel
                 .list_state
                 .select(selected_index.or(Some(0)));
@@ -957,30 +988,6 @@ impl App {
     }
 
     /// Documentation comment in English.
-    pub fn toggle_selected_dir(&mut self) {
-        let selected_dir_path = self.selected_tree_node().and_then(|node| {
-            if node.is_dir {
-                Some(node.path.clone())
-            } else {
-                None
-            }
-        });
-        refresh::toggle_selected_dir(&mut self.ui.files.expanded_dirs, selected_dir_path);
-        self.rebuild_tree();
-    }
-
-    /// Documentation comment in English.
-    pub fn collapse_all(&mut self) {
-        refresh::collapse_all(&mut self.ui.files.expanded_dirs);
-        self.rebuild_tree();
-    }
-
-    /// Documentation comment in English.
-    pub fn expand_all(&mut self) {
-        refresh::expand_all(&mut self.ui.files.expanded_dirs, &self.git.status);
-        self.rebuild_tree();
-    }
-
     pub fn diff_scroll_up(&mut self) {
         self.ui.diff_scroll = self.ui.diff_scroll.saturating_sub(10);
     }
@@ -988,16 +995,6 @@ impl App {
     pub fn diff_scroll_down(&mut self) {
         let max = self.git.current_diff.len().saturating_sub(1);
         self.ui.diff_scroll = (self.ui.diff_scroll + 10).min(max);
-    }
-
-    fn rebuild_tree(&mut self) {
-        refresh::rebuild_tree(
-            &self.git.status,
-            &self.ui.files.expanded_dirs,
-            &mut self.ui.files.tree_nodes,
-            &mut self.ui.files.panel,
-            &mut self.ui.files.visual_anchor,
-        );
     }
 
     pub fn stash_open_tree_or_toggle_dir(&mut self) -> Result<()> {
@@ -1043,12 +1040,18 @@ impl App {
     }
 
     pub fn stash_close_tree(&mut self) {
-        let selected_source_index = self
-            .ui
-            .stash
-            .tree_mode
-            .selected_source
-            .and_then(|stash_index| self.ui.stash.items.iter().position(|s| s.index == stash_index));
+        let selected_source_index =
+            self.ui
+                .stash
+                .tree_mode
+                .selected_source
+                .and_then(|stash_index| {
+                    self.ui
+                        .stash
+                        .items
+                        .iter()
+                        .position(|s| s.index == stash_index)
+                });
 
         let was_open = self.ui.stash.tree_mode.active;
         revision_tree::close_tree_mode(
@@ -1068,6 +1071,31 @@ impl App {
     pub fn reload_diff_now(&mut self) {
         self.schedule_diff_reload();
         self.start_pending_diff_load();
+    }
+
+    fn sync_files_view_from_status(&mut self) {
+        let selection = files_panel_adapter::selection_state_from_shell(&self.ui.files);
+        let mut expanded_dirs = self.ui.files.expanded_dirs.clone();
+        expanded_dirs.extend(FilesBackend::all_dirs(&self.git.status));
+        let view = FilesBackend::handle_command(FilesBackendCommand::RefreshFromStatus {
+            status: self.git.status.clone(),
+            expanded_dirs,
+            selection,
+        });
+        self.apply_files_backend_view(view);
+    }
+
+    pub(crate) fn current_files_view_state(&self) -> FilesPanelViewState {
+        files_panel_adapter::view_state_from_shell(&self.ui.files)
+    }
+
+    pub(crate) fn apply_files_backend_view(
+        &mut self,
+        event: crate::flux::files_backend::FilesBackendEvent,
+    ) {
+        if let crate::flux::files_backend::FilesBackendEvent::ViewStateUpdated(view) = event {
+            files_panel_adapter::apply_view_state(&mut self.ui.files, view);
+        }
     }
 
     pub(super) fn diff_target_to_cache_key(
@@ -1091,9 +1119,8 @@ impl App {
             }
             DiffTarget::Directory { path } => {
                 let hash = self
-                    .ui
-                    .files
-                    .tree_nodes
+                    .current_files_view_state()
+                    .nodes
                     .iter()
                     .filter(|n| n.path.starts_with(path))
                     .map(|n| n.path.to_string_lossy().to_string())
@@ -1217,7 +1244,8 @@ impl App {
             if let Some(idx) = self.ui.commits.panel.list_state.selected() {
                 if let Some(commit) = self.ui.commits.items.get(idx) {
                     let oid = commit.oid.clone();
-                    self.ui.commits.highlighted_oids = compute_highlight_set(&self.ui.commits.items, &oid);
+                    self.ui.commits.highlighted_oids =
+                        compute_highlight_set(&self.ui.commits.items, &oid);
                     return;
                 }
             }
@@ -1255,7 +1283,8 @@ impl App {
         if self.ui.commits.tree_mode.active {
             if let Some(ref oid) = self.ui.commits.tree_mode.selected_source {
                 if self.ui.commits.items.iter().any(|c| c.oid == *oid) {
-                    self.ui.commits.tree_mode.files = self.repo.commit_files(oid).unwrap_or_default();
+                    self.ui.commits.tree_mode.files =
+                        self.repo.commit_files(oid).unwrap_or_default();
                     revision_tree::rebuild_tree_nodes(
                         &self.ui.commits.tree_mode.files,
                         &self.ui.commits.tree_mode.expanded_dirs,
@@ -1277,8 +1306,11 @@ impl App {
             self.search_match_summary_for(SidePanel::Files, false, false);
         self.ui.render_cache.branches_search_summary =
             self.search_match_summary_for(SidePanel::LocalBranches, false, false);
-        self.ui.render_cache.commits_search_summary =
-            self.search_match_summary_for(SidePanel::Commits, self.ui.commits.tree_mode.active, false);
+        self.ui.render_cache.commits_search_summary = self.search_match_summary_for(
+            SidePanel::Commits,
+            self.ui.commits.tree_mode.active,
+            false,
+        );
         self.ui.render_cache.stash_search_summary =
             self.search_match_summary_for(SidePanel::Stash, false, self.ui.stash.tree_mode.active);
     }

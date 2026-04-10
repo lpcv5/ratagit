@@ -17,7 +17,9 @@ impl App {
             self.input.search_queries.remove(&scope);
             return 0;
         }
-        self.input.search_queries.insert(scope, self.input.search_query.clone());
+        self.input
+            .search_queries
+            .insert(scope, self.input.search_query.clone());
         self.input.search_matches = self
             .searchable_items_for_scope()
             .into_iter()
@@ -53,7 +55,12 @@ impl App {
     pub fn restore_search_for_active_scope(&mut self) {
         self.capture_search_scope();
         let scope = self.current_search_scope_key();
-        let query = self.input.search_queries.get(&scope).cloned().unwrap_or_default();
+        let query = self
+            .input
+            .search_queries
+            .get(&scope)
+            .cloned()
+            .unwrap_or_default();
         self.input.search_query = query;
         if self.input.search_query.is_empty() {
             self.input.search_matches.clear();
@@ -175,13 +182,15 @@ impl App {
         }
         let selected = self.active_panel_state_selected().unwrap_or(0);
         let next = if forward {
-            self.input.search_matches
+            self.input
+                .search_matches
                 .iter()
                 .copied()
                 .find(|idx| *idx > selected)
                 .or_else(|| self.input.search_matches.first().copied())
         } else {
-            self.input.search_matches
+            self.input
+                .search_matches
                 .iter()
                 .rev()
                 .copied()
@@ -214,56 +223,82 @@ impl App {
     }
 
     fn search_scope_matches_active(&self) -> bool {
-        self.input.search_scope == self.current_search_scope_key() && !self.input.search_matches.is_empty()
+        self.input.search_scope == self.current_search_scope_key()
+            && !self.input.search_matches.is_empty()
     }
 
     fn searchable_items_for_scope(&self) -> Vec<String> {
         match self.ui.active_panel {
             SidePanel::Files => self
-                .ui.files
+                .ui
+                .files
                 .tree_nodes
                 .iter()
                 .map(Self::tree_node_display_name)
                 .collect(),
             SidePanel::LocalBranches => {
                 if self.ui.branches.commits_subview_active {
-                    self.ui.branches
+                    self.ui
+                        .branches
                         .commits_subview
                         .items
                         .iter()
-                        .map(|c| format!("{} {} {}", &c.oid[..7.min(c.oid.len())], c.author, c.message))
+                        .map(|c| {
+                            format!(
+                                "{} {} {}",
+                                &c.oid[..7.min(c.oid.len())],
+                                c.author,
+                                c.message
+                            )
+                        })
                         .collect()
                 } else {
-                    self.ui.branches.items.iter().map(|b| b.name.clone()).collect()
+                    self.ui
+                        .branches
+                        .items
+                        .iter()
+                        .map(|b| b.name.clone())
+                        .collect()
                 }
             }
             SidePanel::Commits => {
                 if self.ui.commits.tree_mode.active {
                     return self
-                        .ui.commits
+                        .ui
+                        .commits
                         .tree_mode
                         .nodes
                         .iter()
                         .map(Self::tree_node_display_name)
                         .collect();
                 }
-                self.ui.commits
+                self.ui
+                    .commits
                     .items
                     .iter()
-                    .map(|c| format!("{} {} {}", &c.oid[..7.min(c.oid.len())], c.author, c.message))
+                    .map(|c| {
+                        format!(
+                            "{} {} {}",
+                            &c.oid[..7.min(c.oid.len())],
+                            c.author,
+                            c.message
+                        )
+                    })
                     .collect()
             }
             SidePanel::Stash => {
                 if self.ui.stash.tree_mode.active {
                     return self
-                        .ui.stash
+                        .ui
+                        .stash
                         .tree_mode
                         .nodes
                         .iter()
                         .map(Self::tree_node_display_name)
                         .collect();
                 }
-                self.ui.stash
+                self.ui
+                    .stash
                     .items
                     .iter()
                     .map(|s| format!("stash@{{{}}} {}", s.index, s.message))
@@ -292,7 +327,8 @@ impl App {
             SidePanel::Files => self.ui.files.panel.list_state.select(Some(idx)),
             SidePanel::LocalBranches => {
                 if self.ui.branches.commits_subview_active {
-                    self.ui.branches
+                    self.ui
+                        .branches
                         .commits_subview
                         .panel
                         .list_state
@@ -373,7 +409,7 @@ mod tests {
         app.apply_search_query(String::new());
 
         assert_eq!(app.input.search_query, "");
-        assert_eq!(app.input.search_matches, Vec::new());
+        assert_eq!(app.input.search_matches, Vec::<usize>::new());
         assert_eq!(app.has_search_query_for_active_scope(), false);
     }
 
@@ -385,7 +421,7 @@ mod tests {
         app.clear_search();
 
         assert_eq!(app.input.search_query, "");
-        assert_eq!(app.input.search_matches, Vec::new());
+        assert_eq!(app.input.search_matches, Vec::<usize>::new());
         assert_eq!(app.has_search_query_for_active_scope(), false);
     }
 
@@ -431,7 +467,7 @@ mod tests {
         app.restore_search_for_active_scope();
 
         assert_eq!(app.input.search_query, "");
-        assert_eq!(app.input.search_matches, Vec::new());
+        assert_eq!(app.input.search_matches, Vec::<usize>::new());
     }
 
     #[test]

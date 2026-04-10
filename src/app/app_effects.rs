@@ -79,10 +79,8 @@ pub trait AppEffects: StateAccess {
         &self,
         index: usize,
     ) -> color_eyre::Result<Receiver<Result<(), GitError>>>;
-    fn stash_pop_request(
-        &self,
-        index: usize,
-    ) -> color_eyre::Result<Receiver<Result<(), GitError>>>;
+    fn stash_pop_request(&self, index: usize)
+        -> color_eyre::Result<Receiver<Result<(), GitError>>>;
     fn stash_drop_request(
         &self,
         index: usize,

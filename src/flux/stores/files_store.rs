@@ -1,6 +1,7 @@
 use crate::app::Command;
 use crate::flux::action::{Action, ActionEnvelope, DomainAction};
 use crate::flux::effects::EffectRequest;
+use crate::flux::files_backend::FilesBackendCommand;
 use crate::flux::stores::{log_result, ReduceCtx, ReduceOutput, Store, UiInvalidation};
 
 pub struct FilesStore;
@@ -17,20 +18,22 @@ impl Store for FilesStore {
             return ReduceOutput::none();
         };
         match domain {
-            DomainAction::StageFile(path) => {
-                ReduceOutput::from_command(Command::Effect(EffectRequest::StageFile(path.clone())))
-            }
+            DomainAction::StageFile(path) => ReduceOutput::from_command(Command::Effect(
+                EffectRequest::FilesBackend(FilesBackendCommand::StagePath(path.clone())),
+            )),
             DomainAction::UnstageFile(path) => ReduceOutput::from_command(Command::Effect(
-                EffectRequest::UnstageFile(path.clone()),
+                EffectRequest::FilesBackend(FilesBackendCommand::UnstagePath(path.clone())),
             )),
             DomainAction::DiscardPaths(paths) => {
                 if paths.is_empty() {
-                    ctx.state
-                        .push_log("discard blocked: no discardable selected items".to_string(), false);
+                    ctx.state.push_log(
+                        "discard blocked: no discardable selected items".to_string(),
+                        false,
+                    );
                     return ReduceOutput::none();
                 }
-                ReduceOutput::from_command(Command::Effect(EffectRequest::DiscardPaths(
-                    paths.clone(),
+                ReduceOutput::from_command(Command::Effect(EffectRequest::FilesBackend(
+                    FilesBackendCommand::DiscardPaths(paths.clone()),
                 )))
             }
             DomainAction::StageFileFinished { path, result } => {
@@ -58,7 +61,8 @@ impl Store for FilesStore {
                         return ReduceOutput::none().with_invalidation(UiInvalidation::all());
                     }
                     Err(err) => {
-                        ctx.state.push_log(format!("discard failed: {}", err), false);
+                        ctx.state
+                            .push_log(format!("discard failed: {}", err), false);
                     }
                 }
                 ReduceOutput::none()
@@ -72,6 +76,8 @@ impl Store for FilesStore {
 mod tests {
     use super::*;
     use crate::flux::action::{Action, DomainAction};
+    use crate::flux::effects::EffectRequest;
+    use crate::flux::files_backend::FilesBackendCommand;
     use crate::flux::stores::test_support::{mock_app, reduce_action as reduce};
     use std::path::PathBuf;
 
@@ -84,7 +90,11 @@ mod tests {
             &mut app,
             Action::Domain(DomainAction::StageFile(PathBuf::from("foo.txt"))),
         );
-        assert!(!output.commands.is_empty());
+        assert!(matches!(
+            output.commands.as_slice(),
+            [Command::Effect(EffectRequest::FilesBackend(FilesBackendCommand::StagePath(path)))]
+                if path == &PathBuf::from("foo.txt")
+        ));
     }
 
     #[test]
@@ -96,7 +106,11 @@ mod tests {
             &mut app,
             Action::Domain(DomainAction::UnstageFile(PathBuf::from("foo.txt"))),
         );
-        assert!(!output.commands.is_empty());
+        assert!(matches!(
+            output.commands.as_slice(),
+            [Command::Effect(EffectRequest::FilesBackend(FilesBackendCommand::UnstagePath(path)))]
+                if path == &PathBuf::from("foo.txt")
+        ));
     }
 
     #[test]
@@ -160,6 +174,8 @@ mod tests {
 mod more_tests {
     use super::*;
     use crate::flux::action::{Action, DomainAction};
+    use crate::flux::effects::EffectRequest;
+    use crate::flux::files_backend::FilesBackendCommand;
     use crate::flux::stores::test_support::{mock_app, reduce_action as reduce};
     use std::path::PathBuf;
 
@@ -172,7 +188,12 @@ mod more_tests {
             &mut app,
             Action::Domain(DomainAction::DiscardPaths(vec![PathBuf::from("foo.txt")])),
         );
-        assert!(!output.commands.is_empty());
+        assert!(matches!(
+            output.commands.as_slice(),
+            [Command::Effect(EffectRequest::FilesBackend(
+                FilesBackendCommand::DiscardPaths(paths)
+            ))] if paths == &vec![PathBuf::from("foo.txt")]
+        ));
     }
 
     #[test]

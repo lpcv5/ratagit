@@ -105,7 +105,8 @@ impl Store for BranchStore {
             }
             DomainAction::FetchRemote => {
                 if ctx.state.is_fetching_remote() {
-                    ctx.state.push_log("fetch already running".to_string(), false);
+                    ctx.state
+                        .push_log("fetch already running".to_string(), false);
                     return ReduceOutput::none();
                 }
                 ctx.state.set_fetching_remote(true);

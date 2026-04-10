@@ -1,13 +1,9 @@
+use super::app::{App, RefreshKind};
 use super::diff_cache;
 use super::diff_loader;
 use super::states::SidePanel;
-use super::app::{App, RefreshKind};
-use crate::flux::task_manager::{
-    TaskGeneration, TaskKey, TaskRequest, TaskResult, TaskResultKind,
-};
-use crate::git::{
-    BranchInfo, CommitInfo, DiffLine, GitError, GitStatus, StashInfo,
-};
+use crate::flux::task_manager::{TaskGeneration, TaskKey, TaskRequest, TaskResult, TaskResultKind};
+use crate::git::{BranchInfo, CommitInfo, DiffLine, GitError, GitStatus, StashInfo};
 use std::collections::HashMap;
 use std::sync::mpsc::Receiver;
 use tracing::debug;
@@ -421,13 +417,14 @@ impl App {
                                 if self.start_status_load(false) {
                                     self.refresh.pending_full_status_after_fast = false;
                                 } else {
-                                    self.refresh.pending_refresh = Some(match self.refresh.pending_refresh {
-                                        None => RefreshKind::StatusOnly,
-                                        Some(existing) => Self::max_refresh_kind(
-                                            existing,
-                                            RefreshKind::StatusOnly,
-                                        ),
-                                    });
+                                    self.refresh.pending_refresh =
+                                        Some(match self.refresh.pending_refresh {
+                                            None => RefreshKind::StatusOnly,
+                                            Some(existing) => Self::max_refresh_kind(
+                                                existing,
+                                                RefreshKind::StatusOnly,
+                                            ),
+                                        });
                                 }
                             }
                             if self.should_schedule_diff_for_refresh(DiffRefreshSource::Status) {
@@ -486,7 +483,8 @@ impl App {
                                 self.ui.branches.commits_subview.items = items;
                                 self.ui.branches.commits_subview_loading = false;
                                 self.ui.branches.commits_subview.panel.list_state.select(
-                                    (!self.ui.branches.commits_subview.items.is_empty()).then_some(0),
+                                    (!self.ui.branches.commits_subview.items.is_empty())
+                                        .then_some(0),
                                 );
                                 self.ui.dirty.mark_all();
                                 if self.should_schedule_diff_for_refresh(DiffRefreshSource::Commits)
@@ -519,7 +517,8 @@ impl App {
                     if matches!(task.key, TaskKey::Diff { .. }) {
                         self.diff_mgr.in_flight_diff_key = None;
                     }
-                    if matches!(task.key, TaskKey::Diff { .. }) && !self.refresh.pending_diff_reload {
+                    if matches!(task.key, TaskKey::Diff { .. }) && !self.refresh.pending_diff_reload
+                    {
                         self.refresh.pending_diff_reload_at = None;
                     }
                     self.push_log(reason, false);

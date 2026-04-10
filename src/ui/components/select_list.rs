@@ -65,13 +65,10 @@ impl SelectListState {
         if item_count == 0 {
             return;
         }
-        let next = self.list_state.selected().map_or(0, |i| {
-            if i + 1 >= item_count {
-                0
-            } else {
-                i + 1
-            }
-        });
+        let next =
+            self.list_state
+                .selected()
+                .map_or(0, |i| if i + 1 >= item_count { 0 } else { i + 1 });
         self.list_state.select(Some(next));
     }
 
@@ -118,7 +115,10 @@ impl<T> SelectList<T> {
 
     /// Return the value of the item at `index`, if in bounds and enabled.
     pub fn get_value(&self, index: usize) -> Option<&T> {
-        self.items.get(index).filter(|i| i.enabled).map(|i| &i.value)
+        self.items
+            .get(index)
+            .filter(|i| i.enabled)
+            .map(|i| &i.value)
     }
 
     /// Number of items in the list.

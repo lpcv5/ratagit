@@ -77,9 +77,6 @@ pub trait InputAccess {
 pub trait NavigationAccess {
     fn list_down(&mut self);
     fn list_up(&mut self);
-    fn toggle_selected_dir(&mut self);
-    fn collapse_all(&mut self);
-    fn expand_all(&mut self);
     fn diff_scroll_up(&mut self);
     fn diff_scroll_down(&mut self);
     fn recompute_commit_highlight(&mut self);

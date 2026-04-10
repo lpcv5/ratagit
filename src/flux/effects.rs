@@ -1,5 +1,6 @@
-use crate::app::{AppEffects, RefreshKind, SidePanel};
+use crate::app::{App, AppEffects, RefreshKind, SidePanel};
 use crate::flux::action::{Action, DomainAction};
+use crate::flux::files_backend::{FilesBackend, FilesBackendCommand, FilesBackendEvent};
 use crate::flux::stores::UiInvalidation;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -20,10 +21,8 @@ pub enum EffectRequest {
     ToggleStageSelection,
     PrepareCommitFromVisualSelection,
     FetchRemote,
-    StageFile(PathBuf),
+    FilesBackend(FilesBackendCommand),
     StagePaths(Vec<PathBuf>),
-    UnstageFile(PathBuf),
-    DiscardPaths(Vec<PathBuf>),
     CreateBranch(String),
     CheckoutBranch {
         name: String,
@@ -38,7 +37,9 @@ pub enum EffectRequest {
     StashApply(usize),
     StashPop(usize),
     StashDrop(usize),
-    LoadBranchGraph { branch_name: Option<String> },
+    LoadBranchGraph {
+        branch_name: Option<String>,
+    },
 }
 
 pub struct EffectCtx {
@@ -137,6 +138,7 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
 
             vec![Action::Domain(DomainAction::FetchRemoteFinished(result))]
         }
+        EffectRequest::FilesBackend(command) => run_files_backend_command(command, ctx).await,
         EffectRequest::StagePaths(paths) => {
             let repo_rx = {
                 let app = ctx.app.lock().await;
@@ -156,90 +158,6 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
                 Err(err) => Err(err.to_string()),
             };
             vec![Action::Domain(DomainAction::StagePathsFinished { result })]
-        }
-        EffectRequest::StageFile(path) => {
-            let repo_rx = {
-                let app = ctx.app.lock().await;
-                match app.stage_file_request(path.clone()) {
-                    Ok(rx) => rx,
-                    Err(err) => {
-                        return vec![Action::Domain(DomainAction::StageFileFinished {
-                            path,
-                            result: Err(err.to_string()),
-                        })];
-                    }
-                }
-            };
-            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
-                Ok(Ok(Ok(()))) => {
-                    let mut app = ctx.app.lock().await;
-                    app.request_refresh(RefreshKind::StatusOnly);
-                    Ok(())
-                }
-                Ok(Ok(Err(err))) => Err(err.to_string()),
-                Ok(Err(err)) => Err(err.to_string()),
-                Err(err) => Err(err.to_string()),
-            };
-            vec![Action::Domain(DomainAction::StageFileFinished {
-                path,
-                result,
-            })]
-        }
-        EffectRequest::UnstageFile(path) => {
-            let repo_rx = {
-                let app = ctx.app.lock().await;
-                match app.unstage_file_request(path.clone()) {
-                    Ok(rx) => rx,
-                    Err(err) => {
-                        return vec![Action::Domain(DomainAction::UnstageFileFinished {
-                            path,
-                            result: Err(err.to_string()),
-                        })];
-                    }
-                }
-            };
-            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
-                Ok(Ok(Ok(()))) => {
-                    let mut app = ctx.app.lock().await;
-                    app.request_refresh(RefreshKind::StatusOnly);
-                    Ok(())
-                }
-                Ok(Ok(Err(err))) => Err(err.to_string()),
-                Ok(Err(err)) => Err(err.to_string()),
-                Err(err) => Err(err.to_string()),
-            };
-            vec![Action::Domain(DomainAction::UnstageFileFinished {
-                path,
-                result,
-            })]
-        }
-        EffectRequest::DiscardPaths(paths) => {
-            let repo_rx = {
-                let app = ctx.app.lock().await;
-                match app.discard_paths_request(paths.clone()) {
-                    Ok(rx) => rx,
-                    Err(err) => {
-                        return vec![Action::Domain(DomainAction::DiscardPathsFinished {
-                            paths,
-                            result: Err(err.to_string()),
-                        })];
-                    }
-                }
-            };
-            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
-                Ok(Ok(Ok(()))) => {
-                    let mut app = ctx.app.lock().await;
-                    app.request_refresh(RefreshKind::StatusOnly);
-                    Ok(())
-                }
-                Ok(Ok(Err(err))) => Err(err.to_string()),
-                Ok(Err(err)) => Err(err.to_string()),
-                Err(err) => Err(err.to_string()),
-            };
-            vec![Action::Domain(DomainAction::DiscardPathsFinished {
-                paths,
-                result,
-            })]
         }
         EffectRequest::CreateBranch(name) => {
             let repo_rx = {
@@ -474,7 +392,7 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
                     Ok(rx) => rx,
                     Err(err) => {
                         return vec![Action::Domain(DomainAction::BranchGraphLoaded(Err(
-                            err.to_string(),
+                            err.to_string()
                         )))];
                     }
                 }
@@ -492,10 +410,144 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
     }
 }
 
+async fn run_files_backend_command(
+    command: FilesBackendCommand,
+    ctx: &mut EffectCtx,
+) -> Vec<Action> {
+    match command {
+        FilesBackendCommand::RefreshFromStatus { .. } => {
+            panic!("pure files refresh commands must not go through the runtime effect adapter")
+        }
+        FilesBackendCommand::ToggleSelectedDir => {
+            let mut app = ctx.app.lock().await;
+            let app = app
+                .as_any_mut()
+                .downcast_mut::<App>()
+                .expect("files backend dir toggle requires concrete App");
+            let next = FilesBackend::toggle_selected_dir(&app.git.status, app.current_files_view_state());
+            app.apply_files_backend_view(FilesBackendEvent::ViewStateUpdated(next));
+            vec![]
+        }
+        FilesBackendCommand::CollapseAll => {
+            let mut app = ctx.app.lock().await;
+            let app = app
+                .as_any_mut()
+                .downcast_mut::<App>()
+                .expect("files backend collapse requires concrete App");
+            let next = FilesBackend::collapse_all(&app.git.status, app.current_files_view_state());
+            app.apply_files_backend_view(FilesBackendEvent::ViewStateUpdated(next));
+            vec![]
+        }
+        FilesBackendCommand::ExpandAll => {
+            let mut app = ctx.app.lock().await;
+            let app = app
+                .as_any_mut()
+                .downcast_mut::<App>()
+                .expect("files backend expand requires concrete App");
+            let next = FilesBackend::expand_all(&app.git.status, app.current_files_view_state());
+            app.apply_files_backend_view(FilesBackendEvent::ViewStateUpdated(next));
+            vec![]
+        }
+        FilesBackendCommand::ReloadDiff => {
+            let mut app = ctx.app.lock().await;
+            app.reload_diff_now();
+            vec![]
+        }
+        FilesBackendCommand::StagePath(path) => {
+            let repo_rx = {
+                let app = ctx.app.lock().await;
+                match app.stage_file_request(path.clone()) {
+                    Ok(rx) => rx,
+                    Err(err) => {
+                        return vec![FilesBackendEvent::StageFinished {
+                            path,
+                            result: Err(err.to_string()),
+                        }
+                        .into_action()
+                        .expect("stage finished event should map to an action")];
+                    }
+                }
+            };
+            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
+                Ok(Ok(Ok(()))) => {
+                    let mut app = ctx.app.lock().await;
+                    app.request_refresh(RefreshKind::StatusOnly);
+                    Ok(())
+                }
+                Ok(Ok(Err(err))) => Err(err.to_string()),
+                Ok(Err(err)) => Err(err.to_string()),
+                Err(err) => Err(err.to_string()),
+            };
+            vec![FilesBackendEvent::StageFinished { path, result }
+                .into_action()
+                .expect("stage finished event should map to an action")]
+        }
+        FilesBackendCommand::UnstagePath(path) => {
+            let repo_rx = {
+                let app = ctx.app.lock().await;
+                match app.unstage_file_request(path.clone()) {
+                    Ok(rx) => rx,
+                    Err(err) => {
+                        return vec![FilesBackendEvent::UnstageFinished {
+                            path,
+                            result: Err(err.to_string()),
+                        }
+                        .into_action()
+                        .expect("unstage finished event should map to an action")];
+                    }
+                }
+            };
+            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
+                Ok(Ok(Ok(()))) => {
+                    let mut app = ctx.app.lock().await;
+                    app.request_refresh(RefreshKind::StatusOnly);
+                    Ok(())
+                }
+                Ok(Ok(Err(err))) => Err(err.to_string()),
+                Ok(Err(err)) => Err(err.to_string()),
+                Err(err) => Err(err.to_string()),
+            };
+            vec![FilesBackendEvent::UnstageFinished { path, result }
+                .into_action()
+                .expect("unstage finished event should map to an action")]
+        }
+        FilesBackendCommand::DiscardPaths(paths) => {
+            let repo_rx = {
+                let app = ctx.app.lock().await;
+                match app.discard_paths_request(paths.clone()) {
+                    Ok(rx) => rx,
+                    Err(err) => {
+                        return vec![FilesBackendEvent::DiscardFinished {
+                            paths,
+                            result: Err(err.to_string()),
+                        }
+                        .into_action()
+                        .expect("discard finished event should map to an action")];
+                    }
+                }
+            };
+            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
+                Ok(Ok(Ok(()))) => {
+                    let mut app = ctx.app.lock().await;
+                    app.request_refresh(RefreshKind::StatusOnly);
+                    Ok(())
+                }
+                Ok(Ok(Err(err))) => Err(err.to_string()),
+                Ok(Err(err)) => Err(err.to_string()),
+                Err(err) => Err(err.to_string()),
+            };
+            vec![FilesBackendEvent::DiscardFinished { paths, result }
+                .into_action()
+                .expect("discard finished event should map to an action")]
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::app::App;
+    use crate::flux::files_backend::FilesBackendCommand;
     use crate::flux::stores::test_support::MockRepo;
     use pretty_assertions::assert_eq;
     use std::rc::Rc;
@@ -526,27 +578,43 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn stage_file_effect_returns_stage_file_finished_action() {
+    async fn files_backend_stage_path_returns_stage_file_finished_action() {
         let action = assert_single_domain_action(
-            run_effect(EffectRequest::StageFile("foo.txt".into())).await,
+            run_effect(EffectRequest::FilesBackend(FilesBackendCommand::StagePath(
+                "foo.txt".into(),
+            )))
+            .await,
         );
         assert!(matches!(action, DomainAction::StageFileFinished { .. }));
     }
 
     #[tokio::test]
-    async fn unstage_file_effect_returns_unstage_file_finished_action() {
+    async fn files_backend_unstage_path_returns_unstage_file_finished_action() {
         let action = assert_single_domain_action(
-            run_effect(EffectRequest::UnstageFile("foo.txt".into())).await,
+            run_effect(EffectRequest::FilesBackend(
+                FilesBackendCommand::UnstagePath("foo.txt".into()),
+            ))
+            .await,
         );
         assert!(matches!(action, DomainAction::UnstageFileFinished { .. }));
     }
 
     #[tokio::test]
-    async fn discard_paths_effect_returns_discard_paths_finished_action() {
+    async fn files_backend_discard_paths_returns_discard_paths_finished_action() {
         let action = assert_single_domain_action(
-            run_effect(EffectRequest::DiscardPaths(vec!["foo.txt".into()])).await,
+            run_effect(EffectRequest::FilesBackend(
+                FilesBackendCommand::DiscardPaths(vec!["foo.txt".into()]),
+            ))
+            .await,
         );
         assert!(matches!(action, DomainAction::DiscardPathsFinished { .. }));
+    }
+
+    #[tokio::test]
+    async fn files_backend_reload_diff_returns_no_actions() {
+        assert_no_actions(
+            run_effect(EffectRequest::FilesBackend(FilesBackendCommand::ReloadDiff)).await,
+        );
     }
 
     #[tokio::test]
@@ -642,8 +710,12 @@ mod tests {
 
     #[tokio::test]
     async fn toggle_stage_selection_effect_returns_toggle_stage_selection_finished_action() {
-        let action = assert_single_domain_action(run_effect(EffectRequest::ToggleStageSelection).await);
-        assert!(matches!(action, DomainAction::ToggleStageSelectionFinished { .. }));
+        let action =
+            assert_single_domain_action(run_effect(EffectRequest::ToggleStageSelection).await);
+        assert!(matches!(
+            action,
+            DomainAction::ToggleStageSelectionFinished { .. }
+        ));
     }
 
     #[tokio::test]
@@ -651,7 +723,7 @@ mod tests {
         let mut ctx = make_ctx();
         {
             let mut app_guard = ctx.app.lock().await;
-            let app: &mut App = (&mut *app_guard).as_any_mut().downcast_mut().unwrap();
+            let app: &mut App = (*app_guard).as_any_mut().downcast_mut().unwrap();
             app.ui.active_panel = crate::app::SidePanel::LocalBranches;
             app.ui.branches.items = vec![crate::git::BranchInfo {
                 name: "main".to_string(),
@@ -663,7 +735,7 @@ mod tests {
         assert_no_actions(run(EffectRequest::RevisionOpenTreeOrToggleDir, &mut ctx).await);
         assert_no_actions(run(EffectRequest::ProcessBackgroundLoads, &mut ctx).await);
         let app_guard = ctx.app.lock().await;
-        let app: &App = (&*app_guard).as_any().downcast_ref().unwrap();
+        let app: &App = (*app_guard).as_any().downcast_ref().unwrap();
         assert_eq!(app.ui.active_panel, crate::app::SidePanel::LocalBranches);
         assert!(app.ui.branches.commits_subview_active);
         assert!(!app.ui.branches.commits_subview.items.is_empty());
@@ -675,8 +747,13 @@ mod tests {
 
     #[tokio::test]
     async fn prepare_commit_from_visual_selection_effect_returns_prepare_commit_finished_action() {
-        let action = assert_single_domain_action(run_effect(EffectRequest::PrepareCommitFromVisualSelection).await);
-        assert!(matches!(action, DomainAction::PrepareCommitFromSelectionFinished { .. }));
+        let action = assert_single_domain_action(
+            run_effect(EffectRequest::PrepareCommitFromVisualSelection).await,
+        );
+        assert!(matches!(
+            action,
+            DomainAction::PrepareCommitFromSelectionFinished { .. }
+        ));
     }
 
     #[tokio::test]

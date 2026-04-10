@@ -1,6 +1,7 @@
 pub mod action;
 pub mod dispatcher;
 pub mod effects;
+pub mod files_backend;
 pub mod input_mapper;
 pub mod snapshot;
 pub mod stores;

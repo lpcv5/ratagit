@@ -51,22 +51,20 @@ pub fn run_inline_effect(app: &mut App, request: EffectRequest) -> Option<Vec<Do
             }
             Some(vec![])
         }
-        EffectRequest::StagePaths(paths) => {
-            match app.stage_paths_request(paths) {
-                Ok(rx) => match rx.recv() {
-                    Ok(Ok(())) => Some(vec![DomainAction::StagePathsFinished { result: Ok(()) }]),
-                    Ok(Err(e)) => Some(vec![DomainAction::StagePathsFinished {
-                        result: Err(e.to_string()),
-                    }]),
-                    Err(e) => Some(vec![DomainAction::StagePathsFinished {
-                        result: Err(e.to_string()),
-                    }]),
-                },
+        EffectRequest::StagePaths(paths) => match app.stage_paths_request(paths) {
+            Ok(rx) => match rx.recv() {
+                Ok(Ok(())) => Some(vec![DomainAction::StagePathsFinished { result: Ok(()) }]),
+                Ok(Err(e)) => Some(vec![DomainAction::StagePathsFinished {
+                    result: Err(e.to_string()),
+                }]),
                 Err(e) => Some(vec![DomainAction::StagePathsFinished {
                     result: Err(e.to_string()),
                 }]),
-            }
-        }
+            },
+            Err(e) => Some(vec![DomainAction::StagePathsFinished {
+                result: Err(e.to_string()),
+            }]),
+        },
         EffectRequest::ToggleStageSelection => {
             match app.toggle_stage_visual_selection() {
                 Ok((staged, unstaged)) => {

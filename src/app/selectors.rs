@@ -1,6 +1,7 @@
-use super::{diff_loader, revision_tree};
 use super::states::{PanelState, TreeModeState};
+use super::{diff_loader, revision_tree};
 use crate::app::{App, SidePanel};
+use crate::flux::files_backend::{FilesBackend, FilesPanelDiffRequest};
 use crate::ui::widgets::file_tree::FileTreeNode;
 
 impl App {
@@ -24,11 +25,20 @@ impl App {
     }
 
     pub fn selected_branch_subview_commit_oid(&self) -> Option<String> {
-        if self.ui.active_panel != SidePanel::LocalBranches || !self.ui.branches.commits_subview_active {
+        if self.ui.active_panel != SidePanel::LocalBranches
+            || !self.ui.branches.commits_subview_active
+        {
             return None;
         }
-        let idx = self.ui.branches.commits_subview.panel.list_state.selected()?;
-        self.ui.branches
+        let idx = self
+            .ui
+            .branches
+            .commits_subview
+            .panel
+            .list_state
+            .selected()?;
+        self.ui
+            .branches
             .commits_subview
             .items
             .get(idx)
@@ -60,18 +70,28 @@ impl App {
     pub(super) fn selected_diff_target(&self) -> diff_loader::DiffTarget {
         match self.ui.active_panel {
             SidePanel::Files => {
-                let Some(node) = self.selected_tree_node() else {
-                    return diff_loader::DiffTarget::None;
-                };
-                if node.is_dir {
-                    diff_loader::DiffTarget::Directory {
-                        path: node.path.clone(),
+                match FilesBackend::selected_diff_request(&self.current_files_view_state()) {
+                    FilesPanelDiffRequest::None => diff_loader::DiffTarget::None,
+                    FilesPanelDiffRequest::Directory { path } => {
+                        diff_loader::DiffTarget::Directory { path }
                     }
-                } else {
-                    diff_loader::DiffTarget::File {
-                        path: node.path.clone(),
-                        status: node.status.clone(),
-                    }
+                    FilesPanelDiffRequest::File { path, staged } => diff_loader::DiffTarget::File {
+                        path,
+                        status: if staged {
+                            crate::ui::widgets::file_tree::FileTreeNodeStatus::Staged(
+                                crate::git::FileStatus::Modified,
+                            )
+                        } else {
+                            match self.selected_tree_node().map(|node| node.status.clone()) {
+                                Some(status) => status,
+                                None => {
+                                    crate::ui::widgets::file_tree::FileTreeNodeStatus::Unstaged(
+                                        crate::git::FileStatus::Modified,
+                                    )
+                                }
+                            }
+                        },
+                    },
                 }
             }
             SidePanel::Commits => {
@@ -120,7 +140,11 @@ impl App {
     }
 
     pub(super) fn selected_stash_tree_node(&self) -> Option<&FileTreeNode> {
-        self.selected_revision_tree_node(SidePanel::Stash, &self.ui.stash.panel, &self.ui.stash.tree_mode)
+        self.selected_revision_tree_node(
+            SidePanel::Stash,
+            &self.ui.stash.panel,
+            &self.ui.stash.tree_mode,
+        )
     }
 
     fn selected_revision_tree_node<'a, T>(

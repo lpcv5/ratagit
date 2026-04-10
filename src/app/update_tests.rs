@@ -194,7 +194,8 @@ fn mock_app() -> App {
 }
 
 fn first_diff_content(app: &App) -> &str {
-    app.git.current_diff
+    app.git
+        .current_diff
         .first()
         .map(|line| line.content.as_str())
         .expect("diff should contain at least one line")
@@ -1489,7 +1490,12 @@ fn branches_panel_list_navigation_emits_load_branch_graph_effect() {
 
     assert_branches_selected(&app, Some(1));
     assert!(
-        matches!(cmd, Some(crate::app::Command::Effect(EffectRequest::LoadBranchGraph { .. }))),
+        matches!(
+            cmd,
+            Some(crate::app::Command::Effect(
+                EffectRequest::LoadBranchGraph { .. }
+            ))
+        ),
         "expected LoadBranchGraph effect after ListDown in branches panel, got: {:?}",
         cmd
     );

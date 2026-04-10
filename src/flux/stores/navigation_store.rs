@@ -2,6 +2,7 @@ use crate::app::Command;
 use crate::app::SidePanel;
 use crate::flux::action::{Action, ActionEnvelope, DomainAction};
 use crate::flux::effects::EffectRequest;
+use crate::flux::files_backend::FilesBackendCommand;
 use crate::flux::stores::{ReduceCtx, ReduceOutput, Store, UiInvalidation};
 
 pub struct NavigationStore;
@@ -26,7 +27,9 @@ impl NavigationStore {
             let branch_name = ctx.state.selected_branch_name();
             output
                 .commands
-                .push(Command::Effect(EffectRequest::LoadBranchGraph { branch_name }));
+                .push(Command::Effect(EffectRequest::LoadBranchGraph {
+                    branch_name,
+                }));
         } else {
             ctx.state.schedule_diff_reload();
         }
@@ -41,17 +44,13 @@ impl NavigationStore {
             let branch_name = ctx.state.selected_branch_name();
             output
                 .commands
-                .push(Command::Effect(EffectRequest::LoadBranchGraph { branch_name }));
+                .push(Command::Effect(EffectRequest::LoadBranchGraph {
+                    branch_name,
+                }));
         } else {
             ctx.state.schedule_diff_reload();
         }
         output
-    }
-
-    /// Common post-processing after directory operations.
-    fn after_dir_op(ctx: &mut ReduceCtx<'_>) -> ReduceOutput {
-        ctx.state.schedule_diff_reload();
-        ReduceOutput::none().with_invalidation(UiInvalidation::all())
     }
 }
 
@@ -101,16 +100,22 @@ impl Store for NavigationStore {
                 Self::after_list_nav(ctx)
             }
             DomainAction::ToggleDir => {
-                ctx.state.toggle_selected_dir();
-                Self::after_dir_op(ctx)
+                ReduceOutput::from_command(Command::Effect(EffectRequest::FilesBackend(
+                    FilesBackendCommand::ToggleSelectedDir,
+                )))
+                .with_invalidation(UiInvalidation::all())
             }
             DomainAction::CollapseAll => {
-                ctx.state.collapse_all();
-                Self::after_dir_op(ctx)
+                ReduceOutput::from_command(Command::Effect(EffectRequest::FilesBackend(
+                    FilesBackendCommand::CollapseAll,
+                )))
+                .with_invalidation(UiInvalidation::all())
             }
             DomainAction::ExpandAll => {
-                ctx.state.expand_all();
-                Self::after_dir_op(ctx)
+                ReduceOutput::from_command(Command::Effect(EffectRequest::FilesBackend(
+                    FilesBackendCommand::ExpandAll,
+                )))
+                .with_invalidation(UiInvalidation::all())
             }
             DomainAction::DiffScrollUp => {
                 ctx.state.diff_scroll_up();
@@ -129,6 +134,8 @@ impl Store for NavigationStore {
 mod tests {
     use super::*;
     use crate::flux::action::{Action, DomainAction};
+    use crate::flux::effects::EffectRequest;
+    use crate::flux::files_backend::FilesBackendCommand;
     use crate::flux::stores::test_support::{mock_app, reduce_action as reduce};
     use pretty_assertions::assert_eq;
 
@@ -180,7 +187,9 @@ mod tests {
             &mut app,
             Action::Domain(DomainAction::DiffScrollDown),
         );
-        assert!(app.ui.diff_scroll > initial_scroll || output.invalidation != UiInvalidation::none());
+        assert!(
+            app.ui.diff_scroll > initial_scroll || output.invalidation != UiInvalidation::none()
+        );
     }
 
     #[test]
@@ -190,5 +199,65 @@ mod tests {
         let output = reduce(&mut store, &mut app, Action::Domain(DomainAction::Quit));
         assert!(output.commands.is_empty());
         assert_eq!(output.invalidation, UiInvalidation::none());
+    }
+
+    #[test]
+    fn test_toggle_dir_emits_files_backend_effect() {
+        let mut store = NavigationStore::new();
+        let mut app = mock_app();
+        app.ui.active_panel = SidePanel::Files;
+
+        let output = reduce(
+            &mut store,
+            &mut app,
+            Action::Domain(DomainAction::ToggleDir),
+        );
+
+        assert!(matches!(
+            output.commands.as_slice(),
+            [Command::Effect(EffectRequest::FilesBackend(
+                FilesBackendCommand::ToggleSelectedDir
+            ))]
+        ));
+    }
+
+    #[test]
+    fn test_collapse_all_emits_files_backend_effect() {
+        let mut store = NavigationStore::new();
+        let mut app = mock_app();
+        app.ui.active_panel = SidePanel::Files;
+
+        let output = reduce(
+            &mut store,
+            &mut app,
+            Action::Domain(DomainAction::CollapseAll),
+        );
+
+        assert!(matches!(
+            output.commands.as_slice(),
+            [Command::Effect(EffectRequest::FilesBackend(
+                FilesBackendCommand::CollapseAll
+            ))]
+        ));
+    }
+
+    #[test]
+    fn test_expand_all_emits_files_backend_effect() {
+        let mut store = NavigationStore::new();
+        let mut app = mock_app();
+        app.ui.active_panel = SidePanel::Files;
+
+        let output = reduce(
+            &mut store,
+            &mut app,
+            Action::Domain(DomainAction::ExpandAll),
+        );
+
+        assert!(matches!(
+            output.commands.as_slice(),
+            [Command::Effect(EffectRequest::FilesBackend(
+                FilesBackendCommand::ExpandAll
+            ))]
+        ));
     }
 }
