@@ -22,6 +22,7 @@ mod revision_tree;
 mod search;
 mod selection;
 mod selectors;
+pub(crate) mod stash_panel_adapter;
 mod state_access_impl;
 mod states;
 #[cfg(test)]

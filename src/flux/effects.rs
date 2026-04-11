@@ -3,6 +3,8 @@ use crate::flux::action::{Action, DomainAction};
 use crate::flux::branch_backend::{BranchBackend, BranchBackendCommand, BranchBackendEvent};
 use crate::flux::commits_backend::CommitsBackendCommand;
 use crate::flux::files_backend::{FilesBackend, FilesBackendCommand, FilesBackendEvent};
+use crate::flux::git_backend::stash::{StashBackendCommand, StashBackendEvent};
+use crate::flux::git_backend::GitBackendCommand;
 use crate::flux::stores::UiInvalidation;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -19,6 +21,7 @@ pub enum EffectRequest {
     FlushPendingDiffReload,
     EnsureCommitsLoadedForActivePanel,
     ReloadDiffNow,
+    GitBackend(GitBackendCommand),
     RevisionOpenTreeOrToggleDir,
     CommitsBackend(CommitsBackendCommand),
     ToggleStageSelection,
@@ -27,13 +30,6 @@ pub enum EffectRequest {
     FilesBackend(FilesBackendCommand),
     StagePaths(Vec<PathBuf>),
     Commit(String),
-    StashPush {
-        message: String,
-        paths: Vec<PathBuf>,
-    },
-    StashApply(usize),
-    StashPop(usize),
-    StashDrop(usize),
 }
 
 pub struct EffectCtx {
@@ -90,8 +86,15 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
                 )
                 .await;
             }
-            let result = match active_panel {
-                SidePanel::Stash => app.stash_open_tree_or_toggle_dir(),
+            if active_panel == SidePanel::Stash {
+                drop(app);
+                return run_git_backend_command(
+                    GitBackendCommand::Stash(StashBackendCommand::OpenTreeOrToggleDir),
+                    ctx,
+                )
+                .await;
+            }
+            let result: color_eyre::Result<()> = match active_panel {
                 SidePanel::LocalBranches => Ok(()),
                 _ => Ok(()),
             };
@@ -117,6 +120,7 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
             }
             vec![]
         }
+        EffectRequest::GitBackend(command) => run_git_backend_command(command, ctx).await,
         EffectRequest::CommitsBackend(command) => run_commits_backend_command(command, ctx).await,
         EffectRequest::ToggleStageSelection => {
             let mut app = ctx.app.lock().await;
@@ -186,118 +190,6 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
                 result,
             })]
         }
-        EffectRequest::StashPush { message, paths } => {
-            let repo_rx = {
-                let app = ctx.app.lock().await;
-                match app.stash_push_request(paths.clone(), message.clone()) {
-                    Ok(rx) => rx,
-                    Err(err) => {
-                        return vec![Action::Domain(DomainAction::StashPushFinished {
-                            message,
-                            result: Err(err.to_string()),
-                        })];
-                    }
-                }
-            };
-            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
-                Ok(Ok(Ok(index))) => {
-                    let mut app = ctx.app.lock().await;
-                    app.request_refresh(RefreshKind::StatusAndRefs);
-                    Ok(index)
-                }
-                Ok(Ok(Err(err))) => Err(err.to_string()),
-                Ok(Err(err)) => Err(err.to_string()),
-                Err(err) => Err(err.to_string()),
-            };
-            vec![Action::Domain(DomainAction::StashPushFinished {
-                message,
-                result,
-            })]
-        }
-        EffectRequest::StashApply(index) => {
-            let repo_rx = {
-                let app = ctx.app.lock().await;
-                match app.stash_apply_request(index) {
-                    Ok(rx) => rx,
-                    Err(err) => {
-                        return vec![Action::Domain(DomainAction::StashApplyFinished {
-                            index,
-                            result: Err(err.to_string()),
-                        })];
-                    }
-                }
-            };
-            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
-                Ok(Ok(Ok(()))) => {
-                    let mut app = ctx.app.lock().await;
-                    app.request_refresh(RefreshKind::StatusAndRefs);
-                    Ok(())
-                }
-                Ok(Ok(Err(err))) => Err(err.to_string()),
-                Ok(Err(err)) => Err(err.to_string()),
-                Err(err) => Err(err.to_string()),
-            };
-            vec![Action::Domain(DomainAction::StashApplyFinished {
-                index,
-                result,
-            })]
-        }
-        EffectRequest::StashPop(index) => {
-            let repo_rx = {
-                let app = ctx.app.lock().await;
-                match app.stash_pop_request(index) {
-                    Ok(rx) => rx,
-                    Err(err) => {
-                        return vec![Action::Domain(DomainAction::StashPopFinished {
-                            index,
-                            result: Err(err.to_string()),
-                        })];
-                    }
-                }
-            };
-            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
-                Ok(Ok(Ok(()))) => {
-                    let mut app = ctx.app.lock().await;
-                    app.request_refresh(RefreshKind::StatusAndRefs);
-                    Ok(())
-                }
-                Ok(Ok(Err(err))) => Err(err.to_string()),
-                Ok(Err(err)) => Err(err.to_string()),
-                Err(err) => Err(err.to_string()),
-            };
-            vec![Action::Domain(DomainAction::StashPopFinished {
-                index,
-                result,
-            })]
-        }
-        EffectRequest::StashDrop(index) => {
-            let repo_rx = {
-                let app = ctx.app.lock().await;
-                match app.stash_drop_request(index) {
-                    Ok(rx) => rx,
-                    Err(err) => {
-                        return vec![Action::Domain(DomainAction::StashDropFinished {
-                            index,
-                            result: Err(err.to_string()),
-                        })];
-                    }
-                }
-            };
-            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
-                Ok(Ok(Ok(()))) => {
-                    let mut app = ctx.app.lock().await;
-                    app.request_refresh(RefreshKind::StatusAndRefs);
-                    Ok(())
-                }
-                Ok(Ok(Err(err))) => Err(err.to_string()),
-                Ok(Err(err)) => Err(err.to_string()),
-                Err(err) => Err(err.to_string()),
-            };
-            vec![Action::Domain(DomainAction::StashDropFinished {
-                index,
-                result,
-            })]
-        }
     }
 }
 
@@ -338,6 +230,164 @@ async fn run_commits_backend_command(
                 Err(err) => app.push_log(format!("revision files failed: {}", err), false),
             }
             vec![]
+        }
+    }
+}
+
+async fn run_git_backend_command(command: GitBackendCommand, ctx: &mut EffectCtx) -> Vec<Action> {
+    match command {
+        GitBackendCommand::Stash(command) => run_stash_backend_command(command, ctx).await,
+    }
+}
+
+async fn run_stash_backend_command(
+    command: StashBackendCommand,
+    ctx: &mut EffectCtx,
+) -> Vec<Action> {
+    match command {
+        StashBackendCommand::ApplyLoaded { .. }
+        | StashBackendCommand::OpenTreeOrToggleDir
+        | StashBackendCommand::OpenTree { .. }
+        | StashBackendCommand::CloseTree => {
+            let opens_tree = matches!(
+                command,
+                StashBackendCommand::OpenTreeOrToggleDir | StashBackendCommand::OpenTree { .. }
+            );
+            let closes_tree = matches!(command, StashBackendCommand::CloseTree);
+            let mut app = ctx.app.lock().await;
+            let app = app
+                .as_any_mut()
+                .downcast_mut::<App>()
+                .expect("stash backend command requires concrete App");
+            match app.apply_stash_backend_command(command) {
+                Ok(()) => {
+                    if opens_tree || closes_tree {
+                        app.restore_search_for_active_scope();
+                    }
+                    if opens_tree {
+                        app.reload_diff_now();
+                    }
+                    UiInvalidation::all().apply(app);
+                }
+                Err(err) => app.push_log(format!("revision files failed: {}", err), false),
+            }
+            vec![]
+        }
+        StashBackendCommand::Push { message, paths } => {
+            let repo_rx = {
+                let app = ctx.app.lock().await;
+                match app.stash_push_request(paths.clone(), message.clone()) {
+                    Ok(rx) => rx,
+                    Err(err) => {
+                        return vec![StashBackendEvent::PushFinished {
+                            message,
+                            result: Err(err.to_string()),
+                        }
+                        .into_action()
+                        .expect("stash push finished event should map to an action")];
+                    }
+                }
+            };
+            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
+                Ok(Ok(Ok(index))) => {
+                    let mut app = ctx.app.lock().await;
+                    app.request_refresh(RefreshKind::StatusAndRefs);
+                    Ok(index)
+                }
+                Ok(Ok(Err(err))) => Err(err.to_string()),
+                Ok(Err(err)) => Err(err.to_string()),
+                Err(err) => Err(err.to_string()),
+            };
+            vec![StashBackendEvent::PushFinished { message, result }
+                .into_action()
+                .expect("stash push finished event should map to an action")]
+        }
+        StashBackendCommand::Apply(index) => {
+            let repo_rx = {
+                let app = ctx.app.lock().await;
+                match app.stash_apply_request(index) {
+                    Ok(rx) => rx,
+                    Err(err) => {
+                        return vec![StashBackendEvent::ApplyFinished {
+                            index,
+                            result: Err(err.to_string()),
+                        }
+                        .into_action()
+                        .expect("stash apply finished event should map to an action")];
+                    }
+                }
+            };
+            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
+                Ok(Ok(Ok(()))) => {
+                    let mut app = ctx.app.lock().await;
+                    app.request_refresh(RefreshKind::StatusAndRefs);
+                    Ok(())
+                }
+                Ok(Ok(Err(err))) => Err(err.to_string()),
+                Ok(Err(err)) => Err(err.to_string()),
+                Err(err) => Err(err.to_string()),
+            };
+            vec![StashBackendEvent::ApplyFinished { index, result }
+                .into_action()
+                .expect("stash apply finished event should map to an action")]
+        }
+        StashBackendCommand::Pop(index) => {
+            let repo_rx = {
+                let app = ctx.app.lock().await;
+                match app.stash_pop_request(index) {
+                    Ok(rx) => rx,
+                    Err(err) => {
+                        return vec![StashBackendEvent::PopFinished {
+                            index,
+                            result: Err(err.to_string()),
+                        }
+                        .into_action()
+                        .expect("stash pop finished event should map to an action")];
+                    }
+                }
+            };
+            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
+                Ok(Ok(Ok(()))) => {
+                    let mut app = ctx.app.lock().await;
+                    app.request_refresh(RefreshKind::StatusAndRefs);
+                    Ok(())
+                }
+                Ok(Ok(Err(err))) => Err(err.to_string()),
+                Ok(Err(err)) => Err(err.to_string()),
+                Err(err) => Err(err.to_string()),
+            };
+            vec![StashBackendEvent::PopFinished { index, result }
+                .into_action()
+                .expect("stash pop finished event should map to an action")]
+        }
+        StashBackendCommand::Drop(index) => {
+            let repo_rx = {
+                let app = ctx.app.lock().await;
+                match app.stash_drop_request(index) {
+                    Ok(rx) => rx,
+                    Err(err) => {
+                        return vec![StashBackendEvent::DropFinished {
+                            index,
+                            result: Err(err.to_string()),
+                        }
+                        .into_action()
+                        .expect("stash drop finished event should map to an action")];
+                    }
+                }
+            };
+            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
+                Ok(Ok(Ok(()))) => {
+                    let mut app = ctx.app.lock().await;
+                    app.request_refresh(RefreshKind::StatusAndRefs);
+                    Ok(())
+                }
+                Ok(Ok(Err(err))) => Err(err.to_string()),
+                Ok(Err(err)) => Err(err.to_string()),
+                Err(err) => Err(err.to_string()),
+            };
+            vec![StashBackendEvent::DropFinished { index, result }
+                .into_action()
+                .expect("stash drop finished event should map to an action")]
         }
     }
 }
@@ -823,10 +873,12 @@ mod tests {
     #[tokio::test]
     async fn stash_push_effect_returns_stash_push_finished_action() {
         let action = assert_single_domain_action(
-            run_effect(EffectRequest::StashPush {
-                message: "wip".to_string(),
-                paths: vec!["foo.txt".into()],
-            })
+            run_effect(EffectRequest::GitBackend(GitBackendCommand::Stash(
+                StashBackendCommand::Push {
+                    message: "wip".to_string(),
+                    paths: vec!["foo.txt".into()],
+                },
+            )))
             .await,
         );
         assert!(matches!(action, DomainAction::StashPushFinished { .. }));
@@ -834,19 +886,34 @@ mod tests {
 
     #[tokio::test]
     async fn stash_apply_effect_returns_stash_apply_finished_action() {
-        let action = assert_single_domain_action(run_effect(EffectRequest::StashApply(0)).await);
+        let action = assert_single_domain_action(
+            run_effect(EffectRequest::GitBackend(GitBackendCommand::Stash(
+                StashBackendCommand::Apply(0),
+            )))
+            .await,
+        );
         assert!(matches!(action, DomainAction::StashApplyFinished { .. }));
     }
 
     #[tokio::test]
     async fn stash_pop_effect_returns_stash_pop_finished_action() {
-        let action = assert_single_domain_action(run_effect(EffectRequest::StashPop(0)).await);
+        let action = assert_single_domain_action(
+            run_effect(EffectRequest::GitBackend(GitBackendCommand::Stash(
+                StashBackendCommand::Pop(0),
+            )))
+            .await,
+        );
         assert!(matches!(action, DomainAction::StashPopFinished { .. }));
     }
 
     #[tokio::test]
     async fn stash_drop_effect_returns_stash_drop_finished_action() {
-        let action = assert_single_domain_action(run_effect(EffectRequest::StashDrop(0)).await);
+        let action = assert_single_domain_action(
+            run_effect(EffectRequest::GitBackend(GitBackendCommand::Stash(
+                StashBackendCommand::Drop(0),
+            )))
+            .await,
+        );
         assert!(matches!(action, DomainAction::StashDropFinished { .. }));
     }
 
@@ -942,5 +1009,19 @@ mod tests {
         assert_no_actions(
             run_effect(EffectRequest::FlushPendingRefresh { log_success: true }).await,
         );
+    }
+
+    #[tokio::test]
+    async fn git_backend_stash_apply_routes_to_existing_completion_action() {
+        use crate::flux::git_backend::{stash::StashBackendCommand, GitBackendCommand};
+
+        let action = assert_single_domain_action(
+            run_effect(EffectRequest::GitBackend(GitBackendCommand::Stash(
+                StashBackendCommand::Apply(0),
+            )))
+            .await,
+        );
+
+        assert!(matches!(action, DomainAction::StashApplyFinished { .. }));
     }
 }

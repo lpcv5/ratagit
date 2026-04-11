@@ -1,8 +1,8 @@
-use super::states::{PanelState, TreeModeState};
-use super::{diff_loader, revision_tree};
+use super::diff_loader;
 use crate::app::{App, SidePanel};
 use crate::flux::commits_backend::{CommitsBackend, CommitsPanelDiffRequest};
 use crate::flux::files_backend::{FilesBackend, FilesPanelDiffRequest};
+use crate::flux::git_backend::stash::{StashBackend, StashPanelDiffRequest};
 use crate::ui::widgets::file_tree::FileTreeNode;
 
 impl App {
@@ -60,11 +60,7 @@ impl App {
         if self.ui.active_panel != SidePanel::Stash {
             return None;
         }
-        if self.ui.stash.tree_mode.active {
-            return self.ui.stash.tree_mode.selected_source;
-        }
-        let idx = self.ui.stash.panel.list_state.selected()?;
-        self.ui.stash.items.get(idx).map(|s| s.index)
+        StashBackend::selected_stash_index(&self.current_stash_view_state())
     }
 
     pub(super) fn selected_diff_target(&self) -> diff_loader::DiffTarget {
@@ -103,15 +99,12 @@ impl App {
                 }
             }
             SidePanel::Stash => {
-                let Some(index) = self.selected_stash_index() else {
-                    return diff_loader::DiffTarget::None;
-                };
-                let path = if self.ui.stash.tree_mode.active {
-                    self.selected_stash_tree_node().map(|n| n.path.clone())
-                } else {
-                    None
-                };
-                diff_loader::DiffTarget::Stash { index, path }
+                match StashBackend::selected_diff_request(&self.current_stash_view_state()) {
+                    StashPanelDiffRequest::None => diff_loader::DiffTarget::None,
+                    StashPanelDiffRequest::Stash { index, path } => {
+                        diff_loader::DiffTarget::Stash { index, path }
+                    }
+                }
             }
             SidePanel::LocalBranches => {
                 if self.ui.branches.commits_subview_active {
@@ -126,25 +119,5 @@ impl App {
                 diff_loader::DiffTarget::Branch { name }
             }
         }
-    }
-
-    pub(super) fn selected_stash_tree_node(&self) -> Option<&FileTreeNode> {
-        self.selected_revision_tree_node(
-            SidePanel::Stash,
-            &self.ui.stash.panel,
-            &self.ui.stash.tree_mode,
-        )
-    }
-
-    fn selected_revision_tree_node<'a, T>(
-        &'a self,
-        expected: SidePanel,
-        panel: &PanelState,
-        tree: &'a TreeModeState<T>,
-    ) -> Option<&'a FileTreeNode> {
-        if self.ui.active_panel != expected || !tree.active {
-            return None;
-        }
-        revision_tree::selected_tree_node(&panel.list_state, &tree.nodes)
     }
 }

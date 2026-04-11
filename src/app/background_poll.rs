@@ -4,6 +4,7 @@ use super::diff_loader;
 use super::states::SidePanel;
 use crate::flux::branch_backend::BranchBackend;
 use crate::flux::commits_backend::{CommitsBackendCommand, CommitsLoadMode};
+use crate::flux::git_backend::stash::StashBackendCommand;
 use crate::flux::task_manager::{TaskGeneration, TaskKey, TaskRequest, TaskResult, TaskResultKind};
 use crate::git::{BranchInfo, CommitInfo, DiffLine, GitError, GitStatus, StashInfo};
 use std::collections::HashMap;
@@ -446,7 +447,13 @@ impl App {
                             self.ui.dirty.mark_all();
                         }
                         BackgroundPayload::Stashes(items) => {
-                            self.ui.stash.items = items;
+                            if let Err(err) =
+                                self.apply_stash_backend_command(StashBackendCommand::ApplyLoaded {
+                                    items,
+                                })
+                            {
+                                self.push_log(format!("stash load apply failed: {}", err), false);
+                            }
                             if self.should_schedule_diff_for_refresh(DiffRefreshSource::Stashes) {
                                 schedule_diff = true;
                             }

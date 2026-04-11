@@ -178,7 +178,8 @@ pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
         visual_selected_indices: PanelRenderContext::empty_visual_selected_indices(),
         highlighted_oids: PanelRenderContext::empty_highlighted_oids(),
     };
-    draw_stash_panel(frame, stash_area, snapshot.stash, &stash_ctx);
+    let stash_view = snapshot.stash_view_state();
+    draw_stash_panel(frame, stash_area, &stash_view, &stash_ctx);
 
     // Right side: diff + command log
     // Command log collapses to COLLAPSED_HEIGHT when stash is not the concern

@@ -7,10 +7,13 @@ use super::states::{
     BranchesPanelState, CommandLogEntry, CommitsPanelState, FilesPanelState, GitState, InputState,
     PanelState, RenderCache, SidePanel, StashPanelState, TreeModeState, UiState,
 };
-use super::{diff_cache, diff_loader, dirty_flags, files_panel_adapter, revision_tree};
+use super::{
+    diff_cache, diff_loader, dirty_flags, files_panel_adapter, revision_tree, stash_panel_adapter,
+};
 use crate::config::keymap::Keymap;
 use crate::flux::branch_backend::BranchPanelViewState;
 use crate::flux::files_backend::{FilesBackend, FilesBackendCommand, FilesPanelViewState};
+use crate::flux::git_backend::stash::{StashBackend, StashBackendEvent, StashPanelViewState};
 use crate::flux::task_manager::{TaskKey, TaskPriority, TaskRequestKind};
 use crate::git::{Git2Repository, GitError, GitRepository, GitStatus};
 use crate::ui::widgets::file_tree::FileTree;
@@ -202,23 +205,25 @@ impl App {
 
         if matches!(kind, RefreshKind::StatusAndRefs | RefreshKind::Full) {
             self.ui.branches.items = self.repo.branches().unwrap_or_default();
-            self.ui.stash.items = self.repo.stashes().unwrap_or_default();
+            let stashes = self.repo.stashes().unwrap_or_default();
+            self.apply_stash_backend_command(
+                crate::flux::git_backend::stash::StashBackendCommand::ApplyLoaded {
+                    items: stashes,
+                },
+            )?;
             if self.ui.stash.tree_mode.active {
                 if let Some(index) = self.ui.stash.tree_mode.selected_source {
-                    if self.ui.stash.items.iter().any(|s| s.index == index) {
-                        self.ui.stash.tree_mode.files =
-                            self.repo.stash_files(index).unwrap_or_default();
-                        revision_tree::rebuild_tree_nodes(
-                            &self.ui.stash.tree_mode.files,
-                            &self.ui.stash.tree_mode.expanded_dirs,
-                            &mut self.ui.stash.tree_mode.nodes,
-                            &mut self.ui.stash.panel.list_state,
-                        );
-                    } else {
-                        self.stash_close_tree();
-                    }
+                    let files = self.repo.stash_files(index).unwrap_or_default();
+                    self.apply_stash_backend_command(
+                        crate::flux::git_backend::stash::StashBackendCommand::OpenTree {
+                            index,
+                            files,
+                        },
+                    )?;
                 } else {
-                    self.stash_close_tree();
+                    self.apply_stash_backend_command(
+                        crate::flux::git_backend::stash::StashBackendCommand::CloseTree,
+                    )?;
                 }
             }
         }
@@ -951,77 +956,6 @@ impl App {
         self.ui.diff_scroll = (self.ui.diff_scroll + 10).min(max);
     }
 
-    pub fn stash_open_tree_or_toggle_dir(&mut self) -> Result<()> {
-        if self.ui.active_panel != SidePanel::Stash {
-            return Ok(());
-        }
-
-        if !self.ui.stash.tree_mode.active {
-            let Some(index) = self.selected_stash_index() else {
-                return Ok(());
-            };
-            let files = self.repo.stash_files(index)?;
-            revision_tree::enter_tree_mode(
-                index,
-                files,
-                revision_tree::TreeModeState {
-                    tree_mode: &mut self.ui.stash.tree_mode.active,
-                    tree_nodes: &mut self.ui.stash.tree_mode.nodes,
-                    tree_files: &mut self.ui.stash.tree_mode.files,
-                    expanded_dirs: &mut self.ui.stash.tree_mode.expanded_dirs,
-                    selected_tree_revision: &mut self.ui.stash.tree_mode.selected_source,
-                    list_state: &mut self.ui.stash.panel.list_state,
-                },
-            );
-            return Ok(());
-        }
-
-        let selected_dir_path = self.selected_stash_tree_node().and_then(|node| {
-            if node.is_dir {
-                Some(node.path.clone())
-            } else {
-                None
-            }
-        });
-        revision_tree::toggle_tree_dir(
-            selected_dir_path,
-            &self.ui.stash.tree_mode.files,
-            &mut self.ui.stash.tree_mode.expanded_dirs,
-            &mut self.ui.stash.tree_mode.nodes,
-            &mut self.ui.stash.panel.list_state,
-        );
-        Ok(())
-    }
-
-    pub fn stash_close_tree(&mut self) {
-        let selected_source_index =
-            self.ui
-                .stash
-                .tree_mode
-                .selected_source
-                .and_then(|stash_index| {
-                    self.ui
-                        .stash
-                        .items
-                        .iter()
-                        .position(|s| s.index == stash_index)
-                });
-
-        let was_open = self.ui.stash.tree_mode.active;
-        revision_tree::close_tree_mode(
-            &mut self.ui.stash.tree_mode.active,
-            &mut self.ui.stash.tree_mode.nodes,
-            &mut self.ui.stash.tree_mode.files,
-            &mut self.ui.stash.tree_mode.expanded_dirs,
-            &mut self.ui.stash.panel.list_state,
-            selected_source_index,
-            self.ui.stash.items.len(),
-        );
-        if was_open {
-            self.ui.stash.tree_mode.selected_source = None;
-        }
-    }
-
     pub fn reload_diff_now(&mut self) {
         self.schedule_diff_reload();
         self.start_pending_diff_load();
@@ -1053,6 +987,10 @@ impl App {
         crate::app::commits_panel_adapter::view_state_from_shell(&self.ui.commits)
     }
 
+    pub(crate) fn current_stash_view_state(&self) -> StashPanelViewState {
+        stash_panel_adapter::view_state_from_shell(&self.ui.stash)
+    }
+
     pub(crate) fn apply_files_backend_view(
         &mut self,
         event: crate::flux::files_backend::FilesBackendEvent,
@@ -1078,6 +1016,12 @@ impl App {
         }
     }
 
+    pub(crate) fn apply_stash_backend_view(&mut self, event: StashBackendEvent) {
+        if let StashBackendEvent::ViewStateUpdated(view) = event {
+            stash_panel_adapter::apply_view_state(&mut self.ui.stash, view);
+        }
+    }
+
     pub(crate) fn apply_commits_backend_command(
         &mut self,
         command: crate::flux::commits_backend::CommitsBackendCommand,
@@ -1100,6 +1044,52 @@ impl App {
             ),
         };
         self.apply_commits_backend_view(event);
+        Ok(())
+    }
+
+    pub(crate) fn apply_stash_backend_command(
+        &mut self,
+        command: crate::flux::git_backend::stash::StashBackendCommand,
+    ) -> Result<()> {
+        use crate::flux::git_backend::stash::StashBackendCommand;
+
+        match command {
+            StashBackendCommand::ApplyLoaded { items } => {
+                let event = StashBackend::apply_loaded(self.current_stash_view_state(), items);
+                self.apply_stash_backend_view(event);
+            }
+            StashBackendCommand::OpenTreeOrToggleDir => {
+                if self.ui.active_panel != SidePanel::Stash {
+                    return Ok(());
+                }
+                if !self.ui.stash.tree_mode.active {
+                    let Some(index) =
+                        StashBackend::selected_stash_index(&self.current_stash_view_state())
+                    else {
+                        return Ok(());
+                    };
+                    let files = self.repo.stash_files(index)?;
+                    let event =
+                        StashBackend::open_tree(self.current_stash_view_state(), index, files);
+                    self.apply_stash_backend_view(event);
+                    return Ok(());
+                }
+                let event = StashBackend::toggle_tree_dir(self.current_stash_view_state());
+                self.apply_stash_backend_view(event);
+            }
+            StashBackendCommand::OpenTree { index, files } => {
+                let event = StashBackend::open_tree(self.current_stash_view_state(), index, files);
+                self.apply_stash_backend_view(event);
+            }
+            StashBackendCommand::CloseTree => {
+                let event = StashBackend::close_tree(self.current_stash_view_state());
+                self.apply_stash_backend_view(event);
+            }
+            StashBackendCommand::Push { .. }
+            | StashBackendCommand::Apply(_)
+            | StashBackendCommand::Pop(_)
+            | StashBackendCommand::Drop(_) => {}
+        }
         Ok(())
     }
 

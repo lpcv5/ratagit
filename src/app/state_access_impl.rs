@@ -326,10 +326,6 @@ impl OverlayAccess for App {
 // ---------------------------------------------------------------------------
 
 impl RevisionAccess for App {
-    fn stash_close_tree(&mut self) {
-        App::stash_close_tree(self);
-    }
-
     fn close_branch_commits_subview(&mut self) {
         App::close_branch_commits_subview(self);
     }

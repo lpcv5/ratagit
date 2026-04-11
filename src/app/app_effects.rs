@@ -32,7 +32,6 @@ pub trait AppEffects: StateAccess {
         &self,
         paths: Vec<PathBuf>,
     ) -> color_eyre::Result<Receiver<Result<(), GitError>>>;
-    fn stash_open_tree_or_toggle_dir(&mut self) -> color_eyre::Result<()>;
     fn toggle_stage_visual_selection(&mut self) -> color_eyre::Result<(usize, usize)>;
     fn prepare_commit_from_visual_selection(&mut self) -> color_eyre::Result<usize>;
 

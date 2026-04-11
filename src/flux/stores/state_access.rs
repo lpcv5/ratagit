@@ -126,7 +126,6 @@ pub trait OverlayAccess {
 
 /// Revision tree operations (commit tree, stash tree, branch commits subview).
 pub trait RevisionAccess {
-    fn stash_close_tree(&mut self);
     fn close_branch_commits_subview(&mut self);
 }
 

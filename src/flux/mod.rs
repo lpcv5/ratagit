@@ -4,6 +4,7 @@ pub mod commits_backend;
 pub mod dispatcher;
 pub mod effects;
 pub mod files_backend;
+pub mod git_backend;
 pub mod input_mapper;
 pub mod snapshot;
 pub mod stores;

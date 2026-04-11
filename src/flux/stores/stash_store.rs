@@ -1,6 +1,8 @@
 use crate::app::Command;
 use crate::flux::action::{Action, ActionEnvelope, DomainAction};
 use crate::flux::effects::EffectRequest;
+use crate::flux::git_backend::stash::StashBackendCommand;
+use crate::flux::git_backend::GitBackendCommand;
 use crate::flux::stores::{log_result, ReduceCtx, ReduceOutput, Store, UiInvalidation};
 
 pub struct StashStore;
@@ -13,10 +15,12 @@ impl StashStore {
 
 fn stash_op_selected(
     ctx: &mut ReduceCtx<'_>,
-    make_effect: fn(usize) -> EffectRequest,
+    make_command: fn(usize) -> StashBackendCommand,
 ) -> ReduceOutput {
     if let Some(index) = ctx.state.selected_stash_index() {
-        return ReduceOutput::from_command(Command::Effect(make_effect(index)));
+        return ReduceOutput::from_command(Command::Effect(EffectRequest::GitBackend(
+            GitBackendCommand::Stash(make_command(index)),
+        )));
     }
     ctx.state.push_log("no stash selected".to_string(), false);
     ReduceOutput::none()
@@ -29,10 +33,12 @@ impl Store for StashStore {
         };
         match domain {
             DomainAction::StashPush { message, paths } => {
-                ReduceOutput::from_command(Command::Effect(EffectRequest::StashPush {
-                    message: message.clone(),
-                    paths: paths.clone(),
-                }))
+                ReduceOutput::from_command(Command::Effect(EffectRequest::GitBackend(
+                    GitBackendCommand::Stash(StashBackendCommand::Push {
+                        message: message.clone(),
+                        paths: paths.clone(),
+                    }),
+                )))
             }
             DomainAction::StashPushFinished { message, result } => {
                 match result {
@@ -49,21 +55,21 @@ impl Store for StashStore {
                 }
                 ReduceOutput::none()
             }
-            DomainAction::StashApplySelected => stash_op_selected(ctx, EffectRequest::StashApply),
+            DomainAction::StashApplySelected => stash_op_selected(ctx, StashBackendCommand::Apply),
             DomainAction::StashApplyFinished { index, result } => log_result(
                 ctx,
                 result,
                 format!("stash applied stash@{{{}}}", index),
                 |e| format!("stash apply failed stash@{{{}}}: {}", index, e),
             ),
-            DomainAction::StashPopSelected => stash_op_selected(ctx, EffectRequest::StashPop),
+            DomainAction::StashPopSelected => stash_op_selected(ctx, StashBackendCommand::Pop),
             DomainAction::StashPopFinished { index, result } => log_result(
                 ctx,
                 result,
                 format!("stash popped stash@{{{}}}", index),
                 |e| format!("stash pop failed stash@{{{}}}: {}", index, e),
             ),
-            DomainAction::StashDropSelected => stash_op_selected(ctx, EffectRequest::StashDrop),
+            DomainAction::StashDropSelected => stash_op_selected(ctx, StashBackendCommand::Drop),
             DomainAction::StashDropFinished { index, result } => log_result(
                 ctx,
                 result,
@@ -73,6 +79,19 @@ impl Store for StashStore {
             _ => ReduceOutput::none(),
         }
     }
+}
+
+#[cfg(test)]
+fn single_stash_backend_command(output: ReduceOutput) -> StashBackendCommand {
+    let [Command::Effect(EffectRequest::GitBackend(GitBackendCommand::Stash(command)))] =
+        output.commands.as_slice()
+    else {
+        panic!(
+            "expected one git stash backend command, got {:?}",
+            output.commands
+        );
+    };
+    command.clone()
 }
 
 #[cfg(test)]
@@ -94,7 +113,13 @@ mod tests {
                 paths: vec![PathBuf::from("foo.txt")],
             }),
         );
-        assert!(!output.commands.is_empty());
+        match single_stash_backend_command(output) {
+            StashBackendCommand::Push { message, paths } => {
+                assert_eq!(message, "wip");
+                assert_eq!(paths, vec![PathBuf::from("foo.txt")]);
+            }
+            other => panic!("expected stash push command, got {other:?}"),
+        }
     }
 
     #[test]
@@ -128,7 +153,10 @@ mod tests {
             &mut app,
             Action::Domain(DomainAction::StashApplySelected),
         );
-        assert!(!output.commands.is_empty());
+        assert!(matches!(
+            single_stash_backend_command(output),
+            StashBackendCommand::Apply(0)
+        ));
     }
 
     #[test]
@@ -177,7 +205,10 @@ mod more_tests {
             &mut app,
             Action::Domain(DomainAction::StashPopSelected),
         );
-        assert!(!output.commands.is_empty());
+        assert!(matches!(
+            single_stash_backend_command(output),
+            StashBackendCommand::Pop(0)
+        ));
     }
 
     #[test]
@@ -195,7 +226,10 @@ mod more_tests {
             &mut app,
             Action::Domain(DomainAction::StashDropSelected),
         );
-        assert!(!output.commands.is_empty());
+        assert!(matches!(
+            single_stash_backend_command(output),
+            StashBackendCommand::Drop(0)
+        ));
     }
 
     #[test]

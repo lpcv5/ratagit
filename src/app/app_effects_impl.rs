@@ -41,10 +41,6 @@ impl AppEffects for App {
         App::stage_paths_request(self, paths)
     }
 
-    fn stash_open_tree_or_toggle_dir(&mut self) -> color_eyre::Result<()> {
-        App::stash_open_tree_or_toggle_dir(self)
-    }
-
     fn toggle_stage_visual_selection(&mut self) -> color_eyre::Result<(usize, usize)> {
         App::toggle_stage_visual_selection(self)
     }

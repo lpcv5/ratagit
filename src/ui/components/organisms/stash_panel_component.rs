@@ -1,4 +1,5 @@
-use crate::app::{SidePanel, StashPanelState};
+use crate::app::SidePanel;
+use crate::flux::git_backend::stash::StashPanelViewState;
 use crate::ui::components::organisms::{empty_list_item, title_with_search, PanelRenderContext};
 use crate::ui::highlight::highlighted_spans;
 use crate::ui::panels::revision_tree_panel::{render_revision_tree_panel, RevisionTreePanelProps};
@@ -14,7 +15,7 @@ use ratatui::{
 pub fn draw_stash_panel(
     frame: &mut Frame,
     area: Rect,
-    state: &StashPanelState,
+    state: &StashPanelViewState,
     ctx: &PanelRenderContext<'_>,
 ) {
     let is_active = ctx.active_panel == SidePanel::Stash;
@@ -57,12 +58,16 @@ pub fn draw_stash_panel(
                 None
             },
             list_items: items,
-            list_state: state.panel.list_state,
+            list_state: {
+                let mut list_state = ratatui::widgets::ListState::default();
+                list_state.select(state.selected_index);
+                list_state
+            },
         },
     );
 }
 
-impl DynamicPanel for StashPanelState {
+impl DynamicPanel for StashPanelViewState {
     /// Stash collapses to min_height when unfocused; return 0 so the layout
     /// falls back to min_height directly.
     fn default_height_percent(&self) -> u16 {

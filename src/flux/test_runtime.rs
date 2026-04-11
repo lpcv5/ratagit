@@ -3,6 +3,8 @@ use crate::flux::action::DomainAction;
 use crate::flux::branch_backend::BranchBackend;
 use crate::flux::commits_backend::CommitsBackendCommand;
 use crate::flux::effects::EffectRequest;
+use crate::flux::git_backend::stash::StashBackendCommand;
+use crate::flux::git_backend::GitBackendCommand;
 use crate::flux::stores::UiInvalidation;
 
 /// Executes the subset of runtime effects that tests need in-process.
@@ -44,7 +46,9 @@ pub fn run_inline_effect(app: &mut App, request: EffectRequest) -> Option<Vec<Do
                 None
             };
             let result = match active_panel {
-                SidePanel::Stash => app.stash_open_tree_or_toggle_dir(),
+                SidePanel::Stash => {
+                    app.apply_stash_backend_command(StashBackendCommand::OpenTreeOrToggleDir)
+                }
                 SidePanel::Commits => {
                     app.apply_commits_backend_command(CommitsBackendCommand::OpenTreeOrToggleDir)
                 }
@@ -103,6 +107,35 @@ pub fn run_inline_effect(app: &mut App, request: EffectRequest) -> Option<Vec<Do
             }
             Some(vec![])
         }
+        EffectRequest::GitBackend(command) => match command {
+            GitBackendCommand::Stash(command) => match command {
+                StashBackendCommand::OpenTreeOrToggleDir
+                | StashBackendCommand::OpenTree { .. }
+                | StashBackendCommand::CloseTree
+                | StashBackendCommand::ApplyLoaded { .. } => {
+                    let opens_tree = matches!(
+                        command,
+                        StashBackendCommand::OpenTreeOrToggleDir
+                            | StashBackendCommand::OpenTree { .. }
+                    );
+                    let closes_tree = matches!(command, StashBackendCommand::CloseTree);
+                    match app.apply_stash_backend_command(command) {
+                        Ok(()) => {
+                            if opens_tree || closes_tree {
+                                app.restore_search_for_active_scope();
+                            }
+                            if opens_tree {
+                                app.reload_diff_now();
+                                UiInvalidation::all().apply(app);
+                            }
+                        }
+                        Err(err) => app.push_log(format!("revision files failed: {}", err), false),
+                    }
+                    Some(vec![])
+                }
+                _ => None,
+            },
+        },
         EffectRequest::StagePaths(paths) => match app.stage_paths_request(paths) {
             Ok(rx) => match rx.recv() {
                 Ok(Ok(())) => Some(vec![DomainAction::StagePathsFinished { result: Ok(()) }]),

@@ -3,6 +3,8 @@ use crate::app::SidePanel;
 use crate::flux::action::{Action, ActionEnvelope, DomainAction};
 use crate::flux::commits_backend::CommitsBackendCommand;
 use crate::flux::effects::EffectRequest;
+use crate::flux::git_backend::stash::StashBackendCommand;
+use crate::flux::git_backend::GitBackendCommand;
 use crate::flux::stores::{ReduceCtx, ReduceOutput, Store, UiInvalidation};
 
 pub struct RevisionStore;
@@ -23,10 +25,8 @@ impl Store for RevisionStore {
                 Command::Effect(EffectRequest::RevisionOpenTreeOrToggleDir),
             ),
             DomainAction::RevisionCloseTree => {
-                match ctx.state.active_panel() {
-                    SidePanel::Stash => ctx.state.stash_close_tree(),
-                    SidePanel::LocalBranches => ctx.state.close_branch_commits_subview(),
-                    _ => {}
+                if ctx.state.active_panel() == SidePanel::LocalBranches {
+                    ctx.state.close_branch_commits_subview();
                 }
                 ctx.state.restore_search_for_active_scope();
                 let mut output =
@@ -38,6 +38,14 @@ impl Store for RevisionStore {
                         Command::Effect(EffectRequest::CommitsBackend(
                             CommitsBackendCommand::CloseTree,
                         )),
+                    );
+                }
+                if ctx.state.active_panel() == SidePanel::Stash {
+                    output.commands.insert(
+                        0,
+                        Command::Effect(EffectRequest::GitBackend(GitBackendCommand::Stash(
+                            StashBackendCommand::CloseTree,
+                        ))),
                     );
                 }
                 output
@@ -52,6 +60,8 @@ mod tests {
     use super::*;
     use crate::flux::action::{Action, DomainAction};
     use crate::flux::commits_backend::CommitsBackendCommand;
+    use crate::flux::git_backend::stash::StashBackendCommand;
+    use crate::flux::git_backend::GitBackendCommand;
     use crate::flux::stores::test_support::{mock_app, reduce_action as reduce};
 
     #[test]
@@ -96,6 +106,28 @@ mod tests {
                 Command::Effect(EffectRequest::CommitsBackend(
                     CommitsBackendCommand::CloseTree
                 ))
+            )
+        }));
+    }
+
+    #[test]
+    fn stash_revision_close_emits_git_backend_stash_close_tree() {
+        let mut store = RevisionStore::new();
+        let mut app = mock_app();
+        app.ui.active_panel = SidePanel::Stash;
+
+        let output = reduce(
+            &mut store,
+            &mut app,
+            Action::Domain(DomainAction::RevisionCloseTree),
+        );
+
+        assert!(output.commands.iter().any(|command| {
+            matches!(
+                command,
+                Command::Effect(EffectRequest::GitBackend(GitBackendCommand::Stash(
+                    StashBackendCommand::CloseTree
+                )))
             )
         }));
     }

@@ -1,4 +1,6 @@
-use crate::app::{branch_panel_adapter, commits_panel_adapter, files_panel_adapter};
+use crate::app::{
+    branch_panel_adapter, commits_panel_adapter, files_panel_adapter, stash_panel_adapter,
+};
 use crate::app::{
     App, BranchesPanelState, CommitFieldFocus, CommitsPanelState, FilesPanelState, InputMode,
     RenderCache, SidePanel, StashPanelState,
@@ -7,6 +9,7 @@ use crate::config::keymap::Keymap;
 use crate::flux::branch_backend::BranchPanelViewState;
 use crate::flux::commits_backend::CommitsPanelViewState;
 use crate::flux::files_backend::FilesPanelViewState;
+use crate::flux::git_backend::stash::StashPanelViewState;
 use crate::git::DiffLine;
 
 pub struct CommandLogSnapshotEntry<'a> {
@@ -123,6 +126,10 @@ impl<'a> AppStateSnapshot<'a> {
 
     pub fn commits_view_state(&self) -> CommitsPanelViewState {
         commits_panel_adapter::view_state_from_shell(self.commits)
+    }
+
+    pub fn stash_view_state(&self) -> StashPanelViewState {
+        stash_panel_adapter::view_state_from_shell(self.stash)
     }
 }
 
@@ -356,5 +363,33 @@ mod tests {
         assert_eq!(view.tree_mode.selected_source.as_deref(), Some("abc123"));
         assert_eq!(view.tree_mode.nodes.len(), 1);
         assert!(view.highlighted_oids.contains("abc123"));
+    }
+
+    #[test]
+    fn stash_view_state_projects_selection_without_widget_state() {
+        let mut app =
+            App::from_repo(Box::new(crate::flux::stores::test_support::MockRepo)).unwrap();
+        app.ui.stash.items = vec![crate::git::StashInfo {
+            index: 1,
+            message: "wip".to_string(),
+        }];
+        app.ui.stash.panel.list_state.select(Some(0));
+        app.ui.stash.tree_mode.active = true;
+        app.ui.stash.tree_mode.selected_source = Some(1);
+        app.ui.stash.tree_mode.nodes = vec![FileTreeNode {
+            path: "src/main.rs".into(),
+            status: FileTreeNodeStatus::Unstaged(FileStatus::Modified),
+            depth: 0,
+            is_dir: false,
+            is_expanded: false,
+        }];
+
+        let view = AppStateSnapshot::from_app(&app).stash_view_state();
+
+        assert_eq!(view.selected_index, Some(0));
+        assert_eq!(view.items.len(), 1);
+        assert!(view.tree_mode.active);
+        assert_eq!(view.tree_mode.selected_source, Some(1));
+        assert_eq!(view.tree_mode.nodes.len(), 1);
     }
 }
