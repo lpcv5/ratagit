@@ -1,6 +1,5 @@
 use crate::app::{CommitFieldFocus, InputMode, RefreshKind, SidePanel};
 use crate::flux::action::DomainAction;
-use crate::git::DiffLine;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -37,7 +36,6 @@ pub trait CoreAccess {
     fn active_panel(&self) -> SidePanel;
     fn set_active_panel(&mut self, panel: SidePanel);
     fn has_uncommitted_changes(&self) -> bool;
-    fn set_current_diff(&mut self, lines: Vec<DiffLine>);
 }
 
 /// Text input buffers: commit message, stash message, generic input buffer.

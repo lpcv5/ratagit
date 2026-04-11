@@ -1,7 +1,6 @@
 use crate::app::Command;
 use crate::app::SidePanel;
 use crate::flux::action::{Action, ActionEnvelope, DomainAction};
-use crate::flux::branch_backend::BranchBackendCommand;
 use crate::flux::commits_backend::CommitsBackendCommand;
 use crate::flux::effects::EffectRequest;
 use crate::flux::files_backend::FilesBackendCommand;
@@ -17,39 +16,21 @@ impl NavigationStore {
     /// Common post-processing after panel switch operations.
     fn after_panel_switch(ctx: &mut ReduceCtx<'_>) -> ReduceOutput {
         ctx.state.restore_search_for_active_scope();
-        let mut output = ReduceOutput::from_command(Command::Effect(
+        let output = ReduceOutput::from_command(Command::Effect(
             EffectRequest::EnsureCommitsLoadedForActivePanel,
         ))
         .with_invalidation(UiInvalidation::all());
-        if ctx.state.active_panel() == SidePanel::LocalBranches {
-            let branch_name = ctx.state.selected_branch_name();
-            output
-                .commands
-                .push(Command::Effect(EffectRequest::BranchesBackend(
-                    BranchBackendCommand::LoadBranchGraph { branch_name },
-                )));
-        } else {
-            ctx.state.schedule_diff_reload();
-        }
+        ctx.state.schedule_diff_reload();
         output
     }
 
     /// Common post-processing after list navigation operations.
     fn after_list_nav(ctx: &mut ReduceCtx<'_>) -> ReduceOutput {
-        let mut output = ReduceOutput::from_command(Command::Effect(
-            EffectRequest::CommitsBackend(CommitsBackendCommand::RecomputeHighlight),
-        ))
+        let output = ReduceOutput::from_command(Command::Effect(EffectRequest::CommitsBackend(
+            CommitsBackendCommand::RecomputeHighlight,
+        )))
         .with_invalidation(UiInvalidation::all());
-        if ctx.state.active_panel() == SidePanel::LocalBranches {
-            let branch_name = ctx.state.selected_branch_name();
-            output
-                .commands
-                .push(Command::Effect(EffectRequest::BranchesBackend(
-                    BranchBackendCommand::LoadBranchGraph { branch_name },
-                )));
-        } else {
-            ctx.state.schedule_diff_reload();
-        }
+        ctx.state.schedule_diff_reload();
         output
     }
 }

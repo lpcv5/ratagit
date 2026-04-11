@@ -106,7 +106,6 @@ pub enum DomainAction {
     InputEnter,
     InputBackspace,
     InputChar(char),
-    BranchGraphLoaded(Result<Vec<String>, String>),
 }
 
 #[derive(Debug, Clone)]

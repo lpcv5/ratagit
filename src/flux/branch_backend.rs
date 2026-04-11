@@ -37,11 +37,11 @@ pub enum BranchBackendCommand {
     CheckoutBranch { name: String, auto_stash: bool },
     DeleteBranch(String),
     FetchRemote,
-    LoadBranchGraph { branch_name: Option<String> },
     OpenCommitsSubview { branch: String, limit: usize },
 }
 
 #[derive(Debug, Clone)]
+#[allow(clippy::enum_variant_names)]
 pub enum BranchBackendEvent {
     CreateFinished {
         name: String,
@@ -57,7 +57,6 @@ pub enum BranchBackendEvent {
         result: Result<(), String>,
     },
     FetchFinished(Result<String, String>),
-    GraphLoaded(Result<Vec<String>, String>),
 }
 
 impl BranchBackendEvent {
@@ -80,9 +79,6 @@ impl BranchBackendEvent {
             }
             BranchBackendEvent::FetchFinished(result) => {
                 Action::Domain(DomainAction::FetchRemoteFinished(result))
-            }
-            BranchBackendEvent::GraphLoaded(result) => {
-                Action::Domain(DomainAction::BranchGraphLoaded(result))
             }
         }
     }
@@ -154,8 +150,10 @@ impl BranchBackend {
         }
         current.commits_subview.loading = false;
         current.commits_subview.items = items;
-        current.commits_subview.selected_index =
-            (!current.commits_subview.items.is_empty()).then_some(0);
+        if current.commits_subview.selected_index.is_none() {
+            current.commits_subview.selected_index =
+                (!current.commits_subview.items.is_empty()).then_some(0);
+        }
         current
     }
 
@@ -331,6 +329,40 @@ mod tests {
         assert!(!loaded.commits_subview.loading);
         assert_eq!(loaded.commits_subview.selected_index, Some(0));
         assert_eq!(loaded.commits_subview.items.len(), 1);
+    }
+
+    #[test]
+    fn apply_commits_subview_loaded_preserves_selection_on_incremental_load() {
+        let base = BranchPanelViewState {
+            items: vec![BranchPanelListItem {
+                name: "main".to_string(),
+                is_current: true,
+            }],
+            selection: BranchPanelSelectionState {
+                selected_index: Some(0),
+            },
+            is_fetching_remote: false,
+            commits_subview: BranchCommitsSubviewState::default(),
+        };
+        let after_first_load = BranchBackend::apply_commits_subview_loaded(
+            BranchBackend::open_commits_subview(base, "main".to_string()),
+            "main",
+            vec![commit("abc"), commit("def"), commit("ghi")],
+        );
+        // Simulate user scrolling to index 2
+        let mut scrolled = after_first_load;
+        scrolled.commits_subview.selected_index = Some(2);
+
+        // Incremental load arrives with more commits
+        let after_incremental = BranchBackend::apply_commits_subview_loaded(
+            scrolled,
+            "main",
+            vec![commit("abc"), commit("def"), commit("ghi"), commit("jkl"), commit("mno")],
+        );
+
+        // Selection must NOT jump back to 0
+        assert_eq!(after_incremental.commits_subview.selected_index, Some(2));
+        assert_eq!(after_incremental.commits_subview.items.len(), 5);
     }
 
     #[test]

@@ -28,25 +28,18 @@ pub fn render_command_log(frame: &mut Frame, area: Rect, view: &CommandLogViewSt
         }
     } else {
         let available = 3usize.saturating_sub(lines.len());
-        lines.extend(
-            view
-                .entries
-                .iter()
-                .rev()
-                .take(available)
-                .map(|entry| {
-                    let color = if entry.success {
-                        Color::Green
-                    } else {
-                        Color::Red
-                    };
-                    let prefix = if entry.success { "✓ " } else { "✗ " };
-                    Line::from(Span::styled(
-                        format!("{}{}", prefix, entry.command),
-                        Style::default().fg(color),
-                    ))
-                }),
-        );
+        lines.extend(view.entries.iter().rev().take(available).map(|entry| {
+            let color = if entry.success {
+                Color::Green
+            } else {
+                Color::Red
+            };
+            let prefix = if entry.success { "✓ " } else { "✗ " };
+            Line::from(Span::styled(
+                format!("{}{}", prefix, entry.command),
+                Style::default().fg(color),
+            ))
+        }));
     }
 
     let paragraph = Paragraph::new(lines).block(theme.panel_block("Command Log", false));

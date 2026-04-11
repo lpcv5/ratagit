@@ -648,28 +648,6 @@ async fn run_branches_backend_command(
 
             vec![BranchBackendEvent::FetchFinished(result).into_action()]
         }
-        BranchBackendCommand::LoadBranchGraph { branch_name } => {
-            let repo_rx = {
-                let app = ctx.app.lock().await;
-                match app.git_log_graph_request(branch_name) {
-                    Ok(rx) => rx,
-                    Err(err) => {
-                        return vec![
-                            BranchBackendEvent::GraphLoaded(Err(err.to_string())).into_action()
-                        ];
-                    }
-                }
-            };
-
-            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
-                Ok(Ok(Ok(lines))) => Ok(lines),
-                Ok(Ok(Err(err))) => Err(err.to_string()),
-                Ok(Err(err)) => Err(err.to_string()),
-                Err(err) => Err(err.to_string()),
-            };
-
-            vec![BranchBackendEvent::GraphLoaded(result).into_action()]
-        }
         BranchBackendCommand::OpenCommitsSubview { branch, limit } => {
             let mut app = ctx.app.lock().await;
             let app = app

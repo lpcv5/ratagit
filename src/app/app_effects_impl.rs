@@ -131,11 +131,4 @@ impl AppEffects for App {
     ) -> color_eyre::Result<Receiver<Result<(), GitError>>> {
         App::stash_drop_request(self, index)
     }
-
-    fn git_log_graph_request(
-        &self,
-        branch: Option<String>,
-    ) -> color_eyre::Result<Receiver<Result<Vec<String>, GitError>>> {
-        App::git_log_graph_request(self, branch)
-    }
 }

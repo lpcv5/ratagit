@@ -10,11 +10,12 @@ use crate::git::{
 use crate::ui::widgets::file_tree::{FileTreeNode, FileTreeNodeStatus};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use pretty_assertions::assert_eq;
+use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
-    Arc,
+    Arc, Mutex,
 };
 
 struct MockRepo;
@@ -183,10 +184,6 @@ impl GitRepository for MockRepo {
         let _ = tx.send(Ok("origin".to_string()));
         Ok(rx)
     }
-
-    fn git_log_graph(&self, _branch: Option<&str>) -> Result<Vec<String>, GitError> {
-        Ok(vec![])
-    }
 }
 
 fn mock_app() -> App {
@@ -348,10 +345,6 @@ impl GitRepository for CountingRepo {
         let _ = tx.send(Ok("origin".to_string()));
         Ok(rx)
     }
-
-    fn git_log_graph(&self, _branch: Option<&str>) -> Result<Vec<String>, GitError> {
-        Ok(vec![])
-    }
 }
 
 struct RefreshCountingRepo {
@@ -487,10 +480,6 @@ impl GitRepository for DuplicateStatusRepo {
         let (tx, rx) = mpsc::channel();
         let _ = tx.send(Ok("origin".to_string()));
         Ok(rx)
-    }
-
-    fn git_log_graph(&self, _branch: Option<&str>) -> Result<Vec<String>, GitError> {
-        Ok(vec![])
     }
 }
 
@@ -668,9 +657,439 @@ impl GitRepository for NavigationDiffRepo {
         let _ = tx.send(Ok("origin".to_string()));
         Ok(rx)
     }
+}
 
-    fn git_log_graph(&self, _branch: Option<&str>) -> Result<Vec<String>, GitError> {
+struct PagedBranchLogRepo;
+
+impl GitRepository for PagedBranchLogRepo {
+    fn status(&self) -> Result<GitStatus, GitError> {
+        Ok(GitStatus::default())
+    }
+
+    fn stage(&self, _path: &Path) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn stage_paths(&self, _paths: &[PathBuf]) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn unstage(&self, _path: &Path) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn unstage_paths(&self, _paths: &[PathBuf]) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn discard_paths(&self, _paths: &[PathBuf]) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn diff_unstaged(&self, _path: &Path) -> Result<Vec<DiffLine>, GitError> {
         Ok(vec![])
+    }
+
+    fn diff_staged(&self, _path: &Path) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![])
+    }
+
+    fn diff_untracked(&self, _path: &Path) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![])
+    }
+
+    fn branches(&self) -> Result<Vec<BranchInfo>, GitError> {
+        Ok(vec![
+            BranchInfo {
+                name: "main".to_string(),
+                is_current: true,
+            },
+            BranchInfo {
+                name: "feature/x".to_string(),
+                is_current: false,
+            },
+        ])
+    }
+
+    fn branch_log(&self, name: &str, limit: usize) -> Result<Vec<DiffLine>, GitError> {
+        let total = match name {
+            "main" => 25,
+            "feature/x" => 8,
+            _ => 0,
+        };
+        Ok((0..total.min(limit))
+            .map(|i| DiffLine {
+                kind: DiffLineKind::Context,
+                content: format!("\u{1b}[33m*\u{1b}[m {} {:02}", name, i),
+            })
+            .collect())
+    }
+
+    fn commits(&self, _limit: usize) -> Result<Vec<CommitInfo>, GitError> {
+        Ok(vec![])
+    }
+
+    fn commit_files(&self, _oid: &str) -> Result<Vec<FileEntry>, GitError> {
+        Ok(vec![])
+    }
+
+    fn stashes(&self) -> Result<Vec<StashInfo>, GitError> {
+        Ok(vec![])
+    }
+
+    fn stash_files(&self, _index: usize) -> Result<Vec<FileEntry>, GitError> {
+        Ok(vec![])
+    }
+
+    fn stash_diff(&self, _index: usize, _path: Option<&Path>) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![])
+    }
+
+    fn stash_push_paths(&self, _paths: &[PathBuf], _message: &str) -> Result<usize, GitError> {
+        Ok(0)
+    }
+
+    fn stash_apply(&self, _index: usize) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn stash_pop(&self, _index: usize) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn stash_drop(&self, _index: usize) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn commit_diff_scoped(
+        &self,
+        _oid: &str,
+        _path: Option<&Path>,
+    ) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![])
+    }
+
+    fn commit(&self, _message: &str) -> Result<String, GitError> {
+        Ok("oid".to_string())
+    }
+
+    fn create_branch(&self, _name: &str) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn checkout_branch(&self, _name: &str) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn delete_branch(&self, _name: &str) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn fetch_default_async(&self) -> Result<Receiver<Result<String, GitError>>, GitError> {
+        let (tx, rx) = mpsc::channel();
+        let _ = tx.send(Ok("origin".to_string()));
+        Ok(rx)
+    }
+}
+
+#[derive(Clone)]
+struct AsyncBranchLogRequest {
+    limit: usize,
+    tx: Sender<Result<Vec<DiffLine>, GitError>>,
+}
+
+struct AsyncPagedBranchLogRepo {
+    requests: Arc<Mutex<VecDeque<AsyncBranchLogRequest>>>,
+}
+
+impl AsyncPagedBranchLogRepo {
+    fn new() -> (Self, Arc<Mutex<VecDeque<AsyncBranchLogRequest>>>) {
+        let requests = Arc::new(Mutex::new(VecDeque::new()));
+        (
+            Self {
+                requests: requests.clone(),
+            },
+            requests,
+        )
+    }
+
+    fn lines_for(name: &str, limit: usize) -> Vec<DiffLine> {
+        let total = match name {
+            "main" => 25,
+            "feature/x" => 8,
+            _ => 0,
+        };
+        (0..total.min(limit))
+            .map(|i| DiffLine {
+                kind: DiffLineKind::Context,
+                content: format!("\u{1b}[33m*\u{1b}[m {} {:02}", name, i),
+            })
+            .collect()
+    }
+}
+
+impl GitRepository for AsyncPagedBranchLogRepo {
+    fn status(&self) -> Result<GitStatus, GitError> {
+        Ok(GitStatus::default())
+    }
+
+    fn stage(&self, _path: &Path) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn stage_paths(&self, _paths: &[PathBuf]) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn unstage(&self, _path: &Path) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn unstage_paths(&self, _paths: &[PathBuf]) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn discard_paths(&self, _paths: &[PathBuf]) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn diff_unstaged(&self, _path: &Path) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![])
+    }
+
+    fn diff_staged(&self, _path: &Path) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![])
+    }
+
+    fn diff_untracked(&self, _path: &Path) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![])
+    }
+
+    fn branches(&self) -> Result<Vec<BranchInfo>, GitError> {
+        Ok(vec![
+            BranchInfo {
+                name: "main".to_string(),
+                is_current: true,
+            },
+            BranchInfo {
+                name: "feature/x".to_string(),
+                is_current: false,
+            },
+        ])
+    }
+
+    fn branch_log(&self, name: &str, limit: usize) -> Result<Vec<DiffLine>, GitError> {
+        Ok(Self::lines_for(name, limit))
+    }
+
+    fn branch_log_async(
+        &self,
+        name: String,
+        limit: usize,
+    ) -> Result<Receiver<Result<Vec<DiffLine>, GitError>>, GitError> {
+        let (tx, rx) = mpsc::channel();
+        let _ = name;
+        self.requests
+            .lock()
+            .expect("lock requests")
+            .push_back(AsyncBranchLogRequest { limit, tx });
+        Ok(rx)
+    }
+
+    fn commits(&self, _limit: usize) -> Result<Vec<CommitInfo>, GitError> {
+        Ok(vec![])
+    }
+
+    fn commit_files(&self, _oid: &str) -> Result<Vec<FileEntry>, GitError> {
+        Ok(vec![])
+    }
+
+    fn stashes(&self) -> Result<Vec<StashInfo>, GitError> {
+        Ok(vec![])
+    }
+
+    fn stash_files(&self, _index: usize) -> Result<Vec<FileEntry>, GitError> {
+        Ok(vec![])
+    }
+
+    fn stash_diff(&self, _index: usize, _path: Option<&Path>) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![])
+    }
+
+    fn stash_push_paths(&self, _paths: &[PathBuf], _message: &str) -> Result<usize, GitError> {
+        Ok(0)
+    }
+
+    fn stash_apply(&self, _index: usize) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn stash_pop(&self, _index: usize) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn stash_drop(&self, _index: usize) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn commit_diff_scoped(
+        &self,
+        _oid: &str,
+        _path: Option<&Path>,
+    ) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![])
+    }
+
+    fn commit(&self, _message: &str) -> Result<String, GitError> {
+        Ok("oid".to_string())
+    }
+
+    fn create_branch(&self, _name: &str) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn checkout_branch(&self, _name: &str) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn delete_branch(&self, _name: &str) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn fetch_default_async(&self) -> Result<Receiver<Result<String, GitError>>, GitError> {
+        let (tx, rx) = mpsc::channel();
+        let _ = tx.send(Ok("origin".to_string()));
+        Ok(rx)
+    }
+}
+
+struct ShiftedBranchLogRepo;
+
+impl GitRepository for ShiftedBranchLogRepo {
+    fn status(&self) -> Result<GitStatus, GitError> {
+        Ok(GitStatus::default())
+    }
+
+    fn stage(&self, _path: &Path) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn stage_paths(&self, _paths: &[PathBuf]) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn unstage(&self, _path: &Path) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn unstage_paths(&self, _paths: &[PathBuf]) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn discard_paths(&self, _paths: &[PathBuf]) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn diff_unstaged(&self, _path: &Path) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![])
+    }
+
+    fn diff_staged(&self, _path: &Path) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![])
+    }
+
+    fn diff_untracked(&self, _path: &Path) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![])
+    }
+
+    fn branches(&self) -> Result<Vec<BranchInfo>, GitError> {
+        Ok(vec![BranchInfo {
+            name: "main".to_string(),
+            is_current: true,
+        }])
+    }
+
+    fn branch_log(&self, _name: &str, limit: usize) -> Result<Vec<DiffLine>, GitError> {
+        let contents: Vec<String> = if limit <= 20 {
+            (0..20).map(|i| format!("line {:02}", i)).collect()
+        } else {
+            let mut lines = vec!["extra 00".to_string(), "extra 01".to_string()];
+            lines.extend((0..25).map(|i| format!("line {:02}", i)));
+            lines
+        };
+        Ok(contents
+            .into_iter()
+            .map(|content| DiffLine {
+                kind: DiffLineKind::Context,
+                content,
+            })
+            .collect())
+    }
+
+    fn commits(&self, _limit: usize) -> Result<Vec<CommitInfo>, GitError> {
+        Ok(vec![])
+    }
+
+    fn commit_files(&self, _oid: &str) -> Result<Vec<FileEntry>, GitError> {
+        Ok(vec![])
+    }
+
+    fn stashes(&self) -> Result<Vec<StashInfo>, GitError> {
+        Ok(vec![])
+    }
+
+    fn stash_files(&self, _index: usize) -> Result<Vec<FileEntry>, GitError> {
+        Ok(vec![])
+    }
+
+    fn stash_diff(&self, _index: usize, _path: Option<&Path>) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![])
+    }
+
+    fn stash_push_paths(&self, _paths: &[PathBuf], _message: &str) -> Result<usize, GitError> {
+        Ok(0)
+    }
+
+    fn stash_apply(&self, _index: usize) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn stash_pop(&self, _index: usize) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn stash_drop(&self, _index: usize) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn commit_diff_scoped(
+        &self,
+        _oid: &str,
+        _path: Option<&Path>,
+    ) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![])
+    }
+
+    fn commit(&self, _message: &str) -> Result<String, GitError> {
+        Ok("oid".to_string())
+    }
+
+    fn create_branch(&self, _name: &str) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn checkout_branch(&self, _name: &str) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn delete_branch(&self, _name: &str) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn fetch_default_async(&self) -> Result<Receiver<Result<String, GitError>>, GitError> {
+        let (tx, rx) = mpsc::channel();
+        let _ = tx.send(Ok("origin".to_string()));
+        Ok(rx)
     }
 }
 
@@ -816,10 +1235,6 @@ impl GitRepository for BranchSwitchRepo {
         let _ = tx.send(Ok("origin".to_string()));
         Ok(rx)
     }
-
-    fn git_log_graph(&self, _branch: Option<&str>) -> Result<Vec<String>, GitError> {
-        Ok(vec![])
-    }
 }
 
 impl RefreshCountingRepo {
@@ -947,10 +1362,6 @@ impl GitRepository for RefreshCountingRepo {
         let (tx, rx) = mpsc::channel();
         let _ = tx.send(Ok("origin".to_string()));
         Ok(rx)
-    }
-
-    fn git_log_graph(&self, _branch: Option<&str>) -> Result<Vec<String>, GitError> {
-        Ok(vec![])
     }
 }
 
@@ -1480,9 +1891,7 @@ fn commits_panel_list_navigation_keeps_diff_until_pending_reload_is_flushed() {
 }
 
 #[test]
-fn branches_panel_list_navigation_emits_load_branch_graph_effect() {
-    use crate::flux::branch_backend::BranchBackendCommand;
-    use crate::flux::effects::EffectRequest;
+fn branches_panel_list_navigation_schedules_branch_log_reload() {
     let mut app = App::from_repo(Box::new(NavigationDiffRepo)).expect("app from navigation repo");
     app.ui.active_panel = SidePanel::LocalBranches;
     app.ui.branches.panel.list_state.select(Some(0));
@@ -1491,14 +1900,237 @@ fn branches_panel_list_navigation_emits_load_branch_graph_effect() {
 
     assert_branches_selected(&app, Some(1));
     assert!(
-        matches!(
-            cmd,
-            Some(crate::app::Command::Effect(
-                EffectRequest::BranchesBackend(BranchBackendCommand::LoadBranchGraph { .. })
-            ))
-        ),
-        "expected BranchesBackend::LoadBranchGraph effect after ListDown in branches panel, got: {:?}",
+        cmd.is_none(),
+        "unexpected command after ListDown in branches panel: {:?}",
         cmd
+    );
+    assert!(app.has_pending_diff_reload());
+}
+
+#[test]
+fn branches_panel_log_uses_raw_branch_log_lines() {
+    let mut app = App::from_repo(Box::new(PagedBranchLogRepo)).expect("app from paged repo");
+    app.ui.active_panel = SidePanel::LocalBranches;
+    app.ui.branches.panel.list_state.select(Some(0));
+
+    app.reload_diff_now();
+
+    assert_eq!(first_diff_content(&app), "\u{1b}[33m*\u{1b}[m main 00");
+    assert_eq!(
+        app.current_detail_request(),
+        crate::flux::git_backend::detail::DetailRequest::BranchLog {
+            name: "main".to_string(),
+            limit: 20,
+        }
+    );
+}
+
+#[test]
+fn branches_panel_log_scroll_loads_next_batch_without_resetting_scroll() {
+    let mut app = App::from_repo(Box::new(PagedBranchLogRepo)).expect("app from paged repo");
+    app.ui.active_panel = SidePanel::LocalBranches;
+    app.ui.branches.panel.list_state.select(Some(0));
+    app.reload_diff_now();
+
+    assert_eq!(app.git.current_diff.len(), 20);
+    dispatch_test_action(&mut app, DomainAction::DiffScrollDown);
+    dispatch_test_action(&mut app, DomainAction::DiffScrollDown);
+
+    assert!(app.has_pending_diff_reload());
+    assert_eq!(app.ui.diff_scroll, 19);
+    assert_eq!(
+        app.current_detail_request(),
+        crate::flux::git_backend::detail::DetailRequest::BranchLog {
+            name: "main".to_string(),
+            limit: 40,
+        }
+    );
+
+    app.flush_pending_diff_reload();
+
+    assert_eq!(app.git.current_diff.len(), 25);
+    assert_eq!(app.ui.diff_scroll, 19);
+}
+
+#[test]
+fn branch_change_resets_requested_log_limit() {
+    let mut app = App::from_repo(Box::new(PagedBranchLogRepo)).expect("app from paged repo");
+    app.ui.active_panel = SidePanel::LocalBranches;
+    app.ui.branches.panel.list_state.select(Some(0));
+    app.reload_diff_now();
+    dispatch_test_action(&mut app, DomainAction::DiffScrollDown);
+    dispatch_test_action(&mut app, DomainAction::DiffScrollDown);
+
+    assert_eq!(
+        app.current_detail_request(),
+        crate::flux::git_backend::detail::DetailRequest::BranchLog {
+            name: "main".to_string(),
+            limit: 40,
+        }
+    );
+
+    dispatch_test_action(&mut app, DomainAction::ListDown);
+
+    assert_eq!(
+        app.current_detail_request(),
+        crate::flux::git_backend::detail::DetailRequest::BranchLog {
+            name: "feature/x".to_string(),
+            limit: 20,
+        }
+    );
+}
+
+#[test]
+fn branches_panel_log_scroll_stops_extending_after_exhaustion() {
+    let mut app = App::from_repo(Box::new(PagedBranchLogRepo)).expect("app from paged repo");
+    app.ui.active_panel = SidePanel::LocalBranches;
+    app.ui.branches.panel.list_state.select(Some(0));
+    app.reload_diff_now();
+
+    dispatch_test_action(&mut app, DomainAction::DiffScrollDown);
+    dispatch_test_action(&mut app, DomainAction::DiffScrollDown);
+    app.flush_pending_diff_reload();
+    assert_eq!(app.git.current_diff.len(), 25);
+
+    dispatch_test_action(&mut app, DomainAction::DiffScrollDown);
+    assert!(app.has_pending_diff_reload());
+    app.flush_pending_diff_reload();
+    assert_eq!(app.git.current_diff.len(), 25);
+
+    dispatch_test_action(&mut app, DomainAction::DiffScrollDown);
+
+    assert!(!app.has_pending_diff_reload());
+    assert_eq!(
+        app.current_detail_request(),
+        crate::flux::git_backend::detail::DetailRequest::BranchLog {
+            name: "main".to_string(),
+            limit: 60,
+        }
+    );
+}
+
+#[test]
+fn branch_log_same_branch_reload_preserves_scroll_position() {
+    let mut app = App::from_repo(Box::new(PagedBranchLogRepo)).expect("app from paged repo");
+    app.ui.active_panel = SidePanel::LocalBranches;
+    app.ui.branches.panel.list_state.select(Some(0));
+    app.reload_diff_now();
+    dispatch_test_action(&mut app, DomainAction::DiffScrollDown);
+    dispatch_test_action(&mut app, DomainAction::DiffScrollDown);
+    app.flush_pending_diff_reload();
+
+    assert_eq!(app.ui.diff_scroll, 19);
+
+    app.schedule_diff_reload();
+    app.flush_pending_diff_reload();
+
+    assert_eq!(app.ui.diff_scroll, 19);
+}
+
+#[test]
+fn async_branch_log_extension_preserves_scroll_position() {
+    let (repo, requests) = AsyncPagedBranchLogRepo::new();
+    let mut app = App::from_repo(Box::new(repo)).expect("app from async paged repo");
+    app.ui.active_panel = SidePanel::LocalBranches;
+    app.ui.branches.panel.list_state.select(Some(0));
+
+    app.reload_diff_now();
+    {
+        let request = requests
+            .lock()
+            .expect("lock requests")
+            .pop_front()
+            .expect("initial request");
+        assert_eq!(request.limit, 20);
+        let _ = request
+            .tx
+            .send(Ok(AsyncPagedBranchLogRepo::lines_for("main", 20)));
+    }
+    app.process_background_refresh_tick();
+    assert_eq!(app.git.current_diff.len(), 20);
+
+    dispatch_test_action(&mut app, DomainAction::DiffScrollDown);
+    dispatch_test_action(&mut app, DomainAction::DiffScrollDown);
+    assert_eq!(app.ui.diff_scroll, 19);
+
+    app.process_background_refresh_tick();
+    {
+        let request = requests
+            .lock()
+            .expect("lock requests")
+            .pop_front()
+            .expect("extension request");
+        assert_eq!(request.limit, 40);
+        let _ = request
+            .tx
+            .send(Ok(AsyncPagedBranchLogRepo::lines_for("main", 40)));
+    }
+    app.process_background_refresh_tick();
+
+    assert_eq!(app.ui.diff_scroll, 19);
+    assert_eq!(app.git.current_diff.len(), 25);
+}
+
+#[test]
+fn async_branch_log_extension_keeps_existing_lines_visible_while_loading() {
+    let (repo, requests) = AsyncPagedBranchLogRepo::new();
+    let mut app = App::from_repo(Box::new(repo)).expect("app from async paged repo");
+    app.ui.active_panel = SidePanel::LocalBranches;
+    app.ui.branches.panel.list_state.select(Some(0));
+
+    app.reload_diff_now();
+    {
+        let request = requests
+            .lock()
+            .expect("lock requests")
+            .pop_front()
+            .expect("initial request");
+        let _ = request
+            .tx
+            .send(Ok(AsyncPagedBranchLogRepo::lines_for("main", 20)));
+    }
+    app.process_background_refresh_tick();
+    let before_lines = app.git.detail.panel.lines.clone();
+
+    dispatch_test_action(&mut app, DomainAction::DiffScrollDown);
+    dispatch_test_action(&mut app, DomainAction::DiffScrollDown);
+    app.process_background_refresh_tick();
+
+    assert!(!app.git.detail.panel.is_loading);
+    assert_eq!(
+        app.git
+            .detail
+            .panel
+            .lines
+            .iter()
+            .map(|line| line.content.as_str())
+            .collect::<Vec<_>>(),
+        before_lines
+            .iter()
+            .map(|line| line.content.as_str())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn branch_log_extension_appends_without_reanchoring_when_new_lines_insert_above() {
+    let mut app = App::from_repo(Box::new(ShiftedBranchLogRepo)).expect("app from shifted repo");
+    app.ui.active_panel = SidePanel::LocalBranches;
+    app.ui.branches.panel.list_state.select(Some(0));
+    app.reload_diff_now();
+    app.ui.diff_scroll = 19;
+
+    dispatch_test_action(&mut app, DomainAction::DiffScrollDown);
+    app.flush_pending_diff_reload();
+
+    assert_eq!(app.git.current_diff.len(), 25);
+    assert_eq!(app.ui.diff_scroll, 19);
+    assert_eq!(
+        app.git
+            .current_diff
+            .get(app.ui.diff_scroll)
+            .map(|line| line.content.as_str()),
+        Some("line 19")
     );
 }
 

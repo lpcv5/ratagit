@@ -5,7 +5,6 @@ use crate::flux::effects::EffectRequest;
 use crate::flux::stores::{
     log_result, tick_background_loads, ReduceCtx, ReduceOutput, Store, UiInvalidation,
 };
-use crate::git::{DiffLine, DiffLineKind};
 
 pub struct BranchStore;
 
@@ -135,19 +134,6 @@ impl Store for BranchStore {
                     Err(e) => ctx.state.push_log(format!("fetch failed: {}", e), false),
                 }
                 ReduceOutput::none()
-            }
-            DomainAction::BranchGraphLoaded(result) => {
-                if let Ok(lines) = result {
-                    let diff_lines = lines
-                        .iter()
-                        .map(|content| DiffLine {
-                            kind: DiffLineKind::Context,
-                            content: content.clone(),
-                        })
-                        .collect();
-                    ctx.state.set_current_diff(diff_lines);
-                }
-                ReduceOutput::none().with_invalidation(UiInvalidation::diff())
             }
             _ => ReduceOutput::none(),
         }

@@ -77,6 +77,12 @@ impl DiffCache {
         self.usage_order.retain(|k| self.cache.contains_key(k));
     }
 
+    pub fn invalidate_branches(&mut self) {
+        self.cache
+            .retain(|k, _| !matches!(k, DiffCacheKey::Branch { .. }));
+        self.usage_order.retain(|k| self.cache.contains_key(k));
+    }
+
     fn touch(&mut self, key: &DiffCacheKey) {
         self.usage_order.retain(|existing| existing != key);
         self.usage_order.push_back(key.clone());
@@ -157,6 +163,26 @@ mod tests {
         cache.insert(commit_key.clone(), make_diff(1));
         cache.invalidate_files();
         assert!(cache.get_cloned(&file_key).is_none());
+        assert!(cache.get_cloned(&commit_key).is_some());
+    }
+
+    #[test]
+    fn test_invalidate_branches_removes_branch_entries_only() {
+        let mut cache = DiffCache::new();
+        let branch_key = DiffCacheKey::Branch {
+            name: "main".into(),
+            limit: 20,
+        };
+        let commit_key = DiffCacheKey::Commit {
+            oid: "abc".to_string(),
+            path: None,
+        };
+        cache.insert(branch_key.clone(), make_diff(1));
+        cache.insert(commit_key.clone(), make_diff(1));
+
+        cache.invalidate_branches();
+
+        assert!(cache.get_cloned(&branch_key).is_none());
         assert!(cache.get_cloned(&commit_key).is_some());
     }
 

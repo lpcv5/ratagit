@@ -4,7 +4,6 @@ use crate::flux::stores::state_access::{
     CoreAccess, DirtyHint, InputAccess, NavigationAccess, OverlayAccess, RefreshAccess,
     RevisionAccess, SearchAccess, SelectionAccess,
 };
-use crate::git::DiffLine;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -58,18 +57,14 @@ impl CoreAccess for App {
     }
 
     fn set_active_panel(&mut self, panel: SidePanel) {
+        if self.ui.active_panel == SidePanel::LocalBranches && panel != SidePanel::LocalBranches {
+            self.reset_branch_log_paging();
+        }
         self.ui.active_panel = panel;
     }
 
     fn has_uncommitted_changes(&self) -> bool {
         App::has_uncommitted_changes(self)
-    }
-
-    fn set_current_diff(&mut self, lines: Vec<DiffLine>) {
-        self.git.detail.panel.request = self.current_detail_request();
-        self.git.current_diff = lines.clone();
-        self.git.detail.panel.lines = lines;
-        self.git.detail.panel.is_loading = false;
     }
 }
 

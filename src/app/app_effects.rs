@@ -82,8 +82,4 @@ pub trait AppEffects: StateAccess {
         &self,
         index: usize,
     ) -> color_eyre::Result<Receiver<Result<(), GitError>>>;
-    fn git_log_graph_request(
-        &self,
-        branch: Option<String>,
-    ) -> color_eyre::Result<Receiver<Result<Vec<String>, GitError>>>;
 }

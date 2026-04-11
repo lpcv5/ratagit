@@ -346,7 +346,10 @@ fn directory_files_are_all_staged(files_view: &FilesPanelViewState, index: usize
 }
 
 fn is_discardable_status(status: &FilesPanelNodeStatus) -> bool {
-    matches!(status, FilesPanelNodeStatus::Staged(_) | FilesPanelNodeStatus::Unstaged(_))
+    matches!(
+        status,
+        FilesPanelNodeStatus::Staged(_) | FilesPanelNodeStatus::Unstaged(_)
+    )
 }
 
 fn dedup_paths(mut paths: Vec<std::path::PathBuf>) -> Vec<std::path::PathBuf> {

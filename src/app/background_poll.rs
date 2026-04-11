@@ -518,18 +518,7 @@ impl App {
                             }
                         }
                         BackgroundPayload::Diff { cache_key, diff } => {
-                            self.diff_mgr.in_flight_diff_key = None;
-                            self.diff_mgr.cache.insert(cache_key.clone(), diff.clone());
-                            self.diff_mgr.last_diff_key = Some(cache_key);
-                            if self.ui.active_panel != SidePanel::LocalBranches {
-                                self.git.current_diff = diff.clone();
-                                self.git.detail.panel.lines = diff;
-                                self.git.detail.panel.is_loading = false;
-                                if !self.refresh.pending_diff_reload {
-                                    self.refresh.pending_diff_reload_at = None;
-                                }
-                                self.ui.dirty.mark_diff();
-                            }
+                            self.apply_loaded_diff(cache_key, diff);
                         }
                     }
                 }

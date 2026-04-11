@@ -511,19 +511,6 @@ pub trait GitRepository {
 
     /// Documentation comment in English.
     fn fetch_default_async(&self) -> Result<Receiver<Result<String, GitError>>, GitError>;
-
-    /// Returns lines of `git log --graph` output for the given branch (or HEAD if None).
-    fn git_log_graph(&self, branch: Option<&str>) -> Result<Vec<String>, GitError>;
-
-    /// Async wrapper for git_log_graph.
-    fn git_log_graph_async(
-        &self,
-        branch: Option<String>,
-    ) -> Result<Receiver<Result<Vec<String>, GitError>>, GitError> {
-        let (tx, rx) = mpsc::channel();
-        let _ = tx.send(self.git_log_graph(branch.as_deref()));
-        Ok(rx)
-    }
 }
 
 #[allow(dead_code)]
@@ -1338,71 +1325,23 @@ impl Git2RepoInner {
     }
 
     fn branch_log(&self, name: &str, limit: usize) -> Result<Vec<DiffLine>, GitError> {
-        let mut revwalk = self.repo.revwalk()?;
-        let local_ref = format!("refs/heads/{}", name);
-        let Some(tip_oid) = self
-            .resolve_ref_oid(&local_ref)
-            .or_else(|| self.resolve_ref_oid(name))
-        else {
-            return Ok(Vec::new());
-        };
-        revwalk.push(tip_oid)?;
-        revwalk.set_sorting(git2::Sort::TOPOLOGICAL | git2::Sort::TIME)?;
+        let raw = self.run_git_owned(&[
+            "log".to_string(),
+            "--graph".to_string(),
+            "--decorate".to_string(),
+            "--color=always".to_string(),
+            "-n".to_string(),
+            limit.max(1).to_string(),
+            name.to_string(),
+        ])?;
 
-        let head_name = self
-            .repo
-            .head()
-            .ok()
-            .and_then(|h| h.shorthand().map(|s| s.to_string()));
-
-        let mut rows = Vec::new();
-        let mut entries = Vec::new();
-        for oid in revwalk.take(limit.max(1)) {
-            let oid = oid?;
-            let commit = self.repo.find_commit(oid)?;
-            let short_hash = format!("{:.7}", oid);
-            let message = commit.summary().unwrap_or("").to_string();
-            let mut parents = Vec::with_capacity(commit.parent_count());
-            for parent_index in 0..commit.parent_count() {
-                if let Ok(parent_oid) = commit.parent_id(parent_index) {
-                    parents.push(parent_oid);
-                }
-            }
-            let decoration = if oid == tip_oid {
-                if head_name.as_deref() == Some(name) {
-                    format!("(HEAD -> {})", name)
-                } else {
-                    format!("({})", name)
-                }
-            } else {
-                String::new()
-            };
-            rows.push(GraphCommitRow { oid, parents });
-            entries.push((short_hash, decoration, message));
-        }
-
-        let graph_lines = build_commit_graph_lines(&rows, graph_charset_from_env());
-        let mut lines = Vec::new();
-        for ((short_hash, decoration, message), graph) in entries.into_iter().zip(graph_lines) {
-            let graph_text: String = graph.iter().map(|cell| cell.text.as_str()).collect();
-            let mut line = String::new();
-            line.push_str(&graph_text);
-            line.push(' ');
-            line.push_str(&short_hash);
-            if !decoration.is_empty() {
-                line.push(' ');
-                line.push_str(&decoration);
-            }
-            if !message.is_empty() {
-                line.push(' ');
-                line.push_str(&message);
-            }
-            lines.push(DiffLine {
+        Ok(raw
+            .lines()
+            .map(|line| DiffLine {
                 kind: DiffLineKind::Context,
-                content: line,
-            });
-        }
-        Ok(lines)
+                content: line.to_string(),
+            })
+            .collect())
     }
 
     fn commits(&self, limit: usize) -> Result<Vec<CommitInfo>, GitError> {
@@ -1701,22 +1640,6 @@ impl Git2RepoInner {
         let mut branch = self.repo.find_branch(name, git2::BranchType::Local)?;
         branch.delete()?;
         Ok(())
-    }
-
-    fn git_log_graph(&self, branch: Option<&str>) -> Result<Vec<String>, GitError> {
-        let mut args = vec![
-            "log".to_string(),
-            "--graph".to_string(),
-            "--decorate".to_string(),
-            "--color=always".to_string(),
-            "-n".to_string(),
-            "200".to_string(),
-        ];
-        if let Some(b) = branch {
-            args.push(b.to_string());
-        }
-        let raw = self.run_git_owned(&args)?;
-        Ok(raw.lines().map(str::to_owned).collect())
     }
 }
 
@@ -2242,24 +2165,6 @@ impl GitRepository for Git2Repository {
             opts.prune(git2::FetchPrune::On);
             remote_obj.fetch(&[] as &[&str], Some(&mut opts), None)?;
             Ok(remote)
-        })
-    }
-
-    fn git_log_graph(&self, branch: Option<&str>) -> Result<Vec<String>, GitError> {
-        let branch = branch.map(str::to_owned);
-        self.spawn_repo_job("git_log_graph", move |inner| {
-            inner.git_log_graph(branch.as_deref())
-        })?
-        .recv()
-        .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
-    }
-
-    fn git_log_graph_async(
-        &self,
-        branch: Option<String>,
-    ) -> Result<Receiver<Result<Vec<String>, GitError>>, GitError> {
-        self.spawn_repo_job("git_log_graph", move |inner| {
-            inner.git_log_graph(branch.as_deref())
         })
     }
 }
@@ -3132,6 +3037,54 @@ mod tests {
             Some("upstream")
         );
         assert!(parse_remote_from_upstream("").is_none());
+    }
+
+    #[test]
+    fn branch_log_returns_raw_git_graph_output() {
+        let (_dir, repo) = init_repo_with_commit();
+        let branch = repo
+            .branches()
+            .expect("branches")
+            .into_iter()
+            .find(|branch| branch.is_current)
+            .expect("current branch")
+            .name;
+
+        let lines = repo.branch_log(&branch, 20).expect("branch log");
+
+        assert!(!lines.is_empty());
+        assert!(lines.iter().any(|line| line.content.contains('\u{1b}')));
+        assert!(lines.iter().any(|line| line.content.contains('*')));
+    }
+
+    #[test]
+    fn branch_log_limit_truncates_raw_output() {
+        let (dir, repo) = init_repo_with_commit();
+        for index in 0..44 {
+            write_file(
+                &dir.path().join("tracked.txt"),
+                &format!("v{}\n", index + 2),
+            );
+            repo.commit(&format!("commit {}", index + 2))
+                .expect("commit linear history");
+        }
+        let branch = repo
+            .branches()
+            .expect("branches")
+            .into_iter()
+            .find(|branch| branch.is_current)
+            .expect("current branch")
+            .name;
+
+        let first_batch = repo.branch_log(&branch, 20).expect("first batch");
+        let second_batch = repo.branch_log(&branch, 40).expect("second batch");
+
+        assert!(!first_batch.is_empty());
+        assert!(second_batch.len() > first_batch.len());
+        assert_ne!(
+            first_batch.last().map(|line| line.content.as_str()),
+            second_batch.last().map(|line| line.content.as_str())
+        );
     }
 
     #[test]

@@ -7,9 +7,7 @@ use super::states::{
     BranchesPanelState, CommandLogEntry, CommitsPanelState, DetailState, FilesPanelState, GitState,
     InputState, PanelState, RenderCache, SidePanel, StashPanelState, TreeModeState, UiState,
 };
-use super::{
-    diff_cache, dirty_flags, files_panel_adapter, revision_tree, stash_panel_adapter,
-};
+use super::{diff_cache, dirty_flags, files_panel_adapter, revision_tree, stash_panel_adapter};
 use crate::config::keymap::Keymap;
 use crate::flux::branch_backend::BranchPanelViewState;
 use crate::flux::files_backend::{FilesBackend, FilesBackendCommand, FilesPanelViewState};
@@ -30,6 +28,14 @@ const INITIAL_COMMITS_LOAD_LIMIT: usize = 30;
 const COMMITS_LOAD_STEP: usize = 40;
 const COMMITS_LOAD_AHEAD_THRESHOLD: usize = 8;
 const BRANCH_LOG_DIFF_LIMIT: usize = 20;
+const BRANCH_LOG_LOAD_AHEAD_THRESHOLD: usize = 5;
+
+#[derive(Debug, Clone)]
+struct PendingBranchLogExtension {
+    branch: String,
+    limit: usize,
+    previous_line_count: usize,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum InputMode {
@@ -69,6 +75,10 @@ pub struct App {
     pub ui: UiState,
     pub input: InputState,
     pub command_log: Vec<CommandLogEntry>,
+    branch_log_target: Option<String>,
+    branch_log_requested_limit: usize,
+    branch_log_exhausted: bool,
+    pending_branch_log_extension: Option<PendingBranchLogExtension>,
 
     repo: Box<dyn GitRepository>,
     pub(super) refresh: RefreshScheduler,
@@ -171,6 +181,10 @@ impl App {
             },
             input: InputState::default(),
             command_log: Vec::new(),
+            branch_log_target: None,
+            branch_log_requested_limit: BRANCH_LOG_DIFF_LIMIT,
+            branch_log_exhausted: false,
+            pending_branch_log_extension: None,
             repo,
             refresh: RefreshScheduler::new(!preload_commits_and_diff),
             diff_mgr: DiffCacheManager::new(),
@@ -244,6 +258,23 @@ impl App {
             self.ui.commits.dirty = true;
         }
         self.diff_mgr.cache.invalidate_files();
+        if matches!(kind, RefreshKind::StatusAndRefs | RefreshKind::Full) {
+            self.diff_mgr.cache.invalidate_branches();
+            self.branch_log_exhausted = false;
+            self.pending_branch_log_extension = None;
+            if matches!(
+                self.diff_mgr.last_diff_key,
+                Some(diff_cache::DiffCacheKey::Branch { .. })
+            ) {
+                self.diff_mgr.last_diff_key = None;
+            }
+            if matches!(
+                self.diff_mgr.in_flight_diff_key,
+                Some(diff_cache::DiffCacheKey::Branch { .. })
+            ) {
+                self.cancel_pending_diff_task();
+            }
+        }
         if matches!(
             self.diff_mgr.last_diff_key,
             Some(diff_cache::DiffCacheKey::File { .. })
@@ -562,6 +593,10 @@ impl App {
             return;
         }
         let detail_request = self.current_detail_request();
+        if !matches!(detail_request, DetailRequest::BranchLog { .. }) {
+            self.reset_branch_log_paging();
+        }
+        let preserve_scroll = self.is_branch_log_extension_request(&detail_request);
         self.git.detail.panel.request = detail_request.clone();
         let key = DetailBackend::cache_key(&detail_request);
 
@@ -576,14 +611,12 @@ impl App {
             return;
         }
 
-        self.ui.diff_scroll = 0;
+        if !preserve_scroll {
+            self.ui.diff_scroll = 0;
+        }
         if let Some(cached) = self.diff_mgr.cache.get_cloned(&key) {
-            self.git.current_diff = cached;
-            self.git.detail.panel.lines = self.git.current_diff.clone();
-            self.git.detail.panel.is_loading = false;
-            self.diff_mgr.last_diff_key = Some(key);
+            self.apply_loaded_diff(key, cached);
             self.clear_pending_diff_reload();
-            self.ui.dirty.mark_diff();
             return;
         }
 
@@ -600,7 +633,7 @@ impl App {
         );
         let request_generation = task_request.generation.0;
 
-        self.git.detail.panel.is_loading = true;
+        self.git.detail.panel.is_loading = !preserve_scroll;
         let rx = match detail_request.clone() {
             DetailRequest::None => {
                 self.tasks
@@ -614,7 +647,7 @@ impl App {
                 self.ui.dirty.mark_diff();
                 return;
             }
-            DetailRequest::BranchLog { name } => self.repo.branch_log_async(name, BRANCH_LOG_DIFF_LIMIT),
+            DetailRequest::BranchLog { name, limit } => self.repo.branch_log_async(name, limit),
             DetailRequest::File {
                 path,
                 is_staged,
@@ -629,25 +662,16 @@ impl App {
                 }
             }
             DetailRequest::Directory { path, .. } => self.repo.diff_directory_async(path),
-            DetailRequest::Commit { oid, path } => {
-                self.repo.commit_diff_scoped_async(oid, path)
-            }
-            DetailRequest::Stash { index, path } => {
-                self.repo.stash_diff_async(index, path)
-            }
+            DetailRequest::Commit { oid, path } => self.repo.commit_diff_scoped_async(oid, path),
+            DetailRequest::Stash { index, path } => self.repo.stash_diff_async(index, path),
         };
 
         match rx {
             Ok(rx) => {
                 match rx.try_recv() {
                     Ok(Ok(diff)) => {
-                        self.diff_mgr.cache.insert(key.clone(), diff.clone());
-                        self.diff_mgr.last_diff_key = Some(key);
-                        self.git.current_diff = diff;
-                        self.git.detail.panel.lines = self.git.current_diff.clone();
-                        self.git.detail.panel.is_loading = false;
+                        self.apply_loaded_diff(key, diff);
                         self.clear_pending_diff_reload();
-                        self.ui.dirty.mark_diff();
                         return;
                     }
                     Ok(Err(err)) => {
@@ -928,13 +952,6 @@ impl App {
         Ok(self.repo.stash_drop_async(index)?)
     }
 
-    pub fn git_log_graph_request(
-        &self,
-        branch: Option<String>,
-    ) -> Result<Receiver<Result<Vec<String>, GitError>>> {
-        Ok(self.repo.git_log_graph_async(branch)?)
-    }
-
     #[cfg(test)]
     pub fn stash_apply(&mut self, index: usize) -> Result<()> {
         self.repo.stash_apply(index)?;
@@ -964,6 +981,176 @@ impl App {
     pub fn diff_scroll_down(&mut self) {
         let max = self.git.current_diff.len().saturating_sub(1);
         self.ui.diff_scroll = (self.ui.diff_scroll + 10).min(max);
+        self.maybe_extend_branch_log();
+    }
+
+    pub(crate) fn reset_branch_log_paging(&mut self) {
+        self.branch_log_target = None;
+        self.branch_log_requested_limit = BRANCH_LOG_DIFF_LIMIT;
+        self.branch_log_exhausted = false;
+        self.pending_branch_log_extension = None;
+    }
+
+    pub(crate) fn current_branch_log_limit(&self) -> usize {
+        let Some(selected_branch) = self.branch_log_selected_branch() else {
+            return BRANCH_LOG_DIFF_LIMIT;
+        };
+        if self.branch_log_target.as_deref() == Some(selected_branch.as_str()) {
+            self.branch_log_requested_limit
+        } else {
+            BRANCH_LOG_DIFF_LIMIT
+        }
+    }
+
+    fn branch_log_selected_branch(&self) -> Option<String> {
+        if self.ui.active_panel != SidePanel::LocalBranches
+            || self.ui.branches.commits_subview_active
+        {
+            return None;
+        }
+        let idx = self.ui.branches.panel.list_state.selected()?;
+        self.ui
+            .branches
+            .items
+            .get(idx)
+            .map(|branch| branch.name.clone())
+    }
+
+    fn maybe_extend_branch_log(&mut self) {
+        let DetailRequest::BranchLog { name, limit } = self.current_detail_request() else {
+            return;
+        };
+        if self.branch_log_target.as_deref() == Some(name.as_str()) && self.branch_log_exhausted {
+            return;
+        }
+        if self.refresh.pending_diff_reload || self.has_active_diff_task() {
+            return;
+        }
+        let max_index = self.git.current_diff.len().saturating_sub(1);
+        if max_index.saturating_sub(self.ui.diff_scroll) > BRANCH_LOG_LOAD_AHEAD_THRESHOLD {
+            return;
+        }
+
+        let next_limit = limit + BRANCH_LOG_DIFF_LIMIT;
+        self.branch_log_target = Some(name.clone());
+        self.branch_log_requested_limit = next_limit;
+        self.pending_branch_log_extension = Some(PendingBranchLogExtension {
+            branch: name,
+            limit: next_limit,
+            previous_line_count: self.git.current_diff.len(),
+        });
+        self.schedule_diff_reload();
+    }
+
+    pub(super) fn apply_loaded_diff(
+        &mut self,
+        cache_key: diff_cache::DiffCacheKey,
+        diff: Vec<crate::git::DiffLine>,
+    ) {
+        let diff = self.merge_branch_log_extension_if_needed(&cache_key, diff);
+        self.diff_mgr.in_flight_diff_key = None;
+        self.diff_mgr.cache.insert(cache_key.clone(), diff.clone());
+        self.diff_mgr.last_diff_key = Some(cache_key.clone());
+        self.update_branch_log_extension_state(&cache_key, &diff);
+        self.git.current_diff = diff.clone();
+        self.git.detail.panel.lines = diff;
+        self.git.detail.panel.is_loading = false;
+        if !self.refresh.pending_diff_reload {
+            self.refresh.pending_diff_reload_at = None;
+        }
+        self.ui.dirty.mark_diff();
+    }
+
+    fn merge_branch_log_extension_if_needed(
+        &self,
+        cache_key: &diff_cache::DiffCacheKey,
+        diff: Vec<crate::git::DiffLine>,
+    ) -> Vec<crate::git::DiffLine> {
+        let Some(pending) = self.pending_branch_log_extension.as_ref() else {
+            return diff;
+        };
+        let diff_cache::DiffCacheKey::Branch { name, limit } = cache_key else {
+            return diff;
+        };
+        if pending.branch != *name || pending.limit != *limit {
+            return diff;
+        }
+
+        let existing = &self.git.detail.panel.lines;
+        if existing.is_empty() {
+            return diff;
+        }
+
+        let Some(start) = Self::find_subsequence_start(existing, &diff) else {
+            return diff;
+        };
+
+        let append_from = start + existing.len();
+        if append_from >= diff.len() {
+            return existing.clone();
+        }
+
+        let mut merged = existing.clone();
+        merged.extend_from_slice(&diff[append_from..]);
+        merged
+    }
+
+    fn find_subsequence_start(
+        needle: &[crate::git::DiffLine],
+        haystack: &[crate::git::DiffLine],
+    ) -> Option<usize> {
+        if needle.is_empty() {
+            return Some(0);
+        }
+        if haystack.len() < needle.len() {
+            return None;
+        }
+
+        haystack.windows(needle.len()).position(|window| {
+            window
+                .iter()
+                .zip(needle.iter())
+                .all(|(left, right)| left.content == right.content)
+        })
+    }
+
+    fn update_branch_log_extension_state(
+        &mut self,
+        cache_key: &diff_cache::DiffCacheKey,
+        diff: &[crate::git::DiffLine],
+    ) {
+        match cache_key {
+            diff_cache::DiffCacheKey::Branch { name, limit } => {
+                self.branch_log_target = Some(name.clone());
+                self.branch_log_requested_limit = *limit;
+                if let Some(pending) = self.pending_branch_log_extension.take() {
+                    if pending.branch == *name && pending.limit == *limit {
+                        self.branch_log_exhausted = diff.len() <= pending.previous_line_count;
+                    } else {
+                        self.pending_branch_log_extension = Some(pending);
+                    }
+                } else {
+                    self.branch_log_exhausted = false;
+                }
+            }
+            _ => {
+                self.reset_branch_log_paging();
+            }
+        }
+    }
+
+    fn is_branch_log_extension_request(&self, next_request: &DetailRequest) -> bool {
+        matches!(
+            (next_request, self.pending_branch_log_extension.as_ref()),
+            (
+                DetailRequest::BranchLog { name, limit },
+                Some(PendingBranchLogExtension {
+                    branch,
+                    limit: pending_limit,
+                    ..
+                })
+            ) if name == branch && limit == pending_limit
+        )
     }
 
     pub fn reload_diff_now(&mut self) {
@@ -1008,6 +1195,7 @@ impl App {
             &self.ui.branches,
             &self.ui.commits,
             &self.ui.stash,
+            self.current_branch_log_limit(),
         )
     }
 

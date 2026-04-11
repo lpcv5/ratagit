@@ -252,9 +252,6 @@ pub mod test_support {
             drop(tx);
             Ok(rx)
         }
-        fn git_log_graph(&self, _branch: Option<&str>) -> Result<Vec<String>, GitError> {
-            Ok(vec![])
-        }
     }
 
     pub fn mock_app() -> App {

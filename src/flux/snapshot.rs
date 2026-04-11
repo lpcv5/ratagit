@@ -88,6 +88,7 @@ pub struct AppStateSnapshot<'a> {
     pub render_cache: &'a RenderCache,
 
     pub diff_scroll: usize,
+    pub branch_log_limit: usize,
     pub detail: &'a crate::app::DetailState,
 
     pub command_log: Vec<CommandLogSnapshotEntry<'a>>,
@@ -126,6 +127,7 @@ impl<'a> AppStateSnapshot<'a> {
             stash: &app.ui.stash,
             render_cache: &app.ui.render_cache,
             diff_scroll: app.ui.diff_scroll,
+            branch_log_limit: app.current_branch_log_limit(),
             detail: &app.git.detail,
             command_log: app
                 .command_log
@@ -197,6 +199,7 @@ impl<'a> AppStateSnapshot<'a> {
                 self.branches,
                 self.commits,
                 self.stash,
+                self.branch_log_limit,
             );
         }
         DetailBackend::build_view_state(&detail, self.diff_scroll)
@@ -294,6 +297,7 @@ pub struct AppStateSnapshotOwned {
     pub render_cache: RenderCache,
 
     pub diff_scroll: usize,
+    pub branch_log_limit: usize,
     pub detail: crate::app::DetailState,
 
     pub command_log: Vec<CommandLogSnapshotEntryOwned>,
@@ -335,6 +339,7 @@ impl AppStateSnapshotOwned {
             stash: app.ui.stash.clone(),
             render_cache: app.ui.render_cache.clone(),
             diff_scroll: app.ui.diff_scroll,
+            branch_log_limit: app.current_branch_log_limit(),
             detail: app.git.detail.clone(),
             command_log: app
                 .command_log
@@ -402,6 +407,7 @@ impl AppStateSnapshotOwned {
             stash: &self.stash,
             render_cache: &self.render_cache,
             diff_scroll: self.diff_scroll,
+            branch_log_limit: self.branch_log_limit,
             detail: &self.detail,
             command_log: self
                 .command_log
@@ -582,7 +588,10 @@ mod tests {
         app.input.mode = Some(InputMode::CommitAllConfirm);
         let commit_all = AppStateSnapshot::from_app(&app).commit_all_confirm_view_state();
         assert!(commit_all.is_open);
-        assert_eq!(commit_all.uncommitted_change_count, branch_confirm.uncommitted_change_count);
+        assert_eq!(
+            commit_all.uncommitted_change_count,
+            branch_confirm.uncommitted_change_count
+        );
     }
 
     #[test]

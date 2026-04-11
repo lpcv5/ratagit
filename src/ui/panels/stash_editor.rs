@@ -44,8 +44,7 @@ pub fn render_stash_editor(frame: &mut Frame, view: &StashEditorViewState) {
 
     let targets = Paragraph::new(Line::from(format!(
         "Selected targets: {}",
-        view
-            .targets
+        view.targets
             .iter()
             .map(|p| p.to_string())
             .collect::<Vec<_>>()

@@ -1,11 +1,13 @@
+use crate::app::diff_cache::DiffCacheKey;
 use crate::app::SidePanel;
-use crate::app::{BranchesPanelState, CommitsPanelState, FilesPanelState, StashPanelState};
 use crate::app::{
     branch_panel_adapter, commits_panel_adapter, files_panel_adapter, stash_panel_adapter,
 };
-use crate::app::diff_cache::DiffCacheKey;
+use crate::app::{BranchesPanelState, CommitsPanelState, FilesPanelState, StashPanelState};
 use crate::flux::branch_backend::BranchPanelViewState;
-use crate::flux::commits_backend::{CommitsBackend, CommitsPanelDiffRequest, CommitsPanelViewState};
+use crate::flux::commits_backend::{
+    CommitsBackend, CommitsPanelDiffRequest, CommitsPanelViewState,
+};
 use crate::flux::files_backend::{FilesBackend, FilesPanelDiffRequest, FilesPanelViewState};
 use crate::flux::git_backend::stash::{StashBackend, StashPanelDiffRequest, StashPanelViewState};
 use crate::git::DiffLine;
@@ -15,15 +17,27 @@ use std::path::PathBuf;
 pub enum DetailRequest {
     #[default]
     None,
-    BranchLog { name: String },
+    BranchLog {
+        name: String,
+        limit: usize,
+    },
     File {
         path: PathBuf,
         is_staged: bool,
         is_untracked: bool,
     },
-    Directory { path: PathBuf, files_hash: u64 },
-    Commit { oid: String, path: Option<PathBuf> },
-    Stash { index: usize, path: Option<PathBuf> },
+    Directory {
+        path: PathBuf,
+        files_hash: u64,
+    },
+    Commit {
+        oid: String,
+        path: Option<PathBuf>,
+    },
+    Stash {
+        index: usize,
+        path: Option<PathBuf>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,12 +74,20 @@ impl DetailBackend {
         branches: &BranchesPanelState,
         commits: &CommitsPanelState,
         stash: &StashPanelState,
+        branch_log_limit: usize,
     ) -> DetailRequest {
         let files_view = files_panel_adapter::view_state_from_shell(files);
         let branches_view = branch_panel_adapter::view_state_from_shell(branches);
         let commits_view = commits_panel_adapter::view_state_from_shell(commits);
         let stash_view = stash_panel_adapter::view_state_from_shell(stash);
-        Self::request_from_views(active_panel, &files_view, &branches_view, &commits_view, &stash_view)
+        Self::request_from_views(
+            active_panel,
+            &files_view,
+            &branches_view,
+            &commits_view,
+            &stash_view,
+            branch_log_limit,
+        )
     }
 
     pub fn request_from_views(
@@ -74,6 +96,7 @@ impl DetailBackend {
         branches: &BranchPanelViewState,
         commits: &CommitsPanelViewState,
         stash: &StashPanelViewState,
+        branch_log_limit: usize,
     ) -> DetailRequest {
         match active_panel {
             SidePanel::Files => match FilesBackend::selected_diff_request(files) {
@@ -88,7 +111,10 @@ impl DetailBackend {
                         .selected_index
                         .and_then(|index| files.nodes.get(index))
                         .is_some_and(|node| {
-                            matches!(node.status, crate::flux::files_backend::FilesPanelNodeStatus::Untracked)
+                            matches!(
+                                node.status,
+                                crate::flux::files_backend::FilesPanelNodeStatus::Untracked
+                            )
                         });
                     DetailRequest::File {
                         path,
@@ -115,17 +141,22 @@ impl DetailBackend {
                         .and_then(|index| branches.items.get(index))
                         .map(|branch| DetailRequest::BranchLog {
                             name: branch.name.clone(),
+                            limit: branch_log_limit,
                         })
                         .unwrap_or(DetailRequest::None)
                 }
             }
             SidePanel::Commits => match CommitsBackend::selected_diff_request(commits) {
                 CommitsPanelDiffRequest::None => DetailRequest::None,
-                CommitsPanelDiffRequest::Commit { oid, path } => DetailRequest::Commit { oid, path },
+                CommitsPanelDiffRequest::Commit { oid, path } => {
+                    DetailRequest::Commit { oid, path }
+                }
             },
             SidePanel::Stash => match StashBackend::selected_diff_request(stash) {
                 StashPanelDiffRequest::None => DetailRequest::None,
-                StashPanelDiffRequest::Stash { index, path } => DetailRequest::Stash { index, path },
+                StashPanelDiffRequest::Stash { index, path } => {
+                    DetailRequest::Stash { index, path }
+                }
             },
         }
     }
@@ -158,11 +189,17 @@ impl DetailBackend {
 
     pub fn empty_message(request: &DetailRequest) -> String {
         match request {
-            DetailRequest::None | DetailRequest::Directory { .. } => "Select a file to view diff".to_string(),
+            DetailRequest::None | DetailRequest::Directory { .. } => {
+                "Select a file to view diff".to_string()
+            }
             DetailRequest::BranchLog { .. } => "Select a branch to view log".to_string(),
             DetailRequest::File { .. } => "Select a file to view diff".to_string(),
-            DetailRequest::Commit { path: Some(_), .. } => "Select a commit/file to view diff".to_string(),
-            DetailRequest::Commit { path: None, .. } => "Select a commit/file to view diff".to_string(),
+            DetailRequest::Commit { path: Some(_), .. } => {
+                "Select a commit/file to view diff".to_string()
+            }
+            DetailRequest::Commit { path: None, .. } => {
+                "Select a commit/file to view diff".to_string()
+            }
             DetailRequest::Stash { .. } => "Select a stash entry/file to view diff".to_string(),
         }
     }
@@ -170,14 +207,12 @@ impl DetailBackend {
     pub fn cache_key(request: &DetailRequest) -> DiffCacheKey {
         match request {
             DetailRequest::None => DiffCacheKey::None,
-            DetailRequest::BranchLog { name } => DiffCacheKey::Branch {
+            DetailRequest::BranchLog { name, limit } => DiffCacheKey::Branch {
                 name: name.clone(),
-                limit: 100,
+                limit: *limit,
             },
             DetailRequest::File {
-                path,
-                is_staged,
-                ..
+                path, is_staged, ..
             } => DiffCacheKey::File {
                 path: path.clone(),
                 is_staged: *is_staged,
@@ -200,7 +235,9 @@ impl DetailBackend {
     pub fn cache_key_task_target(key: &DiffCacheKey) -> String {
         match key {
             DiffCacheKey::None => "none".to_string(),
-            DiffCacheKey::File { path, is_staged } => format!("file:{}:{}", path.display(), is_staged),
+            DiffCacheKey::File { path, is_staged } => {
+                format!("file:{}:{}", path.display(), is_staged)
+            }
             DiffCacheKey::Branch { name, limit } => format!("branch:{}:{}", name, limit),
             DiffCacheKey::Directory { path, files_hash } => {
                 format!("dir:{}:{}", path.display(), files_hash)
@@ -218,8 +255,7 @@ impl DetailBackend {
 }
 
 fn directory_hash(view: &FilesPanelViewState, path: &std::path::Path) -> u64 {
-    view
-        .nodes
+    view.nodes
         .iter()
         .filter(|node| node.path.starts_with(path))
         .map(|node| node.path.to_string_lossy().to_string())
@@ -232,7 +268,9 @@ fn directory_hash(view: &FilesPanelViewState, path: &std::path::Path) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::git::{BranchInfo, CommitInfo, CommitSyncState, DiffLineKind, FileStatus, GraphCell};
+    use crate::git::{
+        BranchInfo, CommitInfo, CommitSyncState, DiffLineKind, FileStatus, GraphCell,
+    };
     use crate::ui::widgets::file_tree::FileTreeNode;
 
     fn commit(oid: &str) -> CommitInfo {
@@ -257,6 +295,7 @@ mod tests {
     fn branch_request_selects_log_mode() {
         let request = DetailRequest::BranchLog {
             name: "main".to_string(),
+            limit: 20,
         };
 
         let view = DetailBackend::build_view_state(
@@ -271,6 +310,22 @@ mod tests {
         assert_eq!(view.mode, DetailPanelMode::Log);
         assert_eq!(view.panel_title, "Log");
         assert_eq!(view.empty_message, "Select a branch to view log");
+    }
+
+    #[test]
+    fn branch_log_cache_key_includes_requested_limit() {
+        let key = DetailBackend::cache_key(&DetailRequest::BranchLog {
+            name: "main".to_string(),
+            limit: 40,
+        });
+
+        assert_eq!(
+            key,
+            DiffCacheKey::Branch {
+                name: "main".to_string(),
+                limit: 40,
+            }
+        );
     }
 
     #[test]
@@ -292,6 +347,7 @@ mod tests {
             &branches,
             &CommitsPanelState::default(),
             &StashPanelState::default(),
+            20,
         );
 
         assert_eq!(
@@ -306,19 +362,24 @@ mod tests {
     #[test]
     fn request_from_files_directory_uses_directory_hash() {
         let mut files = FilesPanelState {
-            tree_nodes: vec![FileTreeNode {
-                path: "src".into(),
-                status: crate::ui::widgets::file_tree::FileTreeNodeStatus::Directory,
-                depth: 0,
-                is_dir: true,
-                is_expanded: true,
-            }, FileTreeNode {
-                path: "src/main.rs".into(),
-                status: crate::ui::widgets::file_tree::FileTreeNodeStatus::Unstaged(FileStatus::Modified),
-                depth: 1,
-                is_dir: false,
-                is_expanded: false,
-            }],
+            tree_nodes: vec![
+                FileTreeNode {
+                    path: "src".into(),
+                    status: crate::ui::widgets::file_tree::FileTreeNodeStatus::Directory,
+                    depth: 0,
+                    is_dir: true,
+                    is_expanded: true,
+                },
+                FileTreeNode {
+                    path: "src/main.rs".into(),
+                    status: crate::ui::widgets::file_tree::FileTreeNodeStatus::Unstaged(
+                        FileStatus::Modified,
+                    ),
+                    depth: 1,
+                    is_dir: false,
+                    is_expanded: false,
+                },
+            ],
             ..Default::default()
         };
         files.panel.list_state.select(Some(0));
@@ -329,6 +390,7 @@ mod tests {
             &BranchesPanelState::default(),
             &CommitsPanelState::default(),
             &StashPanelState::default(),
+            20,
         );
 
         assert!(matches!(request, DetailRequest::Directory { .. }));
