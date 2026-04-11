@@ -10,7 +10,6 @@ mod command;
 pub(crate) mod commits_panel_adapter;
 pub(crate) mod diff_cache;
 mod diff_cache_manager;
-mod diff_loader;
 mod dirty_flags;
 pub(crate) mod files_panel_adapter;
 pub mod graph_highlight;

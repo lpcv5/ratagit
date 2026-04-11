@@ -51,18 +51,6 @@ pub struct DetailPanelViewState {
     pub empty_message: String,
 }
 
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
-pub enum DetailPanelCommand {
-    Load(DetailRequest),
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
-pub enum DetailPanelEvent {
-    ViewStateUpdated(DetailPanelState),
-}
-
 pub struct DetailBackend;
 
 impl DetailBackend {
