@@ -688,27 +688,11 @@ impl App {
         }
     }
 
-    pub fn open_selected_branch_commits(&mut self, limit: usize) -> Result<()> {
-        if self.ui.active_panel != SidePanel::LocalBranches {
-            return Ok(());
-        }
-        let Some(branch_name) = self.selected_branch_name() else {
-            return Ok(());
-        };
-
-        self.ui.branches.commits_subview_active = true;
-        self.ui.branches.commits_subview_loading = true;
-        self.ui.branches.commits_subview_source = Some(branch_name.clone());
-        self.ui.branches.commits_subview.items.clear();
-        self.ui.branches.commits_subview.dirty = false;
-        self.ui.branches.commits_subview.highlighted_oids.clear();
-        self.ui.branches.commits_subview.tree_mode = TreeModeState::default();
-        self.ui
-            .branches
-            .commits_subview
-            .panel
-            .list_state
-            .select(None);
+    pub(crate) fn start_branch_commits_background_load(
+        &mut self,
+        branch_name: String,
+        limit: usize,
+    ) -> Result<()> {
         let key = TaskKey::BranchCommits {
             branch: branch_name.clone(),
         };
@@ -740,43 +724,17 @@ impl App {
                 self.tasks
                     .task_manager
                     .mark_finished(&key, request.generation);
-                self.ui.branches.commits_subview_loading = false;
-                self.push_log(format!("branch commits load failed: {}", err), false);
+                return Err(err.into());
             }
         }
-        self.push_log(
-            format!("branch commits: {} (Esc to back)", branch_name),
-            true,
-        );
         Ok(())
     }
 
     pub fn close_branch_commits_subview(&mut self) {
-        if !self.ui.branches.commits_subview_active {
-            return;
-        }
-
-        let source_branch = self.ui.branches.commits_subview_source.take();
-        self.ui.branches.commits_subview_active = false;
-        self.ui.branches.commits_subview_loading = false;
-        self.ui.branches.commits_subview = CommitsPanelState::default();
-
-        let selected_index = source_branch.and_then(|name| {
-            self.ui
-                .branches
-                .items
-                .iter()
-                .position(|branch| branch.name == name)
-        });
-        if self.ui.branches.items.is_empty() {
-            self.ui.branches.panel.list_state.select(None);
-        } else {
-            self.ui
-                .branches
-                .panel
-                .list_state
-                .select(selected_index.or(Some(0)));
-        }
+        let view = crate::flux::branch_backend::BranchBackend::close_commits_subview(
+            self.current_branches_view_state(),
+        );
+        self.apply_branches_backend_view(view);
     }
 
     pub fn toggle_visual_select_mode(&mut self) {

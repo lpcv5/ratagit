@@ -159,6 +159,19 @@ impl BranchBackend {
         current
     }
 
+    pub fn fail_commits_subview_load(
+        mut current: BranchPanelViewState,
+        branch: &str,
+    ) -> BranchPanelViewState {
+        if current.commits_subview.source_branch.as_deref() != Some(branch)
+            || !current.commits_subview.active
+        {
+            return current;
+        }
+        current.commits_subview.loading = false;
+        current
+    }
+
     pub fn close_commits_subview(mut current: BranchPanelViewState) -> BranchPanelViewState {
         let source_branch = current.commits_subview.source_branch.take();
         current.commits_subview = BranchCommitsSubviewState::default();
@@ -318,5 +331,28 @@ mod tests {
         assert!(!loaded.commits_subview.loading);
         assert_eq!(loaded.commits_subview.selected_index, Some(0));
         assert_eq!(loaded.commits_subview.items.len(), 1);
+    }
+
+    #[test]
+    fn fail_commits_subview_load_keeps_subview_open_but_clears_loading() {
+        let current = BranchBackend::open_commits_subview(
+            BranchPanelViewState {
+                items: vec![BranchPanelListItem {
+                    name: "main".to_string(),
+                    is_current: true,
+                }],
+                selection: BranchPanelSelectionState {
+                    selected_index: Some(0),
+                },
+                is_fetching_remote: false,
+                commits_subview: BranchCommitsSubviewState::default(),
+            },
+            "main".to_string(),
+        );
+
+        let failed = BranchBackend::fail_commits_subview_load(current, "main");
+
+        assert!(failed.commits_subview.active);
+        assert!(!failed.commits_subview.loading);
     }
 }

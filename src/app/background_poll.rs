@@ -516,8 +516,12 @@ impl App {
                     if matches!(task.key, TaskKey::Status) {
                         self.refresh.pending_refresh_fast_done = false;
                     }
-                    if matches!(task.key, TaskKey::BranchCommits { .. }) {
-                        self.ui.branches.commits_subview_loading = false;
+                    if let TaskKey::BranchCommits { branch } = &task.key {
+                        let view = BranchBackend::fail_commits_subview_load(
+                            self.current_branches_view_state(),
+                            branch,
+                        );
+                        self.apply_branches_backend_view(view);
                     }
                     if matches!(task.key, TaskKey::Diff { .. }) {
                         self.diff_mgr.in_flight_diff_key = None;

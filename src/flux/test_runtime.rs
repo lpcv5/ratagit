@@ -1,5 +1,6 @@
 use crate::app::{App, SidePanel};
 use crate::flux::action::DomainAction;
+use crate::flux::branch_backend::BranchBackend;
 use crate::flux::effects::EffectRequest;
 use crate::flux::stores::UiInvalidation;
 
@@ -35,19 +36,47 @@ pub fn run_inline_effect(app: &mut App, request: EffectRequest) -> Option<Vec<Do
             Some(vec![])
         }
         EffectRequest::RevisionOpenTreeOrToggleDir => {
-            let result = match app.ui.active_panel {
+            let active_panel = app.ui.active_panel;
+            let branch_name = if active_panel == SidePanel::LocalBranches {
+                app.selected_branch_name()
+            } else {
+                None
+            };
+            let result = match active_panel {
                 SidePanel::Stash => app.stash_open_tree_or_toggle_dir(),
                 SidePanel::Commits => app.commit_open_tree_or_toggle_dir(),
-                SidePanel::LocalBranches => app.open_selected_branch_commits(100),
+                SidePanel::LocalBranches => Ok(()),
                 _ => Ok(()),
             };
             match result {
                 Ok(()) => {
                     app.restore_search_for_active_scope();
-                    app.reload_diff_now();
+                    if active_panel != SidePanel::LocalBranches {
+                        app.reload_diff_now();
+                    }
                     UiInvalidation::all().apply(app);
                 }
                 Err(err) => app.push_log(format!("revision files failed: {}", err), false),
+            }
+            if active_panel == SidePanel::LocalBranches {
+                if let Some(branch) = branch_name {
+                    let next = BranchBackend::open_commits_subview(
+                        app.current_branches_view_state(),
+                        branch.clone(),
+                    );
+                    app.apply_branches_backend_view(next);
+                    match app.start_branch_commits_background_load(branch.clone(), 100) {
+                        Ok(()) => app.push_log(format!("branch commits: {} (Esc to back)", branch), true),
+                        Err(err) => {
+                            let failed = BranchBackend::fail_commits_subview_load(
+                                app.current_branches_view_state(),
+                                &branch,
+                            );
+                            app.apply_branches_backend_view(failed);
+                            app.push_log(format!("branch commits load failed: {}", err), false);
+                        }
+                    }
+                }
             }
             Some(vec![])
         }

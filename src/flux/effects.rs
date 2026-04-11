@@ -580,7 +580,17 @@ async fn run_branches_backend_command(
                 branch.clone(),
             );
             app.apply_branches_backend_view(next);
-            let _ = app.open_selected_branch_commits(limit);
+            match app.start_branch_commits_background_load(branch.clone(), limit) {
+                Ok(()) => {
+                    app.push_log(format!("branch commits: {} (Esc to back)", branch), true);
+                }
+                Err(err) => {
+                    let failed =
+                        BranchBackend::fail_commits_subview_load(app.current_branches_view_state(), &branch);
+                    app.apply_branches_backend_view(failed);
+                    app.push_log(format!("branch commits load failed: {}", err), false);
+                }
+            }
             vec![]
         }
     }
