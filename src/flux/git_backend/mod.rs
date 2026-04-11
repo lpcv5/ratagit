@@ -1,3 +1,4 @@
+pub mod detail;
 pub mod stash;
 
 pub mod branches {

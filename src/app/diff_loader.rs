@@ -2,6 +2,7 @@ use crate::git::{DiffLine, GitRepository};
 use crate::ui::widgets::file_tree::FileTreeNodeStatus;
 use std::path::PathBuf;
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum DiffTarget {
     None,

@@ -1,5 +1,5 @@
-use crate::app::SidePanel;
-use crate::git::{DiffLine, DiffLineKind};
+use crate::flux::git_backend::detail::{DetailPanelMode, DetailPanelViewState};
+use crate::git::DiffLineKind;
 use crate::ui::theme::UiTheme;
 use ratatui::{
     layout::Rect,
@@ -9,51 +9,28 @@ use ratatui::{
     Frame,
 };
 
-pub struct DiffViewProps<'a> {
-    pub lines: &'a [DiffLine],
-    pub scroll: usize,
-    pub active_panel: SidePanel,
-    pub is_loading: bool,
-}
-
-pub fn render_diff_panel(frame: &mut Frame, area: Rect, props: DiffViewProps<'_>) {
+pub fn render_diff_panel(frame: &mut Frame, area: Rect, view: &DetailPanelViewState) {
     let theme = UiTheme::default();
 
-    if props.is_loading {
-        let panel_title = if props.active_panel == SidePanel::LocalBranches {
-            "Log"
-        } else {
-            "Diff"
-        };
+    if view.is_loading {
         let paragraph = ratatui::widgets::Paragraph::new("Loading...")
             .style(Style::default().fg(theme.text_muted))
-            .block(theme.panel_block(panel_title, true));
+            .block(theme.panel_block(&view.panel_title, true));
         frame.render_widget(paragraph, area);
         return;
     }
 
-    if props.lines.is_empty() {
-        let hint = match props.active_panel {
-            SidePanel::Files => "Select a file to view diff",
-            SidePanel::LocalBranches => "Select a branch to view log",
-            SidePanel::Commits => "Select a commit/file to view diff",
-            SidePanel::Stash => "Select a stash entry/file to view diff",
-        };
-        let panel_title = if props.active_panel == SidePanel::LocalBranches {
-            "Log"
-        } else {
-            "Diff"
-        };
-        let paragraph = ratatui::widgets::Paragraph::new(hint)
+    if view.lines.is_empty() {
+        let paragraph = ratatui::widgets::Paragraph::new(view.empty_message.as_str())
             .style(Style::default().fg(theme.text_muted))
-            .block(theme.panel_block(panel_title, true));
+            .block(theme.panel_block(&view.panel_title, true));
         frame.render_widget(paragraph, area);
         return;
     }
 
-    let scroll = props.scroll.min(props.lines.len().saturating_sub(1));
+    let scroll = view.scroll.min(view.lines.len().saturating_sub(1));
     let visible_rows = usize::from(area.height.saturating_sub(2)).max(1);
-    let items: Vec<ListItem> = props
+    let items: Vec<ListItem> = view
         .lines
         .iter()
         .skip(scroll)
@@ -77,12 +54,15 @@ pub fn render_diff_panel(frame: &mut Frame, area: Rect, props: DiffViewProps<'_>
         })
         .collect();
 
-    let total = props.lines.len();
+    let total = view.lines.len();
     let end = (scroll + items.len()).min(total);
-    let (panel_label, title) = if props.active_panel == SidePanel::LocalBranches {
-        ("Log", format!("Log [{}-{} / {}]", scroll + 1, end, total))
-    } else {
-        ("Diff", format!("Diff [{}-{} / {}]", scroll + 1, end, total))
+    let title = match view.mode {
+        DetailPanelMode::Log => format!("Log [{}-{} / {}]", scroll + 1, end, total),
+        DetailPanelMode::Diff => format!("Diff [{}-{} / {}]", scroll + 1, end, total),
+    };
+    let panel_label = match view.mode {
+        DetailPanelMode::Log => "Log",
+        DetailPanelMode::Diff => "Diff",
     };
 
     let list = List::new(items).block(theme.panel_block(panel_label, true).title(title));

@@ -1,13 +1,18 @@
 use crate::app::{InputMode, SidePanel};
 use crate::config::keymap::key_to_string;
 use crate::flux::action::{Action, DomainAction};
+use crate::flux::files_backend::{FilesPanelNodeStatus, FilesPanelViewState};
 use crate::flux::snapshot::AppStateSnapshot;
-use crate::ui::widgets::file_tree::FileTreeNodeStatus;
 
 pub fn map_key_to_actions(
     key: crossterm::event::KeyEvent,
     snapshot: &AppStateSnapshot<'_>,
 ) -> Vec<Action> {
+    let files_view = snapshot.files_view_state();
+    let branches_view = snapshot.branches_view_state();
+    let commits_view = snapshot.commits_view_state();
+    let stash_view = snapshot.stash_view_state();
+
     if snapshot.input_mode == Some(InputMode::BranchSwitchConfirm) {
         return match key.code {
             crossterm::event::KeyCode::Char('y')
@@ -73,16 +78,15 @@ pub fn map_key_to_actions(
     }
     if key.code == crossterm::event::KeyCode::Esc
         && snapshot.active_panel == SidePanel::Files
-        && snapshot.files.visual_mode
+        && files_view.selection.visual_mode
     {
         return vec![Action::Domain(DomainAction::ToggleVisualSelectMode)];
     }
     if key.code == crossterm::event::KeyCode::Esc
-        && ((snapshot.active_panel == SidePanel::Stash && snapshot.stash.tree_mode.active)
-            || (snapshot.active_panel == SidePanel::Commits
-                && snapshot.commits_view_state().tree_mode.active)
+        && ((snapshot.active_panel == SidePanel::Stash && stash_view.tree_mode.active)
+            || (snapshot.active_panel == SidePanel::Commits && commits_view.tree_mode.active)
             || (snapshot.active_panel == SidePanel::LocalBranches
-                && snapshot.branches.commits_subview_active))
+                && branches_view.commits_subview.active))
     {
         return vec![Action::Domain(DomainAction::RevisionCloseTree)];
     }
@@ -129,7 +133,7 @@ pub fn map_key_to_actions(
         return vec![Action::Domain(DomainAction::PanelGoto(4))];
     }
     if gm("commit") {
-        if snapshot.active_panel == SidePanel::Files && snapshot.files.visual_mode {
+        if snapshot.active_panel == SidePanel::Files && files_view.selection.visual_mode {
             return vec![Action::Domain(DomainAction::PrepareCommitFromSelection)];
         }
         return vec![Action::Domain(DomainAction::StartCommitInput)];
@@ -153,18 +157,18 @@ pub fn map_key_to_actions(
     let pm = |action: &str| panel_actions.iter().any(|candidate| candidate == action);
 
     if pm("toggle_stage") {
-        if snapshot.active_panel == SidePanel::Files && snapshot.files.visual_mode {
+        if snapshot.active_panel == SidePanel::Files && files_view.selection.visual_mode {
             return vec![Action::Domain(DomainAction::ToggleStageSelection)];
         }
-        if let Some(action) = toggle_stage_for_selected_file(snapshot) {
+        if let Some(action) = toggle_stage_for_selected_file(snapshot.active_panel, &files_view) {
             return vec![Action::Domain(action)];
         }
     }
     if pm("discard") && snapshot.active_panel == SidePanel::Files {
-        if snapshot.files.visual_mode {
+        if files_view.selection.visual_mode {
             return vec![Action::Domain(DomainAction::DiscardSelection)];
         }
-        let paths = prepare_discard_targets_from_selection(snapshot);
+        let paths = prepare_discard_targets_from_selection(snapshot.active_panel, &files_view);
         if !paths.is_empty() {
             return vec![Action::Domain(DomainAction::DiscardPaths(paths))];
         }
@@ -221,14 +225,17 @@ fn active_panel_name(panel: SidePanel) -> &'static str {
     }
 }
 
-fn toggle_stage_for_selected_file(snapshot: &AppStateSnapshot<'_>) -> Option<DomainAction> {
-    if snapshot.active_panel != SidePanel::Files {
+fn toggle_stage_for_selected_file(
+    active_panel: SidePanel,
+    files_view: &FilesPanelViewState,
+) -> Option<DomainAction> {
+    if active_panel != SidePanel::Files {
         return None;
     }
-    let idx = snapshot.files.panel.list_state.selected()?;
-    let node = snapshot.files.tree_nodes.get(idx)?;
+    let idx = files_view.selection.selected_index?;
+    let node = files_view.nodes.get(idx)?;
     if node.is_dir {
-        let all_staged = directory_files_are_all_staged(snapshot, idx);
+        let all_staged = directory_files_are_all_staged(files_view, idx);
         return if all_staged {
             Some(DomainAction::UnstageFile(node.path.clone()))
         } else {
@@ -237,36 +244,37 @@ fn toggle_stage_for_selected_file(snapshot: &AppStateSnapshot<'_>) -> Option<Dom
     }
 
     match &node.status {
-        FileTreeNodeStatus::Staged(_) => Some(DomainAction::UnstageFile(node.path.clone())),
-        FileTreeNodeStatus::Unstaged(_) | FileTreeNodeStatus::Untracked => {
+        FilesPanelNodeStatus::Staged(_) => Some(DomainAction::UnstageFile(node.path.clone())),
+        FilesPanelNodeStatus::Unstaged(_) | FilesPanelNodeStatus::Untracked => {
             Some(DomainAction::StageFile(node.path.clone()))
         }
-        FileTreeNodeStatus::Directory => None,
+        FilesPanelNodeStatus::Directory => None,
     }
 }
 
 fn prepare_discard_targets_from_selection(
-    snapshot: &AppStateSnapshot<'_>,
+    active_panel: SidePanel,
+    files_view: &FilesPanelViewState,
 ) -> Vec<std::path::PathBuf> {
-    if snapshot.active_panel != SidePanel::Files {
+    if active_panel != SidePanel::Files {
         return Vec::new();
     }
-    let Some(index) = snapshot.files.panel.list_state.selected() else {
+    let Some(index) = files_view.selection.selected_index else {
         return Vec::new();
     };
-    collect_discard_targets_for_index(snapshot, index)
+    collect_discard_targets_for_index(files_view, index)
 }
 
 fn collect_discard_targets_for_index(
-    snapshot: &AppStateSnapshot<'_>,
+    files_view: &FilesPanelViewState,
     index: usize,
 ) -> Vec<std::path::PathBuf> {
-    let Some(node) = snapshot.files.tree_nodes.get(index) else {
+    let Some(node) = files_view.nodes.get(index) else {
         return Vec::new();
     };
     if node.is_dir {
-        let end = subtree_end_index(snapshot, index);
-        return collect_discard_targets_in_range(snapshot, index, end);
+        let end = subtree_end_index(files_view, index);
+        return collect_discard_targets_in_range(files_view, index, end);
     }
     if is_discardable_status(&node.status) {
         return vec![node.path.clone()];
@@ -275,13 +283,13 @@ fn collect_discard_targets_for_index(
 }
 
 fn collect_discard_targets_in_range(
-    snapshot: &AppStateSnapshot<'_>,
+    files_view: &FilesPanelViewState,
     start: usize,
     end: usize,
 ) -> Vec<std::path::PathBuf> {
     let mut targets = Vec::new();
     for i in start..=end {
-        let Some(node) = snapshot.files.tree_nodes.get(i) else {
+        let Some(node) = files_view.nodes.get(i) else {
             continue;
         };
         if node.is_dir {
@@ -294,8 +302,8 @@ fn collect_discard_targets_in_range(
     dedup_paths(targets)
 }
 
-fn subtree_end_index(snapshot: &AppStateSnapshot<'_>, index: usize) -> usize {
-    let Some(node) = snapshot.files.tree_nodes.get(index) else {
+fn subtree_end_index(files_view: &FilesPanelViewState, index: usize) -> usize {
+    let Some(node) = files_view.nodes.get(index) else {
         return index;
     };
     if !node.is_dir {
@@ -304,8 +312,8 @@ fn subtree_end_index(snapshot: &AppStateSnapshot<'_>, index: usize) -> usize {
 
     let base_depth = node.depth;
     let mut end = index;
-    for i in index + 1..snapshot.files.tree_nodes.len() {
-        let n = &snapshot.files.tree_nodes[i];
+    for i in index + 1..files_view.nodes.len() {
+        let n = &files_view.nodes[i];
         if n.depth <= base_depth {
             break;
         }
@@ -314,34 +322,31 @@ fn subtree_end_index(snapshot: &AppStateSnapshot<'_>, index: usize) -> usize {
     end
 }
 
-fn directory_files_are_all_staged(snapshot: &AppStateSnapshot<'_>, index: usize) -> bool {
-    let Some(node) = snapshot.files.tree_nodes.get(index) else {
+fn directory_files_are_all_staged(files_view: &FilesPanelViewState, index: usize) -> bool {
+    let Some(node) = files_view.nodes.get(index) else {
         return false;
     };
     if !node.is_dir {
-        return matches!(node.status, FileTreeNodeStatus::Staged(_));
+        return matches!(node.status, FilesPanelNodeStatus::Staged(_));
     }
 
-    let end = subtree_end_index(snapshot, index);
+    let end = subtree_end_index(files_view, index);
     let mut has_file = false;
     for i in index + 1..=end {
-        let child = &snapshot.files.tree_nodes[i];
+        let child = &files_view.nodes[i];
         if child.is_dir {
             continue;
         }
         has_file = true;
-        if !matches!(child.status, FileTreeNodeStatus::Staged(_)) {
+        if !matches!(child.status, FilesPanelNodeStatus::Staged(_)) {
             return false;
         }
     }
     has_file
 }
 
-fn is_discardable_status(status: &FileTreeNodeStatus) -> bool {
-    matches!(
-        status,
-        FileTreeNodeStatus::Staged(_) | FileTreeNodeStatus::Unstaged(_)
-    )
+fn is_discardable_status(status: &FilesPanelNodeStatus) -> bool {
+    matches!(status, FilesPanelNodeStatus::Staged(_) | FilesPanelNodeStatus::Unstaged(_))
 }
 
 fn dedup_paths(mut paths: Vec<std::path::PathBuf>) -> Vec<std::path::PathBuf> {

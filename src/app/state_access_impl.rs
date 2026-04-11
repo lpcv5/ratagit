@@ -66,7 +66,10 @@ impl CoreAccess for App {
     }
 
     fn set_current_diff(&mut self, lines: Vec<DiffLine>) {
-        self.git.current_diff = lines;
+        self.git.detail.panel.request = self.current_detail_request();
+        self.git.current_diff = lines.clone();
+        self.git.detail.panel.lines = lines;
+        self.git.detail.panel.is_loading = false;
     }
 }
 

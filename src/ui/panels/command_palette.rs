@@ -1,5 +1,4 @@
-use crate::app::InputMode;
-use crate::flux::snapshot::AppStateSnapshot;
+use crate::flux::snapshot::CommandPaletteViewState;
 use crate::ui::panels::{centered_rect, render_overlay_chrome};
 use crate::ui::theme::UiTheme;
 use ratatui::{
@@ -10,8 +9,8 @@ use ratatui::{
     Frame,
 };
 
-pub fn render_command_palette(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
-    if snapshot.input_mode != Some(InputMode::CommandPalette) {
+pub fn render_command_palette(frame: &mut Frame, view: &CommandPaletteViewState) {
+    if !view.is_open {
         return;
     }
 
@@ -28,7 +27,7 @@ pub fn render_command_palette(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>
         ])
         .split(inner);
 
-    let input = Paragraph::new(format!(":{}", snapshot.input_buffer))
+    let input = Paragraph::new(format!(":{}", view.input))
         .block(theme.panel_block("Command", true))
         .style(Style::default().fg(theme.text_primary));
     frame.render_widget(input, sections[0]);
@@ -47,8 +46,8 @@ pub fn render_command_palette(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>
     frame.render_widget(help, sections[2]);
 
     let width = sections[0].width.saturating_sub(2).max(1);
-    let col = snapshot
-        .input_buffer
+    let col = view
+        .input
         .chars()
         .count()
         .saturating_add(2)

@@ -1,5 +1,4 @@
-use crate::app::InputMode;
-use crate::flux::snapshot::AppStateSnapshot;
+use crate::flux::snapshot::CommandLogViewState;
 use crate::ui::theme::UiTheme;
 use ratatui::{
     layout::Rect,
@@ -9,18 +8,18 @@ use ratatui::{
     Frame,
 };
 
-pub fn render_command_log(frame: &mut Frame, area: Rect, snapshot: &AppStateSnapshot<'_>) {
+pub fn render_command_log(frame: &mut Frame, area: Rect, view: &CommandLogViewState) {
     let theme = UiTheme::default();
     let mut lines: Vec<Line> = Vec::new();
 
-    if snapshot.input_mode == Some(InputMode::CreateBranch) {
+    if let Some(branch_input) = &view.branch_input {
         lines.push(Line::from(Span::styled(
-            format!("branch> {}", snapshot.input_buffer),
+            format!("branch> {}", branch_input),
             Style::default().fg(Color::Yellow),
         )));
     }
 
-    if snapshot.command_log.is_empty() {
+    if view.entries.is_empty() {
         if lines.is_empty() {
             lines.push(Line::from(Span::styled(
                 "No commands yet",
@@ -30,8 +29,8 @@ pub fn render_command_log(frame: &mut Frame, area: Rect, snapshot: &AppStateSnap
     } else {
         let available = 3usize.saturating_sub(lines.len());
         lines.extend(
-            snapshot
-                .command_log
+            view
+                .entries
                 .iter()
                 .rev()
                 .take(available)

@@ -7,7 +7,7 @@ use crate::ui::components::organisms::{
 use crate::ui::panels::{
     render_branch_switch_confirm, render_command_log, render_command_palette,
     render_commit_all_confirm, render_commit_editor, render_diff_panel, render_shortcut_bar,
-    render_stash_editor, DiffViewProps,
+    render_stash_editor,
 };
 use ratatui::{
     layout::{Constraint, Direction, Layout},
@@ -62,6 +62,11 @@ pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
         ])
         .split(top_rect);
 
+    let files_view = snapshot.files_view_state();
+    let branches_view = snapshot.branches_view_state();
+    let commits_view = snapshot.commits_view_state();
+    let stash_view = snapshot.stash_view_state();
+
     let focus_index = match snapshot.active_panel {
         SidePanel::Files => Some(0usize),
         SidePanel::LocalBranches => Some(1usize),
@@ -69,17 +74,17 @@ pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
         SidePanel::Stash => None,
     };
     let focus_item_count = match snapshot.active_panel {
-        SidePanel::Files => snapshot.files.tree_nodes.len(),
+        SidePanel::Files => files_view.nodes.len(),
         SidePanel::LocalBranches => {
-            if snapshot.branches.commits_subview_active {
-                snapshot.branches.commits_subview.items.len()
+            if branches_view.commits_subview.active {
+                branches_view.commits_subview.items.len()
             } else {
-                snapshot.branches.items.len()
+                branches_view.items.len()
             }
         }
         // Keep commit panel sizing stable when toggling between commit list and tree mode.
         // Use the parent commit list length as the single source for overflow checks.
-        SidePanel::Commits => snapshot.commits_view_state().items.len(),
+        SidePanel::Commits => commits_view.items.len(),
         SidePanel::Stash => 0,
     };
 
@@ -146,7 +151,6 @@ pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
         visual_selected_indices: &snapshot.render_cache.files_visual_selected_indices,
         highlighted_oids: PanelRenderContext::empty_highlighted_oids(),
     };
-    let files_view = snapshot.files_view_state();
     draw_files_panel(frame, left_panels[0], &files_view, &files_ctx);
     let branches_ctx = PanelRenderContext {
         active_panel: snapshot.active_panel,
@@ -156,10 +160,8 @@ pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
         visual_selected_indices: PanelRenderContext::empty_visual_selected_indices(),
         highlighted_oids: PanelRenderContext::empty_highlighted_oids(),
     };
-    let branches_view = snapshot.branches_view_state();
     draw_branches_panel(frame, left_panels[1], &branches_view, &branches_ctx);
 
-    let commits_view = snapshot.commits_view_state();
     let commits_ctx = PanelRenderContext {
         active_panel: snapshot.active_panel,
         panel_title_override: None,
@@ -178,7 +180,6 @@ pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
         visual_selected_indices: PanelRenderContext::empty_visual_selected_indices(),
         highlighted_oids: PanelRenderContext::empty_highlighted_oids(),
     };
-    let stash_view = snapshot.stash_view_state();
     draw_stash_panel(frame, stash_area, &stash_view, &stash_ctx);
 
     // Right side: diff + command log
@@ -197,21 +198,20 @@ pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
         ..horizontal[1]
     };
 
-    render_diff_panel(
-        frame,
-        diff_area,
-        DiffViewProps {
-            lines: snapshot.current_diff,
-            scroll: snapshot.diff_scroll,
-            active_panel: snapshot.active_panel,
-            is_loading: snapshot.diff_loading,
-        },
-    );
-    render_command_log(frame, log_area, snapshot);
-    render_shortcut_bar(frame, vertical[1], snapshot);
-    render_commit_editor(frame, snapshot);
-    render_stash_editor(frame, snapshot);
-    render_branch_switch_confirm(frame, snapshot);
-    render_commit_all_confirm(frame, snapshot);
-    render_command_palette(frame, snapshot);
+    let detail_view = snapshot.detail_view_state();
+    render_diff_panel(frame, diff_area, &detail_view);
+    let command_log_view = snapshot.command_log_view_state();
+    render_command_log(frame, log_area, &command_log_view);
+    let shortcut_bar_view = snapshot.shortcut_bar_view_state();
+    render_shortcut_bar(frame, vertical[1], &shortcut_bar_view);
+    let commit_editor_view = snapshot.commit_editor_view_state();
+    render_commit_editor(frame, &commit_editor_view);
+    let stash_editor_view = snapshot.stash_editor_view_state();
+    render_stash_editor(frame, &stash_editor_view);
+    let branch_switch_confirm_view = snapshot.branch_switch_confirm_view_state();
+    render_branch_switch_confirm(frame, &branch_switch_confirm_view);
+    let commit_all_confirm_view = snapshot.commit_all_confirm_view_state();
+    render_commit_all_confirm(frame, &commit_all_confirm_view);
+    let command_palette_view = snapshot.command_palette_view_state();
+    render_command_palette(frame, &command_palette_view);
 }

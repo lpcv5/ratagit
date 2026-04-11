@@ -1,5 +1,4 @@
-use crate::app::InputMode;
-use crate::flux::snapshot::AppStateSnapshot;
+use crate::flux::snapshot::ShortcutBarViewState;
 use crate::ui::components::loading_indicator::LoadingIndicator;
 use crate::ui::theme::UiTheme;
 use ratatui::{
@@ -10,14 +9,14 @@ use ratatui::{
     Frame,
 };
 
-pub fn render_shortcut_bar(frame: &mut Frame, area: Rect, snapshot: &AppStateSnapshot<'_>) {
+pub fn render_shortcut_bar(frame: &mut Frame, area: Rect, view: &ShortcutBarViewState) {
     let theme = UiTheme::default();
-    let hints = &snapshot.shortcut_hints;
+    let hints = &view.hints;
 
     let mut spans = Vec::new();
 
     // Show animated spinner when background Git tasks are running.
-    if snapshot.has_background_tasks {
+    if view.has_background_tasks {
         // Derive frame index from time so the spinner animates without storing
         // per-render mutable state. 10 frames at ~100ms each = ~1 s cycle.
         let frame_index = (std::time::SystemTime::now()
@@ -35,24 +34,24 @@ pub fn render_shortcut_bar(frame: &mut Frame, area: Rect, snapshot: &AppStateSna
         spans.push(Span::raw("   "));
     }
 
-    if snapshot.input_mode == Some(InputMode::Search) {
+    if let Some(search_input) = &view.search_input {
         spans.push(Span::styled(
-            format!("/{}", snapshot.input_buffer),
+            format!("/{}", search_input),
             Style::default().fg(theme.accent),
         ));
         spans.push(Span::raw("   "));
     }
-    for (idx, (keys, desc)) in hints.iter().enumerate() {
+    for (idx, entry) in hints.iter().enumerate() {
         if idx > 0 {
             spans.push(Span::raw("   "));
         }
         spans.push(Span::styled(
-            format!("[{}]", keys),
+            format!("[{}]", entry.keys),
             Style::default().fg(theme.accent),
         ));
         spans.push(Span::raw(" "));
         spans.push(Span::styled(
-            desc.as_str(),
+            entry.description.as_str(),
             Style::default().fg(theme.text_primary),
         ));
     }

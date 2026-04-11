@@ -8,7 +8,7 @@ mod background_task_runner;
 pub(crate) mod branch_panel_adapter;
 mod command;
 pub(crate) mod commits_panel_adapter;
-mod diff_cache;
+pub(crate) mod diff_cache;
 mod diff_cache_manager;
 mod diff_loader;
 mod dirty_flags;
@@ -38,7 +38,8 @@ pub use app::SearchScopeKey;
 pub use app_effects::AppEffects;
 pub use command::Command;
 pub use states::{
-    BranchesPanelState, CommitsPanelState, FilesPanelState, RenderCache, SidePanel, StashPanelState,
+    BranchesPanelState, CommitsPanelState, DetailState, FilesPanelState, RenderCache, SidePanel,
+    StashPanelState,
 };
 #[cfg(test)]
 pub use test_dispatch::{dispatch_test_action, dispatch_test_key, map_test_key};

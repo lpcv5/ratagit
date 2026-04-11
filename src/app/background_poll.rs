@@ -1,9 +1,9 @@
 use super::app::{App, RefreshKind};
 use super::diff_cache;
-use super::diff_loader;
 use super::states::SidePanel;
 use crate::flux::branch_backend::BranchBackend;
 use crate::flux::commits_backend::{CommitsBackendCommand, CommitsLoadMode};
+use crate::flux::git_backend::detail::DetailRequest;
 use crate::flux::git_backend::stash::StashBackendCommand;
 use crate::flux::task_manager::{TaskGeneration, TaskKey, TaskRequest, TaskResult, TaskResultKind};
 use crate::git::{BranchInfo, CommitInfo, DiffLine, GitError, GitStatus, StashInfo};
@@ -64,14 +64,13 @@ pub(super) enum DiffRefreshSource {
 
 impl App {
     pub(super) fn should_schedule_diff_for_refresh(&self, source: DiffRefreshSource) -> bool {
-        use diff_loader::DiffTarget;
         matches!(
-            (source, self.selected_diff_target()),
-            (DiffRefreshSource::Status, DiffTarget::File { .. })
-                | (DiffRefreshSource::Status, DiffTarget::Directory { .. })
-                | (DiffRefreshSource::Branches, DiffTarget::Branch { .. })
-                | (DiffRefreshSource::Stashes, DiffTarget::Stash { .. })
-                | (DiffRefreshSource::Commits, DiffTarget::Commit { .. })
+            (source, self.current_detail_request()),
+            (DiffRefreshSource::Status, DetailRequest::File { .. })
+                | (DiffRefreshSource::Status, DetailRequest::Directory { .. })
+                | (DiffRefreshSource::Branches, DetailRequest::BranchLog { .. })
+                | (DiffRefreshSource::Stashes, DetailRequest::Stash { .. })
+                | (DiffRefreshSource::Commits, DetailRequest::Commit { .. })
         )
     }
 
@@ -523,7 +522,9 @@ impl App {
                             self.diff_mgr.cache.insert(cache_key.clone(), diff.clone());
                             self.diff_mgr.last_diff_key = Some(cache_key);
                             if self.ui.active_panel != SidePanel::LocalBranches {
-                                self.git.current_diff = diff;
+                                self.git.current_diff = diff.clone();
+                                self.git.detail.panel.lines = diff;
+                                self.git.detail.panel.is_loading = false;
                                 if !self.refresh.pending_diff_reload {
                                     self.refresh.pending_diff_reload_at = None;
                                 }

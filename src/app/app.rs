@@ -4,15 +4,16 @@ use super::branch_panel_adapter;
 use super::diff_cache_manager::DiffCacheManager;
 use super::refresh_scheduler::RefreshScheduler;
 use super::states::{
-    BranchesPanelState, CommandLogEntry, CommitsPanelState, FilesPanelState, GitState, InputState,
-    PanelState, RenderCache, SidePanel, StashPanelState, TreeModeState, UiState,
+    BranchesPanelState, CommandLogEntry, CommitsPanelState, DetailState, FilesPanelState, GitState,
+    InputState, PanelState, RenderCache, SidePanel, StashPanelState, TreeModeState, UiState,
 };
 use super::{
-    diff_cache, diff_loader, dirty_flags, files_panel_adapter, revision_tree, stash_panel_adapter,
+    diff_cache, dirty_flags, files_panel_adapter, revision_tree, stash_panel_adapter,
 };
 use crate::config::keymap::Keymap;
 use crate::flux::branch_backend::BranchPanelViewState;
 use crate::flux::files_backend::{FilesBackend, FilesBackendCommand, FilesPanelViewState};
+use crate::flux::git_backend::detail::{DetailBackend, DetailRequest};
 use crate::flux::git_backend::stash::{StashBackend, StashBackendEvent, StashPanelViewState};
 use crate::flux::task_manager::{TaskKey, TaskPriority, TaskRequestKind};
 use crate::git::{Git2Repository, GitError, GitRepository, GitStatus};
@@ -41,7 +42,7 @@ pub enum InputMode {
     CommitAllConfirm,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommitFieldFocus {
     Message,
     Description,
@@ -132,6 +133,7 @@ impl App {
             git: GitState {
                 status,
                 current_diff: Vec::new(),
+                detail: DetailState::default(),
             },
             ui: UiState {
                 active_panel: SidePanel::Files,
@@ -559,8 +561,9 @@ impl App {
         if !self.refresh.pending_diff_reload {
             return;
         }
-        let target = self.selected_diff_target();
-        let key = self.diff_target_to_cache_key(&target);
+        let detail_request = self.current_detail_request();
+        self.git.detail.panel.request = detail_request.clone();
+        let key = DetailBackend::cache_key(&detail_request);
 
         if self.diff_mgr.in_flight_diff_key.as_ref() == Some(&key) && self.has_active_diff_task() {
             self.clear_pending_diff_reload();
@@ -576,6 +579,8 @@ impl App {
         self.ui.diff_scroll = 0;
         if let Some(cached) = self.diff_mgr.cache.get_cloned(&key) {
             self.git.current_diff = cached;
+            self.git.detail.panel.lines = self.git.current_diff.clone();
+            self.git.detail.panel.is_loading = false;
             self.diff_mgr.last_diff_key = Some(key);
             self.clear_pending_diff_reload();
             self.ui.dirty.mark_diff();
@@ -585,49 +590,49 @@ impl App {
         self.cancel_pending_diff_task();
 
         let key_for_task = Self::diff_task_key();
-        let target_label = Self::diff_cache_key_to_task_target(&key);
-        let request = self.tasks.task_manager.enqueue(
+        let target_label = DetailBackend::cache_key_task_target(&key);
+        let task_request = self.tasks.task_manager.enqueue(
             key_for_task.clone(),
             TaskPriority::High,
             TaskRequestKind::LoadDiff {
                 target: target_label,
             },
         );
-        let request_generation = request.generation.0;
+        let request_generation = task_request.generation.0;
 
-        let rx = match target {
-            diff_loader::DiffTarget::None => {
+        self.git.detail.panel.is_loading = true;
+        let rx = match detail_request.clone() {
+            DetailRequest::None => {
                 self.tasks
                     .task_manager
-                    .mark_finished(&key_for_task, request.generation);
+                    .mark_finished(&key_for_task, task_request.generation);
                 self.git.current_diff = Vec::new();
+                self.git.detail.panel.lines.clear();
+                self.git.detail.panel.is_loading = false;
                 self.diff_mgr.last_diff_key = Some(key);
                 self.clear_pending_diff_reload();
                 self.ui.dirty.mark_diff();
                 return;
             }
-            diff_loader::DiffTarget::Branch { name } => {
-                self.repo.branch_log_async(name, BRANCH_LOG_DIFF_LIMIT)
-            }
-            diff_loader::DiffTarget::File { path, status } => match status {
-                crate::ui::widgets::file_tree::FileTreeNodeStatus::Staged(_) => {
+            DetailRequest::BranchLog { name } => self.repo.branch_log_async(name, BRANCH_LOG_DIFF_LIMIT),
+            DetailRequest::File {
+                path,
+                is_staged,
+                is_untracked,
+            } => {
+                if is_staged {
                     self.repo.diff_staged_async(path)
-                }
-                crate::ui::widgets::file_tree::FileTreeNodeStatus::Untracked => {
+                } else if is_untracked {
                     self.repo.diff_untracked_async(path)
-                }
-                crate::ui::widgets::file_tree::FileTreeNodeStatus::Unstaged(_) => {
+                } else {
                     self.repo.diff_unstaged_async(path)
                 }
-                crate::ui::widgets::file_tree::FileTreeNodeStatus::Directory => {
-                    self.repo.diff_directory_async(path)
-                }
-            },
-            diff_loader::DiffTarget::Directory { path } => self.repo.diff_directory_async(path),
-            diff_loader::DiffTarget::Commit { oid, path } => {
+            }
+            DetailRequest::Directory { path, .. } => self.repo.diff_directory_async(path),
+            DetailRequest::Commit { oid, path } => {
                 self.repo.commit_diff_scoped_async(oid, path)
             }
-            diff_loader::DiffTarget::Stash { index, path } => {
+            DetailRequest::Stash { index, path } => {
                 self.repo.stash_diff_async(index, path)
             }
         };
@@ -639,17 +644,21 @@ impl App {
                         self.diff_mgr.cache.insert(key.clone(), diff.clone());
                         self.diff_mgr.last_diff_key = Some(key);
                         self.git.current_diff = diff;
+                        self.git.detail.panel.lines = self.git.current_diff.clone();
+                        self.git.detail.panel.is_loading = false;
                         self.clear_pending_diff_reload();
                         self.ui.dirty.mark_diff();
                         return;
                     }
                     Ok(Err(err)) => {
                         self.push_log(format!("diff load failed: {}", err), false);
+                        self.git.detail.panel.is_loading = false;
                         self.clear_pending_diff_reload();
                         return;
                     }
                     Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                         self.push_log("diff load disconnected".to_string(), false);
+                        self.git.detail.panel.is_loading = false;
                         self.clear_pending_diff_reload();
                         return;
                     }
@@ -657,11 +666,11 @@ impl App {
                 }
                 self.tasks
                     .task_manager
-                    .mark_started(&key_for_task, request.generation);
+                    .mark_started(&key_for_task, task_request.generation);
                 self.tasks.pending_background_tasks.insert(
-                    request.generation,
+                    task_request.generation,
                     PendingBackgroundTask {
-                        request,
+                        request: task_request,
                         receiver: BackgroundReceiver::Diff {
                             cache_key: key.clone(),
                             rx,
@@ -680,8 +689,9 @@ impl App {
             Err(err) => {
                 self.tasks
                     .task_manager
-                    .mark_finished(&key_for_task, request.generation);
+                    .mark_finished(&key_for_task, task_request.generation);
                 self.push_log(format!("diff load failed: {}", err), false);
+                self.git.detail.panel.is_loading = false;
                 self.clear_pending_diff_reload();
             }
         }
@@ -991,6 +1001,16 @@ impl App {
         stash_panel_adapter::view_state_from_shell(&self.ui.stash)
     }
 
+    pub(crate) fn current_detail_request(&self) -> DetailRequest {
+        DetailBackend::request_from_shell_panels(
+            self.ui.active_panel,
+            &self.ui.files,
+            &self.ui.branches,
+            &self.ui.commits,
+            &self.ui.stash,
+        )
+    }
+
     pub(crate) fn apply_files_backend_view(
         &mut self,
         event: crate::flux::files_backend::FilesBackendEvent,
@@ -1091,76 +1111,6 @@ impl App {
             | StashBackendCommand::Drop(_) => {}
         }
         Ok(())
-    }
-
-    pub(super) fn diff_target_to_cache_key(
-        &self,
-        target: &diff_loader::DiffTarget,
-    ) -> diff_cache::DiffCacheKey {
-        use crate::ui::widgets::file_tree::FileTreeNodeStatus;
-        use diff_loader::DiffTarget;
-
-        match target {
-            DiffTarget::Branch { name } => diff_cache::DiffCacheKey::Branch {
-                name: name.clone(),
-                limit: 100,
-            },
-            DiffTarget::File { path, status } => {
-                let is_staged = matches!(status, FileTreeNodeStatus::Staged(_));
-                diff_cache::DiffCacheKey::File {
-                    path: path.clone(),
-                    is_staged,
-                }
-            }
-            DiffTarget::Directory { path } => {
-                let hash = self
-                    .current_files_view_state()
-                    .nodes
-                    .iter()
-                    .filter(|n| n.path.starts_with(path))
-                    .map(|n| n.path.to_string_lossy().to_string())
-                    .collect::<Vec<_>>()
-                    .join("|")
-                    .bytes()
-                    .fold(0u64, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u64));
-                diff_cache::DiffCacheKey::Directory {
-                    path: path.clone(),
-                    files_hash: hash,
-                }
-            }
-            DiffTarget::Commit { oid, path } => diff_cache::DiffCacheKey::Commit {
-                oid: oid.clone(),
-                path: path.clone(),
-            },
-            DiffTarget::Stash { index, path } => diff_cache::DiffCacheKey::Stash {
-                index: *index,
-                path: path.clone(),
-            },
-            DiffTarget::None => diff_cache::DiffCacheKey::None,
-        }
-    }
-
-    pub(super) fn diff_cache_key_to_task_target(key: &diff_cache::DiffCacheKey) -> String {
-        match key {
-            diff_cache::DiffCacheKey::None => "none".to_string(),
-            diff_cache::DiffCacheKey::File { path, is_staged } => {
-                format!("file:{}:{}", path.display(), is_staged)
-            }
-            diff_cache::DiffCacheKey::Branch { name, limit } => {
-                format!("branch:{}:{}", name, limit)
-            }
-            diff_cache::DiffCacheKey::Directory { path, files_hash } => {
-                format!("dir:{}:{}", path.display(), files_hash)
-            }
-            diff_cache::DiffCacheKey::Commit { oid, path } => match path {
-                Some(path) => format!("commit:{}:{}", oid, path.display()),
-                None => format!("commit:{}:*", oid),
-            },
-            diff_cache::DiffCacheKey::Stash { index, path } => match path {
-                Some(path) => format!("stash:{}:{}", index, path.display()),
-                None => format!("stash:{}:*", index),
-            },
-        }
     }
 
     pub fn commit_open_tree_or_toggle_dir(&mut self) -> Result<()> {
