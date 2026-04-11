@@ -45,10 +45,6 @@ impl AppEffects for App {
         App::stash_open_tree_or_toggle_dir(self)
     }
 
-    fn commit_open_tree_or_toggle_dir(&mut self) -> color_eyre::Result<()> {
-        App::commit_open_tree_or_toggle_dir(self)
-    }
-
     fn toggle_stage_visual_selection(&mut self) -> color_eyre::Result<(usize, usize)> {
         App::toggle_stage_visual_selection(self)
     }

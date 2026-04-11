@@ -7,6 +7,7 @@ mod background_poll;
 mod background_task_runner;
 pub(crate) mod branch_panel_adapter;
 mod command;
+pub(crate) mod commits_panel_adapter;
 mod diff_cache;
 mod diff_cache_manager;
 mod diff_loader;

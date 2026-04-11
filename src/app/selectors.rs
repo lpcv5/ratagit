@@ -1,6 +1,7 @@
 use super::states::{PanelState, TreeModeState};
 use super::{diff_loader, revision_tree};
 use crate::app::{App, SidePanel};
+use crate::flux::commits_backend::{CommitsBackend, CommitsPanelDiffRequest};
 use crate::flux::files_backend::{FilesBackend, FilesPanelDiffRequest};
 use crate::ui::widgets::file_tree::FileTreeNode;
 
@@ -49,11 +50,10 @@ impl App {
         if self.ui.active_panel != SidePanel::Commits {
             return None;
         }
-        if self.ui.commits.tree_mode.active {
-            return self.ui.commits.tree_mode.selected_source.clone();
+        match CommitsBackend::selected_diff_request(&self.current_commits_view_state()) {
+            CommitsPanelDiffRequest::Commit { oid, .. } => Some(oid),
+            CommitsPanelDiffRequest::None => None,
         }
-        let idx = self.ui.commits.panel.list_state.selected()?;
-        self.ui.commits.items.get(idx).map(|c| c.oid.clone())
     }
 
     pub fn selected_stash_index(&self) -> Option<usize> {
@@ -95,15 +95,12 @@ impl App {
                 }
             }
             SidePanel::Commits => {
-                let Some(oid) = self.selected_commit_oid() else {
-                    return diff_loader::DiffTarget::None;
-                };
-                let path = if self.ui.commits.tree_mode.active {
-                    self.selected_commit_tree_node().map(|n| n.path.clone())
-                } else {
-                    None
-                };
-                diff_loader::DiffTarget::Commit { oid, path }
+                match CommitsBackend::selected_diff_request(&self.current_commits_view_state()) {
+                    CommitsPanelDiffRequest::None => diff_loader::DiffTarget::None,
+                    CommitsPanelDiffRequest::Commit { oid, path } => {
+                        diff_loader::DiffTarget::Commit { oid, path }
+                    }
+                }
             }
             SidePanel::Stash => {
                 let Some(index) = self.selected_stash_index() else {
@@ -129,14 +126,6 @@ impl App {
                 diff_loader::DiffTarget::Branch { name }
             }
         }
-    }
-
-    pub(super) fn selected_commit_tree_node(&self) -> Option<&FileTreeNode> {
-        self.selected_revision_tree_node(
-            SidePanel::Commits,
-            &self.ui.commits.panel,
-            &self.ui.commits.tree_mode,
-        )
     }
 
     pub(super) fn selected_stash_tree_node(&self) -> Option<&FileTreeNode> {

@@ -3,6 +3,7 @@ use super::diff_cache;
 use super::diff_loader;
 use super::states::SidePanel;
 use crate::flux::branch_backend::BranchBackend;
+use crate::flux::commits_backend::{CommitsBackendCommand, CommitsLoadMode};
 use crate::flux::task_manager::{TaskGeneration, TaskKey, TaskRequest, TaskResult, TaskResultKind};
 use crate::git::{BranchInfo, CommitInfo, DiffLine, GitError, GitStatus, StashInfo};
 use std::collections::HashMap;
@@ -458,8 +459,14 @@ impl App {
                                 requested_limit = self.tasks.commits_requested_limit,
                                 "commits load finished"
                             );
-                            self.ui.commits.items = items;
-                            self.ui.commits.dirty = false;
+                            if let Err(err) = self.apply_commits_backend_command(
+                                CommitsBackendCommand::ApplyLoaded {
+                                    items,
+                                    mode: CommitsLoadMode::Full,
+                                },
+                            ) {
+                                self.push_log(format!("commits load apply failed: {}", err), false);
+                            }
                             self.ui.dirty.mark_all();
                             if self.should_schedule_diff_for_refresh(DiffRefreshSource::Commits) {
                                 schedule_diff = true;
@@ -473,8 +480,14 @@ impl App {
                                 requested_limit = self.tasks.commits_requested_limit,
                                 "commits fast load finished"
                             );
-                            self.ui.commits.items = items;
-                            self.ui.commits.dirty = true;
+                            if let Err(err) = self.apply_commits_backend_command(
+                                CommitsBackendCommand::ApplyLoaded {
+                                    items,
+                                    mode: CommitsLoadMode::Fast,
+                                },
+                            ) {
+                                self.push_log(format!("commits load apply failed: {}", err), false);
+                            }
                             self.ui.dirty.mark_all();
                             if self.should_schedule_diff_for_refresh(DiffRefreshSource::Commits) {
                                 schedule_diff = true;

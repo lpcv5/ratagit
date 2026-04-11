@@ -79,7 +79,8 @@ pub fn map_key_to_actions(
     }
     if key.code == crossterm::event::KeyCode::Esc
         && ((snapshot.active_panel == SidePanel::Stash && snapshot.stash.tree_mode.active)
-            || (snapshot.active_panel == SidePanel::Commits && snapshot.commits.tree_mode.active)
+            || (snapshot.active_panel == SidePanel::Commits
+                && snapshot.commits_view_state().tree_mode.active)
             || (snapshot.active_panel == SidePanel::LocalBranches
                 && snapshot.branches.commits_subview_active))
     {

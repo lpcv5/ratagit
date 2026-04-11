@@ -1,6 +1,7 @@
 use crate::app::Command;
 use crate::app::SidePanel;
 use crate::flux::action::{Action, ActionEnvelope, DomainAction};
+use crate::flux::commits_backend::CommitsBackendCommand;
 use crate::flux::effects::EffectRequest;
 use crate::flux::stores::{ReduceCtx, ReduceOutput, Store, UiInvalidation};
 
@@ -24,13 +25,22 @@ impl Store for RevisionStore {
             DomainAction::RevisionCloseTree => {
                 match ctx.state.active_panel() {
                     SidePanel::Stash => ctx.state.stash_close_tree(),
-                    SidePanel::Commits => ctx.state.commit_close_tree(),
                     SidePanel::LocalBranches => ctx.state.close_branch_commits_subview(),
                     _ => {}
                 }
                 ctx.state.restore_search_for_active_scope();
-                ReduceOutput::from_command(Command::Effect(EffectRequest::ReloadDiffNow))
-                    .with_invalidation(UiInvalidation::all())
+                let mut output =
+                    ReduceOutput::from_command(Command::Effect(EffectRequest::ReloadDiffNow))
+                        .with_invalidation(UiInvalidation::all());
+                if ctx.state.active_panel() == SidePanel::Commits {
+                    output.commands.insert(
+                        0,
+                        Command::Effect(EffectRequest::CommitsBackend(
+                            CommitsBackendCommand::CloseTree,
+                        )),
+                    );
+                }
+                output
             }
             _ => ReduceOutput::none(),
         }
@@ -41,6 +51,7 @@ impl Store for RevisionStore {
 mod tests {
     use super::*;
     use crate::flux::action::{Action, DomainAction};
+    use crate::flux::commits_backend::CommitsBackendCommand;
     use crate::flux::stores::test_support::{mock_app, reduce_action as reduce};
 
     #[test]
@@ -65,6 +76,28 @@ mod tests {
             Action::Domain(DomainAction::RevisionCloseTree),
         );
         assert!(!output.commands.is_empty());
+    }
+
+    #[test]
+    fn commits_revision_close_emits_commits_backend_close_tree() {
+        let mut store = RevisionStore::new();
+        let mut app = mock_app();
+        app.ui.active_panel = SidePanel::Commits;
+
+        let output = reduce(
+            &mut store,
+            &mut app,
+            Action::Domain(DomainAction::RevisionCloseTree),
+        );
+
+        assert!(output.commands.iter().any(|command| {
+            matches!(
+                command,
+                Command::Effect(EffectRequest::CommitsBackend(
+                    CommitsBackendCommand::CloseTree
+                ))
+            )
+        }));
     }
 
     #[test]

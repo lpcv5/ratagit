@@ -79,7 +79,6 @@ pub trait NavigationAccess {
     fn list_up(&mut self);
     fn diff_scroll_up(&mut self);
     fn diff_scroll_down(&mut self);
-    fn recompute_commit_highlight(&mut self);
 }
 
 /// Search query management and navigation.
@@ -128,7 +127,6 @@ pub trait OverlayAccess {
 /// Revision tree operations (commit tree, stash tree, branch commits subview).
 pub trait RevisionAccess {
     fn stash_close_tree(&mut self);
-    fn commit_close_tree(&mut self);
     fn close_branch_commits_subview(&mut self);
 }
 

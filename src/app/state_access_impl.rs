@@ -191,10 +191,6 @@ impl NavigationAccess for App {
     fn diff_scroll_down(&mut self) {
         App::diff_scroll_down(self);
     }
-
-    fn recompute_commit_highlight(&mut self) {
-        App::recompute_commit_highlight(self);
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -332,10 +328,6 @@ impl OverlayAccess for App {
 impl RevisionAccess for App {
     fn stash_close_tree(&mut self) {
         App::stash_close_tree(self);
-    }
-
-    fn commit_close_tree(&mut self) {
-        App::commit_close_tree(self);
     }
 
     fn close_branch_commits_subview(&mut self) {

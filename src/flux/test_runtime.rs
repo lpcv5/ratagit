@@ -1,6 +1,7 @@
 use crate::app::{App, SidePanel};
 use crate::flux::action::DomainAction;
 use crate::flux::branch_backend::BranchBackend;
+use crate::flux::commits_backend::CommitsBackendCommand;
 use crate::flux::effects::EffectRequest;
 use crate::flux::stores::UiInvalidation;
 
@@ -44,7 +45,9 @@ pub fn run_inline_effect(app: &mut App, request: EffectRequest) -> Option<Vec<Do
             };
             let result = match active_panel {
                 SidePanel::Stash => app.stash_open_tree_or_toggle_dir(),
-                SidePanel::Commits => app.commit_open_tree_or_toggle_dir(),
+                SidePanel::Commits => {
+                    app.apply_commits_backend_command(CommitsBackendCommand::OpenTreeOrToggleDir)
+                }
                 SidePanel::LocalBranches => Ok(()),
                 _ => Ok(()),
             };
@@ -66,7 +69,9 @@ pub fn run_inline_effect(app: &mut App, request: EffectRequest) -> Option<Vec<Do
                     );
                     app.apply_branches_backend_view(next);
                     match app.start_branch_commits_background_load(branch.clone(), 100) {
-                        Ok(()) => app.push_log(format!("branch commits: {} (Esc to back)", branch), true),
+                        Ok(()) => {
+                            app.push_log(format!("branch commits: {} (Esc to back)", branch), true)
+                        }
                         Err(err) => {
                             let failed = BranchBackend::fail_commits_subview_load(
                                 app.current_branches_view_state(),
@@ -77,6 +82,24 @@ pub fn run_inline_effect(app: &mut App, request: EffectRequest) -> Option<Vec<Do
                         }
                     }
                 }
+            }
+            Some(vec![])
+        }
+        EffectRequest::CommitsBackend(command) => {
+            let opens_tree = matches!(command, CommitsBackendCommand::OpenTreeOrToggleDir);
+            let closes_tree = matches!(command, CommitsBackendCommand::CloseTree);
+            match app.apply_commits_backend_command(command) {
+                Ok(()) => {
+                    if opens_tree {
+                        app.restore_search_for_active_scope();
+                        app.reload_diff_now();
+                        UiInvalidation::all().apply(app);
+                    }
+                    if closes_tree {
+                        app.restore_search_for_active_scope();
+                    }
+                }
+                Err(err) => app.push_log(format!("commits backend command failed: {}", err), false),
             }
             Some(vec![])
         }

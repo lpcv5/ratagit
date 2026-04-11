@@ -6,7 +6,6 @@ mod panel_component;
 mod stash_panel_component;
 
 pub use branches_panel_component::draw_branches_panel;
-pub use commits_panel_component::draw_commits_panel;
 pub use commits_panel_component::draw_commits_panel_view;
 pub use commits_panel_presenter::{CommitsPanelViewState, CommitsTreeViewState};
 pub use files_panel_component::draw_files_panel;

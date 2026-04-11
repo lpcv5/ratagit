@@ -1,8 +1,7 @@
-use crate::app::{CommitsPanelState, SidePanel};
+use crate::app::SidePanel;
 use crate::git::{CommitSyncState, GraphCell};
 use crate::ui::components::organisms::{
-    empty_list_item, title_with_search, CommitsPanelViewState, CommitsTreeViewState,
-    PanelRenderContext,
+    empty_list_item, title_with_search, CommitsPanelViewState, PanelRenderContext,
 };
 use crate::ui::highlight::highlighted_spans;
 use crate::ui::panels::revision_tree_panel::{render_revision_tree_panel, RevisionTreePanelProps};
@@ -16,16 +15,6 @@ use ratatui::{
     Frame,
 };
 use std::collections::HashSet;
-
-pub fn draw_commits_panel(
-    frame: &mut Frame,
-    area: Rect,
-    state: &CommitsPanelState,
-    ctx: &PanelRenderContext<'_>,
-) {
-    let view = view_state_from_shell(state);
-    draw_commits_panel_view(frame, area, &view, ctx);
-}
 
 pub fn draw_commits_panel_view(
     frame: &mut Frame,
@@ -115,20 +104,7 @@ pub fn draw_commits_panel_view(
     );
 }
 
-pub fn view_state_from_shell(state: &CommitsPanelState) -> CommitsPanelViewState {
-    CommitsPanelViewState {
-        selected_index: state.panel.list_state.selected(),
-        items: state.items.clone(),
-        tree_mode: CommitsTreeViewState {
-            active: state.tree_mode.active,
-            selected_source: state.tree_mode.selected_source.clone(),
-            nodes: state.tree_mode.nodes.clone(),
-        },
-        highlighted_oids: state.highlighted_oids.clone(),
-    }
-}
-
-impl DynamicPanel for CommitsPanelState {
+impl DynamicPanel for CommitsPanelViewState {
     fn default_height_percent(&self) -> u16 {
         40
     }
@@ -224,8 +200,9 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     #[test]
-    fn view_state_from_shell_projects_selection_without_shell_types() {
-        let mut state = CommitsPanelState {
+    fn commits_view_state_carries_selection_without_widget_state() {
+        let view = CommitsPanelViewState {
+            selected_index: Some(0),
             items: vec![CommitInfo {
                 oid: "abc123".to_string(),
                 message: "test commit".to_string(),
@@ -243,9 +220,7 @@ mod tests {
             }],
             ..Default::default()
         };
-        state.panel.list_state.select(Some(0));
 
-        let view = view_state_from_shell(&state);
         assert_eq!(view.selected_index, Some(0));
         assert_eq!(view.items.len(), 1);
     }

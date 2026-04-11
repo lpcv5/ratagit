@@ -1,10 +1,11 @@
-use crate::app::{branch_panel_adapter, files_panel_adapter};
+use crate::app::{branch_panel_adapter, commits_panel_adapter, files_panel_adapter};
 use crate::app::{
     App, BranchesPanelState, CommitFieldFocus, CommitsPanelState, FilesPanelState, InputMode,
     RenderCache, SidePanel, StashPanelState,
 };
 use crate::config::keymap::Keymap;
 use crate::flux::branch_backend::BranchPanelViewState;
+use crate::flux::commits_backend::CommitsPanelViewState;
 use crate::flux::files_backend::FilesPanelViewState;
 use crate::git::DiffLine;
 
@@ -118,6 +119,10 @@ impl<'a> AppStateSnapshot<'a> {
 
     pub fn branches_view_state(&self) -> BranchPanelViewState {
         branch_panel_adapter::view_state_from_shell(self.branches)
+    }
+
+    pub fn commits_view_state(&self) -> CommitsPanelViewState {
+        commits_panel_adapter::view_state_from_shell(self.commits)
     }
 }
 
@@ -285,8 +290,9 @@ impl AppStateSnapshotOwned {
 mod tests {
     use super::*;
     use crate::app::App;
-    use crate::git::FileStatus;
+    use crate::git::{CommitInfo, CommitSyncState, FileStatus, GraphCell};
     use crate::ui::widgets::file_tree::{FileTreeNode, FileTreeNodeStatus};
+    use std::collections::HashSet;
 
     #[test]
     fn files_view_state_projects_selection_without_widget_state() {
@@ -309,5 +315,46 @@ mod tests {
         assert!(view.selection.visual_mode);
         assert_eq!(view.selection.visual_anchor, Some(0));
         assert_eq!(view.nodes.len(), 1);
+    }
+
+    #[test]
+    fn commits_view_state_projects_selection_without_widget_state() {
+        let mut app =
+            App::from_repo(Box::new(crate::flux::stores::test_support::MockRepo)).unwrap();
+        app.ui.commits.items = vec![CommitInfo {
+            oid: "abc123".to_string(),
+            message: "test commit".to_string(),
+            author: "tester".to_string(),
+            graph: vec![GraphCell {
+                text: "*".to_string(),
+                lane: 0,
+                pipe_oid: None,
+                pipe_oids: vec![],
+            }],
+            time: "2026-04-11 00:00".to_string(),
+            parent_count: 1,
+            sync_state: CommitSyncState::DefaultBranch,
+            parent_oids: vec![],
+        }];
+        app.ui.commits.panel.list_state.select(Some(0));
+        app.ui.commits.tree_mode.active = true;
+        app.ui.commits.tree_mode.selected_source = Some("abc123".to_string());
+        app.ui.commits.tree_mode.nodes = vec![FileTreeNode {
+            path: "src/main.rs".into(),
+            status: FileTreeNodeStatus::Unstaged(FileStatus::Modified),
+            depth: 0,
+            is_dir: false,
+            is_expanded: false,
+        }];
+        app.ui.commits.highlighted_oids = HashSet::from(["abc123".to_string()]);
+
+        let view = AppStateSnapshot::from_app(&app).commits_view_state();
+
+        assert_eq!(view.selected_index, Some(0));
+        assert_eq!(view.items.len(), 1);
+        assert!(view.tree_mode.active);
+        assert_eq!(view.tree_mode.selected_source.as_deref(), Some("abc123"));
+        assert_eq!(view.tree_mode.nodes.len(), 1);
+        assert!(view.highlighted_oids.contains("abc123"));
     }
 }

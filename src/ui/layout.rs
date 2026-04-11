@@ -1,7 +1,8 @@
 use crate::app::SidePanel;
 use crate::flux::snapshot::AppStateSnapshot;
 use crate::ui::components::organisms::{
-    draw_branches_panel, draw_commits_panel, draw_files_panel, draw_stash_panel, PanelRenderContext,
+    draw_branches_panel, draw_commits_panel_view, draw_files_panel, draw_stash_panel,
+    PanelRenderContext,
 };
 use crate::ui::panels::{
     render_branch_switch_confirm, render_command_log, render_command_palette,
@@ -78,7 +79,7 @@ pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
         }
         // Keep commit panel sizing stable when toggling between commit list and tree mode.
         // Use the parent commit list length as the single source for overflow checks.
-        SidePanel::Commits => snapshot.commits.items.len(),
+        SidePanel::Commits => snapshot.commits_view_state().items.len(),
         SidePanel::Stash => 0,
     };
 
@@ -158,15 +159,16 @@ pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
     let branches_view = snapshot.branches_view_state();
     draw_branches_panel(frame, left_panels[1], &branches_view, &branches_ctx);
 
+    let commits_view = snapshot.commits_view_state();
     let commits_ctx = PanelRenderContext {
         active_panel: snapshot.active_panel,
         panel_title_override: None,
         search_query: snapshot.commits_search_query,
         search_summary: snapshot.render_cache.commits_search_summary.as_deref(),
         visual_selected_indices: PanelRenderContext::empty_visual_selected_indices(),
-        highlighted_oids: &snapshot.commits.highlighted_oids,
+        highlighted_oids: &commits_view.highlighted_oids,
     };
-    draw_commits_panel(frame, left_panels[2], snapshot.commits, &commits_ctx);
+    draw_commits_panel_view(frame, left_panels[2], &commits_view, &commits_ctx);
 
     let stash_ctx = PanelRenderContext {
         active_panel: snapshot.active_panel,

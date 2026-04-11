@@ -515,26 +515,20 @@ impl App {
     }
 
     pub(super) fn maybe_schedule_commits_extend(&mut self) {
-        if self.ui.active_panel != SidePanel::Commits || self.ui.commits.tree_mode.active {
-            return;
-        }
-        if self.has_background_task(&TaskKey::Commits) || self.ui.commits.dirty {
-            return;
-        }
-        let len = self.ui.commits.items.len();
-        if len == 0 {
-            return;
-        }
-        let Some(selected) = self.ui.commits.panel.list_state.selected() else {
+        let Some(next_limit) = crate::flux::commits_backend::CommitsBackend::load_ahead_limit(
+            &self.current_commits_view_state(),
+            self.ui.active_panel,
+            self.has_background_task(&TaskKey::Commits),
+            self.ui.commits.dirty,
+            self.tasks.commits_requested_limit,
+            COMMITS_LOAD_AHEAD_THRESHOLD,
+            COMMITS_LOAD_STEP,
+        ) else {
             return;
         };
-        if selected + COMMITS_LOAD_AHEAD_THRESHOLD < len {
-            return;
-        }
-        self.tasks.commits_requested_limit = self
-            .tasks
-            .commits_requested_limit
-            .saturating_add(COMMITS_LOAD_STEP);
+        let selected = self.ui.commits.panel.list_state.selected();
+        let len = self.ui.commits.items.len();
+        self.tasks.commits_requested_limit = next_limit;
         self.ui.commits.dirty = true;
         debug!(
             event = "commits_extend_requested",
@@ -1053,6 +1047,12 @@ impl App {
         branch_panel_adapter::view_state_from_shell(&self.ui.branches)
     }
 
+    pub(crate) fn current_commits_view_state(
+        &self,
+    ) -> crate::flux::commits_backend::CommitsPanelViewState {
+        crate::app::commits_panel_adapter::view_state_from_shell(&self.ui.commits)
+    }
+
     pub(crate) fn apply_files_backend_view(
         &mut self,
         event: crate::flux::files_backend::FilesBackendEvent,
@@ -1064,6 +1064,43 @@ impl App {
 
     pub(crate) fn apply_branches_backend_view(&mut self, view: BranchPanelViewState) {
         branch_panel_adapter::apply_view_state(&mut self.ui.branches, view);
+    }
+
+    pub(crate) fn apply_commits_backend_view(
+        &mut self,
+        event: crate::flux::commits_backend::CommitsBackendEvent,
+    ) {
+        let crate::flux::commits_backend::CommitsBackendEvent::ViewStateUpdated { view, dirty } =
+            event;
+        crate::app::commits_panel_adapter::apply_view_state(&mut self.ui.commits, view);
+        if let Some(dirty) = dirty {
+            self.ui.commits.dirty = dirty;
+        }
+    }
+
+    pub(crate) fn apply_commits_backend_command(
+        &mut self,
+        command: crate::flux::commits_backend::CommitsBackendCommand,
+    ) -> Result<()> {
+        use crate::flux::commits_backend::{CommitsBackend, CommitsBackendCommand};
+
+        let event = match command {
+            CommitsBackendCommand::ApplyLoaded { items, mode } => {
+                CommitsBackend::apply_loaded(self.current_commits_view_state(), items, mode)
+            }
+            CommitsBackendCommand::CloseTree => {
+                CommitsBackend::close_tree(self.current_commits_view_state())
+            }
+            CommitsBackendCommand::OpenTreeOrToggleDir => {
+                return self.commit_open_tree_or_toggle_dir();
+            }
+            CommitsBackendCommand::RecomputeHighlight => CommitsBackend::recompute_highlight(
+                self.current_commits_view_state(),
+                self.ui.active_panel,
+            ),
+        };
+        self.apply_commits_backend_view(event);
+        Ok(())
     }
 
     pub(super) fn diff_target_to_cache_key(
@@ -1150,75 +1187,20 @@ impl App {
                 return Ok(());
             };
             let files = self.repo.commit_files(&oid)?;
-            revision_tree::enter_tree_mode(
+            let event = crate::flux::commits_backend::CommitsBackend::open_tree(
+                self.current_commits_view_state(),
                 oid,
                 files,
-                revision_tree::TreeModeState {
-                    tree_mode: &mut self.ui.commits.tree_mode.active,
-                    tree_nodes: &mut self.ui.commits.tree_mode.nodes,
-                    tree_files: &mut self.ui.commits.tree_mode.files,
-                    expanded_dirs: &mut self.ui.commits.tree_mode.expanded_dirs,
-                    selected_tree_revision: &mut self.ui.commits.tree_mode.selected_source,
-                    list_state: &mut self.ui.commits.panel.list_state,
-                },
             );
+            self.apply_commits_backend_view(event);
             return Ok(());
         }
 
-        let selected_dir_path = self.selected_commit_tree_node().and_then(|node| {
-            if node.is_dir {
-                Some(node.path.clone())
-            } else {
-                None
-            }
-        });
-        revision_tree::toggle_tree_dir(
-            selected_dir_path,
-            &self.ui.commits.tree_mode.files,
-            &mut self.ui.commits.tree_mode.expanded_dirs,
-            &mut self.ui.commits.tree_mode.nodes,
-            &mut self.ui.commits.panel.list_state,
+        let event = crate::flux::commits_backend::CommitsBackend::toggle_tree_dir(
+            self.current_commits_view_state(),
         );
+        self.apply_commits_backend_view(event);
         Ok(())
-    }
-
-    pub fn commit_close_tree(&mut self) {
-        let selected_source_index = self
-            .ui
-            .commits
-            .tree_mode
-            .selected_source
-            .as_ref()
-            .and_then(|oid| self.ui.commits.items.iter().position(|c| c.oid == *oid));
-
-        let was_open = self.ui.commits.tree_mode.active;
-        revision_tree::close_tree_mode(
-            &mut self.ui.commits.tree_mode.active,
-            &mut self.ui.commits.tree_mode.nodes,
-            &mut self.ui.commits.tree_mode.files,
-            &mut self.ui.commits.tree_mode.expanded_dirs,
-            &mut self.ui.commits.panel.list_state,
-            selected_source_index,
-            self.ui.commits.items.len(),
-        );
-        if was_open {
-            self.ui.commits.tree_mode.selected_source = None;
-        }
-    }
-
-    pub fn recompute_commit_highlight(&mut self) {
-        use crate::app::graph_highlight::compute_highlight_set;
-        if self.ui.active_panel == SidePanel::Commits && !self.ui.commits.tree_mode.active {
-            if let Some(idx) = self.ui.commits.panel.list_state.selected() {
-                if let Some(commit) = self.ui.commits.items.get(idx) {
-                    let oid = commit.oid.clone();
-                    self.ui.commits.highlighted_oids =
-                        compute_highlight_set(&self.ui.commits.items, &oid);
-                    return;
-                }
-            }
-        }
-        self.ui.commits.highlighted_oids.clear();
     }
 
     pub(super) fn global_key_or(&self, action: &str, fallback: &str) -> String {
@@ -1243,11 +1225,18 @@ impl App {
     }
 
     pub(super) fn reload_commits_now(&mut self) {
-        self.ui.commits.items = self
+        let items = self
             .repo
             .commits(self.tasks.commits_requested_limit)
             .unwrap_or_default();
-        self.ui.commits.dirty = false;
+        if let Err(err) = self.apply_commits_backend_command(
+            crate::flux::commits_backend::CommitsBackendCommand::ApplyLoaded {
+                items,
+                mode: crate::flux::commits_backend::CommitsLoadMode::Full,
+            },
+        ) {
+            self.push_log(format!("commits reload apply failed: {}", err), false);
+        }
         if self.ui.commits.tree_mode.active {
             if let Some(ref oid) = self.ui.commits.tree_mode.selected_source {
                 if self.ui.commits.items.iter().any(|c| c.oid == *oid) {
@@ -1260,10 +1249,16 @@ impl App {
                         &mut self.ui.commits.panel.list_state,
                     );
                 } else {
-                    self.commit_close_tree();
+                    let event = crate::flux::commits_backend::CommitsBackend::close_tree(
+                        self.current_commits_view_state(),
+                    );
+                    self.apply_commits_backend_view(event);
                 }
             } else {
-                self.commit_close_tree();
+                let event = crate::flux::commits_backend::CommitsBackend::close_tree(
+                    self.current_commits_view_state(),
+                );
+                self.apply_commits_backend_view(event);
             }
         }
     }

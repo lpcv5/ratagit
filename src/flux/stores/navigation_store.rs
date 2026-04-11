@@ -2,6 +2,7 @@ use crate::app::Command;
 use crate::app::SidePanel;
 use crate::flux::action::{Action, ActionEnvelope, DomainAction};
 use crate::flux::branch_backend::BranchBackendCommand;
+use crate::flux::commits_backend::CommitsBackendCommand;
 use crate::flux::effects::EffectRequest;
 use crate::flux::files_backend::FilesBackendCommand;
 use crate::flux::stores::{ReduceCtx, ReduceOutput, Store, UiInvalidation};
@@ -11,10 +12,6 @@ pub struct NavigationStore;
 impl NavigationStore {
     pub fn new() -> Self {
         Self
-    }
-
-    fn recompute_commit_highlight(ctx: &mut ReduceCtx<'_>) {
-        ctx.state.recompute_commit_highlight();
     }
 
     /// Common post-processing after panel switch operations.
@@ -39,8 +36,10 @@ impl NavigationStore {
 
     /// Common post-processing after list navigation operations.
     fn after_list_nav(ctx: &mut ReduceCtx<'_>) -> ReduceOutput {
-        Self::recompute_commit_highlight(ctx);
-        let mut output = ReduceOutput::none().with_invalidation(UiInvalidation::all());
+        let mut output = ReduceOutput::from_command(Command::Effect(
+            EffectRequest::CommitsBackend(CommitsBackendCommand::RecomputeHighlight),
+        ))
+        .with_invalidation(UiInvalidation::all());
         if ctx.state.active_panel() == SidePanel::LocalBranches {
             let branch_name = ctx.state.selected_branch_name();
             output
@@ -129,6 +128,7 @@ impl Store for NavigationStore {
 mod tests {
     use super::*;
     use crate::flux::action::{Action, DomainAction};
+    use crate::flux::commits_backend::CommitsBackendCommand;
     use crate::flux::effects::EffectRequest;
     use crate::flux::files_backend::FilesBackendCommand;
     use crate::flux::stores::test_support::{mock_app, reduce_action as reduce};
@@ -214,6 +214,24 @@ mod tests {
                 FilesBackendCommand::ToggleSelectedDir
             ))]
         ));
+    }
+
+    #[test]
+    fn commits_list_navigation_emits_commits_backend_highlight_recompute() {
+        let mut store = NavigationStore::new();
+        let mut app = mock_app();
+        app.ui.active_panel = SidePanel::Commits;
+
+        let output = reduce(&mut store, &mut app, Action::Domain(DomainAction::ListDown));
+
+        assert!(output.commands.iter().any(|command| {
+            matches!(
+                command,
+                Command::Effect(EffectRequest::CommitsBackend(
+                    CommitsBackendCommand::RecomputeHighlight
+                ))
+            )
+        }));
     }
 
     #[test]

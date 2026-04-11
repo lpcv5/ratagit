@@ -1,6 +1,7 @@
 use crate::app::{App, AppEffects, RefreshKind, SidePanel};
 use crate::flux::action::{Action, DomainAction};
 use crate::flux::branch_backend::{BranchBackend, BranchBackendCommand, BranchBackendEvent};
+use crate::flux::commits_backend::CommitsBackendCommand;
 use crate::flux::files_backend::{FilesBackend, FilesBackendCommand, FilesBackendEvent};
 use crate::flux::stores::UiInvalidation;
 use std::path::PathBuf;
@@ -19,6 +20,7 @@ pub enum EffectRequest {
     EnsureCommitsLoadedForActivePanel,
     ReloadDiffNow,
     RevisionOpenTreeOrToggleDir,
+    CommitsBackend(CommitsBackendCommand),
     ToggleStageSelection,
     PrepareCommitFromVisualSelection,
     BranchesBackend(BranchBackendCommand),
@@ -80,9 +82,16 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
             } else {
                 None
             };
+            if active_panel == SidePanel::Commits {
+                drop(app);
+                return run_commits_backend_command(
+                    CommitsBackendCommand::OpenTreeOrToggleDir,
+                    ctx,
+                )
+                .await;
+            }
             let result = match active_panel {
                 SidePanel::Stash => app.stash_open_tree_or_toggle_dir(),
-                SidePanel::Commits => app.commit_open_tree_or_toggle_dir(),
                 SidePanel::LocalBranches => Ok(()),
                 _ => Ok(()),
             };
@@ -108,6 +117,7 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
             }
             vec![]
         }
+        EffectRequest::CommitsBackend(command) => run_commits_backend_command(command, ctx).await,
         EffectRequest::ToggleStageSelection => {
             let mut app = ctx.app.lock().await;
             let result = app
@@ -287,6 +297,47 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
                 index,
                 result,
             })]
+        }
+    }
+}
+
+async fn run_commits_backend_command(
+    command: CommitsBackendCommand,
+    ctx: &mut EffectCtx,
+) -> Vec<Action> {
+    match command {
+        CommitsBackendCommand::ApplyLoaded { .. }
+        | CommitsBackendCommand::CloseTree
+        | CommitsBackendCommand::RecomputeHighlight => {
+            let closes_tree = matches!(command, CommitsBackendCommand::CloseTree);
+            let mut app = ctx.app.lock().await;
+            let app = app
+                .as_any_mut()
+                .downcast_mut::<App>()
+                .expect("commits backend command requires concrete App");
+            if let Err(err) = app.apply_commits_backend_command(command) {
+                app.push_log(format!("commits backend command failed: {}", err), false);
+            }
+            if closes_tree {
+                app.restore_search_for_active_scope();
+            }
+            vec![]
+        }
+        CommitsBackendCommand::OpenTreeOrToggleDir => {
+            let mut app = ctx.app.lock().await;
+            let app = app
+                .as_any_mut()
+                .downcast_mut::<App>()
+                .expect("commits backend command requires concrete App");
+            match app.apply_commits_backend_command(CommitsBackendCommand::OpenTreeOrToggleDir) {
+                Ok(()) => {
+                    app.restore_search_for_active_scope();
+                    app.reload_diff_now();
+                    UiInvalidation::all().apply(app);
+                }
+                Err(err) => app.push_log(format!("revision files failed: {}", err), false),
+            }
+            vec![]
         }
     }
 }
@@ -585,8 +636,10 @@ async fn run_branches_backend_command(
                     app.push_log(format!("branch commits: {} (Esc to back)", branch), true);
                 }
                 Err(err) => {
-                    let failed =
-                        BranchBackend::fail_commits_subview_load(app.current_branches_view_state(), &branch);
+                    let failed = BranchBackend::fail_commits_subview_load(
+                        app.current_branches_view_state(),
+                        &branch,
+                    );
                     app.apply_branches_backend_view(failed);
                     app.push_log(format!("branch commits load failed: {}", err), false);
                 }
@@ -600,8 +653,10 @@ async fn run_branches_backend_command(
 mod tests {
     use super::*;
     use crate::app::App;
+    use crate::flux::commits_backend::CommitsBackendCommand;
     use crate::flux::files_backend::FilesBackendCommand;
     use crate::flux::stores::test_support::MockRepo;
+    use crate::git::{CommitInfo, CommitSyncState, GraphCell};
     use pretty_assertions::assert_eq;
     use std::rc::Rc;
     use tokio::sync::Mutex;
@@ -630,6 +685,24 @@ mod tests {
         assert!(actions.is_empty());
     }
 
+    fn commit(oid: &str, parents: &[&str]) -> CommitInfo {
+        CommitInfo {
+            oid: oid.to_string(),
+            message: format!("commit {}", oid),
+            author: "tester".to_string(),
+            graph: vec![GraphCell {
+                text: "*".to_string(),
+                lane: 0,
+                pipe_oid: Some(oid.to_string()),
+                pipe_oids: vec![oid.to_string()],
+            }],
+            time: "2026-04-11 00:00".to_string(),
+            parent_count: parents.len(),
+            sync_state: CommitSyncState::DefaultBranch,
+            parent_oids: parents.iter().map(|parent| (*parent).to_string()).collect(),
+        }
+    }
+
     #[tokio::test]
     async fn files_backend_stage_path_returns_stage_file_finished_action() {
         let action = assert_single_domain_action(
@@ -639,6 +712,36 @@ mod tests {
             .await,
         );
         assert!(matches!(action, DomainAction::StageFileFinished { .. }));
+    }
+
+    #[tokio::test]
+    async fn commits_backend_recompute_highlight_updates_app_through_effect() {
+        let mut ctx = make_ctx();
+        {
+            let mut app_guard = ctx.app.lock().await;
+            let app: &mut App = (*app_guard).as_any_mut().downcast_mut().unwrap();
+            app.ui.active_panel = crate::app::SidePanel::Commits;
+            app.ui.commits.items = vec![
+                commit("newer", &["selected"]),
+                commit("selected", &["older"]),
+                commit("older", &[]),
+            ];
+            app.ui.commits.panel.list_state.select(Some(1));
+        }
+
+        assert_no_actions(
+            run(
+                EffectRequest::CommitsBackend(CommitsBackendCommand::RecomputeHighlight),
+                &mut ctx,
+            )
+            .await,
+        );
+
+        let app_guard = ctx.app.lock().await;
+        let app: &App = (*app_guard).as_any().downcast_ref().unwrap();
+        assert!(app.ui.commits.highlighted_oids.contains("newer"));
+        assert!(app.ui.commits.highlighted_oids.contains("selected"));
+        assert!(app.ui.commits.highlighted_oids.contains("older"));
     }
 
     #[tokio::test]
