@@ -1481,6 +1481,7 @@ fn commits_panel_list_navigation_keeps_diff_until_pending_reload_is_flushed() {
 
 #[test]
 fn branches_panel_list_navigation_emits_load_branch_graph_effect() {
+    use crate::flux::branch_backend::BranchBackendCommand;
     use crate::flux::effects::EffectRequest;
     let mut app = App::from_repo(Box::new(NavigationDiffRepo)).expect("app from navigation repo");
     app.ui.active_panel = SidePanel::LocalBranches;
@@ -1493,10 +1494,10 @@ fn branches_panel_list_navigation_emits_load_branch_graph_effect() {
         matches!(
             cmd,
             Some(crate::app::Command::Effect(
-                EffectRequest::LoadBranchGraph { .. }
+                EffectRequest::BranchesBackend(BranchBackendCommand::LoadBranchGraph { .. })
             ))
         ),
-        "expected LoadBranchGraph effect after ListDown in branches panel, got: {:?}",
+        "expected BranchesBackend::LoadBranchGraph effect after ListDown in branches panel, got: {:?}",
         cmd
     );
 }
@@ -1531,6 +1532,7 @@ fn checkout_selected_branch_with_dirty_changes_opens_confirmation_input() {
 
 #[test]
 fn branch_switch_confirm_yes_emits_checkout_with_auto_stash() {
+    use crate::flux::branch_backend::BranchBackendCommand;
     let checkout_calls = Arc::new(AtomicUsize::new(0));
     let auto_stash_calls = Arc::new(AtomicUsize::new(0));
     let repo = BranchSwitchRepo::new(checkout_calls.clone(), auto_stash_calls.clone());
@@ -1543,10 +1545,12 @@ fn branch_switch_confirm_yes_emits_checkout_with_auto_stash() {
     assert!(matches!(
         cmd,
         Some(Command::Effect(
-            crate::flux::effects::EffectRequest::CheckoutBranch {
-                auto_stash: true,
-                ..
-            }
+            crate::flux::effects::EffectRequest::BranchesBackend(
+                BranchBackendCommand::CheckoutBranch {
+                    auto_stash: true,
+                    ..
+                }
+            )
         ))
     ));
 

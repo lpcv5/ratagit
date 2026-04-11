@@ -34,10 +34,6 @@ impl AppEffects for App {
         App::reload_diff_now(self);
     }
 
-    fn open_selected_branch_commits(&mut self, limit: usize) -> color_eyre::Result<()> {
-        App::open_selected_branch_commits(self, limit)
-    }
-
     fn stage_paths_request(
         &self,
         paths: Vec<PathBuf>,

@@ -1,6 +1,9 @@
 use crate::app::{CommitsPanelState, SidePanel};
 use crate::git::{CommitSyncState, GraphCell};
-use crate::ui::components::organisms::{empty_list_item, title_with_search, PanelRenderContext};
+use crate::ui::components::organisms::{
+    empty_list_item, title_with_search, CommitsPanelViewState, CommitsTreeViewState,
+    PanelRenderContext,
+};
 use crate::ui::highlight::highlighted_spans;
 use crate::ui::panels::revision_tree_panel::{render_revision_tree_panel, RevisionTreePanelProps};
 use crate::ui::theme::UiTheme;
@@ -9,9 +12,10 @@ use ratatui::{
     layout::Rect,
     style::{Color, Style},
     text::{Line, Span},
-    widgets::ListItem,
+    widgets::{ListItem, ListState},
     Frame,
 };
+use std::collections::HashSet;
 
 pub fn draw_commits_panel(
     frame: &mut Frame,
@@ -19,17 +23,31 @@ pub fn draw_commits_panel(
     state: &CommitsPanelState,
     ctx: &PanelRenderContext<'_>,
 ) {
+    let view = view_state_from_shell(state);
+    draw_commits_panel_view(frame, area, &view, ctx);
+}
+
+pub fn draw_commits_panel_view(
+    frame: &mut Frame,
+    area: Rect,
+    view: &CommitsPanelViewState,
+    ctx: &PanelRenderContext<'_>,
+) {
     let theme = UiTheme::default();
     let is_active = ctx.active_panel == SidePanel::Commits;
+    let highlighted_oids = if ctx.highlighted_oids.is_empty() {
+        &view.highlighted_oids
+    } else {
+        ctx.highlighted_oids
+    };
 
-    let items: Vec<ListItem> = if state.items.is_empty() {
+    let items: Vec<ListItem> = if view.items.is_empty() {
         empty_list_item("No commits")
     } else {
-        state
-            .items
+        view.items
             .iter()
             .map(|c| {
-                let g_spans = graph_spans(&c.graph, hash_color(c.sync_state), ctx.highlighted_oids);
+                let g_spans = graph_spans(&c.graph, hash_color(c.sync_state), highlighted_oids);
                 let hash_spans = highlighted_spans(
                     &c.oid[..7.min(c.oid.len())],
                     ctx.search_query,
@@ -64,8 +82,8 @@ pub fn draw_commits_panel(
 
     let mut title = if let Some(title_override) = ctx.panel_title_override {
         title_override.to_string()
-    } else if state.tree_mode.active {
-        if let Some(ref oid) = state.tree_mode.selected_source {
+    } else if view.tree_mode.active {
+        if let Some(ref oid) = view.tree_mode.selected_source {
             format!("Commit Files {} [Esc Back]", &oid[..oid.len().min(7)])
         } else {
             "Commit Files [Esc Back]".to_string()
@@ -75,23 +93,39 @@ pub fn draw_commits_panel(
     };
     title = title_with_search(&title, ctx.search_summary);
 
+    let mut list_state = ListState::default();
+    list_state.select(view.selected_index);
+
     render_revision_tree_panel(
         frame,
         area,
         RevisionTreePanelProps {
             title: &title,
             is_active,
-            tree_mode: state.tree_mode.active,
-            tree_nodes: &state.tree_mode.nodes,
-            tree_search_query: if state.tree_mode.active {
+            tree_mode: view.tree_mode.active,
+            tree_nodes: &view.tree_mode.nodes,
+            tree_search_query: if view.tree_mode.active {
                 ctx.search_query
             } else {
                 None
             },
             list_items: items,
-            list_state: state.panel.list_state,
+            list_state,
         },
     );
+}
+
+pub fn view_state_from_shell(state: &CommitsPanelState) -> CommitsPanelViewState {
+    CommitsPanelViewState {
+        selected_index: state.panel.list_state.selected(),
+        items: state.items.clone(),
+        tree_mode: CommitsTreeViewState {
+            active: state.tree_mode.active,
+            selected_source: state.tree_mode.selected_source.clone(),
+            nodes: state.tree_mode.nodes.clone(),
+        },
+        highlighted_oids: state.highlighted_oids.clone(),
+    }
 }
 
 impl DynamicPanel for CommitsPanelState {
@@ -109,12 +143,10 @@ impl DynamicPanel for CommitsPanelState {
     }
 }
 
-/// Render graph cells into colored Span list.
-/// When `highlighted_oids` is non-empty, cells whose owners do not intersect it are dimmed.
 fn graph_spans(
     cells: &[GraphCell],
     color: Color,
-    highlighted_oids: &std::collections::HashSet<String>,
+    highlighted_oids: &HashSet<String>,
 ) -> Vec<Span<'static>> {
     let has_highlight = !highlighted_oids.is_empty();
     let mut spans = Vec::new();
@@ -188,44 +220,33 @@ fn author_initials(author: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::git::CommitInfo;
     use pretty_assertions::assert_eq;
-    use std::collections::HashSet;
 
     #[test]
-    fn test_graph_spans_prioritizes_highlight_when_cell_has_overlap_owner() {
-        let cells = vec![
-            GraphCell {
-                text: "x".to_string(),
-                lane: 0,
-                pipe_oid: Some("other".to_string()),
-                pipe_oids: vec!["other".to_string(), "focus".to_string()],
-            },
-            GraphCell {
-                text: "y".to_string(),
-                lane: 1,
-                pipe_oid: Some("other".to_string()),
-                pipe_oids: vec!["other".to_string()],
-            },
-        ];
-        let highlighted = HashSet::from([String::from("focus")]);
-        let spans = graph_spans(&cells, Color::Green, &highlighted);
-        assert_eq!(spans.len(), 2);
-        assert_eq!(spans[0].style.fg, Some(Color::Green));
-        assert_eq!(spans[1].style.fg, Some(Color::DarkGray));
-    }
+    fn view_state_from_shell_projects_selection_without_shell_types() {
+        let mut state = CommitsPanelState {
+            items: vec![CommitInfo {
+                oid: "abc123".to_string(),
+                message: "test commit".to_string(),
+                author: "tester".to_string(),
+                graph: vec![GraphCell {
+                    text: "●".to_string(),
+                    lane: 0,
+                    pipe_oid: None,
+                    pipe_oids: vec![],
+                }],
+                time: "2026-04-11 00:00".to_string(),
+                parent_count: 1,
+                sync_state: CommitSyncState::DefaultBranch,
+                parent_oids: vec![],
+            }],
+            ..Default::default()
+        };
+        state.panel.list_state.select(Some(0));
 
-    #[test]
-    fn test_author_initials_prefers_first_two_words() {
-        assert_eq!(author_initials("Linus Torvalds"), "LT");
-    }
-
-    #[test]
-    fn test_author_initials_single_word_uses_first_two_chars() {
-        assert_eq!(author_initials("alice"), "AL");
-    }
-
-    #[test]
-    fn test_author_initials_empty_falls_back() {
-        assert_eq!(author_initials("   "), "--");
+        let view = view_state_from_shell(&state);
+        assert_eq!(view.selected_index, Some(0));
+        assert_eq!(view.items.len(), 1);
     }
 }

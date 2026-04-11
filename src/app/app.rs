@@ -1,5 +1,6 @@
 use super::background_poll::{BackgroundReceiver, PendingBackgroundTask};
 use super::background_task_runner::BackgroundTaskRunner;
+use super::branch_panel_adapter;
 use super::diff_cache_manager::DiffCacheManager;
 use super::refresh_scheduler::RefreshScheduler;
 use super::states::{
@@ -8,6 +9,7 @@ use super::states::{
 };
 use super::{diff_cache, diff_loader, dirty_flags, files_panel_adapter, revision_tree};
 use crate::config::keymap::Keymap;
+use crate::flux::branch_backend::BranchPanelViewState;
 use crate::flux::files_backend::{FilesBackend, FilesBackendCommand, FilesPanelViewState};
 use crate::flux::task_manager::{TaskKey, TaskPriority, TaskRequestKind};
 use crate::git::{Git2Repository, GitError, GitRepository, GitStatus};
@@ -1089,6 +1091,10 @@ impl App {
         files_panel_adapter::view_state_from_shell(&self.ui.files)
     }
 
+    pub(crate) fn current_branches_view_state(&self) -> BranchPanelViewState {
+        branch_panel_adapter::view_state_from_shell(&self.ui.branches)
+    }
+
     pub(crate) fn apply_files_backend_view(
         &mut self,
         event: crate::flux::files_backend::FilesBackendEvent,
@@ -1096,6 +1102,10 @@ impl App {
         if let crate::flux::files_backend::FilesBackendEvent::ViewStateUpdated(view) = event {
             files_panel_adapter::apply_view_state(&mut self.ui.files, view);
         }
+    }
+
+    pub(crate) fn apply_branches_backend_view(&mut self, view: BranchPanelViewState) {
+        branch_panel_adapter::apply_view_state(&mut self.ui.branches, view);
     }
 
     pub(super) fn diff_target_to_cache_key(

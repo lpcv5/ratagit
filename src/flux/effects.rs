@@ -1,5 +1,6 @@
 use crate::app::{App, AppEffects, RefreshKind, SidePanel};
 use crate::flux::action::{Action, DomainAction};
+use crate::flux::branch_backend::{BranchBackend, BranchBackendCommand, BranchBackendEvent};
 use crate::flux::files_backend::{FilesBackend, FilesBackendCommand, FilesBackendEvent};
 use crate::flux::stores::UiInvalidation;
 use std::path::PathBuf;
@@ -20,15 +21,9 @@ pub enum EffectRequest {
     RevisionOpenTreeOrToggleDir,
     ToggleStageSelection,
     PrepareCommitFromVisualSelection,
-    FetchRemote,
+    BranchesBackend(BranchBackendCommand),
     FilesBackend(FilesBackendCommand),
     StagePaths(Vec<PathBuf>),
-    CreateBranch(String),
-    CheckoutBranch {
-        name: String,
-        auto_stash: bool,
-    },
-    DeleteBranch(String),
     Commit(String),
     StashPush {
         message: String,
@@ -37,9 +32,6 @@ pub enum EffectRequest {
     StashApply(usize),
     StashPop(usize),
     StashDrop(usize),
-    LoadBranchGraph {
-        branch_name: Option<String>,
-    },
 }
 
 pub struct EffectCtx {
@@ -82,19 +74,37 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
         }
         EffectRequest::RevisionOpenTreeOrToggleDir => {
             let mut app = ctx.app.lock().await;
-            let result = match app.active_panel() {
+            let active_panel = app.active_panel();
+            let branch_name = if active_panel == SidePanel::LocalBranches {
+                app.selected_branch_name()
+            } else {
+                None
+            };
+            let result = match active_panel {
                 SidePanel::Stash => app.stash_open_tree_or_toggle_dir(),
                 SidePanel::Commits => app.commit_open_tree_or_toggle_dir(),
-                SidePanel::LocalBranches => app.open_selected_branch_commits(100),
+                SidePanel::LocalBranches => Ok(()),
                 _ => Ok(()),
             };
             match result {
                 Ok(()) => {
                     app.restore_search_for_active_scope();
-                    app.reload_diff_now();
+                    if active_panel != SidePanel::LocalBranches {
+                        app.reload_diff_now();
+                    }
                     UiInvalidation::all().apply(&mut *app);
                 }
                 Err(err) => app.push_log(format!("revision files failed: {}", err), false),
+            }
+            drop(app);
+            if active_panel == SidePanel::LocalBranches {
+                if let Some(branch) = branch_name {
+                    return run_branches_backend_command(
+                        BranchBackendCommand::OpenCommitsSubview { branch, limit: 100 },
+                        ctx,
+                    )
+                    .await;
+                }
             }
             vec![]
         }
@@ -116,28 +126,7 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
                 DomainAction::PrepareCommitFromSelectionFinished { result },
             )]
         }
-        EffectRequest::FetchRemote => {
-            let repo_rx = {
-                let app = ctx.app.lock().await;
-                match app.fetch_remote_request() {
-                    Ok(rx) => rx,
-                    Err(err) => {
-                        return vec![Action::Domain(DomainAction::FetchRemoteFinished(Err(
-                            err.to_string()
-                        )))];
-                    }
-                }
-            };
-
-            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
-                Ok(Ok(Ok(remote))) => Ok(remote),
-                Ok(Ok(Err(err))) => Err(err.to_string()),
-                Ok(Err(err)) => Err(err.to_string()),
-                Err(err) => Err(err.to_string()),
-            };
-
-            vec![Action::Domain(DomainAction::FetchRemoteFinished(result))]
-        }
+        EffectRequest::BranchesBackend(command) => run_branches_backend_command(command, ctx).await,
         EffectRequest::FilesBackend(command) => run_files_backend_command(command, ctx).await,
         EffectRequest::StagePaths(paths) => {
             let repo_rx = {
@@ -158,92 +147,6 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
                 Err(err) => Err(err.to_string()),
             };
             vec![Action::Domain(DomainAction::StagePathsFinished { result })]
-        }
-        EffectRequest::CreateBranch(name) => {
-            let repo_rx = {
-                let app = ctx.app.lock().await;
-                match app.create_branch_request(name.clone()) {
-                    Ok(rx) => rx,
-                    Err(err) => {
-                        return vec![Action::Domain(DomainAction::CreateBranchFinished {
-                            name,
-                            result: Err(err.to_string()),
-                        })];
-                    }
-                }
-            };
-            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
-                Ok(Ok(Ok(()))) => {
-                    let mut app = ctx.app.lock().await;
-                    app.request_refresh(RefreshKind::StatusAndRefs);
-                    Ok(())
-                }
-                Ok(Ok(Err(err))) => Err(err.to_string()),
-                Ok(Err(err)) => Err(err.to_string()),
-                Err(err) => Err(err.to_string()),
-            };
-            vec![Action::Domain(DomainAction::CreateBranchFinished {
-                name,
-                result,
-            })]
-        }
-        EffectRequest::CheckoutBranch { name, auto_stash } => {
-            let repo_rx = {
-                let app = ctx.app.lock().await;
-                match app.checkout_branch_request(name.clone(), auto_stash) {
-                    Ok(rx) => rx,
-                    Err(err) => {
-                        return vec![Action::Domain(DomainAction::CheckoutBranchFinished {
-                            name,
-                            auto_stash,
-                            result: Err(err.to_string()),
-                        })];
-                    }
-                }
-            };
-            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
-                Ok(Ok(Ok(()))) => {
-                    let mut app = ctx.app.lock().await;
-                    app.request_refresh(RefreshKind::Full);
-                    Ok(())
-                }
-                Ok(Ok(Err(err))) => Err(err.to_string()),
-                Ok(Err(err)) => Err(err.to_string()),
-                Err(err) => Err(err.to_string()),
-            };
-            vec![Action::Domain(DomainAction::CheckoutBranchFinished {
-                name,
-                auto_stash,
-                result,
-            })]
-        }
-        EffectRequest::DeleteBranch(name) => {
-            let repo_rx = {
-                let app = ctx.app.lock().await;
-                match app.delete_branch_request(name.clone()) {
-                    Ok(rx) => rx,
-                    Err(err) => {
-                        return vec![Action::Domain(DomainAction::DeleteBranchFinished {
-                            name,
-                            result: Err(err.to_string()),
-                        })];
-                    }
-                }
-            };
-            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
-                Ok(Ok(Ok(()))) => {
-                    let mut app = ctx.app.lock().await;
-                    app.request_refresh(RefreshKind::StatusAndRefs);
-                    Ok(())
-                }
-                Ok(Ok(Err(err))) => Err(err.to_string()),
-                Ok(Err(err)) => Err(err.to_string()),
-                Err(err) => Err(err.to_string()),
-            };
-            vec![Action::Domain(DomainAction::DeleteBranchFinished {
-                name,
-                result,
-            })]
         }
         EffectRequest::Commit(message) => {
             let repo_rx = {
@@ -385,28 +288,6 @@ pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
                 result,
             })]
         }
-        EffectRequest::LoadBranchGraph { branch_name } => {
-            let repo_rx = {
-                let app = ctx.app.lock().await;
-                match app.git_log_graph_request(branch_name) {
-                    Ok(rx) => rx,
-                    Err(err) => {
-                        return vec![Action::Domain(DomainAction::BranchGraphLoaded(Err(
-                            err.to_string()
-                        )))];
-                    }
-                }
-            };
-
-            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
-                Ok(Ok(Ok(lines))) => Ok(lines),
-                Ok(Ok(Err(err))) => Err(err.to_string()),
-                Ok(Err(err)) => Err(err.to_string()),
-                Err(err) => Err(err.to_string()),
-            };
-
-            vec![Action::Domain(DomainAction::BranchGraphLoaded(result))]
-        }
     }
 }
 
@@ -424,7 +305,8 @@ async fn run_files_backend_command(
                 .as_any_mut()
                 .downcast_mut::<App>()
                 .expect("files backend dir toggle requires concrete App");
-            let next = FilesBackend::toggle_selected_dir(&app.git.status, app.current_files_view_state());
+            let next =
+                FilesBackend::toggle_selected_dir(&app.git.status, app.current_files_view_state());
             app.apply_files_backend_view(FilesBackendEvent::ViewStateUpdated(next));
             vec![]
         }
@@ -543,6 +425,167 @@ async fn run_files_backend_command(
     }
 }
 
+async fn run_branches_backend_command(
+    command: BranchBackendCommand,
+    ctx: &mut EffectCtx,
+) -> Vec<Action> {
+    match command {
+        BranchBackendCommand::CreateBranch(name) => {
+            let repo_rx = {
+                let app = ctx.app.lock().await;
+                match app.create_branch_request(name.clone()) {
+                    Ok(rx) => rx,
+                    Err(err) => {
+                        return vec![BranchBackendEvent::CreateFinished {
+                            name,
+                            result: Err(err.to_string()),
+                        }
+                        .into_action()];
+                    }
+                }
+            };
+            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
+                Ok(Ok(Ok(()))) => {
+                    let mut app = ctx.app.lock().await;
+                    app.request_refresh(RefreshKind::StatusAndRefs);
+                    Ok(())
+                }
+                Ok(Ok(Err(err))) => Err(err.to_string()),
+                Ok(Err(err)) => Err(err.to_string()),
+                Err(err) => Err(err.to_string()),
+            };
+            vec![BranchBackendEvent::CreateFinished { name, result }.into_action()]
+        }
+        BranchBackendCommand::CheckoutBranch { name, auto_stash } => {
+            let repo_rx = {
+                let app = ctx.app.lock().await;
+                match app.checkout_branch_request(name.clone(), auto_stash) {
+                    Ok(rx) => rx,
+                    Err(err) => {
+                        return vec![BranchBackendEvent::CheckoutFinished {
+                            name,
+                            auto_stash,
+                            result: Err(err.to_string()),
+                        }
+                        .into_action()];
+                    }
+                }
+            };
+            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
+                Ok(Ok(Ok(()))) => {
+                    let mut app = ctx.app.lock().await;
+                    app.request_refresh(RefreshKind::Full);
+                    Ok(())
+                }
+                Ok(Ok(Err(err))) => Err(err.to_string()),
+                Ok(Err(err)) => Err(err.to_string()),
+                Err(err) => Err(err.to_string()),
+            };
+            vec![BranchBackendEvent::CheckoutFinished {
+                name,
+                auto_stash,
+                result,
+            }
+            .into_action()]
+        }
+        BranchBackendCommand::DeleteBranch(name) => {
+            let repo_rx = {
+                let app = ctx.app.lock().await;
+                match app.delete_branch_request(name.clone()) {
+                    Ok(rx) => rx,
+                    Err(err) => {
+                        return vec![BranchBackendEvent::DeleteFinished {
+                            name,
+                            result: Err(err.to_string()),
+                        }
+                        .into_action()];
+                    }
+                }
+            };
+            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
+                Ok(Ok(Ok(()))) => {
+                    let mut app = ctx.app.lock().await;
+                    app.request_refresh(RefreshKind::StatusAndRefs);
+                    Ok(())
+                }
+                Ok(Ok(Err(err))) => Err(err.to_string()),
+                Ok(Err(err)) => Err(err.to_string()),
+                Err(err) => Err(err.to_string()),
+            };
+            vec![BranchBackendEvent::DeleteFinished { name, result }.into_action()]
+        }
+        BranchBackendCommand::FetchRemote => {
+            {
+                let mut app = ctx.app.lock().await;
+                let app = app
+                    .as_any_mut()
+                    .downcast_mut::<App>()
+                    .expect("branches backend fetch requires concrete App");
+                let next =
+                    BranchBackend::set_fetching_remote(app.current_branches_view_state(), true);
+                app.apply_branches_backend_view(next);
+            }
+
+            let repo_rx = {
+                let app = ctx.app.lock().await;
+                match app.fetch_remote_request() {
+                    Ok(rx) => rx,
+                    Err(err) => {
+                        return vec![
+                            BranchBackendEvent::FetchFinished(Err(err.to_string())).into_action()
+                        ];
+                    }
+                }
+            };
+
+            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
+                Ok(Ok(Ok(remote))) => Ok(remote),
+                Ok(Ok(Err(err))) => Err(err.to_string()),
+                Ok(Err(err)) => Err(err.to_string()),
+                Err(err) => Err(err.to_string()),
+            };
+
+            vec![BranchBackendEvent::FetchFinished(result).into_action()]
+        }
+        BranchBackendCommand::LoadBranchGraph { branch_name } => {
+            let repo_rx = {
+                let app = ctx.app.lock().await;
+                match app.git_log_graph_request(branch_name) {
+                    Ok(rx) => rx,
+                    Err(err) => {
+                        return vec![
+                            BranchBackendEvent::GraphLoaded(Err(err.to_string())).into_action()
+                        ];
+                    }
+                }
+            };
+
+            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
+                Ok(Ok(Ok(lines))) => Ok(lines),
+                Ok(Ok(Err(err))) => Err(err.to_string()),
+                Ok(Err(err)) => Err(err.to_string()),
+                Err(err) => Err(err.to_string()),
+            };
+
+            vec![BranchBackendEvent::GraphLoaded(result).into_action()]
+        }
+        BranchBackendCommand::OpenCommitsSubview { branch, limit } => {
+            let mut app = ctx.app.lock().await;
+            let app = app
+                .as_any_mut()
+                .downcast_mut::<App>()
+                .expect("branches backend subview requires concrete App");
+            let next = BranchBackend::open_commits_subview(
+                app.current_branches_view_state(),
+                branch.clone(),
+            );
+            app.apply_branches_backend_view(next);
+            let _ = app.open_selected_branch_commits(limit);
+            vec![]
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -620,7 +663,10 @@ mod tests {
     #[tokio::test]
     async fn create_branch_effect_returns_create_branch_finished_action() {
         let action = assert_single_domain_action(
-            run_effect(EffectRequest::CreateBranch("new-branch".to_string())).await,
+            run_effect(EffectRequest::BranchesBackend(
+                BranchBackendCommand::CreateBranch("new-branch".to_string()),
+            ))
+            .await,
         );
         assert!(matches!(action, DomainAction::CreateBranchFinished { .. }));
     }
@@ -628,10 +674,12 @@ mod tests {
     #[tokio::test]
     async fn checkout_branch_effect_returns_checkout_branch_finished_action() {
         let action = assert_single_domain_action(
-            run_effect(EffectRequest::CheckoutBranch {
-                name: "main".to_string(),
-                auto_stash: false,
-            })
+            run_effect(EffectRequest::BranchesBackend(
+                BranchBackendCommand::CheckoutBranch {
+                    name: "main".to_string(),
+                    auto_stash: false,
+                },
+            ))
             .await,
         );
         assert!(matches!(
@@ -643,7 +691,10 @@ mod tests {
     #[tokio::test]
     async fn delete_branch_effect_returns_delete_branch_finished_action() {
         let action = assert_single_domain_action(
-            run_effect(EffectRequest::DeleteBranch("old-branch".to_string())).await,
+            run_effect(EffectRequest::BranchesBackend(
+                BranchBackendCommand::DeleteBranch("old-branch".to_string()),
+            ))
+            .await,
         );
         assert!(matches!(action, DomainAction::DeleteBranchFinished { .. }));
     }
@@ -759,10 +810,12 @@ mod tests {
     #[tokio::test]
     async fn checkout_branch_with_auto_stash_effect_returns_checkout_branch_finished_action() {
         let action = assert_single_domain_action(
-            run_effect(EffectRequest::CheckoutBranch {
-                name: "feature".to_string(),
-                auto_stash: true,
-            })
+            run_effect(EffectRequest::BranchesBackend(
+                BranchBackendCommand::CheckoutBranch {
+                    name: "feature".to_string(),
+                    auto_stash: true,
+                },
+            ))
             .await,
         );
         assert!(matches!(

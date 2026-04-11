@@ -1,6 +1,7 @@
 use crate::app::Command;
 use crate::app::SidePanel;
 use crate::flux::action::{Action, ActionEnvelope, DomainAction};
+use crate::flux::branch_backend::BranchBackendCommand;
 use crate::flux::effects::EffectRequest;
 use crate::flux::files_backend::FilesBackendCommand;
 use crate::flux::stores::{ReduceCtx, ReduceOutput, Store, UiInvalidation};
@@ -27,9 +28,9 @@ impl NavigationStore {
             let branch_name = ctx.state.selected_branch_name();
             output
                 .commands
-                .push(Command::Effect(EffectRequest::LoadBranchGraph {
-                    branch_name,
-                }));
+                .push(Command::Effect(EffectRequest::BranchesBackend(
+                    BranchBackendCommand::LoadBranchGraph { branch_name },
+                )));
         } else {
             ctx.state.schedule_diff_reload();
         }
@@ -44,9 +45,9 @@ impl NavigationStore {
             let branch_name = ctx.state.selected_branch_name();
             output
                 .commands
-                .push(Command::Effect(EffectRequest::LoadBranchGraph {
-                    branch_name,
-                }));
+                .push(Command::Effect(EffectRequest::BranchesBackend(
+                    BranchBackendCommand::LoadBranchGraph { branch_name },
+                )));
         } else {
             ctx.state.schedule_diff_reload();
         }
@@ -99,24 +100,18 @@ impl Store for NavigationStore {
                 ctx.state.list_up();
                 Self::after_list_nav(ctx)
             }
-            DomainAction::ToggleDir => {
-                ReduceOutput::from_command(Command::Effect(EffectRequest::FilesBackend(
-                    FilesBackendCommand::ToggleSelectedDir,
-                )))
-                .with_invalidation(UiInvalidation::all())
-            }
-            DomainAction::CollapseAll => {
-                ReduceOutput::from_command(Command::Effect(EffectRequest::FilesBackend(
-                    FilesBackendCommand::CollapseAll,
-                )))
-                .with_invalidation(UiInvalidation::all())
-            }
-            DomainAction::ExpandAll => {
-                ReduceOutput::from_command(Command::Effect(EffectRequest::FilesBackend(
-                    FilesBackendCommand::ExpandAll,
-                )))
-                .with_invalidation(UiInvalidation::all())
-            }
+            DomainAction::ToggleDir => ReduceOutput::from_command(Command::Effect(
+                EffectRequest::FilesBackend(FilesBackendCommand::ToggleSelectedDir),
+            ))
+            .with_invalidation(UiInvalidation::all()),
+            DomainAction::CollapseAll => ReduceOutput::from_command(Command::Effect(
+                EffectRequest::FilesBackend(FilesBackendCommand::CollapseAll),
+            ))
+            .with_invalidation(UiInvalidation::all()),
+            DomainAction::ExpandAll => ReduceOutput::from_command(Command::Effect(
+                EffectRequest::FilesBackend(FilesBackendCommand::ExpandAll),
+            ))
+            .with_invalidation(UiInvalidation::all()),
             DomainAction::DiffScrollUp => {
                 ctx.state.diff_scroll_up();
                 ReduceOutput::none().with_invalidation(UiInvalidation::diff())

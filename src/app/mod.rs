@@ -5,6 +5,7 @@ mod app_effects;
 mod app_effects_impl;
 mod background_poll;
 mod background_task_runner;
+pub(crate) mod branch_panel_adapter;
 mod command;
 mod diff_cache;
 mod diff_cache_manager;

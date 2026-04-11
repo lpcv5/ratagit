@@ -2,6 +2,7 @@ use super::app::{App, RefreshKind};
 use super::diff_cache;
 use super::diff_loader;
 use super::states::SidePanel;
+use crate::flux::branch_backend::BranchBackend;
 use crate::flux::task_manager::{TaskGeneration, TaskKey, TaskRequest, TaskResult, TaskResultKind};
 use crate::git::{BranchInfo, CommitInfo, DiffLine, GitError, GitStatus, StashInfo};
 use std::collections::HashMap;
@@ -433,7 +434,11 @@ impl App {
                             self.ui.dirty.mark_all();
                         }
                         BackgroundPayload::Branches(items) => {
-                            self.ui.branches.items = items;
+                            let view = BranchBackend::refresh_branches(
+                                &items,
+                                self.current_branches_view_state(),
+                            );
+                            self.apply_branches_backend_view(view);
                             if self.should_schedule_diff_for_refresh(DiffRefreshSource::Branches) {
                                 schedule_diff = true;
                             }
@@ -480,12 +485,12 @@ impl App {
                                 == Some(branch.as_str())
                                 && self.ui.branches.commits_subview_active
                             {
-                                self.ui.branches.commits_subview.items = items;
-                                self.ui.branches.commits_subview_loading = false;
-                                self.ui.branches.commits_subview.panel.list_state.select(
-                                    (!self.ui.branches.commits_subview.items.is_empty())
-                                        .then_some(0),
+                                let view = BranchBackend::apply_commits_subview_loaded(
+                                    self.current_branches_view_state(),
+                                    &branch,
+                                    items,
                                 );
+                                self.apply_branches_backend_view(view);
                                 self.ui.dirty.mark_all();
                                 if self.should_schedule_diff_for_refresh(DiffRefreshSource::Commits)
                                 {

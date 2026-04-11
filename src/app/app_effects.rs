@@ -28,7 +28,6 @@ pub trait AppEffects: StateAccess {
     fn flush_pending_diff_reload(&mut self);
     fn ensure_commits_loaded_for_active_panel(&mut self);
     fn reload_diff_now(&mut self);
-    fn open_selected_branch_commits(&mut self, limit: usize) -> color_eyre::Result<()>;
     fn stage_paths_request(
         &self,
         paths: Vec<PathBuf>,

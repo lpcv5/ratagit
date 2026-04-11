@@ -155,7 +155,8 @@ pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
         visual_selected_indices: PanelRenderContext::empty_visual_selected_indices(),
         highlighted_oids: PanelRenderContext::empty_highlighted_oids(),
     };
-    draw_branches_panel(frame, left_panels[1], snapshot.branches, &branches_ctx);
+    let branches_view = snapshot.branches_view_state();
+    draw_branches_panel(frame, left_panels[1], &branches_view, &branches_ctx);
 
     let commits_ctx = PanelRenderContext {
         active_panel: snapshot.active_panel,

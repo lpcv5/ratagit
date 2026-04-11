@@ -1,7 +1,8 @@
-use crate::app::{BranchesPanelState, SidePanel};
+use crate::app::SidePanel;
+use crate::flux::branch_backend::BranchPanelViewState;
 use crate::ui::components::organisms::{
-    commits_panel_component::draw_commits_panel, empty_list_item, title_with_search,
-    PanelRenderContext,
+    draw_commits_panel_view, empty_list_item, title_with_search, CommitsPanelViewState,
+    CommitsTreeViewState, PanelRenderContext,
 };
 use crate::ui::highlight::highlighted_spans;
 use crate::ui::theme::UiTheme;
@@ -18,30 +19,37 @@ use ratatui::{
 pub fn draw_branches_panel(
     frame: &mut Frame,
     area: Rect,
-    state: &BranchesPanelState,
+    state: &BranchPanelViewState,
     ctx: &PanelRenderContext<'_>,
 ) {
-    if state.commits_subview_active {
+    if state.commits_subview.active {
         let title = state
-            .commits_subview_source
+            .commits_subview
+            .source_branch
             .as_ref()
             .map(|name| {
-                if state.commits_subview_loading {
+                if state.commits_subview.loading {
                     format!("Branch Commits: {} [Loading...] [Esc Back]", name)
                 } else {
                     format!("Branch Commits: {} [Esc Back]", name)
                 }
             })
             .unwrap_or_else(|| "Branch Commits [Esc Back]".to_string());
+        let commits_view = CommitsPanelViewState {
+            selected_index: state.commits_subview.selected_index,
+            items: state.commits_subview.items.clone(),
+            tree_mode: CommitsTreeViewState::default(),
+            highlighted_oids: state.commits_subview.highlighted_oids.clone(),
+        };
         let commits_ctx = PanelRenderContext {
             active_panel: SidePanel::Commits,
             panel_title_override: Some(title.as_str()),
             search_query: ctx.search_query,
             search_summary: ctx.search_summary,
             visual_selected_indices: PanelRenderContext::empty_visual_selected_indices(),
-            highlighted_oids: &state.commits_subview.highlighted_oids,
+            highlighted_oids: &commits_view.highlighted_oids,
         };
-        draw_commits_panel(frame, area, &state.commits_subview, &commits_ctx);
+        draw_commits_panel_view(frame, area, &commits_view, &commits_ctx);
         return;
     }
 
@@ -75,11 +83,12 @@ pub fn draw_branches_panel(
         .scroll_padding(LIST_SCROLL_PADDING)
         .highlight_style(highlight);
 
-    let mut list_state = state.panel.list_state;
+    let mut list_state = ratatui::widgets::ListState::default();
+    list_state.select(state.selection.selected_index);
     frame.render_stateful_widget(list, area, &mut list_state);
 }
 
-impl DynamicPanel for BranchesPanelState {
+impl DynamicPanel for BranchPanelViewState {
     fn default_height_percent(&self) -> u16 {
         25
     }

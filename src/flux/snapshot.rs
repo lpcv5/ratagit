@@ -1,9 +1,10 @@
-use crate::app::files_panel_adapter;
+use crate::app::{branch_panel_adapter, files_panel_adapter};
 use crate::app::{
     App, BranchesPanelState, CommitFieldFocus, CommitsPanelState, FilesPanelState, InputMode,
     RenderCache, SidePanel, StashPanelState,
 };
 use crate::config::keymap::Keymap;
+use crate::flux::branch_backend::BranchPanelViewState;
 use crate::flux::files_backend::FilesPanelViewState;
 use crate::git::DiffLine;
 
@@ -113,6 +114,10 @@ impl<'a> AppStateSnapshot<'a> {
 
     pub fn files_view_state(&self) -> FilesPanelViewState {
         files_panel_adapter::view_state_from_shell(self.files)
+    }
+
+    pub fn branches_view_state(&self) -> BranchPanelViewState {
+        branch_panel_adapter::view_state_from_shell(self.branches)
     }
 }
 

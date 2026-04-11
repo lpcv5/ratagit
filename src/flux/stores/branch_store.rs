@@ -1,5 +1,6 @@
 use crate::app::{Command, RefreshKind};
 use crate::flux::action::{Action, ActionEnvelope, DomainAction};
+use crate::flux::branch_backend::BranchBackendCommand;
 use crate::flux::effects::EffectRequest;
 use crate::flux::stores::{
     log_result, tick_background_loads, ReduceCtx, ReduceOutput, Store, UiInvalidation,
@@ -21,7 +22,7 @@ impl Store for BranchStore {
         };
         match domain {
             DomainAction::CreateBranch(name) => ReduceOutput::from_command(Command::Effect(
-                EffectRequest::CreateBranch(name.clone()),
+                EffectRequest::BranchesBackend(BranchBackendCommand::CreateBranch(name.clone())),
             )),
             DomainAction::CreateBranchFinished { name, result } => {
                 log_result(ctx, result, format!("branch created: {}", name), |e| {
@@ -38,10 +39,12 @@ impl Store for BranchStore {
                     ctx.state.start_branch_switch_confirm(name);
                     return ReduceOutput::none().with_invalidation(UiInvalidation::overlay());
                 }
-                ReduceOutput::from_command(Command::Effect(EffectRequest::CheckoutBranch {
-                    name,
-                    auto_stash: false,
-                }))
+                ReduceOutput::from_command(Command::Effect(EffectRequest::BranchesBackend(
+                    BranchBackendCommand::CheckoutBranch {
+                        name,
+                        auto_stash: false,
+                    },
+                )))
             }
             DomainAction::BranchSwitchConfirm(auto_stash) => {
                 let Some(target) = ctx.state.take_branch_switch_target() else {
@@ -55,10 +58,12 @@ impl Store for BranchStore {
                     return ReduceOutput::none().with_invalidation(UiInvalidation::all());
                 }
 
-                ReduceOutput::from_command(Command::Effect(EffectRequest::CheckoutBranch {
-                    name: target,
-                    auto_stash: true,
-                }))
+                ReduceOutput::from_command(Command::Effect(EffectRequest::BranchesBackend(
+                    BranchBackendCommand::CheckoutBranch {
+                        name: target,
+                        auto_stash: true,
+                    },
+                )))
             }
             DomainAction::CheckoutBranchFinished {
                 name,
@@ -92,7 +97,7 @@ impl Store for BranchStore {
             DomainAction::DeleteSelectedBranch => {
                 if let Some(name) = ctx.state.selected_branch_name() {
                     return ReduceOutput::from_command(Command::Effect(
-                        EffectRequest::DeleteBranch(name),
+                        EffectRequest::BranchesBackend(BranchBackendCommand::DeleteBranch(name)),
                     ));
                 }
                 ctx.state.push_log("no branch selected".to_string(), false);
@@ -111,8 +116,10 @@ impl Store for BranchStore {
                 }
                 ctx.state.set_fetching_remote(true);
                 ctx.state.push_log("fetch started".to_string(), true);
-                ReduceOutput::from_command(Command::Effect(EffectRequest::FetchRemote))
-                    .with_invalidation(UiInvalidation::all())
+                ReduceOutput::from_command(Command::Effect(EffectRequest::BranchesBackend(
+                    BranchBackendCommand::FetchRemote,
+                )))
+                .with_invalidation(UiInvalidation::all())
             }
             DomainAction::FetchRemoteFinished(result) => {
                 ctx.state.set_fetching_remote(false);

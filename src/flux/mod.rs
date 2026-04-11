@@ -1,4 +1,5 @@
 pub mod action;
+pub mod branch_backend;
 pub mod dispatcher;
 pub mod effects;
 pub mod files_backend;
