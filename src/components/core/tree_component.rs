@@ -10,7 +10,7 @@ use ratatui::{
 use crate::app::CachedData;
 use crate::components::core::tree::{get_visible_nodes, GitFileStatus, TreeNode};
 use crate::components::core::{
-    accent_primary_color, accent_secondary_color, selected_row_style, MultiSelectState,
+    accent_primary_color, accent_secondary_color, multi_select_row_style, theme, MultiSelectState,
     MultiSelectableList, SelectableList, LIST_HIGHLIGHT_SYMBOL,
 };
 use crate::components::Component;
@@ -271,11 +271,11 @@ impl Component for TreePanel {
                     // 文件节点：缩进 + 状态图标 + 文件名
                     let status_span = if let Some(status) = node.status {
                         let color = match status {
-                            GitFileStatus::Added => Color::Rgb(136, 209, 161),
-                            GitFileStatus::Modified => Color::Rgb(194, 170, 249),
-                            GitFileStatus::Deleted => Color::Rgb(233, 119, 163),
-                            GitFileStatus::Renamed => Color::Rgb(118, 201, 226),
-                            GitFileStatus::Untracked => Color::Rgb(120, 103, 160),
+                            GitFileStatus::Added => theme().git_added,
+                            GitFileStatus::Modified => theme().git_modified,
+                            GitFileStatus::Deleted => theme().git_deleted,
+                            GitFileStatus::Renamed => theme().git_renamed,
+                            GitFileStatus::Untracked => theme().git_untracked,
                             GitFileStatus::Unmodified => Color::Reset,
                         };
                         Span::styled(
@@ -294,7 +294,7 @@ impl Component for TreePanel {
                 };
 
                 if multi_active && self.is_multi_selected_key(&node.path) {
-                    item = item.style(selected_row_style());
+                    item = item.style(multi_select_row_style());
                 }
 
                 item

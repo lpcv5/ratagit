@@ -9,7 +9,7 @@ use ratatui::{
 
 use crate::app::CachedData;
 
-use crate::components::core::panel_block;
+use crate::components::core::{panel_block, theme};
 use crate::components::Component;
 use crate::components::Intent;
 
@@ -114,7 +114,7 @@ fn colorize_diff_text(content: &str) -> Text<'static> {
 
 fn colorize_diff_line(line: &str) -> Line<'static> {
     let style = if line.starts_with("diff --git ") {
-        Style::default().fg(Color::Rgb(116, 182, 247))
+        Style::default().fg(theme().diff_header)
     } else if line.starts_with("index ")
         || line.starts_with("new file mode ")
         || line.starts_with("deleted file mode ")
@@ -122,17 +122,17 @@ fn colorize_diff_line(line: &str) -> Line<'static> {
         || line.starts_with("rename from ")
         || line.starts_with("rename to ")
     {
-        Style::default().fg(Color::Rgb(245, 196, 109))
+        Style::default().fg(theme().diff_meta)
     } else if line.starts_with("@@ ") {
-        Style::default().fg(Color::Rgb(191, 151, 255))
+        Style::default().fg(theme().diff_hunk)
     } else if line.starts_with("+++ ") || line.starts_with("--- ") {
-        Style::default().fg(Color::Rgb(142, 201, 255))
+        Style::default().fg(theme().diff_file)
     } else if line.starts_with('+') && !line.starts_with("+++") {
-        Style::default().fg(Color::Rgb(122, 214, 154))
+        Style::default().fg(theme().diff_added)
     } else if line.starts_with('-') && !line.starts_with("---") {
-        Style::default().fg(Color::Rgb(239, 122, 122))
+        Style::default().fg(theme().diff_removed)
     } else if line.starts_with("\\ No newline at end of file") {
-        Style::default().fg(Color::Rgb(164, 164, 172))
+        Style::default().fg(Color::Rgb(98, 114, 164)) // Dracula Comment
     } else {
         Style::default()
     };

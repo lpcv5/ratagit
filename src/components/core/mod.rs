@@ -7,8 +7,8 @@ mod tree_component;
 pub use multi_select::{ActionMultiplicity, MultiSelectState, MultiSelectableList};
 pub use selectable_list::{ScrollableText, SelectableList};
 pub use theme::{
-    accent_primary_color, accent_secondary_color, muted_text_style, panel_block,
-    selected_row_style, LIST_HIGHLIGHT_SYMBOL,
+    accent_primary_color, accent_secondary_color, multi_select_row_style, muted_text_style,
+    panel_block, selected_row_style, theme, LIST_HIGHLIGHT_SYMBOL,
 };
 #[allow(unused_imports)]
 pub use tree::get_visible_nodes;

@@ -10,8 +10,9 @@ use ratatui::{
 use crate::app::CachedData;
 use crate::backend::git_ops::CommitEntry;
 use crate::components::core::{
-    accent_primary_color, muted_text_style, panel_block, selected_row_style, ActionMultiplicity,
-    MultiSelectState, MultiSelectableList, SelectableList, TreePanel, LIST_HIGHLIGHT_SYMBOL,
+    accent_primary_color, multi_select_row_style, muted_text_style, panel_block,
+    ActionMultiplicity, MultiSelectState, MultiSelectableList, SelectableList, TreePanel,
+    LIST_HIGHLIGHT_SYMBOL,
 };
 use crate::components::Component;
 use crate::components::Intent;
@@ -254,7 +255,7 @@ impl Component for CommitPanel {
                             Span::raw(commit.summary.clone()),
                         ]));
                         if multi_active && self.is_multi_selected_key(&commit.id) {
-                            item = item.style(selected_row_style());
+                            item = item.style(multi_select_row_style());
                         }
                         item
                     })
