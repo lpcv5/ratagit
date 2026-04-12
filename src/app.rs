@@ -433,35 +433,32 @@ impl App {
     }
 
     fn render(&mut self, frame: &mut Frame) {
-        let vertical = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(9),
-                Constraint::Min(12),
-                Constraint::Length(8),
-            ])
+        let columns = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(34), Constraint::Percentage(66)])
             .split(frame.area());
 
-        let body = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Percentage(32),
-                Constraint::Percentage(24),
-                Constraint::Percentage(44),
-            ])
-            .split(vertical[1]);
-
-        let middle = Layout::default()
+        let left = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-            .split(body[1]);
+            .constraints([
+                Constraint::Percentage(28),
+                Constraint::Percentage(24),
+                Constraint::Percentage(28),
+                Constraint::Percentage(20),
+            ])
+            .split(columns[0]);
 
-        self.render_main_view(frame, vertical[0]);
-        self.render_files_panel(frame, body[0]);
-        self.render_branches_panel(frame, middle[0]);
-        self.render_stash_panel(frame, middle[1]);
-        self.render_commits_panel(frame, body[2]);
-        self.render_log_panel(frame, vertical[2]);
+        let right = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(12), Constraint::Length(8)])
+            .split(columns[1]);
+
+        self.render_files_panel(frame, left[0]);
+        self.render_branches_panel(frame, left[1]);
+        self.render_commits_panel(frame, left[2]);
+        self.render_stash_panel(frame, left[3]);
+        self.render_main_view(frame, right[0]);
+        self.render_log_panel(frame, right[1]);
     }
 
     fn render_main_view(&self, frame: &mut Frame, area: Rect) {
