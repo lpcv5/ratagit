@@ -5,18 +5,16 @@ pub enum Panel {
     Files,
     Branches,
     Commits,
-    CommitFiles,
     Stash,
     Log,
 }
 
 impl Panel {
-    pub const ALL: [Panel; 7] = [
+    pub const ALL: [Panel; 6] = [
         Panel::MainView,
         Panel::Files,
         Panel::Branches,
         Panel::Commits,
-        Panel::CommitFiles,
         Panel::Stash,
         Panel::Log,
     ];
@@ -27,7 +25,6 @@ impl Panel {
             Panel::Files => "Files",
             Panel::Branches => "Branches",
             Panel::Commits => "Commits",
-            Panel::CommitFiles => "Commit Files",
             Panel::Stash => "Stash",
             Panel::Log => "Log",
         }
@@ -57,4 +54,16 @@ impl Panel {
 #[derive(Default)]
 pub struct UiState {
     pub active_panel: Panel,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Panel;
+
+    #[test]
+    fn panel_cycle_excludes_commit_files_panel() {
+        assert_eq!(Panel::ALL.len(), 6);
+        assert_eq!(Panel::Commits.next(), Panel::Stash);
+        assert_eq!(Panel::Stash.previous(), Panel::Commits);
+    }
 }

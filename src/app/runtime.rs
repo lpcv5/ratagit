@@ -4,18 +4,29 @@ use std::time::Duration;
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::{
-    layout::{Constraint, Direction, Layout},
-    widgets::ListState,
+    layout::{Constraint, Direction, Layout, Rect},
+    widgets::{Clear, ListState},
     DefaultTerminal, Frame,
 };
 use tokio::sync::mpsc::error::TryRecvError;
 
 use crate::backend::{BackendCommand, EventEnvelope, FrontendEvent};
+use crate::components::panels::CommitModeView;
 use crate::components::Component;
 use crate::components::Intent;
 
 use super::state::AppState;
 use super::Panel;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum UiSlot {
+    Files,
+    Branches,
+    Commits,
+    Stash,
+    MainView,
+    Log,
+}
 
 pub struct App {
     state: AppState,
@@ -218,6 +229,14 @@ impl App {
             FrontendEvent::CommitFilesLoaded {
                 commit_id, files, ..
             } => {
+                if self.state.components.commit_pending_commit_id() != Some(commit_id.as_str()) {
+                    self.state.push_log(format!(
+                        "Ignored stale commit files response for {}",
+                        short_commit_id(&commit_id)
+                    ));
+                    return Ok(());
+                }
+
                 // 找到对应的 commit 摘要
                 let summary = self
                     .state
@@ -232,10 +251,10 @@ impl App {
                 self.state.push_log(format!(
                     "Loaded {} files for commit {}",
                     files.len(),
-                    &commit_id[..8]
+                    short_commit_id(&commit_id)
                 ));
 
-                // 构建树并更新 CommitFilesPanel
+                // 构建树并更新 CommitPanel 子视图
                 use crate::components::core::build_tree_from_paths;
                 use std::collections::HashMap;
 
@@ -250,11 +269,15 @@ impl App {
                     false, // commit files 不需要空格操作
                 );
 
-                self.state.components.commit_files_panel.update_tree(
+                self.state.components.commit_panel.set_files_tree(
                     commit_id.clone(),
                     summary,
                     tree_panel,
                 );
+
+                if self.state.ui_state.active_panel == Panel::Commits {
+                    self.update_main_view_for_active_panel()?;
+                }
             }
             FrontendEvent::Error { message, .. } => {
                 self.state.push_log(format!("Error: {message}"));
@@ -291,9 +314,11 @@ impl App {
     }
 
     fn set_active_panel(&mut self, panel: Panel) -> Result<()> {
-        self.state.ui_state.active_panel = panel;
-        self.state
-            .push_log(format!("Focus moved to {}", panel.title()));
+        if self.state.ui_state.active_panel != panel {
+            self.state.ui_state.active_panel = panel;
+            self.state
+                .push_log(format!("Focus moved to {}", panel.title()));
+        }
         self.update_main_view_for_active_panel()
     }
 
@@ -303,19 +328,20 @@ impl App {
                 // 请求 commit 文件列表
                 if let Some(commit) = self.state.selected_commit() {
                     let commit_id = commit.id.clone();
-                    let _summary = commit.summary.clone();
+                    let summary = commit.summary.clone();
                     self.state
-                        .push_log(format!("Loading files for commit {}...", &commit_id[..8]));
+                        .components
+                        .commit_panel
+                        .start_loading(commit_id.clone(), summary.clone());
+                    self.state.push_log(format!(
+                        "Loading files for commit {}...",
+                        short_commit_id(&commit_id)
+                    ));
 
                     let request_id = self
                         .state
                         .send_command(BackendCommand::GetCommitFiles { commit_id })?;
                     self.pending_requests.insert(request_id);
-
-                    // 切换到 CommitFiles 面板
-                    self.state.ui_state.active_panel = Panel::CommitFiles;
-                    self.state
-                        .push_log(format!("Focus moved to {}", Panel::CommitFiles.title()));
                 }
             }
             _ => {
@@ -348,14 +374,11 @@ impl App {
             }
             Panel::Commits => {
                 cycle_selection(
-                    self.state.components.commit_list_state_mut(),
+                    self.state.components.commit_state_mut(),
                     self.state.data_cache.commits.len(),
                     1,
                 );
                 self.update_main_view_for_active_panel()?;
-            }
-            Panel::CommitFiles => {
-                // TreePanel 内部管理导航，不需要外部处理
             }
             Panel::Stash => {
                 cycle_selection(
@@ -396,14 +419,11 @@ impl App {
             }
             Panel::Commits => {
                 cycle_selection(
-                    self.state.components.commit_list_state_mut(),
+                    self.state.components.commit_state_mut(),
                     self.state.data_cache.commits.len(),
                     -1,
                 );
                 self.update_main_view_for_active_panel()?;
-            }
-            Panel::CommitFiles => {
-                // TreePanel 内部管理导航，不需要外部处理
             }
             Panel::Stash => {
                 cycle_selection(
@@ -429,8 +449,7 @@ impl App {
             Panel::MainView => self.show_repo_overview(),
             Panel::Files => self.request_selected_file_diff()?,
             Panel::Branches => self.show_branch_detail(),
-            Panel::Commits => self.show_commit_detail(),
-            Panel::CommitFiles => self.show_commit_files_detail(),
+            Panel::Commits => self.show_commits_panel_detail(),
             Panel::Stash => self.show_stash_detail(),
             Panel::Log => self.show_log_detail(),
         }
@@ -539,6 +558,18 @@ impl App {
         self.state.components.main_view_scroll_to(0);
     }
 
+    fn show_commits_panel_detail(&mut self) {
+        match self.state.components.commit_mode_view() {
+            CommitModeView::List => self.show_commit_detail(),
+            CommitModeView::FilesLoading { commit_id, summary } => {
+                self.show_commit_files_loading_detail(&commit_id, &summary)
+            }
+            CommitModeView::FilesTree { commit_id, summary } => {
+                self.show_commit_files_tree_detail(&commit_id, &summary)
+            }
+        }
+    }
+
     fn show_commit_detail(&mut self) {
         if let Some((short_id, id, author, timestamp, summary, body)) =
             self.state.selected_commit().map(|commit| {
@@ -573,30 +604,22 @@ impl App {
         self.state.components.main_view_scroll_to(0);
     }
 
-    fn show_commit_files_detail(&mut self) {
-        if let Some((commit_id, _files)) = &self.state.data_cache.commit_files {
-            let summary = self
-                .state
-                .data_cache
-                .commits
-                .iter()
-                .find(|c| c.id == *commit_id)
-                .map(|c| c.summary.clone())
-                .unwrap_or_else(|| "Unknown".to_string());
+    fn show_commit_files_loading_detail(&mut self, commit_id: &str, summary: &str) {
+        self.state.data_cache.current_diff = Some((
+            format!("Main View · Commit Files · {}", short_commit_id(commit_id)),
+            format!("Loading files for commit: {}\n\nPlease wait...", summary),
+        ));
+        self.state.components.main_view_scroll_to(0);
+    }
 
-            self.state.data_cache.current_diff = Some((
-                format!("Main View · Commit Files · {}", &commit_id[..8]),
-                format!(
-                    "Commit files tree for: {}\n\nUse the left panel to navigate the tree.\nSelect a file to view its diff.",
-                    summary
-                ),
-            ));
-        } else {
-            self.state.data_cache.current_diff = Some((
-                "Main View · Commit Files".to_string(),
-                "No commit files loaded.".to_string(),
-            ));
-        }
+    fn show_commit_files_tree_detail(&mut self, commit_id: &str, summary: &str) {
+        self.state.data_cache.current_diff = Some((
+            format!("Main View · Commit Files · {}", short_commit_id(commit_id)),
+            format!(
+                "Commit files tree for: {}\n\nUse the left panel to navigate the tree.\nSelect a file to view its diff.",
+                summary
+            ),
+        ));
         self.state.components.main_view_scroll_to(0);
     }
 
@@ -649,44 +672,49 @@ impl App {
             .constraints([Constraint::Min(12), Constraint::Length(8)])
             .split(columns[1]);
 
-        // 使用组件渲染
+        let mut rendered_slots = HashSet::new();
+
+        Self::prepare_slot(frame, left[0], UiSlot::Files, &mut rendered_slots);
         self.state.components.file_list_panel.render(
             frame,
             left[0],
             self.state.ui_state.active_panel == Panel::Files,
             &self.state.data_cache,
         );
+
+        Self::prepare_slot(frame, left[1], UiSlot::Branches, &mut rendered_slots);
         self.state.components.branch_list_panel.render(
             frame,
             left[1],
             self.state.ui_state.active_panel == Panel::Branches,
             &self.state.data_cache,
         );
-        self.state.components.commit_list_panel.render(
+
+        Self::prepare_slot(frame, left[2], UiSlot::Commits, &mut rendered_slots);
+        self.state.components.commit_panel.render(
             frame,
             left[2],
-            self.state.ui_state.active_panel == Panel::Commits
-                || self.state.ui_state.active_panel == Panel::CommitFiles,
+            self.state.ui_state.active_panel == Panel::Commits,
             &self.state.data_cache,
         );
-        self.state.components.commit_files_panel.render(
-            frame,
-            left[2],
-            self.state.ui_state.active_panel == Panel::CommitFiles,
-            &self.state.data_cache,
-        );
+
+        Self::prepare_slot(frame, left[3], UiSlot::Stash, &mut rendered_slots);
         self.state.components.stash_list_panel.render(
             frame,
             left[3],
             self.state.ui_state.active_panel == Panel::Stash,
             &self.state.data_cache,
         );
+
+        Self::prepare_slot(frame, right[0], UiSlot::MainView, &mut rendered_slots);
         self.state.components.main_view_panel.render(
             frame,
             right[0],
             self.state.ui_state.active_panel == Panel::MainView,
             &self.state.data_cache,
         );
+
+        Self::prepare_slot(frame, right[1], UiSlot::Log, &mut rendered_slots);
         self.state.components.log_panel.render(
             frame,
             right[1],
@@ -694,6 +722,24 @@ impl App {
             &self.state.data_cache,
         );
     }
+
+    fn prepare_slot(
+        frame: &mut Frame,
+        area: Rect,
+        slot: UiSlot,
+        rendered_slots: &mut HashSet<UiSlot>,
+    ) {
+        debug_assert!(
+            rendered_slots.insert(slot),
+            "UI slot rendered more than once in the same frame: {:?}",
+            slot
+        );
+        frame.render_widget(Clear, area);
+    }
+}
+
+fn short_commit_id(id: &str) -> String {
+    id.chars().take(8).collect()
 }
 
 fn cycle_selection(state: &mut ListState, len: usize, delta: i8) {

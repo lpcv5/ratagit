@@ -73,7 +73,7 @@ impl AppState {
 
     pub fn selected_commit(&self) -> Option<&CommitEntry> {
         self.components
-            .commit_list_panel
+            .commit_panel
             .selected_index()
             .and_then(|index| self.data_cache.commits.get(index))
     }
@@ -105,7 +105,7 @@ impl AppState {
 
     pub fn sync_commit_list_state(&mut self) {
         sync_list_state(
-            self.components.commit_list_panel.state_mut(),
+            self.components.commit_panel.state_mut(),
             self.data_cache.commits.len(),
         );
     }

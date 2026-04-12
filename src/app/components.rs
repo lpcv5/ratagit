@@ -1,7 +1,7 @@
 use ratatui::widgets::ListState;
 
 use crate::components::panels::{
-    BranchListPanel, CommitFilesPanel, CommitListPanel, FileListPanel, LogPanel, MainViewPanel,
+    BranchListPanel, CommitModeView, CommitPanel, FileListPanel, LogPanel, MainViewPanel,
     StashListPanel,
 };
 use crate::components::Component;
@@ -14,8 +14,7 @@ use super::{CachedData, Panel};
 pub struct AppComponents {
     pub file_list_panel: FileListPanel,
     pub branch_list_panel: BranchListPanel,
-    pub commit_list_panel: CommitListPanel,
-    pub commit_files_panel: CommitFilesPanel,
+    pub commit_panel: CommitPanel,
     pub stash_list_panel: StashListPanel,
     pub main_view_panel: MainViewPanel,
     pub log_panel: LogPanel,
@@ -26,8 +25,7 @@ impl AppComponents {
         Self {
             file_list_panel: FileListPanel::new(),
             branch_list_panel: BranchListPanel::new(),
-            commit_list_panel: CommitListPanel::new(),
-            commit_files_panel: CommitFilesPanel::new(),
+            commit_panel: CommitPanel::new(),
             stash_list_panel: StashListPanel::new(),
             main_view_panel: MainViewPanel::new(),
             log_panel: LogPanel::new(),
@@ -44,8 +42,7 @@ impl AppComponents {
         match active_panel {
             Panel::Files => self.file_list_panel.handle_event(event, data),
             Panel::Branches => self.branch_list_panel.handle_event(event, data),
-            Panel::Commits => self.commit_list_panel.handle_event(event, data),
-            Panel::CommitFiles => self.commit_files_panel.handle_event(event, data),
+            Panel::Commits => self.commit_panel.handle_event(event, data),
             Panel::Stash => self.stash_list_panel.handle_event(event, data),
             Panel::MainView => self.main_view_panel.handle_event(event, data),
             Panel::Log => self.log_panel.handle_event(event, data),
@@ -76,7 +73,15 @@ impl AppComponents {
 
     #[allow(dead_code)]
     pub fn selected_commit_index(&self) -> Option<usize> {
-        self.commit_list_panel.selected_index()
+        self.commit_panel.selected_index()
+    }
+
+    pub fn commit_mode_view(&self) -> CommitModeView {
+        self.commit_panel.mode_view()
+    }
+
+    pub fn commit_pending_commit_id(&self) -> Option<&str> {
+        self.commit_panel.pending_commit_id()
     }
 
     #[allow(dead_code)]
@@ -92,8 +97,8 @@ impl AppComponents {
         self.branch_list_panel.state_mut()
     }
 
-    pub fn commit_list_state_mut(&mut self) -> &mut ListState {
-        self.commit_list_panel.state_mut()
+    pub fn commit_state_mut(&mut self) -> &mut ListState {
+        self.commit_panel.state_mut()
     }
 
     pub fn stash_list_state_mut(&mut self) -> &mut ListState {
