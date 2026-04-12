@@ -10,7 +10,8 @@ use ratatui::{
 use crate::app::CachedData;
 use crate::components::core::tree::{get_visible_nodes, GitFileStatus, TreeNode};
 use crate::components::core::{
-    accent_primary_color, accent_secondary_color, SelectableList, LIST_HIGHLIGHT_SYMBOL,
+    accent_primary_color, accent_secondary_color, selected_row_style, MultiSelectState,
+    MultiSelectableList, SelectableList, LIST_HIGHLIGHT_SYMBOL,
 };
 use crate::components::Component;
 use crate::components::Intent;
@@ -23,6 +24,7 @@ pub struct TreePanel {
     all_nodes: Vec<TreeNode>,
     /// 是否支持空格操作（如暂存文件）
     pub enable_space_action: bool,
+    multi_select: MultiSelectState<String>,
 }
 
 impl TreePanel {
@@ -34,6 +36,7 @@ impl TreePanel {
             title,
             all_nodes: nodes,
             enable_space_action,
+            multi_select: MultiSelectState::default(),
         }
     }
 
@@ -49,18 +52,53 @@ impl TreePanel {
     /// 获取当前选中的节点
     #[allow(dead_code)]
     pub fn selected_node(&self) -> Option<&TreeNode> {
-        let visible = get_visible_nodes(&self.all_nodes);
+        let visible = self.visible_nodes();
         self.state
             .selected()
             .and_then(|idx| visible.get(idx).copied())
+    }
+
+    pub fn selected_targets(&self) -> Vec<(String, bool)> {
+        if self.is_multi_active() {
+            let visible_paths = self.visible_paths();
+            return self
+                .multi_selected_keys(&visible_paths)
+                .into_iter()
+                .filter_map(|path| {
+                    self.all_nodes
+                        .iter()
+                        .find(|node| node.path == path)
+                        .map(|node| (node.path.clone(), node.is_dir))
+                })
+                .collect();
+        }
+
+        self.selected_node()
+            .map(|node| vec![(node.path.clone(), node.is_dir)])
+            .unwrap_or_default()
+    }
+
+    pub fn anchor_target(&self) -> Option<(String, bool)> {
+        let visible_paths = self.visible_paths();
+        let Some(path) = self.multi_anchor_key(&visible_paths) else {
+            return self
+                .selected_node()
+                .map(|node| (node.path.clone(), node.is_dir));
+        };
+
+        self.all_nodes
+            .iter()
+            .find(|node| node.path == path)
+            .map(|node| (node.path.clone(), node.is_dir))
     }
 
     /// 更新节点列表（保持当前选择位置）
     #[allow(dead_code)]
     pub fn update_nodes(&mut self, nodes: Vec<TreeNode>) {
         self.all_nodes = nodes;
+        self.exit_multi_select();
         // 同步选择状态
-        let visible_len = get_visible_nodes(&self.all_nodes).len();
+        let visible_len = self.visible_nodes().len();
         if visible_len == 0 {
             self.state.select(None);
         } else {
@@ -72,7 +110,7 @@ impl TreePanel {
 
     /// 切换目录的展开/折叠状态
     fn toggle_node(&mut self) {
-        let visible = get_visible_nodes(&self.all_nodes);
+        let visible = self.visible_nodes();
         if let Some(selected_idx) = self.state.selected() {
             if let Some(node) = visible.get(selected_idx) {
                 if node.is_dir {
@@ -84,11 +122,16 @@ impl TreePanel {
                 }
             }
         }
+
+        if self.is_multi_active() {
+            let visible_paths = self.visible_paths();
+            self.refresh_multi_range(self.state.selected(), &visible_paths);
+        }
     }
 
     /// 向前导航
     pub fn select_next(&mut self) {
-        let visible_len = get_visible_nodes(&self.all_nodes).len();
+        let visible_len = self.visible_nodes().len();
         if visible_len == 0 {
             self.state.select(None);
             return;
@@ -96,11 +139,16 @@ impl TreePanel {
         let current = self.state.selected().unwrap_or(0);
         let next = current.saturating_add(1).min(visible_len.saturating_sub(1));
         self.state.select(Some(next));
+
+        if self.is_multi_active() {
+            let visible_paths = self.visible_paths();
+            self.refresh_multi_range(self.state.selected(), &visible_paths);
+        }
     }
 
     /// 向后导航
     pub fn select_previous(&mut self) {
-        let visible_len = get_visible_nodes(&self.all_nodes).len();
+        let visible_len = self.visible_nodes().len();
         if visible_len == 0 {
             self.state.select(None);
             return;
@@ -108,6 +156,42 @@ impl TreePanel {
         let current = self.state.selected().unwrap_or(0);
         let prev = current.saturating_sub(1);
         self.state.select(Some(prev));
+
+        if self.is_multi_active() {
+            let visible_paths = self.visible_paths();
+            self.refresh_multi_range(self.state.selected(), &visible_paths);
+        }
+    }
+
+    pub fn clear_multi_select(&mut self) {
+        self.exit_multi_select();
+    }
+
+    pub fn multi_select_active(&self) -> bool {
+        self.is_multi_active()
+    }
+
+    fn visible_nodes(&self) -> Vec<&TreeNode> {
+        get_visible_nodes(&self.all_nodes)
+    }
+
+    fn visible_paths(&self) -> Vec<String> {
+        self.visible_nodes()
+            .into_iter()
+            .map(|node| node.path.clone())
+            .collect()
+    }
+}
+
+impl MultiSelectableList for TreePanel {
+    type Key = String;
+
+    fn multi_select_state(&self) -> &MultiSelectState<Self::Key> {
+        &self.multi_select
+    }
+
+    fn multi_select_state_mut(&mut self) -> &mut MultiSelectState<Self::Key> {
+        &mut self.multi_select
     }
 }
 
@@ -119,6 +203,15 @@ impl Component for TreePanel {
             }
 
             match key.code {
+                KeyCode::Esc if self.is_multi_active() => {
+                    self.exit_multi_select();
+                    return Intent::None;
+                }
+                KeyCode::Char('v') if key.modifiers.is_empty() => {
+                    let visible_paths = self.visible_paths();
+                    self.toggle_multi_select(self.state.selected(), &visible_paths);
+                    return Intent::None;
+                }
                 KeyCode::Char('j') | KeyCode::Down => {
                     self.select_next();
                     return Intent::None;
@@ -142,10 +235,16 @@ impl Component for TreePanel {
     }
 
     fn render(&self, frame: &mut Frame, area: Rect, is_focused: bool, _data: &CachedData) {
-        let visible = get_visible_nodes(&self.all_nodes);
+        let visible = self.visible_nodes();
+        let multi_active = self.is_multi_active();
+        let title = if multi_active {
+            format!("{} · MULTI:{}", self.title, self.multi_selected_count())
+        } else {
+            self.title.clone()
+        };
 
         if visible.is_empty() {
-            SelectableList::render_empty(frame, area, &self.title, is_focused);
+            SelectableList::render_empty(frame, area, &title, is_focused);
             return;
         }
 
@@ -154,7 +253,7 @@ impl Component for TreePanel {
             .map(|node| {
                 let indent = "  ".repeat(node.depth);
 
-                if node.is_dir {
+                let mut item = if node.is_dir {
                     // 目录节点：三角图标 + 目录名
                     let expand_icon = if node.is_expanded { "▼" } else { "▶" };
                     ListItem::new(Line::from(vec![
@@ -192,11 +291,17 @@ impl Component for TreePanel {
                         status_span,
                         Span::styled(node.name.clone(), Style::default()),
                     ]))
+                };
+
+                if multi_active && self.is_multi_selected_key(&node.path) {
+                    item = item.style(selected_row_style());
                 }
+
+                item
             })
             .collect();
 
-        let list = SelectableList::new(items, &self.title, is_focused, LIST_HIGHLIGHT_SYMBOL);
+        let list = SelectableList::new(items, &title, is_focused, LIST_HIGHLIGHT_SYMBOL);
         let state = &mut self.state.clone();
         list.render(frame, area, state);
     }
@@ -231,5 +336,54 @@ mod tests {
 
         panel.select_previous();
         assert_eq!(panel.state.selected(), Some(0));
+    }
+
+    #[test]
+    fn v_toggles_contiguous_multi_selection() {
+        let nodes = vec![
+            TreeNode::new("a".to_string(), "a".to_string(), false, 0, None),
+            TreeNode::new("b".to_string(), "b".to_string(), false, 0, None),
+            TreeNode::new("c".to_string(), "c".to_string(), false, 0, None),
+        ];
+        let mut panel = TreePanel::new("Files".to_string(), nodes, false);
+        panel.state.select(Some(0));
+
+        let enter_multi = Event::Key(crossterm::event::KeyEvent::new(
+            KeyCode::Char('v'),
+            crossterm::event::KeyModifiers::NONE,
+        ));
+        panel.handle_event(&enter_multi, &CachedData::default());
+        panel.select_next();
+        panel.select_next();
+
+        let selected = panel.selected_targets();
+        assert_eq!(selected.len(), 3);
+        assert!(selected.iter().any(|(path, _)| path == "a"));
+        assert!(selected.iter().any(|(path, _)| path == "b"));
+        assert!(selected.iter().any(|(path, _)| path == "c"));
+    }
+
+    #[test]
+    fn esc_clears_multi_selection_only() {
+        let nodes = vec![
+            TreeNode::new("a".to_string(), "a".to_string(), false, 0, None),
+            TreeNode::new("b".to_string(), "b".to_string(), false, 0, None),
+        ];
+        let mut panel = TreePanel::new("Files".to_string(), nodes, false);
+
+        let enter_multi = Event::Key(crossterm::event::KeyEvent::new(
+            KeyCode::Char('v'),
+            crossterm::event::KeyModifiers::NONE,
+        ));
+        panel.handle_event(&enter_multi, &CachedData::default());
+        assert!(panel.is_multi_active());
+
+        let esc = Event::Key(crossterm::event::KeyEvent::new(
+            KeyCode::Esc,
+            crossterm::event::KeyModifiers::NONE,
+        ));
+        panel.handle_event(&esc, &CachedData::default());
+        assert!(!panel.is_multi_active());
+        assert_eq!(panel.selected_targets().len(), 1);
     }
 }

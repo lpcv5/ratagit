@@ -1,8 +1,10 @@
+mod multi_select;
 mod selectable_list;
 mod theme;
 mod tree;
 mod tree_component;
 
+pub use multi_select::{ActionMultiplicity, MultiSelectState, MultiSelectableList};
 pub use selectable_list::{ScrollableText, SelectableList};
 pub use theme::{
     accent_primary_color, accent_secondary_color, muted_text_style, panel_block,

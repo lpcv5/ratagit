@@ -91,6 +91,7 @@ impl AppState {
         self.components
             .file_list_panel
             .update_files(&self.data_cache.files);
+        self.components.file_list_panel.clear_multi_select();
         sync_list_state(
             self.components.file_list_panel.state_mut(),
             self.data_cache.files.len(),
@@ -105,6 +106,7 @@ impl AppState {
     }
 
     pub fn sync_commit_list_state(&mut self) {
+        self.components.commit_panel.clear_list_multi_select();
         sync_list_state(
             self.components.commit_panel.state_mut(),
             self.data_cache.commits.len(),

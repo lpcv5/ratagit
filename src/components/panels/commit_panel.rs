@@ -8,9 +8,10 @@ use ratatui::{
 };
 
 use crate::app::CachedData;
+use crate::backend::git_ops::CommitEntry;
 use crate::components::core::{
-    accent_primary_color, muted_text_style, panel_block, SelectableList, TreePanel,
-    LIST_HIGHLIGHT_SYMBOL,
+    accent_primary_color, muted_text_style, panel_block, selected_row_style, ActionMultiplicity,
+    MultiSelectState, MultiSelectableList, SelectableList, TreePanel, LIST_HIGHLIGHT_SYMBOL,
 };
 use crate::components::Component;
 use crate::components::Intent;
@@ -39,6 +40,7 @@ pub enum CommitModeView {
 pub struct CommitPanel {
     state: ListState,
     mode: CommitMode,
+    list_multi_select: MultiSelectState<String>,
 }
 
 impl CommitPanel {
@@ -48,6 +50,7 @@ impl CommitPanel {
         Self {
             state,
             mode: CommitMode::List,
+            list_multi_select: MultiSelectState::default(),
         }
     }
 
@@ -60,6 +63,7 @@ impl CommitPanel {
     }
 
     pub fn start_loading(&mut self, commit_id: String, summary: String) {
+        self.clear_list_multi_select();
         self.mode = CommitMode::FilesLoading { commit_id, summary };
     }
 
@@ -72,6 +76,9 @@ impl CommitPanel {
     }
 
     pub fn show_list(&mut self) {
+        if let CommitMode::FilesTree { tree, .. } = &mut self.mode {
+            tree.clear_multi_select();
+        }
         self.mode = CommitMode::List;
     }
 
@@ -106,11 +113,50 @@ impl CommitPanel {
             _ => None,
         }
     }
+
+    pub fn selected_tree_targets(&self) -> Vec<(String, bool)> {
+        match &self.mode {
+            CommitMode::FilesTree { tree, .. } => tree.selected_targets(),
+            _ => Vec::new(),
+        }
+    }
+
+    pub fn refresh_list_multi_range(&mut self, commits: &[CommitEntry]) {
+        let commit_ids = commit_ids(commits);
+        self.refresh_multi_range(self.state.selected(), &commit_ids);
+    }
+
+    pub fn clear_list_multi_select(&mut self) {
+        self.exit_multi_select();
+    }
+
+    pub fn is_list_multi_select_active(&self) -> bool {
+        self.is_multi_active()
+    }
+
+    pub fn is_tree_multi_select_active(&self) -> bool {
+        matches!(
+            &self.mode,
+            CommitMode::FilesTree { tree, .. } if tree.multi_select_active()
+        )
+    }
 }
 
 impl Default for CommitPanel {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl MultiSelectableList for CommitPanel {
+    type Key = String;
+
+    fn multi_select_state(&self) -> &MultiSelectState<Self::Key> {
+        &self.list_multi_select
+    }
+
+    fn multi_select_state_mut(&mut self) -> &mut MultiSelectState<Self::Key> {
+        &mut self.list_multi_select
     }
 }
 
@@ -121,15 +167,41 @@ impl Component for CommitPanel {
                 return Intent::None;
             }
 
-            if key.code == KeyCode::Esc && !matches!(self.mode, CommitMode::List) {
-                self.show_list();
-                return Intent::SwitchFocus(crate::app::Panel::Commits);
+            if key.code == KeyCode::Esc {
+                let list_multi_active = self.is_list_multi_select_active();
+                match &mut self.mode {
+                    CommitMode::List if list_multi_active => {
+                        self.clear_list_multi_select();
+                        return Intent::RefreshPanelDetail;
+                    }
+                    CommitMode::FilesTree { tree, .. } if tree.multi_select_active() => {
+                        tree.clear_multi_select();
+                        return Intent::RefreshPanelDetail;
+                    }
+                    CommitMode::List => {}
+                    _ => {
+                        self.show_list();
+                        return Intent::SwitchFocus(crate::app::Panel::Commits);
+                    }
+                }
             }
 
             if matches!(self.mode, CommitMode::List) {
                 return match key.code {
+                    KeyCode::Char('v') if key.modifiers.is_empty() => {
+                        let commit_ids = commit_ids(&data.commits);
+                        self.toggle_multi_select(self.state.selected(), &commit_ids);
+                        Intent::RefreshPanelDetail
+                    }
                     KeyCode::Char('j') | KeyCode::Down => Intent::SelectNext,
                     KeyCode::Char('k') | KeyCode::Up => Intent::SelectPrevious,
+                    KeyCode::Enter
+                        if self.is_list_multi_select_active()
+                            && self.enter_action_multiplicity()
+                                == ActionMultiplicity::SingleOnly =>
+                    {
+                        Intent::None
+                    }
                     KeyCode::Enter => Intent::ActivatePanel,
                     _ => Intent::None,
                 };
@@ -137,14 +209,16 @@ impl Component for CommitPanel {
         }
 
         if let CommitMode::FilesTree { tree, .. } = &mut self.mode {
-            let before = tree.selected_node().map(|node| node.path.clone());
+            let before_targets = tree.selected_targets();
+            let before_multi = tree.multi_select_active();
             let intent = tree.handle_event(event, data);
             if !matches!(intent, Intent::None) {
                 return intent;
             }
 
-            let after = tree.selected_node().map(|node| node.path.clone());
-            if before != after {
+            let after_targets = tree.selected_targets();
+            let after_multi = tree.multi_select_active();
+            if before_targets != after_targets || before_multi != after_multi {
                 return Intent::RefreshPanelDetail;
             }
 
@@ -162,21 +236,31 @@ impl Component for CommitPanel {
                     return;
                 }
 
+                let multi_active = self.is_list_multi_select_active();
+                let title = if multi_active {
+                    format!("Commits · MULTI:{}", self.multi_selected_count())
+                } else {
+                    "Commits".to_string()
+                };
                 let items: Vec<ListItem<'_>> = data
                     .commits
                     .iter()
                     .map(|commit| {
-                        ListItem::new(Line::from(vec![
+                        let mut item = ListItem::new(Line::from(vec![
                             Span::styled(
                                 format!("{} ", commit.short_id),
                                 Style::default().fg(accent_primary_color()),
                             ),
                             Span::raw(commit.summary.clone()),
-                        ]))
+                        ]));
+                        if multi_active && self.is_multi_selected_key(&commit.id) {
+                            item = item.style(selected_row_style());
+                        }
+                        item
                     })
                     .collect();
 
-                let list = SelectableList::new(items, "Commits", is_focused, LIST_HIGHLIGHT_SYMBOL);
+                let list = SelectableList::new(items, &title, is_focused, LIST_HIGHLIGHT_SYMBOL);
                 let state = &mut self.state.clone();
                 list.render(frame, area, state);
             }
@@ -191,6 +275,16 @@ impl Component for CommitPanel {
                 tree.render(frame, area, is_focused, data);
             }
         }
+    }
+}
+
+fn commit_ids(commits: &[CommitEntry]) -> Vec<String> {
+    commits.iter().map(|commit| commit.id.clone()).collect()
+}
+
+impl CommitPanel {
+    fn enter_action_multiplicity(&self) -> ActionMultiplicity {
+        ActionMultiplicity::SingleOnly
     }
 }
 
@@ -226,6 +320,45 @@ mod tests {
 
         let intent = panel.handle_event(&event, &CachedData::default());
         assert!(matches!(intent, Intent::ActivatePanel));
+    }
+
+    #[test]
+    fn enter_is_disabled_when_list_multi_select_is_active() {
+        let mut panel = CommitPanel::new();
+        let data = CachedData {
+            commits: vec![
+                CommitEntry {
+                    short_id: "a".to_string(),
+                    id: "aaaaaaaa".to_string(),
+                    summary: "a".to_string(),
+                    body: None,
+                    author: "a".to_string(),
+                    timestamp: 0,
+                },
+                CommitEntry {
+                    short_id: "b".to_string(),
+                    id: "bbbbbbbb".to_string(),
+                    summary: "b".to_string(),
+                    body: None,
+                    author: "b".to_string(),
+                    timestamp: 0,
+                },
+            ],
+            ..CachedData::default()
+        };
+
+        let enter_multi = Event::Key(crossterm::event::KeyEvent::new(
+            KeyCode::Char('v'),
+            crossterm::event::KeyModifiers::NONE,
+        ));
+        panel.handle_event(&enter_multi, &data);
+
+        let enter = Event::Key(crossterm::event::KeyEvent::new(
+            KeyCode::Enter,
+            crossterm::event::KeyModifiers::NONE,
+        ));
+        let intent = panel.handle_event(&enter, &data);
+        assert!(matches!(intent, Intent::None));
     }
 
     #[test]

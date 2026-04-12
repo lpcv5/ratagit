@@ -70,6 +70,18 @@ impl AppComponents {
         self.file_list_panel.selected_tree_node()
     }
 
+    pub fn selected_file_tree_targets(&self) -> Vec<(String, bool)> {
+        self.file_list_panel.selected_tree_targets()
+    }
+
+    pub fn selected_file_anchor_target(&self) -> Option<(String, bool)> {
+        self.file_list_panel.anchor_tree_target()
+    }
+
+    pub fn is_file_multi_select_active(&self) -> bool {
+        self.file_list_panel.is_multi_select_active()
+    }
+
     #[allow(dead_code)]
     pub fn selected_branch_index(&self) -> Option<usize> {
         self.branch_list_panel.selected_index()
@@ -90,6 +102,25 @@ impl AppComponents {
 
     pub fn selected_commit_tree_node(&self) -> Option<(String, bool)> {
         self.commit_panel.selected_tree_node()
+    }
+
+    pub fn selected_commit_tree_targets(&self) -> Vec<(String, bool)> {
+        self.commit_panel.selected_tree_targets()
+    }
+
+    pub fn is_commit_tree_multi_select_active(&self) -> bool {
+        self.commit_panel.is_tree_multi_select_active()
+    }
+
+    pub fn is_commit_list_multi_select_active(&self) -> bool {
+        self.commit_panel.is_list_multi_select_active()
+    }
+
+    pub fn refresh_commit_list_multi_range(
+        &mut self,
+        commits: &[crate::backend::git_ops::CommitEntry],
+    ) {
+        self.commit_panel.refresh_list_multi_range(commits);
     }
 
     #[allow(dead_code)]

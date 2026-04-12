@@ -1,3 +1,9 @@
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct DiffTarget {
+    pub path: String,
+    pub is_dir: bool,
+}
+
 #[derive(Debug, Clone)]
 pub enum BackendCommand {
     RefreshStatus,
@@ -9,6 +15,9 @@ pub enum BackendCommand {
     GetDiff {
         file_path: String,
     },
+    GetDiffBatch {
+        targets: Vec<DiffTarget>,
+    },
     GetCommitFiles {
         commit_id: String,
     },
@@ -17,6 +26,10 @@ pub enum BackendCommand {
         path: String,
         is_dir: bool,
     },
+    GetCommitDiffBatch {
+        commit_id: String,
+        targets: Vec<DiffTarget>,
+    },
     GetBranchGraph {
         branch_name: String,
         limit: usize,
@@ -24,8 +37,14 @@ pub enum BackendCommand {
     StageFile {
         file_path: String,
     },
+    StageFiles {
+        file_paths: Vec<String>,
+    },
     UnstageFile {
         file_path: String,
+    },
+    UnstageFiles {
+        file_paths: Vec<String>,
     },
     Quit,
 }

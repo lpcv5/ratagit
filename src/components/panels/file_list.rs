@@ -7,7 +7,7 @@ use ratatui::Frame;
 use crate::app::CachedData;
 use crate::backend::git_ops::StatusEntry;
 use crate::components::core::{
-    build_tree_from_paths, GitFileStatus, SelectableList, TreeNode, TreePanel,
+    build_tree_from_paths, ActionMultiplicity, GitFileStatus, SelectableList, TreeNode, TreePanel,
 };
 use crate::components::Component;
 use crate::components::Intent;
@@ -60,6 +60,22 @@ impl FileListPanel {
             .map(|node| (node.path.clone(), node.is_dir))
     }
 
+    pub fn selected_tree_targets(&self) -> Vec<(String, bool)> {
+        self.tree.selected_targets()
+    }
+
+    pub fn anchor_tree_target(&self) -> Option<(String, bool)> {
+        self.tree.anchor_target()
+    }
+
+    pub fn is_multi_select_active(&self) -> bool {
+        self.tree.multi_select_active()
+    }
+
+    pub fn clear_multi_select(&mut self) {
+        self.tree.clear_multi_select();
+    }
+
     /// 获取当前选中的文件节点
     #[allow(dead_code)]
     pub fn selected_node(&self) -> Option<&TreeNode> {
@@ -101,12 +117,13 @@ impl Component for FileListPanel {
 
             // 空格键：仅文件支持暂存操作
             if key.code == KeyCode::Char(' ') && key.modifiers.is_empty() {
-                if self
+                let stage_action = ActionMultiplicity::BatchCapable;
+                let has_file_target = self
                     .tree
-                    .selected_node()
-                    .map(|node| !node.is_dir)
-                    .unwrap_or(false)
-                {
+                    .selected_targets()
+                    .iter()
+                    .any(|(_, is_dir)| !*is_dir);
+                if has_file_target && stage_action == ActionMultiplicity::BatchCapable {
                     return Intent::ToggleStageFile;
                 }
                 return Intent::None;
@@ -114,14 +131,16 @@ impl Component for FileListPanel {
         }
 
         // 其他按键委派给 tree 处理；若光标变化则刷新详情
-        let before = self.tree.selected_node().map(|node| node.path.clone());
+        let before_targets = self.tree.selected_targets();
+        let before_multi = self.tree.multi_select_active();
         let intent = self.tree.handle_event(event, data);
         if !matches!(intent, Intent::None) {
             return intent;
         }
 
-        let after = self.tree.selected_node().map(|node| node.path.clone());
-        if before != after {
+        let after_targets = self.tree.selected_targets();
+        let after_multi = self.tree.multi_select_active();
+        if before_targets != after_targets || before_multi != after_multi {
             return Intent::RefreshPanelDetail;
         }
 

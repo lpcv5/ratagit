@@ -5,9 +5,10 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use super::git_ops::GitRepo;
 use super::handlers::CommandHandler;
 use super::handlers::{
-    GetBranchGraphHandler, GetCommitDiffHandler, GetCommitFilesHandler, GetDiffHandler,
-    RefreshBranchesHandler, RefreshCommitsHandler, RefreshStashesHandler, RefreshStatusHandler,
-    StageFileHandler, UnstageFileHandler,
+    GetBranchGraphHandler, GetCommitDiffBatchHandler, GetCommitDiffHandler, GetCommitFilesHandler,
+    GetDiffBatchHandler, GetDiffHandler, RefreshBranchesHandler, RefreshCommitsHandler,
+    RefreshStashesHandler, RefreshStatusHandler, StageFileHandler, StageFilesHandler,
+    UnstageFileHandler, UnstageFilesHandler,
 };
 use super::{CommandEnvelope, EventEnvelope, FrontendEvent};
 
@@ -19,11 +20,15 @@ enum CommandKey {
     RefreshCommits,
     RefreshStashes,
     GetDiff,
+    GetDiffBatch,
     GetCommitFiles,
     GetCommitDiff,
+    GetCommitDiffBatch,
     GetBranchGraph,
     StageFile,
+    StageFiles,
     UnstageFile,
+    UnstageFiles,
 }
 
 pub async fn run_backend(
@@ -67,6 +72,10 @@ pub async fn run_backend(
         Box::new(GetDiffHandler) as Box<dyn CommandHandler>,
     );
     handlers.insert(
+        CommandKey::GetDiffBatch,
+        Box::new(GetDiffBatchHandler) as Box<dyn CommandHandler>,
+    );
+    handlers.insert(
         CommandKey::StageFile,
         Box::new(StageFileHandler) as Box<dyn CommandHandler>,
     );
@@ -75,12 +84,24 @@ pub async fn run_backend(
         Box::new(UnstageFileHandler) as Box<dyn CommandHandler>,
     );
     handlers.insert(
+        CommandKey::StageFiles,
+        Box::new(StageFilesHandler) as Box<dyn CommandHandler>,
+    );
+    handlers.insert(
+        CommandKey::UnstageFiles,
+        Box::new(UnstageFilesHandler) as Box<dyn CommandHandler>,
+    );
+    handlers.insert(
         CommandKey::GetCommitFiles,
         Box::new(GetCommitFilesHandler) as Box<dyn CommandHandler>,
     );
     handlers.insert(
         CommandKey::GetCommitDiff,
         Box::new(GetCommitDiffHandler) as Box<dyn CommandHandler>,
+    );
+    handlers.insert(
+        CommandKey::GetCommitDiffBatch,
+        Box::new(GetCommitDiffBatchHandler) as Box<dyn CommandHandler>,
     );
     handlers.insert(
         CommandKey::GetBranchGraph,
@@ -96,15 +117,21 @@ pub async fn run_backend(
             }
             crate::backend::BackendCommand::RefreshStashes => Some(CommandKey::RefreshStashes),
             crate::backend::BackendCommand::GetDiff { .. } => Some(CommandKey::GetDiff),
+            crate::backend::BackendCommand::GetDiffBatch { .. } => Some(CommandKey::GetDiffBatch),
             crate::backend::BackendCommand::GetCommitFiles { .. } => {
                 Some(CommandKey::GetCommitFiles)
             }
             crate::backend::BackendCommand::GetCommitDiff { .. } => Some(CommandKey::GetCommitDiff),
+            crate::backend::BackendCommand::GetCommitDiffBatch { .. } => {
+                Some(CommandKey::GetCommitDiffBatch)
+            }
             crate::backend::BackendCommand::GetBranchGraph { .. } => {
                 Some(CommandKey::GetBranchGraph)
             }
             crate::backend::BackendCommand::StageFile { .. } => Some(CommandKey::StageFile),
+            crate::backend::BackendCommand::StageFiles { .. } => Some(CommandKey::StageFiles),
             crate::backend::BackendCommand::UnstageFile { .. } => Some(CommandKey::UnstageFile),
+            crate::backend::BackendCommand::UnstageFiles { .. } => Some(CommandKey::UnstageFiles),
             crate::backend::BackendCommand::Quit => None,
         };
 

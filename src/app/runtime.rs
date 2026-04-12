@@ -10,7 +10,7 @@ use ratatui::{
 };
 use tokio::sync::mpsc::error::TryRecvError;
 
-use crate::backend::{BackendCommand, EventEnvelope, FrontendEvent};
+use crate::backend::{BackendCommand, DiffTarget, EventEnvelope, FrontendEvent};
 use crate::components::panels::CommitModeView;
 use crate::components::Component;
 use crate::components::Intent;
@@ -426,6 +426,14 @@ impl App {
     fn activate_panel(&mut self) -> Result<()> {
         match self.state.ui_state.active_panel {
             Panel::Commits => {
+                if self.state.components.is_commit_list_multi_select_active() {
+                    self.state.push_log(
+                        "Commit list multi-select is active; Enter is disabled in this mode."
+                            .to_string(),
+                    );
+                    return self.update_main_view_for_active_panel();
+                }
+
                 // 请求 commit 文件列表
                 if let Some(commit) = self.state.selected_commit() {
                     let commit_id = commit.id.clone();
@@ -479,6 +487,9 @@ impl App {
                     self.state.data_cache.commits.len(),
                     1,
                 );
+                self.state
+                    .components
+                    .refresh_commit_list_multi_range(&self.state.data_cache.commits);
                 self.update_main_view_for_active_panel()?;
             }
             Panel::Stash => {
@@ -524,6 +535,9 @@ impl App {
                     self.state.data_cache.commits.len(),
                     -1,
                 );
+                self.state
+                    .components
+                    .refresh_commit_list_multi_range(&self.state.data_cache.commits);
                 self.update_main_view_for_active_panel()?;
             }
             Panel::Stash => {
@@ -596,6 +610,18 @@ impl App {
     }
 
     fn request_selected_file_diff(&mut self) -> Result<()> {
+        let targets = self.state.components.selected_file_tree_targets();
+        if self.state.components.is_file_multi_select_active() && !targets.is_empty() {
+            let deduped = dedupe_targets_parent_first(to_diff_targets(&targets));
+            self.state.data_cache.current_diff = Some((
+                "Main View · Files".to_string(),
+                format!("Loading diff for {} selected targets...", deduped.len()),
+            ));
+            self.state.components.main_view_scroll_to(0);
+            self.send_latest_diff_command(BackendCommand::GetDiffBatch { targets: deduped })?;
+            return Ok(());
+        }
+
         if let Some((path, is_dir)) = self.state.components.selected_file_tree_node() {
             let pathspec = if is_dir && !path.ends_with('/') {
                 format!("{path}/")
@@ -627,6 +653,16 @@ impl App {
     }
 
     fn request_selected_commit_tree_diff(&mut self, commit_id: &str, summary: &str) -> Result<()> {
+        let targets = self.state.components.selected_commit_tree_targets();
+        if self.state.components.is_commit_tree_multi_select_active() && !targets.is_empty() {
+            let deduped = dedupe_targets_parent_first(to_diff_targets(&targets));
+            self.send_latest_diff_command(BackendCommand::GetCommitDiffBatch {
+                commit_id: commit_id.to_string(),
+                targets: deduped,
+            })?;
+            return Ok(());
+        }
+
         if let Some((path, is_dir)) = self.state.components.selected_commit_tree_node() {
             self.send_latest_diff_command(BackendCommand::GetCommitDiff {
                 commit_id: commit_id.to_string(),
@@ -647,26 +683,56 @@ impl App {
     }
 
     fn toggle_stage_selected_file(&mut self) -> Result<()> {
-        if let Some((path, is_dir)) = self.state.components.selected_file_tree_node() {
-            if is_dir {
-                return Ok(());
-            }
-
-            let Some(file) = self.state.data_cache.files.iter().find(|f| f.path == path) else {
-                return Ok(());
-            };
-            let is_staged = file.is_staged;
-
-            let command = if is_staged {
-                BackendCommand::UnstageFile { file_path: path }
-            } else {
-                BackendCommand::StageFile { file_path: path }
-            };
-
-            let request_id = self.state.send_command(command)?;
-            self.pending_requests.insert(request_id);
+        let selected_targets = self.state.components.selected_file_tree_targets();
+        let selected_files: Vec<String> = selected_targets
+            .into_iter()
+            .filter(|(_, is_dir)| !is_dir)
+            .map(|(path, _)| path)
+            .collect();
+        if selected_files.is_empty() {
+            return Ok(());
         }
 
+        let anchor_file = self
+            .state
+            .components
+            .selected_file_anchor_target()
+            .and_then(|(path, is_dir)| (!is_dir).then_some(path))
+            .or_else(|| selected_files.first().cloned());
+
+        let Some(pivot_path) = anchor_file else {
+            return Ok(());
+        };
+        let Some(file) = self
+            .state
+            .data_cache
+            .files
+            .iter()
+            .find(|entry| entry.path == pivot_path)
+        else {
+            return Ok(());
+        };
+        let should_unstage = file.is_staged;
+
+        let command = if selected_files.len() == 1 {
+            let file_path = selected_files.into_iter().next().unwrap_or_default();
+            if should_unstage {
+                BackendCommand::UnstageFile { file_path }
+            } else {
+                BackendCommand::StageFile { file_path }
+            }
+        } else if should_unstage {
+            BackendCommand::UnstageFiles {
+                file_paths: selected_files,
+            }
+        } else {
+            BackendCommand::StageFiles {
+                file_paths: selected_files,
+            }
+        };
+
+        let request_id = self.state.send_command(command)?;
+        self.pending_requests.insert(request_id);
         Ok(())
     }
 
@@ -1050,6 +1116,47 @@ fn short_commit_id(id: &str) -> String {
     id.chars().take(8).collect()
 }
 
+fn to_diff_targets(targets: &[(String, bool)]) -> Vec<DiffTarget> {
+    targets
+        .iter()
+        .map(|(path, is_dir)| DiffTarget {
+            path: path.clone(),
+            is_dir: *is_dir,
+        })
+        .collect()
+}
+
+fn dedupe_targets_parent_first(targets: Vec<DiffTarget>) -> Vec<DiffTarget> {
+    let selected_dirs: Vec<String> = targets
+        .iter()
+        .filter(|target| target.is_dir)
+        .map(|target| normalize_path(&target.path))
+        .collect();
+    let mut deduped = Vec::new();
+    let mut seen = HashSet::new();
+
+    for target in targets {
+        let normalized = normalize_path(&target.path);
+        let parent_selected = selected_dirs
+            .iter()
+            .any(|dir| dir != &normalized && normalized.starts_with(format!("{dir}/").as_str()));
+        if parent_selected {
+            continue;
+        }
+
+        let key = format!("{}:{}", normalized, target.is_dir);
+        if seen.insert(key) {
+            deduped.push(target);
+        }
+    }
+
+    deduped
+}
+
+fn normalize_path(path: &str) -> String {
+    path.trim_end_matches('/').to_string()
+}
+
 fn cycle_selection(state: &mut ListState, len: usize, delta: i8) {
     if len == 0 {
         state.select(None);
@@ -1142,5 +1249,32 @@ mod tests {
         assert_eq!(previous_left_panel(Panel::Files), Panel::Stash);
         assert_eq!(previous_left_panel(Panel::Branches), Panel::Files);
         assert_eq!(previous_left_panel(Panel::Log), Panel::Stash);
+    }
+
+    #[test]
+    fn dedupe_targets_prefers_parent_directory() {
+        let targets = vec![
+            DiffTarget {
+                path: "src".to_string(),
+                is_dir: true,
+            },
+            DiffTarget {
+                path: "src/main.rs".to_string(),
+                is_dir: false,
+            },
+            DiffTarget {
+                path: "README.md".to_string(),
+                is_dir: false,
+            },
+        ];
+
+        let deduped = dedupe_targets_parent_first(targets);
+        assert_eq!(deduped.len(), 2);
+        assert!(deduped
+            .iter()
+            .any(|target| target.path == "src" && target.is_dir));
+        assert!(deduped
+            .iter()
+            .any(|target| target.path == "README.md" && !target.is_dir));
     }
 }
