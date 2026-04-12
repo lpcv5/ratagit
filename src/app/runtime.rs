@@ -4,11 +4,11 @@ use anyhow::Result;
 use crossterm::event;
 use tokio::sync::mpsc::error::TryRecvError;
 
-use crate::backend::{EventEnvelope, FrontendEvent};
-use crate::components::core::build_tree_from_paths;
 use super::request_tracker::RequestTracker;
 use super::state::AppState;
 use super::Panel;
+use crate::backend::{EventEnvelope, FrontendEvent};
+use crate::components::core::build_tree_from_paths;
 
 pub struct App {
     pub(super) state: AppState,
@@ -73,19 +73,38 @@ impl App {
             FrontendEvent::FilesUpdated { files } => {
                 self.state.data_cache.files = files;
                 self.state.sync_file_list_state();
-                self.state.push_log(format!("Files refreshed: {} entries", self.state.data_cache.files.len()));
-                if matches!(self.state.ui_state.active_panel, Panel::Files | Panel::MainView) {
+                self.state.push_log(format!(
+                    "Files refreshed: {} entries",
+                    self.state.data_cache.files.len()
+                ));
+                if matches!(
+                    self.state.ui_state.active_panel,
+                    Panel::Files | Panel::MainView
+                ) {
                     self.update_main_view_for_active_panel()?;
                 }
             }
             FrontendEvent::BranchesUpdated { branches } => {
                 self.state.data_cache.branches = branches;
                 self.state.sync_branch_list_state();
-                self.state.data_cache.branch_graphs.retain(|branch_name, _| {
-                    self.state.data_cache.branches.iter().any(|b| b.name == *branch_name)
-                });
-                self.state.push_log(format!("Branches refreshed: {} entries", self.state.data_cache.branches.len()));
-                if matches!(self.state.ui_state.active_panel, Panel::Branches | Panel::MainView) {
+                self.state
+                    .data_cache
+                    .branch_graphs
+                    .retain(|branch_name, _| {
+                        self.state
+                            .data_cache
+                            .branches
+                            .iter()
+                            .any(|b| b.name == *branch_name)
+                    });
+                self.state.push_log(format!(
+                    "Branches refreshed: {} entries",
+                    self.state.data_cache.branches.len()
+                ));
+                if matches!(
+                    self.state.ui_state.active_panel,
+                    Panel::Branches | Panel::MainView
+                ) {
                     self.update_main_view_for_active_panel()?;
                 }
             }
@@ -93,62 +112,113 @@ impl App {
                 self.state.data_cache.commits = commits;
                 self.state.sync_commit_list_state();
                 self.state.data_cache.branch_graphs.clear();
-                self.state.push_log(format!("Commits refreshed: {} entries", self.state.data_cache.commits.len()));
-                if matches!(self.state.ui_state.active_panel, Panel::Commits | Panel::MainView | Panel::Branches) {
+                self.state.push_log(format!(
+                    "Commits refreshed: {} entries",
+                    self.state.data_cache.commits.len()
+                ));
+                if matches!(
+                    self.state.ui_state.active_panel,
+                    Panel::Commits | Panel::MainView | Panel::Branches
+                ) {
                     self.update_main_view_for_active_panel()?;
                 }
             }
             FrontendEvent::StashesUpdated { stashes } => {
                 self.state.data_cache.stashes = stashes;
                 self.state.sync_stash_list_state();
-                self.state.push_log(format!("Stashes refreshed: {} entries", self.state.data_cache.stashes.len()));
-                if matches!(self.state.ui_state.active_panel, Panel::Stash | Panel::MainView) {
+                self.state.push_log(format!(
+                    "Stashes refreshed: {} entries",
+                    self.state.data_cache.stashes.len()
+                ));
+                if matches!(
+                    self.state.ui_state.active_panel,
+                    Panel::Stash | Panel::MainView
+                ) {
                     self.update_main_view_for_active_panel()?;
                 }
             }
-            FrontendEvent::DiffLoaded { file_path, diff, .. } => {
+            FrontendEvent::DiffLoaded {
+                file_path, diff, ..
+            } => {
                 self.state.data_cache.current_diff = Some((file_path.clone(), diff.clone()));
                 self.state.components.main_view_scroll_to(0);
                 self.state.push_log(format!("Loaded diff for {file_path}"));
             }
-            FrontendEvent::CommitFilesLoaded { commit_id, files, .. } => {
+            FrontendEvent::CommitFilesLoaded {
+                commit_id, files, ..
+            } => {
                 if self.state.components.commit_pending_commit_id() != Some(commit_id.as_str()) {
-                    self.state.push_log(format!("Ignored stale commit files response for {}", super::intent_executor::short_commit_id(&commit_id)));
+                    self.state.push_log(format!(
+                        "Ignored stale commit files response for {}",
+                        super::intent_executor::short_commit_id(&commit_id)
+                    ));
                     return Ok(());
                 }
-                let summary = self.state.data_cache.commits.iter()
+                let summary = self
+                    .state
+                    .data_cache
+                    .commits
+                    .iter()
                     .find(|c| c.id == commit_id)
                     .map(|c| c.summary.clone())
                     .unwrap_or_else(|| "Unknown".to_string());
                 self.state.data_cache.commit_files = Some((commit_id.clone(), files.clone()));
-                self.state.push_log(format!("Loaded {} files for commit {}", files.len(), super::intent_executor::short_commit_id(&commit_id)));
+                self.state.push_log(format!(
+                    "Loaded {} files for commit {}",
+                    files.len(),
+                    super::intent_executor::short_commit_id(&commit_id)
+                ));
 
                 let paths: Vec<String> = files.iter().map(|(p, _)| p.clone()).collect();
-                let status_map: std::collections::HashMap<String, crate::components::core::GitFileStatus> = files.iter().cloned().collect();
+                let status_map: std::collections::HashMap<
+                    String,
+                    crate::components::core::GitFileStatus,
+                > = files.iter().cloned().collect();
                 let tree_nodes = build_tree_from_paths(&paths, Some(&status_map));
-                let tree_panel = crate::components::core::TreePanel::new(format!("Files · {}", &summary), tree_nodes, false);
-                self.state.components.commit_panel.set_files_tree(commit_id.clone(), summary, tree_panel);
+                let tree_panel = crate::components::core::TreePanel::new(
+                    format!("Files · {}", &summary),
+                    tree_nodes,
+                    false,
+                );
+                self.state.components.commit_panel.set_files_tree(
+                    commit_id.clone(),
+                    summary,
+                    tree_panel,
+                );
 
                 if self.state.ui_state.active_panel == Panel::Commits {
                     self.update_main_view_for_active_panel()?;
                 }
             }
-            FrontendEvent::BranchGraphLoaded { branch_name, graph, .. } => {
-                self.state.data_cache.branch_graphs.insert(branch_name.clone(), graph.clone());
-                self.state.push_log(format!("Loaded branch graph for {branch_name}"));
+            FrontendEvent::BranchGraphLoaded {
+                branch_name, graph, ..
+            } => {
+                self.state
+                    .data_cache
+                    .branch_graphs
+                    .insert(branch_name.clone(), graph.clone());
+                self.state
+                    .push_log(format!("Loaded branch graph for {branch_name}"));
                 if self.state.ui_state.active_panel == Panel::Branches
-                    && self.state.selected_branch().map(|b| b.name.as_str()) == Some(branch_name.as_str())
+                    && self.state.selected_branch().map(|b| b.name.as_str())
+                        == Some(branch_name.as_str())
                 {
-                    self.state.data_cache.current_diff = Some((format!("Main View · Branch Graph · {branch_name}"), graph));
+                    self.state.data_cache.current_diff =
+                        Some((format!("Main View · Branch Graph · {branch_name}"), graph));
                     self.state.components.main_view_scroll_to(0);
                 }
             }
-            FrontendEvent::Error { message, .. } => self.state.push_log(format!("Error: {message}")),
-            FrontendEvent::ActionSucceeded { message, .. } => self.state.push_log(format!("OK: {message}")),
-            FrontendEvent::ActionFailed { message, .. } => self.state.push_log(format!("FAILED: {message}")),
+            FrontendEvent::Error { message, .. } => {
+                self.state.push_log(format!("Error: {message}"))
+            }
+            FrontendEvent::ActionSucceeded { message, .. } => {
+                self.state.push_log(format!("OK: {message}"))
+            }
+            FrontendEvent::ActionFailed { message, .. } => {
+                self.state.push_log(format!("FAILED: {message}"))
+            }
         }
 
         Ok(())
     }
 }
-

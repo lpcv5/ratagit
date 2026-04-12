@@ -1,8 +1,7 @@
 use std::collections::HashMap;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tokio::sync::mpsc::{Receiver, Sender};
-use tokio::time::timeout;
 
 use super::git_ops::GitRepo;
 use super::handlers::CommandHandler;
@@ -139,23 +138,25 @@ pub async fn run_backend(mut cmd_rx: Receiver<CommandEnvelope>, event_tx: Sender
         if let Some(key) = command_key {
             if let Some(ref mut repo_mut) = repo {
                 if let Some(handler) = handlers.get(&key) {
-                    let result = timeout(OPERATION_TIMEOUT, async {
-                        tokio::task::block_in_place(|| {
-                            if handler.needs_mut_repo() {
-                                handler.handle_mut(&envelope, repo_mut, &event_tx)
-                            } else {
-                                handler.handle(&envelope, repo_mut, &event_tx)
-                            }
-                        })
+                    let start = Instant::now();
+                    tokio::task::block_in_place(|| {
+                        if handler.needs_mut_repo() {
+                            handler.handle_mut(&envelope, repo_mut, &event_tx)
+                        } else {
+                            handler.handle(&envelope, repo_mut, &event_tx)
+                        }
                     })
-                    .await;
-
-                    if result.is_err() {
+                    .ok();
+                    if start.elapsed() > OPERATION_TIMEOUT {
                         let _ = event_tx.try_send(EventEnvelope::new(
                             Some(envelope.request_id),
                             FrontendEvent::Error {
                                 request_id: Some(envelope.request_id),
-                                message: "Operation timed out".to_string(),
+                                message: format!(
+                                    "Operation took {:.1}s (limit {}s)",
+                                    start.elapsed().as_secs_f32(),
+                                    OPERATION_TIMEOUT.as_secs()
+                                ),
                             },
                         ));
                     }

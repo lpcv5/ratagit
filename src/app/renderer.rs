@@ -36,7 +36,8 @@ impl App {
             .constraints([Constraint::Percentage(34), Constraint::Percentage(66)])
             .split(frame.area());
 
-        let left_heights = compute_left_panel_heights(columns[0].height, self.state.ui_state.active_panel);
+        let left_heights =
+            compute_left_panel_heights(columns[0].height, self.state.ui_state.active_panel);
         let left = Layout::default()
             .direction(Direction::Vertical)
             .constraints(left_heights.map(Constraint::Length))
@@ -50,27 +51,61 @@ impl App {
         let mut rendered_slots = HashSet::new();
 
         prepare_slot(frame, left[0], UiSlot::Files, &mut rendered_slots);
-        self.state.components.file_list_panel.render(frame, left[0], self.state.ui_state.active_panel == Panel::Files, &self.state.data_cache);
+        self.state.components.file_list_panel.render(
+            frame,
+            left[0],
+            self.state.ui_state.active_panel == Panel::Files,
+            &self.state.data_cache,
+        );
 
         prepare_slot(frame, left[1], UiSlot::Branches, &mut rendered_slots);
-        self.state.components.branch_list_panel.render(frame, left[1], self.state.ui_state.active_panel == Panel::Branches, &self.state.data_cache);
+        self.state.components.branch_list_panel.render(
+            frame,
+            left[1],
+            self.state.ui_state.active_panel == Panel::Branches,
+            &self.state.data_cache,
+        );
 
         prepare_slot(frame, left[2], UiSlot::Commits, &mut rendered_slots);
-        self.state.components.commit_panel.render(frame, left[2], self.state.ui_state.active_panel == Panel::Commits, &self.state.data_cache);
+        self.state.components.commit_panel.render(
+            frame,
+            left[2],
+            self.state.ui_state.active_panel == Panel::Commits,
+            &self.state.data_cache,
+        );
 
         prepare_slot(frame, left[3], UiSlot::Stash, &mut rendered_slots);
-        self.state.components.stash_list_panel.render(frame, left[3], self.state.ui_state.active_panel == Panel::Stash, &self.state.data_cache);
+        self.state.components.stash_list_panel.render(
+            frame,
+            left[3],
+            self.state.ui_state.active_panel == Panel::Stash,
+            &self.state.data_cache,
+        );
 
         prepare_slot(frame, right[0], UiSlot::MainView, &mut rendered_slots);
-        self.state.components.main_view_panel.render(frame, right[0], self.state.ui_state.active_panel == Panel::MainView, &self.state.data_cache);
+        self.state.components.main_view_panel.render(
+            frame,
+            right[0],
+            self.state.ui_state.active_panel == Panel::MainView,
+            &self.state.data_cache,
+        );
 
         prepare_slot(frame, right[1], UiSlot::Log, &mut rendered_slots);
-        self.state.components.log_panel.render(frame, right[1], self.state.ui_state.active_panel == Panel::Log, &self.state.data_cache);
+        self.state.components.log_panel.render(
+            frame,
+            right[1],
+            self.state.ui_state.active_panel == Panel::Log,
+            &self.state.data_cache,
+        );
     }
 }
 
 fn prepare_slot(frame: &mut Frame, area: Rect, slot: UiSlot, rendered_slots: &mut HashSet<UiSlot>) {
-    debug_assert!(rendered_slots.insert(slot), "UI slot rendered more than once in the same frame: {:?}", slot);
+    debug_assert!(
+        rendered_slots.insert(slot),
+        "UI slot rendered more than once in the same frame: {:?}",
+        slot
+    );
     frame.render_widget(Clear, area);
 }
 
@@ -91,7 +126,9 @@ pub(super) fn compute_left_panel_heights(total_height: u16, active_panel: Panel)
             };
             heights[LEFT_STASH_INDEX] = STASH_COLLAPSED_HEIGHT;
             let remaining_for_top_three = total_height.saturating_sub(STASH_COLLAPSED_HEIGHT);
-            let focused_height = (remaining_for_top_three / 2).max(FOCUSED_PANEL_MIN_HEIGHT).min(remaining_for_top_three);
+            let focused_height = (remaining_for_top_three / 2)
+                .max(FOCUSED_PANEL_MIN_HEIGHT)
+                .min(remaining_for_top_three);
             heights[focused_index] = focused_height;
             let remaining = remaining_for_top_three.saturating_sub(focused_height);
             let mut non_focused = [0_usize; 2];
@@ -105,15 +142,25 @@ pub(super) fn compute_left_panel_heights(total_height: u16, active_panel: Panel)
             distribute_evenly_into(remaining, &non_focused, &mut heights);
         }
         Panel::Stash => {
-            let stash_height = (total_height / 2).max(FOCUSED_PANEL_MIN_HEIGHT).min(total_height);
+            let stash_height = (total_height / 2)
+                .max(FOCUSED_PANEL_MIN_HEIGHT)
+                .min(total_height);
             heights[LEFT_STASH_INDEX] = stash_height;
             let remaining = total_height.saturating_sub(stash_height);
-            distribute_evenly_into(remaining, &[LEFT_FILES_INDEX, LEFT_BRANCHES_INDEX, LEFT_COMMITS_INDEX], &mut heights);
+            distribute_evenly_into(
+                remaining,
+                &[LEFT_FILES_INDEX, LEFT_BRANCHES_INDEX, LEFT_COMMITS_INDEX],
+                &mut heights,
+            );
         }
         Panel::MainView | Panel::Log => {
             heights[LEFT_STASH_INDEX] = STASH_COLLAPSED_HEIGHT;
             let remaining = total_height.saturating_sub(STASH_COLLAPSED_HEIGHT);
-            distribute_evenly_into(remaining, &[LEFT_FILES_INDEX, LEFT_BRANCHES_INDEX, LEFT_COMMITS_INDEX], &mut heights);
+            distribute_evenly_into(
+                remaining,
+                &[LEFT_FILES_INDEX, LEFT_BRANCHES_INDEX, LEFT_COMMITS_INDEX],
+                &mut heights,
+            );
         }
     }
 
@@ -148,7 +195,9 @@ fn distribute_weighted(total: u16, weights: [u16; 4]) -> [u16; 4] {
     }
     let mut remainder = total.saturating_sub(consumed);
     for value in &mut heights {
-        if remainder == 0 { break; }
+        if remainder == 0 {
+            break;
+        }
         *value = value.saturating_add(1);
         remainder -= 1;
     }
@@ -182,7 +231,11 @@ mod tests {
     fn left_heights_keep_stash_collapsed_when_right_side_is_focused() {
         let heights = compute_left_panel_heights(25, Panel::MainView);
         assert_eq!(heights[LEFT_STASH_INDEX], STASH_COLLAPSED_HEIGHT);
-        let top_three = [heights[LEFT_FILES_INDEX], heights[LEFT_BRANCHES_INDEX], heights[LEFT_COMMITS_INDEX]];
+        let top_three = [
+            heights[LEFT_FILES_INDEX],
+            heights[LEFT_BRANCHES_INDEX],
+            heights[LEFT_COMMITS_INDEX],
+        ];
         let max = *top_three.iter().max().unwrap();
         let min = *top_three.iter().min().unwrap();
         assert!(max - min <= 1);
@@ -230,9 +283,18 @@ mod tests {
         use crate::backend::DiffTarget;
         use crate::shared::path_utils::dedupe_targets_parent_first;
         let targets = vec![
-            DiffTarget { path: "src".to_string(), is_dir: true },
-            DiffTarget { path: "src/main.rs".to_string(), is_dir: false },
-            DiffTarget { path: "README.md".to_string(), is_dir: false },
+            DiffTarget {
+                path: "src".to_string(),
+                is_dir: true,
+            },
+            DiffTarget {
+                path: "src/main.rs".to_string(),
+                is_dir: false,
+            },
+            DiffTarget {
+                path: "README.md".to_string(),
+                is_dir: false,
+            },
         ];
         let deduped = dedupe_targets_parent_first(&targets);
         assert_eq!(deduped.len(), 2);

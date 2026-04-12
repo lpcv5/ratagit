@@ -43,11 +43,19 @@ impl App {
         Ok(())
     }
 
-    pub(super) fn request_refresh_all(&self) {
-        let _ = self.state.cmd_tx.try_send(crate::backend::CommandEnvelope::new(0, BackendCommand::RefreshStatus));
-        let _ = self.state.cmd_tx.try_send(crate::backend::CommandEnvelope::new(0, BackendCommand::RefreshBranches));
-        let _ = self.state.cmd_tx.try_send(crate::backend::CommandEnvelope::new(0, BackendCommand::RefreshCommits { limit: 30 }));
-        let _ = self.state.cmd_tx.try_send(crate::backend::CommandEnvelope::new(0, BackendCommand::RefreshStashes));
+    pub(super) fn request_refresh_all(&mut self) {
+        for cmd in [
+            BackendCommand::RefreshStatus,
+            BackendCommand::RefreshBranches,
+            BackendCommand::RefreshCommits { limit: 30 },
+            BackendCommand::RefreshStashes,
+        ] {
+            if let Ok(id) = self.state.send_command(cmd) {
+                if id != 0 {
+                    self.requests.track(id);
+                }
+            }
+        }
     }
 
     pub(super) fn scroll_main_view_by(&mut self, delta: i16) {
@@ -66,7 +74,8 @@ impl App {
     fn set_active_panel(&mut self, panel: Panel) -> Result<()> {
         if self.state.ui_state.active_panel != panel {
             self.state.ui_state.active_panel = panel;
-            self.state.push_log(format!("Focus moved to {}", panel.title()));
+            self.state
+                .push_log(format!("Focus moved to {}", panel.title()));
         }
         self.update_main_view_for_active_panel()
     }
@@ -75,20 +84,34 @@ impl App {
         match self.state.ui_state.active_panel {
             Panel::Commits => {
                 if self.state.components.is_commit_list_multi_select_active() {
-                    self.state.push_log("Commit list multi-select is active; Enter is disabled in this mode.".to_string());
+                    self.state.push_log(
+                        "Commit list multi-select is active; Enter is disabled in this mode."
+                            .to_string(),
+                    );
                     return self.update_main_view_for_active_panel();
                 }
                 if let Some(commit) = self.state.selected_commit() {
                     let commit_id = commit.id.clone();
                     let summary = commit.summary.clone();
-                    self.state.components.commit_panel.start_loading(commit_id.clone(), summary.clone());
-                    self.state.push_log(format!("Loading files for commit {}...", short_commit_id(&commit_id)));
-                    let request_id = self.state.send_command(BackendCommand::GetCommitFiles { commit_id })?;
+                    self.state
+                        .components
+                        .commit_panel
+                        .start_loading(commit_id.clone(), summary.clone());
+                    self.state.push_log(format!(
+                        "Loading files for commit {}...",
+                        short_commit_id(&commit_id)
+                    ));
+                    let request_id = self
+                        .state
+                        .send_command(BackendCommand::GetCommitFiles { commit_id })?;
                     self.requests.track(request_id);
                 }
             }
             _ => {
-                self.state.push_log(format!("Activated {}", self.state.ui_state.active_panel.title()));
+                self.state.push_log(format!(
+                    "Activated {}",
+                    self.state.ui_state.active_panel.title()
+                ));
             }
         }
         self.update_main_view_for_active_panel()
@@ -97,20 +120,38 @@ impl App {
     fn navigate_forward(&mut self) -> Result<()> {
         match self.state.ui_state.active_panel {
             Panel::Files => {
-                cycle_selection(self.state.components.file_list_panel.state_mut(), self.state.data_cache.files.len(), 1);
+                cycle_selection(
+                    self.state.components.file_list_panel.state_mut(),
+                    self.state.data_cache.files.len(),
+                    1,
+                );
                 self.update_main_view_for_active_panel()?;
             }
             Panel::Branches => {
-                cycle_selection(self.state.components.branch_list_panel.state_mut(), self.state.data_cache.branches.len(), 1);
+                cycle_selection(
+                    self.state.components.branch_list_panel.state_mut(),
+                    self.state.data_cache.branches.len(),
+                    1,
+                );
                 self.update_main_view_for_active_panel()?;
             }
             Panel::Commits => {
-                cycle_selection(self.state.components.commit_panel.state_mut(), self.state.data_cache.commits.len(), 1);
-                self.state.components.refresh_commit_list_multi_range(&self.state.data_cache.commits);
+                cycle_selection(
+                    self.state.components.commit_panel.state_mut(),
+                    self.state.data_cache.commits.len(),
+                    1,
+                );
+                self.state
+                    .components
+                    .refresh_commit_list_multi_range(&self.state.data_cache.commits);
                 self.update_main_view_for_active_panel()?;
             }
             Panel::Stash => {
-                cycle_selection(self.state.components.stash_list_panel.state_mut(), self.state.data_cache.stashes.len(), 1);
+                cycle_selection(
+                    self.state.components.stash_list_panel.state_mut(),
+                    self.state.data_cache.stashes.len(),
+                    1,
+                );
                 self.update_main_view_for_active_panel()?;
             }
             Panel::MainView => self.scroll_main_view_by(1),
@@ -122,20 +163,38 @@ impl App {
     fn navigate_backward(&mut self) -> Result<()> {
         match self.state.ui_state.active_panel {
             Panel::Files => {
-                cycle_selection(self.state.components.file_list_panel.state_mut(), self.state.data_cache.files.len(), -1);
+                cycle_selection(
+                    self.state.components.file_list_panel.state_mut(),
+                    self.state.data_cache.files.len(),
+                    -1,
+                );
                 self.update_main_view_for_active_panel()?;
             }
             Panel::Branches => {
-                cycle_selection(self.state.components.branch_list_panel.state_mut(), self.state.data_cache.branches.len(), -1);
+                cycle_selection(
+                    self.state.components.branch_list_panel.state_mut(),
+                    self.state.data_cache.branches.len(),
+                    -1,
+                );
                 self.update_main_view_for_active_panel()?;
             }
             Panel::Commits => {
-                cycle_selection(self.state.components.commit_panel.state_mut(), self.state.data_cache.commits.len(), -1);
-                self.state.components.refresh_commit_list_multi_range(&self.state.data_cache.commits);
+                cycle_selection(
+                    self.state.components.commit_panel.state_mut(),
+                    self.state.data_cache.commits.len(),
+                    -1,
+                );
+                self.state
+                    .components
+                    .refresh_commit_list_multi_range(&self.state.data_cache.commits);
                 self.update_main_view_for_active_panel()?;
             }
             Panel::Stash => {
-                cycle_selection(self.state.components.stash_list_panel.state_mut(), self.state.data_cache.stashes.len(), -1);
+                cycle_selection(
+                    self.state.components.stash_list_panel.state_mut(),
+                    self.state.data_cache.stashes.len(),
+                    -1,
+                );
                 self.update_main_view_for_active_panel()?;
             }
             Panel::MainView => self.scroll_main_view_by(-1),
@@ -145,12 +204,28 @@ impl App {
     }
 
     fn show_repo_overview(&mut self) {
-        let current_branch = self.state.data_cache.branches.iter()
+        let current_branch = self
+            .state
+            .data_cache
+            .branches
+            .iter()
             .find(|b| b.is_head)
             .map(|b| b.name.clone())
             .unwrap_or_else(|| "(detached)".to_string());
-        let staged = self.state.data_cache.files.iter().filter(|f| f.is_staged).count();
-        let unstaged = self.state.data_cache.files.iter().filter(|f| f.is_unstaged).count();
+        let staged = self
+            .state
+            .data_cache
+            .files
+            .iter()
+            .filter(|f| f.is_staged)
+            .count();
+        let unstaged = self
+            .state
+            .data_cache
+            .files
+            .iter()
+            .filter(|f| f.is_unstaged)
+            .count();
         let content = format!(
             "Repository snapshot\n\nCurrent branch: {current_branch}\nFiles: {} (staged: {staged}, unstaged: {unstaged})\nBranches: {}\nCommits loaded: {}\nStashes: {}\n\nNavigation\n- h/l: switch focus across left panels\n- 1/2/3/4: jump to Files/Branches/Commits/Stash\n- j/k or arrows: move inside the focused panel\n- Enter: refresh the current panel detail\n- r: refresh all Git-backed panels\n- Ctrl+d / Ctrl+u: globally page Main View\n- q: quit",
             self.state.data_cache.files.len(),
@@ -177,11 +252,22 @@ impl App {
         }
 
         if let Some((path, is_dir)) = self.state.components.selected_file_tree_node() {
-            let pathspec = if is_dir && !path.ends_with('/') { format!("{path}/") } else { path.clone() };
-            let label = if is_dir { format!("{path}/") } else { path.clone() };
-            self.state.data_cache.current_diff = Some((label.clone(), format!("Loading diff for {label}...")));
+            let pathspec = if is_dir && !path.ends_with('/') {
+                format!("{path}/")
+            } else {
+                path.clone()
+            };
+            let label = if is_dir {
+                format!("{path}/")
+            } else {
+                path.clone()
+            };
+            self.state.data_cache.current_diff =
+                Some((label.clone(), format!("Loading diff for {label}...")));
             self.state.components.main_view_scroll_to(0);
-            self.send_latest_diff_command(BackendCommand::GetDiff { file_path: pathspec })?;
+            self.send_latest_diff_command(BackendCommand::GetDiff {
+                file_path: pathspec,
+            })?;
         } else {
             self.state.data_cache.current_diff = Some((
                 "Main View · Files".to_string(),
@@ -222,7 +308,8 @@ impl App {
 
     fn toggle_stage_selected_file(&mut self) -> Result<()> {
         let selected_targets = self.state.components.selected_file_tree_targets();
-        let selected_files: Vec<String> = selected_targets.into_iter()
+        let selected_files: Vec<String> = selected_targets
+            .into_iter()
             .filter(|(_, is_dir)| !is_dir)
             .map(|(path, _)| path)
             .collect();
@@ -231,23 +318,42 @@ impl App {
             return Ok(());
         }
 
-        let anchor_file = self.state.components.selected_file_anchor_target()
+        let anchor_file = self
+            .state
+            .components
+            .selected_file_anchor_target()
             .and_then(|(path, is_dir)| (!is_dir).then_some(path))
             .or_else(|| selected_files.first().cloned());
 
-        let Some(pivot_path) = anchor_file else { return Ok(()); };
-        let Some(file) = self.state.data_cache.files.iter().find(|e| e.path == pivot_path) else {
+        let Some(pivot_path) = anchor_file else {
+            return Ok(());
+        };
+        let Some(file) = self
+            .state
+            .data_cache
+            .files
+            .iter()
+            .find(|e| e.path == pivot_path)
+        else {
             return Ok(());
         };
         let should_unstage = file.is_staged;
 
         let command = if selected_files.len() == 1 {
             let file_path = selected_files.into_iter().next().unwrap_or_default();
-            if should_unstage { BackendCommand::UnstageFile { file_path } } else { BackendCommand::StageFile { file_path } }
+            if should_unstage {
+                BackendCommand::UnstageFile { file_path }
+            } else {
+                BackendCommand::StageFile { file_path }
+            }
         } else if should_unstage {
-            BackendCommand::UnstageFiles { file_paths: selected_files }
+            BackendCommand::UnstageFiles {
+                file_paths: selected_files,
+            }
         } else {
-            BackendCommand::StageFiles { file_paths: selected_files }
+            BackendCommand::StageFiles {
+                file_paths: selected_files,
+            }
         };
 
         let request_id = self.state.send_command(command)?;
@@ -256,11 +362,14 @@ impl App {
     }
 
     fn show_branch_detail(&mut self) -> Result<()> {
-        if let Some((name, is_head, upstream)) = self.state.selected_branch()
+        if let Some((name, is_head, upstream)) = self
+            .state
+            .selected_branch()
             .map(|b| (b.name.clone(), b.is_head, b.upstream.clone()))
         {
             if let Some(graph) = self.state.data_cache.branch_graphs.get(&name) {
-                self.state.data_cache.current_diff = Some((format!("Main View · Branch Graph · {name}"), graph.clone()));
+                self.state.data_cache.current_diff =
+                    Some((format!("Main View · Branch Graph · {name}"), graph.clone()));
                 self.state.components.main_view_scroll_to(0);
                 return Ok(());
             }
@@ -269,10 +378,14 @@ impl App {
             let content = format!(
                 "Loading branch graph...\n\nBranch: {name}\nChecked out: {head_status}\nUpstream: {upstream}\n\nRunning: git log --graph --decorate --color=always --max-count={BRANCH_GRAPH_LIMIT} refs/heads/{name}"
             );
-            self.state.data_cache.current_diff = Some((format!("Main View · Branch Graph · {name}"), content));
+            self.state.data_cache.current_diff =
+                Some((format!("Main View · Branch Graph · {name}"), content));
             self.send_latest_branch_graph_command(name)?;
         } else {
-            self.state.data_cache.current_diff = Some(("Main View · Branches".to_string(), "No branches available.".to_string()));
+            self.state.data_cache.current_diff = Some((
+                "Main View · Branches".to_string(),
+                "No branches available.".to_string(),
+            ));
         }
         self.state.components.main_view_scroll_to(0);
         Ok(())
@@ -281,21 +394,44 @@ impl App {
     fn show_commits_panel_detail(&mut self) -> Result<()> {
         match self.state.components.commit_mode_view() {
             CommitModeView::List => self.show_commit_detail(),
-            CommitModeView::FilesLoading { commit_id, summary } => self.show_commit_files_loading_detail(&commit_id, &summary),
-            CommitModeView::FilesTree { commit_id, summary } => self.show_commit_files_tree_detail(&commit_id, &summary)?,
+            CommitModeView::FilesLoading { commit_id, summary } => {
+                self.show_commit_files_loading_detail(&commit_id, &summary)
+            }
+            CommitModeView::FilesTree { commit_id, summary } => {
+                self.show_commit_files_tree_detail(&commit_id, &summary)?
+            }
         }
         Ok(())
     }
 
     fn show_commit_detail(&mut self) {
-        if let Some((short_id, id, author, timestamp, summary, body)) = self.state.selected_commit().map(|c| {
-            (c.short_id.clone(), c.id.clone(), c.author.clone(), c.timestamp, c.summary.clone(), c.body.clone())
-        }) {
-            let body = body.as_deref().filter(|v| !v.is_empty()).unwrap_or("(no body)");
-            let content = format!("Commit detail\n\nCommit: {}\nAuthor: {}\nTimestamp: {}\nSummary: {}\n\nBody:\n{}", id, author, timestamp, summary, body);
-            self.state.data_cache.current_diff = Some((format!("Main View · Commit · {short_id}"), content));
+        if let Some((short_id, id, author, timestamp, summary, body)) =
+            self.state.selected_commit().map(|c| {
+                (
+                    c.short_id.clone(),
+                    c.id.clone(),
+                    c.author.clone(),
+                    c.timestamp,
+                    c.summary.clone(),
+                    c.body.clone(),
+                )
+            })
+        {
+            let body = body
+                .as_deref()
+                .filter(|v| !v.is_empty())
+                .unwrap_or("(no body)");
+            let content = format!(
+                "Commit detail\n\nCommit: {}\nAuthor: {}\nTimestamp: {}\nSummary: {}\n\nBody:\n{}",
+                id, author, timestamp, summary, body
+            );
+            self.state.data_cache.current_diff =
+                Some((format!("Main View · Commit · {short_id}"), content));
         } else {
-            self.state.data_cache.current_diff = Some(("Main View · Commits".to_string(), "No commits loaded.".to_string()));
+            self.state.data_cache.current_diff = Some((
+                "Main View · Commits".to_string(),
+                "No commits loaded.".to_string(),
+            ));
         }
         self.state.components.main_view_scroll_to(0);
     }
@@ -313,14 +449,22 @@ impl App {
     }
 
     fn show_stash_detail(&mut self) {
-        if let Some((index, id, message)) = self.state.selected_stash().map(|s| (s.index, s.id.clone(), s.message.clone())) {
+        if let Some((index, id, message)) = self
+            .state
+            .selected_stash()
+            .map(|s| (s.index, s.id.clone(), s.message.clone()))
+        {
             let content = format!(
                 "Stash detail\n\nIndex: {}\nId: {}\nMessage: {}\n\nStash actions can be added later without changing the panel navigation shell.",
                 index, id, message
             );
-            self.state.data_cache.current_diff = Some((format!("Main View · Stash · #{index}"), content));
+            self.state.data_cache.current_diff =
+                Some((format!("Main View · Stash · #{index}"), content));
         } else {
-            self.state.data_cache.current_diff = Some(("Main View · Stash".to_string(), "No stashes found in this repository.".to_string()));
+            self.state.data_cache.current_diff = Some((
+                "Main View · Stash".to_string(),
+                "No stashes found in this repository.".to_string(),
+            ));
         }
         self.state.components.main_view_scroll_to(0);
     }
@@ -366,5 +510,11 @@ pub(super) fn short_commit_id(id: &str) -> String {
 }
 
 pub(super) fn to_diff_targets(targets: &[(String, bool)]) -> Vec<DiffTarget> {
-    targets.iter().map(|(path, is_dir)| DiffTarget { path: path.clone(), is_dir: *is_dir }).collect()
+    targets
+        .iter()
+        .map(|(path, is_dir)| DiffTarget {
+            path: path.clone(),
+            is_dir: *is_dir,
+        })
+        .collect()
 }

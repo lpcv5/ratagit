@@ -38,12 +38,23 @@ impl AppState {
         id
     }
 
-    /// 发送命令（自动分配请求 ID）
+    /// 发送命令（自动分配请求 ID）。队列满时记录日志并返回 Ok(0)（哨兵值，不追踪）。
     pub fn send_command(&mut self, command: crate::backend::BackendCommand) -> anyhow::Result<u64> {
         let request_id = self.next_request_id();
-        self.cmd_tx
-            .try_send(CommandEnvelope::new(request_id, command))?;
-        Ok(request_id)
+        match self
+            .cmd_tx
+            .try_send(CommandEnvelope::new(request_id, command))
+        {
+            Ok(()) => Ok(request_id),
+            Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                self.push_log("Backend busy: command dropped (queue full)".to_string());
+                Ok(0)
+            }
+            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                self.should_quit = true;
+                Ok(0)
+            }
+        }
     }
 
     pub fn push_log(&mut self, entry: String) {

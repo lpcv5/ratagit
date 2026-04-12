@@ -7,6 +7,12 @@ use crate::shared::path_utils::{
 };
 use tokio::sync::mpsc::Sender;
 
+fn send_event(event_tx: &Sender<EventEnvelope>, envelope: EventEnvelope) {
+    if let Err(e) = event_tx.try_send(envelope) {
+        eprintln!("ratagit: event dropped (queue full): {e}");
+    }
+}
+
 /// 命令处理器 trait
 pub trait CommandHandler: Send + Sync {
     /// 执行命令并发送事件
@@ -44,10 +50,10 @@ impl CommandHandler for RefreshStatusHandler {
     ) -> Result<()> {
         match super::git_ops::get_status_files(repo) {
             Ok(files) => {
-                let _ = event_tx.try_send(EventEnvelope::new(
-                    None,
-                    FrontendEvent::FilesUpdated { files },
-                ));
+                send_event(
+                    event_tx,
+                    EventEnvelope::new(None, FrontendEvent::FilesUpdated { files }),
+                );
             }
             Err(error) => send_error(event_tx, None, "status", error),
         }
@@ -66,10 +72,10 @@ impl CommandHandler for RefreshBranchesHandler {
     ) -> Result<()> {
         match super::git_ops::get_branches(repo) {
             Ok(branches) => {
-                let _ = event_tx.try_send(EventEnvelope::new(
-                    None,
-                    FrontendEvent::BranchesUpdated { branches },
-                ));
+                send_event(
+                    event_tx,
+                    EventEnvelope::new(None, FrontendEvent::BranchesUpdated { branches }),
+                );
             }
             Err(error) => send_error(event_tx, None, "branches", error),
         }
@@ -95,10 +101,10 @@ impl CommandHandler for RefreshCommitsHandler {
 
         match super::git_ops::get_commits(repo, limit) {
             Ok(commits) => {
-                let _ = event_tx.try_send(EventEnvelope::new(
-                    None,
-                    FrontendEvent::CommitsUpdated { commits },
-                ));
+                send_event(
+                    event_tx,
+                    EventEnvelope::new(None, FrontendEvent::CommitsUpdated { commits }),
+                );
             }
             Err(error) => send_error(event_tx, None, "commits", error),
         }
@@ -131,10 +137,10 @@ impl CommandHandler for RefreshStashesHandler {
     ) -> Result<()> {
         match super::git_ops::get_stashes(repo) {
             Ok(stashes) => {
-                let _ = event_tx.try_send(EventEnvelope::new(
-                    None,
-                    FrontendEvent::StashesUpdated { stashes },
-                ));
+                send_event(
+                    event_tx,
+                    EventEnvelope::new(None, FrontendEvent::StashesUpdated { stashes }),
+                );
             }
             Err(error) => send_error(event_tx, None, "stashes", error),
         }
@@ -160,14 +166,17 @@ impl CommandHandler for GetDiffHandler {
 
         match super::git_ops::get_diff(repo, &file_path) {
             Ok(diff) => {
-                let _ = event_tx.try_send(EventEnvelope::new(
-                    Some(envelope.request_id),
-                    FrontendEvent::DiffLoaded {
-                        request_id: envelope.request_id,
-                        file_path,
-                        diff,
-                    },
-                ));
+                send_event(
+                    event_tx,
+                    EventEnvelope::new(
+                        Some(envelope.request_id),
+                        FrontendEvent::DiffLoaded {
+                            request_id: envelope.request_id,
+                            file_path,
+                            diff,
+                        },
+                    ),
+                );
             }
             Err(error) => send_error(event_tx, Some(envelope.request_id), "diff", error),
         }
@@ -207,14 +216,17 @@ impl CommandHandler for GetDiffBatchHandler {
             sections.join("\n\n")
         };
 
-        let _ = event_tx.try_send(EventEnvelope::new(
-            Some(envelope.request_id),
-            FrontendEvent::DiffLoaded {
-                request_id: envelope.request_id,
-                file_path: headline,
-                diff,
-            },
-        ));
+        send_event(
+            event_tx,
+            EventEnvelope::new(
+                Some(envelope.request_id),
+                FrontendEvent::DiffLoaded {
+                    request_id: envelope.request_id,
+                    file_path: headline,
+                    diff,
+                },
+            ),
+        );
         Ok(())
     }
 }
@@ -241,14 +253,17 @@ impl CommandHandler for GetCommitFilesHandler {
         if let Some(commit) = commits.iter().find(|c| c.id == commit_id) {
             match super::git_ops::get_commit_files(repo, commit) {
                 Ok(files) => {
-                    let _ = event_tx.try_send(EventEnvelope::new(
-                        Some(envelope.request_id),
-                        FrontendEvent::CommitFilesLoaded {
-                            request_id: envelope.request_id,
-                            commit_id,
-                            files,
-                        },
-                    ));
+                    send_event(
+                        event_tx,
+                        EventEnvelope::new(
+                            Some(envelope.request_id),
+                            FrontendEvent::CommitFilesLoaded {
+                                request_id: envelope.request_id,
+                                commit_id,
+                                files,
+                            },
+                        ),
+                    );
                 }
                 Err(error) => {
                     send_error(event_tx, Some(envelope.request_id), "commit files", error)
@@ -295,14 +310,17 @@ impl CommandHandler for GetCommitDiffHandler {
                     format!("{short_id}:{path}")
                 };
 
-                let _ = event_tx.try_send(EventEnvelope::new(
-                    Some(envelope.request_id),
-                    FrontendEvent::DiffLoaded {
-                        request_id: envelope.request_id,
-                        file_path: target,
-                        diff,
-                    },
-                ));
+                send_event(
+                    event_tx,
+                    EventEnvelope::new(
+                        Some(envelope.request_id),
+                        FrontendEvent::DiffLoaded {
+                            request_id: envelope.request_id,
+                            file_path: target,
+                            diff,
+                        },
+                    ),
+                );
             }
             Err(error) => send_error(event_tx, Some(envelope.request_id), "commit diff", error),
         }
@@ -345,14 +363,17 @@ impl CommandHandler for GetCommitDiffBatchHandler {
             sections.join("\n\n")
         };
 
-        let _ = event_tx.try_send(EventEnvelope::new(
-            Some(envelope.request_id),
-            FrontendEvent::DiffLoaded {
-                request_id: envelope.request_id,
-                file_path: headline,
-                diff,
-            },
-        ));
+        send_event(
+            event_tx,
+            EventEnvelope::new(
+                Some(envelope.request_id),
+                FrontendEvent::DiffLoaded {
+                    request_id: envelope.request_id,
+                    file_path: headline,
+                    diff,
+                },
+            ),
+        );
         Ok(())
     }
 }
@@ -377,14 +398,17 @@ impl CommandHandler for GetBranchGraphHandler {
 
         match super::git_ops::get_branch_graph(repo, &branch_name, limit) {
             Ok(graph) => {
-                let _ = event_tx.try_send(EventEnvelope::new(
-                    Some(envelope.request_id),
-                    FrontendEvent::BranchGraphLoaded {
-                        request_id: envelope.request_id,
-                        branch_name,
-                        graph,
-                    },
-                ));
+                send_event(
+                    event_tx,
+                    EventEnvelope::new(
+                        Some(envelope.request_id),
+                        FrontendEvent::BranchGraphLoaded {
+                            request_id: envelope.request_id,
+                            branch_name,
+                            graph,
+                        },
+                    ),
+                );
             }
             Err(error) => send_error(event_tx, Some(envelope.request_id), "branch graph", error),
         }
@@ -410,19 +434,22 @@ impl CommandHandler for StageFileHandler {
 
         match super::git_ops::stage_file(repo, &file_path) {
             Ok(()) => {
-                let _ = event_tx.try_send(EventEnvelope::new(
-                    Some(envelope.request_id),
-                    FrontendEvent::ActionSucceeded {
-                        request_id: envelope.request_id,
-                        message: format!("Staged: {file_path}"),
-                    },
-                ));
+                send_event(
+                    event_tx,
+                    EventEnvelope::new(
+                        Some(envelope.request_id),
+                        FrontendEvent::ActionSucceeded {
+                            request_id: envelope.request_id,
+                            message: format!("Staged: {file_path}"),
+                        },
+                    ),
+                );
                 // 自动刷新文件状态
                 if let Ok(files) = super::git_ops::get_status_files(repo) {
-                    let _ = event_tx.try_send(EventEnvelope::new(
-                        None,
-                        FrontendEvent::FilesUpdated { files },
-                    ));
+                    send_event(
+                        event_tx,
+                        EventEnvelope::new(None, FrontendEvent::FilesUpdated { files }),
+                    );
                 }
             }
             Err(error) => send_error(event_tx, Some(envelope.request_id), "stage", error),
@@ -481,19 +508,22 @@ impl CommandHandler for UnstageFileHandler {
 
         match super::git_ops::unstage_file(repo, &file_path) {
             Ok(()) => {
-                let _ = event_tx.try_send(EventEnvelope::new(
-                    Some(envelope.request_id),
-                    FrontendEvent::ActionSucceeded {
-                        request_id: envelope.request_id,
-                        message: format!("Unstaged: {file_path}"),
-                    },
-                ));
+                send_event(
+                    event_tx,
+                    EventEnvelope::new(
+                        Some(envelope.request_id),
+                        FrontendEvent::ActionSucceeded {
+                            request_id: envelope.request_id,
+                            message: format!("Unstaged: {file_path}"),
+                        },
+                    ),
+                );
                 // 自动刷新文件状态
                 if let Ok(files) = super::git_ops::get_status_files(repo) {
-                    let _ = event_tx.try_send(EventEnvelope::new(
-                        None,
-                        FrontendEvent::FilesUpdated { files },
-                    ));
+                    send_event(
+                        event_tx,
+                        EventEnvelope::new(None, FrontendEvent::FilesUpdated { files }),
+                    );
                 }
             }
             Err(error) => send_error(event_tx, Some(envelope.request_id), "unstage", error),
@@ -561,13 +591,16 @@ fn send_batch_action_result(
     failed: &[String],
 ) {
     if !success.is_empty() {
-        let _ = event_tx.try_send(EventEnvelope::new(
-            Some(request_id),
-            FrontendEvent::ActionSucceeded {
-                request_id,
-                message: format!("{verb} {} files", success.len()),
-            },
-        ));
+        send_event(
+            event_tx,
+            EventEnvelope::new(
+                Some(request_id),
+                FrontendEvent::ActionSucceeded {
+                    request_id,
+                    message: format!("{verb} {} files", success.len()),
+                },
+            ),
+        );
     }
 
     if !failed.is_empty() {
@@ -589,10 +622,10 @@ fn send_batch_action_result(
 
 fn refresh_files(event_tx: &Sender<EventEnvelope>, repo: &GitRepo) {
     if let Ok(files) = super::git_ops::get_status_files(repo) {
-        let _ = event_tx.try_send(EventEnvelope::new(
-            None,
-            FrontendEvent::FilesUpdated { files },
-        ));
+        send_event(
+            event_tx,
+            EventEnvelope::new(None, FrontendEvent::FilesUpdated { files }),
+        );
     }
 }
 
@@ -602,11 +635,14 @@ fn send_error(
     context: &str,
     error: impl std::fmt::Display,
 ) {
-    let _ = event_tx.try_send(EventEnvelope::new(
-        request_id,
-        FrontendEvent::Error {
+    send_event(
+        event_tx,
+        EventEnvelope::new(
             request_id,
-            message: format!("Failed to load {context}: {error}"),
-        },
-    ));
+            FrontendEvent::Error {
+                request_id,
+                message: format!("Failed to load {context}: {error}"),
+            },
+        ),
+    );
 }
