@@ -7,7 +7,7 @@ use crate::shared::path_utils::{
 };
 use tokio::sync::mpsc::Sender;
 
-fn send_event(event_tx: &Sender<EventEnvelope>, envelope: EventEnvelope) {
+pub fn send_event(event_tx: &Sender<EventEnvelope>, envelope: EventEnvelope) {
     if let Err(e) = event_tx.try_send(envelope) {
         eprintln!("ratagit: event dropped (queue full): {e}");
     }

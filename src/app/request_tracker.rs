@@ -16,7 +16,9 @@ impl RequestTracker {
     }
 
     pub fn track(&mut self, id: u64) {
-        self.pending.insert(id);
+        if id != 0 {
+            self.pending.insert(id);
+        }
     }
 
     pub fn complete(&mut self, id: u64) -> bool {
@@ -24,6 +26,9 @@ impl RequestTracker {
     }
 
     pub fn set_latest_diff(&mut self, id: u64) {
+        if id == 0 {
+            return;
+        }
         if let Some(prev) = self.latest_diff.replace(id) {
             self.pending.remove(&prev);
         }
@@ -31,6 +36,9 @@ impl RequestTracker {
     }
 
     pub fn set_latest_branch_graph(&mut self, id: u64) {
+        if id == 0 {
+            return;
+        }
         if let Some(prev) = self.latest_branch_graph.replace(id) {
             self.pending.remove(&prev);
         }

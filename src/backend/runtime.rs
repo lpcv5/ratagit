@@ -6,10 +6,10 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use super::git_ops::GitRepo;
 use super::handlers::CommandHandler;
 use super::handlers::{
-    GetBranchGraphHandler, GetCommitDiffBatchHandler, GetCommitDiffHandler, GetCommitFilesHandler,
-    GetDiffBatchHandler, GetDiffHandler, RefreshBranchesHandler, RefreshCommitsHandler,
-    RefreshStashesHandler, RefreshStatusHandler, StageFileHandler, StageFilesHandler,
-    UnstageFileHandler, UnstageFilesHandler,
+    send_event, GetBranchGraphHandler, GetCommitDiffBatchHandler, GetCommitDiffHandler,
+    GetCommitFilesHandler, GetDiffBatchHandler, GetDiffHandler, RefreshBranchesHandler,
+    RefreshCommitsHandler, RefreshStashesHandler, RefreshStatusHandler, StageFileHandler,
+    StageFilesHandler, UnstageFileHandler, UnstageFilesHandler,
 };
 use super::{CommandEnvelope, EventEnvelope, FrontendEvent};
 
@@ -38,13 +38,16 @@ pub async fn run_backend(mut cmd_rx: Receiver<CommandEnvelope>, event_tx: Sender
     let mut repo = match GitRepo::discover() {
         Ok(repo) => Some(repo),
         Err(error) => {
-            let _ = event_tx.try_send(EventEnvelope::new(
-                None,
-                FrontendEvent::Error {
-                    request_id: None,
-                    message: format!("Failed to open repository: {error}"),
-                },
-            ));
+            send_event(
+                &event_tx,
+                EventEnvelope::new(
+                    None,
+                    FrontendEvent::Error {
+                        request_id: None,
+                        message: format!("Failed to open repository: {error}"),
+                    },
+                ),
+            );
             None
         }
     };
@@ -148,17 +151,20 @@ pub async fn run_backend(mut cmd_rx: Receiver<CommandEnvelope>, event_tx: Sender
                     })
                     .ok();
                     if start.elapsed() > OPERATION_TIMEOUT {
-                        let _ = event_tx.try_send(EventEnvelope::new(
-                            Some(envelope.request_id),
-                            FrontendEvent::Error {
-                                request_id: Some(envelope.request_id),
-                                message: format!(
-                                    "Operation took {:.1}s (limit {}s)",
-                                    start.elapsed().as_secs_f32(),
-                                    OPERATION_TIMEOUT.as_secs()
-                                ),
-                            },
-                        ));
+                        send_event(
+                            &event_tx,
+                            EventEnvelope::new(
+                                Some(envelope.request_id),
+                                FrontendEvent::Error {
+                                    request_id: Some(envelope.request_id),
+                                    message: format!(
+                                        "Operation took {:.1}s (limit {}s)",
+                                        start.elapsed().as_secs_f32(),
+                                        OPERATION_TIMEOUT.as_secs()
+                                    ),
+                                },
+                            ),
+                        );
                     }
                 }
             }
