@@ -378,6 +378,45 @@ impl CommandHandler for GetCommitDiffBatchHandler {
     }
 }
 
+/// 获取分支提交列表处理器
+pub struct GetBranchCommitsHandler;
+impl CommandHandler for GetBranchCommitsHandler {
+    fn handle(
+        &self,
+        envelope: &CommandEnvelope,
+        repo: &GitRepo,
+        event_tx: &Sender<EventEnvelope>,
+    ) -> Result<()> {
+        let (branch_name, limit) =
+            if let crate::backend::BackendCommand::GetBranchCommits { branch_name, limit } =
+                &envelope.command
+            {
+                (branch_name.clone(), *limit)
+            } else {
+                return Ok(());
+            };
+
+        match super::git_ops::get_commits_for_branch(repo, &branch_name, limit) {
+            Ok(commits) => {
+                send_event(
+                    event_tx,
+                    EventEnvelope::new(
+                        Some(envelope.request_id),
+                        FrontendEvent::BranchCommitsLoaded {
+                            request_id: envelope.request_id,
+                            branch_name,
+                            commits,
+                        },
+                    ),
+                );
+            }
+            Err(error) => send_error(event_tx, Some(envelope.request_id), "branch commits", error),
+        }
+        Ok(())
+    }
+}
+
+
 /// 获取分支提交图处理器
 pub struct GetBranchGraphHandler;
 impl CommandHandler for GetBranchGraphHandler {

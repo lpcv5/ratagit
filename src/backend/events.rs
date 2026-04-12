@@ -33,6 +33,12 @@ pub enum FrontendEvent {
         branch_name: String,
         graph: String,
     },
+    BranchCommitsLoaded {
+        #[allow(dead_code)]
+        request_id: u64,
+        branch_name: String,
+        commits: Vec<crate::backend::git_ops::CommitEntry>,
+    },
     ActionSucceeded {
         #[allow(dead_code)]
         request_id: u64,

@@ -15,4 +15,6 @@ pub struct CachedData {
     pub commit_files: Option<(String, Vec<(String, GitFileStatus)>)>,
     /// 分支提交图缓存：branch_name -> git log --graph output
     pub branch_graphs: HashMap<String, String>,
+    /// 进入 branch commits sub-panel 前保存的 commits，退出时恢复
+    pub saved_commits: Option<Vec<CommitEntry>>,
 }

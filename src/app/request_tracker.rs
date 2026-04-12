@@ -4,6 +4,7 @@ pub struct RequestTracker {
     pending: HashSet<u64>,
     latest_diff: Option<u64>,
     latest_branch_graph: Option<u64>,
+    latest_branch_commits: Option<u64>,
 }
 
 impl RequestTracker {
@@ -12,6 +13,7 @@ impl RequestTracker {
             pending: HashSet::new(),
             latest_diff: None,
             latest_branch_graph: None,
+            latest_branch_commits: None,
         }
     }
 
@@ -43,5 +45,19 @@ impl RequestTracker {
             self.pending.remove(&prev);
         }
         self.pending.insert(id);
+    }
+
+    pub fn set_latest_branch_commits(&mut self, id: u64) {
+        if id == 0 {
+            return;
+        }
+        if let Some(prev) = self.latest_branch_commits.replace(id) {
+            self.pending.remove(&prev);
+        }
+        self.pending.insert(id);
+    }
+
+    pub fn is_latest_branch_commits(&self, id: u64) -> bool {
+        self.latest_branch_commits == Some(id)
     }
 }

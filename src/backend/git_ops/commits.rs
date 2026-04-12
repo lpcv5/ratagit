@@ -17,7 +17,19 @@ pub fn get_commits(repo: &GitRepo, limit: usize) -> Result<Vec<CommitEntry>> {
     let mut walk = repo.repo.revwalk()?;
     walk.set_sorting(Sort::TIME)?;
     walk.push_head()?;
+    collect_commits(repo, &mut walk, limit)
+}
 
+pub fn get_commits_for_branch(repo: &GitRepo, branch_name: &str, limit: usize) -> Result<Vec<CommitEntry>> {
+    let branch = repo.repo.find_branch(branch_name, git2::BranchType::Local)?;
+    let commit = branch.get().peel_to_commit()?;
+    let mut walk = repo.repo.revwalk()?;
+    walk.set_sorting(Sort::TIME)?;
+    walk.push(commit.id())?;
+    collect_commits(repo, &mut walk, limit)
+}
+
+fn collect_commits(repo: &GitRepo, walk: &mut git2::Revwalk, limit: usize) -> Result<Vec<CommitEntry>> {
     let mut commits = Vec::new();
     for oid_result in walk.take(limit) {
         let oid = oid_result?;
@@ -28,7 +40,6 @@ pub fn get_commits(repo: &GitRepo, limit: usize) -> Result<Vec<CommitEntry>> {
         let author_name = author.name().unwrap_or("Unknown");
         let author_email = author.email().unwrap_or("unknown@example.com");
         let id = oid.to_string();
-
         commits.push(CommitEntry {
             short_id: short_oid(&id),
             id,
@@ -38,7 +49,6 @@ pub fn get_commits(repo: &GitRepo, limit: usize) -> Result<Vec<CommitEntry>> {
             timestamp: commit.time().seconds(),
         });
     }
-
     Ok(commits)
 }
 

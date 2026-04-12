@@ -72,6 +72,12 @@ impl App {
     }
 
     fn set_active_panel(&mut self, panel: Panel) -> Result<()> {
+        if panel == Panel::Branches {
+            if let Some(saved) = self.state.data_cache.saved_commits.take() {
+                self.state.data_cache.commits = saved;
+                self.state.sync_commit_list_state();
+            }
+        }
         if self.state.ui_state.active_panel != panel {
             self.state.ui_state.active_panel = panel;
             self.state
@@ -82,6 +88,17 @@ impl App {
 
     fn activate_panel(&mut self) -> Result<()> {
         match self.state.ui_state.active_panel {
+            Panel::Branches => {
+                if let Some(branch) = self.state.selected_branch() {
+                    let branch_name = branch.name.clone();
+                    self.state.push_log(format!("Loading commits for branch {branch_name}..."));
+                    let request_id = self.state.send_command(BackendCommand::GetBranchCommits {
+                        branch_name,
+                        limit: 50,
+                    })?;
+                    self.requests.set_latest_branch_commits(request_id);
+                }
+            }
             Panel::Commits => {
                 if self.state.components.is_commit_list_multi_select_active() {
                     self.state.push_log(

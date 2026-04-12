@@ -6,7 +6,7 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use super::git_ops::GitRepo;
 use super::handlers::CommandHandler;
 use super::handlers::{
-    send_event, GetBranchGraphHandler, GetCommitDiffBatchHandler, GetCommitDiffHandler,
+    send_event, GetBranchCommitsHandler, GetBranchGraphHandler, GetCommitDiffBatchHandler, GetCommitDiffHandler,
     GetCommitFilesHandler, GetDiffBatchHandler, GetDiffHandler, RefreshBranchesHandler,
     RefreshCommitsHandler, RefreshStashesHandler, RefreshStatusHandler, StageFileHandler,
     StageFilesHandler, UnstageFileHandler, UnstageFilesHandler,
@@ -28,6 +28,7 @@ enum CommandKey {
     GetCommitDiff,
     GetCommitDiffBatch,
     GetBranchGraph,
+    GetBranchCommits,
     StageFile,
     StageFiles,
     UnstageFile,
@@ -110,6 +111,10 @@ pub async fn run_backend(mut cmd_rx: Receiver<CommandEnvelope>, event_tx: Sender
         CommandKey::GetBranchGraph,
         Box::new(GetBranchGraphHandler) as Box<dyn CommandHandler>,
     );
+    handlers.insert(
+        CommandKey::GetBranchCommits,
+        Box::new(GetBranchCommitsHandler) as Box<dyn CommandHandler>,
+    );
 
     while let Some(envelope) = cmd_rx.recv().await {
         let command_key = match &envelope.command {
@@ -130,6 +135,9 @@ pub async fn run_backend(mut cmd_rx: Receiver<CommandEnvelope>, event_tx: Sender
             }
             crate::backend::BackendCommand::GetBranchGraph { .. } => {
                 Some(CommandKey::GetBranchGraph)
+            }
+            crate::backend::BackendCommand::GetBranchCommits { .. } => {
+                Some(CommandKey::GetBranchCommits)
             }
             crate::backend::BackendCommand::StageFile { .. } => Some(CommandKey::StageFile),
             crate::backend::BackendCommand::StageFiles { .. } => Some(CommandKey::StageFiles),

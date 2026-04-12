@@ -13,7 +13,7 @@ pub use branch_graph::get_branch_graph;
 pub use branches::{get_branches, BranchEntry};
 pub use commit_diff::get_commit_diff;
 pub use commit_files::get_commit_files;
-pub use commits::{get_commits, CommitEntry};
+pub use commits::{get_commits, get_commits_for_branch, CommitEntry};
 pub use diff::get_diff;
 pub use repo::GitRepo;
 pub use stash::{get_stashes, StashEntry};

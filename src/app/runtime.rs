@@ -190,6 +190,28 @@ impl App {
                     self.update_main_view_for_active_panel()?;
                 }
             }
+            FrontendEvent::BranchCommitsLoaded {
+                request_id, branch_name, commits,
+            } => {
+                if !self.requests.is_latest_branch_commits(request_id) {
+                    self.state.push_log(format!(
+                        "Ignored stale branch commits response for {branch_name}"
+                    ));
+                    return Ok(());
+                }
+                self.state.push_log(format!(
+                    "Loaded {} commits for branch {branch_name}",
+                    commits.len()
+                ));
+                self.state.data_cache.saved_commits = Some(std::mem::replace(
+                    &mut self.state.data_cache.commits,
+                    commits,
+                ));
+                self.state.components.show_branch_commits();
+                if self.state.ui_state.active_panel == Panel::Branches {
+                    self.update_main_view_for_active_panel()?;
+                }
+            }
             FrontendEvent::BranchGraphLoaded {
                 branch_name, graph, ..
             } => {

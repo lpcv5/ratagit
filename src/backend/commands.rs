@@ -34,6 +34,10 @@ pub enum BackendCommand {
         branch_name: String,
         limit: usize,
     },
+    GetBranchCommits {
+        branch_name: String,
+        limit: usize,
+    },
     StageFile {
         file_path: String,
     },

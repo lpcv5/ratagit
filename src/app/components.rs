@@ -80,6 +80,10 @@ impl AppComponents {
         self.file_list_panel.is_multi_select_active()
     }
 
+    pub fn show_branch_commits(&mut self) {
+        self.branch_list_panel.show_branch_commits();
+    }
+
     #[allow(dead_code)]
     pub fn selected_branch_index(&self) -> Option<usize> {
         self.branch_list_panel.selected_index()
