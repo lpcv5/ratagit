@@ -461,7 +461,7 @@ impl App {
         match self.state.ui_state.active_panel {
             Panel::Files => {
                 cycle_selection(
-                    self.state.components.file_list_state_mut(),
+                    self.state.components.file_list_panel.state_mut(),
                     self.state.data_cache.files.len(),
                     1,
                 );
@@ -469,7 +469,7 @@ impl App {
             }
             Panel::Branches => {
                 cycle_selection(
-                    self.state.components.branch_list_state_mut(),
+                    self.state.components.branch_list_panel.state_mut(),
                     self.state.data_cache.branches.len(),
                     1,
                 );
@@ -477,7 +477,7 @@ impl App {
             }
             Panel::Commits => {
                 cycle_selection(
-                    self.state.components.commit_state_mut(),
+                    self.state.components.commit_panel.state_mut(),
                     self.state.data_cache.commits.len(),
                     1,
                 );
@@ -488,7 +488,7 @@ impl App {
             }
             Panel::Stash => {
                 cycle_selection(
-                    self.state.components.stash_list_state_mut(),
+                    self.state.components.stash_list_panel.state_mut(),
                     self.state.data_cache.stashes.len(),
                     1,
                 );
@@ -509,7 +509,7 @@ impl App {
         match self.state.ui_state.active_panel {
             Panel::Files => {
                 cycle_selection(
-                    self.state.components.file_list_state_mut(),
+                    self.state.components.file_list_panel.state_mut(),
                     self.state.data_cache.files.len(),
                     -1,
                 );
@@ -517,7 +517,7 @@ impl App {
             }
             Panel::Branches => {
                 cycle_selection(
-                    self.state.components.branch_list_state_mut(),
+                    self.state.components.branch_list_panel.state_mut(),
                     self.state.data_cache.branches.len(),
                     -1,
                 );
@@ -525,7 +525,7 @@ impl App {
             }
             Panel::Commits => {
                 cycle_selection(
-                    self.state.components.commit_state_mut(),
+                    self.state.components.commit_panel.state_mut(),
                     self.state.data_cache.commits.len(),
                     -1,
                 );
@@ -536,7 +536,7 @@ impl App {
             }
             Panel::Stash => {
                 cycle_selection(
-                    self.state.components.stash_list_state_mut(),
+                    self.state.components.stash_list_panel.state_mut(),
                     self.state.data_cache.stashes.len(),
                     -1,
                 );

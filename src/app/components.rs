@@ -1,5 +1,3 @@
-use ratatui::widgets::ListState;
-
 use crate::components::panels::{
     BranchListPanel, CommitModeView, CommitPanel, FileListPanel, LogPanel, MainViewPanel,
     StashListPanel,
@@ -126,22 +124,6 @@ impl AppComponents {
     #[allow(dead_code)]
     pub fn selected_stash_index(&self) -> Option<usize> {
         self.stash_list_panel.selected_index()
-    }
-
-    pub fn file_list_state_mut(&mut self) -> &mut ListState {
-        self.file_list_panel.state_mut()
-    }
-
-    pub fn branch_list_state_mut(&mut self) -> &mut ListState {
-        self.branch_list_panel.state_mut()
-    }
-
-    pub fn commit_state_mut(&mut self) -> &mut ListState {
-        self.commit_panel.state_mut()
-    }
-
-    pub fn stash_list_state_mut(&mut self) -> &mut ListState {
-        self.stash_list_panel.state_mut()
     }
 }
 
