@@ -2,289 +2,53 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project Overview
-
-Ratagit is a terminal Git client written in Rust, built on ratatui, inspired by lazygit. M1-M3 are complete, with M4 (Release Readiness) in draft stage.
-
-## Language Rules
-
-- **All code comments, documentation, and doc comments must be written in English**
-- **CLAUDE.md and all files in `docs/` must be written in English**
-- Communication with the user is in Chinese (per session instructions)
-
-## Common Commands
+## Commands
 
 ```bash
-cargo build
-cargo run
-cargo test
-cargo test test_name
-cargo build --release
-cargo check
-cargo fmt
-cargo clippy
+cargo run                  # run in the current Git repo
+cargo check                # fast type-check without building
+cargo test                 # run all tests
+cargo test <name>          # run a single test by name
+cargo fmt --check          # verify formatting (CI enforced)
+cargo clippy --all-targets --all-features -- -D warnings
 ```
 
-## Core Architecture
-
-### Flux + Tokio Architecture (ADR-015)
-
-Unidirectional data flow:
-
-```
-UI → Action → Dispatcher → Stores → Effect Runtime → AppStateSnapshot → UI
+Full local gate before a PR:
+```bash
+cargo fmt --check && cargo check && cargo test && cargo clippy --all-targets --all-features -- -D warnings
 ```
 
-**Core components**:
-1. **Action**: User input or system events (`DomainAction`, `UiAction`, `SystemAction`)
-2. **Dispatcher**: Routes `ActionEnvelope` through ordered list of `Store` reducers
-3. **Stores**: Domain-partitioned reducers in `src/flux/stores/`
-4. **StateAccess**: Trait abstraction between Stores and App state
-5. **Effects**: Async Git I/O via `EffectRequest` → `effects::run()` → `EffectResultAction`
-6. **AppStateSnapshot**: Read-only view of `App` passed to UI renderer
+## Architecture
 
-### State Organization
-
-App state is organized into logical groups:
-
-```rust
-pub struct App {
-    pub git: GitState,      // Git data: status, current_diff
-    pub ui: UiState,        // UI state: panels, navigation, dirty flags
-    pub input: InputState,  // Input: buffers, search, input mode
-    // ... runtime fields (task_manager, pending_tasks, etc.)
-}
-```
-
-**Key architectural decisions**:
-- **Stores access state via StateAccess trait** - decouples stores from App implementation
-- **Effects use AppEffects trait** - decouples effects.rs from concrete App type via `Rc<Mutex<dyn AppEffects>>`
-- **State grouped by concern** - git data, UI state, and input state are separated
-- **UiInvalidation::apply() uses dyn StateAccess** - Dispatcher calls `apply(ctx.state)` so invalidation routing no longer needs `&mut App` directly
-
-### Module Structure
+Ratagit is a single-crate TUI Git client (ratatui + crossterm + git2 + tokio). The design separates all Git I/O from the UI via async channels.
 
 ```
-src/
-├── app/
-│   ├── app.rs            # App struct and state model (runtime + business logic)
-│   ├── app_effects.rs    # AppEffects trait (effect runtime abstraction)
-│   ├── app_effects_impl.rs # AppEffects implementation for App
-│   ├── states/           # State sub-structures
-│   │   ├── panel_state.rs # Panel types: SidePanel, PanelState, *PanelState, RenderCache
-│   │   ├── git_state.rs  # Git data (status, current_diff)
-│   │   ├── ui_state.rs   # UI state (panels, navigation, dirty)
-│   │   └── input_state.rs # Input state (buffers, search, mode)
-│   ├── state_access_impl.rs # StateAccess trait implementation
-│   ├── command.rs        # Command definitions
-│   ├── input_mode.rs     # Input mode state (Commit/Branch/Stash/Search)
-│   ├── search.rs         # Search query management
-│   ├── revision_tree.rs  # Commit tree expansion state
-│   ├── panel_nav.rs      # Panel navigation utilities
-│   ├── selectors.rs      # Selector trait and implementations
-│   ├── diff_loader.rs    # Diff loading utilities
-│   ├── diff_cache.rs     # Diff result caching
-│   ├── dirty_flags.rs    # Change tracking flags
-│   ├── graph_highlight.rs # Commit graph highlight state
-│   ├── refresh.rs        # State refresh utilities
-│   ├── hints.rs          # UI hint generation
-│   ├── trace.rs          # Debug tracing utilities
-│   └── test_dispatch.rs  # Test-only Flux helpers for action/key dispatch
-├── flux/
-│   ├── action.rs         # Action/DomainAction/SystemAction enums
-│   ├── dispatcher.rs     # Dispatcher: routes ActionEnvelope → Stores
-│   ├── effects.rs        # EffectRequest + async run() for Git I/O
-│   ├── input_mapper.rs   # Key events → Action mapping
-│   ├── snapshot.rs       # AppStateSnapshot (read-only view for UI)
-│   ├── task_manager.rs   # Background task lifecycle management
-│   ├── test_runtime.rs   # Test-only Flux runtime helpers
-│   └── stores/           # Domain stores (files, branches, commits, stash, etc.)
-│       └── state_access.rs # StateAccess trait definition
-├── git/
-│   └── repository.rs     # GitRepository trait + Git2Repository impl
-├── ui/
-│   ├── layout.rs         # Layout rendering
-│   ├── theme.rs          # Color theme
-│   ├── highlight.rs      # Search highlighting
-│   ├── traits.rs         # UI component traits (PanelComponent etc.)
-│   ├── components/       # Atomic design hierarchy
-│   │   ├── atoms/        # Primitive widgets (loading_indicator, select_list, virtual_list)
-│   │   ├── molecules/    # Composed widgets
-│   │   └── organisms/    # Full panel components (files, branches, commits, stash)
-│   ├── panels/           # Overlay/dialog renderers (diff, commit editor, stash editor, etc.)
-│   └── widgets/          # Legacy reusable widgets (file_tree)
-├── config/
-│   ├── mod.rs            # Config loading
-│   └── keymap.rs         # Keymap config (global + per-panel)
-└── main.rs
+main.rs
+  ├── tokio::spawn(run_backend(cmd_rx, event_tx))   ← Git I/O on a background task
+  └── App::new(cmd_tx, event_rx).run().await        ← UI on the main thread
 ```
 
-## Key Technical Decisions
+**Channel protocol** — unbounded mpsc, two directions:
 
-### StateAccess Trait Abstraction
+| Direction | Type | Variants |
+|-----------|------|----------|
+| UI → Backend | `BackendCommand` | `RefreshStatus`, `RefreshBranches`, `RefreshCommits { limit }`, `RefreshStashes`, `GetDiff { file_path }`, `Quit` |
+| Backend → UI | `FrontendEvent` | `StatusUpdated`, `BranchesUpdated`, `CommitsUpdated`, `StashesUpdated`, `DiffLoaded`, `Error` |
 
-**Important**: Stores access App state through the `StateAccess` trait in `src/flux/stores/state_access.rs`.
-This decouples stores from App's concrete implementation.
+**`App` (src/app.rs)** owns all UI state: panel focus (`Panel` enum), four `ListState`s, cached Git data (`files`, `branches`, `commits`, `stashes`), and the main-view/log scroll positions. The render loop is: drain backend events → draw → poll input (100 ms timeout).
 
-```rust
-pub trait StateAccess {
-    fn push_log(&mut self, msg: String, success: bool);
-    fn request_refresh(&mut self, kind: RefreshKind);
-    fn cancel_input(&mut self);
-    // ... ~66 methods covering all Store needs
-}
-```
+**`run_backend` (src/backend.rs)** opens `GitRepo::discover()` once, then loops on `cmd_rx.recv()`, dispatching to `GitRepo` methods and sending results back as `FrontendEvent`s.
 
-Stores receive `ReduceCtx { state: &mut dyn StateAccess }` instead of direct App access.
-This enables:
-- Stores don't depend on App's internal structure
-- Easy to mock for testing
-- Clear interface contract between stores and state
+**`GitRepo` (src/git/repo.rs)** wraps `git2::Repository`. All Git operations live here: `get_status_files`, `get_branches`, `get_commits`, `get_stashes`, `get_diff`. Note: `get_stashes` requires `&mut self` due to the git2 callback API.
 
-**Important**: All Git operations must go through the `GitRepository` trait in `src/git/repository.rs`.
-Never call git2 directly from stores or components.
+**Layout** — two columns (34% / 66%). Left column: Files, Branches, Commits, Stash panels stacked vertically. Right column: Main View (diff/detail/overview) + Log panel.
 
-Operations covered: `status`, `stage/unstage/discard` (single + batch `_paths` variants),
-`diff_unstaged/staged/untracked`, `branches/create_branch/checkout_branch/delete_branch`,
-`commits/commit_files/commit_diff_scoped/commit`, `stashes/stash_*`, `fetch_default_async`.
+**Panel navigation** — `Tab`/`Shift+Tab`/`h`/`l` cycle panels; `j`/`k` navigate within a panel; selecting a list item triggers `update_main_view_for_active_panel`, which either sends a `GetDiff` command (Files panel) or renders detail text inline (other panels).
 
-Rationale: start with git2 (stable), migrate to gix (pure Rust) in Phase 4+.
+## Key conventions
 
-### UI Component Architecture (Atomic Design)
-
-UI is being refactored to an atomic design hierarchy:
-- **atoms/**: Primitive, stateless widgets (`SelectList`, `VirtualList`, `LoadingIndicator`)
-- **molecules/**: Composed from atoms
-- **organisms/**: Full panel components implementing `PanelComponent` trait
-  (`FilesPanelComponent`, `BranchesPanelComponent`, `CommitsPanelComponent`, `StashPanelComponent`)
-- **panels/**: Modal overlays and dialogs (`DiffPanel`, `CommitEditor`, `StashEditor`, etc.)
-
-Key trait: `src/ui/traits.rs` — `PanelComponent` trait for generic panel rendering.
-
-### Keymap System
-
-Two-layer keymap stored in `~/.config/ratagit/keymap.toml`:
-- `[global]` — active in all panels
-- `[files]`, `[branches]`, `[commits]`, `[stash]` — panel-local bindings
-
-Default global keys (lazygit-inspired):
-- `h`/`l` or `Left`/`Right` — previous/next panel
-- `1`-`4` — jump to panel directly
-- `j`/`k` or `Up`/`Down` — list navigation
-- `q` — quit, `r` — refresh
-- `Ctrl+U`/`Ctrl+D` — scroll diff
-
-Default files-panel local keys:
-- `Enter`/`Space` — toggle directory expand/collapse, stage/unstage file
-- `-` — collapse all, `=` — expand all
-- `v` — toggle visual selection mode
-- `c` — commit staged changes
-- `S` — stash selected files
-- `D` — discard selected changes
-
-### Flux Dispatcher and Stores
-
-`Dispatcher::with_default_stores()` creates ordered stores; each `Store` implements:
-```rust
-pub trait Store {
-    fn reduce(&mut self, action: &ActionEnvelope, ctx: &mut ReduceCtx<'_>) -> ReduceOutput;
-}
-```
-Stores: `InputStore`, `QuitStore`, `OpsStore`, `RevisionStore`, `NavigationStore`,
-`SelectionStore`, `SearchStore`, `DiffStore`, `OverlayStore`, `FilesStore`,
-`BranchStore`, `StashStore`, `CommitStore`.
-
-Git I/O is done exclusively in `effects.rs` via `EffectRequest` — stores must NOT do I/O.
-
-For tests, `src/app/test_dispatch.rs` provides `dispatch_test_action()` and
-`dispatch_test_key()` helpers, and key mapping must go through `flux::input_mapper`.
-
-### Input Modes
-
-The app supports multiple input modes managed by `InputMode` enum:
-- `CommitEditor` — commit message input
-- `CreateBranch` — new branch name input
-- `StashEditor` — stash message input
-- `Search` — search query input
-
-When in input mode, key events go to the text input instead of normal navigation.
-
-### Visual Selection Mode
-
-Files panel supports visual selection (like vim):
-- Press `v` to toggle visual mode
-- Use `j`/`k` to extend selection from anchor point
-- Batch operations (stage/unstage/discard/stash) apply to all selected files
-
-### Search Functionality
-
-- `/` or `s` starts search input
-- Search highlights matches in current panel
-- `n`/`N` navigates to next/previous match
-- Search scope is panel-specific (files, branches, commits, stash)
-
-### File Tree Widget
-
-`src/ui/widgets/file_tree.rs` — reusable `StatefulWidget`:
-- `FileTree::from_git_status_with_expanded()` builds flat visible node list from git status + expanded dir set
-- Directories shown with `▼`/`▶` arrows, files with status icons (`✚ ✎ ● ✖ ➜ ?`)
-- Colors: green=staged/new, yellow=modified, red=deleted, gray=untracked, blue=directory
-
-### Diff Display
-
-- File node selected → show file diff (supports untracked files via full-content read)
-- Directory node selected → aggregate diff of all files under it (max 2000 lines)
-- Commit node selected → show commit diff
-- Stash node selected → show stash diff
-- `diff_scroll` offset in `App` controls visible window; resets to 0 on selection change
-
-### Revision Tree (Commit Panel)
-
-Commits panel supports tree navigation:
-- Press `Enter` to expand commit and show changed files
-- File tree appears under the commit with expand/collapse support
-- Select file to see commit-scoped diff for that file
-- Press `Escape` to collapse tree
-
-Managed by `revision_tree.rs` module, stores expanded state per commit.
-
-### Async Git Operations
-
-Async/side-effect operations are modeled as `Command::Effect(EffectRequest)` and executed by
-the effect loop. Result actions are fed back into dispatcher as `Action::System(...)`.
-
-## Configuration
-
-Keymap: `~/.config/ratagit/keymap.toml` (auto-created with defaults if missing)
-
-Future: `~/.config/ratagit/config.toml` for general config
-
-## Testing Strategy
-
-- Unit tests: `#[cfg(test)]` inside modules
-- Integration tests: `tests/` directory (if needed)
-- Use `tempfile` to create temporary Git repos for testing
-- GitRepository tests in `src/git/repository.rs` demonstrate testing pattern
-
-Coverage targets: M1-M2 > 50%, M3 > 70%, M4 (release) > 80%
-
-## Notes
-
-1. **Git ops**: Always via `GitRepository` trait, never call git2/gix directly
-2. **State updates**: Follow Flux — update state only through `Action -> Dispatcher -> Stores`
-3. **Async**: Heavy git ops use `Command::Effect(EffectRequest)` via effect runtime
-4. **Errors**: Use `thiserror` for custom error types
-5. **Comments**: All code comments and docs in English
-6. **Batch operations**: Use `*_paths()` methods (e.g., `stage_paths`, `unstage_paths`, `discard_paths`) for multi-file operations
-7. **External git**: Some operations (stash, commit diff, discard) shell out to `git` CLI for reliability
-
-## Implementation Patterns
-
-### Git Operations
-
-- Most operations use git2 directly
-- Complex operations (stash, scoped diffs) shell out to `git` CLI via `run_git()` helper
-- Batch operations use `*_paths()` variants for efficiency
-- Async operations use `std::sync::mpsc` channels (not tokio tasks yet)
-
-```
+- Side effects belong in `backend.rs`; `App` methods stay pure where possible.
+- `push_log` appends to the in-memory log (capped at 200 entries) — use it for any backend response or user action worth surfacing.
+- `sync_list_state` keeps `ListState` in bounds after data refreshes; always call it when replacing a panel's data vec.
+- Commit messages use imperative prefixes: `feat:`, `refactor:`, `chore:`, `fix:`.
+- PRs for TUI-visible changes should include terminal captures.

@@ -1,0 +1,266 @@
+use anyhow::Result;
+
+use super::git_ops::GitRepo;
+use super::{CommandEnvelope, EventEnvelope, FrontendEvent};
+use tokio::sync::mpsc::UnboundedSender;
+
+/// 命令处理器 trait
+pub trait CommandHandler: Send + Sync {
+    /// 执行命令并发送事件
+    fn handle(
+        &self,
+        envelope: &CommandEnvelope,
+        repo: &GitRepo,
+        event_tx: &UnboundedSender<EventEnvelope>,
+    ) -> Result<()>;
+
+    /// 是否需要可变仓库引用
+    fn needs_mut_repo(&self) -> bool {
+        false
+    }
+
+    /// 执行命令并发送事件（可变引用版本）
+    fn handle_mut(
+        &self,
+        _envelope: &CommandEnvelope,
+        _repo: &mut GitRepo,
+        _event_tx: &UnboundedSender<EventEnvelope>,
+    ) -> Result<()> {
+        unreachable!("handle_mut should only be called when needs_mut_repo returns true")
+    }
+}
+
+/// 刷新状态处理器
+pub struct RefreshStatusHandler;
+impl CommandHandler for RefreshStatusHandler {
+    fn handle(
+        &self,
+        _envelope: &CommandEnvelope,
+        repo: &GitRepo,
+        event_tx: &UnboundedSender<EventEnvelope>,
+    ) -> Result<()> {
+        match super::git_ops::get_status_files(repo) {
+            Ok(files) => {
+                let _ = event_tx.send(EventEnvelope::new(
+                    None,
+                    FrontendEvent::FilesUpdated { files },
+                ));
+            }
+            Err(error) => send_error(event_tx, None, "status", error),
+        }
+        Ok(())
+    }
+}
+
+/// 刷新分支处理器
+pub struct RefreshBranchesHandler;
+impl CommandHandler for RefreshBranchesHandler {
+    fn handle(
+        &self,
+        _envelope: &CommandEnvelope,
+        repo: &GitRepo,
+        event_tx: &UnboundedSender<EventEnvelope>,
+    ) -> Result<()> {
+        match super::git_ops::get_branches(repo) {
+            Ok(branches) => {
+                let _ = event_tx.send(EventEnvelope::new(
+                    None,
+                    FrontendEvent::BranchesUpdated { branches },
+                ));
+            }
+            Err(error) => send_error(event_tx, None, "branches", error),
+        }
+        Ok(())
+    }
+}
+
+/// 刷新提交处理器
+pub struct RefreshCommitsHandler;
+impl CommandHandler for RefreshCommitsHandler {
+    fn handle(
+        &self,
+        envelope: &CommandEnvelope,
+        repo: &GitRepo,
+        event_tx: &UnboundedSender<EventEnvelope>,
+    ) -> Result<()> {
+        let limit =
+            if let crate::backend::BackendCommand::RefreshCommits { limit } = &envelope.command {
+                *limit
+            } else {
+                30
+            };
+
+        match super::git_ops::get_commits(repo, limit) {
+            Ok(commits) => {
+                let _ = event_tx.send(EventEnvelope::new(
+                    None,
+                    FrontendEvent::CommitsUpdated { commits },
+                ));
+            }
+            Err(error) => send_error(event_tx, None, "commits", error),
+        }
+        Ok(())
+    }
+}
+
+/// 刷新贮藏处理器（需要可变引用）
+pub struct RefreshStashesHandler;
+impl CommandHandler for RefreshStashesHandler {
+    fn handle(
+        &self,
+        _envelope: &CommandEnvelope,
+        _repo: &GitRepo,
+        _event_tx: &UnboundedSender<EventEnvelope>,
+    ) -> Result<()> {
+        // 这个实现不会被调用，因为 needs_mut_repo 返回 true
+        unreachable!()
+    }
+
+    fn needs_mut_repo(&self) -> bool {
+        true
+    }
+
+    fn handle_mut(
+        &self,
+        _envelope: &CommandEnvelope,
+        repo: &mut GitRepo,
+        event_tx: &UnboundedSender<EventEnvelope>,
+    ) -> Result<()> {
+        match super::git_ops::get_stashes(repo) {
+            Ok(stashes) => {
+                let _ = event_tx.send(EventEnvelope::new(
+                    None,
+                    FrontendEvent::StashesUpdated { stashes },
+                ));
+            }
+            Err(error) => send_error(event_tx, None, "stashes", error),
+        }
+        Ok(())
+    }
+}
+
+/// 获取差异处理器
+pub struct GetDiffHandler;
+impl CommandHandler for GetDiffHandler {
+    fn handle(
+        &self,
+        envelope: &CommandEnvelope,
+        repo: &GitRepo,
+        event_tx: &UnboundedSender<EventEnvelope>,
+    ) -> Result<()> {
+        let file_path =
+            if let crate::backend::BackendCommand::GetDiff { file_path } = &envelope.command {
+                file_path.clone()
+            } else {
+                return Ok(());
+            };
+
+        match super::git_ops::get_diff(repo, &file_path) {
+            Ok(diff) => {
+                let _ = event_tx.send(EventEnvelope::new(
+                    Some(envelope.request_id),
+                    FrontendEvent::DiffLoaded {
+                        request_id: envelope.request_id,
+                        file_path,
+                        diff,
+                    },
+                ));
+            }
+            Err(error) => send_error(event_tx, Some(envelope.request_id), "diff", error),
+        }
+        Ok(())
+    }
+}
+
+/// 暂存文件处理器
+pub struct StageFileHandler;
+impl CommandHandler for StageFileHandler {
+    fn handle(
+        &self,
+        envelope: &CommandEnvelope,
+        repo: &GitRepo,
+        event_tx: &UnboundedSender<EventEnvelope>,
+    ) -> Result<()> {
+        let file_path =
+            if let crate::backend::BackendCommand::StageFile { file_path } = &envelope.command {
+                file_path.clone()
+            } else {
+                return Ok(());
+            };
+
+        match super::git_ops::stage_file(repo, &file_path) {
+            Ok(()) => {
+                let _ = event_tx.send(EventEnvelope::new(
+                    Some(envelope.request_id),
+                    FrontendEvent::ActionSucceeded {
+                        request_id: envelope.request_id,
+                        message: format!("Staged: {file_path}"),
+                    },
+                ));
+                // 自动刷新文件状态
+                if let Ok(files) = super::git_ops::get_status_files(repo) {
+                    let _ = event_tx.send(EventEnvelope::new(
+                        None,
+                        FrontendEvent::FilesUpdated { files },
+                    ));
+                }
+            }
+            Err(error) => send_error(event_tx, Some(envelope.request_id), "stage", error),
+        }
+        Ok(())
+    }
+}
+
+/// 取消暂存文件处理器
+pub struct UnstageFileHandler;
+impl CommandHandler for UnstageFileHandler {
+    fn handle(
+        &self,
+        envelope: &CommandEnvelope,
+        repo: &GitRepo,
+        event_tx: &UnboundedSender<EventEnvelope>,
+    ) -> Result<()> {
+        let file_path =
+            if let crate::backend::BackendCommand::UnstageFile { file_path } = &envelope.command {
+                file_path.clone()
+            } else {
+                return Ok(());
+            };
+
+        match super::git_ops::unstage_file(repo, &file_path) {
+            Ok(()) => {
+                let _ = event_tx.send(EventEnvelope::new(
+                    Some(envelope.request_id),
+                    FrontendEvent::ActionSucceeded {
+                        request_id: envelope.request_id,
+                        message: format!("Unstaged: {file_path}"),
+                    },
+                ));
+                // 自动刷新文件状态
+                if let Ok(files) = super::git_ops::get_status_files(repo) {
+                    let _ = event_tx.send(EventEnvelope::new(
+                        None,
+                        FrontendEvent::FilesUpdated { files },
+                    ));
+                }
+            }
+            Err(error) => send_error(event_tx, Some(envelope.request_id), "unstage", error),
+        }
+        Ok(())
+    }
+}
+
+fn send_error(
+    event_tx: &UnboundedSender<EventEnvelope>,
+    request_id: Option<u64>,
+    context: &str,
+    error: impl std::fmt::Display,
+) {
+    let _ = event_tx.send(EventEnvelope::new(
+        request_id,
+        FrontendEvent::Error {
+            request_id,
+            message: format!("Failed to load {context}: {error}"),
+        },
+    ));
+}

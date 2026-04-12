@@ -1,51 +1,6 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Panel {
-    MainView,
-    Files,
-    Branches,
-    Commits,
-    Stash,
-    Log,
-}
+mod component;
+pub mod core;
+pub mod panels;
 
-impl Panel {
-    pub const ALL: [Panel; 6] = [
-        Panel::MainView,
-        Panel::Files,
-        Panel::Branches,
-        Panel::Commits,
-        Panel::Stash,
-        Panel::Log,
-    ];
-
-    pub fn title(self) -> &'static str {
-        match self {
-            Panel::MainView => "Main View",
-            Panel::Files => "Files",
-            Panel::Branches => "Branches",
-            Panel::Commits => "Commits",
-            Panel::Stash => "Stash",
-            Panel::Log => "Log",
-        }
-    }
-
-    pub fn next(self) -> Self {
-        let index = Self::ALL
-            .iter()
-            .position(|panel| *panel == self)
-            .unwrap_or(0);
-        Self::ALL[(index + 1) % Self::ALL.len()]
-    }
-
-    pub fn previous(self) -> Self {
-        let index = Self::ALL
-            .iter()
-            .position(|panel| *panel == self)
-            .unwrap_or(0);
-        if index == 0 {
-            Self::ALL[Self::ALL.len() - 1]
-        } else {
-            Self::ALL[index - 1]
-        }
-    }
-}
+pub use crate::app::Intent;
+pub use component::Component;
