@@ -1,7 +1,3 @@
-mod repository;
+mod repo;
 
-#[allow(unused_imports)]
-pub use repository::{
-    enable_git_job_log, BranchInfo, CommitInfo, CommitSyncState, DiffLine, DiffLineKind, FileEntry,
-    FileStatus, Git2Repository, GitError, GitRepository, GitStatus, GraphCell, StashInfo,
-};
+pub use repo::{BranchEntry, CommitEntry, GitRepo, StashEntry, StatusEntry};

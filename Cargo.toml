@@ -10,48 +10,20 @@ keywords = ["git", "tui", "terminal", "ratatui"]
 categories = ["command-line-interface", "development-tools"]
 
 [dependencies]
-# UI framework
-ratatui = "0.30"
-crossterm = "0.29"
-
-# Git operations
+anyhow = "1"
+crossterm = { version = "0.29", features = ["event-stream"] }
+env_logger = "0.11"
 git2 = "0.19"
-
-# Async runtime
+log = "0.4"
+ratatui = "0.30"
 tokio = { version = "1.40", features = ["full"] }
-async-trait = "0.1"
-
-# Error handling
-thiserror = "1.0"
-color-eyre = "0.6"
-
-# Serialization
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-toml = "0.8"
-
-# Logging
-tracing = "0.1"
-tracing-subscriber = "0.3"
-
-# Utilities
-chrono = { version = "0.4", features = ["serde"] }
-dirs = "5.0"
-regex = "1.10"
-
-[dev-dependencies]
-# Testing
-tempfile = "3.10"
-pretty_assertions = "1.4"
 
 [profile.release]
-# Optimize release build
 codegen-units = 1
 lto = true
 opt-level = "z"
 strip = true
 
 [profile.dev]
-# Optimize dev build settings
 opt-level = 0
 debug = true
