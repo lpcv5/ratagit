@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 use anyhow::Result;
-use crossterm::event::{self, Event, KeyCode, KeyEventKind};
+use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     widgets::{Clear, ListState},
@@ -34,6 +34,8 @@ pub struct App {
     pending_requests: HashSet<u64>,
     /// 当前“最新 diff”请求 ID（用于丢弃过期 diff 响应）
     latest_diff_request_id: Option<u64>,
+    /// 当前“最新分支图”请求 ID（用于丢弃过期分支图响应）
+    latest_branch_graph_request_id: Option<u64>,
 }
 
 impl App {
@@ -45,6 +47,7 @@ impl App {
             state: AppState::new(cmd_tx, event_rx),
             pending_requests: HashSet::new(),
             latest_diff_request_id: None,
+            latest_branch_graph_request_id: None,
         }
     }
 
@@ -135,6 +138,14 @@ impl App {
                     self.request_refresh_all();
                     return Ok(());
                 }
+                KeyCode::Char('u') if key.modifiers == KeyModifiers::CONTROL => {
+                    self.scroll_main_view_by(-MAIN_VIEW_PAGE_SCROLL);
+                    return Ok(());
+                }
+                KeyCode::Char('d') if key.modifiers == KeyModifiers::CONTROL => {
+                    self.scroll_main_view_by(MAIN_VIEW_PAGE_SCROLL);
+                    return Ok(());
+                }
                 _ => {}
             }
         }
@@ -187,7 +198,7 @@ impl App {
             Intent::SwitchFocus(panel) => self.set_active_panel(panel)?,
             Intent::RefreshPanelDetail => self.update_main_view_for_active_panel()?,
             Intent::ScrollMainView(delta) => {
-                self.state.components.scroll_main_view_by(delta);
+                self.scroll_main_view_by(delta);
             }
             Intent::ScrollLog(delta) => {
                 self.state.components.scroll_log_by(delta);
@@ -234,6 +245,16 @@ impl App {
             FrontendEvent::BranchesUpdated { branches } => {
                 self.state.data_cache.branches = branches;
                 self.state.sync_branch_list_state();
+                self.state
+                    .data_cache
+                    .branch_graphs
+                    .retain(|branch_name, _| {
+                        self.state
+                            .data_cache
+                            .branches
+                            .iter()
+                            .any(|branch| branch.name == *branch_name)
+                    });
                 self.state.push_log(format!(
                     "Branches refreshed: {} entries",
                     self.state.data_cache.branches.len()
@@ -249,6 +270,7 @@ impl App {
             FrontendEvent::CommitsUpdated { commits } => {
                 self.state.data_cache.commits = commits;
                 self.state.sync_commit_list_state();
+                self.state.data_cache.branch_graphs.clear();
                 self.state.push_log(format!(
                     "Commits refreshed: {} entries",
                     self.state.data_cache.commits.len()
@@ -256,7 +278,7 @@ impl App {
 
                 if matches!(
                     self.state.ui_state.active_panel,
-                    Panel::Commits | Panel::MainView
+                    Panel::Commits | Panel::MainView | Panel::Branches
                 ) {
                     self.update_main_view_for_active_panel()?;
                 }
@@ -334,6 +356,28 @@ impl App {
 
                 if self.state.ui_state.active_panel == Panel::Commits {
                     self.update_main_view_for_active_panel()?;
+                }
+            }
+            FrontendEvent::BranchGraphLoaded {
+                branch_name, graph, ..
+            } => {
+                self.state
+                    .data_cache
+                    .branch_graphs
+                    .insert(branch_name.clone(), graph.clone());
+                self.state
+                    .push_log(format!("Loaded branch graph for {branch_name}"));
+
+                if self.state.ui_state.active_panel == Panel::Branches
+                    && self
+                        .state
+                        .selected_branch()
+                        .map(|branch| branch.name.as_str())
+                        == Some(branch_name.as_str())
+                {
+                    self.state.data_cache.current_diff =
+                        Some((format!("Main View · Branch Graph · {branch_name}"), graph));
+                    self.state.components.main_view_scroll_to(0);
                 }
             }
             FrontendEvent::Error { message, .. } => {
@@ -446,7 +490,7 @@ impl App {
                 self.update_main_view_for_active_panel()?;
             }
             Panel::MainView => {
-                self.state.components.scroll_main_view_by(1);
+                self.scroll_main_view_by(1);
             }
             Panel::Log => {
                 self.state.components.scroll_log_by(1);
@@ -491,7 +535,7 @@ impl App {
                 self.update_main_view_for_active_panel()?;
             }
             Panel::MainView => {
-                self.state.components.scroll_main_view_by(-1);
+                self.scroll_main_view_by(-1);
             }
             Panel::Log => {
                 self.state.components.scroll_log_by(-1);
@@ -505,7 +549,7 @@ impl App {
         match self.state.ui_state.active_panel {
             Panel::MainView => self.show_repo_overview(),
             Panel::Files => self.request_selected_file_diff()?,
-            Panel::Branches => self.show_branch_detail(),
+            Panel::Branches => self.show_branch_detail()?,
             Panel::Commits => self.show_commits_panel_detail()?,
             Panel::Stash => self.show_stash_detail(),
             Panel::Log => self.show_log_detail(),
@@ -540,7 +584,7 @@ impl App {
             .count();
 
         let content = format!(
-            "Repository snapshot\n\nCurrent branch: {current_branch}\nFiles: {} (staged: {staged}, unstaged: {unstaged})\nBranches: {}\nCommits loaded: {}\nStashes: {}\n\nNavigation\n- h/l: switch focus across left panels\n- 1/2/3/4: jump to Files/Branches/Commits/Stash\n- j/k or arrows: move inside the focused panel\n- Enter: refresh the current panel detail\n- r: refresh all Git-backed panels\n- Ctrl+d / Ctrl+u: fast scroll in Main View and Log\n- q: quit",
+            "Repository snapshot\n\nCurrent branch: {current_branch}\nFiles: {} (staged: {staged}, unstaged: {unstaged})\nBranches: {}\nCommits loaded: {}\nStashes: {}\n\nNavigation\n- h/l: switch focus across left panels\n- 1/2/3/4: jump to Files/Branches/Commits/Stash\n- j/k or arrows: move inside the focused panel\n- Enter: refresh the current panel detail\n- r: refresh all Git-backed panels\n- Ctrl+d / Ctrl+u: globally page Main View\n- q: quit",
             self.state.data_cache.files.len(),
             self.state.data_cache.branches.len(),
             self.state.data_cache.commits.len(),
@@ -626,22 +670,28 @@ impl App {
         Ok(())
     }
 
-    fn show_branch_detail(&mut self) {
+    fn show_branch_detail(&mut self) -> Result<()> {
         if let Some((name, is_head, upstream)) = self
             .state
             .selected_branch()
             .map(|branch| (branch.name.clone(), branch.is_head, branch.upstream.clone()))
         {
+            if let Some(graph) = self.state.data_cache.branch_graphs.get(&name) {
+                self.state.data_cache.current_diff =
+                    Some((format!("Main View · Branch Graph · {name}"), graph.clone()));
+                self.state.components.main_view_scroll_to(0);
+                return Ok(());
+            }
+
             let upstream = upstream.unwrap_or_else(|| "(no upstream)".to_string());
             let head_status = if is_head { "yes" } else { "no" };
 
             let content = format!(
-                "Branch detail\n\nName: {}\nChecked out: {head_status}\nUpstream: {upstream}\n\nThis panel is wired for navigation first. Branch actions can be layered on top of the same focus model later.",
-                name
+                "Loading branch graph...\n\nBranch: {name}\nChecked out: {head_status}\nUpstream: {upstream}\n\nRunning: git log --graph --decorate --color=always --max-count={BRANCH_GRAPH_LIMIT} refs/heads/{name}"
             );
-
             self.state.data_cache.current_diff =
-                Some((format!("Main View · Branch · {name}"), content));
+                Some((format!("Main View · Branch Graph · {name}"), content));
+            self.send_latest_branch_graph_command(name)?;
         } else {
             self.state.data_cache.current_diff = Some((
                 "Main View · Branches".to_string(),
@@ -649,6 +699,7 @@ impl App {
             ));
         }
         self.state.components.main_view_scroll_to(0);
+        Ok(())
     }
 
     fn show_commits_panel_detail(&mut self) -> Result<()> {
@@ -734,15 +785,43 @@ impl App {
     }
 
     fn show_log_detail(&mut self) {
-        let content = "The Log panel records UI focus changes, refreshes, and backend responses.\n\nUse j/k or Ctrl+d / Ctrl+u while the Log panel is focused to scroll through recent messages.".to_string();
+        let content = "The Log panel records UI focus changes, refreshes, and backend responses.\n\nUse j/k to scroll this panel.\nCtrl+d / Ctrl+u pages Main View globally.".to_string();
         self.state.data_cache.current_diff = Some(("Main View · Log Help".to_string(), content));
         self.state.components.main_view_scroll_to(0);
+    }
+
+    fn scroll_main_view_by(&mut self, delta: i16) {
+        let max_scroll = self.current_main_view_max_scroll();
+        self.state.components.scroll_main_view_by(delta, max_scroll);
+    }
+
+    fn current_main_view_max_scroll(&self) -> u16 {
+        let Some((_, content)) = self.state.data_cache.current_diff.as_ref() else {
+            return 0;
+        };
+
+        let max_lines = content.lines().count().saturating_sub(1);
+        u16::try_from(max_lines).unwrap_or(u16::MAX)
     }
 
     fn send_latest_diff_command(&mut self, command: BackendCommand) -> Result<()> {
         let request_id = self.state.send_command(command)?;
 
         if let Some(previous) = self.latest_diff_request_id.replace(request_id) {
+            self.pending_requests.remove(&previous);
+        }
+
+        self.pending_requests.insert(request_id);
+        Ok(())
+    }
+
+    fn send_latest_branch_graph_command(&mut self, branch_name: String) -> Result<()> {
+        let request_id = self.state.send_command(BackendCommand::GetBranchGraph {
+            branch_name,
+            limit: BRANCH_GRAPH_LIMIT,
+        })?;
+
+        if let Some(previous) = self.latest_branch_graph_request_id.replace(request_id) {
             self.pending_requests.remove(&previous);
         }
 
@@ -841,6 +920,8 @@ const LEFT_STASH_INDEX: usize = 3;
 const LEFT_DYNAMIC_MIN_HEIGHT: u16 = 18;
 const STASH_COLLAPSED_HEIGHT: u16 = 3;
 const FOCUSED_PANEL_MIN_HEIGHT: u16 = 7;
+const BRANCH_GRAPH_LIMIT: usize = 80;
+const MAIN_VIEW_PAGE_SCROLL: i16 = 12;
 
 fn compute_left_panel_heights(total_height: u16, active_panel: Panel) -> [u16; 4] {
     if total_height < LEFT_DYNAMIC_MIN_HEIGHT {

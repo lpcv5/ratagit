@@ -17,6 +17,10 @@ pub enum BackendCommand {
         path: String,
         is_dir: bool,
     },
+    GetBranchGraph {
+        branch_name: String,
+        limit: usize,
+    },
     StageFile {
         file_path: String,
     },

@@ -1,3 +1,4 @@
+mod branch_graph;
 mod branches;
 mod commit_diff;
 mod commit_files;
@@ -8,6 +9,7 @@ mod stash;
 mod status;
 mod working_tree;
 
+pub use branch_graph::get_branch_graph;
 pub use branches::{get_branches, BranchEntry};
 pub use commit_diff::get_commit_diff;
 pub use commit_files::get_commit_files;

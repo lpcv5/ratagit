@@ -263,6 +263,41 @@ impl CommandHandler for GetCommitDiffHandler {
     }
 }
 
+/// 获取分支提交图处理器
+pub struct GetBranchGraphHandler;
+impl CommandHandler for GetBranchGraphHandler {
+    fn handle(
+        &self,
+        envelope: &CommandEnvelope,
+        repo: &GitRepo,
+        event_tx: &UnboundedSender<EventEnvelope>,
+    ) -> Result<()> {
+        let (branch_name, limit) =
+            if let crate::backend::BackendCommand::GetBranchGraph { branch_name, limit } =
+                &envelope.command
+            {
+                (branch_name.clone(), *limit)
+            } else {
+                return Ok(());
+            };
+
+        match super::git_ops::get_branch_graph(repo, &branch_name, limit) {
+            Ok(graph) => {
+                let _ = event_tx.send(EventEnvelope::new(
+                    Some(envelope.request_id),
+                    FrontendEvent::BranchGraphLoaded {
+                        request_id: envelope.request_id,
+                        branch_name,
+                        graph,
+                    },
+                ));
+            }
+            Err(error) => send_error(event_tx, Some(envelope.request_id), "branch graph", error),
+        }
+        Ok(())
+    }
+}
+
 /// 暂存文件处理器
 pub struct StageFileHandler;
 impl CommandHandler for StageFileHandler {

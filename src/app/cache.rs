@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::backend::git_ops::{BranchEntry, CommitEntry, StashEntry, StatusEntry};
 use crate::components::core::GitFileStatus;
 
@@ -11,4 +13,6 @@ pub struct CachedData {
     pub log_entries: Vec<String>,
     /// Commit 文件树缓存：(commit_id, 文件列表)
     pub commit_files: Option<(String, Vec<(String, GitFileStatus)>)>,
+    /// 分支提交图缓存：branch_name -> git log --graph output
+    pub branch_graphs: HashMap<String, String>,
 }

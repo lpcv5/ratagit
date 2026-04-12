@@ -1,7 +1,7 @@
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::{
     layout::Rect,
-    style::{Color, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::Paragraph,
     Frame,
@@ -27,11 +27,13 @@ impl MainViewPanel {
         self.scroll = offset;
     }
 
-    pub fn scroll_by(&mut self, delta: i16) {
+    pub fn scroll_by_clamped(&mut self, delta: i16, max_scroll: u16) {
+        let current = self.scroll.min(max_scroll);
+
         if delta.is_negative() {
-            self.scroll = self.scroll.saturating_sub(delta.unsigned_abs());
+            self.scroll = current.saturating_sub(delta.unsigned_abs());
         } else {
-            self.scroll = self.scroll.saturating_add(delta as u16);
+            self.scroll = current.saturating_add(delta as u16).min(max_scroll);
         }
     }
 }
@@ -77,7 +79,9 @@ impl Component for MainViewPanel {
             .unwrap_or("No file diff loaded. Select a file to see its diff here.");
 
         let block = panel_block(&title, is_focused);
-        let paragraph = if is_diff_text(content) {
+        let paragraph = if contains_ansi_escape(content) {
+            Paragraph::new(colorize_ansi_text(content))
+        } else if is_diff_text(content) {
             Paragraph::new(colorize_diff_text(content))
         } else {
             Paragraph::new(content.to_string())
@@ -97,6 +101,10 @@ fn is_diff_text(content: &str) -> bool {
             || line.starts_with("+++ ")
             || line.starts_with("--- ")
     })
+}
+
+fn contains_ansi_escape(content: &str) -> bool {
+    content.contains('\u{1b}')
 }
 
 fn colorize_diff_text(content: &str) -> Text<'static> {
@@ -130,4 +138,107 @@ fn colorize_diff_line(line: &str) -> Line<'static> {
     };
 
     Line::from(Span::styled(line.to_string(), style))
+}
+
+fn colorize_ansi_text(content: &str) -> Text<'static> {
+    let lines: Vec<Line<'static>> = content.lines().map(parse_ansi_line).collect();
+    Text::from(lines)
+}
+
+fn parse_ansi_line(line: &str) -> Line<'static> {
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    let mut current = String::new();
+    let mut style = Style::default();
+    let mut chars = line.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '\u{1b}' && matches!(chars.peek(), Some('[')) {
+            let _ = chars.next();
+            if !current.is_empty() {
+                spans.push(Span::styled(current.clone(), style));
+                current.clear();
+            }
+
+            let mut seq = String::new();
+            let mut found_terminator = false;
+            for code_ch in chars.by_ref() {
+                if code_ch == 'm' {
+                    found_terminator = true;
+                    break;
+                }
+                seq.push(code_ch);
+            }
+
+            if found_terminator {
+                apply_sgr_sequence(&seq, &mut style);
+            } else {
+                current.push('\u{1b}');
+                current.push('[');
+                current.push_str(&seq);
+                break;
+            }
+        } else {
+            current.push(ch);
+        }
+    }
+
+    if !current.is_empty() {
+        spans.push(Span::styled(current, style));
+    }
+
+    Line::from(spans)
+}
+
+fn apply_sgr_sequence(seq: &str, style: &mut Style) {
+    if seq.is_empty() {
+        *style = Style::default();
+        return;
+    }
+
+    for part in seq.split(';') {
+        let Ok(code) = part.parse::<u8>() else {
+            continue;
+        };
+
+        match code {
+            0 => *style = Style::default(),
+            1 => *style = style.add_modifier(Modifier::BOLD),
+            22 => *style = style.remove_modifier(Modifier::BOLD),
+            30 => *style = style.fg(Color::Black),
+            31 => *style = style.fg(Color::Red),
+            32 => *style = style.fg(Color::Green),
+            33 => *style = style.fg(Color::Yellow),
+            34 => *style = style.fg(Color::Blue),
+            35 => *style = style.fg(Color::Magenta),
+            36 => *style = style.fg(Color::Cyan),
+            37 => *style = style.fg(Color::Gray),
+            39 => *style = style.fg(Color::Reset),
+            40 => *style = style.bg(Color::Black),
+            41 => *style = style.bg(Color::Red),
+            42 => *style = style.bg(Color::Green),
+            43 => *style = style.bg(Color::Yellow),
+            44 => *style = style.bg(Color::Blue),
+            45 => *style = style.bg(Color::Magenta),
+            46 => *style = style.bg(Color::Cyan),
+            47 => *style = style.bg(Color::Gray),
+            49 => *style = style.bg(Color::Reset),
+            90 => *style = style.fg(Color::DarkGray),
+            91 => *style = style.fg(Color::LightRed),
+            92 => *style = style.fg(Color::LightGreen),
+            93 => *style = style.fg(Color::LightYellow),
+            94 => *style = style.fg(Color::LightBlue),
+            95 => *style = style.fg(Color::LightMagenta),
+            96 => *style = style.fg(Color::LightCyan),
+            97 => *style = style.fg(Color::White),
+            100 => *style = style.bg(Color::DarkGray),
+            101 => *style = style.bg(Color::LightRed),
+            102 => *style = style.bg(Color::LightGreen),
+            103 => *style = style.bg(Color::LightYellow),
+            104 => *style = style.bg(Color::LightBlue),
+            105 => *style = style.bg(Color::LightMagenta),
+            106 => *style = style.bg(Color::LightCyan),
+            107 => *style = style.bg(Color::White),
+            _ => {}
+        }
+    }
 }

@@ -27,6 +27,12 @@ pub enum FrontendEvent {
         commit_id: String,
         files: Vec<(String, GitFileStatus)>,
     },
+    BranchGraphLoaded {
+        #[allow(dead_code)]
+        request_id: u64,
+        branch_name: String,
+        graph: String,
+    },
     ActionSucceeded {
         #[allow(dead_code)]
         request_id: u64,

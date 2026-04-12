@@ -49,8 +49,8 @@ impl AppComponents {
         }
     }
 
-    pub fn scroll_main_view_by(&mut self, delta: i16) {
-        self.main_view_panel.scroll_by(delta);
+    pub fn scroll_main_view_by(&mut self, delta: i16, max_scroll: u16) {
+        self.main_view_panel.scroll_by_clamped(delta, max_scroll);
     }
 
     pub fn scroll_log_by(&mut self, delta: i16) {
