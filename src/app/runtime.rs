@@ -32,6 +32,8 @@ pub struct App {
     state: AppState,
     /// 等待响应的请求 ID 集合
     pending_requests: HashSet<u64>,
+    /// 当前“最新 diff”请求 ID（用于丢弃过期 diff 响应）
+    latest_diff_request_id: Option<u64>,
 }
 
 impl App {
@@ -42,6 +44,7 @@ impl App {
         Self {
             state: AppState::new(cmd_tx, event_rx),
             pending_requests: HashSet::new(),
+            latest_diff_request_id: None,
         }
     }
 
@@ -96,15 +99,35 @@ impl App {
                     self.state.should_quit = true;
                     return Ok(());
                 }
-                KeyCode::Tab | KeyCode::Right | KeyCode::Char('l') if key.modifiers.is_empty() => {
-                    let intent = Intent::SwitchFocus(self.state.ui_state.active_panel.next());
+                KeyCode::Char('1') if key.modifiers.is_empty() => {
+                    let intent = Intent::SwitchFocus(Panel::Files);
                     self.execute_intent(intent)?;
                     return Ok(());
                 }
-                KeyCode::BackTab | KeyCode::Left | KeyCode::Char('h')
-                    if key.modifiers.is_empty() =>
-                {
-                    let intent = Intent::SwitchFocus(self.state.ui_state.active_panel.previous());
+                KeyCode::Char('2') if key.modifiers.is_empty() => {
+                    let intent = Intent::SwitchFocus(Panel::Branches);
+                    self.execute_intent(intent)?;
+                    return Ok(());
+                }
+                KeyCode::Char('3') if key.modifiers.is_empty() => {
+                    let intent = Intent::SwitchFocus(Panel::Commits);
+                    self.execute_intent(intent)?;
+                    return Ok(());
+                }
+                KeyCode::Char('4') if key.modifiers.is_empty() => {
+                    let intent = Intent::SwitchFocus(Panel::Stash);
+                    self.execute_intent(intent)?;
+                    return Ok(());
+                }
+                KeyCode::Char('l') if key.modifiers.is_empty() => {
+                    let intent =
+                        Intent::SwitchFocus(next_left_panel(self.state.ui_state.active_panel));
+                    self.execute_intent(intent)?;
+                    return Ok(());
+                }
+                KeyCode::Char('h') if key.modifiers.is_empty() => {
+                    let intent =
+                        Intent::SwitchFocus(previous_left_panel(self.state.ui_state.active_panel));
                     self.execute_intent(intent)?;
                     return Ok(());
                 }
@@ -122,7 +145,39 @@ impl App {
             &event,
             &self.state.data_cache,
         );
-        self.execute_intent(intent)
+        self.execute_intent(intent)?;
+
+        if self.should_refresh_commit_tree_diff(&event) {
+            self.update_main_view_for_active_panel()?;
+        }
+
+        Ok(())
+    }
+
+    fn should_refresh_commit_tree_diff(&self, event: &Event) -> bool {
+        if self.state.ui_state.active_panel != Panel::Commits {
+            return false;
+        }
+
+        if !matches!(
+            self.state.components.commit_mode_view(),
+            CommitModeView::FilesTree { .. }
+        ) {
+            return false;
+        }
+
+        let Event::Key(key) = event else {
+            return false;
+        };
+
+        if key.kind != KeyEventKind::Press {
+            return false;
+        }
+
+        matches!(
+            key.code,
+            KeyCode::Char('j') | KeyCode::Char('k') | KeyCode::Down | KeyCode::Up | KeyCode::Enter
+        )
     }
 
     fn execute_intent(&mut self, intent: Intent) -> Result<()> {
@@ -130,6 +185,7 @@ impl App {
             Intent::SelectNext => self.navigate_forward()?,
             Intent::SelectPrevious => self.navigate_backward()?,
             Intent::SwitchFocus(panel) => self.set_active_panel(panel)?,
+            Intent::RefreshPanelDetail => self.update_main_view_for_active_panel()?,
             Intent::ScrollMainView(delta) => {
                 self.state.components.scroll_main_view_by(delta);
             }
@@ -224,6 +280,7 @@ impl App {
                 file_path, diff, ..
             } => {
                 self.state.data_cache.current_diff = Some((file_path.clone(), diff.clone()));
+                self.state.components.main_view_scroll_to(0);
                 self.state.push_log(format!("Loaded diff for {file_path}"));
             }
             FrontendEvent::CommitFilesLoaded {
@@ -449,7 +506,7 @@ impl App {
             Panel::MainView => self.show_repo_overview(),
             Panel::Files => self.request_selected_file_diff()?,
             Panel::Branches => self.show_branch_detail(),
-            Panel::Commits => self.show_commits_panel_detail(),
+            Panel::Commits => self.show_commits_panel_detail()?,
             Panel::Stash => self.show_stash_detail(),
             Panel::Log => self.show_log_detail(),
         }
@@ -483,7 +540,7 @@ impl App {
             .count();
 
         let content = format!(
-            "Repository snapshot\n\nCurrent branch: {current_branch}\nFiles: {} (staged: {staged}, unstaged: {unstaged})\nBranches: {}\nCommits loaded: {}\nStashes: {}\n\nNavigation\n- Tab / Shift+Tab or h/l: switch panel focus\n- j/k or arrows: move inside the focused panel\n- Enter: refresh the current panel detail\n- r: refresh all Git-backed panels\n- Ctrl+d / Ctrl+u: fast scroll in Main View and Log\n- q: quit",
+            "Repository snapshot\n\nCurrent branch: {current_branch}\nFiles: {} (staged: {staged}, unstaged: {unstaged})\nBranches: {}\nCommits loaded: {}\nStashes: {}\n\nNavigation\n- h/l: switch focus across left panels\n- 1/2/3/4: jump to Files/Branches/Commits/Stash\n- j/k or arrows: move inside the focused panel\n- Enter: refresh the current panel detail\n- r: refresh all Git-backed panels\n- Ctrl+d / Ctrl+u: fast scroll in Main View and Log\n- q: quit",
             self.state.data_cache.files.len(),
             self.state.data_cache.branches.len(),
             self.state.data_cache.commits.len(),
@@ -495,19 +552,49 @@ impl App {
     }
 
     fn request_selected_file_diff(&mut self) -> Result<()> {
-        if let Some(path) = self.state.selected_file().map(|file| file.path.clone()) {
+        if let Some((path, is_dir)) = self.state.components.selected_file_tree_node() {
+            let pathspec = if is_dir && !path.ends_with('/') {
+                format!("{path}/")
+            } else {
+                path.clone()
+            };
+            let label = if is_dir {
+                format!("{path}/")
+            } else {
+                path.clone()
+            };
+
             self.state.data_cache.current_diff =
-                Some((path.clone(), format!("Loading diff for {path}...")));
+                Some((label.clone(), format!("Loading diff for {label}...")));
             self.state.components.main_view_scroll_to(0);
 
-            let request_id = self
-                .state
-                .send_command(BackendCommand::GetDiff { file_path: path })?;
-            self.pending_requests.insert(request_id);
+            self.send_latest_diff_command(BackendCommand::GetDiff {
+                file_path: pathspec,
+            })?;
         } else {
             self.state.data_cache.current_diff = Some((
                 "Main View · Files".to_string(),
-                "No file is currently selected.".to_string(),
+                "No file or folder is currently selected.".to_string(),
+            ));
+            self.state.components.main_view_scroll_to(0);
+        }
+
+        Ok(())
+    }
+
+    fn request_selected_commit_tree_diff(&mut self, commit_id: &str, summary: &str) -> Result<()> {
+        if let Some((path, is_dir)) = self.state.components.selected_commit_tree_node() {
+            self.send_latest_diff_command(BackendCommand::GetCommitDiff {
+                commit_id: commit_id.to_string(),
+                path,
+                is_dir,
+            })?;
+        } else {
+            self.state.data_cache.current_diff = Some((
+                format!("Main View · Commit Files · {}", short_commit_id(commit_id)),
+                format!(
+                    "Commit files tree for: {summary}\n\nMove the cursor to a file or folder to preview its diff."
+                ),
             ));
             self.state.components.main_view_scroll_to(0);
         }
@@ -516,8 +603,14 @@ impl App {
     }
 
     fn toggle_stage_selected_file(&mut self) -> Result<()> {
-        if let Some(file) = self.state.selected_file() {
-            let path = file.path.clone();
+        if let Some((path, is_dir)) = self.state.components.selected_file_tree_node() {
+            if is_dir {
+                return Ok(());
+            }
+
+            let Some(file) = self.state.data_cache.files.iter().find(|f| f.path == path) else {
+                return Ok(());
+            };
             let is_staged = file.is_staged;
 
             let command = if is_staged {
@@ -558,16 +651,18 @@ impl App {
         self.state.components.main_view_scroll_to(0);
     }
 
-    fn show_commits_panel_detail(&mut self) {
+    fn show_commits_panel_detail(&mut self) -> Result<()> {
         match self.state.components.commit_mode_view() {
             CommitModeView::List => self.show_commit_detail(),
             CommitModeView::FilesLoading { commit_id, summary } => {
                 self.show_commit_files_loading_detail(&commit_id, &summary)
             }
             CommitModeView::FilesTree { commit_id, summary } => {
-                self.show_commit_files_tree_detail(&commit_id, &summary)
+                self.show_commit_files_tree_detail(&commit_id, &summary)?
             }
         }
+
+        Ok(())
     }
 
     fn show_commit_detail(&mut self) {
@@ -612,15 +707,8 @@ impl App {
         self.state.components.main_view_scroll_to(0);
     }
 
-    fn show_commit_files_tree_detail(&mut self, commit_id: &str, summary: &str) {
-        self.state.data_cache.current_diff = Some((
-            format!("Main View · Commit Files · {}", short_commit_id(commit_id)),
-            format!(
-                "Commit files tree for: {}\n\nUse the left panel to navigate the tree.\nSelect a file to view its diff.",
-                summary
-            ),
-        ));
-        self.state.components.main_view_scroll_to(0);
+    fn show_commit_files_tree_detail(&mut self, commit_id: &str, summary: &str) -> Result<()> {
+        self.request_selected_commit_tree_diff(commit_id, summary)
     }
 
     fn show_stash_detail(&mut self) {
@@ -651,20 +739,28 @@ impl App {
         self.state.components.main_view_scroll_to(0);
     }
 
+    fn send_latest_diff_command(&mut self, command: BackendCommand) -> Result<()> {
+        let request_id = self.state.send_command(command)?;
+
+        if let Some(previous) = self.latest_diff_request_id.replace(request_id) {
+            self.pending_requests.remove(&previous);
+        }
+
+        self.pending_requests.insert(request_id);
+        Ok(())
+    }
+
     fn render(&mut self, frame: &mut Frame) {
         let columns = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(34), Constraint::Percentage(66)])
             .split(frame.area());
 
+        let left_heights =
+            compute_left_panel_heights(columns[0].height, self.state.ui_state.active_panel);
         let left = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Percentage(28),
-                Constraint::Percentage(24),
-                Constraint::Percentage(28),
-                Constraint::Percentage(20),
-            ])
+            .constraints(left_heights.map(Constraint::Length))
             .split(columns[0]);
 
         let right = Layout::default()
@@ -738,6 +834,137 @@ impl App {
     }
 }
 
+const LEFT_FILES_INDEX: usize = 0;
+const LEFT_BRANCHES_INDEX: usize = 1;
+const LEFT_COMMITS_INDEX: usize = 2;
+const LEFT_STASH_INDEX: usize = 3;
+const LEFT_DYNAMIC_MIN_HEIGHT: u16 = 18;
+const STASH_COLLAPSED_HEIGHT: u16 = 3;
+const FOCUSED_PANEL_MIN_HEIGHT: u16 = 7;
+
+fn compute_left_panel_heights(total_height: u16, active_panel: Panel) -> [u16; 4] {
+    if total_height < LEFT_DYNAMIC_MIN_HEIGHT {
+        return distribute_weighted(total_height, [28, 24, 28, 20]);
+    }
+
+    let mut heights = [0_u16; 4];
+
+    match active_panel {
+        Panel::Files | Panel::Branches | Panel::Commits => {
+            let focused_index = match active_panel {
+                Panel::Files => LEFT_FILES_INDEX,
+                Panel::Branches => LEFT_BRANCHES_INDEX,
+                Panel::Commits => LEFT_COMMITS_INDEX,
+                _ => unreachable!("focused panel for this branch must be one of left top three"),
+            };
+
+            heights[LEFT_STASH_INDEX] = STASH_COLLAPSED_HEIGHT;
+            let remaining_for_top_three = total_height.saturating_sub(STASH_COLLAPSED_HEIGHT);
+            let focused_height = (remaining_for_top_three / 2)
+                .max(FOCUSED_PANEL_MIN_HEIGHT)
+                .min(remaining_for_top_three);
+
+            heights[focused_index] = focused_height;
+
+            let remaining = remaining_for_top_three.saturating_sub(focused_height);
+            let mut non_focused_top_indices = [0_usize; 2];
+            let mut write_index = 0;
+            for index in [LEFT_FILES_INDEX, LEFT_BRANCHES_INDEX, LEFT_COMMITS_INDEX] {
+                if index != focused_index {
+                    non_focused_top_indices[write_index] = index;
+                    write_index += 1;
+                }
+            }
+            distribute_evenly_into(remaining, &non_focused_top_indices, &mut heights);
+        }
+        Panel::Stash => {
+            let stash_height = (total_height / 2)
+                .max(FOCUSED_PANEL_MIN_HEIGHT)
+                .min(total_height);
+            heights[LEFT_STASH_INDEX] = stash_height;
+            let remaining = total_height.saturating_sub(stash_height);
+            distribute_evenly_into(
+                remaining,
+                &[LEFT_FILES_INDEX, LEFT_BRANCHES_INDEX, LEFT_COMMITS_INDEX],
+                &mut heights,
+            );
+        }
+        Panel::MainView | Panel::Log => {
+            heights[LEFT_STASH_INDEX] = STASH_COLLAPSED_HEIGHT;
+            let remaining = total_height.saturating_sub(STASH_COLLAPSED_HEIGHT);
+            distribute_evenly_into(
+                remaining,
+                &[LEFT_FILES_INDEX, LEFT_BRANCHES_INDEX, LEFT_COMMITS_INDEX],
+                &mut heights,
+            );
+        }
+    }
+
+    heights
+}
+
+fn distribute_evenly_into(total: u16, target_indices: &[usize], heights: &mut [u16; 4]) {
+    if target_indices.is_empty() {
+        return;
+    }
+
+    let len = target_indices.len() as u16;
+    let base = total / len;
+    let mut remainder = total % len;
+
+    for index in target_indices {
+        let mut value = base;
+        if remainder > 0 {
+            value += 1;
+            remainder -= 1;
+        }
+        heights[*index] = value;
+    }
+}
+
+fn distribute_weighted(total: u16, weights: [u16; 4]) -> [u16; 4] {
+    let mut heights = [0_u16; 4];
+    let sum: u16 = weights.iter().sum();
+    let mut consumed = 0_u16;
+
+    for (idx, weight) in weights.into_iter().enumerate() {
+        let value = total.saturating_mul(weight) / sum;
+        heights[idx] = value;
+        consumed = consumed.saturating_add(value);
+    }
+
+    let mut remainder = total.saturating_sub(consumed);
+    for value in &mut heights {
+        if remainder == 0 {
+            break;
+        }
+        *value = value.saturating_add(1);
+        remainder -= 1;
+    }
+
+    heights
+}
+
+fn next_left_panel(current: Panel) -> Panel {
+    match current {
+        Panel::Files => Panel::Branches,
+        Panel::Branches => Panel::Commits,
+        Panel::Commits => Panel::Stash,
+        Panel::Stash => Panel::Files,
+        Panel::MainView | Panel::Log => Panel::Files,
+    }
+}
+
+fn previous_left_panel(current: Panel) -> Panel {
+    match current {
+        Panel::Files => Panel::Stash,
+        Panel::Branches => Panel::Files,
+        Panel::Commits => Panel::Branches,
+        Panel::Stash => Panel::Commits,
+        Panel::MainView | Panel::Log => Panel::Stash,
+    }
+}
+
 fn short_commit_id(id: &str) -> String {
     id.chars().take(8).collect()
 }
@@ -750,16 +977,89 @@ fn cycle_selection(state: &mut ListState, len: usize, delta: i8) {
 
     let current = state.selected().unwrap_or(0);
     let next = if delta > 0 {
-        if current + 1 >= len {
-            0
-        } else {
-            current + 1
-        }
-    } else if current == 0 {
-        len.saturating_sub(1)
+        current.saturating_add(1).min(len.saturating_sub(1))
     } else {
-        current - 1
+        current.saturating_sub(1)
     };
 
     state.select(Some(next));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn left_heights_expand_focused_files_panel_and_collapse_stash() {
+        let heights = compute_left_panel_heights(30, Panel::Files);
+
+        assert_eq!(heights[LEFT_STASH_INDEX], STASH_COLLAPSED_HEIGHT);
+        assert!(heights[LEFT_FILES_INDEX] > heights[LEFT_BRANCHES_INDEX]);
+        assert!(heights[LEFT_FILES_INDEX] > heights[LEFT_COMMITS_INDEX]);
+        assert_eq!(heights.iter().sum::<u16>(), 30);
+    }
+
+    #[test]
+    fn left_heights_expand_stash_when_stash_is_focused() {
+        let heights = compute_left_panel_heights(30, Panel::Stash);
+
+        assert_eq!(heights[LEFT_STASH_INDEX], 15);
+        assert_eq!(heights[LEFT_FILES_INDEX], 5);
+        assert_eq!(heights[LEFT_BRANCHES_INDEX], 5);
+        assert_eq!(heights[LEFT_COMMITS_INDEX], 5);
+        assert_eq!(heights.iter().sum::<u16>(), 30);
+    }
+
+    #[test]
+    fn left_heights_keep_stash_collapsed_when_right_side_is_focused() {
+        let heights = compute_left_panel_heights(25, Panel::MainView);
+
+        assert_eq!(heights[LEFT_STASH_INDEX], STASH_COLLAPSED_HEIGHT);
+        let top_three = [
+            heights[LEFT_FILES_INDEX],
+            heights[LEFT_BRANCHES_INDEX],
+            heights[LEFT_COMMITS_INDEX],
+        ];
+        let max = *top_three.iter().max().expect("top three should have items");
+        let min = *top_three.iter().min().expect("top three should have items");
+        assert!(max - min <= 1);
+        assert_eq!(heights.iter().sum::<u16>(), 25);
+    }
+
+    #[test]
+    fn left_heights_fall_back_to_legacy_weights_on_small_terminal() {
+        let heights = compute_left_panel_heights(10, Panel::Files);
+
+        assert_eq!(heights, [3, 3, 2, 2]);
+        assert_eq!(heights.iter().sum::<u16>(), 10);
+    }
+
+    #[test]
+    fn cycle_selection_does_not_wrap_forward() {
+        let mut state = ListState::default();
+        state.select(Some(2));
+
+        cycle_selection(&mut state, 3, 1);
+        assert_eq!(state.selected(), Some(2));
+    }
+
+    #[test]
+    fn cycle_selection_does_not_wrap_backward() {
+        let mut state = ListState::default();
+        state.select(Some(0));
+
+        cycle_selection(&mut state, 3, -1);
+        assert_eq!(state.selected(), Some(0));
+    }
+
+    #[test]
+    fn left_panel_navigation_stays_on_left_panels_only() {
+        assert_eq!(next_left_panel(Panel::Files), Panel::Branches);
+        assert_eq!(next_left_panel(Panel::Stash), Panel::Files);
+        assert_eq!(next_left_panel(Panel::MainView), Panel::Files);
+
+        assert_eq!(previous_left_panel(Panel::Files), Panel::Stash);
+        assert_eq!(previous_left_panel(Panel::Branches), Panel::Files);
+        assert_eq!(previous_left_panel(Panel::Log), Panel::Stash);
+    }
 }

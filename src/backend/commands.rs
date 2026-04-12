@@ -2,12 +2,27 @@
 pub enum BackendCommand {
     RefreshStatus,
     RefreshBranches,
-    RefreshCommits { limit: usize },
+    RefreshCommits {
+        limit: usize,
+    },
     RefreshStashes,
-    GetDiff { file_path: String },
-    GetCommitFiles { commit_id: String },
-    StageFile { file_path: String },
-    UnstageFile { file_path: String },
+    GetDiff {
+        file_path: String,
+    },
+    GetCommitFiles {
+        commit_id: String,
+    },
+    GetCommitDiff {
+        commit_id: String,
+        path: String,
+        is_dir: bool,
+    },
+    StageFile {
+        file_path: String,
+    },
+    UnstageFile {
+        file_path: String,
+    },
     Quit,
 }
 

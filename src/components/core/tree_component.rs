@@ -9,7 +9,9 @@ use ratatui::{
 
 use crate::app::CachedData;
 use crate::components::core::tree::{get_visible_nodes, GitFileStatus, TreeNode};
-use crate::components::core::SelectableList;
+use crate::components::core::{
+    accent_primary_color, accent_secondary_color, SelectableList, LIST_HIGHLIGHT_SYMBOL,
+};
 use crate::components::Component;
 use crate::components::Intent;
 
@@ -92,11 +94,7 @@ impl TreePanel {
             return;
         }
         let current = self.state.selected().unwrap_or(0);
-        let next = if current + 1 >= visible_len {
-            0
-        } else {
-            current + 1
-        };
+        let next = current.saturating_add(1).min(visible_len.saturating_sub(1));
         self.state.select(Some(next));
     }
 
@@ -108,11 +106,7 @@ impl TreePanel {
             return;
         }
         let current = self.state.selected().unwrap_or(0);
-        let prev = if current == 0 {
-            visible_len - 1
-        } else {
-            current - 1
-        };
+        let prev = current.saturating_sub(1);
         self.state.select(Some(prev));
     }
 }
@@ -167,19 +161,22 @@ impl Component for TreePanel {
                         Span::styled(indent.clone(), Style::default()),
                         Span::styled(
                             format!("{} ", expand_icon),
-                            Style::default().fg(Color::Yellow),
+                            Style::default().fg(accent_secondary_color()),
                         ),
-                        Span::styled(node.name.clone(), Style::default().fg(Color::LightBlue)),
+                        Span::styled(
+                            node.name.clone(),
+                            Style::default().fg(accent_primary_color()),
+                        ),
                     ]))
                 } else {
                     // 文件节点：缩进 + 状态图标 + 文件名
                     let status_span = if let Some(status) = node.status {
                         let color = match status {
-                            GitFileStatus::Added => Color::Green,
-                            GitFileStatus::Modified => Color::Yellow,
-                            GitFileStatus::Deleted => Color::Red,
-                            GitFileStatus::Renamed => Color::LightCyan,
-                            GitFileStatus::Untracked => Color::DarkGray,
+                            GitFileStatus::Added => Color::Rgb(136, 209, 161),
+                            GitFileStatus::Modified => Color::Rgb(194, 170, 249),
+                            GitFileStatus::Deleted => Color::Rgb(233, 119, 163),
+                            GitFileStatus::Renamed => Color::Rgb(118, 201, 226),
+                            GitFileStatus::Untracked => Color::Rgb(120, 103, 160),
                             GitFileStatus::Unmodified => Color::Reset,
                         };
                         Span::styled(
@@ -199,8 +196,40 @@ impl Component for TreePanel {
             })
             .collect();
 
-        let list = SelectableList::new(items, &self.title, is_focused, "> ");
+        let list = SelectableList::new(items, &self.title, is_focused, LIST_HIGHLIGHT_SYMBOL);
         let state = &mut self.state.clone();
         list.render(frame, area, state);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tree_navigation_does_not_wrap_forward() {
+        let nodes = vec![
+            TreeNode::new("a".to_string(), "a".to_string(), false, 0, None),
+            TreeNode::new("b".to_string(), "b".to_string(), false, 0, None),
+            TreeNode::new("c".to_string(), "c".to_string(), false, 0, None),
+        ];
+        let mut panel = TreePanel::new("Files".to_string(), nodes, false);
+        panel.state.select(Some(2));
+
+        panel.select_next();
+        assert_eq!(panel.state.selected(), Some(2));
+    }
+
+    #[test]
+    fn tree_navigation_does_not_wrap_backward() {
+        let nodes = vec![
+            TreeNode::new("a".to_string(), "a".to_string(), false, 0, None),
+            TreeNode::new("b".to_string(), "b".to_string(), false, 0, None),
+        ];
+        let mut panel = TreePanel::new("Files".to_string(), nodes, false);
+        panel.state.select(Some(0));
+
+        panel.select_previous();
+        assert_eq!(panel.state.selected(), Some(0));
     }
 }

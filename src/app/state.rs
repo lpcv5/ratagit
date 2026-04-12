@@ -57,6 +57,7 @@ impl AppState {
         }
     }
 
+    #[allow(dead_code)]
     pub fn selected_file(&self) -> Option<&StatusEntry> {
         self.components
             .file_list_panel

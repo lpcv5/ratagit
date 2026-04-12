@@ -1,9 +1,15 @@
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
-use ratatui::{layout::Rect, Frame};
+use ratatui::{
+    layout::Rect,
+    style::{Color, Style},
+    text::{Line, Span, Text},
+    widgets::Paragraph,
+    Frame,
+};
 
 use crate::app::CachedData;
 
-use crate::components::core::ScrollableText;
+use crate::components::core::panel_block;
 use crate::components::Component;
 use crate::components::Intent;
 
@@ -70,7 +76,58 @@ impl Component for MainViewPanel {
             .map(|(_, diff)| diff.as_str())
             .unwrap_or("No file diff loaded. Select a file to see its diff here.");
 
-        let text = ScrollableText::new(content, &title, is_focused, self.scroll);
-        text.render(frame, area);
+        let block = panel_block(&title, is_focused);
+        let paragraph = if is_diff_text(content) {
+            Paragraph::new(colorize_diff_text(content))
+        } else {
+            Paragraph::new(content.to_string())
+        }
+        .block(block)
+        .scroll((self.scroll, 0));
+
+        frame.render_widget(paragraph, area);
     }
+}
+
+fn is_diff_text(content: &str) -> bool {
+    content.lines().any(|line| {
+        line.starts_with("diff --git ")
+            || line.starts_with("index ")
+            || line.starts_with("@@ ")
+            || line.starts_with("+++ ")
+            || line.starts_with("--- ")
+    })
+}
+
+fn colorize_diff_text(content: &str) -> Text<'static> {
+    let lines: Vec<Line<'static>> = content.lines().map(colorize_diff_line).collect();
+    Text::from(lines)
+}
+
+fn colorize_diff_line(line: &str) -> Line<'static> {
+    let style = if line.starts_with("diff --git ") {
+        Style::default().fg(Color::Rgb(116, 182, 247))
+    } else if line.starts_with("index ")
+        || line.starts_with("new file mode ")
+        || line.starts_with("deleted file mode ")
+        || line.starts_with("similarity index ")
+        || line.starts_with("rename from ")
+        || line.starts_with("rename to ")
+    {
+        Style::default().fg(Color::Rgb(245, 196, 109))
+    } else if line.starts_with("@@ ") {
+        Style::default().fg(Color::Rgb(191, 151, 255))
+    } else if line.starts_with("+++ ") || line.starts_with("--- ") {
+        Style::default().fg(Color::Rgb(142, 201, 255))
+    } else if line.starts_with('+') && !line.starts_with("+++") {
+        Style::default().fg(Color::Rgb(122, 214, 154))
+    } else if line.starts_with('-') && !line.starts_with("---") {
+        Style::default().fg(Color::Rgb(239, 122, 122))
+    } else if line.starts_with("\\ No newline at end of file") {
+        Style::default().fg(Color::Rgb(164, 164, 172))
+    } else {
+        Style::default()
+    };
+
+    Line::from(Span::styled(line.to_string(), style))
 }

@@ -7,7 +7,7 @@ use ratatui::{
 
 use crate::app::CachedData;
 
-use crate::components::core::SelectableList;
+use crate::components::core::{SelectableList, LIST_HIGHLIGHT_SYMBOL};
 use crate::components::Component;
 use crate::components::Intent;
 
@@ -68,7 +68,7 @@ impl Component for StashListPanel {
             .map(|stash| ListItem::new(format!("#{} {}", stash.index, stash.message)))
             .collect();
 
-        let list = SelectableList::new(items, "Stash", is_focused, "> ");
+        let list = SelectableList::new(items, "Stash", is_focused, LIST_HIGHLIGHT_SYMBOL);
         let state = &mut self.state.clone();
         list.render(frame, area, state);
     }

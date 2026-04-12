@@ -1,14 +1,17 @@
 use crossterm::event::{Event, KeyCode, KeyEventKind};
 use ratatui::{
     layout::Rect,
-    style::{Color, Style},
+    style::Style,
     text::{Line, Span},
-    widgets::{Block, Borders, ListItem, ListState, Paragraph},
+    widgets::{ListItem, ListState, Paragraph},
     Frame,
 };
 
 use crate::app::CachedData;
-use crate::components::core::{SelectableList, TreePanel};
+use crate::components::core::{
+    accent_primary_color, muted_text_style, panel_block, SelectableList, TreePanel,
+    LIST_HIGHLIGHT_SYMBOL,
+};
 use crate::components::Component;
 use crate::components::Intent;
 
@@ -94,6 +97,15 @@ impl CommitPanel {
             },
         }
     }
+
+    pub fn selected_tree_node(&self) -> Option<(String, bool)> {
+        match &self.mode {
+            CommitMode::FilesTree { tree, .. } => tree
+                .selected_node()
+                .map(|node| (node.path.clone(), node.is_dir)),
+            _ => None,
+        }
+    }
 }
 
 impl Default for CommitPanel {
@@ -125,7 +137,18 @@ impl Component for CommitPanel {
         }
 
         if let CommitMode::FilesTree { tree, .. } = &mut self.mode {
-            return tree.handle_event(event, data);
+            let before = tree.selected_node().map(|node| node.path.clone());
+            let intent = tree.handle_event(event, data);
+            if !matches!(intent, Intent::None) {
+                return intent;
+            }
+
+            let after = tree.selected_node().map(|node| node.path.clone());
+            if before != after {
+                return Intent::RefreshPanelDetail;
+            }
+
+            return Intent::None;
         }
 
         Intent::None
@@ -146,30 +169,21 @@ impl Component for CommitPanel {
                         ListItem::new(Line::from(vec![
                             Span::styled(
                                 format!("{} ", commit.short_id),
-                                Style::default().fg(Color::LightBlue),
+                                Style::default().fg(accent_primary_color()),
                             ),
                             Span::raw(commit.summary.clone()),
                         ]))
                     })
                     .collect();
 
-                let list = SelectableList::new(items, "Commits", is_focused, "> ");
+                let list = SelectableList::new(items, "Commits", is_focused, LIST_HIGHLIGHT_SYMBOL);
                 let state = &mut self.state.clone();
                 list.render(frame, area, state);
             }
             CommitMode::FilesLoading { summary, .. } => {
-                let border_style = if is_focused {
-                    Style::default().fg(Color::Yellow)
-                } else {
-                    Style::default().fg(Color::DarkGray)
-                };
-
-                let block = Block::default()
-                    .borders(Borders::ALL)
-                    .border_style(border_style)
-                    .title(format!("Files · {}", summary));
+                let block = panel_block(format!("Files · {}", summary), is_focused);
                 let paragraph = Paragraph::new("Loading commit files...\n\nPlease wait.")
-                    .style(Style::default().fg(Color::Gray))
+                    .style(muted_text_style())
                     .block(block);
                 frame.render_widget(paragraph, area);
             }
@@ -212,5 +226,39 @@ mod tests {
 
         let intent = panel.handle_event(&event, &CachedData::default());
         assert!(matches!(intent, Intent::ActivatePanel));
+    }
+
+    #[test]
+    fn tree_navigation_refreshes_panel_detail() {
+        let mut panel = CommitPanel::new();
+        let nodes = vec![
+            crate::components::core::TreeNode::new(
+                "a.rs".to_string(),
+                "a.rs".to_string(),
+                false,
+                0,
+                None,
+            ),
+            crate::components::core::TreeNode::new(
+                "b.rs".to_string(),
+                "b.rs".to_string(),
+                false,
+                0,
+                None,
+            ),
+        ];
+        panel.set_files_tree(
+            "abc12345".to_string(),
+            "summary".to_string(),
+            TreePanel::new("Files".to_string(), nodes, false),
+        );
+
+        let event = Event::Key(crossterm::event::KeyEvent::new(
+            KeyCode::Down,
+            crossterm::event::KeyModifiers::NONE,
+        ));
+        let intent = panel.handle_event(&event, &CachedData::default());
+
+        assert!(matches!(intent, Intent::RefreshPanelDetail));
     }
 }

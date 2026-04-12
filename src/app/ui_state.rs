@@ -10,6 +10,7 @@ pub enum Panel {
 }
 
 impl Panel {
+    #[allow(dead_code)]
     pub const ALL: [Panel; 6] = [
         Panel::MainView,
         Panel::Files,
@@ -30,6 +31,7 @@ impl Panel {
         }
     }
 
+    #[allow(dead_code)]
     pub fn next(self) -> Self {
         let index = Self::ALL
             .iter()
@@ -38,6 +40,7 @@ impl Panel {
         Self::ALL[(index + 1) % Self::ALL.len()]
     }
 
+    #[allow(dead_code)]
     pub fn previous(self) -> Self {
         let index = Self::ALL
             .iter()

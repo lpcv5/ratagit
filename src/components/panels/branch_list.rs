@@ -7,7 +7,7 @@ use ratatui::{
 
 use crate::app::CachedData;
 
-use crate::components::core::SelectableList;
+use crate::components::core::{SelectableList, LIST_HIGHLIGHT_SYMBOL};
 use crate::components::Component;
 use crate::components::Intent;
 
@@ -72,7 +72,7 @@ impl Component for BranchListPanel {
             })
             .collect();
 
-        let list = SelectableList::new(items, "Branches", is_focused, "> ");
+        let list = SelectableList::new(items, "Branches", is_focused, LIST_HIGHLIGHT_SYMBOL);
         let state = &mut self.state.clone();
         list.render(frame, area, state);
     }

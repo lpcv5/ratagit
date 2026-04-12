@@ -7,6 +7,7 @@ pub enum Intent {
     SelectNext,
     SelectPrevious,
     SwitchFocus(Panel),
+    RefreshPanelDetail,
     ScrollMainView(i16),
     ScrollLog(i16),
     ActivatePanel,

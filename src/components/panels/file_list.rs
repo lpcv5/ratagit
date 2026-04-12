@@ -54,6 +54,12 @@ impl FileListPanel {
         self.tree.selected_index()
     }
 
+    pub fn selected_tree_node(&self) -> Option<(String, bool)> {
+        self.tree
+            .selected_node()
+            .map(|node| (node.path.clone(), node.is_dir))
+    }
+
     /// 获取当前选中的文件节点
     #[allow(dead_code)]
     pub fn selected_node(&self) -> Option<&TreeNode> {
@@ -80,29 +86,46 @@ impl Component for FileListPanel {
                 return Intent::None;
             }
 
-            // Enter 键：如果是目录则展开/折叠，如果是文件则激活
+            // Enter 键：目录展开/折叠后也刷新右侧详情；文件上 Enter 仅作为手动刷新。
             if key.code == KeyCode::Enter {
                 if let Some(node) = self.tree.selected_node() {
                     if node.is_dir {
-                        // 目录：切换展开/折叠
                         self.tree.handle_event(event, data);
-                        return Intent::None;
+                        return Intent::RefreshPanelDetail;
                     } else {
-                        // 文件：激活
-                        return Intent::ActivatePanel;
+                        return Intent::RefreshPanelDetail;
                     }
                 }
                 return Intent::None;
             }
 
-            // 空格键：暂存文件
+            // 空格键：仅文件支持暂存操作
             if key.code == KeyCode::Char(' ') && key.modifiers.is_empty() {
-                return Intent::ToggleStageFile;
+                if self
+                    .tree
+                    .selected_node()
+                    .map(|node| !node.is_dir)
+                    .unwrap_or(false)
+                {
+                    return Intent::ToggleStageFile;
+                }
+                return Intent::None;
             }
         }
 
-        // 其他按键委派给 tree 处理
-        self.tree.handle_event(event, data)
+        // 其他按键委派给 tree 处理；若光标变化则刷新详情
+        let before = self.tree.selected_node().map(|node| node.path.clone());
+        let intent = self.tree.handle_event(event, data);
+        if !matches!(intent, Intent::None) {
+            return intent;
+        }
+
+        let after = self.tree.selected_node().map(|node| node.path.clone());
+        if before != after {
+            return Intent::RefreshPanelDetail;
+        }
+
+        Intent::None
     }
 
     fn render(&self, frame: &mut Frame, area: Rect, is_focused: bool, data: &CachedData) {
@@ -177,5 +200,33 @@ mod tests {
         // 找到 modified 文件节点
         let modified = nodes.iter().find(|n| n.path == "src/modified.rs").unwrap();
         assert_eq!(modified.status, Some(GitFileStatus::Modified));
+    }
+
+    #[test]
+    fn tree_navigation_refreshes_panel_detail() {
+        let files = vec![
+            StatusEntry {
+                path: "a.rs".to_string(),
+                is_staged: false,
+                is_unstaged: true,
+                is_untracked: false,
+            },
+            StatusEntry {
+                path: "b.rs".to_string(),
+                is_staged: false,
+                is_unstaged: true,
+                is_untracked: false,
+            },
+        ];
+
+        let mut panel = FileListPanel::new();
+        panel.update_files(&files);
+
+        let event = Event::Key(crossterm::event::KeyEvent::new(
+            KeyCode::Down,
+            crossterm::event::KeyModifiers::NONE,
+        ));
+        let intent = panel.handle_event(&event, &CachedData::default());
+        assert!(matches!(intent, Intent::RefreshPanelDetail));
     }
 }

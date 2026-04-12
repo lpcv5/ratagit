@@ -66,6 +66,10 @@ impl AppComponents {
         self.file_list_panel.selected_index()
     }
 
+    pub fn selected_file_tree_node(&self) -> Option<(String, bool)> {
+        self.file_list_panel.selected_tree_node()
+    }
+
     #[allow(dead_code)]
     pub fn selected_branch_index(&self) -> Option<usize> {
         self.branch_list_panel.selected_index()
@@ -82,6 +86,10 @@ impl AppComponents {
 
     pub fn commit_pending_commit_id(&self) -> Option<&str> {
         self.commit_panel.pending_commit_id()
+    }
+
+    pub fn selected_commit_tree_node(&self) -> Option<(String, bool)> {
+        self.commit_panel.selected_tree_node()
     }
 
     #[allow(dead_code)]

@@ -219,6 +219,50 @@ impl CommandHandler for GetCommitFilesHandler {
     }
 }
 
+/// 获取 commit 某路径差异处理器（支持文件/目录）
+pub struct GetCommitDiffHandler;
+impl CommandHandler for GetCommitDiffHandler {
+    fn handle(
+        &self,
+        envelope: &CommandEnvelope,
+        repo: &GitRepo,
+        event_tx: &UnboundedSender<EventEnvelope>,
+    ) -> Result<()> {
+        let (commit_id, path, is_dir) = if let crate::backend::BackendCommand::GetCommitDiff {
+            commit_id,
+            path,
+            is_dir,
+        } = &envelope.command
+        {
+            (commit_id.clone(), path.clone(), *is_dir)
+        } else {
+            return Ok(());
+        };
+
+        match super::git_ops::get_commit_diff(repo, &commit_id, &path, is_dir) {
+            Ok(diff) => {
+                let short_id: String = commit_id.chars().take(8).collect();
+                let target = if is_dir {
+                    format!("{short_id}:{path}/")
+                } else {
+                    format!("{short_id}:{path}")
+                };
+
+                let _ = event_tx.send(EventEnvelope::new(
+                    Some(envelope.request_id),
+                    FrontendEvent::DiffLoaded {
+                        request_id: envelope.request_id,
+                        file_path: target,
+                        diff,
+                    },
+                ));
+            }
+            Err(error) => send_error(event_tx, Some(envelope.request_id), "commit diff", error),
+        }
+        Ok(())
+    }
+}
+
 /// 暂存文件处理器
 pub struct StageFileHandler;
 impl CommandHandler for StageFileHandler {
