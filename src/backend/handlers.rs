@@ -5,7 +5,7 @@ use super::{CommandEnvelope, EventEnvelope, FrontendEvent};
 use crate::shared::path_utils::{
     dedupe_targets_parent_first, diff_target_label, diff_target_pathspec,
 };
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::mpsc::Sender;
 
 /// 命令处理器 trait
 pub trait CommandHandler: Send + Sync {
@@ -14,7 +14,7 @@ pub trait CommandHandler: Send + Sync {
         &self,
         envelope: &CommandEnvelope,
         repo: &GitRepo,
-        event_tx: &UnboundedSender<EventEnvelope>,
+        event_tx: &Sender<EventEnvelope>,
     ) -> Result<()>;
 
     /// 是否需要可变仓库引用
@@ -27,7 +27,7 @@ pub trait CommandHandler: Send + Sync {
         &self,
         _envelope: &CommandEnvelope,
         _repo: &mut GitRepo,
-        _event_tx: &UnboundedSender<EventEnvelope>,
+        _event_tx: &Sender<EventEnvelope>,
     ) -> Result<()> {
         unreachable!("handle_mut should only be called when needs_mut_repo returns true")
     }
@@ -40,11 +40,11 @@ impl CommandHandler for RefreshStatusHandler {
         &self,
         _envelope: &CommandEnvelope,
         repo: &GitRepo,
-        event_tx: &UnboundedSender<EventEnvelope>,
+        event_tx: &Sender<EventEnvelope>,
     ) -> Result<()> {
         match super::git_ops::get_status_files(repo) {
             Ok(files) => {
-                let _ = event_tx.send(EventEnvelope::new(
+                let _ = event_tx.try_send(EventEnvelope::new(
                     None,
                     FrontendEvent::FilesUpdated { files },
                 ));
@@ -62,11 +62,11 @@ impl CommandHandler for RefreshBranchesHandler {
         &self,
         _envelope: &CommandEnvelope,
         repo: &GitRepo,
-        event_tx: &UnboundedSender<EventEnvelope>,
+        event_tx: &Sender<EventEnvelope>,
     ) -> Result<()> {
         match super::git_ops::get_branches(repo) {
             Ok(branches) => {
-                let _ = event_tx.send(EventEnvelope::new(
+                let _ = event_tx.try_send(EventEnvelope::new(
                     None,
                     FrontendEvent::BranchesUpdated { branches },
                 ));
@@ -84,7 +84,7 @@ impl CommandHandler for RefreshCommitsHandler {
         &self,
         envelope: &CommandEnvelope,
         repo: &GitRepo,
-        event_tx: &UnboundedSender<EventEnvelope>,
+        event_tx: &Sender<EventEnvelope>,
     ) -> Result<()> {
         let limit =
             if let crate::backend::BackendCommand::RefreshCommits { limit } = &envelope.command {
@@ -95,7 +95,7 @@ impl CommandHandler for RefreshCommitsHandler {
 
         match super::git_ops::get_commits(repo, limit) {
             Ok(commits) => {
-                let _ = event_tx.send(EventEnvelope::new(
+                let _ = event_tx.try_send(EventEnvelope::new(
                     None,
                     FrontendEvent::CommitsUpdated { commits },
                 ));
@@ -113,7 +113,7 @@ impl CommandHandler for RefreshStashesHandler {
         &self,
         _envelope: &CommandEnvelope,
         _repo: &GitRepo,
-        _event_tx: &UnboundedSender<EventEnvelope>,
+        _event_tx: &Sender<EventEnvelope>,
     ) -> Result<()> {
         // 这个实现不会被调用，因为 needs_mut_repo 返回 true
         unreachable!()
@@ -127,11 +127,11 @@ impl CommandHandler for RefreshStashesHandler {
         &self,
         _envelope: &CommandEnvelope,
         repo: &mut GitRepo,
-        event_tx: &UnboundedSender<EventEnvelope>,
+        event_tx: &Sender<EventEnvelope>,
     ) -> Result<()> {
         match super::git_ops::get_stashes(repo) {
             Ok(stashes) => {
-                let _ = event_tx.send(EventEnvelope::new(
+                let _ = event_tx.try_send(EventEnvelope::new(
                     None,
                     FrontendEvent::StashesUpdated { stashes },
                 ));
@@ -149,7 +149,7 @@ impl CommandHandler for GetDiffHandler {
         &self,
         envelope: &CommandEnvelope,
         repo: &GitRepo,
-        event_tx: &UnboundedSender<EventEnvelope>,
+        event_tx: &Sender<EventEnvelope>,
     ) -> Result<()> {
         let file_path =
             if let crate::backend::BackendCommand::GetDiff { file_path } = &envelope.command {
@@ -160,7 +160,7 @@ impl CommandHandler for GetDiffHandler {
 
         match super::git_ops::get_diff(repo, &file_path) {
             Ok(diff) => {
-                let _ = event_tx.send(EventEnvelope::new(
+                let _ = event_tx.try_send(EventEnvelope::new(
                     Some(envelope.request_id),
                     FrontendEvent::DiffLoaded {
                         request_id: envelope.request_id,
@@ -182,7 +182,7 @@ impl CommandHandler for GetDiffBatchHandler {
         &self,
         envelope: &CommandEnvelope,
         repo: &GitRepo,
-        event_tx: &UnboundedSender<EventEnvelope>,
+        event_tx: &Sender<EventEnvelope>,
     ) -> Result<()> {
         let targets =
             if let crate::backend::BackendCommand::GetDiffBatch { targets } = &envelope.command {
@@ -207,7 +207,7 @@ impl CommandHandler for GetDiffBatchHandler {
             sections.join("\n\n")
         };
 
-        let _ = event_tx.send(EventEnvelope::new(
+        let _ = event_tx.try_send(EventEnvelope::new(
             Some(envelope.request_id),
             FrontendEvent::DiffLoaded {
                 request_id: envelope.request_id,
@@ -226,7 +226,7 @@ impl CommandHandler for GetCommitFilesHandler {
         &self,
         envelope: &CommandEnvelope,
         repo: &GitRepo,
-        event_tx: &UnboundedSender<EventEnvelope>,
+        event_tx: &Sender<EventEnvelope>,
     ) -> Result<()> {
         let commit_id = if let crate::backend::BackendCommand::GetCommitFiles { commit_id } =
             &envelope.command
@@ -241,7 +241,7 @@ impl CommandHandler for GetCommitFilesHandler {
         if let Some(commit) = commits.iter().find(|c| c.id == commit_id) {
             match super::git_ops::get_commit_files(repo, commit) {
                 Ok(files) => {
-                    let _ = event_tx.send(EventEnvelope::new(
+                    let _ = event_tx.try_send(EventEnvelope::new(
                         Some(envelope.request_id),
                         FrontendEvent::CommitFilesLoaded {
                             request_id: envelope.request_id,
@@ -273,7 +273,7 @@ impl CommandHandler for GetCommitDiffHandler {
         &self,
         envelope: &CommandEnvelope,
         repo: &GitRepo,
-        event_tx: &UnboundedSender<EventEnvelope>,
+        event_tx: &Sender<EventEnvelope>,
     ) -> Result<()> {
         let (commit_id, path, is_dir) = if let crate::backend::BackendCommand::GetCommitDiff {
             commit_id,
@@ -295,7 +295,7 @@ impl CommandHandler for GetCommitDiffHandler {
                     format!("{short_id}:{path}")
                 };
 
-                let _ = event_tx.send(EventEnvelope::new(
+                let _ = event_tx.try_send(EventEnvelope::new(
                     Some(envelope.request_id),
                     FrontendEvent::DiffLoaded {
                         request_id: envelope.request_id,
@@ -317,7 +317,7 @@ impl CommandHandler for GetCommitDiffBatchHandler {
         &self,
         envelope: &CommandEnvelope,
         repo: &GitRepo,
-        event_tx: &UnboundedSender<EventEnvelope>,
+        event_tx: &Sender<EventEnvelope>,
     ) -> Result<()> {
         let (commit_id, targets) =
             if let crate::backend::BackendCommand::GetCommitDiffBatch { commit_id, targets } =
@@ -345,7 +345,7 @@ impl CommandHandler for GetCommitDiffBatchHandler {
             sections.join("\n\n")
         };
 
-        let _ = event_tx.send(EventEnvelope::new(
+        let _ = event_tx.try_send(EventEnvelope::new(
             Some(envelope.request_id),
             FrontendEvent::DiffLoaded {
                 request_id: envelope.request_id,
@@ -364,7 +364,7 @@ impl CommandHandler for GetBranchGraphHandler {
         &self,
         envelope: &CommandEnvelope,
         repo: &GitRepo,
-        event_tx: &UnboundedSender<EventEnvelope>,
+        event_tx: &Sender<EventEnvelope>,
     ) -> Result<()> {
         let (branch_name, limit) =
             if let crate::backend::BackendCommand::GetBranchGraph { branch_name, limit } =
@@ -377,7 +377,7 @@ impl CommandHandler for GetBranchGraphHandler {
 
         match super::git_ops::get_branch_graph(repo, &branch_name, limit) {
             Ok(graph) => {
-                let _ = event_tx.send(EventEnvelope::new(
+                let _ = event_tx.try_send(EventEnvelope::new(
                     Some(envelope.request_id),
                     FrontendEvent::BranchGraphLoaded {
                         request_id: envelope.request_id,
@@ -399,7 +399,7 @@ impl CommandHandler for StageFileHandler {
         &self,
         envelope: &CommandEnvelope,
         repo: &GitRepo,
-        event_tx: &UnboundedSender<EventEnvelope>,
+        event_tx: &Sender<EventEnvelope>,
     ) -> Result<()> {
         let file_path =
             if let crate::backend::BackendCommand::StageFile { file_path } = &envelope.command {
@@ -410,7 +410,7 @@ impl CommandHandler for StageFileHandler {
 
         match super::git_ops::stage_file(repo, &file_path) {
             Ok(()) => {
-                let _ = event_tx.send(EventEnvelope::new(
+                let _ = event_tx.try_send(EventEnvelope::new(
                     Some(envelope.request_id),
                     FrontendEvent::ActionSucceeded {
                         request_id: envelope.request_id,
@@ -419,7 +419,7 @@ impl CommandHandler for StageFileHandler {
                 ));
                 // 自动刷新文件状态
                 if let Ok(files) = super::git_ops::get_status_files(repo) {
-                    let _ = event_tx.send(EventEnvelope::new(
+                    let _ = event_tx.try_send(EventEnvelope::new(
                         None,
                         FrontendEvent::FilesUpdated { files },
                     ));
@@ -438,7 +438,7 @@ impl CommandHandler for StageFilesHandler {
         &self,
         envelope: &CommandEnvelope,
         repo: &GitRepo,
-        event_tx: &UnboundedSender<EventEnvelope>,
+        event_tx: &Sender<EventEnvelope>,
     ) -> Result<()> {
         let file_paths =
             if let crate::backend::BackendCommand::StageFiles { file_paths } = &envelope.command {
@@ -470,7 +470,7 @@ impl CommandHandler for UnstageFileHandler {
         &self,
         envelope: &CommandEnvelope,
         repo: &GitRepo,
-        event_tx: &UnboundedSender<EventEnvelope>,
+        event_tx: &Sender<EventEnvelope>,
     ) -> Result<()> {
         let file_path =
             if let crate::backend::BackendCommand::UnstageFile { file_path } = &envelope.command {
@@ -481,7 +481,7 @@ impl CommandHandler for UnstageFileHandler {
 
         match super::git_ops::unstage_file(repo, &file_path) {
             Ok(()) => {
-                let _ = event_tx.send(EventEnvelope::new(
+                let _ = event_tx.try_send(EventEnvelope::new(
                     Some(envelope.request_id),
                     FrontendEvent::ActionSucceeded {
                         request_id: envelope.request_id,
@@ -490,7 +490,7 @@ impl CommandHandler for UnstageFileHandler {
                 ));
                 // 自动刷新文件状态
                 if let Ok(files) = super::git_ops::get_status_files(repo) {
-                    let _ = event_tx.send(EventEnvelope::new(
+                    let _ = event_tx.try_send(EventEnvelope::new(
                         None,
                         FrontendEvent::FilesUpdated { files },
                     ));
@@ -509,7 +509,7 @@ impl CommandHandler for UnstageFilesHandler {
         &self,
         envelope: &CommandEnvelope,
         repo: &GitRepo,
-        event_tx: &UnboundedSender<EventEnvelope>,
+        event_tx: &Sender<EventEnvelope>,
     ) -> Result<()> {
         let file_paths = if let crate::backend::BackendCommand::UnstageFiles { file_paths } =
             &envelope.command
@@ -553,7 +553,7 @@ where
 }
 
 fn send_batch_action_result(
-    event_tx: &UnboundedSender<EventEnvelope>,
+    event_tx: &Sender<EventEnvelope>,
     request_id: u64,
     context: &str,
     verb: &str,
@@ -561,7 +561,7 @@ fn send_batch_action_result(
     failed: &[String],
 ) {
     if !success.is_empty() {
-        let _ = event_tx.send(EventEnvelope::new(
+        let _ = event_tx.try_send(EventEnvelope::new(
             Some(request_id),
             FrontendEvent::ActionSucceeded {
                 request_id,
@@ -587,9 +587,9 @@ fn send_batch_action_result(
     }
 }
 
-fn refresh_files(event_tx: &UnboundedSender<EventEnvelope>, repo: &GitRepo) {
+fn refresh_files(event_tx: &Sender<EventEnvelope>, repo: &GitRepo) {
     if let Ok(files) = super::git_ops::get_status_files(repo) {
-        let _ = event_tx.send(EventEnvelope::new(
+        let _ = event_tx.try_send(EventEnvelope::new(
             None,
             FrontendEvent::FilesUpdated { files },
         ));
@@ -597,12 +597,12 @@ fn refresh_files(event_tx: &UnboundedSender<EventEnvelope>, repo: &GitRepo) {
 }
 
 fn send_error(
-    event_tx: &UnboundedSender<EventEnvelope>,
+    event_tx: &Sender<EventEnvelope>,
     request_id: Option<u64>,
     context: &str,
     error: impl std::fmt::Display,
 ) {
-    let _ = event_tx.send(EventEnvelope::new(
+    let _ = event_tx.try_send(EventEnvelope::new(
         request_id,
         FrontendEvent::Error {
             request_id,

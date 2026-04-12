@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::{Receiver, Sender};
 
 use super::git_ops::GitRepo;
 use super::handlers::CommandHandler;
@@ -31,14 +31,11 @@ enum CommandKey {
     UnstageFiles,
 }
 
-pub async fn run_backend(
-    mut cmd_rx: UnboundedReceiver<CommandEnvelope>,
-    event_tx: UnboundedSender<EventEnvelope>,
-) {
+pub async fn run_backend(mut cmd_rx: Receiver<CommandEnvelope>, event_tx: Sender<EventEnvelope>) {
     let mut repo = match GitRepo::discover() {
         Ok(repo) => Some(repo),
         Err(error) => {
-            let _ = event_tx.send(EventEnvelope::new(
+            let _ = event_tx.try_send(EventEnvelope::new(
                 None,
                 FrontendEvent::Error {
                     request_id: None,

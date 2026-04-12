@@ -37,8 +37,8 @@ pub struct App {
 
 impl App {
     pub fn new(
-        cmd_tx: tokio::sync::mpsc::UnboundedSender<crate::backend::CommandEnvelope>,
-        event_rx: tokio::sync::mpsc::UnboundedReceiver<crate::backend::EventEnvelope>,
+        cmd_tx: tokio::sync::mpsc::Sender<crate::backend::CommandEnvelope>,
+        event_rx: tokio::sync::mpsc::Receiver<crate::backend::EventEnvelope>,
     ) -> Self {
         Self {
             state: AppState::new(cmd_tx, event_rx),
@@ -390,22 +390,34 @@ impl App {
 
     fn request_refresh_all(&self) {
         // 刷新类事件不需要请求 ID（它们不是由用户操作触发的）
-        let _ = self.state.cmd_tx.send(crate::backend::CommandEnvelope::new(
-            0,
-            BackendCommand::RefreshStatus,
-        ));
-        let _ = self.state.cmd_tx.send(crate::backend::CommandEnvelope::new(
-            0,
-            BackendCommand::RefreshBranches,
-        ));
-        let _ = self.state.cmd_tx.send(crate::backend::CommandEnvelope::new(
-            0,
-            BackendCommand::RefreshCommits { limit: 30 },
-        ));
-        let _ = self.state.cmd_tx.send(crate::backend::CommandEnvelope::new(
-            0,
-            BackendCommand::RefreshStashes,
-        ));
+        let _ = self
+            .state
+            .cmd_tx
+            .try_send(crate::backend::CommandEnvelope::new(
+                0,
+                BackendCommand::RefreshStatus,
+            ));
+        let _ = self
+            .state
+            .cmd_tx
+            .try_send(crate::backend::CommandEnvelope::new(
+                0,
+                BackendCommand::RefreshBranches,
+            ));
+        let _ = self
+            .state
+            .cmd_tx
+            .try_send(crate::backend::CommandEnvelope::new(
+                0,
+                BackendCommand::RefreshCommits { limit: 30 },
+            ));
+        let _ = self
+            .state
+            .cmd_tx
+            .try_send(crate::backend::CommandEnvelope::new(
+                0,
+                BackendCommand::RefreshStashes,
+            ));
     }
 
     fn set_active_panel(&mut self, panel: Panel) -> Result<()> {

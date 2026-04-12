@@ -2,7 +2,7 @@ use ratatui::widgets::ListState;
 
 use crate::backend::git_ops::{BranchEntry, CommitEntry, StashEntry, StatusEntry};
 use crate::backend::{CommandEnvelope, EventEnvelope};
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::{Receiver, Sender};
 
 use super::components::AppComponents;
 use super::{CachedData, UiState};
@@ -11,18 +11,15 @@ use super::{CachedData, UiState};
 pub struct AppState {
     pub ui_state: UiState,
     pub data_cache: CachedData,
-    pub cmd_tx: UnboundedSender<CommandEnvelope>,
-    pub event_rx: UnboundedReceiver<EventEnvelope>,
+    pub cmd_tx: Sender<CommandEnvelope>,
+    pub event_rx: Receiver<EventEnvelope>,
     pub should_quit: bool,
     pub components: AppComponents,
     next_request_id: u64,
 }
 
 impl AppState {
-    pub fn new(
-        cmd_tx: UnboundedSender<CommandEnvelope>,
-        event_rx: UnboundedReceiver<EventEnvelope>,
-    ) -> Self {
+    pub fn new(cmd_tx: Sender<CommandEnvelope>, event_rx: Receiver<EventEnvelope>) -> Self {
         Self {
             cmd_tx,
             event_rx,
@@ -45,7 +42,7 @@ impl AppState {
     pub fn send_command(&mut self, command: crate::backend::BackendCommand) -> anyhow::Result<u64> {
         let request_id = self.next_request_id();
         self.cmd_tx
-            .send(CommandEnvelope::new(request_id, command))?;
+            .try_send(CommandEnvelope::new(request_id, command))?;
         Ok(request_id)
     }
 
