@@ -65,7 +65,7 @@ impl Component for MainViewPanel {
         Intent::None
     }
 
-    fn render(&self, frame: &mut Frame, area: Rect, is_focused: bool, data: &CachedData) {
+    fn render(&mut self, frame: &mut Frame, area: Rect, is_focused: bool, data: &CachedData) {
         let title = if let Some((path, _)) = &data.current_diff {
             format!("Main View · Diff · {path}")
         } else {

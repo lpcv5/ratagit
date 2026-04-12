@@ -147,7 +147,7 @@ impl Component for FileListPanel {
         Intent::None
     }
 
-    fn render(&self, frame: &mut Frame, area: Rect, is_focused: bool, data: &CachedData) {
+    fn render(&mut self, frame: &mut Frame, area: Rect, is_focused: bool, data: &CachedData) {
         if data.files.is_empty() {
             SelectableList::render_empty(frame, area, "Files", is_focused);
             return;

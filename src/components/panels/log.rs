@@ -53,7 +53,7 @@ impl Component for LogPanel {
         Intent::None
     }
 
-    fn render(&self, frame: &mut Frame, area: Rect, is_focused: bool, data: &CachedData) {
+    fn render(&mut self, frame: &mut Frame, area: Rect, is_focused: bool, data: &CachedData) {
         let content = if data.log_entries.is_empty() {
             "No log messages yet.".to_string()
         } else {

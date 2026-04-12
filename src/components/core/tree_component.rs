@@ -234,7 +234,7 @@ impl Component for TreePanel {
         Intent::None
     }
 
-    fn render(&self, frame: &mut Frame, area: Rect, is_focused: bool, _data: &CachedData) {
+    fn render(&mut self, frame: &mut Frame, area: Rect, is_focused: bool, _data: &CachedData) {
         let visible = self.visible_nodes();
         let multi_active = self.is_multi_active();
         let title = if multi_active {

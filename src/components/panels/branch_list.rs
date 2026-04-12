@@ -56,7 +56,7 @@ impl Component for BranchListPanel {
         Intent::None
     }
 
-    fn render(&self, frame: &mut Frame, area: Rect, is_focused: bool, data: &CachedData) {
+    fn render(&mut self, frame: &mut Frame, area: Rect, is_focused: bool, data: &CachedData) {
         if data.branches.is_empty() {
             SelectableList::render_empty(frame, area, "Branches", is_focused);
             return;
@@ -73,7 +73,6 @@ impl Component for BranchListPanel {
             .collect();
 
         let list = SelectableList::new(items, "Branches", is_focused, LIST_HIGHLIGHT_SYMBOL);
-        let state = &mut self.state.clone();
-        list.render(frame, area, state);
+        list.render(frame, area, &mut self.state);
     }
 }

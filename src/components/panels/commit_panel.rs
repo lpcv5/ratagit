@@ -229,8 +229,8 @@ impl Component for CommitPanel {
         Intent::None
     }
 
-    fn render(&self, frame: &mut Frame, area: Rect, is_focused: bool, data: &CachedData) {
-        match &self.mode {
+    fn render(&mut self, frame: &mut Frame, area: Rect, is_focused: bool, data: &CachedData) {
+        match &mut self.mode {
             CommitMode::List => {
                 if data.commits.is_empty() {
                     SelectableList::render_empty(frame, area, "Commits", is_focused);
@@ -262,8 +262,7 @@ impl Component for CommitPanel {
                     .collect();
 
                 let list = SelectableList::new(items, &title, is_focused, LIST_HIGHLIGHT_SYMBOL);
-                let state = &mut self.state.clone();
-                list.render(frame, area, state);
+                list.render(frame, area, &mut self.state);
             }
             CommitMode::FilesLoading { summary, .. } => {
                 let block = panel_block(format!("Files · {}", summary), is_focused);

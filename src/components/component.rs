@@ -14,5 +14,5 @@ pub trait Component {
     fn handle_event(&mut self, event: &Event, data: &CachedData) -> Intent;
 
     /// 渲染组件
-    fn render(&self, frame: &mut Frame, area: Rect, is_focused: bool, data: &CachedData);
+    fn render(&mut self, frame: &mut Frame, area: Rect, is_focused: bool, data: &CachedData);
 }
