@@ -16,6 +16,7 @@ use crate::components::Component;
 use crate::components::Intent;
 use crate::shared::path_utils::dedupe_targets_parent_first;
 
+use super::request_tracker::RequestTracker;
 use super::state::AppState;
 use super::Panel;
 
@@ -31,12 +32,7 @@ enum UiSlot {
 
 pub struct App {
     state: AppState,
-    /// 等待响应的请求 ID 集合
-    pending_requests: HashSet<u64>,
-    /// 当前“最新 diff”请求 ID（用于丢弃过期 diff 响应）
-    latest_diff_request_id: Option<u64>,
-    /// 当前“最新分支图”请求 ID（用于丢弃过期分支图响应）
-    latest_branch_graph_request_id: Option<u64>,
+    requests: RequestTracker,
 }
 
 impl App {
@@ -46,9 +42,7 @@ impl App {
     ) -> Self {
         Self {
             state: AppState::new(cmd_tx, event_rx),
-            pending_requests: HashSet::new(),
-            latest_diff_request_id: None,
-            latest_branch_graph_request_id: None,
+            requests: RequestTracker::new(),
         }
     }
 
@@ -208,7 +202,7 @@ impl App {
             Intent::ToggleStageFile => self.toggle_stage_selected_file()?,
             Intent::SendCommand(cmd) => {
                 let request_id = self.state.send_command(cmd)?;
-                self.pending_requests.insert(request_id);
+                self.requests.track(request_id);
             }
             Intent::None => {}
         }
@@ -221,8 +215,7 @@ impl App {
 
         // 乱序防护：只接受已发送的请求 ID
         if let Some(id) = request_id {
-            if !self.pending_requests.remove(&id) {
-                // 过期/未知响应，丢弃
+            if !self.requests.complete(id) {
                 return Ok(());
             }
         }
@@ -451,7 +444,7 @@ impl App {
                     let request_id = self
                         .state
                         .send_command(BackendCommand::GetCommitFiles { commit_id })?;
-                    self.pending_requests.insert(request_id);
+                    self.requests.track(request_id);
                 }
             }
             _ => {
@@ -735,7 +728,7 @@ impl App {
         };
 
         let request_id = self.state.send_command(command)?;
-        self.pending_requests.insert(request_id);
+        self.requests.track(request_id);
         Ok(())
     }
 
@@ -875,12 +868,7 @@ impl App {
 
     fn send_latest_diff_command(&mut self, command: BackendCommand) -> Result<()> {
         let request_id = self.state.send_command(command)?;
-
-        if let Some(previous) = self.latest_diff_request_id.replace(request_id) {
-            self.pending_requests.remove(&previous);
-        }
-
-        self.pending_requests.insert(request_id);
+        self.requests.set_latest_diff(request_id);
         Ok(())
     }
 
@@ -889,12 +877,7 @@ impl App {
             branch_name,
             limit: BRANCH_GRAPH_LIMIT,
         })?;
-
-        if let Some(previous) = self.latest_branch_graph_request_id.replace(request_id) {
-            self.pending_requests.remove(&previous);
-        }
-
-        self.pending_requests.insert(request_id);
+        self.requests.set_latest_branch_graph(request_id);
         Ok(())
     }
 
