@@ -1,34 +1,18 @@
-use crossterm::event::{Event, KeyCode, KeyEventKind};
-use ratatui::{
-    layout::Rect,
-    widgets::{ListItem, ListState},
-    Frame,
-};
+use crate::components::core::{render_branches, SimpleListPanel};
 
-use crate::app::CachedData;
-
-use crate::components::core::{SelectableList, LIST_HIGHLIGHT_SYMBOL};
-use crate::components::Component;
-use crate::components::Intent;
-
-/// 分支列表面板组件（持有自身状态）
-pub struct BranchListPanel {
-    state: ListState,
-}
+pub struct BranchListPanel(pub SimpleListPanel);
 
 impl BranchListPanel {
     pub fn new() -> Self {
-        let mut state = ListState::default();
-        state.select(Some(0));
-        Self { state }
+        Self(SimpleListPanel::new("Branches", render_branches))
     }
 
-    pub fn state_mut(&mut self) -> &mut ListState {
-        &mut self.state
+    pub fn state_mut(&mut self) -> &mut ratatui::widgets::ListState {
+        self.0.state_mut()
     }
 
     pub fn selected_index(&self) -> Option<usize> {
-        self.state.selected()
+        self.0.selected_index()
     }
 }
 
@@ -38,41 +22,22 @@ impl Default for BranchListPanel {
     }
 }
 
-impl Component for BranchListPanel {
-    fn handle_event(&mut self, event: &Event, _data: &CachedData) -> Intent {
-        if let Event::Key(key) = event {
-            if key.kind != KeyEventKind::Press {
-                return Intent::None;
-            }
-
-            match key.code {
-                KeyCode::Char('j') | KeyCode::Down => return Intent::SelectNext,
-                KeyCode::Char('k') | KeyCode::Up => return Intent::SelectPrevious,
-                KeyCode::Enter => return Intent::ActivatePanel,
-                _ => {}
-            }
-        }
-
-        Intent::None
+impl crate::components::Component for BranchListPanel {
+    fn handle_event(
+        &mut self,
+        event: &crossterm::event::Event,
+        data: &crate::app::CachedData,
+    ) -> crate::components::Intent {
+        self.0.handle_event(event, data)
     }
 
-    fn render(&mut self, frame: &mut Frame, area: Rect, is_focused: bool, data: &CachedData) {
-        if data.branches.is_empty() {
-            SelectableList::render_empty(frame, area, "Branches", is_focused);
-            return;
-        }
-
-        let items: Vec<ListItem<'_>> = data
-            .branches
-            .iter()
-            .map(|branch| {
-                let marker = if branch.is_head { "*" } else { " " };
-                let upstream = branch.upstream.as_deref().unwrap_or("-");
-                ListItem::new(format!("[{marker}] {}  ({upstream})", branch.name))
-            })
-            .collect();
-
-        let list = SelectableList::new(items, "Branches", is_focused, LIST_HIGHLIGHT_SYMBOL);
-        list.render(frame, area, &mut self.state);
+    fn render(
+        &mut self,
+        frame: &mut ratatui::Frame,
+        area: ratatui::layout::Rect,
+        is_focused: bool,
+        data: &crate::app::CachedData,
+    ) {
+        self.0.render(frame, area, is_focused, data);
     }
 }
