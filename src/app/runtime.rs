@@ -14,6 +14,7 @@ use crate::backend::{BackendCommand, DiffTarget, EventEnvelope, FrontendEvent};
 use crate::components::panels::CommitModeView;
 use crate::components::Component;
 use crate::components::Intent;
+use crate::shared::path_utils::dedupe_targets_parent_first;
 
 use super::state::AppState;
 use super::Panel;
@@ -612,7 +613,8 @@ impl App {
     fn request_selected_file_diff(&mut self) -> Result<()> {
         let targets = self.state.components.selected_file_tree_targets();
         if self.state.components.is_file_multi_select_active() && !targets.is_empty() {
-            let deduped = dedupe_targets_parent_first(to_diff_targets(&targets));
+            let targets = to_diff_targets(&targets);
+            let deduped = dedupe_targets_parent_first(&targets);
             self.state.data_cache.current_diff = Some((
                 "Main View · Files".to_string(),
                 format!("Loading diff for {} selected targets...", deduped.len()),
@@ -655,7 +657,8 @@ impl App {
     fn request_selected_commit_tree_diff(&mut self, commit_id: &str, summary: &str) -> Result<()> {
         let targets = self.state.components.selected_commit_tree_targets();
         if self.state.components.is_commit_tree_multi_select_active() && !targets.is_empty() {
-            let deduped = dedupe_targets_parent_first(to_diff_targets(&targets));
+            let targets = to_diff_targets(&targets);
+            let deduped = dedupe_targets_parent_first(&targets);
             self.send_latest_diff_command(BackendCommand::GetCommitDiffBatch {
                 commit_id: commit_id.to_string(),
                 targets: deduped,
@@ -1126,37 +1129,6 @@ fn to_diff_targets(targets: &[(String, bool)]) -> Vec<DiffTarget> {
         .collect()
 }
 
-fn dedupe_targets_parent_first(targets: Vec<DiffTarget>) -> Vec<DiffTarget> {
-    let selected_dirs: Vec<String> = targets
-        .iter()
-        .filter(|target| target.is_dir)
-        .map(|target| normalize_path(&target.path))
-        .collect();
-    let mut deduped = Vec::new();
-    let mut seen = HashSet::new();
-
-    for target in targets {
-        let normalized = normalize_path(&target.path);
-        let parent_selected = selected_dirs
-            .iter()
-            .any(|dir| dir != &normalized && normalized.starts_with(format!("{dir}/").as_str()));
-        if parent_selected {
-            continue;
-        }
-
-        let key = format!("{}:{}", normalized, target.is_dir);
-        if seen.insert(key) {
-            deduped.push(target);
-        }
-    }
-
-    deduped
-}
-
-fn normalize_path(path: &str) -> String {
-    path.trim_end_matches('/').to_string()
-}
-
 fn cycle_selection(state: &mut ListState, len: usize, delta: i8) {
     if len == 0 {
         state.select(None);
@@ -1268,7 +1240,7 @@ mod tests {
             },
         ];
 
-        let deduped = dedupe_targets_parent_first(targets);
+        let deduped = dedupe_targets_parent_first(&targets);
         assert_eq!(deduped.len(), 2);
         assert!(deduped
             .iter()

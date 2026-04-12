@@ -1,6 +1,7 @@
 mod app;
 mod backend;
 mod components;
+mod shared;
 
 use anyhow::Result;
 use app::App;

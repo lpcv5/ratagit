@@ -1,8 +1,10 @@
 use anyhow::Result;
-use std::collections::HashSet;
 
 use super::git_ops::GitRepo;
-use super::{CommandEnvelope, DiffTarget, EventEnvelope, FrontendEvent};
+use super::{CommandEnvelope, EventEnvelope, FrontendEvent};
+use crate::shared::path_utils::{
+    dedupe_targets_parent_first, diff_target_label, diff_target_pathspec,
+};
 use tokio::sync::mpsc::UnboundedSender;
 
 /// 命令处理器 trait
@@ -592,57 +594,6 @@ fn refresh_files(event_tx: &UnboundedSender<EventEnvelope>, repo: &GitRepo) {
             FrontendEvent::FilesUpdated { files },
         ));
     }
-}
-
-fn diff_target_label(target: &DiffTarget) -> String {
-    if target.is_dir {
-        if target.path.ends_with('/') {
-            target.path.clone()
-        } else {
-            format!("{}/", target.path)
-        }
-    } else {
-        target.path.clone()
-    }
-}
-
-fn diff_target_pathspec(target: &DiffTarget) -> String {
-    if target.is_dir && !target.path.ends_with('/') {
-        format!("{}/", target.path)
-    } else {
-        target.path.clone()
-    }
-}
-
-fn dedupe_targets_parent_first(targets: &[DiffTarget]) -> Vec<DiffTarget> {
-    let selected_dirs: Vec<String> = targets
-        .iter()
-        .filter(|target| target.is_dir)
-        .map(|target| normalize_path(&target.path))
-        .collect();
-    let mut seen = HashSet::new();
-
-    targets
-        .iter()
-        .filter(|target| {
-            let normalized = normalize_path(&target.path);
-            let parent_selected = selected_dirs.iter().any(|dir| {
-                dir != &normalized
-                    && (normalized == *dir || normalized.starts_with(format!("{dir}/").as_str()))
-            });
-            if parent_selected {
-                return false;
-            }
-
-            let unique = format!("{}:{}", normalized, target.is_dir);
-            seen.insert(unique)
-        })
-        .cloned()
-        .collect()
-}
-
-fn normalize_path(path: &str) -> String {
-    path.trim_end_matches('/').to_string()
 }
 
 fn send_error(
