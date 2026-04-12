@@ -1,6 +1,8 @@
 use std::collections::HashMap;
+use std::time::Duration;
 
 use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::time::timeout;
 
 use super::git_ops::GitRepo;
 use super::handlers::CommandHandler;
@@ -11,6 +13,8 @@ use super::handlers::{
     UnstageFileHandler, UnstageFilesHandler,
 };
 use super::{CommandEnvelope, EventEnvelope, FrontendEvent};
+
+const OPERATION_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// 命令类型枚举（用于映射）
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -135,15 +139,29 @@ pub async fn run_backend(mut cmd_rx: Receiver<CommandEnvelope>, event_tx: Sender
         if let Some(key) = command_key {
             if let Some(ref mut repo_mut) = repo {
                 if let Some(handler) = handlers.get(&key) {
-                    if handler.needs_mut_repo() {
-                        let _ = handler.handle_mut(&envelope, repo_mut, &event_tx);
-                    } else {
-                        let _ = handler.handle(&envelope, repo_mut, &event_tx);
+                    let result = timeout(OPERATION_TIMEOUT, async {
+                        tokio::task::block_in_place(|| {
+                            if handler.needs_mut_repo() {
+                                handler.handle_mut(&envelope, repo_mut, &event_tx)
+                            } else {
+                                handler.handle(&envelope, repo_mut, &event_tx)
+                            }
+                        })
+                    })
+                    .await;
+
+                    if result.is_err() {
+                        let _ = event_tx.try_send(EventEnvelope::new(
+                            Some(envelope.request_id),
+                            FrontendEvent::Error {
+                                request_id: Some(envelope.request_id),
+                                message: "Operation timed out".to_string(),
+                            },
+                        ));
                     }
                 }
             }
         } else {
-            // Quit 命令
             break;
         }
     }
