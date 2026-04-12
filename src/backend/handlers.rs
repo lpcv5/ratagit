@@ -172,6 +172,53 @@ impl CommandHandler for GetDiffHandler {
     }
 }
 
+/// 获取 commit 文件列表处理器
+pub struct GetCommitFilesHandler;
+impl CommandHandler for GetCommitFilesHandler {
+    fn handle(
+        &self,
+        envelope: &CommandEnvelope,
+        repo: &GitRepo,
+        event_tx: &UnboundedSender<EventEnvelope>,
+    ) -> Result<()> {
+        let commit_id = if let crate::backend::BackendCommand::GetCommitFiles { commit_id } =
+            &envelope.command
+        {
+            commit_id.clone()
+        } else {
+            return Ok(());
+        };
+
+        // 先找到对应的 commit
+        let commits = super::git_ops::get_commits(repo, 100)?;
+        if let Some(commit) = commits.iter().find(|c| c.id == commit_id) {
+            match super::git_ops::get_commit_files(repo, commit) {
+                Ok(files) => {
+                    let _ = event_tx.send(EventEnvelope::new(
+                        Some(envelope.request_id),
+                        FrontendEvent::CommitFilesLoaded {
+                            request_id: envelope.request_id,
+                            commit_id,
+                            files,
+                        },
+                    ));
+                }
+                Err(error) => {
+                    send_error(event_tx, Some(envelope.request_id), "commit files", error)
+                }
+            }
+        } else {
+            send_error(
+                event_tx,
+                Some(envelope.request_id),
+                "commit files",
+                anyhow::anyhow!("Commit not found: {}", commit_id),
+            );
+        }
+        Ok(())
+    }
+}
+
 /// 暂存文件处理器
 pub struct StageFileHandler;
 impl CommandHandler for StageFileHandler {

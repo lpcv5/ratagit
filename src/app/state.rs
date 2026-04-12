@@ -87,6 +87,9 @@ impl AppState {
 
     // 同步组件列表状态与数据长度
     pub fn sync_file_list_state(&mut self) {
+        self.components
+            .file_list_panel
+            .update_files(&self.data_cache.files);
         sync_list_state(
             self.components.file_list_panel.state_mut(),
             self.data_cache.files.len(),

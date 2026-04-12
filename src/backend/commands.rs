@@ -5,6 +5,7 @@ pub enum BackendCommand {
     RefreshCommits { limit: usize },
     RefreshStashes,
     GetDiff { file_path: String },
+    GetCommitFiles { commit_id: String },
     StageFile { file_path: String },
     UnstageFile { file_path: String },
     Quit,

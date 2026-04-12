@@ -1,4 +1,5 @@
 mod branches;
+mod commit_files;
 mod commits;
 mod diff;
 mod repo;
@@ -7,6 +8,7 @@ mod status;
 mod working_tree;
 
 pub use branches::{get_branches, BranchEntry};
+pub use commit_files::get_commit_files;
 pub use commits::{get_commits, CommitEntry};
 pub use diff::get_diff;
 pub use repo::GitRepo;

@@ -8,6 +8,7 @@ pub struct StatusEntry {
     pub path: String,
     pub is_staged: bool,
     pub is_unstaged: bool,
+    pub is_untracked: bool,
 }
 
 pub fn get_status_files(repo: &GitRepo) -> Result<Vec<StatusEntry>> {
@@ -16,7 +17,6 @@ pub fn get_status_files(repo: &GitRepo) -> Result<Vec<StatusEntry>> {
     options.include_ignored(false);
     options.include_unmodified(false);
     options.show(StatusShow::IndexAndWorkdir);
-    options.recurse_untracked_dirs(true);
 
     let statuses = repo.repo.statuses(Some(&mut options))?;
     let mut entries = Vec::new();
@@ -27,18 +27,24 @@ pub fn get_status_files(repo: &GitRepo) -> Result<Vec<StatusEntry>> {
         };
 
         let status = entry.status();
+
+        let is_untracked = status.is_wt_new();
+        let is_unstaged = status.is_wt_new()
+            || status.is_wt_modified()
+            || status.is_wt_deleted()
+            || status.is_wt_renamed()
+            || status.is_wt_typechange();
+        let is_staged = status.is_index_new()
+            || status.is_index_modified()
+            || status.is_index_deleted()
+            || status.is_index_renamed()
+            || status.is_index_typechange();
+
         entries.push(StatusEntry {
             path: path.to_string(),
-            is_staged: status.is_index_new()
-                || status.is_index_modified()
-                || status.is_index_deleted()
-                || status.is_index_renamed()
-                || status.is_index_typechange(),
-            is_unstaged: status.is_wt_new()
-                || status.is_wt_modified()
-                || status.is_wt_deleted()
-                || status.is_wt_renamed()
-                || status.is_wt_typechange(),
+            is_staged,
+            is_unstaged,
+            is_untracked,
         });
     }
 

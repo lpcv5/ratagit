@@ -1,7 +1,8 @@
 use ratatui::widgets::ListState;
 
 use crate::components::panels::{
-    BranchListPanel, CommitListPanel, FileListPanel, LogPanel, MainViewPanel, StashListPanel,
+    BranchListPanel, CommitFilesPanel, CommitListPanel, FileListPanel, LogPanel, MainViewPanel,
+    StashListPanel,
 };
 use crate::components::Component;
 use crate::components::Intent;
@@ -14,6 +15,7 @@ pub struct AppComponents {
     pub file_list_panel: FileListPanel,
     pub branch_list_panel: BranchListPanel,
     pub commit_list_panel: CommitListPanel,
+    pub commit_files_panel: CommitFilesPanel,
     pub stash_list_panel: StashListPanel,
     pub main_view_panel: MainViewPanel,
     pub log_panel: LogPanel,
@@ -25,6 +27,7 @@ impl AppComponents {
             file_list_panel: FileListPanel::new(),
             branch_list_panel: BranchListPanel::new(),
             commit_list_panel: CommitListPanel::new(),
+            commit_files_panel: CommitFilesPanel::new(),
             stash_list_panel: StashListPanel::new(),
             main_view_panel: MainViewPanel::new(),
             log_panel: LogPanel::new(),
@@ -42,6 +45,7 @@ impl AppComponents {
             Panel::Files => self.file_list_panel.handle_event(event, data),
             Panel::Branches => self.branch_list_panel.handle_event(event, data),
             Panel::Commits => self.commit_list_panel.handle_event(event, data),
+            Panel::CommitFiles => self.commit_files_panel.handle_event(event, data),
             Panel::Stash => self.stash_list_panel.handle_event(event, data),
             Panel::MainView => self.main_view_panel.handle_event(event, data),
             Panel::Log => self.log_panel.handle_event(event, data),

@@ -5,8 +5,8 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use super::git_ops::GitRepo;
 use super::handlers::CommandHandler;
 use super::handlers::{
-    GetDiffHandler, RefreshBranchesHandler, RefreshCommitsHandler, RefreshStashesHandler,
-    RefreshStatusHandler, StageFileHandler, UnstageFileHandler,
+    GetCommitFilesHandler, GetDiffHandler, RefreshBranchesHandler, RefreshCommitsHandler,
+    RefreshStashesHandler, RefreshStatusHandler, StageFileHandler, UnstageFileHandler,
 };
 use super::{CommandEnvelope, EventEnvelope, FrontendEvent};
 
@@ -18,6 +18,7 @@ enum CommandKey {
     RefreshCommits,
     RefreshStashes,
     GetDiff,
+    GetCommitFiles,
     StageFile,
     UnstageFile,
 }
@@ -70,6 +71,10 @@ pub async fn run_backend(
         CommandKey::UnstageFile,
         Box::new(UnstageFileHandler) as Box<dyn CommandHandler>,
     );
+    handlers.insert(
+        CommandKey::GetCommitFiles,
+        Box::new(GetCommitFilesHandler) as Box<dyn CommandHandler>,
+    );
 
     while let Some(envelope) = cmd_rx.recv().await {
         let command_key = match &envelope.command {
@@ -80,6 +85,9 @@ pub async fn run_backend(
             }
             crate::backend::BackendCommand::RefreshStashes => Some(CommandKey::RefreshStashes),
             crate::backend::BackendCommand::GetDiff { .. } => Some(CommandKey::GetDiff),
+            crate::backend::BackendCommand::GetCommitFiles { .. } => {
+                Some(CommandKey::GetCommitFiles)
+            }
             crate::backend::BackendCommand::StageFile { .. } => Some(CommandKey::StageFile),
             crate::backend::BackendCommand::UnstageFile { .. } => Some(CommandKey::UnstageFile),
             crate::backend::BackendCommand::Quit => None,

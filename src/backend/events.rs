@@ -1,4 +1,5 @@
 use crate::backend::git_ops::{BranchEntry, CommitEntry, StashEntry, StatusEntry};
+use crate::components::core::GitFileStatus;
 
 #[derive(Debug)]
 pub enum FrontendEvent {
@@ -19,6 +20,12 @@ pub enum FrontendEvent {
         request_id: u64,
         file_path: String,
         diff: String,
+    },
+    CommitFilesLoaded {
+        #[allow(dead_code)]
+        request_id: u64,
+        commit_id: String,
+        files: Vec<(String, GitFileStatus)>,
     },
     ActionSucceeded {
         #[allow(dead_code)]

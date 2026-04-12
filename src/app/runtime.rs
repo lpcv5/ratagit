@@ -215,6 +215,47 @@ impl App {
                 self.state.data_cache.current_diff = Some((file_path.clone(), diff.clone()));
                 self.state.push_log(format!("Loaded diff for {file_path}"));
             }
+            FrontendEvent::CommitFilesLoaded {
+                commit_id, files, ..
+            } => {
+                // 找到对应的 commit 摘要
+                let summary = self
+                    .state
+                    .data_cache
+                    .commits
+                    .iter()
+                    .find(|c| c.id == commit_id)
+                    .map(|c| c.summary.clone())
+                    .unwrap_or_else(|| "Unknown".to_string());
+
+                self.state.data_cache.commit_files = Some((commit_id.clone(), files.clone()));
+                self.state.push_log(format!(
+                    "Loaded {} files for commit {}",
+                    files.len(),
+                    &commit_id[..8]
+                ));
+
+                // 构建树并更新 CommitFilesPanel
+                use crate::components::core::build_tree_from_paths;
+                use std::collections::HashMap;
+
+                let paths: Vec<String> = files.iter().map(|(p, _)| p.clone()).collect();
+                let status_map: HashMap<String, crate::components::core::GitFileStatus> =
+                    files.iter().cloned().collect();
+                let tree_nodes = build_tree_from_paths(&paths, Some(&status_map));
+
+                let tree_panel = crate::components::core::TreePanel::new(
+                    format!("Files · {}", &summary),
+                    tree_nodes,
+                    false, // commit files 不需要空格操作
+                );
+
+                self.state.components.commit_files_panel.update_tree(
+                    commit_id.clone(),
+                    summary,
+                    tree_panel,
+                );
+            }
             FrontendEvent::Error { message, .. } => {
                 self.state.push_log(format!("Error: {message}"));
             }
@@ -257,10 +298,33 @@ impl App {
     }
 
     fn activate_panel(&mut self) -> Result<()> {
-        self.state.push_log(format!(
-            "Activated {}",
-            self.state.ui_state.active_panel.title()
-        ));
+        match self.state.ui_state.active_panel {
+            Panel::Commits => {
+                // 请求 commit 文件列表
+                if let Some(commit) = self.state.selected_commit() {
+                    let commit_id = commit.id.clone();
+                    let _summary = commit.summary.clone();
+                    self.state
+                        .push_log(format!("Loading files for commit {}...", &commit_id[..8]));
+
+                    let request_id = self
+                        .state
+                        .send_command(BackendCommand::GetCommitFiles { commit_id })?;
+                    self.pending_requests.insert(request_id);
+
+                    // 切换到 CommitFiles 面板
+                    self.state.ui_state.active_panel = Panel::CommitFiles;
+                    self.state
+                        .push_log(format!("Focus moved to {}", Panel::CommitFiles.title()));
+                }
+            }
+            _ => {
+                self.state.push_log(format!(
+                    "Activated {}",
+                    self.state.ui_state.active_panel.title()
+                ));
+            }
+        }
         self.update_main_view_for_active_panel()
     }
 
@@ -289,6 +353,9 @@ impl App {
                     1,
                 );
                 self.update_main_view_for_active_panel()?;
+            }
+            Panel::CommitFiles => {
+                // TreePanel 内部管理导航，不需要外部处理
             }
             Panel::Stash => {
                 cycle_selection(
@@ -335,6 +402,9 @@ impl App {
                 );
                 self.update_main_view_for_active_panel()?;
             }
+            Panel::CommitFiles => {
+                // TreePanel 内部管理导航，不需要外部处理
+            }
             Panel::Stash => {
                 cycle_selection(
                     self.state.components.stash_list_state_mut(),
@@ -360,6 +430,7 @@ impl App {
             Panel::Files => self.request_selected_file_diff()?,
             Panel::Branches => self.show_branch_detail(),
             Panel::Commits => self.show_commit_detail(),
+            Panel::CommitFiles => self.show_commit_files_detail(),
             Panel::Stash => self.show_stash_detail(),
             Panel::Log => self.show_log_detail(),
         }
@@ -502,6 +573,33 @@ impl App {
         self.state.components.main_view_scroll_to(0);
     }
 
+    fn show_commit_files_detail(&mut self) {
+        if let Some((commit_id, _files)) = &self.state.data_cache.commit_files {
+            let summary = self
+                .state
+                .data_cache
+                .commits
+                .iter()
+                .find(|c| c.id == *commit_id)
+                .map(|c| c.summary.clone())
+                .unwrap_or_else(|| "Unknown".to_string());
+
+            self.state.data_cache.current_diff = Some((
+                format!("Main View · Commit Files · {}", &commit_id[..8]),
+                format!(
+                    "Commit files tree for: {}\n\nUse the left panel to navigate the tree.\nSelect a file to view its diff.",
+                    summary
+                ),
+            ));
+        } else {
+            self.state.data_cache.current_diff = Some((
+                "Main View · Commit Files".to_string(),
+                "No commit files loaded.".to_string(),
+            ));
+        }
+        self.state.components.main_view_scroll_to(0);
+    }
+
     fn show_stash_detail(&mut self) {
         if let Some((index, id, message)) = self
             .state
@@ -567,7 +665,14 @@ impl App {
         self.state.components.commit_list_panel.render(
             frame,
             left[2],
-            self.state.ui_state.active_panel == Panel::Commits,
+            self.state.ui_state.active_panel == Panel::Commits
+                || self.state.ui_state.active_panel == Panel::CommitFiles,
+            &self.state.data_cache,
+        );
+        self.state.components.commit_files_panel.render(
+            frame,
+            left[2],
+            self.state.ui_state.active_panel == Panel::CommitFiles,
             &self.state.data_cache,
         );
         self.state.components.stash_list_panel.render(

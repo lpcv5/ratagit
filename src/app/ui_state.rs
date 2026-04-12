@@ -5,16 +5,18 @@ pub enum Panel {
     Files,
     Branches,
     Commits,
+    CommitFiles,
     Stash,
     Log,
 }
 
 impl Panel {
-    pub const ALL: [Panel; 6] = [
+    pub const ALL: [Panel; 7] = [
         Panel::MainView,
         Panel::Files,
         Panel::Branches,
         Panel::Commits,
+        Panel::CommitFiles,
         Panel::Stash,
         Panel::Log,
     ];
@@ -25,6 +27,7 @@ impl Panel {
             Panel::Files => "Files",
             Panel::Branches => "Branches",
             Panel::Commits => "Commits",
+            Panel::CommitFiles => "Commit Files",
             Panel::Stash => "Stash",
             Panel::Log => "Log",
         }
