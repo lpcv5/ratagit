@@ -9,7 +9,7 @@ use super::CommitPanel;
 
 enum BranchMode {
     List,
-    CommitsSub { panel: CommitPanel },
+    CommitsSub { panel: Box<CommitPanel> },
 }
 
 pub struct BranchListPanel {
@@ -34,7 +34,7 @@ impl BranchListPanel {
     }
 
     pub fn show_branch_commits(&mut self) {
-        self.mode = BranchMode::CommitsSub { panel: CommitPanel::new() };
+        self.mode = BranchMode::CommitsSub { panel: Box::new(CommitPanel::new()) };
     }
 }
 

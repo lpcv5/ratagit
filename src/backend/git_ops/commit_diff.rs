@@ -89,3 +89,94 @@ pub fn get_commit_diff(
 fn path_matches_dir(candidate: &str, dir: &str, prefix: &str) -> bool {
     candidate == dir || candidate.starts_with(prefix)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::path::Path;
+
+    fn create_test_repo() -> (tempfile::TempDir, GitRepo) {
+        let temp_dir = tempfile::TempDir::new().expect("Failed to create temp dir");
+        let path = temp_dir.path();
+
+        let repo = git2::Repository::init(path).expect("Failed to init repo");
+
+        {
+            let mut config = repo.config().expect("Failed to get config");
+            config.set_str("user.name", "Test User").expect("Failed to set user.name");
+            config.set_str("user.email", "test@example.com").expect("Failed to set user.email");
+        }
+
+        {
+            let sig = repo.signature().expect("Failed to create signature");
+            let tree_id = {
+                let mut index = repo.index().expect("Failed to get index");
+                index.write_tree().expect("Failed to write tree")
+            };
+            let tree = repo.find_tree(tree_id).expect("Failed to find tree");
+            repo.commit(Some("HEAD"), &sig, &sig, "Initial commit", &tree, &[])
+                .expect("Failed to create initial commit");
+        }
+
+        (temp_dir, GitRepo { repo })
+    }
+
+    #[test]
+    fn test_get_commit_diff_file() {
+        let (temp_dir, repo) = create_test_repo();
+
+        // Create and commit a file
+        fs::write(temp_dir.path().join("test.txt"), "content\n").expect("Failed to write file");
+
+        let commit_id = {
+            let mut index = repo.repo.index().expect("Failed to get index");
+            index.add_path(Path::new("test.txt")).expect("Failed to add file");
+            index.write().expect("Failed to write index");
+
+            let sig = repo.repo.signature().expect("Failed to create signature");
+            let tree_id = index.write_tree().expect("Failed to write tree");
+            let tree = repo.repo.find_tree(tree_id).expect("Failed to find tree");
+            let parent = repo.repo.head().unwrap().peel_to_commit().unwrap();
+            repo.repo.commit(Some("HEAD"), &sig, &sig, "Add test.txt", &tree, &[&parent])
+                .expect("Failed to commit")
+                .to_string()
+        };
+
+        let diff = get_commit_diff(&repo, &commit_id, "test.txt", false)
+            .expect("Failed to get commit diff");
+
+        assert!(diff.contains("content") || diff.contains("test.txt"));
+    }
+
+    #[test]
+    fn test_get_commit_diff_directory() {
+        let (temp_dir, repo) = create_test_repo();
+
+        // Create directory with files
+        fs::create_dir(temp_dir.path().join("src")).expect("Failed to create dir");
+        fs::write(temp_dir.path().join("src/file1.txt"), "content1\n").expect("Failed to write file");
+        fs::write(temp_dir.path().join("src/file2.txt"), "content2\n").expect("Failed to write file");
+
+        let commit_id = {
+            let mut index = repo.repo.index().expect("Failed to get index");
+            index.add_path(Path::new("src/file1.txt")).expect("Failed to add file");
+            index.add_path(Path::new("src/file2.txt")).expect("Failed to add file");
+            index.write().expect("Failed to write index");
+
+            let sig = repo.repo.signature().expect("Failed to create signature");
+            let tree_id = index.write_tree().expect("Failed to write tree");
+            let tree = repo.repo.find_tree(tree_id).expect("Failed to find tree");
+            let parent = repo.repo.head().unwrap().peel_to_commit().unwrap();
+            repo.repo.commit(Some("HEAD"), &sig, &sig, "Add src files", &tree, &[&parent])
+                .expect("Failed to commit")
+                .to_string()
+        };
+
+        let diff = get_commit_diff(&repo, &commit_id, "src", true)
+            .expect("Failed to get commit diff");
+
+        // Should contain diffs for files in the directory
+        assert!(diff.contains("content1") || diff.contains("content2") || diff.contains("src"));
+    }
+}

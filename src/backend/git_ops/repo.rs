@@ -15,3 +15,18 @@ impl GitRepo {
         Ok(Self { repo })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_discover_valid_repo() {
+        // This test runs in the ratagit repo itself, which is a valid git repo
+        let result = GitRepo::discover();
+        assert!(result.is_ok());
+
+        let repo = result.unwrap();
+        assert!(repo.repo.workdir().is_some());
+    }
+}
