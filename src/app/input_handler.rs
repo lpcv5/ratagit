@@ -51,11 +51,19 @@ impl App {
                     return Ok(());
                 }
                 KeyCode::Char('u') if key.modifiers == KeyModifiers::CONTROL => {
-                    self.scroll_main_view_by(-MAIN_VIEW_PAGE_SCROLL);
-                    return Ok(());
+                    if self.state.ui_state.active_panel != Panel::Log {
+                        self.scroll_main_view_by(-MAIN_VIEW_PAGE_SCROLL);
+                        return Ok(());
+                    }
                 }
                 KeyCode::Char('d') if key.modifiers == KeyModifiers::CONTROL => {
-                    self.scroll_main_view_by(MAIN_VIEW_PAGE_SCROLL);
+                    if self.state.ui_state.active_panel != Panel::Log {
+                        self.scroll_main_view_by(MAIN_VIEW_PAGE_SCROLL);
+                        return Ok(());
+                    }
+                }
+                KeyCode::Char('?') => {
+                    self.execute_intent(Intent::ShowHelp)?;
                     return Ok(());
                 }
                 _ => {}

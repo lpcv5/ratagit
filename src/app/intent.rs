@@ -19,6 +19,8 @@ pub enum Intent {
     ShowResetMenu,
     ExecuteResetOption(usize),
     CloseModal,
+    ShowHelp,
+    TriggerHelpItem(Box<Intent>),
     #[allow(dead_code)]
     SendCommand(BackendCommand),
     None,

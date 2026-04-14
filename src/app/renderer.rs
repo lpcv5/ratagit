@@ -2,12 +2,16 @@ use std::collections::HashSet;
 
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
+    style::{Modifier, Style},
+    text::{Line, Span},
     widgets::Clear,
     Frame,
 };
 
+use crate::components::core::{muted_text_style, theme};
 use crate::components::Component;
 
+use super::keyhints::keyhints_for_panel;
 use super::ui_state::Panel;
 use super::App;
 
@@ -31,10 +35,16 @@ const FOCUSED_PANEL_MIN_HEIGHT: u16 = 7;
 
 impl App {
     pub(super) fn render(&mut self, frame: &mut Frame) {
+        // Reserve 1 row at the very bottom for the shortcut bar
+        let outer = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(1), Constraint::Length(1)])
+            .split(frame.area());
+
         let columns = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(34), Constraint::Percentage(66)])
-            .split(frame.area());
+            .split(outer[0]);
 
         let left_heights =
             compute_left_panel_heights(columns[0].height, self.state.ui_state.active_panel);
@@ -98,10 +108,35 @@ impl App {
             &self.state.data_cache,
         );
 
+        // Render shortcut bar
+        self.render_shortcut_bar(frame, outer[1]);
+
         // Render modal if active
         if let Some(ref modal) = self.state.active_modal {
             modal.render(frame, frame.area());
         }
+    }
+
+    fn render_shortcut_bar(&self, frame: &mut Frame, area: Rect) {
+        let hints = keyhints_for_panel(self.state.ui_state.active_panel);
+        let t = theme();
+        let key_style = Style::default()
+            .fg(t.accent_primary)
+            .add_modifier(Modifier::BOLD);
+        let desc_style = muted_text_style();
+        let sep_style = Style::default().fg(t.border_unfocused);
+
+        let mut spans: Vec<Span> = Vec::new();
+        for (i, hint) in hints.iter().enumerate() {
+            if i > 0 {
+                spans.push(Span::styled("  ", sep_style));
+            }
+            spans.push(Span::styled(hint.key, key_style));
+            spans.push(Span::styled(" ", sep_style));
+            spans.push(Span::styled(hint.description, desc_style));
+        }
+
+        frame.render_widget(Line::from(spans), area);
     }
 }
 

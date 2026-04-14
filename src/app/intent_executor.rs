@@ -3,9 +3,10 @@ use ratatui::widgets::ListState;
 
 use crate::backend::{BackendCommand, DiffTarget};
 use crate::components::panels::CommitModeView;
-use crate::components::Intent;
+use crate::components::{Intent, ModalDialog};
 use crate::shared::path_utils::dedupe_targets_parent_first;
 
+use super::keyhints::keyhints_for_panel;
 use super::ui_state::Panel;
 use super::App;
 
@@ -29,6 +30,11 @@ impl App {
             Intent::ShowResetMenu => self.show_reset_menu()?,
             Intent::ExecuteResetOption(index) => self.execute_reset_option(index)?,
             Intent::CloseModal => self.close_modal(),
+            Intent::ShowHelp => self.show_help_modal(),
+            Intent::TriggerHelpItem(inner) => {
+                self.close_modal();
+                self.execute_intent(*inner)?;
+            }
             Intent::SendCommand(cmd) => {
                 let request_id = self.state.send_command(cmd)?;
                 self.requests.track(request_id);
@@ -742,6 +748,19 @@ impl App {
 
     fn close_modal(&mut self) {
         self.state.active_modal = None;
+    }
+
+    fn show_help_modal(&mut self) {
+        let panel = self.state.ui_state.active_panel;
+        let hints = keyhints_for_panel(panel);
+        let items: Vec<(String, Intent)> = hints
+            .iter()
+            .map(|h| (format!("{:<10} {}", h.key, h.description), h.intent.clone()))
+            .collect();
+        self.state.active_modal = Some(ModalDialog::help(
+            format!("{} Keybindings", panel.title()),
+            items,
+        ));
     }
 }
 

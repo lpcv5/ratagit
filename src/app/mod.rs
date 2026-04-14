@@ -3,6 +3,7 @@ mod components;
 mod input_handler;
 mod intent;
 mod intent_executor;
+pub(super) mod keyhints;
 mod renderer;
 mod request_tracker;
 pub mod runtime;

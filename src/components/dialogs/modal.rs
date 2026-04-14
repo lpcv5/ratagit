@@ -22,6 +22,11 @@ pub enum ModalType {
         options: Vec<String>,
         selected: usize,
     },
+    Help {
+        title: String,
+        items: Vec<(String, Intent)>,
+        selected: usize,
+    },
 }
 
 /// Modal dialog component
@@ -45,6 +50,16 @@ impl ModalDialog {
             modal_type: ModalType::Selection {
                 title,
                 options,
+                selected: 0,
+            },
+        }
+    }
+
+    pub fn help(title: String, items: Vec<(String, Intent)>) -> Self {
+        Self {
+            modal_type: ModalType::Help {
+                title,
+                items,
                 selected: 0,
             },
         }
@@ -87,6 +102,29 @@ impl ModalDialog {
                 KeyCode::Esc => Intent::CloseModal,
                 _ => Intent::None,
             },
+            ModalType::Help {
+                items, selected, ..
+            } => match code {
+                KeyCode::Char('j') | KeyCode::Down => {
+                    if *selected < items.len().saturating_sub(1) {
+                        *selected += 1;
+                    }
+                    Intent::None
+                }
+                KeyCode::Char('k') | KeyCode::Up => {
+                    *selected = selected.saturating_sub(1);
+                    Intent::None
+                }
+                KeyCode::Enter => {
+                    let intent = items
+                        .get(*selected)
+                        .map(|(_, i)| i.clone())
+                        .unwrap_or(Intent::None);
+                    Intent::TriggerHelpItem(Box::new(intent))
+                }
+                KeyCode::Esc => Intent::CloseModal,
+                _ => Intent::None,
+            },
         }
     }
 
@@ -101,6 +139,11 @@ impl ModalDialog {
                 options,
                 selected,
             } => self.render_selection(frame, area, title, options, *selected),
+            ModalType::Help {
+                title,
+                items,
+                selected,
+            } => self.render_help(frame, area, title, items, *selected),
         }
     }
 
@@ -178,6 +221,45 @@ impl ModalDialog {
                     .add_modifier(Modifier::BOLD),
             )
             .highlight_symbol(">> ");
+
+        let mut state = ListState::default();
+        state.select(Some(selected));
+
+        frame.render_stateful_widget(list, inner, &mut state);
+    }
+
+    fn render_help(
+        &self,
+        frame: &mut Frame,
+        area: Rect,
+        title: &str,
+        items: &[(String, Intent)],
+        selected: usize,
+    ) {
+        let popup_area = centered_rect(70, 60, area);
+
+        frame.render_widget(Clear, popup_area);
+
+        let block = Block::default()
+            .title(format!(" {title} "))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Rgb(189, 147, 249)));
+
+        let inner = block.inner(popup_area);
+        frame.render_widget(block, popup_area);
+
+        let list_items: Vec<ListItem> = items
+            .iter()
+            .map(|(label, _)| ListItem::new(label.as_str()))
+            .collect();
+
+        let list = List::new(list_items)
+            .highlight_style(
+                Style::default()
+                    .bg(Color::Rgb(68, 71, 90))
+                    .add_modifier(Modifier::BOLD),
+            )
+            .highlight_symbol("▸ ");
 
         let mut state = ListState::default();
         state.select(Some(selected));
