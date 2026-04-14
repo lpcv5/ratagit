@@ -51,6 +51,9 @@ pub enum BackendCommand {
         file_paths: Vec<String>,
     },
     StageAll,
+    Commit {
+        message: String,
+    },
     DiscardFiles {
         paths: Vec<String>,
     },

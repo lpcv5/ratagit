@@ -44,6 +44,7 @@ impl App {
             Intent::IgnoreSelected => self.ignore_selected()?,
             Intent::ShowRenameDialog => self.show_rename_dialog()?,
             Intent::RenameFile(new_name) => self.rename_file(new_name)?,
+            Intent::ShowCommitDialog => self.show_commit_dialog()?,
             Intent::None => {}
         }
         Ok(())
@@ -858,6 +859,31 @@ impl App {
                 new_path: new_name,
             })?;
             self.requests.track(request_id);
+        }
+        Ok(())
+    }
+
+    fn show_commit_dialog(&mut self) -> Result<()> {
+        // Check if there are any staged files
+        let has_staged = self.state.data_cache.files.iter().any(|f| f.is_staged);
+
+        if !has_staged {
+            // No staged files, show confirmation dialog to stage all
+            self.state.active_modal = Some(ModalDialog::confirmation(
+                "Stage All".to_string(),
+                "No files staged. Stage all changes?".to_string(),
+                Intent::StageAll,
+            ));
+        } else {
+            // Has staged files, trigger commit with placeholder message
+            let request_id = self
+                .state
+                .send_command(crate::backend::BackendCommand::Commit {
+                    message: "WIP commit".to_string(),
+                })?;
+            self.requests.track(request_id);
+            self.state
+                .push_log("Committing staged files...".to_string());
         }
         Ok(())
     }

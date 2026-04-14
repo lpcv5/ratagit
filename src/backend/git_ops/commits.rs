@@ -72,6 +72,27 @@ pub fn get_commit_message(repo: &GitRepo, commit_id: &str) -> Result<String> {
     Ok(commit.message().unwrap_or("").to_string())
 }
 
+/// Create a new commit with staged files
+pub fn commit(repo: &GitRepo, message: &str) -> Result<()> {
+    let mut index = repo.repo.index()?;
+    let tree_id = index.write_tree()?;
+    let tree = repo.repo.find_tree(tree_id)?;
+    let sig = repo.repo.signature()?;
+
+    // Get parent commit (HEAD)
+    let parent_commit = match repo.repo.head() {
+        Ok(head) => Some(head.peel_to_commit()?),
+        Err(_) => None, // Initial commit
+    };
+
+    let parents: Vec<&git2::Commit> = parent_commit.iter().collect();
+
+    repo.repo
+        .commit(Some("HEAD"), &sig, &sig, message, &tree, &parents)?;
+
+    Ok(())
+}
+
 pub fn amend_commit(repo: &GitRepo, message: &str) -> Result<()> {
     let head = repo.repo.head()?;
     let commit = head.peel_to_commit()?;

@@ -20,9 +20,9 @@ pub fn keyhints_for_panel(panel: Panel) -> Vec<KeyHint> {
                 intent: Intent::ToggleStageFile,
             },
             KeyHint {
-                key: "a",
-                description: "stage all",
-                intent: Intent::StageAll,
+                key: "c",
+                description: "commit",
+                intent: Intent::ShowCommitDialog,
             },
             KeyHint {
                 key: "A",

@@ -845,6 +845,42 @@ impl CommandHandler for AmendCommitHandler {
     }
 }
 
+/// Commit handler
+pub struct CommitHandler;
+impl CommandHandler for CommitHandler {
+    fn handle(
+        &self,
+        envelope: &CommandEnvelope,
+        repo: &GitRepo,
+        event_tx: &Sender<EventEnvelope>,
+    ) -> Result<()> {
+        let message = if let crate::backend::BackendCommand::Commit { message } = &envelope.command
+        {
+            message.clone()
+        } else {
+            return Ok(());
+        };
+
+        match super::git_ops::commit(repo, &message) {
+            Ok(()) => {
+                send_event(
+                    event_tx,
+                    EventEnvelope::new(
+                        Some(envelope.request_id),
+                        FrontendEvent::ActionSucceeded {
+                            request_id: envelope.request_id,
+                            message: "Changes committed".to_string(),
+                        },
+                    ),
+                );
+                refresh_all(event_tx, repo);
+            }
+            Err(error) => send_error(event_tx, Some(envelope.request_id), "commit", error),
+        }
+        Ok(())
+    }
+}
+
 /// Get commit message handler
 pub struct GetCommitMessageHandler;
 impl CommandHandler for GetCommitMessageHandler {

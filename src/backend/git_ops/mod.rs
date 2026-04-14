@@ -14,8 +14,8 @@ pub use branches::{get_branches, BranchEntry};
 pub use commit_diff::get_commit_diff;
 pub use commit_files::get_commit_files;
 pub use commits::{
-    amend_commit, amend_commit_with_files, get_commit_message, get_commits, get_commits_for_branch,
-    reset_hard, reset_mixed, reset_soft, CommitEntry,
+    amend_commit, amend_commit_with_files, commit, get_commit_message, get_commits,
+    get_commits_for_branch, reset_hard, reset_mixed, reset_soft, CommitEntry,
 };
 pub use diff::get_diff;
 pub use repo::GitRepo;

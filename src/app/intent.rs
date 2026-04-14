@@ -13,6 +13,7 @@ pub enum Intent {
     ActivatePanel,
     ToggleStageFile,
     StageAll,
+    ShowCommitDialog,
     DiscardSelected,
     StashSelected,
     AmendCommit,

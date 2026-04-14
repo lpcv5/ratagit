@@ -121,7 +121,7 @@ impl Component for FileListPanel {
 
             // New keybindings
             match key.code {
-                KeyCode::Char('a') => return Intent::StageAll,
+                KeyCode::Char('c') => return Intent::ShowCommitDialog,
                 KeyCode::Char('A') => return Intent::AmendCommit,
                 KeyCode::Char('d') => return Intent::DiscardSelected,
                 KeyCode::Char('D') => return Intent::ShowResetMenu,

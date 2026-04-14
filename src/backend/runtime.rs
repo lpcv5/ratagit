@@ -6,8 +6,8 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use super::git_ops::GitRepo;
 use super::handlers::CommandHandler;
 use super::handlers::{
-    send_event, AmendCommitHandler, AmendCommitWithFilesHandler, DiscardFilesHandler,
-    GetBranchCommitsHandler, GetBranchGraphHandler, GetCommitDiffBatchHandler,
+    send_event, AmendCommitHandler, AmendCommitWithFilesHandler, CommitHandler,
+    DiscardFilesHandler, GetBranchCommitsHandler, GetBranchGraphHandler, GetCommitDiffBatchHandler,
     GetCommitDiffHandler, GetCommitFilesHandler, GetCommitMessageHandler, GetDiffBatchHandler,
     GetDiffHandler, IgnoreFilesHandler, RefreshBranchesHandler, RefreshCommitsHandler,
     RefreshStashesHandler, RefreshStatusHandler, RenameFileHandler, ResetHardHandler,
@@ -37,6 +37,7 @@ enum CommandKey {
     UnstageFile,
     UnstageFiles,
     StageAll,
+    Commit,
     DiscardFiles,
     StashFiles,
     AmendCommit,
@@ -134,6 +135,10 @@ pub async fn run_backend(mut cmd_rx: Receiver<CommandEnvelope>, event_tx: Sender
         Box::new(StageAllHandler) as Box<dyn CommandHandler>,
     );
     handlers.insert(
+        CommandKey::Commit,
+        Box::new(CommitHandler) as Box<dyn CommandHandler>,
+    );
+    handlers.insert(
         CommandKey::DiscardFiles,
         Box::new(DiscardFilesHandler) as Box<dyn CommandHandler>,
     );
@@ -202,6 +207,7 @@ pub async fn run_backend(mut cmd_rx: Receiver<CommandEnvelope>, event_tx: Sender
             crate::backend::BackendCommand::UnstageFile { .. } => Some(CommandKey::UnstageFile),
             crate::backend::BackendCommand::UnstageFiles { .. } => Some(CommandKey::UnstageFiles),
             crate::backend::BackendCommand::StageAll => Some(CommandKey::StageAll),
+            crate::backend::BackendCommand::Commit { .. } => Some(CommandKey::Commit),
             crate::backend::BackendCommand::DiscardFiles { .. } => Some(CommandKey::DiscardFiles),
             crate::backend::BackendCommand::StashFiles { .. } => Some(CommandKey::StashFiles),
             crate::backend::BackendCommand::AmendCommit { .. } => Some(CommandKey::AmendCommit),
