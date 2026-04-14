@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crossterm::event::{Event, KeyCode, KeyEventKind};
 use ratatui::{
     layout::Rect,
@@ -61,21 +63,45 @@ impl TreePanel {
     pub fn selected_targets(&self) -> Vec<(String, bool)> {
         if self.is_multi_active() {
             let visible_paths = self.visible_paths();
-            return self
-                .multi_selected_keys(&visible_paths)
-                .into_iter()
-                .filter_map(|path| {
-                    self.all_nodes
-                        .iter()
-                        .find(|node| node.path == path)
-                        .map(|node| (node.path.clone(), node.is_dir))
-                })
-                .collect();
+            let mut targets = Vec::new();
+            for path in self.multi_selected_keys(&visible_paths) {
+                if let Some(node) = self.all_nodes.iter().find(|n| n.path == path) {
+                    if node.is_dir {
+                        // 文件夹：收集该文件夹下所有在树中的文件
+                        targets.extend(self.get_files_in_dir(&node.path));
+                    } else {
+                        // 文件：直接添加
+                        targets.push((node.path.clone(), false));
+                    }
+                }
+            }
+            return targets;
         }
 
-        self.selected_node()
-            .map(|node| vec![(node.path.clone(), node.is_dir)])
-            .unwrap_or_default()
+        // 单选模式
+        if let Some(node) = self.selected_node() {
+            if node.is_dir {
+                // 文件夹：返回该文件夹下所有在树中的文件
+                return self.get_files_in_dir(&node.path);
+            } else {
+                // 文件：直接返回
+                return vec![(node.path.clone(), false)];
+            }
+        }
+
+        vec![]
+    }
+
+    /// 获取指定文件夹下所有在树中的文件节点（递归包括子文件夹）
+    fn get_files_in_dir(&self, dir_path: &str) -> Vec<(String, bool)> {
+        let prefix = format!("{}/", dir_path);
+        self.all_nodes
+            .iter()
+            .filter(|node| {
+                !node.is_dir && node.path.starts_with(&prefix)
+            })
+            .map(|node| (node.path.clone(), false))
+            .collect()
     }
 
     pub fn anchor_target(&self) -> Option<(String, bool)> {
@@ -92,20 +118,59 @@ impl TreePanel {
             .map(|node| (node.path.clone(), node.is_dir))
     }
 
-    /// 更新节点列表（保持当前选择位置）
+    /// 更新节点列表（保持展开状态和光标位置）
     #[allow(dead_code)]
     pub fn update_nodes(&mut self, nodes: Vec<TreeNode>) {
-        self.all_nodes = nodes;
+        // 在更新前，从旧的可见列表中获取当前选中的路径
+        let old_visible = self.visible_nodes();
+        let old_selected_idx = self.state.selected().unwrap_or(0);
+        let selected_path = old_visible
+            .get(old_selected_idx)
+            .map(|node| node.path.clone());
+
+        // 保存旧节点的展开状态
+        let old_expanded_state: HashMap<String, bool> = self
+            .all_nodes
+            .iter()
+            .filter(|n| n.is_dir)
+            .map(|n| (n.path.clone(), n.is_expanded))
+            .collect();
+
+        // 更新节点，恢复展开状态
+        self.all_nodes = nodes
+            .into_iter()
+            .map(|mut node| {
+                if node.is_dir {
+                    if let Some(&expanded) = old_expanded_state.get(&node.path) {
+                        node.is_expanded = expanded;
+                    }
+                }
+                node
+            })
+            .collect();
+
         self.exit_multi_select();
-        // 同步选择状态
-        let visible_len = self.visible_nodes().len();
+
+        // 在新的可见列表中查找原路径
+        let visible = self.visible_nodes();
+        let visible_len = visible.len();
+
         if visible_len == 0 {
             self.state.select(None);
-        } else {
-            let current = self.state.selected().unwrap_or(0);
-            self.state
-                .select(Some(current.min(visible_len.saturating_sub(1))));
+            return;
         }
+
+        // 尝试找回原路径
+        if let Some(path) = selected_path {
+            if let Some(idx) = visible.iter().position(|node| node.path == path) {
+                self.state.select(Some(idx));
+                return;
+            }
+        }
+
+        // 找不到原路径，保持索引位置
+        let current = self.state.selected().unwrap_or(0);
+        self.state.select(Some(current.min(visible_len.saturating_sub(1))));
     }
 
     /// 切换目录的展开/折叠状态
@@ -269,6 +334,7 @@ impl Component for TreePanel {
                     ]))
                 } else {
                     // 文件节点：缩进 + 状态图标 + 文件名
+                    // 如果文件是 staged，文件名显示为绿色
                     let status_span = if let Some(status) = node.status {
                         let color = match status {
                             GitFileStatus::Added => theme().git_added,
@@ -286,10 +352,17 @@ impl Component for TreePanel {
                         Span::raw("    ")
                     };
 
+                    // 如果文件是 staged，文件名显示为绿色
+                    let name_span = if node.is_staged {
+                        Span::styled(node.name.clone(), Style::default().fg(theme().git_added))
+                    } else {
+                        Span::styled(node.name.clone(), Style::default())
+                    };
+
                     ListItem::new(Line::from(vec![
                         Span::styled(indent.clone(), Style::default()),
                         status_span,
-                        Span::styled(node.name.clone(), Style::default()),
+                        name_span,
                     ]))
                 };
 

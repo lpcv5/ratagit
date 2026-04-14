@@ -41,7 +41,16 @@ impl App {
             terminal.draw(|frame| self.render(frame))?;
             if event::poll(Duration::from_millis(100))? {
                 let input = event::read()?;
-                self.handle_input(input)?;
+
+                // If modal is active, let it handle the input first
+                if let Some(ref mut modal) = self.state.active_modal {
+                    let intent = modal.handle_event(&input);
+                    if !matches!(intent, crate::components::Intent::None) {
+                        self.execute_intent(intent)?;
+                    }
+                } else {
+                    self.handle_input(input)?;
+                }
             }
         }
         Ok(())
@@ -235,6 +244,10 @@ impl App {
             }
             FrontendEvent::ActionSucceeded { message, .. } => {
                 self.state.push_log(format!("OK: {message}"))
+            }
+            FrontendEvent::CommitMessageLoaded { message, .. } => {
+                // Store the commit message for amend operation
+                self.state.data_cache.pending_commit_message = Some(message);
             }
             FrontendEvent::ActionFailed { message, .. } => {
                 self.state.push_log(format!("FAILED: {message}"))

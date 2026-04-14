@@ -56,6 +56,102 @@ fn short_oid(oid: &str) -> String {
     oid.chars().take(8).collect()
 }
 
+pub fn get_commit_message(repo: &GitRepo, commit_id: &str) -> Result<String> {
+    let oid = git2::Oid::from_str(commit_id)?;
+    let commit = repo.repo.find_commit(oid)?;
+    Ok(commit.message().unwrap_or("").to_string())
+}
+
+pub fn amend_commit(repo: &GitRepo, message: &str) -> Result<()> {
+    let head = repo.repo.head()?;
+    let commit = head.peel_to_commit()?;
+    let tree = commit.tree()?;
+    let sig = repo.repo.signature()?;
+
+    repo.repo.commit(
+        Some("HEAD"),
+        &sig,
+        &sig,
+        message,
+        &tree,
+        &[&commit.parent(0)?],
+    )?;
+
+    Ok(())
+}
+
+pub fn amend_commit_with_files(repo: &GitRepo, commit_id: &str, message: &str, paths: &[String]) -> Result<()> {
+    // This is a complex operation that requires:
+    // 1. Create a new tree with the specified files from the index
+    // 2. Rebase the commit with the new tree
+    // For now, we'll use a simpler approach: stage files and amend HEAD
+
+    // Stage the specified files
+    let mut index = repo.repo.index()?;
+    for path in paths {
+        index.add_path(std::path::Path::new(path))?;
+    }
+    let tree_id = index.write_tree()?;
+    let tree = repo.repo.find_tree(tree_id)?;
+
+    // Get the target commit
+    let oid = git2::Oid::from_str(commit_id)?;
+    let commit = repo.repo.find_commit(oid)?;
+    let sig = repo.repo.signature()?;
+
+    // Check if this is HEAD
+    let head = repo.repo.head()?;
+    let head_commit = head.peel_to_commit()?;
+
+    if commit.id() == head_commit.id() {
+        // Amending HEAD - straightforward
+        let parent = if commit.parent_count() > 0 {
+            Some(commit.parent(0)?)
+        } else {
+            None
+        };
+
+        let parents: Vec<&git2::Commit> = if let Some(ref p) = parent {
+            vec![p]
+        } else {
+            vec![]
+        };
+
+        repo.repo.commit(
+            Some("HEAD"),
+            &sig,
+            &sig,
+            message,
+            &tree,
+            &parents,
+        )?;
+    } else {
+        // Amending a non-HEAD commit requires interactive rebase
+        // This is complex and risky, so we'll return an error for now
+        anyhow::bail!("Amending non-HEAD commits is not yet supported. Please use 'git rebase -i' manually.");
+    }
+
+    Ok(())
+}
+
+pub fn reset_hard(repo: &GitRepo, target: &str) -> Result<()> {
+    let obj = repo.repo.revparse_single(target)?;
+    repo.repo.reset(&obj, git2::ResetType::Hard, None)?;
+    Ok(())
+}
+
+pub fn reset_mixed(repo: &GitRepo, target: &str) -> Result<()> {
+    let obj = repo.repo.revparse_single(target)?;
+    repo.repo.reset(&obj, git2::ResetType::Mixed, None)?;
+    Ok(())
+}
+
+pub fn reset_soft(repo: &GitRepo, target: &str) -> Result<()> {
+    let obj = repo.repo.revparse_single(target)?;
+    repo.repo.reset(&obj, git2::ResetType::Soft, None)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

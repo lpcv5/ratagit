@@ -46,6 +46,7 @@ pub struct TreeNode {
     pub is_expanded: bool,
     pub depth: usize,
     pub status: Option<GitFileStatus>,
+    pub is_staged: bool, // 文件是否被 staged
 }
 
 impl TreeNode {
@@ -63,6 +64,7 @@ impl TreeNode {
             is_expanded: true, // 默认展开目录
             depth,
             status,
+            is_staged: false,
         }
     }
 
@@ -86,8 +88,23 @@ pub fn build_tree_from_paths(
 
     // 收集所有唯一的目录路径及其深度
     let mut dir_map: HashMap<String, usize> = HashMap::new();
+    let mut untracked_dirs: HashMap<String, GitFileStatus> = HashMap::new();
+
     for path in paths {
-        let parts: Vec<&str> = path.split('/').collect();
+        // 处理以 / 结尾的路径（未跟踪的目录）
+        let is_dir_path = path.ends_with('/');
+        let clean_path = path.trim_end_matches('/');
+
+        if is_dir_path {
+            // 这是一个未跟踪的目录，记录它
+            let depth = clean_path.split('/').count() - 1;
+            dir_map.insert(clean_path.to_string(), depth);
+            if let Some(status) = status_map.and_then(|m| m.get(path).copied()) {
+                untracked_dirs.insert(clean_path.to_string(), status);
+            }
+        }
+
+        let parts: Vec<&str> = clean_path.split('/').collect();
         // 对于 src/app/cache.rs，parts = ["src", "app", "cache.rs"]
         // 目录有: "src" (depth 0), "src/app" (depth 1)
         for i in 1..parts.len() {
@@ -105,11 +122,15 @@ pub fn build_tree_from_paths(
             .next_back()
             .unwrap_or(dir_path)
             .to_string();
-        nodes.push(TreeNode::new(dir_path.clone(), name, true, *depth, None));
+        let status = untracked_dirs.get(dir_path).copied();
+        nodes.push(TreeNode::new(dir_path.clone(), name, true, *depth, status));
     }
 
-    // 添加文件节点
+    // 添加文件节点（跳过以 / 结尾的目录路径）
     for path in paths {
+        if path.ends_with('/') {
+            continue; // 跳过目录路径，已经在上面处理过了
+        }
         let depth = path.split('/').count() - 1;
         let name = path.split('/').next_back().unwrap_or(path).to_string();
         let status = status_map.and_then(|m| m.get(path).copied());

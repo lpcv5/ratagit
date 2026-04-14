@@ -22,9 +22,18 @@ impl App {
             Intent::ScrollLog(delta) => self.state.components.scroll_log_by(delta),
             Intent::ActivatePanel => self.activate_panel()?,
             Intent::ToggleStageFile => self.toggle_stage_selected_file()?,
+            Intent::StageAll => self.stage_all()?,
+            Intent::DiscardSelected => self.discard_selected()?,
+            Intent::StashSelected => self.stash_selected()?,
+            Intent::AmendCommit => self.amend_commit()?,
+            Intent::ShowResetMenu => self.show_reset_menu()?,
+            Intent::ExecuteResetOption(index) => self.execute_reset_option(index)?,
+            Intent::CloseModal => self.close_modal(),
             Intent::SendCommand(cmd) => {
                 let request_id = self.state.send_command(cmd)?;
                 self.requests.track(request_id);
+                // Close modal after sending command (for confirmation dialogs)
+                self.close_modal();
             }
             Intent::None => {}
         }
@@ -505,6 +514,193 @@ impl App {
         })?;
         self.requests.set_latest_branch_graph(request_id);
         Ok(())
+    }
+
+    fn stage_all(&mut self) -> Result<()> {
+        let request_id = self.state.send_command(BackendCommand::StageAll)?;
+        if request_id != 0 {
+            self.requests.track(request_id);
+        }
+        Ok(())
+    }
+
+    fn discard_selected(&mut self) -> Result<()> {
+        let paths = if self.state.components.file_list_panel.is_multi_select_active() {
+            self.state
+                .components
+                .file_list_panel
+                .selected_tree_targets()
+                .into_iter()
+                .map(|(path, _)| path)
+                .collect()
+        } else {
+            if let Some((path, _)) = self.state.components.file_list_panel.selected_tree_node() {
+                vec![path]
+            } else {
+                return Ok(());
+            }
+        };
+
+        if paths.is_empty() {
+            return Ok(());
+        }
+
+        // Show confirmation modal
+        use crate::components::ModalDialog;
+        let modal = ModalDialog::confirmation(
+            "Discard Changes".to_string(),
+            format!("Discard changes to {} file(s)?\nThis cannot be undone.", paths.len()),
+            Intent::SendCommand(BackendCommand::DiscardFiles { paths }),
+        );
+        self.state.active_modal = Some(modal);
+        Ok(())
+    }
+
+    fn stash_selected(&mut self) -> Result<()> {
+        let paths = if self.state.components.file_list_panel.is_multi_select_active() {
+            self.state
+                .components
+                .file_list_panel
+                .selected_tree_targets()
+                .into_iter()
+                .map(|(path, _)| path)
+                .collect()
+        } else {
+            if let Some((path, _)) = self.state.components.file_list_panel.selected_tree_node() {
+                vec![path]
+            } else {
+                return Ok(());
+            }
+        };
+
+        if paths.is_empty() {
+            return Ok(());
+        }
+
+        let request_id = self.state.send_command(BackendCommand::StashFiles {
+            paths,
+            message: None,
+        })?;
+        if request_id != 0 {
+            self.requests.track(request_id);
+        }
+        Ok(())
+    }
+
+    fn amend_commit(&mut self) -> Result<()> {
+        // Get selected files from Files panel
+        let paths = self.state.components.file_list_panel.selected_tree_targets();
+
+        if paths.is_empty() {
+            self.state.push_log("No files selected for amend".to_string());
+            return Ok(());
+        }
+
+        // Get selected commit from Commits panel
+        let selected_commit = self.state.components.commit_panel.selected_commit(&self.state.data_cache.commits);
+
+        if let Some(commit) = selected_commit {
+            let commit_id = commit.id.clone();
+
+            // Check if this is HEAD (first commit in the list)
+            let is_head = self.state.data_cache.commits.first()
+                .map(|c| c.id == commit_id)
+                .unwrap_or(false);
+
+            if !is_head {
+                self.state.push_log("Can only amend HEAD commit. Please select the most recent commit.".to_string());
+                return Ok(());
+            }
+
+            // For now, use a simple confirmation dialog
+            use crate::components::ModalDialog;
+            let message = format!(
+                "Amend HEAD with {} selected file(s)?\n\nThis will add the selected files to the last commit.\nThe commit message will remain unchanged.\n\nPress 'y' to confirm, 'n' to cancel.",
+                paths.len()
+            );
+
+            self.state.active_modal = Some(ModalDialog::confirmation(
+                "Amend Commit".to_string(),
+                message,
+                Intent::SendCommand(crate::backend::BackendCommand::AmendCommitWithFiles {
+                    commit_id,
+                    message: format!("{}{}",
+                        commit.summary,
+                        commit.body.as_ref().map(|b| format!("\n\n{}", b)).unwrap_or_default()
+                    ),
+                    paths: paths.into_iter().map(|(path, _)| path).collect(),
+                }),
+            ));
+        } else {
+            self.state.push_log("No commit selected. Please select HEAD in the Commits panel.".to_string());
+        }
+
+        Ok(())
+    }
+
+    fn show_reset_menu(&mut self) -> Result<()> {
+        use crate::components::ModalDialog;
+        let options = vec![
+            "Hard Reset (HEAD) - Discard all changes".to_string(),
+            "Mixed Reset (HEAD) - Unstage all, keep changes".to_string(),
+            "Soft Reset (HEAD) - Keep staged changes".to_string(),
+            "Hard Reset (HEAD~1) - Undo last commit, discard changes".to_string(),
+            "Soft Reset (HEAD~1) - Undo last commit, keep staged".to_string(),
+            "Nuke Repository - Delete .git directory".to_string(),
+        ];
+        let modal = ModalDialog::selection("Reset Options".to_string(), options);
+        self.state.active_modal = Some(modal);
+        Ok(())
+    }
+
+    fn execute_reset_option(&mut self, index: usize) -> Result<()> {
+        let (target, reset_type, needs_confirmation) = match index {
+            0 => ("HEAD", "hard", true),
+            1 => ("HEAD", "mixed", false),
+            2 => ("HEAD", "soft", false),
+            3 => ("HEAD~1", "hard", true),
+            4 => ("HEAD~1", "soft", false),
+            5 => {
+                // Nuke repo - needs double confirmation
+                use crate::components::ModalDialog;
+                let modal = ModalDialog::confirmation(
+                    "NUKE REPOSITORY".to_string(),
+                    "Are you ABSOLUTELY SURE?\nThis will DELETE the .git directory.\nThis CANNOT be undone!".to_string(),
+                    Intent::None, // TODO: Implement nuke
+                );
+                self.state.active_modal = Some(modal);
+                return Ok(());
+            }
+            _ => return Ok(()),
+        };
+
+        let command = match reset_type {
+            "hard" => BackendCommand::ResetHard { target: target.to_string() },
+            "mixed" => BackendCommand::ResetMixed { target: target.to_string() },
+            "soft" => BackendCommand::ResetSoft { target: target.to_string() },
+            _ => return Ok(()),
+        };
+
+        if needs_confirmation {
+            use crate::components::ModalDialog;
+            let modal = ModalDialog::confirmation(
+                "Confirm Reset".to_string(),
+                format!("Reset {} to {}?\nThis will discard changes.", reset_type, target),
+                Intent::SendCommand(command),
+            );
+            self.state.active_modal = Some(modal);
+        } else {
+            self.state.active_modal = None;
+            let request_id = self.state.send_command(command)?;
+            if request_id != 0 {
+                self.requests.track(request_id);
+            }
+        }
+        Ok(())
+    }
+
+    fn close_modal(&mut self) {
+        self.state.active_modal = None;
     }
 }
 

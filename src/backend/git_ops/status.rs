@@ -17,6 +17,7 @@ pub fn get_status_files(repo: &GitRepo) -> Result<Vec<StatusEntry>> {
     options.include_ignored(false);
     options.include_unmodified(false);
     options.show(StatusShow::IndexAndWorkdir);
+    options.recurse_untracked_dirs(true); // 递归列出未跟踪目录中的文件
 
     let statuses = repo.repo.statuses(Some(&mut options))?;
     let mut entries = Vec::new();

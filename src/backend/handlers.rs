@@ -668,6 +668,27 @@ fn refresh_files(event_tx: &Sender<EventEnvelope>, repo: &GitRepo) {
     }
 }
 
+fn refresh_all(event_tx: &Sender<EventEnvelope>, repo: &GitRepo) {
+    // Refresh files
+    refresh_files(event_tx, repo);
+
+    // Refresh branches
+    if let Ok(branches) = super::git_ops::get_branches(repo) {
+        send_event(
+            event_tx,
+            EventEnvelope::new(None, FrontendEvent::BranchesUpdated { branches }),
+        );
+    }
+
+    // Refresh commits
+    if let Ok(commits) = super::git_ops::get_commits(repo, 100) {
+        send_event(
+            event_tx,
+            EventEnvelope::new(None, FrontendEvent::CommitsUpdated { commits }),
+        );
+    }
+}
+
 fn send_error(
     event_tx: &Sender<EventEnvelope>,
     request_id: Option<u64>,
@@ -684,4 +705,311 @@ fn send_error(
             },
         ),
     );
+}
+
+/// Stage all files handler
+pub struct StageAllHandler;
+impl CommandHandler for StageAllHandler {
+    fn handle(
+        &self,
+        envelope: &CommandEnvelope,
+        repo: &GitRepo,
+        event_tx: &Sender<EventEnvelope>,
+    ) -> Result<()> {
+        match super::git_ops::stage_all(repo) {
+            Ok(()) => {
+                send_event(
+                    event_tx,
+                    EventEnvelope::new(
+                        Some(envelope.request_id),
+                        FrontendEvent::ActionSucceeded {
+                            request_id: envelope.request_id,
+                            message: "Staged all files".to_string(),
+                        },
+                    ),
+                );
+                refresh_files(event_tx, repo);
+            }
+            Err(error) => send_error(event_tx, Some(envelope.request_id), "stage all", error),
+        }
+        Ok(())
+    }
+}
+
+/// Discard files handler
+pub struct DiscardFilesHandler;
+impl CommandHandler for DiscardFilesHandler {
+    fn handle(
+        &self,
+        envelope: &CommandEnvelope,
+        repo: &GitRepo,
+        event_tx: &Sender<EventEnvelope>,
+    ) -> Result<()> {
+        let paths = if let crate::backend::BackendCommand::DiscardFiles { paths } = &envelope.command {
+            paths.clone()
+        } else {
+            return Ok(());
+        };
+
+        match super::git_ops::discard_files(repo, &paths) {
+            Ok(()) => {
+                send_event(
+                    event_tx,
+                    EventEnvelope::new(
+                        Some(envelope.request_id),
+                        FrontendEvent::ActionSucceeded {
+                            request_id: envelope.request_id,
+                            message: format!("Discarded {} files", paths.len()),
+                        },
+                    ),
+                );
+                refresh_files(event_tx, repo);
+            }
+            Err(error) => send_error(event_tx, Some(envelope.request_id), "discard", error),
+        }
+        Ok(())
+    }
+}
+
+/// Stash files handler
+pub struct StashFilesHandler;
+impl CommandHandler for StashFilesHandler {
+    fn handle(
+        &self,
+        envelope: &CommandEnvelope,
+        repo: &GitRepo,
+        event_tx: &Sender<EventEnvelope>,
+    ) -> Result<()> {
+        let (paths, message) = if let crate::backend::BackendCommand::StashFiles { paths, message } = &envelope.command {
+            (paths.clone(), message.as_deref())
+        } else {
+            return Ok(());
+        };
+
+        match super::git_ops::stash_files(repo, &paths, message) {
+            Ok(()) => {
+                send_event(
+                    event_tx,
+                    EventEnvelope::new(
+                        Some(envelope.request_id),
+                        FrontendEvent::ActionSucceeded {
+                            request_id: envelope.request_id,
+                            message: format!("Stashed {} files", paths.len()),
+                        },
+                    ),
+                );
+                refresh_files(event_tx, repo);
+            }
+            Err(error) => send_error(event_tx, Some(envelope.request_id), "stash", error),
+        }
+        Ok(())
+    }
+}
+
+/// Amend commit handler
+pub struct AmendCommitHandler;
+impl CommandHandler for AmendCommitHandler {
+    fn handle(
+        &self,
+        envelope: &CommandEnvelope,
+        repo: &GitRepo,
+        event_tx: &Sender<EventEnvelope>,
+    ) -> Result<()> {
+        let message = if let crate::backend::BackendCommand::AmendCommit { message } = &envelope.command {
+            message.clone()
+        } else {
+            return Ok(());
+        };
+
+        match super::git_ops::amend_commit(repo, &message) {
+            Ok(()) => {
+                send_event(
+                    event_tx,
+                    EventEnvelope::new(
+                        Some(envelope.request_id),
+                        FrontendEvent::ActionSucceeded {
+                            request_id: envelope.request_id,
+                            message: "Amended commit".to_string(),
+                        },
+                    ),
+                );
+            }
+            Err(error) => send_error(event_tx, Some(envelope.request_id), "amend", error),
+        }
+        Ok(())
+    }
+}
+
+/// Get commit message handler
+pub struct GetCommitMessageHandler;
+impl CommandHandler for GetCommitMessageHandler {
+    fn handle(
+        &self,
+        envelope: &CommandEnvelope,
+        repo: &GitRepo,
+        event_tx: &Sender<EventEnvelope>,
+    ) -> Result<()> {
+        let commit_id = if let crate::backend::BackendCommand::GetCommitMessage { commit_id } = &envelope.command {
+            commit_id.clone()
+        } else {
+            return Ok(());
+        };
+
+        match super::git_ops::get_commit_message(repo, &commit_id) {
+            Ok(message) => {
+                send_event(
+                    event_tx,
+                    EventEnvelope::new(
+                        Some(envelope.request_id),
+                        FrontendEvent::CommitMessageLoaded {
+                            request_id: envelope.request_id,
+                            message,
+                        },
+                    ),
+                );
+            }
+            Err(error) => send_error(event_tx, Some(envelope.request_id), "get commit message", error),
+        }
+        Ok(())
+    }
+}
+
+/// Amend commit with files handler
+pub struct AmendCommitWithFilesHandler;
+impl CommandHandler for AmendCommitWithFilesHandler {
+    fn handle(
+        &self,
+        envelope: &CommandEnvelope,
+        repo: &GitRepo,
+        event_tx: &Sender<EventEnvelope>,
+    ) -> Result<()> {
+        let (commit_id, message, paths) = if let crate::backend::BackendCommand::AmendCommitWithFiles { commit_id, message, paths } = &envelope.command {
+            (commit_id.clone(), message.clone(), paths.clone())
+        } else {
+            return Ok(());
+        };
+
+        match super::git_ops::amend_commit_with_files(repo, &commit_id, &message, &paths) {
+            Ok(()) => {
+                send_event(
+                    event_tx,
+                    EventEnvelope::new(
+                        Some(envelope.request_id),
+                        FrontendEvent::ActionSucceeded {
+                            request_id: envelope.request_id,
+                            message: "Amended commit with selected files".to_string(),
+                        },
+                    ),
+                );
+                refresh_all(event_tx, repo);
+            }
+            Err(error) => send_error(event_tx, Some(envelope.request_id), "amend with files", error),
+        }
+        Ok(())
+    }
+}
+
+/// Reset hard handler
+pub struct ResetHardHandler;
+impl CommandHandler for ResetHardHandler {
+    fn handle(
+        &self,
+        envelope: &CommandEnvelope,
+        repo: &GitRepo,
+        event_tx: &Sender<EventEnvelope>,
+    ) -> Result<()> {
+        let target = if let crate::backend::BackendCommand::ResetHard { target } = &envelope.command {
+            target.clone()
+        } else {
+            return Ok(());
+        };
+
+        match super::git_ops::reset_hard(repo, &target) {
+            Ok(()) => {
+                send_event(
+                    event_tx,
+                    EventEnvelope::new(
+                        Some(envelope.request_id),
+                        FrontendEvent::ActionSucceeded {
+                            request_id: envelope.request_id,
+                            message: format!("Hard reset to {}", target),
+                        },
+                    ),
+                );
+                refresh_all(event_tx, repo);
+            }
+            Err(error) => send_error(event_tx, Some(envelope.request_id), "reset hard", error),
+        }
+        Ok(())
+    }
+}
+
+/// Reset mixed handler
+pub struct ResetMixedHandler;
+impl CommandHandler for ResetMixedHandler {
+    fn handle(
+        &self,
+        envelope: &CommandEnvelope,
+        repo: &GitRepo,
+        event_tx: &Sender<EventEnvelope>,
+    ) -> Result<()> {
+        let target = if let crate::backend::BackendCommand::ResetMixed { target } = &envelope.command {
+            target.clone()
+        } else {
+            return Ok(());
+        };
+
+        match super::git_ops::reset_mixed(repo, &target) {
+            Ok(()) => {
+                send_event(
+                    event_tx,
+                    EventEnvelope::new(
+                        Some(envelope.request_id),
+                        FrontendEvent::ActionSucceeded {
+                            request_id: envelope.request_id,
+                            message: format!("Mixed reset to {}", target),
+                        },
+                    ),
+                );
+                refresh_all(event_tx, repo);
+            }
+            Err(error) => send_error(event_tx, Some(envelope.request_id), "reset mixed", error),
+        }
+        Ok(())
+    }
+}
+
+/// Reset soft handler
+pub struct ResetSoftHandler;
+impl CommandHandler for ResetSoftHandler {
+    fn handle(
+        &self,
+        envelope: &CommandEnvelope,
+        repo: &GitRepo,
+        event_tx: &Sender<EventEnvelope>,
+    ) -> Result<()> {
+        let target = if let crate::backend::BackendCommand::ResetSoft { target } = &envelope.command {
+            target.clone()
+        } else {
+            return Ok(());
+        };
+
+        match super::git_ops::reset_soft(repo, &target) {
+            Ok(()) => {
+                send_event(
+                    event_tx,
+                    EventEnvelope::new(
+                        Some(envelope.request_id),
+                        FrontendEvent::ActionSucceeded {
+                            request_id: envelope.request_id,
+                            message: format!("Soft reset to {}", target),
+                        },
+                    ),
+                );
+                refresh_all(event_tx, repo);
+            }
+            Err(error) => send_error(event_tx, Some(envelope.request_id), "reset soft", error),
+        }
+        Ok(())
+    }
 }

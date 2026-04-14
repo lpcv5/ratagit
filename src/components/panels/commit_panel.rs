@@ -63,6 +63,10 @@ impl CommitPanel {
         self.state.selected()
     }
 
+    pub fn selected_commit<'a>(&self, commits: &'a [CommitEntry]) -> Option<&'a CommitEntry> {
+        self.state.selected().and_then(|idx| commits.get(idx))
+    }
+
     pub fn start_loading(&mut self, commit_id: String, summary: String) {
         self.clear_list_multi_select();
         self.mode = CommitMode::FilesLoading { commit_id, summary };

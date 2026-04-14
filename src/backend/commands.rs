@@ -50,6 +50,34 @@ pub enum BackendCommand {
     UnstageFiles {
         file_paths: Vec<String>,
     },
+    StageAll,
+    DiscardFiles {
+        paths: Vec<String>,
+    },
+    StashFiles {
+        paths: Vec<String>,
+        message: Option<String>,
+    },
+    AmendCommit {
+        message: String,
+    },
+    GetCommitMessage {
+        commit_id: String,
+    },
+    AmendCommitWithFiles {
+        commit_id: String,
+        message: String,
+        paths: Vec<String>,
+    },
+    ResetHard {
+        target: String,
+    },
+    ResetMixed {
+        target: String,
+    },
+    ResetSoft {
+        target: String,
+    },
     Quit,
 }
 

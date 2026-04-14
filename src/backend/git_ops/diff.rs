@@ -13,6 +13,7 @@ pub fn get_diff(repo: &GitRepo, file_path: &str) -> Result<String> {
     let mut options = DiffOptions::new();
     options.include_untracked(true);
     options.recurse_untracked_dirs(true);
+    options.show_untracked_content(true); // 关键：显示未跟踪文件的内容
     options.pathspec(file_path);
 
     let diff = repo

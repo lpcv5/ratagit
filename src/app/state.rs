@@ -2,6 +2,7 @@ use ratatui::widgets::ListState;
 
 use crate::backend::git_ops::{BranchEntry, CommitEntry, StashEntry, StatusEntry};
 use crate::backend::{CommandEnvelope, EventEnvelope};
+use crate::components::ModalDialog;
 use tokio::sync::mpsc::{Receiver, Sender};
 
 use super::components::AppComponents;
@@ -15,6 +16,7 @@ pub struct AppState {
     pub event_rx: Receiver<EventEnvelope>,
     pub should_quit: bool,
     pub components: AppComponents,
+    pub active_modal: Option<ModalDialog>,
     next_request_id: u64,
 }
 
@@ -27,6 +29,7 @@ impl AppState {
             data_cache: CachedData::default(),
             should_quit: false,
             components: AppComponents::new(),
+            active_modal: None,
             next_request_id: 1,
         }
     }
@@ -100,10 +103,6 @@ impl AppState {
             .file_list_panel
             .update_files(&self.data_cache.files);
         self.components.file_list_panel.clear_multi_select();
-        sync_list_state(
-            self.components.file_list_panel.state_mut(),
-            self.data_cache.files.len(),
-        );
     }
 
     pub fn sync_branch_list_state(&mut self) {
@@ -137,4 +136,49 @@ fn sync_list_state(state: &mut ListState, len: usize) {
 
     let current = state.selected().unwrap_or(0);
     state.select(Some(current.min(len.saturating_sub(1))));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sync_file_list_state_keeps_tree_selection_index() {
+        let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::channel(4);
+        let (_event_tx, event_rx) = tokio::sync::mpsc::channel(4);
+        let mut state = AppState::new(cmd_tx, event_rx);
+
+        state.data_cache.files = vec![
+            StatusEntry {
+                path: "src/components/mod.rs".to_string(),
+                is_staged: false,
+                is_unstaged: true,
+                is_untracked: false,
+            },
+            StatusEntry {
+                path: "src/components/core/tree.rs".to_string(),
+                is_staged: false,
+                is_unstaged: true,
+                is_untracked: false,
+            },
+            StatusEntry {
+                path: "src/components/panels/file_list.rs".to_string(),
+                is_staged: false,
+                is_unstaged: true,
+                is_untracked: false,
+            },
+        ];
+
+        state.sync_file_list_state();
+        state.components.file_list_panel.state_mut().select(Some(6));
+        let selected_before_sync = state.components.file_list_panel.selected_tree_node();
+
+        state.sync_file_list_state();
+
+        assert_eq!(state.components.file_list_panel.selected_index(), Some(6));
+        assert_eq!(
+            state.components.file_list_panel.selected_tree_node(),
+            selected_before_sync
+        );
+    }
 }

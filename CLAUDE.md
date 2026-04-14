@@ -20,7 +20,7 @@ cargo fmt --check && cargo check && cargo test && cargo clippy --all-targets --a
 
 ## Architecture
 
-Ratagit is a single-crate TUI Git client (ratatui + crossterm + git2 + tokio). The design separates all Git I/O from the UI via async channels.
+Ratagit is a single-crate TUI Git client (ratatui + crossterm + git2 + tokio). All Git I/O is separated from the UI via bounded async channels (capacity 100).
 
 ```
 main.rs
@@ -28,27 +28,31 @@ main.rs
   └── App::new(cmd_tx, event_rx).run().await        ← UI on the main thread
 ```
 
-**Channel protocol** — unbounded mpsc, two directions:
+**Channel protocol** — `CommandEnvelope` (UI → Backend) and `EventEnvelope` (Backend → UI), both carrying a `request_id: u64` for request tracking.
 
-| Direction | Type | Variants |
-|-----------|------|----------|
-| UI → Backend | `BackendCommand` | `RefreshStatus`, `RefreshBranches`, `RefreshCommits { limit }`, `RefreshStashes`, `GetDiff { file_path }`, `Quit` |
-| Backend → UI | `FrontendEvent` | `StatusUpdated`, `BranchesUpdated`, `CommitsUpdated`, `StashesUpdated`, `DiffLoaded`, `Error` |
+| Direction | Type | Key variants |
+|-----------|------|-------------|
+| UI → Backend | `BackendCommand` | `RefreshStatus`, `RefreshBranches`, `RefreshCommits`, `RefreshStashes`, `GetDiff`, `GetDiffBatch`, `GetCommitFiles`, `GetCommitDiff`, `GetBranchCommits`, `StageFile/s`, `UnstageFile/s`, `Quit` |
+| Backend → UI | `FrontendEvent` | `FilesUpdated`, `BranchesUpdated`, `CommitsUpdated`, `StashesUpdated`, `DiffLoaded`, `CommitFilesLoaded`, `BranchGraphLoaded`, `BranchCommitsLoaded`, `ActionSucceeded`, `Error` |
 
-**`App` (src/app.rs)** owns all UI state: panel focus (`Panel` enum), four `ListState`s, cached Git data (`files`, `branches`, `commits`, `stashes`), and the main-view/log scroll positions. The render loop is: drain backend events → draw → poll input (100 ms timeout).
+**`App` (src/app/runtime.rs)** — main loop: drain backend events → draw → poll input (100 ms). Owns `AppState` and `RequestTracker`.
 
-**`run_backend` (src/backend.rs)** opens `GitRepo::discover()` once, then loops on `cmd_rx.recv()`, dispatching to `GitRepo` methods and sending results back as `FrontendEvent`s.
+**`AppState` (src/app/state.rs)** — holds `UiState` (panel focus, scroll), `CachedData` (files, branches, commits, stashes, diffs), channel handles, and the log buffer.
 
-**`GitRepo` (src/git/repo.rs)** wraps `git2::Repository`. All Git operations live here: `get_status_files`, `get_branches`, `get_commits`, `get_stashes`, `get_diff`. Note: `get_stashes` requires `&mut self` due to the git2 callback API.
+**`RequestTracker` (src/app/request_tracker.rs)** — tracks in-flight request IDs; stale/duplicate responses are dropped in `handle_backend_event`.
 
-**Layout** — two columns (34% / 66%). Left column: Files, Branches, Commits, Stash panels stacked vertically. Right column: Main View (diff/detail/overview) + Log panel.
+**`run_backend` (src/backend/runtime.rs)** — opens `GitRepo::discover()` once, dispatches each `CommandEnvelope` to a `CommandHandler` impl (one per command type in `src/backend/handlers.rs`), sends `EventEnvelope` responses.
 
-**Panel navigation** — `Tab`/`Shift+Tab`/`h`/`l` cycle panels; `j`/`k` navigate within a panel; selecting a list item triggers `update_main_view_for_active_panel`, which either sends a `GetDiff` command (Files panel) or renders detail text inline (other panels).
+**`GitRepo` (src/backend/git_ops/repo.rs)** — wraps `git2::Repository`. Operations are split into focused modules: `status`, `branches`, `commits`, `stash`, `diff`, `commit_files`, `commit_diff`, `branch_graph`, `working_tree`.
+
+**Component system (src/components/)** — UI panels implement the `Component` trait (`handle_event` → `Intent`, `render`). Components return `Intent` values; `App` executes them via `intent_executor.rs`. Core primitives live in `src/components/core/` (tree, selectable_list, simple_list, multi_select, theme).
+
+**Layout** — two columns (34% / 66%). Left: Files, Branches, Commits, Stash panels. Right: Main View (diff/detail) + Log panel.
 
 ## Key conventions
 
-- Side effects belong in `backend.rs`; `App` methods stay pure where possible.
-- `push_log` appends to the in-memory log (capped at 200 entries) — use it for any backend response or user action worth surfacing.
-- `sync_list_state` keeps `ListState` in bounds after data refreshes; always call it when replacing a panel's data vec.
+- `Intent` (src/app/intent.rs) is the only way components communicate upward to `App` — no direct state mutation from components.
+- `push_log` appends to the in-memory log (capped at 200 entries); use it for any backend response or user action worth surfacing.
+- `sync_*_list_state` keeps `ListState` in bounds after data refreshes; always call after replacing a panel's data vec.
 - Commit messages use imperative prefixes: `feat:`, `refactor:`, `chore:`, `fix:`.
 - PRs for TUI-visible changes should include terminal captures.

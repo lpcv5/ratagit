@@ -12,6 +12,13 @@ pub enum Intent {
     ScrollLog(i16),
     ActivatePanel,
     ToggleStageFile,
+    StageAll,
+    DiscardSelected,
+    StashSelected,
+    AmendCommit,
+    ShowResetMenu,
+    ExecuteResetOption(usize),
+    CloseModal,
     #[allow(dead_code)]
     SendCommand(BackendCommand),
     None,

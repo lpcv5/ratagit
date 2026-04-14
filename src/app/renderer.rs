@@ -97,6 +97,11 @@ impl App {
             self.state.ui_state.active_panel == Panel::Log,
             &self.state.data_cache,
         );
+
+        // Render modal if active
+        if let Some(ref modal) = self.state.active_modal {
+            modal.render(frame, frame.area());
+        }
     }
 }
 

@@ -9,10 +9,96 @@ pub fn stage_file(repo: &GitRepo, file_path: &str) -> Result<()> {
 }
 
 pub fn unstage_file(repo: &GitRepo, file_path: &str) -> Result<()> {
-    // 从 index 中移除文件
+    // 使用 git reset HEAD <file> 的逻辑
+    // 将 index 中的文件恢复到 HEAD 的状态
     let mut index = repo.repo.index()?;
-    index.remove_path(file_path.as_ref())?;
+
+    // Check if HEAD exists (not an unborn branch)
+    let head_tree = repo.repo.head()
+        .ok()
+        .and_then(|head| head.peel_to_commit().ok())
+        .and_then(|commit| commit.tree().ok());
+
+    match head_tree {
+        Some(tree) => {
+            // Repository has commits, restore from HEAD
+            match tree.get_path(file_path.as_ref()) {
+                Ok(entry) => {
+                    // 文件在 HEAD 中存在，将 index 恢复到 HEAD 的状态
+                    index.add(&git2::IndexEntry {
+                        ctime: git2::IndexTime::new(0, 0),
+                        mtime: git2::IndexTime::new(0, 0),
+                        dev: 0,
+                        ino: 0,
+                        mode: entry.filemode() as u32,
+                        uid: 0,
+                        gid: 0,
+                        file_size: 0,
+                        id: entry.id(),
+                        flags: file_path.len() as u16,
+                        flags_extended: 0,
+                        path: file_path.as_bytes().to_vec(),
+                    })?;
+                }
+                Err(_) => {
+                    // 文件在 HEAD 中不存在（新文件），从 index 中移除
+                    index.remove_path(file_path.as_ref())?;
+                }
+            }
+        }
+        None => {
+            // No HEAD (unborn branch), just remove from index
+            index.remove_path(file_path.as_ref())?;
+        }
+    }
+
     Ok(index.write()?)
+}
+
+pub fn stage_all(repo: &GitRepo) -> Result<()> {
+    let mut index = repo.repo.index()?;
+    index.add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None)?;
+    Ok(index.write()?)
+}
+
+pub fn discard_files(repo: &GitRepo, paths: &[String]) -> Result<()> {
+    let workdir = repo.repo.workdir().ok_or_else(|| anyhow::anyhow!("No workdir"))?;
+
+    for path in paths {
+        let full_path = workdir.join(path);
+
+        // Check if file is tracked by checking if it exists in HEAD
+        let is_tracked = repo.repo.head()
+            .ok()
+            .and_then(|head| head.peel_to_tree().ok())
+            .and_then(|tree| tree.get_path(std::path::Path::new(path)).ok())
+            .is_some();
+
+        if is_tracked {
+            // Tracked file: use checkout to restore from HEAD
+            repo.repo.checkout_head(Some(
+                git2::build::CheckoutBuilder::new()
+                    .path(path)
+                    .force()
+            ))?;
+        } else {
+            // Untracked or staged-new file: remove from index and delete from working tree
+            let mut index = repo.repo.index()?;
+            // Remove from index if present (handles staged-new files)
+            let _ = index.remove_path(std::path::Path::new(path));
+            index.write()?;
+
+            // Delete from working tree
+            if full_path.exists() {
+                if full_path.is_dir() {
+                    std::fs::remove_dir_all(&full_path)?;
+                } else {
+                    std::fs::remove_file(&full_path)?;
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

@@ -28,6 +28,37 @@ fn short_oid(oid: &str) -> String {
     oid.chars().take(8).collect()
 }
 
+pub fn stash_files(repo: &GitRepo, paths: &[String], message: Option<&str>) -> Result<()> {
+    let msg = message.unwrap_or("WIP on files");
+
+    // Use git stash push with pathspec
+    // git2 doesn't have direct support for partial stash, so we use command
+    use std::process::Command;
+
+    let repo_path = repo.repo.path().parent().unwrap_or(repo.repo.path());
+    let mut cmd = Command::new("git");
+    cmd.current_dir(repo_path);
+    cmd.arg("stash").arg("push");
+
+    // Add -u to include untracked files
+    cmd.arg("-u");
+
+    cmd.arg("-m").arg(msg);
+
+    // Add -- separator once, then all paths
+    cmd.arg("--");
+    for path in paths {
+        cmd.arg(path);
+    }
+
+    let output = cmd.output()?;
+    if !output.status.success() {
+        anyhow::bail!("Failed to stash files: {}", String::from_utf8_lossy(&output.stderr));
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

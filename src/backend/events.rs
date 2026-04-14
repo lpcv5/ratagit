@@ -39,6 +39,11 @@ pub enum FrontendEvent {
         branch_name: String,
         commits: Vec<crate::backend::git_ops::CommitEntry>,
     },
+    CommitMessageLoaded {
+        #[allow(dead_code)]
+        request_id: u64,
+        message: String,
+    },
     ActionSucceeded {
         #[allow(dead_code)]
         request_id: u64,

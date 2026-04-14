@@ -17,4 +17,6 @@ pub struct CachedData {
     pub branch_graphs: HashMap<String, String>,
     /// 进入 branch commits sub-panel 前保存的 commits，退出时恢复
     pub saved_commits: Option<Vec<CommitEntry>>,
+    /// Pending commit message for amend operation
+    pub pending_commit_message: Option<String>,
 }

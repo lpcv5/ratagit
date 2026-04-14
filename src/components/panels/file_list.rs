@@ -13,12 +13,15 @@ use crate::components::Component;
 use crate::components::Intent;
 
 /// 将 StatusEntry 转换为 GitFileStatus
+/// 优先显示 unstaged 状态，如果没有则显示 staged 状态
 fn status_entry_to_git_status(entry: &StatusEntry) -> GitFileStatus {
     if entry.is_untracked {
         GitFileStatus::Untracked
-    } else if entry.is_staged {
-        GitFileStatus::Added
     } else if entry.is_unstaged {
+        // 有 unstaged 修改，显示 Modified（即使也被 staged 了）
+        GitFileStatus::Modified
+    } else if entry.is_staged {
+        // 只有 staged 修改，显示 Modified（而不是 Added）
         GitFileStatus::Modified
     } else {
         GitFileStatus::Unmodified
@@ -32,7 +35,21 @@ fn build_file_tree(files: &[StatusEntry]) -> Vec<TreeNode> {
         .iter()
         .map(|f| (f.path.clone(), status_entry_to_git_status(f)))
         .collect();
-    build_tree_from_paths(&paths, Some(&status_map))
+    let staged_map: HashMap<String, bool> = files
+        .iter()
+        .map(|f| (f.path.clone(), f.is_staged))
+        .collect();
+
+    let mut nodes = build_tree_from_paths(&paths, Some(&status_map));
+
+    // 设置 is_staged 标志
+    for node in &mut nodes {
+        if let Some(&is_staged) = staged_map.get(&node.path) {
+            node.is_staged = is_staged;
+        }
+    }
+
+    nodes
 }
 
 /// 文件树面板组件（使用 Tree 组件）
@@ -100,6 +117,16 @@ impl Component for FileListPanel {
         if let Event::Key(key) = event {
             if key.kind != KeyEventKind::Press {
                 return Intent::None;
+            }
+
+            // New keybindings
+            match key.code {
+                KeyCode::Char('a') => return Intent::StageAll,
+                KeyCode::Char('A') => return Intent::AmendCommit,
+                KeyCode::Char('d') => return Intent::DiscardSelected,
+                KeyCode::Char('D') => return Intent::ShowResetMenu,
+                KeyCode::Char('s') => return Intent::StashSelected,
+                _ => {}
             }
 
             // Enter 键：目录展开/折叠后也刷新右侧详情；文件上 Enter 仅作为手动刷新。
@@ -191,7 +218,8 @@ mod tests {
             is_unstaged: false,
             is_untracked: false,
         };
-        assert_eq!(status_entry_to_git_status(&entry), GitFileStatus::Added);
+        // Staged 文件显示为 Modified（保持 M 图标）
+        assert_eq!(status_entry_to_git_status(&entry), GitFileStatus::Modified);
     }
 
     #[test]

@@ -6,10 +6,11 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use super::git_ops::GitRepo;
 use super::handlers::CommandHandler;
 use super::handlers::{
-    send_event, GetBranchCommitsHandler, GetBranchGraphHandler, GetCommitDiffBatchHandler, GetCommitDiffHandler,
-    GetCommitFilesHandler, GetDiffBatchHandler, GetDiffHandler, RefreshBranchesHandler,
-    RefreshCommitsHandler, RefreshStashesHandler, RefreshStatusHandler, StageFileHandler,
-    StageFilesHandler, UnstageFileHandler, UnstageFilesHandler,
+    send_event, AmendCommitHandler, AmendCommitWithFilesHandler, DiscardFilesHandler, GetBranchCommitsHandler, GetBranchGraphHandler,
+    GetCommitDiffBatchHandler, GetCommitDiffHandler, GetCommitFilesHandler, GetCommitMessageHandler, GetDiffBatchHandler,
+    GetDiffHandler, RefreshBranchesHandler, RefreshCommitsHandler, RefreshStashesHandler,
+    RefreshStatusHandler, ResetHardHandler, ResetMixedHandler, ResetSoftHandler, StageAllHandler,
+    StageFileHandler, StageFilesHandler, StashFilesHandler, UnstageFileHandler, UnstageFilesHandler,
 };
 use super::{CommandEnvelope, EventEnvelope, FrontendEvent};
 
@@ -33,6 +34,15 @@ enum CommandKey {
     StageFiles,
     UnstageFile,
     UnstageFiles,
+    StageAll,
+    DiscardFiles,
+    StashFiles,
+    AmendCommit,
+    GetCommitMessage,
+    AmendCommitWithFiles,
+    ResetHard,
+    ResetMixed,
+    ResetSoft,
 }
 
 pub async fn run_backend(mut cmd_rx: Receiver<CommandEnvelope>, event_tx: Sender<EventEnvelope>) {
@@ -115,6 +125,42 @@ pub async fn run_backend(mut cmd_rx: Receiver<CommandEnvelope>, event_tx: Sender
         CommandKey::GetBranchCommits,
         Box::new(GetBranchCommitsHandler) as Box<dyn CommandHandler>,
     );
+    handlers.insert(
+        CommandKey::StageAll,
+        Box::new(StageAllHandler) as Box<dyn CommandHandler>,
+    );
+    handlers.insert(
+        CommandKey::DiscardFiles,
+        Box::new(DiscardFilesHandler) as Box<dyn CommandHandler>,
+    );
+    handlers.insert(
+        CommandKey::StashFiles,
+        Box::new(StashFilesHandler) as Box<dyn CommandHandler>,
+    );
+    handlers.insert(
+        CommandKey::AmendCommit,
+        Box::new(AmendCommitHandler) as Box<dyn CommandHandler>,
+    );
+    handlers.insert(
+        CommandKey::GetCommitMessage,
+        Box::new(GetCommitMessageHandler) as Box<dyn CommandHandler>,
+    );
+    handlers.insert(
+        CommandKey::AmendCommitWithFiles,
+        Box::new(AmendCommitWithFilesHandler) as Box<dyn CommandHandler>,
+    );
+    handlers.insert(
+        CommandKey::ResetHard,
+        Box::new(ResetHardHandler) as Box<dyn CommandHandler>,
+    );
+    handlers.insert(
+        CommandKey::ResetMixed,
+        Box::new(ResetMixedHandler) as Box<dyn CommandHandler>,
+    );
+    handlers.insert(
+        CommandKey::ResetSoft,
+        Box::new(ResetSoftHandler) as Box<dyn CommandHandler>,
+    );
 
     while let Some(envelope) = cmd_rx.recv().await {
         let command_key = match &envelope.command {
@@ -143,6 +189,15 @@ pub async fn run_backend(mut cmd_rx: Receiver<CommandEnvelope>, event_tx: Sender
             crate::backend::BackendCommand::StageFiles { .. } => Some(CommandKey::StageFiles),
             crate::backend::BackendCommand::UnstageFile { .. } => Some(CommandKey::UnstageFile),
             crate::backend::BackendCommand::UnstageFiles { .. } => Some(CommandKey::UnstageFiles),
+            crate::backend::BackendCommand::StageAll => Some(CommandKey::StageAll),
+            crate::backend::BackendCommand::DiscardFiles { .. } => Some(CommandKey::DiscardFiles),
+            crate::backend::BackendCommand::StashFiles { .. } => Some(CommandKey::StashFiles),
+            crate::backend::BackendCommand::AmendCommit { .. } => Some(CommandKey::AmendCommit),
+            crate::backend::BackendCommand::GetCommitMessage { .. } => Some(CommandKey::GetCommitMessage),
+            crate::backend::BackendCommand::AmendCommitWithFiles { .. } => Some(CommandKey::AmendCommitWithFiles),
+            crate::backend::BackendCommand::ResetHard { .. } => Some(CommandKey::ResetHard),
+            crate::backend::BackendCommand::ResetMixed { .. } => Some(CommandKey::ResetMixed),
+            crate::backend::BackendCommand::ResetSoft { .. } => Some(CommandKey::ResetSoft),
             crate::backend::BackendCommand::Quit => None,
         };
 
