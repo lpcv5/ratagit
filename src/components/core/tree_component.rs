@@ -97,9 +97,7 @@ impl TreePanel {
         let prefix = format!("{}/", dir_path);
         self.all_nodes
             .iter()
-            .filter(|node| {
-                !node.is_dir && node.path.starts_with(&prefix)
-            })
+            .filter(|node| !node.is_dir && node.path.starts_with(&prefix))
             .map(|node| (node.path.clone(), false))
             .collect()
     }
@@ -170,7 +168,8 @@ impl TreePanel {
 
         // 找不到原路径，保持索引位置
         let current = self.state.selected().unwrap_or(0);
-        self.state.select(Some(current.min(visible_len.saturating_sub(1))));
+        self.state
+            .select(Some(current.min(visible_len.saturating_sub(1))));
     }
 
     /// 切换目录的展开/折叠状态

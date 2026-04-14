@@ -22,4 +22,3 @@ fn test_fixture_smoke_test() {
     revwalk.push_head().unwrap();
     assert!(revwalk.count() >= 2);
 }
-

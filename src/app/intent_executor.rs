@@ -100,7 +100,8 @@ impl App {
             Panel::Branches => {
                 if let Some(branch) = self.state.selected_branch() {
                     let branch_name = branch.name.clone();
-                    self.state.push_log(format!("Loading commits for branch {branch_name}..."));
+                    self.state
+                        .push_log(format!("Loading commits for branch {branch_name}..."));
                     let request_id = self.state.send_command(BackendCommand::GetBranchCommits {
                         branch_name,
                         limit: 50,
@@ -525,7 +526,12 @@ impl App {
     }
 
     fn discard_selected(&mut self) -> Result<()> {
-        let paths = if self.state.components.file_list_panel.is_multi_select_active() {
+        let paths = if self
+            .state
+            .components
+            .file_list_panel
+            .is_multi_select_active()
+        {
             self.state
                 .components
                 .file_list_panel
@@ -547,7 +553,10 @@ impl App {
         use crate::components::ModalDialog;
         let modal = ModalDialog::confirmation(
             "Discard Changes".to_string(),
-            format!("Discard changes to {} file(s)?\nThis cannot be undone.", paths.len()),
+            format!(
+                "Discard changes to {} file(s)?\nThis cannot be undone.",
+                paths.len()
+            ),
             Intent::SendCommand(BackendCommand::DiscardFiles { paths }),
         );
         self.state.active_modal = Some(modal);
@@ -555,7 +564,12 @@ impl App {
     }
 
     fn stash_selected(&mut self) -> Result<()> {
-        let paths = if self.state.components.file_list_panel.is_multi_select_active() {
+        let paths = if self
+            .state
+            .components
+            .file_list_panel
+            .is_multi_select_active()
+        {
             self.state
                 .components
                 .file_list_panel
@@ -585,26 +599,41 @@ impl App {
 
     fn amend_commit(&mut self) -> Result<()> {
         // Get selected files from Files panel
-        let paths = self.state.components.file_list_panel.selected_tree_targets();
+        let paths = self
+            .state
+            .components
+            .file_list_panel
+            .selected_tree_targets();
 
         if paths.is_empty() {
-            self.state.push_log("No files selected for amend".to_string());
+            self.state
+                .push_log("No files selected for amend".to_string());
             return Ok(());
         }
 
         // Get selected commit from Commits panel
-        let selected_commit = self.state.components.commit_panel.selected_commit(&self.state.data_cache.commits);
+        let selected_commit = self
+            .state
+            .components
+            .commit_panel
+            .selected_commit(&self.state.data_cache.commits);
 
         if let Some(commit) = selected_commit {
             let commit_id = commit.id.clone();
 
             // Check if this is HEAD (first commit in the list)
-            let is_head = self.state.data_cache.commits.first()
+            let is_head = self
+                .state
+                .data_cache
+                .commits
+                .first()
                 .map(|c| c.id == commit_id)
                 .unwrap_or(false);
 
             if !is_head {
-                self.state.push_log("Can only amend HEAD commit. Please select the most recent commit.".to_string());
+                self.state.push_log(
+                    "Can only amend HEAD commit. Please select the most recent commit.".to_string(),
+                );
                 return Ok(());
             }
 
@@ -620,15 +649,22 @@ impl App {
                 message,
                 Intent::SendCommand(crate::backend::BackendCommand::AmendCommitWithFiles {
                     commit_id,
-                    message: format!("{}{}",
+                    message: format!(
+                        "{}{}",
                         commit.summary,
-                        commit.body.as_ref().map(|b| format!("\n\n{}", b)).unwrap_or_default()
+                        commit
+                            .body
+                            .as_ref()
+                            .map(|b| format!("\n\n{}", b))
+                            .unwrap_or_default()
                     ),
                     paths: paths.into_iter().map(|(path, _)| path).collect(),
                 }),
             ));
         } else {
-            self.state.push_log("No commit selected. Please select HEAD in the Commits panel.".to_string());
+            self.state.push_log(
+                "No commit selected. Please select HEAD in the Commits panel.".to_string(),
+            );
         }
 
         Ok(())
@@ -671,9 +707,15 @@ impl App {
         };
 
         let command = match reset_type {
-            "hard" => BackendCommand::ResetHard { target: target.to_string() },
-            "mixed" => BackendCommand::ResetMixed { target: target.to_string() },
-            "soft" => BackendCommand::ResetSoft { target: target.to_string() },
+            "hard" => BackendCommand::ResetHard {
+                target: target.to_string(),
+            },
+            "mixed" => BackendCommand::ResetMixed {
+                target: target.to_string(),
+            },
+            "soft" => BackendCommand::ResetSoft {
+                target: target.to_string(),
+            },
             _ => return Ok(()),
         };
 
@@ -681,7 +723,10 @@ impl App {
             use crate::components::ModalDialog;
             let modal = ModalDialog::confirmation(
                 "Confirm Reset".to_string(),
-                format!("Reset {} to {}?\nThis will discard changes.", reset_type, target),
+                format!(
+                    "Reset {} to {}?\nThis will discard changes.",
+                    reset_type, target
+                ),
                 Intent::SendCommand(command),
             );
             self.state.active_modal = Some(modal);

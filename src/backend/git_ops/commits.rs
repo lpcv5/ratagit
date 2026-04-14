@@ -20,8 +20,14 @@ pub fn get_commits(repo: &GitRepo, limit: usize) -> Result<Vec<CommitEntry>> {
     collect_commits(repo, &mut walk, limit)
 }
 
-pub fn get_commits_for_branch(repo: &GitRepo, branch_name: &str, limit: usize) -> Result<Vec<CommitEntry>> {
-    let branch = repo.repo.find_branch(branch_name, git2::BranchType::Local)?;
+pub fn get_commits_for_branch(
+    repo: &GitRepo,
+    branch_name: &str,
+    limit: usize,
+) -> Result<Vec<CommitEntry>> {
+    let branch = repo
+        .repo
+        .find_branch(branch_name, git2::BranchType::Local)?;
     let commit = branch.get().peel_to_commit()?;
     let mut walk = repo.repo.revwalk()?;
     walk.set_sorting(Sort::TIME)?;
@@ -29,7 +35,11 @@ pub fn get_commits_for_branch(repo: &GitRepo, branch_name: &str, limit: usize) -
     collect_commits(repo, &mut walk, limit)
 }
 
-fn collect_commits(repo: &GitRepo, walk: &mut git2::Revwalk, limit: usize) -> Result<Vec<CommitEntry>> {
+fn collect_commits(
+    repo: &GitRepo,
+    walk: &mut git2::Revwalk,
+    limit: usize,
+) -> Result<Vec<CommitEntry>> {
     let mut commits = Vec::new();
     for oid_result in walk.take(limit) {
         let oid = oid_result?;
@@ -80,7 +90,12 @@ pub fn amend_commit(repo: &GitRepo, message: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn amend_commit_with_files(repo: &GitRepo, commit_id: &str, message: &str, paths: &[String]) -> Result<()> {
+pub fn amend_commit_with_files(
+    repo: &GitRepo,
+    commit_id: &str,
+    message: &str,
+    paths: &[String],
+) -> Result<()> {
     // This is a complex operation that requires:
     // 1. Create a new tree with the specified files from the index
     // 2. Rebase the commit with the new tree
@@ -117,18 +132,14 @@ pub fn amend_commit_with_files(repo: &GitRepo, commit_id: &str, message: &str, p
             vec![]
         };
 
-        repo.repo.commit(
-            Some("HEAD"),
-            &sig,
-            &sig,
-            message,
-            &tree,
-            &parents,
-        )?;
+        repo.repo
+            .commit(Some("HEAD"), &sig, &sig, message, &tree, &parents)?;
     } else {
         // Amending a non-HEAD commit requires interactive rebase
         // This is complex and risky, so we'll return an error for now
-        anyhow::bail!("Amending non-HEAD commits is not yet supported. Please use 'git rebase -i' manually.");
+        anyhow::bail!(
+            "Amending non-HEAD commits is not yet supported. Please use 'git rebase -i' manually."
+        );
     }
 
     Ok(())
@@ -166,8 +177,12 @@ mod tests {
 
         {
             let mut config = repo.config().expect("Failed to get config");
-            config.set_str("user.name", "Test User").expect("Failed to set user.name");
-            config.set_str("user.email", "test@example.com").expect("Failed to set user.email");
+            config
+                .set_str("user.name", "Test User")
+                .expect("Failed to set user.name");
+            config
+                .set_str("user.email", "test@example.com")
+                .expect("Failed to set user.email");
         }
 
         {
@@ -189,7 +204,9 @@ mod tests {
         fs::write(temp_dir.path().join(&filename), "content").expect("Failed to write file");
 
         let mut index = repo.repo.index().expect("Failed to get index");
-        index.add_path(Path::new(&filename)).expect("Failed to add file");
+        index
+            .add_path(Path::new(&filename))
+            .expect("Failed to add file");
         index.write().expect("Failed to write index");
 
         let sig = repo.repo.signature().expect("Failed to create signature");
@@ -197,7 +214,8 @@ mod tests {
         let tree = repo.repo.find_tree(tree_id).expect("Failed to find tree");
         let parent = repo.repo.head().unwrap().peel_to_commit().unwrap();
 
-        repo.repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &[&parent])
+        repo.repo
+            .commit(Some("HEAD"), &sig, &sig, message, &tree, &[&parent])
             .expect("Failed to commit");
 
         // Small delay to ensure different timestamps
@@ -258,8 +276,12 @@ mod tests {
         // Create a branch and add commits to it
         let head = repo.repo.head().expect("Failed to get HEAD");
         let commit = head.peel_to_commit().expect("Failed to peel to commit");
-        repo.repo.branch("feature", &commit, false).expect("Failed to create branch");
-        repo.repo.set_head("refs/heads/feature").expect("Failed to set HEAD");
+        repo.repo
+            .branch("feature", &commit, false)
+            .expect("Failed to create branch");
+        repo.repo
+            .set_head("refs/heads/feature")
+            .expect("Failed to set HEAD");
 
         add_commit(&repo, &temp_dir, "Feature commit");
 

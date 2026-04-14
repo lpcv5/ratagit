@@ -52,8 +52,12 @@ mod tests {
 
         {
             let mut config = repo.config().expect("Failed to get config");
-            config.set_str("user.name", "Test User").expect("Failed to set user.name");
-            config.set_str("user.email", "test@example.com").expect("Failed to set user.email");
+            config
+                .set_str("user.name", "Test User")
+                .expect("Failed to set user.name");
+            config
+                .set_str("user.email", "test@example.com")
+                .expect("Failed to set user.email");
         }
 
         {
@@ -79,14 +83,17 @@ mod tests {
         fs::write(temp_dir.path().join("file.txt"), "content").expect("Failed to write file");
         {
             let mut index = repo.repo.index().expect("Failed to get index");
-            index.add_path(Path::new("file.txt")).expect("Failed to add file");
+            index
+                .add_path(Path::new("file.txt"))
+                .expect("Failed to add file");
             index.write().expect("Failed to write index");
 
             let sig = repo.repo.signature().expect("Failed to create signature");
             let tree_id = index.write_tree().expect("Failed to write tree");
             let tree = repo.repo.find_tree(tree_id).expect("Failed to find tree");
             let parent = repo.repo.head().unwrap().peel_to_commit().unwrap();
-            repo.repo.commit(Some("HEAD"), &sig, &sig, "Add file", &tree, &[&parent])
+            repo.repo
+                .commit(Some("HEAD"), &sig, &sig, "Add file", &tree, &[&parent])
                 .expect("Failed to commit");
         }
 
@@ -121,14 +128,24 @@ mod tests {
             fs::write(temp_dir.path().join(&filename), "content").expect("Failed to write file");
 
             let mut index = repo.repo.index().expect("Failed to get index");
-            index.add_path(Path::new(&filename)).expect("Failed to add file");
+            index
+                .add_path(Path::new(&filename))
+                .expect("Failed to add file");
             index.write().expect("Failed to write index");
 
             let sig = repo.repo.signature().expect("Failed to create signature");
             let tree_id = index.write_tree().expect("Failed to write tree");
             let tree = repo.repo.find_tree(tree_id).expect("Failed to find tree");
             let parent = repo.repo.head().unwrap().peel_to_commit().unwrap();
-            repo.repo.commit(Some("HEAD"), &sig, &sig, &format!("Commit {}", i), &tree, &[&parent])
+            repo.repo
+                .commit(
+                    Some("HEAD"),
+                    &sig,
+                    &sig,
+                    &format!("Commit {}", i),
+                    &tree,
+                    &[&parent],
+                )
                 .expect("Failed to commit");
 
             std::thread::sleep(std::time::Duration::from_millis(10));

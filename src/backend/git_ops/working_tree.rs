@@ -14,7 +14,9 @@ pub fn unstage_file(repo: &GitRepo, file_path: &str) -> Result<()> {
     let mut index = repo.repo.index()?;
 
     // Check if HEAD exists (not an unborn branch)
-    let head_tree = repo.repo.head()
+    let head_tree = repo
+        .repo
+        .head()
         .ok()
         .and_then(|head| head.peel_to_commit().ok())
         .and_then(|commit| commit.tree().ok());
@@ -62,13 +64,18 @@ pub fn stage_all(repo: &GitRepo) -> Result<()> {
 }
 
 pub fn discard_files(repo: &GitRepo, paths: &[String]) -> Result<()> {
-    let workdir = repo.repo.workdir().ok_or_else(|| anyhow::anyhow!("No workdir"))?;
+    let workdir = repo
+        .repo
+        .workdir()
+        .ok_or_else(|| anyhow::anyhow!("No workdir"))?;
 
     for path in paths {
         let full_path = workdir.join(path);
 
         // Check if file is tracked by checking if it exists in HEAD
-        let is_tracked = repo.repo.head()
+        let is_tracked = repo
+            .repo
+            .head()
             .ok()
             .and_then(|head| head.peel_to_tree().ok())
             .and_then(|tree| tree.get_path(std::path::Path::new(path)).ok())
@@ -76,11 +83,8 @@ pub fn discard_files(repo: &GitRepo, paths: &[String]) -> Result<()> {
 
         if is_tracked {
             // Tracked file: use checkout to restore from HEAD
-            repo.repo.checkout_head(Some(
-                git2::build::CheckoutBuilder::new()
-                    .path(path)
-                    .force()
-            ))?;
+            repo.repo
+                .checkout_head(Some(git2::build::CheckoutBuilder::new().path(path).force()))?;
         } else {
             // Untracked or staged-new file: remove from index and delete from working tree
             let mut index = repo.repo.index()?;
@@ -115,8 +119,12 @@ mod tests {
 
         {
             let mut config = repo.config().expect("Failed to get config");
-            config.set_str("user.name", "Test User").expect("Failed to set user.name");
-            config.set_str("user.email", "test@example.com").expect("Failed to set user.email");
+            config
+                .set_str("user.name", "Test User")
+                .expect("Failed to set user.name");
+            config
+                .set_str("user.email", "test@example.com")
+                .expect("Failed to set user.email");
         }
 
         {
@@ -145,7 +153,10 @@ mod tests {
 
         // Verify file is staged
         let statuses = repo.repo.statuses(None).expect("Failed to get statuses");
-        let entry = statuses.iter().find(|e| e.path() == Some("new.txt")).expect("File not found");
+        let entry = statuses
+            .iter()
+            .find(|e| e.path() == Some("new.txt"))
+            .expect("File not found");
         assert!(entry.status().is_index_new());
     }
 
@@ -165,7 +176,9 @@ mod tests {
         // Create and stage file
         fs::write(temp_dir.path().join("staged.txt"), "content").expect("Failed to write file");
         let mut index = repo.repo.index().expect("Failed to get index");
-        index.add_path(Path::new("staged.txt")).expect("Failed to add file");
+        index
+            .add_path(Path::new("staged.txt"))
+            .expect("Failed to add file");
         index.write().expect("Failed to write index");
 
         // Unstage the file
@@ -173,7 +186,10 @@ mod tests {
 
         // Verify file is no longer staged
         let statuses = repo.repo.statuses(None).expect("Failed to get statuses");
-        let entry = statuses.iter().find(|e| e.path() == Some("staged.txt")).expect("File not found");
+        let entry = statuses
+            .iter()
+            .find(|e| e.path() == Some("staged.txt"))
+            .expect("File not found");
         assert!(!entry.status().is_index_new());
         assert!(entry.status().is_wt_new()); // Should still be untracked
     }

@@ -6,11 +6,13 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use super::git_ops::GitRepo;
 use super::handlers::CommandHandler;
 use super::handlers::{
-    send_event, AmendCommitHandler, AmendCommitWithFilesHandler, DiscardFilesHandler, GetBranchCommitsHandler, GetBranchGraphHandler,
-    GetCommitDiffBatchHandler, GetCommitDiffHandler, GetCommitFilesHandler, GetCommitMessageHandler, GetDiffBatchHandler,
+    send_event, AmendCommitHandler, AmendCommitWithFilesHandler, DiscardFilesHandler,
+    GetBranchCommitsHandler, GetBranchGraphHandler, GetCommitDiffBatchHandler,
+    GetCommitDiffHandler, GetCommitFilesHandler, GetCommitMessageHandler, GetDiffBatchHandler,
     GetDiffHandler, RefreshBranchesHandler, RefreshCommitsHandler, RefreshStashesHandler,
     RefreshStatusHandler, ResetHardHandler, ResetMixedHandler, ResetSoftHandler, StageAllHandler,
-    StageFileHandler, StageFilesHandler, StashFilesHandler, UnstageFileHandler, UnstageFilesHandler,
+    StageFileHandler, StageFilesHandler, StashFilesHandler, UnstageFileHandler,
+    UnstageFilesHandler,
 };
 use super::{CommandEnvelope, EventEnvelope, FrontendEvent};
 
@@ -193,8 +195,12 @@ pub async fn run_backend(mut cmd_rx: Receiver<CommandEnvelope>, event_tx: Sender
             crate::backend::BackendCommand::DiscardFiles { .. } => Some(CommandKey::DiscardFiles),
             crate::backend::BackendCommand::StashFiles { .. } => Some(CommandKey::StashFiles),
             crate::backend::BackendCommand::AmendCommit { .. } => Some(CommandKey::AmendCommit),
-            crate::backend::BackendCommand::GetCommitMessage { .. } => Some(CommandKey::GetCommitMessage),
-            crate::backend::BackendCommand::AmendCommitWithFiles { .. } => Some(CommandKey::AmendCommitWithFiles),
+            crate::backend::BackendCommand::GetCommitMessage { .. } => {
+                Some(CommandKey::GetCommitMessage)
+            }
+            crate::backend::BackendCommand::AmendCommitWithFiles { .. } => {
+                Some(CommandKey::AmendCommitWithFiles)
+            }
             crate::backend::BackendCommand::ResetHard { .. } => Some(CommandKey::ResetHard),
             crate::backend::BackendCommand::ResetMixed { .. } => Some(CommandKey::ResetMixed),
             crate::backend::BackendCommand::ResetSoft { .. } => Some(CommandKey::ResetSoft),

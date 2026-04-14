@@ -52,9 +52,7 @@ impl ModalDialog {
 
     /// Handle input events for the modal
     pub fn handle_event(&mut self, event: &Event) -> Intent {
-        let Event::Key(KeyEvent {
-            code, kind, ..
-        }) = event else {
+        let Event::Key(KeyEvent { code, kind, .. }) = event else {
             return Intent::None;
         };
 
@@ -95,11 +93,9 @@ impl ModalDialog {
     /// Render the modal dialog
     pub fn render(&self, frame: &mut Frame, area: Rect) {
         match &self.modal_type {
-            ModalType::Confirmation {
-                title,
-                message,
-                ..
-            } => self.render_confirmation(frame, area, title, message),
+            ModalType::Confirmation { title, message, .. } => {
+                self.render_confirmation(frame, area, title, message)
+            }
             ModalType::Selection {
                 title,
                 options,
@@ -133,9 +129,17 @@ impl ModalDialog {
 
         let prompt = Paragraph::new(Line::from(vec![
             Span::styled("Press ", Style::default()),
-            Span::styled("y", Style::default().add_modifier(Modifier::BOLD).fg(Color::Green)),
+            Span::styled(
+                "y",
+                Style::default()
+                    .add_modifier(Modifier::BOLD)
+                    .fg(Color::Green),
+            ),
             Span::styled(" to confirm, ", Style::default()),
-            Span::styled("n", Style::default().add_modifier(Modifier::BOLD).fg(Color::Red)),
+            Span::styled(
+                "n",
+                Style::default().add_modifier(Modifier::BOLD).fg(Color::Red),
+            ),
             Span::styled(" to cancel", Style::default()),
         ]))
         .alignment(Alignment::Center);

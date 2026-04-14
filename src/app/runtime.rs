@@ -200,7 +200,9 @@ impl App {
                 }
             }
             FrontendEvent::BranchCommitsLoaded {
-                request_id, branch_name, commits,
+                request_id,
+                branch_name,
+                commits,
             } => {
                 if !self.requests.is_latest_branch_commits(request_id) {
                     self.state.push_log(format!(

@@ -416,7 +416,6 @@ impl CommandHandler for GetBranchCommitsHandler {
     }
 }
 
-
 /// 获取分支提交图处理器
 pub struct GetBranchGraphHandler;
 impl CommandHandler for GetBranchGraphHandler {
@@ -745,11 +744,12 @@ impl CommandHandler for DiscardFilesHandler {
         repo: &GitRepo,
         event_tx: &Sender<EventEnvelope>,
     ) -> Result<()> {
-        let paths = if let crate::backend::BackendCommand::DiscardFiles { paths } = &envelope.command {
-            paths.clone()
-        } else {
-            return Ok(());
-        };
+        let paths =
+            if let crate::backend::BackendCommand::DiscardFiles { paths } = &envelope.command {
+                paths.clone()
+            } else {
+                return Ok(());
+            };
 
         match super::git_ops::discard_files(repo, &paths) {
             Ok(()) => {
@@ -780,7 +780,11 @@ impl CommandHandler for StashFilesHandler {
         repo: &GitRepo,
         event_tx: &Sender<EventEnvelope>,
     ) -> Result<()> {
-        let (paths, message) = if let crate::backend::BackendCommand::StashFiles { paths, message } = &envelope.command {
+        let (paths, message) = if let crate::backend::BackendCommand::StashFiles {
+            paths,
+            message,
+        } = &envelope.command
+        {
             (paths.clone(), message.as_deref())
         } else {
             return Ok(());
@@ -815,11 +819,12 @@ impl CommandHandler for AmendCommitHandler {
         repo: &GitRepo,
         event_tx: &Sender<EventEnvelope>,
     ) -> Result<()> {
-        let message = if let crate::backend::BackendCommand::AmendCommit { message } = &envelope.command {
-            message.clone()
-        } else {
-            return Ok(());
-        };
+        let message =
+            if let crate::backend::BackendCommand::AmendCommit { message } = &envelope.command {
+                message.clone()
+            } else {
+                return Ok(());
+            };
 
         match super::git_ops::amend_commit(repo, &message) {
             Ok(()) => {
@@ -849,7 +854,9 @@ impl CommandHandler for GetCommitMessageHandler {
         repo: &GitRepo,
         event_tx: &Sender<EventEnvelope>,
     ) -> Result<()> {
-        let commit_id = if let crate::backend::BackendCommand::GetCommitMessage { commit_id } = &envelope.command {
+        let commit_id = if let crate::backend::BackendCommand::GetCommitMessage { commit_id } =
+            &envelope.command
+        {
             commit_id.clone()
         } else {
             return Ok(());
@@ -868,7 +875,12 @@ impl CommandHandler for GetCommitMessageHandler {
                     ),
                 );
             }
-            Err(error) => send_error(event_tx, Some(envelope.request_id), "get commit message", error),
+            Err(error) => send_error(
+                event_tx,
+                Some(envelope.request_id),
+                "get commit message",
+                error,
+            ),
         }
         Ok(())
     }
@@ -883,11 +895,17 @@ impl CommandHandler for AmendCommitWithFilesHandler {
         repo: &GitRepo,
         event_tx: &Sender<EventEnvelope>,
     ) -> Result<()> {
-        let (commit_id, message, paths) = if let crate::backend::BackendCommand::AmendCommitWithFiles { commit_id, message, paths } = &envelope.command {
-            (commit_id.clone(), message.clone(), paths.clone())
-        } else {
-            return Ok(());
-        };
+        let (commit_id, message, paths) =
+            if let crate::backend::BackendCommand::AmendCommitWithFiles {
+                commit_id,
+                message,
+                paths,
+            } = &envelope.command
+            {
+                (commit_id.clone(), message.clone(), paths.clone())
+            } else {
+                return Ok(());
+            };
 
         match super::git_ops::amend_commit_with_files(repo, &commit_id, &message, &paths) {
             Ok(()) => {
@@ -903,7 +921,12 @@ impl CommandHandler for AmendCommitWithFilesHandler {
                 );
                 refresh_all(event_tx, repo);
             }
-            Err(error) => send_error(event_tx, Some(envelope.request_id), "amend with files", error),
+            Err(error) => send_error(
+                event_tx,
+                Some(envelope.request_id),
+                "amend with files",
+                error,
+            ),
         }
         Ok(())
     }
@@ -918,7 +941,8 @@ impl CommandHandler for ResetHardHandler {
         repo: &GitRepo,
         event_tx: &Sender<EventEnvelope>,
     ) -> Result<()> {
-        let target = if let crate::backend::BackendCommand::ResetHard { target } = &envelope.command {
+        let target = if let crate::backend::BackendCommand::ResetHard { target } = &envelope.command
+        {
             target.clone()
         } else {
             return Ok(());
@@ -953,11 +977,12 @@ impl CommandHandler for ResetMixedHandler {
         repo: &GitRepo,
         event_tx: &Sender<EventEnvelope>,
     ) -> Result<()> {
-        let target = if let crate::backend::BackendCommand::ResetMixed { target } = &envelope.command {
-            target.clone()
-        } else {
-            return Ok(());
-        };
+        let target =
+            if let crate::backend::BackendCommand::ResetMixed { target } = &envelope.command {
+                target.clone()
+            } else {
+                return Ok(());
+            };
 
         match super::git_ops::reset_mixed(repo, &target) {
             Ok(()) => {
@@ -988,7 +1013,8 @@ impl CommandHandler for ResetSoftHandler {
         repo: &GitRepo,
         event_tx: &Sender<EventEnvelope>,
     ) -> Result<()> {
-        let target = if let crate::backend::BackendCommand::ResetSoft { target } = &envelope.command {
+        let target = if let crate::backend::BackendCommand::ResetSoft { target } = &envelope.command
+        {
             target.clone()
         } else {
             return Ok(());

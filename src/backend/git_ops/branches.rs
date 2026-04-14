@@ -44,8 +44,12 @@ mod tests {
 
         {
             let mut config = repo.config().expect("Failed to get config");
-            config.set_str("user.name", "Test User").expect("Failed to set user.name");
-            config.set_str("user.email", "test@example.com").expect("Failed to set user.email");
+            config
+                .set_str("user.name", "Test User")
+                .expect("Failed to set user.name");
+            config
+                .set_str("user.email", "test@example.com")
+                .expect("Failed to set user.email");
         }
 
         {
@@ -81,8 +85,12 @@ mod tests {
         // Create additional branches
         let head = repo.repo.head().expect("Failed to get HEAD");
         let commit = head.peel_to_commit().expect("Failed to peel to commit");
-        repo.repo.branch("feature-a", &commit, false).expect("Failed to create branch");
-        repo.repo.branch("feature-b", &commit, false).expect("Failed to create branch");
+        repo.repo
+            .branch("feature-a", &commit, false)
+            .expect("Failed to create branch");
+        repo.repo
+            .branch("feature-b", &commit, false)
+            .expect("Failed to create branch");
 
         let branches = get_branches(&repo).expect("Failed to get branches");
 
@@ -99,18 +107,29 @@ mod tests {
         // Create and checkout a new branch
         let head = repo.repo.head().expect("Failed to get HEAD");
         let commit = head.peel_to_commit().expect("Failed to peel to commit");
-        let branch = repo.repo.branch("new-branch", &commit, false).expect("Failed to create branch");
+        let branch = repo
+            .repo
+            .branch("new-branch", &commit, false)
+            .expect("Failed to create branch");
 
-        repo.repo.set_head(branch.get().name().unwrap()).expect("Failed to set HEAD");
+        repo.repo
+            .set_head(branch.get().name().unwrap())
+            .expect("Failed to set HEAD");
 
         let branches = get_branches(&repo).expect("Failed to get branches");
 
         // Find the new-branch
-        let new_branch = branches.iter().find(|b| b.name == "new-branch").expect("Branch not found");
+        let new_branch = branches
+            .iter()
+            .find(|b| b.name == "new-branch")
+            .expect("Branch not found");
         assert!(new_branch.is_head);
 
         // Original branch should not be HEAD
-        let original = branches.iter().find(|b| b.name != "new-branch").expect("Original branch not found");
+        let original = branches
+            .iter()
+            .find(|b| b.name != "new-branch")
+            .expect("Original branch not found");
         assert!(!original.is_head);
     }
 }

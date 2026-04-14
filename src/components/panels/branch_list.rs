@@ -34,7 +34,9 @@ impl BranchListPanel {
     }
 
     pub fn show_branch_commits(&mut self) {
-        self.mode = BranchMode::CommitsSub { panel: Box::new(CommitPanel::new()) };
+        self.mode = BranchMode::CommitsSub {
+            panel: Box::new(CommitPanel::new()),
+        };
     }
 }
 
@@ -63,7 +65,11 @@ impl Component for BranchListPanel {
                             KeyCode::Char('j') | KeyCode::Down => {
                                 let len = data.commits.len();
                                 let state = panel.state_mut();
-                                let next = state.selected().unwrap_or(0).saturating_add(1).min(len.saturating_sub(1));
+                                let next = state
+                                    .selected()
+                                    .unwrap_or(0)
+                                    .saturating_add(1)
+                                    .min(len.saturating_sub(1));
                                 state.select(Some(next));
                                 panel.refresh_list_multi_range(&data.commits);
                                 return Intent::RefreshPanelDetail;

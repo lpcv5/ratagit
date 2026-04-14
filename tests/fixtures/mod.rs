@@ -23,8 +23,12 @@ impl TestRepo {
         // Configure user for commits
         {
             let mut config = repo.config().expect("Failed to get config");
-            config.set_str("user.name", "Test User").expect("Failed to set user.name");
-            config.set_str("user.email", "test@example.com").expect("Failed to set user.email");
+            config
+                .set_str("user.name", "Test User")
+                .expect("Failed to set user.name");
+            config
+                .set_str("user.email", "test@example.com")
+                .expect("Failed to set user.email");
         }
 
         // Create initial commit to avoid empty repo issues
@@ -35,17 +39,15 @@ impl TestRepo {
                 index.write_tree().expect("Failed to write tree")
             };
             let tree = repo.find_tree(tree_id).expect("Failed to find tree");
-            repo.commit(
-                Some("HEAD"),
-                &sig,
-                &sig,
-                "Initial commit",
-                &tree,
-                &[],
-            ).expect("Failed to create initial commit");
+            repo.commit(Some("HEAD"), &sig, &sig, "Initial commit", &tree, &[])
+                .expect("Failed to create initial commit");
         }
 
-        Self { temp_dir, repo, path }
+        Self {
+            temp_dir,
+            repo,
+            path,
+        }
     }
 
     /// Create a file in the working directory
@@ -60,7 +62,9 @@ impl TestRepo {
     /// Stage a file
     pub fn stage_file(&self, path: &str) {
         let mut index = self.repo.index().expect("Failed to get index");
-        index.add_path(Path::new(path)).expect("Failed to stage file");
+        index
+            .add_path(Path::new(path))
+            .expect("Failed to stage file");
         index.write().expect("Failed to write index");
     }
 
@@ -71,7 +75,9 @@ impl TestRepo {
         let tree_id = index.write_tree().expect("Failed to write tree");
         let tree = self.repo.find_tree(tree_id).expect("Failed to find tree");
 
-        let parent_commit = self.repo.head()
+        let parent_commit = self
+            .repo
+            .head()
             .ok()
             .and_then(|head: git2::Reference| head.peel_to_commit().ok());
 
@@ -81,29 +87,31 @@ impl TestRepo {
             vec![]
         };
 
-        self.repo.commit(
-            Some("HEAD"),
-            &sig,
-            &sig,
-            message,
-            &tree,
-            &parents,
-        ).expect("Failed to create commit");
+        self.repo
+            .commit(Some("HEAD"), &sig, &sig, message, &tree, &parents)
+            .expect("Failed to create commit");
     }
 
     /// Create a new branch
     pub fn create_branch(&self, name: &str) {
         let head = self.repo.head().expect("Failed to get HEAD");
         let commit = head.peel_to_commit().expect("Failed to peel to commit");
-        self.repo.branch(name, &commit, false).expect("Failed to create branch");
+        self.repo
+            .branch(name, &commit, false)
+            .expect("Failed to create branch");
     }
 
     /// Checkout a branch
     pub fn checkout(&self, branch_name: &str) {
-        let obj = self.repo.revparse_single(&format!("refs/heads/{}", branch_name))
+        let obj = self
+            .repo
+            .revparse_single(&format!("refs/heads/{}", branch_name))
             .expect("Failed to find branch");
-        self.repo.checkout_tree(&obj, None).expect("Failed to checkout tree");
-        self.repo.set_head(&format!("refs/heads/{}", branch_name))
+        self.repo
+            .checkout_tree(&obj, None)
+            .expect("Failed to checkout tree");
+        self.repo
+            .set_head(&format!("refs/heads/{}", branch_name))
             .expect("Failed to set HEAD");
     }
 
@@ -141,4 +149,3 @@ impl TestRepo {
         test_repo
     }
 }
-
