@@ -127,3 +127,168 @@ impl<'a> ScrollableText<'a> {
         frame.render_widget(paragraph, area);
     }
 }
+
+#[cfg(test)]
+mod render_tests {
+    use super::*;
+    use crate::components::test_utils::*;
+    use ratatui::widgets::ListItem;
+
+    #[test]
+    fn test_empty_list_renders() {
+        let mut terminal = create_test_terminal(40, 10);
+
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                SelectableList::render_empty(frame, area, "Test List", false);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let line = get_buffer_line(buffer, 1);
+        assert!(
+            line.contains("No items"),
+            "Expected 'No items' in line, got: {}",
+            line
+        );
+    }
+
+    #[test]
+    fn test_list_with_items_renders() {
+        let mut terminal = create_test_terminal(40, 10);
+        let mut state = ListState::default();
+        state.select(Some(0));
+
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                let items = vec![
+                    ListItem::new("Item 1"),
+                    ListItem::new("Item 2"),
+                    ListItem::new("Item 3"),
+                ];
+                let list = SelectableList::new(items, "Test List", false, ">> ");
+                list.render(frame, area, &mut state);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+
+        // Check that items appear in the buffer
+        let content = get_buffer_line(buffer, 1);
+        assert!(
+            content.contains("Item 1"),
+            "Expected 'Item 1' in buffer, got: {}",
+            content
+        );
+    }
+
+    #[test]
+    fn test_selected_item_highlighted_when_focused() {
+        let mut terminal = create_test_terminal(40, 10);
+        let mut state = ListState::default();
+        state.select(Some(1));
+
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                let items = vec![
+                    ListItem::new("Item 1"),
+                    ListItem::new("Item 2"),
+                    ListItem::new("Item 3"),
+                ];
+                let list = SelectableList::new(items, "Test List", true, ">> ");
+                list.render(frame, area, &mut state);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+
+        // When focused, the highlight symbol should appear
+        let line = get_buffer_line(buffer, 2);
+        assert!(
+            line.contains(">>"),
+            "Expected highlight symbol '>>' when focused, got: {}",
+            line
+        );
+    }
+
+    #[test]
+    fn test_no_highlight_symbol_when_not_focused() {
+        let mut terminal = create_test_terminal(40, 10);
+        let mut state = ListState::default();
+        state.select(Some(1));
+
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                let items = vec![
+                    ListItem::new("Item 1"),
+                    ListItem::new("Item 2"),
+                    ListItem::new("Item 3"),
+                ];
+                let list = SelectableList::new(items, "Test List", false, ">> ");
+                list.render(frame, area, &mut state);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+
+        // When not focused, no highlight symbol
+        let line = get_buffer_line(buffer, 2);
+        assert!(
+            !line.contains(">>"),
+            "Expected no highlight symbol when not focused, got: {}",
+            line
+        );
+    }
+
+    #[test]
+    fn test_scrollable_text_renders() {
+        let mut terminal = create_test_terminal(40, 10);
+
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                let content = "Line 1\nLine 2\nLine 3\nLine 4\nLine 5";
+                let text = ScrollableText::new(content, "Text View", false, 0);
+                text.render(frame, area);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+
+        // Check that first line appears
+        let line = get_buffer_line(buffer, 1);
+        assert!(
+            line.contains("Line 1"),
+            "Expected 'Line 1' in buffer, got: {}",
+            line
+        );
+    }
+
+    #[test]
+    fn test_scrollable_text_with_offset() {
+        let mut terminal = create_test_terminal(40, 10);
+
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                let content = "Line 1\nLine 2\nLine 3\nLine 4\nLine 5";
+                let text = ScrollableText::new(content, "Text View", false, 2);
+                text.render(frame, area);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+
+        // With offset 2, should start from Line 3
+        let line = get_buffer_line(buffer, 1);
+        assert!(
+            line.contains("Line 3"),
+            "Expected 'Line 3' with offset 2, got: {}",
+            line
+        );
+    }
+}

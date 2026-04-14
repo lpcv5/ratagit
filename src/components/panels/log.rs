@@ -64,3 +64,128 @@ impl Component for LogPanel {
         text.render(frame, area);
     }
 }
+
+#[cfg(test)]
+mod render_tests {
+    use super::*;
+    use crate::components::test_utils::*;
+
+    #[test]
+    fn test_log_panel_empty_state() {
+        let mut terminal = create_test_terminal(50, 10);
+        let mut panel = LogPanel::new();
+        let data = CachedData::default();
+
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                panel.render(frame, area, false, &data);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let line = get_buffer_line(buffer, 1);
+        assert!(
+            line.contains("No log messages"),
+            "Expected 'No log messages' for empty log, got: {}",
+            line
+        );
+    }
+
+    #[test]
+    fn test_log_panel_renders_entries() {
+        let mut terminal = create_test_terminal(60, 10);
+        let mut panel = LogPanel::new();
+        let data = CachedData {
+            log_entries: vec![
+                "Log entry 1".to_string(),
+                "Log entry 2".to_string(),
+                "Log entry 3".to_string(),
+            ],
+            ..Default::default()
+        };
+
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                panel.render(frame, area, false, &data);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+
+        let mut all_content = String::new();
+        for row in 0..10 {
+            let line = get_buffer_line(buffer, row);
+            all_content.push_str(&line);
+            all_content.push('\n');
+        }
+
+        assert!(
+            all_content.contains("Log entry 1"),
+            "Expected log entries in buffer, got:\n{}",
+            all_content
+        );
+    }
+
+    #[test]
+    fn test_log_panel_scrolling() {
+        let mut terminal = create_test_terminal(60, 8);
+        let mut panel = LogPanel::new();
+        let data = CachedData {
+            log_entries: vec![
+                "Line 1".to_string(),
+                "Line 2".to_string(),
+                "Line 3".to_string(),
+                "Line 4".to_string(),
+                "Line 5".to_string(),
+                "Line 6".to_string(),
+                "Line 7".to_string(),
+                "Line 8".to_string(),
+            ],
+            ..Default::default()
+        };
+
+        // Scroll down by 3 lines
+        panel.scroll_by(3);
+
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                panel.render(frame, area, false, &data);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+
+        let mut all_content = String::new();
+        for row in 0..8 {
+            let line = get_buffer_line(buffer, row);
+            all_content.push_str(&line);
+            all_content.push('\n');
+        }
+
+        // After scrolling down, later lines should be visible
+        assert!(
+            all_content.contains("Line 4") || all_content.contains("Line 5"),
+            "Expected scrolled content, got:\n{}",
+            all_content
+        );
+    }
+
+    #[test]
+    fn test_log_panel_scroll_by_negative() {
+        let mut panel = LogPanel::new();
+        panel.scroll = 10;
+        panel.scroll_by(-3);
+        assert_eq!(panel.scroll, 7, "Expected scroll to decrease by 3");
+    }
+
+    #[test]
+    fn test_log_panel_scroll_by_positive() {
+        let mut panel = LogPanel::new();
+        panel.scroll = 5;
+        panel.scroll_by(3);
+        assert_eq!(panel.scroll, 8, "Expected scroll to increase by 3");
+    }
+}

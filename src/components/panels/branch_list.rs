@@ -180,3 +180,134 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod render_tests {
+    use super::*;
+    use crate::components::test_utils::*;
+
+    #[test]
+    fn test_branch_list_empty_state() {
+        let mut terminal = create_test_terminal(50, 10);
+        let mut panel = BranchListPanel::new();
+        let data = create_test_cached_data_with_branches(vec![]);
+
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                panel.render(frame, area, false, &data);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let line = get_buffer_line(buffer, 1);
+        assert!(
+            line.contains("No items"),
+            "Expected 'No items' for empty branches, got: {}",
+            line
+        );
+    }
+
+    #[test]
+    fn test_branch_list_renders_branches() {
+        let mut terminal = create_test_terminal(50, 10);
+        let mut panel = BranchListPanel::new();
+        let branches = vec![
+            test_branch_entry("main", true, None),
+            test_branch_entry("feature/test", false, Some("origin/feature/test")),
+        ];
+        let data = create_test_cached_data_with_branches(branches);
+
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                panel.render(frame, area, false, &data);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+
+        // Check that branch names appear
+        let mut all_content = String::new();
+        for row in 0..10 {
+            let line = get_buffer_line(buffer, row);
+            all_content.push_str(&line);
+            all_content.push('\n');
+        }
+
+        assert!(
+            all_content.contains("main") || all_content.contains("feature"),
+            "Expected branch names in buffer, got:\n{}",
+            all_content
+        );
+    }
+
+    #[test]
+    fn test_current_branch_indicator() {
+        let mut terminal = create_test_terminal(50, 10);
+        let mut panel = BranchListPanel::new();
+        let branches = vec![
+            test_branch_entry("main", true, None),
+            test_branch_entry("develop", false, None),
+        ];
+        let data = create_test_cached_data_with_branches(branches);
+
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                panel.render(frame, area, false, &data);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+
+        // Check for HEAD indicator (*) on the same line as "main"
+        let mut found_head_indicator = false;
+        for row in 0..10 {
+            let line = get_buffer_line(buffer, row);
+            if line.contains("main") && line.contains("*") {
+                found_head_indicator = true;
+                break;
+            }
+        }
+
+        assert!(
+            found_head_indicator,
+            "Expected '*' marker on the same line as 'main' branch"
+        );
+    }
+
+    #[test]
+    fn test_branch_with_upstream() {
+        let mut terminal = create_test_terminal(60, 10);
+        let mut panel = BranchListPanel::new();
+        let branches = vec![test_branch_entry(
+            "feature/new",
+            false,
+            Some("origin/feature/new"),
+        )];
+        let data = create_test_cached_data_with_branches(branches);
+
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                panel.render(frame, area, false, &data);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+
+        let mut all_content = String::new();
+        for row in 0..10 {
+            let line = get_buffer_line(buffer, row);
+            all_content.push_str(&line);
+            all_content.push('\n');
+        }
+
+        assert!(
+            all_content.contains("feature") || all_content.contains("origin"),
+            "Expected branch with upstream info, got:\n{}",
+            all_content
+        );
+    }
+}

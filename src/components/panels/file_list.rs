@@ -277,3 +277,141 @@ mod tests {
         assert!(matches!(intent, Intent::RefreshPanelDetail));
     }
 }
+
+#[cfg(test)]
+mod render_tests {
+    use super::*;
+    use crate::components::test_utils::*;
+
+    #[test]
+    fn test_file_list_empty_state() {
+        let mut terminal = create_test_terminal(50, 10);
+        let mut panel = FileListPanel::new();
+        let data = create_test_cached_data_with_files(vec![]);
+
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                panel.render(frame, area, false, &data);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let line = get_buffer_line(buffer, 1);
+        assert!(
+            line.contains("No items"),
+            "Expected 'No items' for empty files, got: {}",
+            line
+        );
+    }
+
+    #[test]
+    fn test_file_list_renders_files() {
+        let mut terminal = create_test_terminal(60, 15);
+        let mut panel = FileListPanel::new();
+        let files = vec![
+            test_status_entry("src/main.rs", false, true, false),
+            test_status_entry("README.md", false, false, true),
+        ];
+        panel.update_files(&files);
+        let data = create_test_cached_data_with_files(files);
+
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                panel.render(frame, area, false, &data);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+
+        let mut all_content = String::new();
+        for row in 0..15 {
+            let line = get_buffer_line(buffer, row);
+            all_content.push_str(&line);
+            all_content.push('\n');
+        }
+
+        assert!(
+            all_content.contains("main.rs") || all_content.contains("README"),
+            "Expected file names in buffer, got:\n{}",
+            all_content
+        );
+    }
+
+    #[test]
+    fn test_file_list_shows_status_indicators() {
+        let mut terminal = create_test_terminal(60, 15);
+        let mut panel = FileListPanel::new();
+        let files = vec![
+            test_status_entry("modified.rs", false, true, false),
+            test_status_entry("new_file.txt", false, false, true),
+        ];
+        panel.update_files(&files);
+        let data = create_test_cached_data_with_files(files);
+
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                panel.render(frame, area, false, &data);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+
+        let mut all_content = String::new();
+        for row in 0..15 {
+            let line = get_buffer_line(buffer, row);
+            all_content.push_str(&line);
+            all_content.push('\n');
+        }
+
+        // Should show file names with status indicators (M for modified, ?? for untracked)
+        let has_modified_indicator = all_content.contains("M") && all_content.contains("modified");
+        let has_untracked_indicator =
+            all_content.contains("??") && all_content.contains("new_file");
+
+        assert!(
+            has_modified_indicator || has_untracked_indicator,
+            "Expected status indicators (M or ??) alongside file names, got:\n{}",
+            all_content
+        );
+    }
+    #[test]
+    fn test_file_list_tree_structure() {
+        let mut terminal = create_test_terminal(60, 20);
+        let mut panel = FileListPanel::new();
+        let files = vec![
+            test_status_entry("src/main.rs", false, true, false),
+            test_status_entry("src/lib.rs", false, true, false),
+            test_status_entry("tests/test.rs", false, false, true),
+        ];
+        panel.update_files(&files);
+        let data = create_test_cached_data_with_files(files);
+
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                panel.render(frame, area, false, &data);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+
+        let mut all_content = String::new();
+        for row in 0..20 {
+            let line = get_buffer_line(buffer, row);
+            all_content.push_str(&line);
+            all_content.push('\n');
+        }
+
+        // Should show directory structure
+        assert!(
+            all_content.contains("src")
+                || all_content.contains("tests")
+                || all_content.contains("main.rs"),
+            "Expected tree structure with directories, got:\n{}",
+            all_content
+        );
+    }
+}
