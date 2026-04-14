@@ -533,12 +533,10 @@ impl App {
                 .into_iter()
                 .map(|(path, _)| path)
                 .collect()
+        } else if let Some((path, _)) = self.state.components.file_list_panel.selected_tree_node() {
+            vec![path]
         } else {
-            if let Some((path, _)) = self.state.components.file_list_panel.selected_tree_node() {
-                vec![path]
-            } else {
-                return Ok(());
-            }
+            return Ok(());
         };
 
         if paths.is_empty() {
@@ -565,12 +563,10 @@ impl App {
                 .into_iter()
                 .map(|(path, _)| path)
                 .collect()
+        } else if let Some((path, _)) = self.state.components.file_list_panel.selected_tree_node() {
+            vec![path]
         } else {
-            if let Some((path, _)) = self.state.components.file_list_panel.selected_tree_node() {
-                vec![path]
-            } else {
-                return Ok(());
-            }
+            return Ok(());
         };
 
         if paths.is_empty() {

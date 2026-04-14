@@ -58,9 +58,11 @@ pub enum BackendCommand {
         paths: Vec<String>,
         message: Option<String>,
     },
+    #[allow(dead_code)]
     AmendCommit {
         message: String,
     },
+    #[allow(dead_code)]
     GetCommitMessage {
         commit_id: String,
     },
