@@ -21,4 +21,6 @@ pub use diff::get_diff;
 pub use repo::GitRepo;
 pub use stash::{get_stashes, stash_files, StashEntry};
 pub use status::{get_status_files, StatusEntry};
-pub use working_tree::{discard_files, stage_all, stage_file, unstage_file};
+pub use working_tree::{
+    discard_files, ignore_files, rename_file, stage_all, stage_file, unstage_file,
+};

@@ -21,6 +21,10 @@ pub enum Intent {
     CloseModal,
     ShowHelp,
     TriggerHelpItem(Box<Intent>),
+    IgnoreSelected,
+    ShowRenameDialog,
+    #[allow(dead_code)]
+    RenameFile(String),
     #[allow(dead_code)]
     SendCommand(BackendCommand),
     None,

@@ -1,4 +1,7 @@
 use anyhow::Result;
+use std::fs;
+use std::io::Write;
+use std::path::Path;
 
 use super::repo::GitRepo;
 
@@ -105,6 +108,95 @@ pub fn discard_files(repo: &GitRepo, paths: &[String]) -> Result<()> {
     Ok(())
 }
 
+/// Append paths to .gitignore file
+pub fn ignore_files(repo: &GitRepo, paths: &[String]) -> Result<()> {
+    let workdir = repo
+        .repo
+        .workdir()
+        .ok_or_else(|| anyhow::anyhow!("No workdir"))?;
+
+    let gitignore_path = workdir.join(".gitignore");
+
+    // Read existing .gitignore content
+    let mut existing_content = if gitignore_path.exists() {
+        fs::read_to_string(&gitignore_path)?
+    } else {
+        String::new()
+    };
+
+    // Ensure file ends with newline if it has content
+    if !existing_content.is_empty() && !existing_content.ends_with('\n') {
+        existing_content.push('\n');
+    }
+
+    // Append new paths
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(&gitignore_path)?;
+
+    file.write_all(existing_content.as_bytes())?;
+    for path in paths {
+        writeln!(file, "{}", path)?;
+    }
+
+    Ok(())
+}
+
+/// Rename file using git mv (preserves history)
+pub fn rename_file(repo: &GitRepo, old_path: &str, new_path: &str) -> Result<()> {
+    let workdir = repo
+        .repo
+        .workdir()
+        .ok_or_else(|| anyhow::anyhow!("No workdir"))?;
+
+    let old_full_path = workdir.join(old_path);
+    let new_full_path = workdir.join(new_path);
+
+    // Validate old path exists
+    if !old_full_path.exists() {
+        anyhow::bail!("File does not exist: {}", old_path);
+    }
+
+    // Validate new path doesn't exist
+    if new_full_path.exists() {
+        anyhow::bail!("Target already exists: {}", new_path);
+    }
+
+    // Validate new path parent directory exists
+    if let Some(parent) = Path::new(new_path).parent() {
+        if !parent.as_os_str().is_empty() {
+            let parent_full = workdir.join(parent);
+            if !parent_full.exists() {
+                anyhow::bail!("Parent directory does not exist: {}", parent.display());
+            }
+        }
+    }
+
+    // Validate no path traversal
+    if new_path.contains("..") {
+        anyhow::bail!("Invalid path: path traversal not allowed");
+    }
+
+    // Check if file is in index (staged or tracked)
+    let mut index = repo.repo.index()?;
+    let old_path_obj = Path::new(old_path);
+
+    if index.get_path(old_path_obj, 0).is_some() {
+        // File is tracked: use git mv
+        index.remove_path(old_path_obj)?;
+        fs::rename(&old_full_path, &new_full_path)?;
+        index.add_path(Path::new(new_path))?;
+        index.write()?;
+    } else {
+        // Untracked file: just rename in filesystem
+        fs::rename(&old_full_path, &new_full_path)?;
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -204,5 +296,151 @@ mod tests {
         // Unstaging an untracked file succeeds (no-op in git2)
         let result = unstage_file(&repo, "untracked.txt");
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_ignore_files_creates_gitignore() {
+        let (temp_dir, repo) = create_test_repo();
+
+        // Ignore a file
+        let paths = vec!["test.txt".to_string()];
+        ignore_files(&repo, &paths).expect("Failed to ignore files");
+
+        // Verify .gitignore was created
+        let gitignore_path = temp_dir.path().join(".gitignore");
+        assert!(gitignore_path.exists());
+
+        // Verify content
+        let content = fs::read_to_string(&gitignore_path).expect("Failed to read .gitignore");
+        assert_eq!(content, "test.txt\n");
+    }
+
+    #[test]
+    fn test_ignore_files_appends_to_existing() {
+        let (temp_dir, repo) = create_test_repo();
+
+        // Create existing .gitignore
+        let gitignore_path = temp_dir.path().join(".gitignore");
+        fs::write(&gitignore_path, "existing.txt\n").expect("Failed to write .gitignore");
+
+        // Ignore more files
+        let paths = vec!["new1.txt".to_string(), "new2.txt".to_string()];
+        ignore_files(&repo, &paths).expect("Failed to ignore files");
+
+        // Verify content
+        let content = fs::read_to_string(&gitignore_path).expect("Failed to read .gitignore");
+        assert_eq!(content, "existing.txt\nnew1.txt\nnew2.txt\n");
+    }
+
+    #[test]
+    fn test_ignore_files_multiple() {
+        let (temp_dir, repo) = create_test_repo();
+
+        // Ignore multiple files at once
+        let paths = vec![
+            "file1.txt".to_string(),
+            "file2.txt".to_string(),
+            "dir/file3.txt".to_string(),
+        ];
+        ignore_files(&repo, &paths).expect("Failed to ignore files");
+
+        // Verify content
+        let gitignore_path = temp_dir.path().join(".gitignore");
+        let content = fs::read_to_string(&gitignore_path).expect("Failed to read .gitignore");
+        assert_eq!(content, "file1.txt\nfile2.txt\ndir/file3.txt\n");
+    }
+
+    #[test]
+    fn test_rename_file_untracked() {
+        let (temp_dir, repo) = create_test_repo();
+
+        // Create untracked file
+        let old_path = temp_dir.path().join("old.txt");
+        fs::write(&old_path, "content").expect("Failed to write file");
+
+        // Rename the file
+        rename_file(&repo, "old.txt", "new.txt").expect("Failed to rename file");
+
+        // Verify old file doesn't exist
+        assert!(!old_path.exists());
+
+        // Verify new file exists
+        let new_path = temp_dir.path().join("new.txt");
+        assert!(new_path.exists());
+        assert_eq!(
+            fs::read_to_string(&new_path).expect("Failed to read file"),
+            "content"
+        );
+    }
+
+    #[test]
+    fn test_rename_file_tracked() {
+        let (temp_dir, repo) = create_test_repo();
+
+        // Create and commit a file
+        let old_path = temp_dir.path().join("tracked.txt");
+        fs::write(&old_path, "content").expect("Failed to write file");
+        stage_file(&repo, "tracked.txt").expect("Failed to stage file");
+
+        // Rename the file
+        rename_file(&repo, "tracked.txt", "renamed.txt").expect("Failed to rename file");
+
+        // Verify old file doesn't exist
+        assert!(!old_path.exists());
+
+        // Verify new file exists
+        let new_path = temp_dir.path().join("renamed.txt");
+        assert!(new_path.exists());
+
+        // Verify new file is in index
+        let index = repo.repo.index().expect("Failed to get index");
+        assert!(index.get_path(Path::new("renamed.txt"), 0).is_some());
+        assert!(index.get_path(Path::new("tracked.txt"), 0).is_none());
+    }
+
+    #[test]
+    fn test_rename_file_target_exists() {
+        let (temp_dir, repo) = create_test_repo();
+
+        // Create two files
+        fs::write(temp_dir.path().join("file1.txt"), "content1").expect("Failed to write file");
+        fs::write(temp_dir.path().join("file2.txt"), "content2").expect("Failed to write file");
+
+        // Try to rename file1 to file2 (should fail)
+        let result = rename_file(&repo, "file1.txt", "file2.txt");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Target already exists"));
+    }
+
+    #[test]
+    fn test_rename_file_source_not_exists() {
+        let (_temp_dir, repo) = create_test_repo();
+
+        // Try to rename non-existent file
+        let result = rename_file(&repo, "nonexistent.txt", "new.txt");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("File does not exist"));
+    }
+
+    #[test]
+    fn test_rename_file_path_traversal() {
+        let (temp_dir, repo) = create_test_repo();
+
+        // Create a file
+        fs::write(temp_dir.path().join("file.txt"), "content").expect("Failed to write file");
+
+        // Try to rename with path traversal
+        let result = rename_file(&repo, "file.txt", "../outside.txt");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("path traversal not allowed"));
     }
 }

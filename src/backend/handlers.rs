@@ -1039,3 +1039,77 @@ impl CommandHandler for ResetSoftHandler {
         Ok(())
     }
 }
+
+/// Ignore files handler
+pub struct IgnoreFilesHandler;
+impl CommandHandler for IgnoreFilesHandler {
+    fn handle(
+        &self,
+        envelope: &CommandEnvelope,
+        repo: &GitRepo,
+        event_tx: &Sender<EventEnvelope>,
+    ) -> Result<()> {
+        let paths = if let crate::backend::BackendCommand::IgnoreFiles { paths } = &envelope.command
+        {
+            paths.clone()
+        } else {
+            return Ok(());
+        };
+
+        match super::git_ops::ignore_files(repo, &paths) {
+            Ok(()) => {
+                send_event(
+                    event_tx,
+                    EventEnvelope::new(
+                        Some(envelope.request_id),
+                        FrontendEvent::ActionSucceeded {
+                            request_id: envelope.request_id,
+                            message: format!("Ignored {} file(s)", paths.len()),
+                        },
+                    ),
+                );
+                refresh_files(event_tx, repo);
+            }
+            Err(error) => send_error(event_tx, Some(envelope.request_id), "ignore", error),
+        }
+        Ok(())
+    }
+}
+
+/// Rename file handler
+pub struct RenameFileHandler;
+impl CommandHandler for RenameFileHandler {
+    fn handle(
+        &self,
+        envelope: &CommandEnvelope,
+        repo: &GitRepo,
+        event_tx: &Sender<EventEnvelope>,
+    ) -> Result<()> {
+        let (old_path, new_path) =
+            if let crate::backend::BackendCommand::RenameFile { old_path, new_path } =
+                &envelope.command
+            {
+                (old_path.clone(), new_path.clone())
+            } else {
+                return Ok(());
+            };
+
+        match super::git_ops::rename_file(repo, &old_path, &new_path) {
+            Ok(()) => {
+                send_event(
+                    event_tx,
+                    EventEnvelope::new(
+                        Some(envelope.request_id),
+                        FrontendEvent::ActionSucceeded {
+                            request_id: envelope.request_id,
+                            message: format!("Renamed {} → {}", old_path, new_path),
+                        },
+                    ),
+                );
+                refresh_files(event_tx, repo);
+            }
+            Err(error) => send_error(event_tx, Some(envelope.request_id), "rename", error),
+        }
+        Ok(())
+    }
+}

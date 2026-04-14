@@ -41,6 +41,9 @@ impl App {
                 // Close modal after sending command (for confirmation dialogs)
                 self.close_modal();
             }
+            Intent::IgnoreSelected => self.ignore_selected()?,
+            Intent::ShowRenameDialog => self.show_rename_dialog()?,
+            Intent::RenameFile(new_name) => self.rename_file(new_name)?,
             Intent::None => {}
         }
         Ok(())
@@ -790,4 +793,72 @@ pub(super) fn to_diff_targets(targets: &[(String, bool)]) -> Vec<DiffTarget> {
             is_dir: *is_dir,
         })
         .collect()
+}
+
+impl App {
+    fn ignore_selected(&mut self) -> Result<()> {
+        let targets = self
+            .state
+            .components
+            .file_list_panel
+            .selected_tree_targets();
+        if targets.is_empty() {
+            return Ok(());
+        }
+
+        let paths: Vec<String> = targets.into_iter().map(|(path, _)| path).collect();
+        let request_id = self
+            .state
+            .send_command(BackendCommand::IgnoreFiles { paths })?;
+        self.requests.track(request_id);
+        self.state.components.file_list_panel.clear_multi_select();
+        Ok(())
+    }
+
+    fn show_rename_dialog(&mut self) -> Result<()> {
+        // Only allow rename for single file (not multi-select)
+        if self
+            .state
+            .components
+            .file_list_panel
+            .is_multi_select_active()
+        {
+            self.state
+                .push_log("Rename: multi-select not supported".to_string());
+            return Ok(());
+        }
+
+        let selected = self.state.components.file_list_panel.selected_tree_node();
+        if let Some((path, is_dir)) = selected {
+            if is_dir {
+                self.state
+                    .push_log("Rename: directories not supported".to_string());
+                return Ok(());
+            }
+
+            // TODO: Show input dialog for new filename
+            // For now, just log that we need an input dialog
+            self.state
+                .push_log(format!("Rename dialog for: {} (not implemented)", path));
+        }
+        Ok(())
+    }
+
+    fn rename_file(&mut self, new_name: String) -> Result<()> {
+        let selected = self.state.components.file_list_panel.selected_tree_node();
+        if let Some((old_path, is_dir)) = selected {
+            if is_dir {
+                self.state
+                    .push_log("Rename: directories not supported".to_string());
+                return Ok(());
+            }
+
+            let request_id = self.state.send_command(BackendCommand::RenameFile {
+                old_path: old_path.clone(),
+                new_path: new_name,
+            })?;
+            self.requests.track(request_id);
+        }
+        Ok(())
+    }
 }

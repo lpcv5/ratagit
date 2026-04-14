@@ -80,6 +80,13 @@ pub enum BackendCommand {
     ResetSoft {
         target: String,
     },
+    IgnoreFiles {
+        paths: Vec<String>,
+    },
+    RenameFile {
+        old_path: String,
+        new_path: String,
+    },
     Quit,
 }
 
