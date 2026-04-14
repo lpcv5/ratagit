@@ -194,11 +194,12 @@ pub fn rename_file(repo: &GitRepo, old_path: &str, new_path: &str) -> Result<()>
     let old_path_obj = Path::new(old_path);
 
     if let Some(entry) = index.get_path(old_path_obj, 0) {
-        // File is tracked: check for unstaged changes
+        // File is in index: check if it's tracked in HEAD or staged-new
         let head_tree = repo.repo.head()?.peel_to_tree().ok();
 
         if let Some(tree) = head_tree {
             if let Ok(tree_entry) = tree.get_path(old_path_obj) {
+                // File exists in HEAD: check for staged/unstaged changes
                 let tree_oid = tree_entry.id();
                 let index_oid = entry.id;
 
@@ -212,14 +213,22 @@ pub fn rename_file(repo: &GitRepo, old_path: &str, new_path: &str) -> Result<()>
                 if workdir_oid != index_oid {
                     anyhow::bail!("File has unstaged changes. Commit or discard before renaming.");
                 }
-            }
-        }
 
-        // File is tracked and clean: use git mv
-        index.remove_path(old_path_obj)?;
-        fs::rename(&old_full_path, &new_full_path)?;
-        index.add_path(Path::new(new_path))?;
-        index.write()?;
+                // File is tracked and clean: use git mv
+                index.remove_path(old_path_obj)?;
+                fs::rename(&old_full_path, &new_full_path)?;
+                index.add_path(Path::new(new_path))?;
+                index.write()?;
+            } else {
+                // File is in index but not in HEAD: staged-new file
+                anyhow::bail!(
+                    "File is staged but not committed. Commit or unstage before renaming."
+                );
+            }
+        } else {
+            // No HEAD (initial commit scenario): file is staged-new
+            anyhow::bail!("File is staged but not committed. Commit or unstage before renaming.");
+        }
     } else {
         // Untracked file: just rename in filesystem
         fs::rename(&old_full_path, &new_full_path)?;
@@ -413,6 +422,25 @@ mod tests {
         fs::write(&old_path, "content").expect("Failed to write file");
         stage_file(&repo, "tracked.txt").expect("Failed to stage file");
 
+        // Commit the file
+        let sig = repo.repo.signature().expect("Failed to create signature");
+        let tree_id = {
+            let mut index = repo.repo.index().expect("Failed to get index");
+            index.write_tree().expect("Failed to write tree")
+        };
+        let tree = repo.repo.find_tree(tree_id).expect("Failed to find tree");
+        let parent = repo.repo.head().unwrap().peel_to_commit().unwrap();
+        repo.repo
+            .commit(
+                Some("HEAD"),
+                &sig,
+                &sig,
+                "Add tracked.txt",
+                &tree,
+                &[&parent],
+            )
+            .expect("Failed to commit");
+
         // Rename the file
         rename_file(&repo, "tracked.txt", "renamed.txt").expect("Failed to rename file");
 
@@ -574,5 +602,23 @@ mod tests {
         let result = rename_file(&repo, "tracked.txt", "renamed.txt");
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("staged changes"));
+    }
+
+    #[test]
+    fn test_rename_file_staged_new() {
+        let (_temp_dir, repo) = create_test_repo();
+
+        // Create and stage a new file (not committed)
+        let file_path = repo.repo.workdir().unwrap().join("new_staged.txt");
+        fs::write(&file_path, "content").expect("Failed to write file");
+        stage_file(&repo, "new_staged.txt").expect("Failed to stage file");
+
+        // Try to rename - should fail because file is staged but not committed
+        let result = rename_file(&repo, "new_staged.txt", "renamed.txt");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("staged but not committed"));
     }
 }
