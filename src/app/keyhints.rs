@@ -50,11 +50,6 @@ pub fn keyhints_for_panel(panel: Panel) -> Vec<KeyHint> {
                 intent: Intent::IgnoreSelected,
             },
             KeyHint {
-                key: "r",
-                description: "rename",
-                intent: Intent::ShowRenameDialog,
-            },
-            KeyHint {
                 key: "v",
                 description: "multi-select",
                 intent: Intent::None,

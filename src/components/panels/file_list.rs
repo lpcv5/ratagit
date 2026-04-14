@@ -127,7 +127,6 @@ impl Component for FileListPanel {
                 KeyCode::Char('D') => return Intent::ShowResetMenu,
                 KeyCode::Char('s') => return Intent::StashSelected,
                 KeyCode::Char('i') => return Intent::IgnoreSelected,
-                KeyCode::Char('r') => return Intent::ShowRenameDialog,
                 _ => {}
             }
 

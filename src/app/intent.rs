@@ -22,6 +22,7 @@ pub enum Intent {
     ShowHelp,
     TriggerHelpItem(Box<Intent>),
     IgnoreSelected,
+    #[allow(dead_code)]
     ShowRenameDialog,
     #[allow(dead_code)]
     RenameFile(String),

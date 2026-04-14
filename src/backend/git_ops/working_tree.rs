@@ -151,8 +151,23 @@ pub fn rename_file(repo: &GitRepo, old_path: &str, new_path: &str) -> Result<()>
         .workdir()
         .ok_or_else(|| anyhow::anyhow!("No workdir"))?;
 
+    // Validate paths are relative and don't contain path traversal
+    if new_path.contains("..") || new_path.starts_with('/') || new_path.starts_with('\\') {
+        anyhow::bail!("Invalid path: must be relative without path traversal");
+    }
+
+    // Check for absolute paths (Windows: C:\, D:\, etc.)
+    if new_path.len() >= 2 && new_path.chars().nth(1) == Some(':') {
+        anyhow::bail!("Invalid path: absolute paths not allowed");
+    }
+
     let old_full_path = workdir.join(old_path);
     let new_full_path = workdir.join(new_path);
+
+    // Ensure new_full_path is actually under workdir (defense against path manipulation)
+    if !new_full_path.starts_with(workdir) {
+        anyhow::bail!("Invalid path: target must be within repository");
+    }
 
     // Validate old path exists
     if !old_full_path.exists() {
@@ -174,17 +189,33 @@ pub fn rename_file(repo: &GitRepo, old_path: &str, new_path: &str) -> Result<()>
         }
     }
 
-    // Validate no path traversal
-    if new_path.contains("..") {
-        anyhow::bail!("Invalid path: path traversal not allowed");
-    }
-
     // Check if file is in index (staged or tracked)
     let mut index = repo.repo.index()?;
     let old_path_obj = Path::new(old_path);
 
-    if index.get_path(old_path_obj, 0).is_some() {
-        // File is tracked: use git mv
+    if let Some(entry) = index.get_path(old_path_obj, 0) {
+        // File is tracked: check for unstaged changes
+        let head_tree = repo.repo.head()?.peel_to_tree().ok();
+
+        if let Some(tree) = head_tree {
+            if let Ok(tree_entry) = tree.get_path(old_path_obj) {
+                let tree_oid = tree_entry.id();
+                let index_oid = entry.id;
+
+                // If index differs from HEAD, file has staged changes
+                if tree_oid != index_oid {
+                    anyhow::bail!("File has staged changes. Commit or unstage before renaming.");
+                }
+
+                // Check for unstaged changes by comparing working tree to index
+                let workdir_oid = repo.repo.blob_path(&old_full_path)?;
+                if workdir_oid != index_oid {
+                    anyhow::bail!("File has unstaged changes. Commit or discard before renaming.");
+                }
+            }
+        }
+
+        // File is tracked and clean: use git mv
         index.remove_path(old_path_obj)?;
         fs::rename(&old_full_path, &new_full_path)?;
         index.add_path(Path::new(new_path))?;
@@ -438,9 +469,110 @@ mod tests {
         // Try to rename with path traversal
         let result = rename_file(&repo, "file.txt", "../outside.txt");
         assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("must be relative"));
+    }
+
+    #[test]
+    fn test_rename_file_absolute_path_unix() {
+        let (temp_dir, repo) = create_test_repo();
+
+        // Create a file
+        fs::write(temp_dir.path().join("file.txt"), "content").expect("Failed to write file");
+
+        // Try to rename with absolute path
+        let result = rename_file(&repo, "file.txt", "/tmp/outside.txt");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("must be relative"));
+    }
+
+    #[test]
+    fn test_rename_file_absolute_path_windows() {
+        let (temp_dir, repo) = create_test_repo();
+
+        // Create a file
+        fs::write(temp_dir.path().join("file.txt"), "content").expect("Failed to write file");
+
+        // Try to rename with Windows absolute path
+        let result = rename_file(&repo, "file.txt", "C:\\tmp\\outside.txt");
+        assert!(result.is_err());
         assert!(result
             .unwrap_err()
             .to_string()
-            .contains("path traversal not allowed"));
+            .contains("absolute paths not allowed"));
+    }
+
+    #[test]
+    fn test_rename_file_with_unstaged_changes() {
+        let (temp_dir, repo) = create_test_repo();
+
+        // Create and commit a file
+        let file_path = temp_dir.path().join("tracked.txt");
+        fs::write(&file_path, "original").expect("Failed to write file");
+        stage_file(&repo, "tracked.txt").expect("Failed to stage file");
+
+        // Commit the file
+        let sig = repo.repo.signature().expect("Failed to create signature");
+        let tree_id = {
+            let mut index = repo.repo.index().expect("Failed to get index");
+            index.write_tree().expect("Failed to write tree")
+        };
+        let tree = repo.repo.find_tree(tree_id).expect("Failed to find tree");
+        let parent = repo.repo.head().unwrap().peel_to_commit().unwrap();
+        repo.repo
+            .commit(
+                Some("HEAD"),
+                &sig,
+                &sig,
+                "Add tracked.txt",
+                &tree,
+                &[&parent],
+            )
+            .expect("Failed to commit");
+
+        // Modify the file (unstaged changes)
+        fs::write(&file_path, "modified").expect("Failed to write file");
+
+        // Try to rename - should fail
+        let result = rename_file(&repo, "tracked.txt", "renamed.txt");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("unstaged changes"));
+    }
+
+    #[test]
+    fn test_rename_file_with_staged_changes() {
+        let (temp_dir, repo) = create_test_repo();
+
+        // Create and commit a file
+        let file_path = temp_dir.path().join("tracked.txt");
+        fs::write(&file_path, "original").expect("Failed to write file");
+        stage_file(&repo, "tracked.txt").expect("Failed to stage file");
+
+        // Commit the file
+        let sig = repo.repo.signature().expect("Failed to create signature");
+        let tree_id = {
+            let mut index = repo.repo.index().expect("Failed to get index");
+            index.write_tree().expect("Failed to write tree")
+        };
+        let tree = repo.repo.find_tree(tree_id).expect("Failed to find tree");
+        let parent = repo.repo.head().unwrap().peel_to_commit().unwrap();
+        repo.repo
+            .commit(
+                Some("HEAD"),
+                &sig,
+                &sig,
+                "Add tracked.txt",
+                &tree,
+                &[&parent],
+            )
+            .expect("Failed to commit");
+
+        // Modify and stage the file
+        fs::write(&file_path, "modified").expect("Failed to write file");
+        stage_file(&repo, "tracked.txt").expect("Failed to stage file");
+
+        // Try to rename - should fail
+        let result = rename_file(&repo, "tracked.txt", "renamed.txt");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("staged changes"));
     }
 }
