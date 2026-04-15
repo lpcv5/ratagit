@@ -43,8 +43,9 @@ pub enum AppEvent {
     Git(GitEvent),
     Modal(ModalEvent),
     SwitchPanel(Panel),
-    SelectionChanged,  // component selection changed, refresh main view
-    None,  // component handled internally
+    ActivatePanel,         // Enter key: branch→load commits, commit→load files
+    SelectionChanged,      // component selection changed, refresh main view
+    None,                  // component handled internally
 }
 
 pub enum GitEvent {
@@ -185,15 +186,36 @@ impl GitProcessor {
     pub fn execute(&self, event: GitEvent, state: &AppState) -> Result<ProcessorOutcome> {
         let outcome = match event {
             GitEvent::ToggleStageFile => {
-                // Note: Requires helper method or direct component access
-                // Example assumes AppState::get_selected_file_path() helper added
-                let path = state.get_selected_file_path()?;
-                let is_staged = state.data_cache.files.iter()
-                    .any(|f| f.path == path && f.status.is_staged());
-                let cmd = if is_staged {
-                    BackendCommand::UnstageFile { file_path: path }
+                // Multi-select aware: gets all selected targets (files + directory children)
+                // Uses anchor file to determine stage/unstage direction (pivot logic)
+                // See src/app/intent_executor.rs:347 for current implementation
+                let selected_targets = state.components.selected_file_tree_targets();
+                let selected_files: Vec<String> = selected_targets
+                    .into_iter()
+                    .filter(|(_, is_dir)| !is_dir)
+                    .map(|(path, _)| path)
+                    .collect();
+                if selected_files.is_empty() {
+                    return Ok(ProcessorOutcome::None);
+                }
+                // Pivot: use anchor file's is_staged to decide direction
+                let pivot_path = state.components.selected_file_anchor_target()
+                    .and_then(|(path, is_dir)| (!is_dir).then_some(path))
+                    .or_else(|| selected_files.first().cloned());
+                let should_unstage = pivot_path
+                    .and_then(|p| state.data_cache.files.iter().find(|e| e.path == p))
+                    .map(|f| f.is_staged)
+                    .unwrap_or(false);
+                let cmd = if selected_files.len() == 1 {
+                    if should_unstage {
+                        BackendCommand::UnstageFile { file_path: selected_files.into_iter().next().unwrap() }
+                    } else {
+                        BackendCommand::StageFile { file_path: selected_files.into_iter().next().unwrap() }
+                    }
+                } else if should_unstage {
+                    BackendCommand::UnstageFiles { file_paths: selected_files }
                 } else {
-                    BackendCommand::StageFile { file_path: path }
+                    BackendCommand::StageFiles { file_paths: selected_files }
                 };
                 ProcessorOutcome::SendCommand(cmd)
             }
@@ -210,8 +232,12 @@ impl GitProcessor {
                 // Note: Current behavior sends command directly without confirmation.
                 // Keeping that behavior for now. If confirmation is desired, change to:
                 // ProcessorOutcome::ShowModal(ModalEvent::ShowStashConfirmation)
-                // Requires helper method or direct component access
-                let paths = state.get_selected_file_paths()?;
+                let selected_targets = state.components.selected_file_tree_targets();
+                let paths: Vec<String> = selected_targets
+                    .into_iter()
+                    .filter(|(_, is_dir)| !is_dir)
+                    .map(|(path, _)| path)
+                    .collect();
                 ProcessorOutcome::SendCommand(BackendCommand::StashFiles { 
                     paths, 
                     message: None 
@@ -297,6 +323,33 @@ impl App {
                 self.state.ui_state.active_panel = panel;
                 self.update_main_view_for_active_panel()?;
             }
+            AppEvent::ActivatePanel => {
+                // Enter key behavior: branch→load commits, commit→load files
+                // See src/app/intent_executor.rs:109 for current implementation
+                match self.state.ui_state.active_panel {
+                    Panel::Branches => {
+                        if let Some(branch) = self.state.selected_branch() {
+                            let branch_name = branch.name.clone();
+                            self.state.push_log(format!("Loading commits for branch {branch_name}..."));
+                            let request_id = self.state.send_command(BackendCommand::GetBranchCommits {
+                                branch_name,
+                                limit: 50,
+                            })?;
+                            self.requests.set_latest_branch_commits(request_id);
+                        }
+                    }
+                    Panel::Commits => {
+                        if let Some(commit) = self.state.selected_commit() {
+                            let commit_id = commit.id.clone();
+                            self.state.push_log(format!("Loading files for commit {}...", &commit_id[..7]));
+                            let request_id = self.state.send_command(BackendCommand::GetCommitFiles { commit_id })?;
+                            self.requests.track(request_id);
+                        }
+                    }
+                    _ => {}
+                }
+                self.update_main_view_for_active_panel()?;
+            }
             AppEvent::SelectionChanged => {
                 self.update_main_view_for_active_panel()?;
             }
@@ -354,6 +407,7 @@ The `define_handlers!` macro generates:
 
 **Note:** The macro syntax shown is simplified. The actual implementation must handle:
 - Request IDs from `CommandEnvelope`
+- **CRITICAL INVARIANT:** Only the terminal action event (ActionSucceeded, FilesUpdated, etc.) should carry the command's request_id. Follow-up refresh events (e.g., stage → auto-refresh files) must use `None` as request_id, otherwise `RequestTracker` will treat them as stale after the first completion. See src/backend/handlers.rs:475 and src/app/runtime.rs:73 for current pattern.
 - Mutable vs immutable repo access (`[mut]` flag)
 - Post-action refreshes (stage/unstage → refresh files)
 - Custom result shaping (batch diffs, commit files)
@@ -425,7 +479,11 @@ src/
     │   ├── main_view.rs
     │   └── log.rs
     └── dialogs/
-        └── modal.rs           (unchanged)
+        └── modal.rs           (UPDATED — returns AppEvent instead of Intent;
+                                 ModalType::Selection returns AppEvent::Git(GitEvent::ExecuteReset(idx)),
+                                 ModalType::TextInput returns AppEvent::Git(GitEvent::CommitWithMessage(msg)),
+                                 ModalType::Help returns AppEvent::ActivatePanel for help items.
+                                 See src/components/dialogs/modal.rs:116 for current Intent coupling.)
 ```
 
 ## Testing Strategy
@@ -513,7 +571,7 @@ async fn test_stage_commit_workflow() {
     app.send_event(AppEvent::Git(GitEvent::CommitWithMessage("test".into()))).await;
     app.wait_for_backend_response().await;
     
-    assert_eq!(app.state().cache.commits.len(), 1);
+    assert_eq!(app.state().data_cache.commits.len(), 1);
 }
 ```
 
@@ -535,7 +593,7 @@ cargo clippy -- -D warnings
 
 **Expected result:** All backend tests pass, no functional changes
 
-**Rollback:** `git reset --hard` if tests fail
+**Rollback:** `git revert <commit>` or `git reset --soft HEAD~1` if tests fail. Do NOT use `git reset --hard` in a dirty worktree — check `git status` first to avoid discarding unrelated work.
 
 ---
 
@@ -561,27 +619,35 @@ cargo test
 ---
 
 ### Phase 3: Component Trait Migration (High Risk)
-**Goal:** Migrate components one at a time to new trait
+**Goal:** Migrate components to new trait without breaking existing code
+
+**Challenge:** The Component trait is global — all panels implement it. Changing the signature breaks all un-migrated panels immediately.
+
+**Solution:** Parallel trait approach with adapter pattern
 
 **Steps:**
 
-**3.1: Update Component trait**
-1. Update `src/components/component.rs`:
-   - Add `RenderContext` struct
-   - Change `handle_event` → `on_event`
-   - Update signature to use `RenderContext`
+**3.1: Create ComponentV2 trait alongside Component**
+1. Create `src/components/component_v2.rs`:
+   ```rust
+   pub trait ComponentV2 {
+       fn on_event(&mut self, ctx: &RenderContext, event: &Event) -> AppEvent;
+       fn render(&mut self, frame: &mut Frame, area: Rect, ctx: &RenderContext);
+   }
+   ```
 2. Create `src/components/core/list_behavior.rs` trait
+3. Keep original `Component` trait unchanged
 
 **Validation:**
 ```bash
-cargo check  # Will fail — components not updated yet
+cargo check  # Should pass — no breaking changes yet
 ```
 
-**3.2: Migrate StashListPanel (simplest)**
-1. Update `StashListPanel` to new trait
-2. Move j/k navigation into component
-3. Return `AppEvent` instead of `Intent`
-4. Update `App` to handle both old and new event types temporarily
+**3.2: Migrate StashListPanel (simplest) to ComponentV2**
+1. Implement `ComponentV2` for `StashListPanel`
+2. Keep old `Component` impl temporarily (forward to V2)
+3. Move j/k navigation into component
+4. Return `AppEvent` instead of `Intent`
 
 **Validation:**
 ```bash
@@ -590,6 +656,31 @@ cargo run  # Manual test: navigate stash panel
 ```
 
 **Expected result:** Stash panel works identically to before
+
+**3.3: Migrate remaining panels one by one**
+- BranchListPanel
+- FileListPanel  
+- CommitPanel
+- MainView
+- LogPanel
+
+After each panel:
+```bash
+cargo test <panel_name>
+cargo run  # Manual smoke test
+```
+
+**3.4: Remove Component trait and adapters**
+1. Delete `src/components/component.rs` (old trait)
+2. Rename `ComponentV2` → `Component`
+3. Remove all adapter code
+4. Update `modal.rs` to return `AppEvent`
+
+**Validation:**
+```bash
+cargo test
+cargo clippy -- -D warnings
+```
 
 **3.3: Migrate BranchListPanel (has sub-panel)**
 1. Update `BranchListPanel` to new trait
@@ -662,7 +753,7 @@ cargo run  # Full manual testing of all workflows
 - [ ] All modals (commit, rename, reset)
 - [ ] Selection changes refresh main view
 
-**Rollback:** `git reset --hard` to Phase 3 completion if critical bugs found
+**Rollback:** `git revert <commit>` or `git reset --soft HEAD~1` to Phase 3 completion if critical bugs found. Check `git status` before any reset to avoid discarding unrelated work.
 
 ---
 
@@ -704,7 +795,7 @@ Each phase is considered complete when:
 ## Rollback Strategy
 
 - Commit after each phase completes
-- If a phase fails, `git reset --hard` to previous commit
+- If a phase fails, use `git revert <commit>` or `git reset --soft HEAD~1` to previous commit. Always check `git status` before any reset — `git reset --hard` can discard unrelated work in a dirty worktree.
 - Each phase is independently testable
 - Can pause between phases without breaking the app
 
