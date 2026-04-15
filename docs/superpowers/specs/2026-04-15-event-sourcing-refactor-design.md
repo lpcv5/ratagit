@@ -51,12 +51,23 @@ pub enum GitEvent {
     ToggleStageFile,
     StageAll,
     CommitWithMessage(String),
-    Discard,
-    Stash,
-    AmendCommit,
-    ExecuteReset(usize),
+    DiscardSelected,      // Opens confirmation modal first
+    StashSelected,        // Opens confirmation modal first
+    AmendCommit,          // Opens confirmation modal first
+    ExecuteReset(usize),  // Receives index after user selects from modal
     IgnoreSelected,
     RenameFile(String),
+}
+
+pub enum ModalEvent {
+    ShowHelp,
+    ShowCommitDialog,
+    ShowRenameDialog,
+    ShowResetMenu,
+    ShowDiscardConfirmation,
+    ShowStashConfirmation,
+    ShowAmendConfirmation,
+    Close,
 }
 
 pub enum ModalEvent {
@@ -167,28 +178,55 @@ pub type BranchListPanel = ConfigurableList<BranchInfo, BranchBehavior>;
 // src/app/git_processor.rs
 pub struct GitProcessor;
 
+pub enum ProcessorOutcome {
+    SendCommand(BackendCommand),
+    ShowModal(ModalEvent),
+    None,
+}
+
 impl GitProcessor {
-    pub fn execute(&self, event: GitEvent, state: &AppState) -> Result<BackendCommand> {
-        let cmd = match event {
+    pub fn execute(&self, event: GitEvent, state: &AppState) -> Result<ProcessorOutcome> {
+        let outcome = match event {
             GitEvent::ToggleStageFile => {
                 let path = state.get_selected_file_path()?;
-                if state.cache.is_file_staged(&path) {
+                let cmd = if state.cache.is_file_staged(&path) {
                     BackendCommand::UnstageFile { file_path: path }
                 } else {
                     BackendCommand::StageFile { file_path: path }
-                }
+                };
+                ProcessorOutcome::SendCommand(cmd)
             }
-            GitEvent::StageAll => BackendCommand::StageAll,
-            GitEvent::CommitWithMessage(msg) => BackendCommand::Commit { message: msg },
+            GitEvent::StageAll => {
+                ProcessorOutcome::SendCommand(BackendCommand::StageAll)
+            }
+            GitEvent::CommitWithMessage(msg) => {
+                ProcessorOutcome::SendCommand(BackendCommand::Commit { message: msg })
+            }
+            GitEvent::DiscardSelected => {
+                ProcessorOutcome::ShowModal(ModalEvent::ShowDiscardConfirmation)
+            }
+            GitEvent::AmendCommit => {
+                ProcessorOutcome::ShowModal(ModalEvent::ShowAmendConfirmation)
+            }
+            GitEvent::ExecuteReset(index) => {
+                let target = state.get_reset_target(index)?;
+                let cmd = match index {
+                    0 => BackendCommand::ResetSoft { target },
+                    1 => BackendCommand::ResetMixed { target },
+                    2 => BackendCommand::ResetHard { target },
+                    _ => return Ok(ProcessorOutcome::None),
+                };
+                ProcessorOutcome::SendCommand(cmd)
+            }
             // ... other events
         };
         
-        Ok(cmd)
+        Ok(outcome)
     }
 }
 ```
 
-**Note:** `GitProcessor` is stateless — it just translates events to commands. `App` owns `RequestTracker` and handles command sending + response filtering.
+**Note:** `GitProcessor` is stateless — it translates events to outcomes (commands or modal requests). `App` owns `RequestTracker` and handles command sending + response filtering.
 
 **App's main loop becomes trivial:**
 
@@ -210,9 +248,16 @@ impl App {
     fn process_event(&mut self, event: AppEvent) -> Result<()> {
         match event {
             AppEvent::Git(git_event) => {
-                let cmd = self.git_processor.execute(git_event, &self.state)?;
-                let request_id = self.state.send_command(cmd)?;
-                self.requests.track(request_id);
+                match self.git_processor.execute(git_event, &self.state)? {
+                    ProcessorOutcome::SendCommand(cmd) => {
+                        let request_id = self.state.send_command(cmd)?;
+                        self.requests.track(request_id);
+                    }
+                    ProcessorOutcome::ShowModal(modal_event) => {
+                        self.modal_processor.execute(modal_event, &mut self.state)?;
+                    }
+                    ProcessorOutcome::None => {}
+                }
             }
             AppEvent::Modal(modal_event) => {
                 self.modal_processor.execute(modal_event, &mut self.state)?;
@@ -303,7 +348,7 @@ src/
 │   ├── events.rs              (unchanged)
 │   ├── runtime.rs             (unchanged)
 │   ├── macros.rs              (NEW — define_handlers! macro)
-│   ├── handlers.rs            (1151 → ~200 lines, macro-driven)
+│   ├── handlers.rs            (1151 → ~300 lines, macro-driven)
 │   └── git_ops/               (unchanged — already clean)
 │       ├── mod.rs
 │       ├── repo.rs
@@ -378,12 +423,22 @@ fn test_branch_selection_triggers_detail_refresh() {
 }
 
 #[test]
-fn test_navigation_handled_internally() {
+fn test_navigation_triggers_selection_changed() {
     let mut panel = BranchListPanel::new();
     let ctx = mock_render_context();
     
-    // j/k keys should return None (handled internally)
+    // j/k keys change selection, should return SelectionChanged
     let event = Event::Key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
+    assert_eq!(panel.on_event(&event, &ctx), AppEvent::SelectionChanged);
+}
+
+#[test]
+fn test_unhandled_keys_return_none() {
+    let mut panel = BranchListPanel::new();
+    let ctx = mock_render_context();
+    
+    // Keys that don't affect app state return None
+    let event = Event::Key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE));
     assert_eq!(panel.on_event(&event, &ctx), AppEvent::None);
 }
 ```
@@ -391,14 +446,27 @@ fn test_navigation_handled_internally() {
 ### GitProcessor Tests (new)
 ```rust
 #[test]
-fn test_stage_file_sends_correct_command() {
-    let mut processor = GitProcessor::new(mock_cmd_tx());
-    let mut state = mock_app_state();
-    
-    processor.execute(GitEvent::ToggleStageFile, &mut state).unwrap();
-    
-    let sent_cmd = state.last_sent_command();
-    assert!(matches!(sent_cmd, BackendCommand::StageFile { .. }));
+fn test_stage_file_returns_command() {
+    let processor = GitProcessor;
+    let state = mock_app_state_with_unstaged_file("test.txt");
+
+    let outcome = processor.execute(GitEvent::ToggleStageFile, &state).unwrap();
+
+    assert!(matches!(outcome, ProcessorOutcome::SendCommand(
+        BackendCommand::StageFile { file_path } 
+    ) if file_path == "test.txt"));
+}
+
+#[test]
+fn test_discard_returns_modal() {
+    let processor = GitProcessor;
+    let state = mock_app_state();
+
+    let outcome = processor.execute(GitEvent::DiscardSelected, &state).unwrap();
+
+    assert!(matches!(outcome, ProcessorOutcome::ShowModal(
+        ModalEvent::ShowDiscardConfirmation
+    )));
 }
 ```
 
@@ -663,8 +731,9 @@ After refactor completion:
   - Total reduction: ~1400 lines
 
 - **Maintainability:**
-  - Adding new command: 1 line (macro definition) vs 40+ lines (handler struct + impl)
+  - Adding new command: 1-3 lines (macro definition) vs 40+ lines (handler struct + impl)
   - Adding new panel: Implement `ListBehavior` trait (~20 lines) vs full component (~300 lines)
+  - Adding new git event: Add enum variant + match arm in `GitProcessor::execute` (~5 lines)
 
 - **Testability:**
   - Components testable in isolation (no App dependency)
