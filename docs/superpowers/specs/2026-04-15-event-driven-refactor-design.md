@@ -151,8 +151,8 @@ impl ListBehavior for BranchBehavior {
     type Item = BranchInfo;
     
     fn on_activate(&self, item: &BranchInfo) -> AppEvent {
-        // Branch checkout is future feature work, not in this refactor
-        AppEvent::SelectionChanged
+        // Enter on branch loads branch commits via ActivatePanel
+        AppEvent::ActivatePanel
     }
 }
 
@@ -238,6 +238,9 @@ impl GitProcessor {
                     .filter(|(_, is_dir)| !is_dir)
                     .map(|(path, _)| path)
                     .collect();
+                if paths.is_empty() {
+                    return Ok(ProcessorOutcome::None);
+                }
                 ProcessorOutcome::SendCommand(BackendCommand::StashFiles { 
                     paths, 
                     message: None 
@@ -341,6 +344,13 @@ impl App {
                     Panel::Commits => {
                         if let Some(commit) = self.state.selected_commit() {
                             let commit_id = commit.id.clone();
+                            let summary = commit.summary.clone();
+                            // Must set loading state before sending command —
+                            // response handler rejects CommitFilesLoaded unless
+                            // commit_pending_commit_id() matches.
+                            // See src/app/runtime.rs:159 for the filter.
+                            self.state.components.commit_panel
+                                .start_loading(commit_id.clone(), summary.clone());
                             self.state.push_log(format!("Loading files for commit {}...", &commit_id[..7]));
                             let request_id = self.state.send_command(BackendCommand::GetCommitFiles { commit_id })?;
                             self.requests.track(request_id);
@@ -482,8 +492,9 @@ src/
         └── modal.rs           (UPDATED — returns AppEvent instead of Intent;
                                  ModalType::Selection returns AppEvent::Git(GitEvent::ExecuteReset(idx)),
                                  ModalType::TextInput returns AppEvent::Git(GitEvent::CommitWithMessage(msg)),
-                                 ModalType::Help returns AppEvent::ActivatePanel for help items.
-                                 See src/components/dialogs/modal.rs:116 for current Intent coupling.)
+                                 ModalType::Help stores Vec<(String, AppEvent)> and returns the selected event.
+                                 Current help items carry arbitrary actions (stage, commit, discard, reset, scroll).
+                                 See src/app/keyhints.rs:16 and src/components/dialogs/modal.rs:133.)
 ```
 
 ## Testing Strategy
@@ -501,14 +512,14 @@ fn test_stage_file() {
 ### Component Tests (much simpler)
 ```rust
 #[test]
-fn test_branch_selection_triggers_detail_refresh() {
+fn test_branch_activation_triggers_panel_activate() {
     let mut panel = BranchListPanel::new();
     let ctx = mock_render_context();
     
     let event = Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
     let result = panel.on_event(&event, &ctx);
     
-    assert!(matches!(result, AppEvent::SelectionChanged));
+    assert!(matches!(result, AppEvent::ActivatePanel));
 }
 
 #[test]
@@ -587,7 +598,7 @@ async fn test_stage_commit_workflow() {
 
 **Validation:**
 ```bash
-cargo test --lib backend
+cargo test
 cargo clippy -- -D warnings
 ```
 
@@ -658,9 +669,9 @@ cargo run  # Manual test: navigate stash panel
 **Expected result:** Stash panel works identically to before
 
 **3.3: Migrate remaining panels one by one**
-- BranchListPanel
-- FileListPanel  
-- CommitPanel
+- BranchListPanel (has sub-panel delegation)
+- FileListPanel (most complex: tree navigation, multi-select)
+- CommitPanel (three modes: List, Loading, FilesTree)
 - MainView
 - LogPanel
 
@@ -682,40 +693,9 @@ cargo test
 cargo clippy -- -D warnings
 ```
 
-**3.3: Migrate BranchListPanel (has sub-panel)**
-1. Update `BranchListPanel` to new trait
-2. Handle sub-panel delegation
-3. Test branch checkout, delete, sub-panel navigation
+**Expected result:** All panels migrated, old Intent system deleted
 
-**Validation:**
-```bash
-cargo test branch_list
-cargo run  # Manual test: navigate branches, view commits sub-panel
-```
-
-**3.4: Migrate CommitPanel**
-1. Update `CommitPanel` to new trait
-2. Handle three modes (List, Loading, FilesTree)
-3. Test commit selection, file tree navigation
-
-**Validation:**
-```bash
-cargo test commit_panel
-cargo run  # Manual test: navigate commits, view files, view diffs
-```
-
-**3.5: Migrate FileListPanel (most complex)**
-1. Update `FileListPanel` to new trait
-2. Handle tree navigation, multi-select
-3. Test stage/unstage, discard, ignore, rename
-
-**Validation:**
-```bash
-cargo test file_list
-cargo run  # Manual test: stage files, commit, discard, rename, ignore
-```
-
-**Rollback per panel:** If a panel migration fails, revert that panel's changes and continue with others
+**Rollback:** `git revert <commit>` or `git reset --soft HEAD~1` to Phase 2 completion if critical bugs found. Check `git status` before any reset to avoid discarding unrelated work.
 
 ---
 
