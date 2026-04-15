@@ -56,6 +56,12 @@ pub enum GitEvent {
     ExecuteReset(usize),
     IgnoreSelected,
     RenameFile(String),
+    // Branch operations (added during Phase 3 panel migration)
+    CheckoutBranch(String),
+    DeleteBranch(String),
+    ApplyStash,
+    PopStash,
+    DropStash,
 }
 
 pub enum ModalEvent {
