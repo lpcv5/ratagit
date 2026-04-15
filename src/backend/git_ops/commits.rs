@@ -96,16 +96,15 @@ pub fn commit(repo: &GitRepo, message: &str) -> Result<()> {
 pub fn amend_commit(repo: &GitRepo, message: &str) -> Result<()> {
     let head = repo.repo.head()?;
     let commit = head.peel_to_commit()?;
-    let tree = commit.tree()?;
-    let sig = repo.repo.signature()?;
 
-    repo.repo.commit(
+    // Use commit.amend() to properly amend the commit
+    commit.amend(
         Some("HEAD"),
-        &sig,
-        &sig,
-        message,
-        &tree,
-        &[&commit.parent(0)?],
+        None,  // author - None means keep original
+        None,  // committer - None means use current signature
+        None,  // message_encoding - None means UTF-8
+        Some(message),
+        None,  // tree - None means keep original tree
     )?;
 
     Ok(())
@@ -117,23 +116,18 @@ pub fn amend_commit_with_files(
     message: &str,
     paths: &[String],
 ) -> Result<()> {
-    // This is a complex operation that requires:
-    // 1. Create a new tree with the specified files from the index
-    // 2. Rebase the commit with the new tree
-    // For now, we'll use a simpler approach: stage files and amend HEAD
-
     // Stage the specified files
     let mut index = repo.repo.index()?;
     for path in paths {
         index.add_path(std::path::Path::new(path))?;
     }
+    index.write()?;
     let tree_id = index.write_tree()?;
     let tree = repo.repo.find_tree(tree_id)?;
 
     // Get the target commit
     let oid = git2::Oid::from_str(commit_id)?;
     let commit = repo.repo.find_commit(oid)?;
-    let sig = repo.repo.signature()?;
 
     // Check if this is HEAD
     let head = repo.repo.head()?;
@@ -141,27 +135,74 @@ pub fn amend_commit_with_files(
 
     if commit.id() == head_commit.id() {
         // Amending HEAD - straightforward
-        let parent = if commit.parent_count() > 0 {
-            Some(commit.parent(0)?)
-        } else {
-            None
-        };
-
-        let parents: Vec<&git2::Commit> = if let Some(ref p) = parent {
-            vec![p]
-        } else {
-            vec![]
-        };
-
-        repo.repo
-            .commit(Some("HEAD"), &sig, &sig, message, &tree, &parents)?;
+        commit.amend(
+            Some("HEAD"),
+            None,
+            None,
+            None,
+            Some(message),
+            Some(&tree),
+        )?;
     } else {
-        // Amending a non-HEAD commit requires interactive rebase
-        // This is complex and risky, so we'll return an error for now
-        anyhow::bail!(
-            "Amending non-HEAD commits is not yet supported. Please use 'git rebase -i' manually."
-        );
+        // Amending a non-HEAD commit: rewrite the target commit and rebase descendants
+        amend_non_head_commit(repo, &commit, message, &tree, &head_commit)?;
     }
+
+    Ok(())
+}
+
+/// Rewrite a non-HEAD commit with a new tree, then rebase all descendant commits on top.
+fn amend_non_head_commit(
+    repo: &GitRepo,
+    target: &git2::Commit,
+    message: &str,
+    new_tree: &git2::Tree,
+    head_commit: &git2::Commit,
+) -> Result<()> {
+    // Collect commits from target (exclusive) up to HEAD (inclusive), oldest first
+    let mut descendants: Vec<git2::Commit> = Vec::new();
+    let mut current = head_commit.clone();
+    loop {
+        if current.id() == target.id() {
+            break;
+        }
+        descendants.push(current.clone());
+        if current.parent_count() == 0 {
+            anyhow::bail!("Target commit not found in ancestry of HEAD");
+        }
+        current = current.parent(0)?;
+    }
+    descendants.reverse(); // oldest descendant first
+
+    // Create the amended target commit (no ref update yet)
+    let amended_oid = target.amend(
+        None, // don't update any ref
+        None,
+        None,
+        None,
+        Some(message),
+        Some(new_tree),
+    )?;
+    let mut new_parent_oid = amended_oid;
+
+    // Replay each descendant commit on top of the amended commit
+    let sig = repo.repo.signature()?;
+    for desc in &descendants {
+        let new_parent = repo.repo.find_commit(new_parent_oid)?;
+        let desc_tree = desc.tree()?;
+        new_parent_oid = repo.repo.commit(
+            None, // no ref update yet
+            &desc.author(),
+            &sig,
+            desc.message().unwrap_or(""),
+            &desc_tree,
+            &[&new_parent],
+        )?;
+    }
+
+    // Update HEAD to point to the new tip
+    let new_head = repo.repo.find_object(new_parent_oid, None)?;
+    repo.repo.reset(&new_head, git2::ResetType::Soft, None)?;
 
     Ok(())
 }
@@ -316,5 +357,55 @@ mod tests {
         assert!(summaries.contains(&"Feature commit"));
         assert!(summaries.contains(&"Main commit"));
         assert!(summaries.contains(&"Initial commit"));
+    }
+
+    #[test]
+    fn test_amend_non_head_commit() {
+        let (temp_dir, repo) = create_test_repo();
+
+        // Create a history: Initial -> A -> B -> C (HEAD)
+        add_commit(&repo, &temp_dir, "Commit A");
+        add_commit(&repo, &temp_dir, "Commit B");
+        add_commit(&repo, &temp_dir, "Commit C");
+
+        let commits = get_commits(&repo, 10).expect("Failed to get commits");
+        assert_eq!(commits.len(), 4);
+
+        // Find commits by summary (order is not guaranteed by get_commits)
+        let commit_b_id = commits.iter().find(|c| c.summary == "Commit B")
+            .expect("Commit B not found").id.clone();
+        let commit_a_id = commits.iter().find(|c| c.summary == "Commit A")
+            .expect("Commit A not found").id.clone();
+        let commit_c_id = commits.iter().find(|c| c.summary == "Commit C")
+            .expect("Commit C not found").id.clone();
+
+        // Create a new file to amend into commit B
+        let new_file = "amended_file.txt";
+        fs::write(temp_dir.path().join(new_file), "amended content")
+            .expect("Failed to write file");
+
+        // Amend commit B with the new file
+        amend_commit_with_files(&repo, &commit_b_id, "Commit B (amended)", &[new_file.to_string()])
+            .expect("Failed to amend commit");
+
+        let new_commits = get_commits(&repo, 10).expect("Failed to get commits");
+        assert_eq!(new_commits.len(), 4);
+
+        let summaries: Vec<&str> = new_commits.iter().map(|c| c.summary.as_str()).collect();
+        assert!(summaries.contains(&"Commit C"));
+        assert!(summaries.contains(&"Commit B (amended)"));
+        assert!(summaries.contains(&"Commit A"));
+        assert!(summaries.contains(&"Initial commit"));
+        assert!(!summaries.contains(&"Commit B")); // original B is gone
+
+        // A is unchanged (it's before B in history)
+        let new_a = new_commits.iter().find(|c| c.summary == "Commit A").unwrap();
+        assert_eq!(new_a.id, commit_a_id);
+
+        // B and C have new IDs (history rewritten)
+        let new_b = new_commits.iter().find(|c| c.summary == "Commit B (amended)").unwrap();
+        let new_c = new_commits.iter().find(|c| c.summary == "Commit C").unwrap();
+        assert_ne!(new_b.id, commit_b_id);
+        assert_ne!(new_c.id, commit_c_id);
     }
 }

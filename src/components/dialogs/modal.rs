@@ -27,6 +27,11 @@ pub enum ModalType {
         items: Vec<(String, Intent)>,
         selected: usize,
     },
+    TextInput {
+        title: String,
+        prompt: String,
+        buffer: String,
+    },
 }
 
 /// Modal dialog component
@@ -61,6 +66,16 @@ impl ModalDialog {
                 title,
                 items,
                 selected: 0,
+            },
+        }
+    }
+
+    pub fn text_input(title: String, prompt: String) -> Self {
+        Self {
+            modal_type: ModalType::TextInput {
+                title,
+                prompt,
+                buffer: String::new(),
             },
         }
     }
@@ -125,6 +140,26 @@ impl ModalDialog {
                 KeyCode::Esc => Intent::CloseModal,
                 _ => Intent::None,
             },
+            ModalType::TextInput { buffer, .. } => match code {
+                KeyCode::Enter => {
+                    let msg = buffer.trim().to_string();
+                    if msg.is_empty() {
+                        Intent::None
+                    } else {
+                        Intent::CommitWithMessage(msg)
+                    }
+                }
+                KeyCode::Esc => Intent::CloseModal,
+                KeyCode::Backspace => {
+                    buffer.pop();
+                    Intent::None
+                }
+                KeyCode::Char(c) => {
+                    buffer.push(*c);
+                    Intent::None
+                }
+                _ => Intent::None,
+            },
         }
     }
 
@@ -144,6 +179,11 @@ impl ModalDialog {
                 items,
                 selected,
             } => self.render_help(frame, area, title, items, *selected),
+            ModalType::TextInput {
+                title,
+                prompt,
+                buffer,
+            } => self.render_text_input(frame, area, title, prompt, buffer),
         }
     }
 
@@ -265,6 +305,53 @@ impl ModalDialog {
         state.select(Some(selected));
 
         frame.render_stateful_widget(list, inner, &mut state);
+    }
+
+    fn render_text_input(
+        &self,
+        frame: &mut Frame,
+        area: Rect,
+        title: &str,
+        prompt: &str,
+        buffer: &str,
+    ) {
+        let popup_area = centered_rect(60, 30, area);
+
+        // Clear the area
+        frame.render_widget(Clear, popup_area);
+
+        // Create the block
+        let block = Block::default()
+            .title(title)
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Rgb(139, 233, 253)))
+            .style(Style::default().bg(Color::Rgb(40, 42, 54)));
+
+        let inner = block.inner(popup_area);
+        frame.render_widget(block, popup_area);
+
+        // Split into prompt and input areas
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(2), Constraint::Length(3)])
+            .split(inner);
+
+        // Render prompt
+        let prompt_text = Paragraph::new(prompt)
+            .style(Style::default().fg(Color::Rgb(248, 248, 242)))
+            .wrap(Wrap { trim: true });
+        frame.render_widget(prompt_text, chunks[0]);
+
+        // Render input field with cursor
+        let input_text = format!("{}_", buffer);
+        let input = Paragraph::new(input_text)
+            .style(Style::default().fg(Color::Rgb(80, 250, 123)))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::Rgb(98, 114, 164))),
+            );
+        frame.render_widget(input, chunks[1]);
     }
 }
 

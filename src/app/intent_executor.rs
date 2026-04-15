@@ -45,6 +45,7 @@ impl App {
             Intent::ShowRenameDialog => self.show_rename_dialog()?,
             Intent::RenameFile(new_name) => self.rename_file(new_name)?,
             Intent::ShowCommitDialog => self.show_commit_dialog()?,
+            Intent::CommitWithMessage(message) => self.commit_with_message(message)?,
             Intent::None => {}
         }
         Ok(())
@@ -640,19 +641,20 @@ impl App {
                 .map(|c| c.id == commit_id)
                 .unwrap_or(false);
 
-            if !is_head {
-                self.state.push_log(
-                    "Can only amend HEAD commit. Please select the most recent commit.".to_string(),
-                );
-                return Ok(());
-            }
-
-            // For now, use a simple confirmation dialog
+            // Build confirmation message based on whether it's HEAD or not
             use crate::components::ModalDialog;
-            let message = format!(
-                "Amend HEAD with {} selected file(s)?\n\nThis will add the selected files to the last commit.\nThe commit message will remain unchanged.\n\nPress 'y' to confirm, 'n' to cancel.",
-                paths.len()
-            );
+            let message = if is_head {
+                format!(
+                    "Amend HEAD with {} selected file(s)?\n\nThis will add the selected files to the last commit.\nThe commit message will remain unchanged.\n\nPress 'y' to confirm, 'n' to cancel.",
+                    paths.len()
+                )
+            } else {
+                format!(
+                    "Amend commit '{}' with {} selected file(s)?\n\nThis will rewrite history using interactive rebase.\nAll commits after this one will be rebased.\n\nPress 'y' to confirm, 'n' to cancel.",
+                    commit.summary,
+                    paths.len()
+                )
+            };
 
             self.state.active_modal = Some(ModalDialog::confirmation(
                 "Amend Commit".to_string(),
@@ -673,7 +675,7 @@ impl App {
             ));
         } else {
             self.state.push_log(
-                "No commit selected. Please select HEAD in the Commits panel.".to_string(),
+                "No commit selected. Please select a commit in the Commits panel.".to_string(),
             );
         }
 
@@ -875,16 +877,26 @@ impl App {
                 Intent::StageAll,
             ));
         } else {
-            // Has staged files, trigger commit with placeholder message
-            let request_id = self
-                .state
-                .send_command(crate::backend::BackendCommand::Commit {
-                    message: "WIP commit".to_string(),
-                })?;
-            self.requests.track(request_id);
-            self.state
-                .push_log("Committing staged files...".to_string());
+            // Has staged files, show text input modal for commit message
+            self.state.active_modal = Some(ModalDialog::text_input(
+                "Commit".to_string(),
+                "Enter commit message:".to_string(),
+            ));
         }
+        Ok(())
+    }
+
+    fn commit_with_message(&mut self, message: String) -> Result<()> {
+        // Send commit command to backend
+        let request_id = self
+            .state
+            .send_command(crate::backend::BackendCommand::Commit { message })?;
+        self.requests.track(request_id);
+        self.state
+            .push_log("Committing staged files...".to_string());
+
+        // Close the modal
+        self.close_modal();
         Ok(())
     }
 }

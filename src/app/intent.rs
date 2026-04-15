@@ -14,6 +14,7 @@ pub enum Intent {
     ToggleStageFile,
     StageAll,
     ShowCommitDialog,
+    CommitWithMessage(String),
     DiscardSelected,
     StashSelected,
     AmendCommit,
