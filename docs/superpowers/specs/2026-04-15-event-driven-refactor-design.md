@@ -453,7 +453,6 @@ src/
 │       ├── working_tree.rs
 │       ├── diff.rs
 │       ├── stash.rs
-│       └── reflog.rs          (NEW — for future undo feature)
 │
 ├── app/
 │   ├── mod.rs
