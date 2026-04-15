@@ -67,16 +67,11 @@ pub enum ModalEvent {
     ShowDiscardConfirmation,
     ShowStashConfirmation,
     ShowAmendConfirmation,
+    ShowResetConfirmation(usize),  // index from reset menu
+    ShowNukeConfirmation,
     Close,
 }
 
-pub enum ModalEvent {
-    ShowHelp,
-    ShowCommitDialog,
-    ShowRenameDialog,
-    ShowResetMenu,
-    Close,
-}
 ```
 
 **Key principle:** Components handle their own navigation (j/k/scroll) internally. When selection changes and the main view needs refresh, they return `AppEvent::SelectionChanged`. Only app-level coordination (git ops, panel switching, modals, detail refresh) bubbles up.
@@ -90,10 +85,12 @@ pub enum ModalEvent {
 ```rust
 // src/components/component.rs
 pub struct RenderContext<'a> {
-    pub data: &'a CachedData,   // git data (read-only)
+    pub data: &'a CachedData,   // git data (read-only) — from state.data_cache
     pub theme: &'a Theme,
     pub is_focused: bool,
 }
+
+// Note: AppState fields are ui_state and data_cache, not ui and cache
 
 pub trait Component {
     fn on_event(&mut self, event: &Event, ctx: &RenderContext) -> AppEvent;
@@ -189,7 +186,7 @@ impl GitProcessor {
         let outcome = match event {
             GitEvent::ToggleStageFile => {
                 let path = state.get_selected_file_path()?;
-                let cmd = if state.cache.is_file_staged(&path) {
+                let cmd = if state.data_cache.is_file_staged(&path) {
                     BackendCommand::UnstageFile { file_path: path }
                 } else {
                     BackendCommand::StageFile { file_path: path }
@@ -205,18 +202,43 @@ impl GitProcessor {
             GitEvent::DiscardSelected => {
                 ProcessorOutcome::ShowModal(ModalEvent::ShowDiscardConfirmation)
             }
+            GitEvent::StashSelected => {
+                // Note: Current behavior sends command directly without confirmation.
+                // Keeping that behavior for now. If confirmation is desired, change to:
+                // ProcessorOutcome::ShowModal(ModalEvent::ShowStashConfirmation)
+                let paths = state.get_selected_file_paths()?;
+                ProcessorOutcome::SendCommand(BackendCommand::StashFiles { 
+                    paths, 
+                    message: None 
+                })
+            }
             GitEvent::AmendCommit => {
                 ProcessorOutcome::ShowModal(ModalEvent::ShowAmendConfirmation)
             }
             GitEvent::ExecuteReset(index) => {
-                let target = state.get_reset_target(index)?;
-                let cmd = match index {
-                    0 => BackendCommand::ResetSoft { target },
-                    1 => BackendCommand::ResetMixed { target },
-                    2 => BackendCommand::ResetHard { target },
+                // Current reset menu order (from intent_executor.rs:687):
+                // 0: Hard Reset (HEAD)
+                // 1: Mixed Reset (HEAD)
+                // 2: Soft Reset (HEAD)
+                // 3: Hard Reset (HEAD~1)
+                // 4: Soft Reset (HEAD~1)
+                // 5: Nuke Repository (not implemented)
+                let (target, cmd) = match index {
+                    0 => ("HEAD", BackendCommand::ResetHard { target: "HEAD".into() }),
+                    1 => ("HEAD", BackendCommand::ResetMixed { target: "HEAD".into() }),
+                    2 => ("HEAD", BackendCommand::ResetSoft { target: "HEAD".into() }),
+                    3 => ("HEAD~1", BackendCommand::ResetHard { target: "HEAD~1".into() }),
+                    4 => ("HEAD~1", BackendCommand::ResetSoft { target: "HEAD~1".into() }),
+                    5 => return Ok(ProcessorOutcome::ShowModal(ModalEvent::ShowNukeConfirmation)),
                     _ => return Ok(ProcessorOutcome::None),
                 };
-                ProcessorOutcome::SendCommand(cmd)
+                
+                // Hard resets need confirmation
+                if matches!(cmd, BackendCommand::ResetHard { .. }) {
+                    ProcessorOutcome::ShowModal(ModalEvent::ShowResetConfirmation(index))
+                } else {
+                    ProcessorOutcome::SendCommand(cmd)
+                }
             }
             // ... other events
         };
@@ -263,7 +285,7 @@ impl App {
                 self.modal_processor.execute(modal_event, &mut self.state)?;
             }
             AppEvent::SwitchPanel(panel) => {
-                self.state.ui.set_active_panel(panel);
+                self.state.ui_state.set_active_panel(panel);
                 self.update_main_view_for_active_panel()?;
             }
             AppEvent::SelectionChanged => {
