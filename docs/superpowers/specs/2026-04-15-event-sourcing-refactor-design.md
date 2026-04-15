@@ -52,7 +52,7 @@ pub enum GitEvent {
     StageAll,
     CommitWithMessage(String),
     DiscardSelected,      // Opens confirmation modal first
-    StashSelected,        // Opens confirmation modal first
+    StashSelected,        // Sends stash command directly
     AmendCommit,          // Opens confirmation modal first
     ExecuteReset(usize),  // Receives index after user selects from modal
     IgnoreSelected,
@@ -185,8 +185,12 @@ impl GitProcessor {
     pub fn execute(&self, event: GitEvent, state: &AppState) -> Result<ProcessorOutcome> {
         let outcome = match event {
             GitEvent::ToggleStageFile => {
+                // Note: Requires helper method or direct component access
+                // Example assumes AppState::get_selected_file_path() helper added
                 let path = state.get_selected_file_path()?;
-                let cmd = if state.data_cache.is_file_staged(&path) {
+                let is_staged = state.data_cache.files.iter()
+                    .any(|f| f.path == path && f.status.is_staged());
+                let cmd = if is_staged {
                     BackendCommand::UnstageFile { file_path: path }
                 } else {
                     BackendCommand::StageFile { file_path: path }
@@ -206,6 +210,7 @@ impl GitProcessor {
                 // Note: Current behavior sends command directly without confirmation.
                 // Keeping that behavior for now. If confirmation is desired, change to:
                 // ProcessorOutcome::ShowModal(ModalEvent::ShowStashConfirmation)
+                // Requires helper method or direct component access
                 let paths = state.get_selected_file_paths()?;
                 ProcessorOutcome::SendCommand(BackendCommand::StashFiles { 
                     paths, 
@@ -234,7 +239,8 @@ impl GitProcessor {
                 };
                 
                 // Hard resets need confirmation
-                if matches!(cmd, BackendCommand::ResetHard { .. }) {
+                let needs_confirmation = matches!(&cmd, BackendCommand::ResetHard { .. });
+                if needs_confirmation {
                     ProcessorOutcome::ShowModal(ModalEvent::ShowResetConfirmation(index))
                 } else {
                     ProcessorOutcome::SendCommand(cmd)
@@ -285,7 +291,10 @@ impl App {
                 self.modal_processor.execute(modal_event, &mut self.state)?;
             }
             AppEvent::SwitchPanel(panel) => {
-                self.state.ui_state.set_active_panel(panel);
+                // Note: Current implementation restores saved branch commits when switching
+                // back to Panel::Branches. This logic should be preserved in the new design.
+                // See src/app/intent_executor.rs:94 for current behavior.
+                self.state.ui_state.active_panel = panel;
                 self.update_main_view_for_active_panel()?;
             }
             AppEvent::SelectionChanged => {
