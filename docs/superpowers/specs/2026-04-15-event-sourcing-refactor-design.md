@@ -1,4 +1,4 @@
-# Event Sourcing Architecture Refactor
+# Event-Driven Component Refactor
 
 **Date:** 2026-04-15  
 **Status:** Design Approved  
@@ -43,6 +43,7 @@ pub enum AppEvent {
     Git(GitEvent),
     Modal(ModalEvent),
     SwitchPanel(Panel),
+    SelectionChanged,  // component selection changed, refresh main view
     None,  // component handled internally
 }
 
@@ -56,12 +57,6 @@ pub enum GitEvent {
     ExecuteReset(usize),
     IgnoreSelected,
     RenameFile(String),
-    // Branch operations (added during Phase 3 panel migration)
-    CheckoutBranch(String),
-    DeleteBranch(String),
-    ApplyStash,
-    PopStash,
-    DropStash,
 }
 
 pub enum ModalEvent {
@@ -73,7 +68,7 @@ pub enum ModalEvent {
 }
 ```
 
-**Key principle:** Components handle their own navigation (j/k/scroll) and return `AppEvent::None`. Only app-level coordination (git ops, panel switching, modals) bubbles up.
+**Key principle:** Components handle their own navigation (j/k/scroll) internally. When selection changes and the main view needs refresh, they return `AppEvent::SelectionChanged`. Only app-level coordination (git ops, panel switching, modals, detail refresh) bubbles up.
 
 ### React-Like Component Model
 
@@ -147,11 +142,8 @@ impl ListBehavior for BranchBehavior {
     type Item = BranchInfo;
     
     fn on_activate(&self, item: &BranchInfo) -> AppEvent {
-        AppEvent::Git(GitEvent::CheckoutBranch(item.name.clone()))
-    }
-    
-    fn on_delete(&self, item: &BranchInfo) -> AppEvent {
-        AppEvent::Git(GitEvent::DeleteBranch(item.name.clone()))
+        // Branch checkout is future feature work, not in this refactor
+        AppEvent::SelectionChanged
     }
 }
 
@@ -163,6 +155,8 @@ pub type BranchListPanel = ConfigurableList<BranchInfo, BranchBehavior>;
 - Custom behavior via trait implementation
 - Easy to add new panel types
 
+**Note:** This requires a new `StatefulList<T>` type that owns both data and `ListState`. Current `SelectableList` is render-only.
+
 ### GitProcessor (replaces intent_executor.rs)
 
 **Current problem:** 902-line `intent_executor.rs` with 33 methods split across two `impl App` blocks.
@@ -171,13 +165,10 @@ pub type BranchListPanel = ConfigurableList<BranchInfo, BranchBehavior>;
 
 ```rust
 // src/app/git_processor.rs
-pub struct GitProcessor {
-    cmd_tx: Sender<CommandEnvelope>,
-    request_tracker: RequestTracker,
-}
+pub struct GitProcessor;
 
 impl GitProcessor {
-    pub fn execute(&mut self, event: GitEvent, state: &mut AppState) -> Result<()> {
+    pub fn execute(&self, event: GitEvent, state: &AppState) -> Result<BackendCommand> {
         let cmd = match event {
             GitEvent::ToggleStageFile => {
                 let path = state.get_selected_file_path()?;
@@ -192,12 +183,12 @@ impl GitProcessor {
             // ... other events
         };
         
-        let request_id = state.send_command(cmd)?;
-        self.request_tracker.track(request_id);
-        Ok(())
+        Ok(cmd)
     }
 }
 ```
+
+**Note:** `GitProcessor` is stateless — it just translates events to commands. `App` owns `RequestTracker` and handles command sending + response filtering.
 
 **App's main loop becomes trivial:**
 
@@ -219,13 +210,19 @@ impl App {
     fn process_event(&mut self, event: AppEvent) -> Result<()> {
         match event {
             AppEvent::Git(git_event) => {
-                self.git_processor.execute(git_event, &mut self.state)?;
+                let cmd = self.git_processor.execute(git_event, &self.state)?;
+                let request_id = self.state.send_command(cmd)?;
+                self.requests.track(request_id);
             }
             AppEvent::Modal(modal_event) => {
                 self.modal_processor.execute(modal_event, &mut self.state)?;
             }
             AppEvent::SwitchPanel(panel) => {
                 self.state.ui.set_active_panel(panel);
+                self.update_main_view_for_active_panel()?;
+            }
+            AppEvent::SelectionChanged => {
+                self.update_main_view_for_active_panel()?;
             }
             AppEvent::None => {}
         }
@@ -276,10 +273,19 @@ The `define_handlers!` macro generates:
 2. `CommandHandler` trait implementations
 3. Handler registry initialization
 4. Error handling boilerplate
+5. Request ID threading
+6. Post-action refresh logic (e.g., stage → refresh status)
+
+**Note:** The macro syntax shown is simplified. The actual implementation must handle:
+- Request IDs from `CommandEnvelope`
+- Mutable vs immutable repo access (`[mut]` flag)
+- Post-action refreshes (stage/unstage → refresh files)
+- Custom result shaping (batch diffs, commit files)
+- Error handling and event emission
 
 **Result:**
-- 1151 lines → ~200 lines
-- Adding new command: 1 line instead of 40+ lines
+- 1151 lines → ~300 lines (more realistic with full macro complexity)
+- Adding new command: 1-3 lines instead of 40+ lines
 - Single source of truth for command → git_ops → event mapping
 
 ## File Structure
@@ -361,14 +367,14 @@ fn test_stage_file() {
 ### Component Tests (much simpler)
 ```rust
 #[test]
-fn test_branch_selection_returns_checkout_event() {
+fn test_branch_selection_triggers_detail_refresh() {
     let mut panel = BranchListPanel::new();
     let ctx = mock_render_context();
     
     let event = Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
     let result = panel.on_event(&event, &ctx);
     
-    assert!(matches!(result, AppEvent::Git(GitEvent::CheckoutBranch(_))));
+    assert!(matches!(result, AppEvent::SelectionChanged));
 }
 
 #[test]
@@ -414,7 +420,7 @@ async fn test_stage_commit_workflow() {
 
 ## Migration Strategy
 
-### Phase 1: Backend Cleanup (Low Risk)
+### Phase 1: Backend Cleanup (Medium Risk)
 **Goal:** Eliminate handler boilerplate without changing behavior
 
 **Steps:**
@@ -480,8 +486,8 @@ cargo check  # Will fail — components not updated yet
 
 **Validation:**
 ```bash
-cargo test --test stash_panel_tests
-cargo run  # Manual test: navigate stash panel, apply/pop/drop
+cargo test stash_list
+cargo run  # Manual test: navigate stash panel
 ```
 
 **Expected result:** Stash panel works identically to before
@@ -493,8 +499,8 @@ cargo run  # Manual test: navigate stash panel, apply/pop/drop
 
 **Validation:**
 ```bash
-cargo test --test branch_panel_tests
-cargo run  # Manual test: checkout branch, delete branch, view commits
+cargo test branch_list
+cargo run  # Manual test: navigate branches, view commits sub-panel
 ```
 
 **3.4: Migrate CommitPanel**
@@ -504,7 +510,7 @@ cargo run  # Manual test: checkout branch, delete branch, view commits
 
 **Validation:**
 ```bash
-cargo test --test commit_panel_tests
+cargo test commit_panel
 cargo run  # Manual test: navigate commits, view files, view diffs
 ```
 
@@ -515,7 +521,7 @@ cargo run  # Manual test: navigate commits, view files, view diffs
 
 **Validation:**
 ```bash
-cargo test --test file_panel_tests
+cargo test file_list
 cargo run  # Manual test: stage files, commit, discard, rename, ignore
 ```
 
@@ -547,15 +553,15 @@ cargo run  # Full manual testing of all workflows
 - [ ] Amend commit
 - [ ] Discard changes
 - [ ] Stash changes
-- [ ] Checkout branch
-- [ ] Delete branch
+- [ ] Navigate branches (checkout/delete are future features)
 - [ ] View commit details
-- [ ] Apply/pop/drop stash
+- [ ] Navigate stash list (apply/pop/drop are future features)
 - [ ] Ignore files
 - [ ] Rename files
 - [ ] Reset (hard/mixed/soft)
 - [ ] Help panel
 - [ ] All modals (commit, rename, reset)
+- [ ] Selection changes refresh main view
 
 **Rollback:** `git reset --hard` to Phase 3 completion if critical bugs found
 
@@ -617,21 +623,33 @@ Each phase is considered complete when:
 
 These are enabled by the new architecture but not part of this refactor:
 
-1. **Undo/Redo via git reflog**
+1. **Branch Operations**
+   - Add `CheckoutBranch`, `DeleteBranch` to `GitEvent`
+   - Add corresponding `BackendCommand` variants
+   - Add git_ops functions in `branches.rs`
+   - Add handlers and tests
+
+2. **Stash Operations**
+   - Add `ApplyStash`, `PopStash`, `DropStash` to `GitEvent`
+   - Add corresponding `BackendCommand` variants
+   - Add git_ops functions in `stash.rs`
+   - Add handlers and tests
+
+3. **Undo/Redo via git reflog**
    - Add `backend/git_ops/reflog.rs`
    - Add `UndoToReflog` backend command
    - Add `u`/`Ctrl+r` keybindings
    - Show reflog panel
 
-2. **Component Registry**
+4. **Component Registry**
    - Dynamic panel loading
    - Plugin system for custom panels
 
-3. **Enhanced Testing**
+5. **Enhanced Testing**
    - Property-based tests for event sequences
    - Snapshot tests for UI rendering
 
-4. **Performance Optimizations**
+6. **Performance Optimizations**
    - Incremental rendering
    - Event batching
 
@@ -640,9 +658,9 @@ These are enabled by the new architecture but not part of this refactor:
 After refactor completion:
 
 - **Code size:** 
-  - `handlers.rs`: 1151 → ~200 lines (83% reduction)
+  - `handlers.rs`: 1151 → ~300 lines (74% reduction)
   - `intent_executor.rs`: 902 → deleted (replaced by ~300 lines across git_processor + modal_processor)
-  - Total reduction: ~1500 lines
+  - Total reduction: ~1400 lines
 
 - **Maintainability:**
   - Adding new command: 1 line (macro definition) vs 40+ lines (handler struct + impl)
