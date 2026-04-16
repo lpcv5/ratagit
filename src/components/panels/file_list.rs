@@ -1,15 +1,19 @@
 use std::collections::HashMap;
 
-use crossterm::event::{Event, KeyCode, KeyEventKind};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::layout::Rect;
 use ratatui::Frame;
+use ratatui::buffer::Buffer;
 
 use crate::app::CachedData;
+use crate::app::AppState;
+use crate::app::events::{AppEvent, GitEvent, ModalEvent};
 use crate::backend::git_ops::StatusEntry;
 use crate::components::core::{
     build_tree_from_paths, ActionMultiplicity, GitFileStatus, SelectableList, TreeNode, TreePanel,
 };
 use crate::components::Component;
+use crate::components::component_v2::ComponentV2;
 use crate::components::Intent;
 
 /// 将 StatusEntry 转换为 GitFileStatus
@@ -185,9 +189,125 @@ impl Component for FileListPanel {
     }
 }
 
+impl ComponentV2 for FileListPanel {
+    fn handle_key_event(&mut self, key: KeyEvent, _state: &AppState) -> AppEvent {
+        match key.code {
+            KeyCode::Char('j') | KeyCode::Down => {
+                self.tree.select_next();
+                AppEvent::SelectionChanged
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.tree.select_previous();
+                AppEvent::SelectionChanged
+            }
+            KeyCode::Char(' ') => AppEvent::Git(GitEvent::ToggleStageFile),
+            KeyCode::Char('A') => AppEvent::Git(GitEvent::StageAll),
+            KeyCode::Enter => AppEvent::ActivatePanel,
+            KeyCode::Char('d') => AppEvent::Git(GitEvent::DiscardSelected),
+            KeyCode::Char('i') => AppEvent::Git(GitEvent::IgnoreSelected),
+            KeyCode::Char('r') => AppEvent::Modal(ModalEvent::ShowRenameDialog),
+            KeyCode::Char('c') => AppEvent::Modal(ModalEvent::ShowCommitDialog),
+            KeyCode::Char('s') => AppEvent::Git(GitEvent::StashSelected),
+            KeyCode::Char('a') => AppEvent::Git(GitEvent::AmendCommit),
+            KeyCode::Char('R') => AppEvent::Modal(ModalEvent::ShowResetMenu),
+            _ => AppEvent::None,
+        }
+    }
+
+    fn render(&self, _area: Rect, _buf: &mut Buffer, _state: &AppState) {
+        // Render implementation will be added when ComponentV2 is fully integrated
+        // For now, this is a stub to satisfy the trait
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crossterm::event::KeyModifiers;
+
+    #[test]
+    fn test_file_panel_component_v2() {
+        let mut panel = FileListPanel::new();
+        let state = mock_state();
+
+        // Test navigation keys return SelectionChanged
+        let key = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
+        let event = panel.handle_key_event(key, &state);
+        assert_eq!(event, AppEvent::SelectionChanged);
+
+        let key = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
+        let event = panel.handle_key_event(key, &state);
+        assert_eq!(event, AppEvent::SelectionChanged);
+
+        let key = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE);
+        let event = panel.handle_key_event(key, &state);
+        assert_eq!(event, AppEvent::SelectionChanged);
+
+        let key = KeyEvent::new(KeyCode::Up, KeyModifiers::NONE);
+        let event = panel.handle_key_event(key, &state);
+        assert_eq!(event, AppEvent::SelectionChanged);
+
+        // Test space key returns ToggleStageFile
+        let key = KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE);
+        let event = panel.handle_key_event(key, &state);
+        assert_eq!(event, AppEvent::Git(GitEvent::ToggleStageFile));
+
+        // Test 'A' key returns StageAll
+        let key = KeyEvent::new(KeyCode::Char('A'), KeyModifiers::NONE);
+        let event = panel.handle_key_event(key, &state);
+        assert_eq!(event, AppEvent::Git(GitEvent::StageAll));
+
+        // Test Enter key returns ActivatePanel
+        let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        let event = panel.handle_key_event(key, &state);
+        assert_eq!(event, AppEvent::ActivatePanel);
+
+        // Test 'd' key returns DiscardSelected
+        let key = KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE);
+        let event = panel.handle_key_event(key, &state);
+        assert_eq!(event, AppEvent::Git(GitEvent::DiscardSelected));
+
+        // Test 'i' key returns IgnoreSelected
+        let key = KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE);
+        let event = panel.handle_key_event(key, &state);
+        assert_eq!(event, AppEvent::Git(GitEvent::IgnoreSelected));
+
+        // Test 'r' key returns ShowRenameDialog
+        let key = KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE);
+        let event = panel.handle_key_event(key, &state);
+        assert_eq!(event, AppEvent::Modal(ModalEvent::ShowRenameDialog));
+
+        // Test 'c' key returns ShowCommitDialog
+        let key = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::NONE);
+        let event = panel.handle_key_event(key, &state);
+        assert_eq!(event, AppEvent::Modal(ModalEvent::ShowCommitDialog));
+
+        // Test 's' key returns StashSelected
+        let key = KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE);
+        let event = panel.handle_key_event(key, &state);
+        assert_eq!(event, AppEvent::Git(GitEvent::StashSelected));
+
+        // Test 'a' key returns AmendCommit
+        let key = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE);
+        let event = panel.handle_key_event(key, &state);
+        assert_eq!(event, AppEvent::Git(GitEvent::AmendCommit));
+
+        // Test 'R' key returns ShowResetMenu
+        let key = KeyEvent::new(KeyCode::Char('R'), KeyModifiers::NONE);
+        let event = panel.handle_key_event(key, &state);
+        assert_eq!(event, AppEvent::Modal(ModalEvent::ShowResetMenu));
+
+        // Test unknown key returns None
+        let key = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE);
+        let event = panel.handle_key_event(key, &state);
+        assert_eq!(event, AppEvent::None);
+    }
+
+    fn mock_state() -> crate::app::AppState {
+        let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::channel(100);
+        let (_event_tx, event_rx) = tokio::sync::mpsc::channel(100);
+        crate::app::AppState::new(cmd_tx, event_rx)
+    }
 
     #[test]
     fn test_untracked_file_status() {
@@ -293,7 +413,7 @@ mod render_tests {
         terminal
             .draw(|frame| {
                 let area = frame.area();
-                panel.render(frame, area, false, &data);
+                Component::render(&mut panel, frame, area, false, &data);
             })
             .unwrap();
 
@@ -320,7 +440,7 @@ mod render_tests {
         terminal
             .draw(|frame| {
                 let area = frame.area();
-                panel.render(frame, area, false, &data);
+                Component::render(&mut panel, frame, area, false, &data);
             })
             .unwrap();
 
@@ -354,7 +474,7 @@ mod render_tests {
         terminal
             .draw(|frame| {
                 let area = frame.area();
-                panel.render(frame, area, false, &data);
+                Component::render(&mut panel, frame, area, false, &data);
             })
             .unwrap();
 
@@ -393,7 +513,7 @@ mod render_tests {
         terminal
             .draw(|frame| {
                 let area = frame.area();
-                panel.render(frame, area, false, &data);
+                Component::render(&mut panel, frame, area, false, &data);
             })
             .unwrap();
 
