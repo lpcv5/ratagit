@@ -1,7 +1,7 @@
 // src/app/processors/git_processor.rs
 use crate::app::events::GitEvent;
 use crate::app::state::AppState;
-use crate::backend::BackendCommand;
+use crate::BackendCommand;
 
 pub struct GitProcessor;
 
@@ -24,8 +24,6 @@ impl GitProcessor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::events::GitEvent;
-    use crate::backend::BackendCommand;
 
     #[test]
     fn test_git_processor_toggle_stage() {
