@@ -4,6 +4,8 @@ use anyhow::Result;
 use crossterm::event;
 use tokio::sync::mpsc::error::TryRecvError;
 
+use super::events::AppEvent;
+use super::processors::{git_processor::GitProcessor, modal_processor::ModalProcessor};
 use super::request_tracker::RequestTracker;
 use super::state::AppState;
 use super::Panel;
@@ -13,6 +15,8 @@ use crate::components::core::build_tree_from_paths;
 pub struct App {
     pub(super) state: AppState,
     pub(super) requests: RequestTracker,
+    git_processor: GitProcessor,
+    modal_processor: ModalProcessor,
 }
 
 impl App {
@@ -23,6 +27,50 @@ impl App {
         Self {
             state: AppState::new(cmd_tx, event_rx),
             requests: RequestTracker::new(),
+            git_processor: GitProcessor,
+            modal_processor: ModalProcessor,
+        }
+    }
+
+    /// Process an AppEvent by routing it to the appropriate processor
+    pub fn process_event(&mut self, event: AppEvent) {
+        match event {
+            AppEvent::None => {}
+            AppEvent::Git(git_event) => {
+                let commands = self.git_processor.process(git_event, &self.state);
+                for cmd in commands {
+                    if let Err(e) = self.state.send_command(cmd) {
+                        self.state.push_log(format!("Failed to send command: {}", e));
+                    }
+                }
+            }
+            AppEvent::Modal(modal_event) => {
+                self.modal_processor.process(modal_event, &mut self.state);
+            }
+            AppEvent::SwitchPanel(panel) => {
+                self.state.ui_state.active_panel = panel;
+            }
+            AppEvent::ActivatePanel => {
+                self.handle_activate_panel();
+            }
+            AppEvent::SelectionChanged => {
+                // Selection changed - no action needed, just UI update
+            }
+        }
+    }
+
+    fn handle_activate_panel(&mut self) {
+        match self.state.ui_state.active_panel {
+            Panel::Files => {
+                // Show diff for selected file
+                // (implementation depends on your diff logic)
+            }
+            Panel::Branches => {
+                // Checkout selected branch
+                // (implementation depends on your checkout logic)
+            }
+            // Handle other panels...
+            _ => {}
         }
     }
 
@@ -257,5 +305,52 @@ impl App {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::events::{AppEvent, GitEvent, ModalEvent};
+    use crate::app::Panel;
+    use tokio::sync::mpsc;
+
+    fn create_test_app() -> App {
+        let (cmd_tx, _cmd_rx) = mpsc::channel(100);
+        let (_event_tx, event_rx) = mpsc::channel(100);
+        App::new(cmd_tx, event_rx)
+    }
+
+    #[test]
+    fn test_app_process_event_git() {
+        let mut app = create_test_app();
+        app.process_event(AppEvent::Git(GitEvent::StageAll));
+
+        // Verify BackendCommand was sent
+        // (check cmd_tx channel has StageAll command)
+    }
+
+    #[test]
+    fn test_app_process_event_modal() {
+        let mut app = create_test_app();
+        app.process_event(AppEvent::Modal(ModalEvent::ShowHelp));
+
+        // Verify modal was set
+        assert!(app.state.active_modal.is_some());
+    }
+
+    #[test]
+    fn test_app_process_event_switch_panel() {
+        let mut app = create_test_app();
+        app.process_event(AppEvent::SwitchPanel(Panel::Branches));
+
+        assert_eq!(app.state.ui_state.active_panel, Panel::Branches);
+    }
+
+    #[test]
+    fn test_app_process_event_none() {
+        let mut app = create_test_app();
+        // Should not panic
+        app.process_event(AppEvent::None);
     }
 }

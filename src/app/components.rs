@@ -3,8 +3,11 @@ use crate::components::panels::{
     StashListPanel,
 };
 use crate::components::Component;
+use crate::components::component_v2::ComponentV2;
 use crate::components::Intent;
-use crossterm::event::Event;
+use crate::app::events::AppEvent;
+use crate::app::AppState;
+use crossterm::event::{Event, KeyEvent};
 
 use super::{CachedData, Panel};
 
@@ -44,6 +47,23 @@ impl AppComponents {
             Panel::Stash => self.stash_list_panel.handle_event(event, data),
             Panel::MainView => self.main_view_panel.handle_event(event, data),
             Panel::Log => self.log_panel.handle_event(event, data),
+        }
+    }
+
+    /// Dispatch key event to active panel using ComponentV2 trait (returns AppEvent)
+    pub fn dispatch_key_event_v2(
+        &mut self,
+        active_panel: Panel,
+        key: KeyEvent,
+        state: &AppState,
+    ) -> AppEvent {
+        match active_panel {
+            Panel::Files => self.file_list_panel.handle_key_event(key, state),
+            Panel::Branches => self.branch_list_panel.handle_key_event(key, state),
+            Panel::Commits => self.commit_panel.handle_key_event(key, state),
+            Panel::Stash => self.stash_list_panel.handle_key_event(key, state),
+            Panel::MainView => self.main_view_panel.handle_key_event(key, state),
+            Panel::Log => self.log_panel.handle_key_event(key, state),
         }
     }
 
