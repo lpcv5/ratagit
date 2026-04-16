@@ -57,16 +57,77 @@ macro_rules! __generate_handler_struct {
     };
 }
 
-// Generate CommandHandler trait implementation (stub for Task 1.2)
+// Generate CommandHandler trait implementation
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __generate_handler_impl {
+    // Simple command with no fields, immutable repo
     (
-        $cmd_variant:ident $({ $($field:ident),* })? $([ $mut_flag:ident ])? =>
+        $cmd_variant:ident =>
         $git_fn:expr =>
-        $event_variant:ident $( ( $result_binding:ident ) )?
+        $event_variant:ident
     ) => {
-        // Stub: will be implemented in Task 1.2
+        paste::paste! {
+            impl CommandHandler for [<$cmd_variant Handler>] {
+                fn handle(
+                    &self,
+                    repo: &GitRepo,
+                    request_id: u64,
+                ) -> Result<Vec<EventEnvelope>> {
+                    let result = $git_fn(repo)?;
+                    Ok(vec![EventEnvelope {
+                        request_id: Some(request_id),
+                        event: FrontendEvent::$event_variant,
+                    }])
+                }
+            }
+        }
+    };
+
+    // Command with fields, immutable repo
+    (
+        $cmd_variant:ident { $($field:ident),* } =>
+        $git_fn:expr =>
+        $event_variant:ident ( $result_binding:ident )
+    ) => {
+        paste::paste! {
+            impl CommandHandler for [<$cmd_variant Handler>] {
+                fn handle(
+                    &self,
+                    repo: &GitRepo,
+                    request_id: u64,
+                ) -> Result<Vec<EventEnvelope>> {
+                    let $result_binding = $git_fn(repo)?;
+                    Ok(vec![EventEnvelope {
+                        request_id: Some(request_id),
+                        event: FrontendEvent::$event_variant($result_binding),
+                    }])
+                }
+            }
+        }
+    };
+
+    // Command with mutable repo flag
+    (
+        $cmd_variant:ident [ mut ] =>
+        $git_fn:expr =>
+        $event_variant:ident ( $result_binding:ident )
+    ) => {
+        paste::paste! {
+            impl CommandHandler for [<$cmd_variant Handler>] {
+                fn handle_mut(
+                    &self,
+                    repo: &mut GitRepo,
+                    request_id: u64,
+                ) -> Result<Vec<EventEnvelope>> {
+                    let $result_binding = $git_fn(repo)?;
+                    Ok(vec![EventEnvelope {
+                        request_id: Some(request_id),
+                        event: FrontendEvent::$event_variant($result_binding),
+                    }])
+                }
+            }
+        }
     };
 }
 
