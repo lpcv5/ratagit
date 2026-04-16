@@ -15,4 +15,5 @@ mod ui_state;
 pub(crate) use cache::CachedData;
 pub use intent::Intent;
 pub use runtime::App;
+pub use state::AppState;
 pub use ui_state::{Panel, UiState};
