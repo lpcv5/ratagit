@@ -6,6 +6,10 @@ use crate::app::CachedData;
 use crate::components::core::ScrollableText;
 use crate::components::Component;
 use crate::components::Intent;
+use crate::components::component_v2::ComponentV2;
+use crate::app::events::AppEvent;
+use crate::app::AppState;
+use ratatui::buffer::Buffer;
 
 /// 日志面板组件（持有自身滚动状态）
 pub struct LogPanel {
@@ -65,10 +69,42 @@ impl Component for LogPanel {
     }
 }
 
+impl ComponentV2 for LogPanel {
+    fn handle_key_event(&mut self, _key: crossterm::event::KeyEvent, _state: &AppState) -> AppEvent {
+        // Display-only component - no keyboard input handling
+        AppEvent::None
+    }
+
+    fn render(&self, _area: Rect, _buf: &mut Buffer, _state: &AppState) {
+        // Delegate to existing Component::render
+        // This is a placeholder - actual rendering happens via Component trait
+    }
+}
+
 #[cfg(test)]
 mod render_tests {
     use super::*;
     use crate::components::test_utils::*;
+
+    #[test]
+    fn test_log_panel_component_v2() {
+        let mut panel = LogPanel::new();
+        let state = mock_state();
+        let key = crossterm::event::KeyEvent::new(
+            KeyCode::Char('j'),
+            crossterm::event::KeyModifiers::NONE,
+        );
+
+        // Display-only component should always return AppEvent::None
+        let event = panel.handle_key_event(key, &state);
+        assert_eq!(event, AppEvent::None);
+    }
+
+    fn mock_state() -> AppState {
+        let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::channel(100);
+        let (_event_tx, event_rx) = tokio::sync::mpsc::channel(100);
+        AppState::new(cmd_tx, event_rx)
+    }
 
     #[test]
     fn test_log_panel_empty_state() {
@@ -79,7 +115,7 @@ mod render_tests {
         terminal
             .draw(|frame| {
                 let area = frame.area();
-                panel.render(frame, area, false, &data);
+                Component::render(&mut panel, frame, area, false, &data);
             })
             .unwrap();
 
@@ -108,7 +144,7 @@ mod render_tests {
         terminal
             .draw(|frame| {
                 let area = frame.area();
-                panel.render(frame, area, false, &data);
+                Component::render(&mut panel, frame, area, false, &data);
             })
             .unwrap();
 
@@ -152,7 +188,7 @@ mod render_tests {
         terminal
             .draw(|frame| {
                 let area = frame.area();
-                panel.render(frame, area, false, &data);
+                Component::render(&mut panel, frame, area, false, &data);
             })
             .unwrap();
 

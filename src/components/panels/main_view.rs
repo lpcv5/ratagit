@@ -12,6 +12,10 @@ use crate::app::CachedData;
 use crate::components::core::{panel_block, theme};
 use crate::components::Component;
 use crate::components::Intent;
+use crate::components::component_v2::ComponentV2;
+use crate::app::events::AppEvent;
+use crate::app::AppState;
+use ratatui::buffer::Buffer;
 
 /// 主视面板组件（持有自身滚动状态）
 pub struct MainViewPanel {
@@ -240,5 +244,42 @@ fn apply_sgr_sequence(seq: &str, style: &mut Style) {
             107 => *style = style.bg(Color::White),
             _ => {}
         }
+    }
+}
+
+impl ComponentV2 for MainViewPanel {
+    fn handle_key_event(&mut self, _key: crossterm::event::KeyEvent, _state: &AppState) -> AppEvent {
+        // Display-only component - no keyboard input handling
+        AppEvent::None
+    }
+
+    fn render(&self, _area: Rect, _buf: &mut Buffer, _state: &AppState) {
+        // Delegate to existing Component::render
+        // This is a placeholder - actual rendering happens via Component trait
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_main_view_component_v2() {
+        let mut panel = MainViewPanel::new();
+        let state = mock_state();
+        let key = crossterm::event::KeyEvent::new(
+            KeyCode::Char('j'),
+            crossterm::event::KeyModifiers::NONE,
+        );
+
+        // Display-only component should always return AppEvent::None
+        let event = panel.handle_key_event(key, &state);
+        assert_eq!(event, AppEvent::None);
+    }
+
+    fn mock_state() -> AppState {
+        let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::channel(100);
+        let (_event_tx, event_rx) = tokio::sync::mpsc::channel(100);
+        AppState::new(cmd_tx, event_rx)
     }
 }
