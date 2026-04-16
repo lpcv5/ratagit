@@ -1,5 +1,6 @@
 mod cache;
 mod components;
+pub mod events;
 mod input_handler;
 mod intent;
 mod intent_executor;
