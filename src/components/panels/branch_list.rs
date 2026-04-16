@@ -1,9 +1,13 @@
-use crossterm::event::{Event, KeyCode, KeyEventKind};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{layout::Rect, Frame};
+use ratatui::buffer::Buffer;
 
 use crate::app::CachedData;
+use crate::app::AppState;
+use crate::app::events::{AppEvent, GitEvent};
 use crate::components::core::{render_branches, SimpleListPanel};
 use crate::components::{Component, Intent};
+use crate::components::component_v2::ComponentV2;
 
 use super::CommitPanel;
 
@@ -98,11 +102,77 @@ impl Component for BranchListPanel {
     }
 }
 
+impl ComponentV2 for BranchListPanel {
+    fn handle_key_event(&mut self, key: KeyEvent, state: &AppState) -> AppEvent {
+        match key.code {
+            KeyCode::Char('j') | KeyCode::Down => {
+                if !state.data_cache.branches.is_empty() {
+                    let current = self.list.state_mut().selected().unwrap_or(0);
+                    let next = (current + 1).min(state.data_cache.branches.len() - 1);
+                    self.list.state_mut().select(Some(next));
+                    AppEvent::SelectionChanged
+                } else {
+                    AppEvent::None
+                }
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                if !state.data_cache.branches.is_empty() {
+                    let current = self.list.state_mut().selected().unwrap_or(0);
+                    let prev = current.saturating_sub(1);
+                    self.list.state_mut().select(Some(prev));
+                    AppEvent::SelectionChanged
+                } else {
+                    AppEvent::None
+                }
+            }
+            KeyCode::Enter => AppEvent::ActivatePanel,
+            KeyCode::Char('d') => AppEvent::Git(GitEvent::DiscardSelected),
+            _ => AppEvent::None,
+        }
+    }
+
+    fn render(&self, _area: Rect, _buf: &mut Buffer, _state: &AppState) {
+        // Render implementation will be added when ComponentV2 is fully integrated
+        // For now, this is a stub to satisfy the trait
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::backend::git_ops::CommitEntry;
     use crate::components::core::MultiSelectableList;
+
+    #[test]
+    fn test_branch_panel_component_v2() {
+        use crate::components::component_v2::ComponentV2;
+        use crate::app::events::AppEvent;
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let mut panel = BranchListPanel::new();
+        let mut state = mock_state();
+
+        // Add a branch entry so navigation works
+        state.data_cache.branches = vec![
+            crate::backend::git_ops::BranchEntry {
+                name: "main".to_string(),
+                is_head: true,
+                upstream: None,
+            }
+        ];
+
+        let key = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
+        let event = panel.handle_key_event(key, &state);
+
+        // Should return SelectionChanged for 'j' key
+        assert_eq!(event, AppEvent::SelectionChanged);
+    }
+
+    fn mock_state() -> crate::app::AppState {
+        let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::channel(100);
+        let (_event_tx, event_rx) = tokio::sync::mpsc::channel(100);
+        crate::app::AppState::new(cmd_tx, event_rx)
+    }
 
     fn key(code: KeyCode) -> Event {
         Event::Key(crossterm::event::KeyEvent::new(
@@ -195,7 +265,7 @@ mod render_tests {
         terminal
             .draw(|frame| {
                 let area = frame.area();
-                panel.render(frame, area, false, &data);
+                Component::render(&mut panel, frame, area, false, &data);
             })
             .unwrap();
 
@@ -221,7 +291,7 @@ mod render_tests {
         terminal
             .draw(|frame| {
                 let area = frame.area();
-                panel.render(frame, area, false, &data);
+                Component::render(&mut panel, frame, area, false, &data);
             })
             .unwrap();
 
@@ -255,7 +325,7 @@ mod render_tests {
         terminal
             .draw(|frame| {
                 let area = frame.area();
-                panel.render(frame, area, false, &data);
+                Component::render(&mut panel, frame, area, false, &data);
             })
             .unwrap();
 
@@ -291,7 +361,7 @@ mod render_tests {
         terminal
             .draw(|frame| {
                 let area = frame.area();
-                panel.render(frame, area, false, &data);
+                Component::render(&mut panel, frame, area, false, &data);
             })
             .unwrap();
 
