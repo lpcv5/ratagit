@@ -97,7 +97,9 @@ impl Component for BranchListPanel {
     fn render(&mut self, frame: &mut Frame, area: Rect, is_focused: bool, data: &CachedData) {
         match &mut self.mode {
             BranchMode::List => self.list.render(frame, area, is_focused, data),
-            BranchMode::CommitsSub { panel } => panel.render(frame, area, is_focused, data),
+            BranchMode::CommitsSub { panel } => {
+                Component::render(panel.as_mut(), frame, area, is_focused, data)
+            }
         }
     }
 }

@@ -16,6 +16,9 @@ use crate::components::core::{
 };
 use crate::components::Component;
 use crate::components::Intent;
+use crate::components::component_v2::ComponentV2;
+use crate::app::events::AppEvent;
+use crate::app::AppState;
 
 enum CommitMode {
     List,
@@ -282,6 +285,54 @@ impl Component for CommitPanel {
     }
 }
 
+impl ComponentV2 for CommitPanel {
+    fn handle_key_event(&mut self, key: crossterm::event::KeyEvent, state: &AppState) -> AppEvent {
+        use crossterm::event::KeyCode;
+
+        match key.code {
+            KeyCode::Char('j') | KeyCode::Down => {
+                if !state.data_cache.commits.is_empty() {
+                    let current = self.state.selected().unwrap_or(0);
+                    let next = (current + 1).min(state.data_cache.commits.len() - 1);
+                    self.state.select(Some(next));
+                    AppEvent::SelectionChanged
+                } else {
+                    AppEvent::None
+                }
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                if !state.data_cache.commits.is_empty() {
+                    let current = self.state.selected().unwrap_or(0);
+                    let prev = current.saturating_sub(1);
+                    self.state.select(Some(prev));
+                    AppEvent::SelectionChanged
+                } else {
+                    AppEvent::None
+                }
+            }
+            KeyCode::Enter => {
+                // Only activate if in List mode and not in multi-select
+                match &self.mode {
+                    CommitMode::List => {
+                        if self.enter_action_multiplicity() == ActionMultiplicity::SingleOnly {
+                            AppEvent::ActivatePanel
+                        } else {
+                            AppEvent::None
+                        }
+                    }
+                    _ => AppEvent::None,
+                }
+            }
+            _ => AppEvent::None,
+        }
+    }
+
+    fn render(&self, _area: Rect, _buf: &mut ratatui::buffer::Buffer, _state: &AppState) {
+        // Render implementation will be added when ComponentV2 is fully integrated
+        // For now, this is a stub to satisfy the trait
+    }
+}
+
 fn commit_ids(commits: &[CommitEntry]) -> Vec<String> {
     commits.iter().map(|commit| commit.id.clone()).collect()
 }
@@ -397,5 +448,54 @@ mod tests {
         let intent = panel.handle_event(&event, &CachedData::default());
 
         assert!(matches!(intent, Intent::RefreshPanelDetail));
+    }
+
+    #[test]
+    fn test_commit_panel_component_v2() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let mut panel = CommitPanel::new();
+        let mut state = mock_state();
+
+        // Add commit entries so navigation works
+        state.data_cache.commits = vec![
+            CommitEntry {
+                short_id: "abc1234".to_string(),
+                id: "abc123".to_string(),
+                summary: "Test commit 1".to_string(),
+                body: None,
+                author: "Author".to_string(),
+                timestamp: 1704067200,
+            },
+            CommitEntry {
+                short_id: "def4567".to_string(),
+                id: "def456".to_string(),
+                summary: "Test commit 2".to_string(),
+                body: None,
+                author: "Author".to_string(),
+                timestamp: 1704153600,
+            },
+        ];
+
+        // Test j key - should return SelectionChanged
+        let key = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
+        let event = panel.handle_key_event(key, &state);
+        assert_eq!(event, AppEvent::SelectionChanged);
+
+        // Test k key - should return SelectionChanged
+        let key = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE);
+        let event = panel.handle_key_event(key, &state);
+        assert_eq!(event, AppEvent::SelectionChanged);
+
+        // Test Enter key - should return ActivatePanel
+        let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        let event = panel.handle_key_event(key, &state);
+        assert_eq!(event, AppEvent::ActivatePanel);
+    }
+
+    fn mock_state() -> AppState {
+        let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::channel(100);
+        let (_event_tx, event_rx) = tokio::sync::mpsc::channel(100);
+        AppState::new(cmd_tx, event_rx)
     }
 }
