@@ -5,6 +5,7 @@ mod input_handler;
 mod intent;
 mod intent_executor;
 pub(super) mod keyhints;
+pub mod processors;
 mod renderer;
 mod request_tracker;
 pub mod runtime;
