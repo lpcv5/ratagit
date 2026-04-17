@@ -14,18 +14,22 @@ use crate::app::AppState;
 
 enum CommitMode {
     List,
+    #[allow(dead_code)] // Used in mode transitions
     FilesLoading {
         commit_id: String,
         summary: String,
     },
     FilesTree {
+    #[allow(dead_code)] // Used in mode transitions
         commit_id: String,
+    #[allow(dead_code)] // Used in mode transitions
         summary: String,
         tree: TreePanel,
     },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)] // Used in mode_view() method
 pub enum CommitModeView {
     List,
     FilesLoading { commit_id: String, summary: String },
@@ -39,6 +43,7 @@ pub struct CommitPanel {
     list_multi_select: MultiSelectState<String>,
 }
 
+#[allow(dead_code)] // Methods reserved for future use
 impl CommitPanel {
     pub fn new() -> Self {
         let mut state = ListState::default();
@@ -50,6 +55,7 @@ impl CommitPanel {
         }
     }
 
+    #[allow(dead_code)] // Reserved for future use
     pub fn state_mut(&mut self) -> &mut ListState {
         &mut self.state
     }
@@ -62,6 +68,7 @@ impl CommitPanel {
         self.state.selected().and_then(|idx| commits.get(idx))
     }
 
+    #[allow(dead_code)] // Used for loading state transitions
     pub fn start_loading(&mut self, commit_id: String, summary: String) {
         self.clear_list_multi_select();
         self.mode = CommitMode::FilesLoading { commit_id, summary };
@@ -75,6 +82,7 @@ impl CommitPanel {
         };
     }
 
+    #[allow(dead_code)] // Reserved for future use
     pub fn show_list(&mut self) {
         if let CommitMode::FilesTree { tree, .. } = &mut self.mode {
             tree.clear_multi_select();
@@ -264,6 +272,7 @@ impl ComponentV2 for CommitPanel {
     }
 }
 
+#[allow(dead_code)] // Helper function for multi-select
 fn commit_ids(commits: &[CommitEntry]) -> Vec<String> {
     commits.iter().map(|commit| commit.id.clone()).collect()
 }

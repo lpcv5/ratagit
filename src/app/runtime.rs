@@ -407,7 +407,7 @@ mod tests {
         app.process_event(AppEvent::None);
     }
 }
-
+#[allow(clippy::items_after_test_module)] // Helper function used by main code
 /// Helper function to shorten commit IDs for display
 fn short_commit_id(id: &str) -> String {
     if id.len() > 7 {

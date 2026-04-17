@@ -9,7 +9,9 @@ pub struct CommitEntry {
     pub id: String,
     pub summary: String,
     pub body: Option<String>,
+    #[allow(dead_code)] // Used in tests
     pub author: String,
+    #[allow(dead_code)] // Reserved for future use
     pub timestamp: i64,
 }
 

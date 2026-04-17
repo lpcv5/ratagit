@@ -64,6 +64,7 @@ impl FileListPanel {
         Self { tree }
     }
 
+    #[allow(dead_code)] // Reserved for future use
     pub fn state_mut(&mut self) -> &mut ratatui::widgets::ListState {
         self.tree.state_mut()
     }

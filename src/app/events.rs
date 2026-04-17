@@ -36,6 +36,7 @@ pub enum AppEvent {
 /// GitProcessor handles multi-select logic and determines the appropriate
 /// backend commands to send.
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)] // Used in match arms and tests
 pub enum GitEvent {
     ToggleStageFile,
     StageAll,
@@ -54,6 +55,7 @@ pub enum GitEvent {
 /// ModalProcessor updates AppState.active_modal, which is then rendered
 /// on top of the main UI.
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)] // Used in match arms and tests
 pub enum ModalEvent {
     ShowHelp,
     ShowCommitDialog,

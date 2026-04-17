@@ -61,6 +61,7 @@ pub fn assert_buffer_contains(buffer: &Buffer, row: u16, col: u16, text: &str) {
 }
 
 /// Create a CachedData instance with test file data
+#[allow(dead_code)] // Used in tests
 pub fn create_test_cached_data_with_files(files: Vec<StatusEntry>) -> CachedData {
     CachedData {
         files,
@@ -69,6 +70,7 @@ pub fn create_test_cached_data_with_files(files: Vec<StatusEntry>) -> CachedData
 }
 
 /// Create a CachedData instance with test branch data
+#[allow(dead_code)] // Used in tests
 pub fn create_test_cached_data_with_branches(branches: Vec<BranchEntry>) -> CachedData {
     CachedData {
         branches,
@@ -86,6 +88,7 @@ pub fn create_test_cached_data_with_commits(commits: Vec<CommitEntry>) -> Cached
 }
 
 /// Create a CachedData instance with test stash data
+#[allow(dead_code)] // Used in tests
 pub fn create_test_cached_data_with_stashes(stashes: Vec<StashEntry>) -> CachedData {
     CachedData {
         stashes,
@@ -94,6 +97,7 @@ pub fn create_test_cached_data_with_stashes(stashes: Vec<StashEntry>) -> CachedD
 }
 
 /// Create a test StatusEntry
+#[allow(dead_code)] // Used in tests
 pub fn test_status_entry(
     path: &str,
     is_staged: bool,
@@ -109,6 +113,7 @@ pub fn test_status_entry(
 }
 
 /// Create a test BranchEntry
+#[allow(dead_code)] // Used in tests
 pub fn test_branch_entry(name: &str, is_head: bool, upstream: Option<&str>) -> BranchEntry {
     BranchEntry {
         name: name.to_string(),
@@ -131,6 +136,7 @@ pub fn test_commit_entry(short_id: &str, summary: &str, author: &str) -> CommitE
 }
 
 /// Create a test StashEntry
+#[allow(dead_code)] // Used in tests
 pub fn test_stash_entry(index: usize, id: &str, message: &str) -> StashEntry {
     StashEntry {
         index,

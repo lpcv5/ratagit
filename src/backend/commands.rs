@@ -5,6 +5,7 @@ pub struct DiffTarget {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // Used in match arms and handlers
 pub enum BackendCommand {
     RefreshStatus,
     RefreshBranches,

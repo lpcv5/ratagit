@@ -50,6 +50,7 @@ pub trait MultiSelectableList {
     fn multi_select_state(&self) -> &MultiSelectState<Self::Key>;
     fn multi_select_state_mut(&mut self) -> &mut MultiSelectState<Self::Key>;
 
+    #[allow(dead_code)] // Reserved for future multi-select functionality
     fn toggle_multi_select(
         &mut self,
         cursor_index: Option<usize>,

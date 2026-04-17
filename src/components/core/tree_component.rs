@@ -22,6 +22,7 @@ pub struct TreePanel {
     /// 所有节点（包含折叠的）
     all_nodes: Vec<TreeNode>,
     /// 是否支持空格操作（如暂存文件）
+    #[allow(dead_code)] // Used in constructor, reserved for future use
     pub enable_space_action: bool,
     multi_select: MultiSelectState<String>,
 }
@@ -39,6 +40,7 @@ impl TreePanel {
         }
     }
 
+    #[allow(dead_code)] // Reserved for future use
     pub fn state_mut(&mut self) -> &mut ListState {
         &mut self.state
     }
@@ -170,6 +172,7 @@ impl TreePanel {
     }
 
     /// 切换目录的展开/折叠状态
+    #[allow(dead_code)] // Reserved for future tree expansion functionality
     fn toggle_node(&mut self) {
         let visible = self.visible_nodes();
         if let Some(selected_idx) = self.state.selected() {

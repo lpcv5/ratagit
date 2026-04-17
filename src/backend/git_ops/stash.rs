@@ -5,6 +5,7 @@ use super::repo::GitRepo;
 #[derive(Debug, Clone)]
 pub struct StashEntry {
     pub index: usize,
+    #[allow(dead_code)] // Used in tests
     pub id: String,
     pub message: String,
 }

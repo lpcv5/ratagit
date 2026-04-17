@@ -17,6 +17,7 @@ impl LogPanel {
         Self { scroll: 0 }
     }
 
+    #[allow(dead_code)] // Reserved for future scroll functionality
     pub fn scroll_by(&mut self, delta: i16) {
         if delta.is_negative() {
             self.scroll = self.scroll.saturating_sub(delta.unsigned_abs());

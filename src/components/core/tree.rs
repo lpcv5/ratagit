@@ -68,6 +68,7 @@ impl TreeNode {
         }
     }
 
+    #[allow(dead_code)] // Used by tree_component.toggle_node
     pub fn toggle_expanded(&mut self) {
         if self.is_dir {
             self.is_expanded = !self.is_expanded;

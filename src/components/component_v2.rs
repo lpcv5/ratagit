@@ -44,6 +44,7 @@ pub trait ComponentV2 {
     ///
     /// Rendering is decoupled from event handling - state changes happen
     /// via events, not during rendering.
+    #[allow(dead_code)] // Trait method, used by implementors
     fn render(&self, area: Rect, buf: &mut Buffer, state: &AppState);
 }
 
