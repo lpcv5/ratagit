@@ -1,4 +1,15 @@
 // src/app/processors/modal_processor.rs
+//
+// ModalProcessor handles modal dialog events.
+//
+// This processor is responsible for:
+// - Creating appropriate modal dialogs (help, confirmation, text input, menu)
+// - Updating AppState.active_modal to show/hide modals
+// - Configuring modal callbacks (what event to return on confirmation)
+//
+// ModalProcessor directly mutates AppState (unlike GitProcessor which returns commands).
+// This is safe because modal state is purely UI state, not Git state.
+
 use crate::app::events::{AppEvent, GitEvent, ModalEvent};
 use crate::app::state::AppState;
 use crate::app::ui_state::Panel;
@@ -7,6 +18,10 @@ use crate::components::dialogs::ModalDialogV2;
 pub struct ModalProcessor;
 
 impl ModalProcessor {
+    /// Process a ModalEvent and update AppState
+    ///
+    /// This directly mutates state.active_modal to show/hide dialogs.
+    /// Modals handle their own input and return AppEvent when confirmed/cancelled.
     pub fn process(&self, event: ModalEvent, state: &mut AppState) {
         match event {
             ModalEvent::ShowHelp => {

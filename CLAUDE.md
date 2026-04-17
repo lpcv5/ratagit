@@ -45,14 +45,24 @@ main.rs
 
 **`GitRepo` (src/backend/git_ops/repo.rs)** — wraps `git2::Repository`. Operations are split into focused modules: `status`, `branches`, `commits`, `stash`, `diff`, `commit_files`, `commit_diff`, `branch_graph`, `working_tree`.
 
-**Component system (src/components/)** — UI panels implement the `Component` trait (`handle_event` → `Intent`, `render`). Components return `Intent` values; `App` executes them via `intent_executor.rs`. Core primitives live in `src/components/core/` (tree, selectable_list, simple_list, multi_select, theme).
+**Component system (src/components/)** — UI panels implement the `ComponentV2` trait (`handle_key_event` → `AppEvent`, `render`). Components return `AppEvent` values; `App::process_event` routes them to processors (`GitProcessor`, `ModalProcessor`). Core primitives live in `src/components/core/` (tree, selectable_list, simple_list, multi_select, theme).
 
 **Layout** — two columns (34% / 66%). Left: Files, Branches, Commits, Stash panels. Right: Main View (diff/detail) + Log panel.
 
 ## Key conventions
 
-- `Intent` (src/app/intent.rs) is the only way components communicate upward to `App` — no direct state mutation from components.
+- `AppEvent` (src/app/events.rs) is the only way components communicate upward to `App` — no direct state mutation from components. Events are routed to processors: `GitProcessor` converts `GitEvent` to `BackendCommand`s, `ModalProcessor` updates modal state.
 - `push_log` appends to the in-memory log (capped at 200 entries); use it for any backend response or user action worth surfacing.
 - `sync_*_list_state` keeps `ListState` in bounds after data refreshes; always call after replacing a panel's data vec.
 - Commit messages use imperative prefixes: `feat:`, `refactor:`, `chore:`, `fix:`.
 - PRs for TUI-visible changes should include terminal captures.
+
+## Event-driven architecture
+
+See `docs/ARCHITECTURE.md` for full details. Key points:
+
+- Components return `AppEvent` (Git, Modal, SwitchPanel, ActivatePanel, SelectionChanged, None)
+- `App::process_event` routes events to appropriate processors
+- `GitProcessor` converts `GitEvent` to `BackendCommand` sequences
+- `ModalProcessor` updates `AppState.active_modal` to show/hide dialogs
+- All Git I/O happens asynchronously on the backend task

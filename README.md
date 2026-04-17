@@ -61,16 +61,20 @@ cargo run
 
 ## Architecture
 
-Ratagit follows a layered runtime design:
+Ratagit uses an event-driven architecture with clear separation between UI and Git operations:
 
-- UI -> `Action` -> `Dispatcher`/`Stores` -> Effect Runtime -> `GitRepository`
-- Reducers remain pure; Git I/O is executed in the effect runtime
-- UI renders from immutable snapshots, keeping rendering decoupled from mutation logic
+- **Event Flow**: User Input → Component → AppEvent → Processor → Backend/State
+- **Components** return `AppEvent` (no direct state mutation)
+- **Processors** convert events to backend commands or state updates
+- **Backend** executes Git operations asynchronously on a separate task
 
-Read more in:
+Key benefits:
+- Unidirectional data flow (predictable state changes)
+- Type-safe event handling (strongly typed enums)
+- Responsive UI (Git I/O never blocks rendering)
+- Easy testing (processors are simple, pure functions)
 
-- [Architecture Decisions](docs/DECISIONS.md)
-- [Development Model](docs/DEVELOPMENT_MODEL.md)
+Read more in `docs/ARCHITECTURE.md`.
 
 ## Tech Stack
 

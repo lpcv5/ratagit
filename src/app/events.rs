@@ -1,8 +1,19 @@
 // src/app/events.rs
+//
+// Event type definitions for the event-driven architecture.
+//
+// Components return AppEvent from handle_key_event(), which flows to App::process_event().
+// The App routes events to appropriate processors:
+// - GitEvent → GitProcessor → BackendCommand(s)
+// - ModalEvent → ModalProcessor → State update
+// - SwitchPanel/ActivatePanel → Direct state update
 
 use crate::app::ui_state::Panel;
 
 /// Top-level event type returned by components
+///
+/// This is the primary communication mechanism from components to the App.
+/// Components never mutate state directly - they only return events.
 #[derive(Debug, Clone, PartialEq)]
 pub enum AppEvent {
     /// Git operation event
@@ -20,6 +31,10 @@ pub enum AppEvent {
 }
 
 /// Git operation events
+///
+/// These events are converted to BackendCommand(s) by GitProcessor.
+/// GitProcessor handles multi-select logic and determines the appropriate
+/// backend commands to send.
 #[derive(Debug, Clone, PartialEq)]
 pub enum GitEvent {
     ToggleStageFile,
@@ -34,6 +49,10 @@ pub enum GitEvent {
 }
 
 /// Modal/dialog events
+///
+/// These events are processed by ModalProcessor to show/hide modal dialogs.
+/// ModalProcessor updates AppState.active_modal, which is then rendered
+/// on top of the main UI.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ModalEvent {
     ShowHelp,

@@ -1,4 +1,16 @@
 // src/app/processors/git_processor.rs
+//
+// GitProcessor converts GitEvent to BackendCommand(s).
+//
+// This processor is responsible for:
+// - Converting high-level GitEvent to low-level BackendCommand(s)
+// - Handling multi-select logic (stage/unstage multiple files)
+// - Determining stage/unstage direction based on anchor file
+// - Filtering out invalid targets (e.g., directories)
+//
+// GitProcessor is stateless - it reads from AppState but doesn't mutate it.
+// All state changes happen via BackendCommand → Backend → FrontendEvent → AppState.
+
 use crate::app::events::GitEvent;
 use crate::app::state::AppState;
 use crate::BackendCommand;
@@ -6,6 +18,11 @@ use crate::BackendCommand;
 pub struct GitProcessor;
 
 impl GitProcessor {
+    /// Process a GitEvent and return zero or more BackendCommands
+    ///
+    /// This is the main entry point for converting events to commands.
+    /// Returns a Vec because some events may generate multiple commands
+    /// (e.g., multi-select operations).
     pub fn process(&self, event: GitEvent, state: &AppState) -> Vec<BackendCommand> {
         match event {
             GitEvent::ToggleStageFile => self.toggle_stage_file(state),

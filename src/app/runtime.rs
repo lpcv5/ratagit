@@ -12,6 +12,19 @@ use super::Panel;
 use crate::backend::{EventEnvelope, FrontendEvent};
 use crate::components::core::build_tree_from_paths;
 
+/// Main application runtime
+///
+/// App owns the application state and coordinates the event-driven architecture:
+/// 1. Receives user input
+/// 2. Routes input to active component (or modal if open)
+/// 3. Component returns AppEvent
+/// 4. App::process_event routes event to appropriate processor
+/// 5. Processor converts event to backend commands or state updates
+/// 6. Backend executes commands asynchronously
+/// 7. Backend sends FrontendEvent back to App
+/// 8. App updates state and re-renders
+///
+/// This unidirectional flow ensures predictable state changes and easy debugging.
 pub struct App {
     pub(super) state: AppState,
     pub(super) requests: RequestTracker,
@@ -33,6 +46,15 @@ impl App {
     }
 
     /// Process an AppEvent by routing it to the appropriate processor
+    ///
+    /// This is the central event dispatcher in the event-driven architecture.
+    /// Events flow through here from components and are routed to:
+    /// - GitProcessor: Converts GitEvent to BackendCommand(s)
+    /// - ModalProcessor: Updates modal state
+    /// - Direct state updates: Panel switching, activation
+    ///
+    /// This method never blocks - Git operations are sent to the backend
+    /// asynchronously via channels.
     pub fn process_event(&mut self, event: AppEvent) {
         match event {
             AppEvent::None => {}
