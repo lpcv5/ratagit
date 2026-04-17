@@ -1,6 +1,6 @@
 use ratatui::widgets::ListState;
 
-use crate::backend::git_ops::{BranchEntry, CommitEntry, StashEntry, StatusEntry};
+use crate::backend::git_ops::{BranchEntry, StatusEntry};
 use crate::backend::{CommandEnvelope, EventEnvelope};
 use crate::components::dialogs::ModalDialogV2;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -81,20 +81,6 @@ impl AppState {
             .branch_list_panel
             .selected_index()
             .and_then(|index| self.data_cache.branches.get(index))
-    }
-
-    pub fn selected_commit(&self) -> Option<&CommitEntry> {
-        self.components
-            .commit_panel
-            .selected_index()
-            .and_then(|index| self.data_cache.commits.get(index))
-    }
-
-    pub fn selected_stash(&self) -> Option<&StashEntry> {
-        self.components
-            .stash_list_panel
-            .selected_index()
-            .and_then(|index| self.data_cache.stashes.get(index))
     }
 
     // 同步组件列表状态与数据长度

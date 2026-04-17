@@ -5,7 +5,7 @@ mod theme;
 mod tree;
 mod tree_component;
 
-pub use multi_select::{ActionMultiplicity, MultiSelectState, MultiSelectableList};
+pub use multi_select::{MultiSelectState, MultiSelectableList};
 pub use selectable_list::{ScrollableText, SelectableList};
 pub use simple_list::{render_branches, render_stashes, SimpleListPanel};
 pub use theme::{

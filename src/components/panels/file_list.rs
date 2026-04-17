@@ -9,7 +9,7 @@ use crate::app::AppState;
 use crate::app::events::{AppEvent, GitEvent, ModalEvent};
 use crate::backend::git_ops::StatusEntry;
 use crate::components::core::{
-    build_tree_from_paths, ActionMultiplicity, GitFileStatus, SelectableList, TreeNode, TreePanel,
+    build_tree_from_paths, GitFileStatus, SelectableList, TreeNode, TreePanel,
 };
 use crate::components::component_v2::ComponentV2;
 

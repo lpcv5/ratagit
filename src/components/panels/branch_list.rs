@@ -97,8 +97,6 @@ impl ComponentV2 for BranchListPanel {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::backend::git_ops::CommitEntry;
-    use crate::components::core::MultiSelectableList;
 
     #[test]
     fn test_branch_panel_component_v2() {

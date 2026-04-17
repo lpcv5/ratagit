@@ -2,7 +2,6 @@ use ratatui::layout::Rect;
 
 use crate::app::CachedData;
 
-use crate::components::core::ScrollableText;
 use crate::components::component_v2::ComponentV2;
 use crate::app::events::AppEvent;
 use crate::app::AppState;
@@ -62,7 +61,6 @@ impl ComponentV2 for LogPanel {
 #[cfg(test)]
 mod render_tests {
     use super::*;
-    use crate::components::test_utils::*;
     use crossterm::event::KeyCode;
 
     #[test]

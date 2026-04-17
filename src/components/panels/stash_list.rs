@@ -73,7 +73,6 @@ impl ComponentV2 for StashListPanel {
 #[cfg(test)]
 mod render_tests {
     use super::*;
-    use crate::components::test_utils::*;
 
     #[test]
     fn test_stash_panel_component_v2() {

@@ -1,17 +1,12 @@
 use ratatui::{
-    style::Style,
-    text::{Line, Span},
-    widgets::{ListItem, ListState, Paragraph},
+    widgets::ListState,
 };
-use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 
 use crate::app::CachedData;
 use crate::backend::git_ops::CommitEntry;
 use crate::components::core::{
-    accent_primary_color, multi_select_row_style, muted_text_style, panel_block,
-    ActionMultiplicity, MultiSelectState, MultiSelectableList, SelectableList, TreePanel,
-    LIST_HIGHLIGHT_SYMBOL,
+    MultiSelectState, MultiSelectableList, TreePanel,
 };
 use crate::components::component_v2::ComponentV2;
 use crate::app::events::AppEvent;
@@ -250,7 +245,7 @@ impl ComponentV2 for CommitPanel {
                 // Only activate if in List mode and not in multi-select
                 match &self.mode {
                     CommitMode::List => {
-                        if self.enter_action_multiplicity() == ActionMultiplicity::SingleOnly {
+                        if !self.list_multi_select.is_active() {
                             AppEvent::ActivatePanel
                         } else {
                             AppEvent::None
@@ -273,17 +268,10 @@ fn commit_ids(commits: &[CommitEntry]) -> Vec<String> {
     commits.iter().map(|commit| commit.id.clone()).collect()
 }
 
-impl CommitPanel {
-    fn enter_action_multiplicity(&self) -> ActionMultiplicity {
-        ActionMultiplicity::SingleOnly
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
     #[test]
     fn test_commit_panel_component_v2() {
         use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};

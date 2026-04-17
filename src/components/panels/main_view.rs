@@ -1,13 +1,12 @@
 use ratatui::{
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::Paragraph,
 };
 use ratatui::layout::Rect;
 
 use crate::app::CachedData;
 
-use crate::components::core::{panel_block, theme};
+use crate::components::core::theme;
 use crate::components::component_v2::ComponentV2;
 use crate::app::events::AppEvent;
 use crate::app::AppState;

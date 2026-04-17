@@ -1,3 +1,3 @@
 mod modal;
 
-pub use modal::{ModalDialogV2, ModalTypeV2};
+pub use modal::ModalDialogV2;

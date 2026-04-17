@@ -1,12 +1,6 @@
 use std::collections::HashSet;
 use std::hash::Hash;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ActionMultiplicity {
-    SingleOnly,
-    BatchCapable,
-}
-
 #[derive(Debug, Clone)]
 pub struct MultiSelectState<Key> {
     active: bool,
