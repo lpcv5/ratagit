@@ -1,9 +1,7 @@
-use crossterm::event::{Event, KeyCode, KeyEventKind};
 use ratatui::{layout::Rect, widgets::ListState, Frame};
 
 use crate::app::CachedData;
 use crate::components::core::{SelectableList, LIST_HIGHLIGHT_SYMBOL};
-use crate::components::{Component, Intent};
 
 pub struct SimpleListPanel {
     pub state: ListState,
@@ -27,25 +25,9 @@ impl SimpleListPanel {
     pub fn selected_index(&self) -> Option<usize> {
         self.state.selected()
     }
-}
 
-impl Component for SimpleListPanel {
-    fn handle_event(&mut self, event: &Event, _data: &CachedData) -> Intent {
-        if let Event::Key(key) = event {
-            if key.kind != KeyEventKind::Press {
-                return Intent::None;
-            }
-            match key.code {
-                KeyCode::Char('j') | KeyCode::Down => return Intent::SelectNext,
-                KeyCode::Char('k') | KeyCode::Up => return Intent::SelectPrevious,
-                KeyCode::Enter => return Intent::ActivatePanel,
-                _ => {}
-            }
-        }
-        Intent::None
-    }
-
-    fn render(&mut self, frame: &mut Frame, area: Rect, is_focused: bool, data: &CachedData) {
+    /// Temporary bridge method for old renderer (will be removed when renderer migrates to ComponentV2)
+    pub fn render(&mut self, frame: &mut ratatui::Frame, area: ratatui::layout::Rect, is_focused: bool, data: &CachedData) {
         (self.render_fn)(frame, area, is_focused, data, &mut self.state);
     }
 }

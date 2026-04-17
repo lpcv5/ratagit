@@ -92,16 +92,47 @@ impl App {
 
                 // If modal is active, let it handle the input first
                 if let Some(ref mut modal) = self.state.active_modal {
-                    let intent = modal.handle_event(&input);
-                    if !matches!(intent, crate::components::Intent::None) {
-                        self.execute_intent(intent)?;
-                    }
+                    let app_event = modal.handle_event_v2(&input);
+                    self.process_event(app_event);
                 } else {
-                    self.handle_input(input)?;
+                    self.handle_input_v2(input)?;
                 }
             }
         }
         Ok(())
+    }
+
+    pub(super) fn request_refresh_all(&mut self) {
+        use crate::backend::BackendCommand;
+        for cmd in [
+            BackendCommand::RefreshStatus,
+            BackendCommand::RefreshBranches,
+            BackendCommand::RefreshCommits { limit: 30 },
+            BackendCommand::RefreshStashes,
+        ] {
+            if let Err(e) = self.state.send_command(cmd) {
+                self.state.push_log(format!("Failed to send refresh command: {}", e));
+            }
+        }
+    }
+
+    pub(super) fn update_main_view_for_active_panel(&mut self) -> Result<()> {
+        // TODO: Implement proper main view updates for each panel
+        // This is a stub to allow compilation after Intent system deletion
+        // The old implementation was in intent_executor.rs and needs to be
+        // refactored to work with the new event-driven architecture
+        Ok(())
+    }
+
+    pub(super) fn scroll_main_view_by(&mut self, delta: i16) {
+        // Calculate max scroll based on current diff content
+        let max_scroll = if let Some((_, content)) = self.state.data_cache.current_diff.as_ref() {
+            let max_lines = content.lines().count().saturating_sub(1);
+            u16::try_from(max_lines).unwrap_or(u16::MAX)
+        } else {
+            0
+        };
+        self.state.components.scroll_main_view_by(delta, max_scroll);
     }
 
     async fn drain_backend_events(&mut self) -> Result<()> {
@@ -207,7 +238,7 @@ impl App {
                 if self.state.components.commit_pending_commit_id() != Some(commit_id.as_str()) {
                     self.state.push_log(format!(
                         "Ignored stale commit files response for {}",
-                        super::intent_executor::short_commit_id(&commit_id)
+                        short_commit_id(&commit_id)
                     ));
                     return Ok(());
                 }
@@ -223,7 +254,7 @@ impl App {
                 self.state.push_log(format!(
                     "Loaded {} files for commit {}",
                     files.len(),
-                    super::intent_executor::short_commit_id(&commit_id)
+                    short_commit_id(&commit_id)
                 ));
 
                 let paths: Vec<String> = files.iter().map(|(p, _)| p.clone()).collect();
@@ -354,3 +385,13 @@ mod tests {
         app.process_event(AppEvent::None);
     }
 }
+
+/// Helper function to shorten commit IDs for display
+fn short_commit_id(id: &str) -> String {
+    if id.len() > 7 {
+        id[..7].to_string()
+    } else {
+        id.to_string()
+    }
+}
+

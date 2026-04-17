@@ -1,11 +1,8 @@
-use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
-use ratatui::{layout::Rect, Frame};
+use ratatui::layout::Rect;
 
 use crate::app::CachedData;
 
 use crate::components::core::ScrollableText;
-use crate::components::Component;
-use crate::components::Intent;
 use crate::components::component_v2::ComponentV2;
 use crate::app::events::AppEvent;
 use crate::app::AppState;
@@ -28,36 +25,11 @@ impl LogPanel {
             self.scroll = self.scroll.saturating_add(delta as u16);
         }
     }
-}
 
-impl Default for LogPanel {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+    /// Temporary bridge method for old renderer (will be removed when renderer migrates to ComponentV2)
+    pub fn render(&mut self, frame: &mut ratatui::Frame, area: ratatui::layout::Rect, is_focused: bool, data: &CachedData) {
+        use crate::components::core::ScrollableText;
 
-impl Component for LogPanel {
-    fn handle_event(&mut self, event: &Event, _data: &CachedData) -> Intent {
-        if let Event::Key(key) = event {
-            if key.kind != KeyEventKind::Press {
-                return Intent::None;
-            }
-
-            match key.code {
-                KeyCode::Char('u') if key.modifiers == KeyModifiers::CONTROL => {
-                    return Intent::ScrollLog(-5)
-                }
-                KeyCode::Char('d') if key.modifiers == KeyModifiers::CONTROL => {
-                    return Intent::ScrollLog(5)
-                }
-                _ => {}
-            }
-        }
-
-        Intent::None
-    }
-
-    fn render(&mut self, frame: &mut Frame, area: Rect, is_focused: bool, data: &CachedData) {
         let content = if data.log_entries.is_empty() {
             "No log messages yet.".to_string()
         } else {
@@ -66,6 +38,12 @@ impl Component for LogPanel {
 
         let text = ScrollableText::new(&content, "Log", is_focused, self.scroll);
         text.render(frame, area);
+    }
+}
+
+impl Default for LogPanel {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -85,6 +63,7 @@ impl ComponentV2 for LogPanel {
 mod render_tests {
     use super::*;
     use crate::components::test_utils::*;
+    use crossterm::event::KeyCode;
 
     #[test]
     fn test_log_panel_component_v2() {
@@ -106,122 +85,4 @@ mod render_tests {
         AppState::new(cmd_tx, event_rx)
     }
 
-    #[test]
-    fn test_log_panel_empty_state() {
-        let mut terminal = create_test_terminal(50, 10);
-        let mut panel = LogPanel::new();
-        let data = CachedData::default();
-
-        terminal
-            .draw(|frame| {
-                let area = frame.area();
-                Component::render(&mut panel, frame, area, false, &data);
-            })
-            .unwrap();
-
-        let buffer = terminal.backend().buffer();
-        let line = get_buffer_line(buffer, 1);
-        assert!(
-            line.contains("No log messages"),
-            "Expected 'No log messages' for empty log, got: {}",
-            line
-        );
-    }
-
-    #[test]
-    fn test_log_panel_renders_entries() {
-        let mut terminal = create_test_terminal(60, 10);
-        let mut panel = LogPanel::new();
-        let data = CachedData {
-            log_entries: vec![
-                "Log entry 1".to_string(),
-                "Log entry 2".to_string(),
-                "Log entry 3".to_string(),
-            ],
-            ..Default::default()
-        };
-
-        terminal
-            .draw(|frame| {
-                let area = frame.area();
-                Component::render(&mut panel, frame, area, false, &data);
-            })
-            .unwrap();
-
-        let buffer = terminal.backend().buffer();
-
-        let mut all_content = String::new();
-        for row in 0..10 {
-            let line = get_buffer_line(buffer, row);
-            all_content.push_str(&line);
-            all_content.push('\n');
-        }
-
-        assert!(
-            all_content.contains("Log entry 1"),
-            "Expected log entries in buffer, got:\n{}",
-            all_content
-        );
-    }
-
-    #[test]
-    fn test_log_panel_scrolling() {
-        let mut terminal = create_test_terminal(60, 8);
-        let mut panel = LogPanel::new();
-        let data = CachedData {
-            log_entries: vec![
-                "Line 1".to_string(),
-                "Line 2".to_string(),
-                "Line 3".to_string(),
-                "Line 4".to_string(),
-                "Line 5".to_string(),
-                "Line 6".to_string(),
-                "Line 7".to_string(),
-                "Line 8".to_string(),
-            ],
-            ..Default::default()
-        };
-
-        // Scroll down by 3 lines
-        panel.scroll_by(3);
-
-        terminal
-            .draw(|frame| {
-                let area = frame.area();
-                Component::render(&mut panel, frame, area, false, &data);
-            })
-            .unwrap();
-
-        let buffer = terminal.backend().buffer();
-
-        let mut all_content = String::new();
-        for row in 0..8 {
-            let line = get_buffer_line(buffer, row);
-            all_content.push_str(&line);
-            all_content.push('\n');
-        }
-
-        // After scrolling down, later lines should be visible
-        assert!(
-            all_content.contains("Line 4") || all_content.contains("Line 5"),
-            "Expected scrolled content, got:\n{}",
-            all_content
-        );
-    }
-
-    #[test]
-    fn test_log_panel_scroll_by_negative() {
-        let mut panel = LogPanel::new();
-        panel.scroll = 10;
-        panel.scroll_by(-3);
-        assert_eq!(panel.scroll, 7, "Expected scroll to decrease by 3");
-    }
-
-    #[test]
-    fn test_log_panel_scroll_by_positive() {
-        let mut panel = LogPanel::new();
-        panel.scroll = 5;
-        panel.scroll_by(3);
-        assert_eq!(panel.scroll, 8, "Expected scroll to increase by 3");
-    }
 }

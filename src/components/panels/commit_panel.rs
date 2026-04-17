@@ -1,11 +1,10 @@
-use crossterm::event::{Event, KeyCode, KeyEventKind};
 use ratatui::{
-    layout::Rect,
     style::Style,
     text::{Line, Span},
     widgets::{ListItem, ListState, Paragraph},
-    Frame,
 };
+use ratatui::buffer::Buffer;
+use ratatui::layout::Rect;
 
 use crate::app::CachedData;
 use crate::backend::git_ops::CommitEntry;
@@ -14,8 +13,6 @@ use crate::components::core::{
     ActionMultiplicity, MultiSelectState, MultiSelectableList, SelectableList, TreePanel,
     LIST_HIGHLIGHT_SYMBOL,
 };
-use crate::components::Component;
-use crate::components::Intent;
 use crate::components::component_v2::ComponentV2;
 use crate::app::events::AppEvent;
 use crate::app::AppState;
@@ -168,75 +165,14 @@ impl MultiSelectableList for CommitPanel {
     }
 }
 
-impl Component for CommitPanel {
-    fn handle_event(&mut self, event: &Event, data: &CachedData) -> Intent {
-        if let Event::Key(key) = event {
-            if key.kind != KeyEventKind::Press {
-                return Intent::None;
-            }
+impl CommitPanel {
+    /// Temporary bridge method for old renderer (will be removed when renderer migrates to ComponentV2)
+    pub fn render(&mut self, frame: &mut ratatui::Frame, area: ratatui::layout::Rect, is_focused: bool, data: &CachedData) {
+        use ratatui::text::{Line, Span};
+        use ratatui::widgets::{ListItem, Paragraph};
+        use ratatui::style::Style;
+        use crate::components::core::{accent_primary_color, multi_select_row_style, muted_text_style, panel_block, SelectableList, LIST_HIGHLIGHT_SYMBOL};
 
-            if key.code == KeyCode::Esc {
-                let list_multi_active = self.is_list_multi_select_active();
-                match &mut self.mode {
-                    CommitMode::List if list_multi_active => {
-                        self.clear_list_multi_select();
-                        return Intent::RefreshPanelDetail;
-                    }
-                    CommitMode::FilesTree { tree, .. } if tree.multi_select_active() => {
-                        tree.clear_multi_select();
-                        return Intent::RefreshPanelDetail;
-                    }
-                    CommitMode::List => {}
-                    _ => {
-                        self.show_list();
-                        return Intent::SwitchFocus(crate::app::Panel::Commits);
-                    }
-                }
-            }
-
-            if matches!(self.mode, CommitMode::List) {
-                return match key.code {
-                    KeyCode::Char('v') if key.modifiers.is_empty() => {
-                        let commit_ids = commit_ids(&data.commits);
-                        self.toggle_multi_select(self.state.selected(), &commit_ids);
-                        Intent::RefreshPanelDetail
-                    }
-                    KeyCode::Char('j') | KeyCode::Down => Intent::SelectNext,
-                    KeyCode::Char('k') | KeyCode::Up => Intent::SelectPrevious,
-                    KeyCode::Enter
-                        if self.is_list_multi_select_active()
-                            && self.enter_action_multiplicity()
-                                == ActionMultiplicity::SingleOnly =>
-                    {
-                        Intent::None
-                    }
-                    KeyCode::Enter => Intent::ActivatePanel,
-                    _ => Intent::None,
-                };
-            }
-        }
-
-        if let CommitMode::FilesTree { tree, .. } = &mut self.mode {
-            let before_targets = tree.selected_targets();
-            let before_multi = tree.multi_select_active();
-            let intent = tree.handle_event(event, data);
-            if !matches!(intent, Intent::None) {
-                return intent;
-            }
-
-            let after_targets = tree.selected_targets();
-            let after_multi = tree.multi_select_active();
-            if before_targets != after_targets || before_multi != after_multi {
-                return Intent::RefreshPanelDetail;
-            }
-
-            return Intent::None;
-        }
-
-        Intent::None
-    }
-
-    fn render(&mut self, frame: &mut Frame, area: Rect, is_focused: bool, data: &CachedData) {
         match &mut self.mode {
             CommitMode::List => {
                 if data.commits.is_empty() {
@@ -279,7 +215,7 @@ impl Component for CommitPanel {
                 frame.render_widget(paragraph, area);
             }
             CommitMode::FilesTree { tree, .. } => {
-                tree.render(frame, area, is_focused, data);
+                tree.render_old(frame, area, is_focused, data);
             }
         }
     }
@@ -348,108 +284,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn esc_returns_to_list_mode_from_loading() {
-        let mut panel = CommitPanel::new();
-        panel.start_loading("abc12345".to_string(), "summary".to_string());
-
-        let event = Event::Key(crossterm::event::KeyEvent::new(
-            KeyCode::Esc,
-            crossterm::event::KeyModifiers::NONE,
-        ));
-        let intent = panel.handle_event(&event, &CachedData::default());
-
-        assert!(matches!(
-            intent,
-            Intent::SwitchFocus(crate::app::Panel::Commits)
-        ));
-        assert_eq!(panel.mode_view(), CommitModeView::List);
-    }
-
-    #[test]
-    fn enter_activates_panel_in_list_mode() {
-        let mut panel = CommitPanel::new();
-        let event = Event::Key(crossterm::event::KeyEvent::new(
-            KeyCode::Enter,
-            crossterm::event::KeyModifiers::NONE,
-        ));
-
-        let intent = panel.handle_event(&event, &CachedData::default());
-        assert!(matches!(intent, Intent::ActivatePanel));
-    }
-
-    #[test]
-    fn enter_is_disabled_when_list_multi_select_is_active() {
-        let mut panel = CommitPanel::new();
-        let data = CachedData {
-            commits: vec![
-                CommitEntry {
-                    short_id: "a".to_string(),
-                    id: "aaaaaaaa".to_string(),
-                    summary: "a".to_string(),
-                    body: None,
-                    author: "a".to_string(),
-                    timestamp: 0,
-                },
-                CommitEntry {
-                    short_id: "b".to_string(),
-                    id: "bbbbbbbb".to_string(),
-                    summary: "b".to_string(),
-                    body: None,
-                    author: "b".to_string(),
-                    timestamp: 0,
-                },
-            ],
-            ..CachedData::default()
-        };
-
-        let enter_multi = Event::Key(crossterm::event::KeyEvent::new(
-            KeyCode::Char('v'),
-            crossterm::event::KeyModifiers::NONE,
-        ));
-        panel.handle_event(&enter_multi, &data);
-
-        let enter = Event::Key(crossterm::event::KeyEvent::new(
-            KeyCode::Enter,
-            crossterm::event::KeyModifiers::NONE,
-        ));
-        let intent = panel.handle_event(&enter, &data);
-        assert!(matches!(intent, Intent::None));
-    }
-
-    #[test]
-    fn tree_navigation_refreshes_panel_detail() {
-        let mut panel = CommitPanel::new();
-        let nodes = vec![
-            crate::components::core::TreeNode::new(
-                "a.rs".to_string(),
-                "a.rs".to_string(),
-                false,
-                0,
-                None,
-            ),
-            crate::components::core::TreeNode::new(
-                "b.rs".to_string(),
-                "b.rs".to_string(),
-                false,
-                0,
-                None,
-            ),
-        ];
-        panel.set_files_tree(
-            "abc12345".to_string(),
-            "summary".to_string(),
-            TreePanel::new("Files".to_string(), nodes, false),
-        );
-
-        let event = Event::Key(crossterm::event::KeyEvent::new(
-            KeyCode::Down,
-            crossterm::event::KeyModifiers::NONE,
-        ));
-        let intent = panel.handle_event(&event, &CachedData::default());
-
-        assert!(matches!(intent, Intent::RefreshPanelDetail));
-    }
-
     #[test]
     fn test_commit_panel_component_v2() {
         use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};

@@ -2,7 +2,7 @@ use ratatui::widgets::ListState;
 
 use crate::backend::git_ops::{BranchEntry, CommitEntry, StashEntry, StatusEntry};
 use crate::backend::{CommandEnvelope, EventEnvelope};
-use crate::components::ModalDialog;
+use crate::components::dialogs::ModalDialogV2;
 use tokio::sync::mpsc::{Receiver, Sender};
 
 use super::components::AppComponents;
@@ -16,7 +16,7 @@ pub struct AppState {
     pub event_rx: Receiver<EventEnvelope>,
     pub should_quit: bool,
     pub components: AppComponents,
-    pub active_modal: Option<ModalDialog>,
+    pub active_modal: Option<ModalDialogV2>,
     next_request_id: u64,
 }
 

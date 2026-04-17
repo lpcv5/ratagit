@@ -151,10 +151,9 @@ impl GitProcessor {
         };
 
         // Reconstruct the full message from summary and body
-        let message = if let Some(body) = &commit.body {
-            format!("{}\n\n{}", commit.summary, body)
-        } else {
-            commit.summary.clone()
+        let message = match &commit.body {
+            Some(body) if !body.is_empty() => format!("{}\n\n{}", commit.summary, body),
+            _ => commit.summary.clone(),
         };
 
         vec![BackendCommand::AmendCommitWithFiles {

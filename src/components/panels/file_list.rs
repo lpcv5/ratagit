@@ -1,9 +1,8 @@
 use std::collections::HashMap;
 
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind};
-use ratatui::layout::Rect;
-use ratatui::Frame;
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::buffer::Buffer;
+use ratatui::layout::Rect;
 
 use crate::app::CachedData;
 use crate::app::AppState;
@@ -12,9 +11,7 @@ use crate::backend::git_ops::StatusEntry;
 use crate::components::core::{
     build_tree_from_paths, ActionMultiplicity, GitFileStatus, SelectableList, TreeNode, TreePanel,
 };
-use crate::components::Component;
 use crate::components::component_v2::ComponentV2;
-use crate::components::Intent;
 
 /// 将 StatusEntry 转换为 GitFileStatus
 /// 优先显示 unstaged 状态，如果没有则显示 staged 状态
@@ -108,84 +105,27 @@ impl FileListPanel {
         let nodes = build_file_tree(files);
         self.tree.update_nodes(nodes);
     }
-}
 
-impl Default for FileListPanel {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Component for FileListPanel {
-    fn handle_event(&mut self, event: &Event, data: &CachedData) -> Intent {
-        if let Event::Key(key) = event {
-            if key.kind != KeyEventKind::Press {
-                return Intent::None;
-            }
-
-            // New keybindings
-            match key.code {
-                KeyCode::Char('c') => return Intent::ShowCommitDialog,
-                KeyCode::Char('A') => return Intent::AmendCommit,
-                KeyCode::Char('d') => return Intent::DiscardSelected,
-                KeyCode::Char('D') => return Intent::ShowResetMenu,
-                KeyCode::Char('s') => return Intent::StashSelected,
-                KeyCode::Char('i') => return Intent::IgnoreSelected,
-                _ => {}
-            }
-
-            // Enter 键：目录展开/折叠后也刷新右侧详情；文件上 Enter 仅作为手动刷新。
-            if key.code == KeyCode::Enter {
-                if let Some(node) = self.tree.selected_node() {
-                    if node.is_dir {
-                        self.tree.handle_event(event, data);
-                        return Intent::RefreshPanelDetail;
-                    } else {
-                        return Intent::RefreshPanelDetail;
-                    }
-                }
-                return Intent::None;
-            }
-
-            // 空格键：仅文件支持暂存操作
-            if key.code == KeyCode::Char(' ') && key.modifiers.is_empty() {
-                let stage_action = ActionMultiplicity::BatchCapable;
-                let has_file_target = self
-                    .tree
-                    .selected_targets()
-                    .iter()
-                    .any(|(_, is_dir)| !*is_dir);
-                if has_file_target && stage_action == ActionMultiplicity::BatchCapable {
-                    return Intent::ToggleStageFile;
-                }
-                return Intent::None;
-            }
-        }
-
-        // 其他按键委派给 tree 处理；若光标变化则刷新详情
-        let before_targets = self.tree.selected_targets();
-        let before_multi = self.tree.multi_select_active();
-        let intent = self.tree.handle_event(event, data);
-        if !matches!(intent, Intent::None) {
-            return intent;
-        }
-
-        let after_targets = self.tree.selected_targets();
-        let after_multi = self.tree.multi_select_active();
-        if before_targets != after_targets || before_multi != after_multi {
-            return Intent::RefreshPanelDetail;
-        }
-
-        Intent::None
-    }
-
-    fn render(&mut self, frame: &mut Frame, area: Rect, is_focused: bool, data: &CachedData) {
+    /// Temporary bridge method for old renderer (will be removed when renderer migrates to ComponentV2)
+    pub fn render(
+        &mut self,
+        frame: &mut ratatui::Frame,
+        area: ratatui::layout::Rect,
+        is_focused: bool,
+        data: &CachedData,
+    ) {
         if data.files.is_empty() {
             SelectableList::render_empty(frame, area, "Files", is_focused);
             return;
         }
 
-        self.tree.render(frame, area, is_focused, data);
+        self.tree.render_old(frame, area, is_focused, data);
+    }
+}
+
+impl Default for FileListPanel {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -368,171 +308,5 @@ mod tests {
         // 找到 modified 文件节点
         let modified = nodes.iter().find(|n| n.path == "src/modified.rs").unwrap();
         assert_eq!(modified.status, Some(GitFileStatus::Modified));
-    }
-
-    #[test]
-    fn tree_navigation_refreshes_panel_detail() {
-        let files = vec![
-            StatusEntry {
-                path: "a.rs".to_string(),
-                is_staged: false,
-                is_unstaged: true,
-                is_untracked: false,
-            },
-            StatusEntry {
-                path: "b.rs".to_string(),
-                is_staged: false,
-                is_unstaged: true,
-                is_untracked: false,
-            },
-        ];
-
-        let mut panel = FileListPanel::new();
-        panel.update_files(&files);
-
-        let event = Event::Key(crossterm::event::KeyEvent::new(
-            KeyCode::Down,
-            crossterm::event::KeyModifiers::NONE,
-        ));
-        let intent = panel.handle_event(&event, &CachedData::default());
-        assert!(matches!(intent, Intent::RefreshPanelDetail));
-    }
-}
-
-#[cfg(test)]
-mod render_tests {
-    use super::*;
-    use crate::components::test_utils::*;
-
-    #[test]
-    fn test_file_list_empty_state() {
-        let mut terminal = create_test_terminal(50, 10);
-        let mut panel = FileListPanel::new();
-        let data = create_test_cached_data_with_files(vec![]);
-
-        terminal
-            .draw(|frame| {
-                let area = frame.area();
-                Component::render(&mut panel, frame, area, false, &data);
-            })
-            .unwrap();
-
-        let buffer = terminal.backend().buffer();
-        let line = get_buffer_line(buffer, 1);
-        assert!(
-            line.contains("No items"),
-            "Expected 'No items' for empty files, got: {}",
-            line
-        );
-    }
-
-    #[test]
-    fn test_file_list_renders_files() {
-        let mut terminal = create_test_terminal(60, 15);
-        let mut panel = FileListPanel::new();
-        let files = vec![
-            test_status_entry("src/main.rs", false, true, false),
-            test_status_entry("README.md", false, false, true),
-        ];
-        panel.update_files(&files);
-        let data = create_test_cached_data_with_files(files);
-
-        terminal
-            .draw(|frame| {
-                let area = frame.area();
-                Component::render(&mut panel, frame, area, false, &data);
-            })
-            .unwrap();
-
-        let buffer = terminal.backend().buffer();
-
-        let mut all_content = String::new();
-        for row in 0..15 {
-            let line = get_buffer_line(buffer, row);
-            all_content.push_str(&line);
-            all_content.push('\n');
-        }
-
-        assert!(
-            all_content.contains("main.rs") || all_content.contains("README"),
-            "Expected file names in buffer, got:\n{}",
-            all_content
-        );
-    }
-
-    #[test]
-    fn test_file_list_shows_status_indicators() {
-        let mut terminal = create_test_terminal(60, 15);
-        let mut panel = FileListPanel::new();
-        let files = vec![
-            test_status_entry("modified.rs", false, true, false),
-            test_status_entry("new_file.txt", false, false, true),
-        ];
-        panel.update_files(&files);
-        let data = create_test_cached_data_with_files(files);
-
-        terminal
-            .draw(|frame| {
-                let area = frame.area();
-                Component::render(&mut panel, frame, area, false, &data);
-            })
-            .unwrap();
-
-        let buffer = terminal.backend().buffer();
-
-        let mut all_content = String::new();
-        for row in 0..15 {
-            let line = get_buffer_line(buffer, row);
-            all_content.push_str(&line);
-            all_content.push('\n');
-        }
-
-        // Should show file names with status indicators (M for modified, ?? for untracked)
-        let has_modified_indicator = all_content.contains("M") && all_content.contains("modified");
-        let has_untracked_indicator =
-            all_content.contains("??") && all_content.contains("new_file");
-
-        assert!(
-            has_modified_indicator || has_untracked_indicator,
-            "Expected status indicators (M or ??) alongside file names, got:\n{}",
-            all_content
-        );
-    }
-    #[test]
-    fn test_file_list_tree_structure() {
-        let mut terminal = create_test_terminal(60, 20);
-        let mut panel = FileListPanel::new();
-        let files = vec![
-            test_status_entry("src/main.rs", false, true, false),
-            test_status_entry("src/lib.rs", false, true, false),
-            test_status_entry("tests/test.rs", false, false, true),
-        ];
-        panel.update_files(&files);
-        let data = create_test_cached_data_with_files(files);
-
-        terminal
-            .draw(|frame| {
-                let area = frame.area();
-                Component::render(&mut panel, frame, area, false, &data);
-            })
-            .unwrap();
-
-        let buffer = terminal.backend().buffer();
-
-        let mut all_content = String::new();
-        for row in 0..20 {
-            let line = get_buffer_line(buffer, row);
-            all_content.push_str(&line);
-            all_content.push('\n');
-        }
-
-        // Should show directory structure
-        assert!(
-            all_content.contains("src")
-                || all_content.contains("tests")
-                || all_content.contains("main.rs"),
-            "Expected tree structure with directories, got:\n{}",
-            all_content
-        );
     }
 }

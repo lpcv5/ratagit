@@ -2,14 +2,12 @@ use crate::components::panels::{
     BranchListPanel, CommitModeView, CommitPanel, FileListPanel, LogPanel, MainViewPanel,
     StashListPanel,
 };
-use crate::components::Component;
 use crate::components::component_v2::ComponentV2;
-use crate::components::Intent;
 use crate::app::events::AppEvent;
 use crate::app::AppState;
-use crossterm::event::{Event, KeyEvent};
+use crossterm::event::KeyEvent;
 
-use super::{CachedData, Panel};
+use super::{Panel};
 
 /// 所有面板组件的容器
 pub struct AppComponents {
@@ -30,23 +28,6 @@ impl AppComponents {
             stash_list_panel: StashListPanel::new(),
             main_view_panel: MainViewPanel::new(),
             log_panel: LogPanel::new(),
-        }
-    }
-
-    /// 分发事件到当前活动面板
-    pub fn dispatch_event(
-        &mut self,
-        active_panel: Panel,
-        event: &Event,
-        data: &CachedData,
-    ) -> Intent {
-        match active_panel {
-            Panel::Files => self.file_list_panel.handle_event(event, data),
-            Panel::Branches => self.branch_list_panel.handle_event(event, data),
-            Panel::Commits => self.commit_panel.handle_event(event, data),
-            Panel::Stash => self.stash_list_panel.handle_event(event, data),
-            Panel::MainView => self.main_view_panel.handle_event(event, data),
-            Panel::Log => self.log_panel.handle_event(event, data),
         }
     }
 

@@ -1,17 +1,13 @@
-use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::{
-    layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::Paragraph,
-    Frame,
 };
+use ratatui::layout::Rect;
 
 use crate::app::CachedData;
 
 use crate::components::core::{panel_block, theme};
-use crate::components::Component;
-use crate::components::Intent;
 use crate::components::component_v2::ComponentV2;
 use crate::app::events::AppEvent;
 use crate::app::AppState;
@@ -40,36 +36,12 @@ impl MainViewPanel {
             self.scroll = current.saturating_add(delta as u16).min(max_scroll);
         }
     }
-}
 
-impl Default for MainViewPanel {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+    /// Temporary bridge method for old renderer (will be removed when renderer migrates to ComponentV2)
+    pub fn render(&mut self, frame: &mut ratatui::Frame, area: ratatui::layout::Rect, is_focused: bool, data: &CachedData) {
+        use ratatui::widgets::Paragraph;
+        use crate::components::core::panel_block;
 
-impl Component for MainViewPanel {
-    fn handle_event(&mut self, event: &Event, _data: &CachedData) -> Intent {
-        if let Event::Key(key) = event {
-            if key.kind != KeyEventKind::Press {
-                return Intent::None;
-            }
-
-            match key.code {
-                KeyCode::Char('u') if key.modifiers == KeyModifiers::CONTROL => {
-                    return Intent::ScrollMainView(-5)
-                }
-                KeyCode::Char('d') if key.modifiers == KeyModifiers::CONTROL => {
-                    return Intent::ScrollMainView(5)
-                }
-                _ => {}
-            }
-        }
-
-        Intent::None
-    }
-
-    fn render(&mut self, frame: &mut Frame, area: Rect, is_focused: bool, data: &CachedData) {
         let title = if let Some((path, _)) = &data.current_diff {
             format!("Main View · Diff · {path}")
         } else {
@@ -94,6 +66,12 @@ impl Component for MainViewPanel {
         .scroll((self.scroll, 0));
 
         frame.render_widget(paragraph, area);
+    }
+}
+
+impl Default for MainViewPanel {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -262,6 +240,7 @@ impl ComponentV2 for MainViewPanel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crossterm::event::KeyCode;
 
     #[test]
     fn test_main_view_component_v2() {

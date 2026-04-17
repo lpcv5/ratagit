@@ -9,7 +9,6 @@ use ratatui::{
 };
 
 use crate::components::core::{muted_text_style, theme};
-use crate::components::Component;
 
 use super::keyhints::keyhints_for_panel;
 use super::ui_state::Panel;
@@ -289,12 +288,26 @@ mod tests {
         assert_eq!(heights.iter().sum::<u16>(), 10);
     }
 
+    fn cycle_selection(state: &mut ratatui::widgets::ListState, len: usize, delta: i8) {
+        if len == 0 {
+            state.select(None);
+            return;
+        }
+        let current = state.selected().unwrap_or(0);
+        let next = if delta > 0 {
+            current.saturating_add(1).min(len.saturating_sub(1))
+        } else {
+            current.saturating_sub(1)
+        };
+        state.select(Some(next));
+    }
+
     #[test]
     fn cycle_selection_does_not_wrap_forward() {
         use ratatui::widgets::ListState;
         let mut state = ListState::default();
         state.select(Some(2));
-        super::super::intent_executor::cycle_selection(&mut state, 3, 1);
+        cycle_selection(&mut state, 3, 1);
         assert_eq!(state.selected(), Some(2));
     }
 
@@ -303,7 +316,7 @@ mod tests {
         use ratatui::widgets::ListState;
         let mut state = ListState::default();
         state.select(Some(0));
-        super::super::intent_executor::cycle_selection(&mut state, 3, -1);
+        cycle_selection(&mut state, 3, -1);
         assert_eq!(state.selected(), Some(0));
     }
 

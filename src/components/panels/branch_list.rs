@@ -1,12 +1,11 @@
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind};
-use ratatui::{layout::Rect, Frame};
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::buffer::Buffer;
+use ratatui::layout::Rect;
 
 use crate::app::CachedData;
 use crate::app::AppState;
 use crate::app::events::{AppEvent, GitEvent};
 use crate::components::core::{render_branches, SimpleListPanel};
-use crate::components::{Component, Intent};
 use crate::components::component_v2::ComponentV2;
 
 use super::CommitPanel;
@@ -42,65 +41,21 @@ impl BranchListPanel {
             panel: Box::new(CommitPanel::new()),
         };
     }
+
+    /// Temporary bridge method for old renderer (will be removed when renderer migrates to ComponentV2)
+    pub fn render(&mut self, frame: &mut ratatui::Frame, area: ratatui::layout::Rect, is_focused: bool, data: &CachedData) {
+        match &mut self.mode {
+            BranchMode::List => self.list.render(frame, area, is_focused, data),
+            BranchMode::CommitsSub { panel } => {
+                CommitPanel::render(panel, frame, area, is_focused, data)
+            }
+        }
+    }
 }
 
 impl Default for BranchListPanel {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-impl Component for BranchListPanel {
-    fn handle_event(&mut self, event: &Event, data: &CachedData) -> Intent {
-        match &mut self.mode {
-            BranchMode::List => self.list.handle_event(event, data),
-            BranchMode::CommitsSub { panel } => {
-                if let Event::Key(key) = event {
-                    if key.kind == KeyEventKind::Press {
-                        match key.code {
-                            KeyCode::Esc => {
-                                if panel.is_list_multi_select_active() {
-                                    panel.clear_list_multi_select();
-                                    return Intent::RefreshPanelDetail;
-                                }
-                                self.mode = BranchMode::List;
-                                return Intent::SwitchFocus(crate::app::Panel::Branches);
-                            }
-                            KeyCode::Char('j') | KeyCode::Down => {
-                                let len = data.commits.len();
-                                let state = panel.state_mut();
-                                let next = state
-                                    .selected()
-                                    .unwrap_or(0)
-                                    .saturating_add(1)
-                                    .min(len.saturating_sub(1));
-                                state.select(Some(next));
-                                panel.refresh_list_multi_range(&data.commits);
-                                return Intent::RefreshPanelDetail;
-                            }
-                            KeyCode::Char('k') | KeyCode::Up => {
-                                let state = panel.state_mut();
-                                let next = state.selected().unwrap_or(0).saturating_sub(1);
-                                state.select(Some(next));
-                                panel.refresh_list_multi_range(&data.commits);
-                                return Intent::RefreshPanelDetail;
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                panel.handle_event(event, data)
-            }
-        }
-    }
-
-    fn render(&mut self, frame: &mut Frame, area: Rect, is_focused: bool, data: &CachedData) {
-        match &mut self.mode {
-            BranchMode::List => self.list.render(frame, area, is_focused, data),
-            BranchMode::CommitsSub { panel } => {
-                Component::render(panel.as_mut(), frame, area, is_focused, data)
-            }
-        }
     }
 }
 
@@ -175,211 +130,5 @@ mod tests {
         let (_event_tx, event_rx) = tokio::sync::mpsc::channel(100);
         crate::app::AppState::new(cmd_tx, event_rx)
     }
-
-    fn key(code: KeyCode) -> Event {
-        Event::Key(crossterm::event::KeyEvent::new(
-            code,
-            crossterm::event::KeyModifiers::NONE,
-        ))
-    }
-
-    fn commit(id: &str) -> CommitEntry {
-        CommitEntry {
-            short_id: id.chars().take(8).collect(),
-            id: id.to_string(),
-            summary: id.to_string(),
-            body: None,
-            author: "tester <tester@example.com>".to_string(),
-            timestamp: 0,
-        }
-    }
-
-    #[test]
-    fn v_mode_j_extends_branch_sub_commit_range() {
-        let mut branch_panel = BranchListPanel::new();
-        branch_panel.show_branch_commits();
-
-        let data = CachedData {
-            commits: vec![commit("a"), commit("b"), commit("c")],
-            ..CachedData::default()
-        };
-
-        let intent_v = branch_panel.handle_event(&key(KeyCode::Char('v')), &data);
-        assert!(matches!(intent_v, Intent::RefreshPanelDetail));
-
-        let intent_j = branch_panel.handle_event(&key(KeyCode::Char('j')), &data);
-        assert!(matches!(intent_j, Intent::RefreshPanelDetail));
-
-        match &branch_panel.mode {
-            BranchMode::CommitsSub { panel } => {
-                assert_eq!(panel.multi_selected_count(), 2);
-            }
-            BranchMode::List => panic!("expected commits sub panel mode"),
-        }
-    }
-
-    #[test]
-    fn esc_exits_v_mode_before_leaving_sub_panel() {
-        let mut branch_panel = BranchListPanel::new();
-        branch_panel.show_branch_commits();
-
-        let data = CachedData {
-            commits: vec![commit("a"), commit("b"), commit("c")],
-            ..CachedData::default()
-        };
-
-        let intent_v = branch_panel.handle_event(&key(KeyCode::Char('v')), &data);
-        assert!(matches!(intent_v, Intent::RefreshPanelDetail));
-
-        let intent_esc_first = branch_panel.handle_event(&key(KeyCode::Esc), &data);
-        assert!(matches!(intent_esc_first, Intent::RefreshPanelDetail));
-        match &branch_panel.mode {
-            BranchMode::CommitsSub { panel } => {
-                assert!(!panel.is_list_multi_select_active());
-                assert_eq!(panel.multi_selected_count(), 0);
-            }
-            BranchMode::List => panic!("expected commits sub panel mode"),
-        }
-
-        let intent_esc_second = branch_panel.handle_event(&key(KeyCode::Esc), &data);
-        assert!(matches!(
-            intent_esc_second,
-            Intent::SwitchFocus(crate::app::Panel::Branches)
-        ));
-        match &branch_panel.mode {
-            BranchMode::List => {}
-            BranchMode::CommitsSub { .. } => panic!("expected list mode"),
-        }
-    }
 }
 
-#[cfg(test)]
-mod render_tests {
-    use super::*;
-    use crate::components::test_utils::*;
-
-    #[test]
-    fn test_branch_list_empty_state() {
-        let mut terminal = create_test_terminal(50, 10);
-        let mut panel = BranchListPanel::new();
-        let data = create_test_cached_data_with_branches(vec![]);
-
-        terminal
-            .draw(|frame| {
-                let area = frame.area();
-                Component::render(&mut panel, frame, area, false, &data);
-            })
-            .unwrap();
-
-        let buffer = terminal.backend().buffer();
-        let line = get_buffer_line(buffer, 1);
-        assert!(
-            line.contains("No items"),
-            "Expected 'No items' for empty branches, got: {}",
-            line
-        );
-    }
-
-    #[test]
-    fn test_branch_list_renders_branches() {
-        let mut terminal = create_test_terminal(50, 10);
-        let mut panel = BranchListPanel::new();
-        let branches = vec![
-            test_branch_entry("main", true, None),
-            test_branch_entry("feature/test", false, Some("origin/feature/test")),
-        ];
-        let data = create_test_cached_data_with_branches(branches);
-
-        terminal
-            .draw(|frame| {
-                let area = frame.area();
-                Component::render(&mut panel, frame, area, false, &data);
-            })
-            .unwrap();
-
-        let buffer = terminal.backend().buffer();
-
-        // Check that branch names appear
-        let mut all_content = String::new();
-        for row in 0..10 {
-            let line = get_buffer_line(buffer, row);
-            all_content.push_str(&line);
-            all_content.push('\n');
-        }
-
-        assert!(
-            all_content.contains("main") || all_content.contains("feature"),
-            "Expected branch names in buffer, got:\n{}",
-            all_content
-        );
-    }
-
-    #[test]
-    fn test_current_branch_indicator() {
-        let mut terminal = create_test_terminal(50, 10);
-        let mut panel = BranchListPanel::new();
-        let branches = vec![
-            test_branch_entry("main", true, None),
-            test_branch_entry("develop", false, None),
-        ];
-        let data = create_test_cached_data_with_branches(branches);
-
-        terminal
-            .draw(|frame| {
-                let area = frame.area();
-                Component::render(&mut panel, frame, area, false, &data);
-            })
-            .unwrap();
-
-        let buffer = terminal.backend().buffer();
-
-        // Check for HEAD indicator (*) on the same line as "main"
-        let mut found_head_indicator = false;
-        for row in 0..10 {
-            let line = get_buffer_line(buffer, row);
-            if line.contains("main") && line.contains("*") {
-                found_head_indicator = true;
-                break;
-            }
-        }
-
-        assert!(
-            found_head_indicator,
-            "Expected '*' marker on the same line as 'main' branch"
-        );
-    }
-
-    #[test]
-    fn test_branch_with_upstream() {
-        let mut terminal = create_test_terminal(60, 10);
-        let mut panel = BranchListPanel::new();
-        let branches = vec![test_branch_entry(
-            "feature/new",
-            false,
-            Some("origin/feature/new"),
-        )];
-        let data = create_test_cached_data_with_branches(branches);
-
-        terminal
-            .draw(|frame| {
-                let area = frame.area();
-                Component::render(&mut panel, frame, area, false, &data);
-            })
-            .unwrap();
-
-        let buffer = terminal.backend().buffer();
-
-        let mut all_content = String::new();
-        for row in 0..10 {
-            let line = get_buffer_line(buffer, row);
-            all_content.push_str(&line);
-            all_content.push('\n');
-        }
-
-        assert!(
-            all_content.contains("feature") || all_content.contains("origin"),
-            "Expected branch with upstream info, got:\n{}",
-            all_content
-        );
-    }
-}

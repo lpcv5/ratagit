@@ -1,8 +1,8 @@
 // src/app/processors/modal_processor.rs
-use crate::app::events::ModalEvent;
+use crate::app::events::{AppEvent, GitEvent, ModalEvent};
 use crate::app::state::AppState;
 use crate::app::ui_state::Panel;
-use crate::components::{Intent, ModalDialog};
+use crate::components::dialogs::ModalDialogV2;
 
 pub struct ModalProcessor;
 
@@ -13,13 +13,13 @@ impl ModalProcessor {
                 state.active_modal = Some(self.create_help_modal(state.ui_state.active_panel));
             }
             ModalEvent::ShowCommitDialog => {
-                state.active_modal = Some(ModalDialog::text_input(
+                state.active_modal = Some(ModalDialogV2::text_input(
                     "Commit".to_string(),
                     "Enter commit message:".to_string(),
                 ));
             }
             ModalEvent::ShowRenameDialog => {
-                state.active_modal = Some(ModalDialog::text_input(
+                state.active_modal = Some(ModalDialogV2::text_input(
                     "Rename File".to_string(),
                     "Enter new filename:".to_string(),
                 ));
@@ -28,34 +28,34 @@ impl ModalProcessor {
                 state.active_modal = Some(self.create_reset_menu());
             }
             ModalEvent::ShowDiscardConfirmation => {
-                state.active_modal = Some(ModalDialog::confirmation(
+                state.active_modal = Some(ModalDialogV2::confirmation(
                     "Discard Changes".to_string(),
                     "Discard changes to selected file(s)?\nThis cannot be undone.".to_string(),
-                    Intent::None, // Will be replaced by event-driven flow
+                    AppEvent::Git(GitEvent::DiscardSelected),
                 ));
             }
             ModalEvent::ShowStashConfirmation => {
-                state.active_modal = Some(ModalDialog::confirmation(
+                state.active_modal = Some(ModalDialogV2::confirmation(
                     "Stash Changes".to_string(),
                     "Stash selected file(s)?".to_string(),
-                    Intent::None, // Will be replaced by event-driven flow
+                    AppEvent::Git(GitEvent::StashSelected),
                 ));
             }
             ModalEvent::ShowAmendConfirmation => {
-                state.active_modal = Some(ModalDialog::confirmation(
+                state.active_modal = Some(ModalDialogV2::confirmation(
                     "Amend Commit".to_string(),
                     "Amend the last commit with staged changes?".to_string(),
-                    Intent::None, // Will be replaced by event-driven flow
+                    AppEvent::Git(GitEvent::AmendCommit),
                 ));
             }
             ModalEvent::ShowResetConfirmation(index) => {
                 state.active_modal = Some(self.create_reset_confirmation(index));
             }
             ModalEvent::ShowNukeConfirmation => {
-                state.active_modal = Some(ModalDialog::confirmation(
+                state.active_modal = Some(ModalDialogV2::confirmation(
                     "NUKE REPOSITORY".to_string(),
                     "Are you ABSOLUTELY SURE?\nThis will DELETE the .git directory.\nThis CANNOT be undone!".to_string(),
-                    Intent::None, // Will be replaced by event-driven flow
+                    AppEvent::None, // Placeholder - nuke not implemented yet
                 ));
             }
             ModalEvent::Close => {
@@ -64,43 +64,43 @@ impl ModalProcessor {
         }
     }
 
-    fn create_help_modal(&self, panel: Panel) -> ModalDialog {
+    fn create_help_modal(&self, panel: Panel) -> ModalDialogV2 {
         let items = match panel {
             Panel::Files => vec![
-                ("j/k or ↑/↓".to_string(), Intent::None),
-                ("Space".to_string(), Intent::None),
-                ("a".to_string(), Intent::None),
-                ("c".to_string(), Intent::None),
-                ("d".to_string(), Intent::None),
-                ("s".to_string(), Intent::None),
-                ("i".to_string(), Intent::None),
-                ("r".to_string(), Intent::None),
+                ("j/k or ↑/↓".to_string(), AppEvent::None),
+                ("Space".to_string(), AppEvent::None),
+                ("a".to_string(), AppEvent::None),
+                ("c".to_string(), AppEvent::None),
+                ("d".to_string(), AppEvent::None),
+                ("s".to_string(), AppEvent::None),
+                ("i".to_string(), AppEvent::None),
+                ("r".to_string(), AppEvent::None),
             ],
             Panel::Branches => vec![
-                ("j/k or ↑/↓".to_string(), Intent::None),
-                ("Enter".to_string(), Intent::None),
-                ("d".to_string(), Intent::None),
+                ("j/k or ↑/↓".to_string(), AppEvent::None),
+                ("Enter".to_string(), AppEvent::None),
+                ("d".to_string(), AppEvent::None),
             ],
             Panel::Commits => vec![
-                ("j/k or ↑/↓".to_string(), Intent::None),
-                ("Enter".to_string(), Intent::None),
+                ("j/k or ↑/↓".to_string(), AppEvent::None),
+                ("Enter".to_string(), AppEvent::None),
             ],
             Panel::Stash => vec![
-                ("j/k or ↑/↓".to_string(), Intent::None),
-                ("Space".to_string(), Intent::None),
-                ("p".to_string(), Intent::None),
-                ("d".to_string(), Intent::None),
+                ("j/k or ↑/↓".to_string(), AppEvent::None),
+                ("Space".to_string(), AppEvent::None),
+                ("p".to_string(), AppEvent::None),
+                ("d".to_string(), AppEvent::None),
             ],
             Panel::MainView | Panel::Log => vec![
-                ("q".to_string(), Intent::None),
-                ("?".to_string(), Intent::None),
+                ("q".to_string(), AppEvent::None),
+                ("?".to_string(), AppEvent::None),
             ],
         };
 
-        ModalDialog::help(format!("{} Keybindings", panel.title()), items)
+        ModalDialogV2::help(format!("{} Keybindings", panel.title()), items)
     }
 
-    fn create_reset_menu(&self) -> ModalDialog {
+    fn create_reset_menu(&self) -> ModalDialogV2 {
         let options = vec![
             "Reset --hard HEAD".to_string(),
             "Reset --mixed HEAD".to_string(),
@@ -109,10 +109,10 @@ impl ModalProcessor {
             "Reset --soft HEAD~1".to_string(),
             "Nuke repo (delete .git)".to_string(),
         ];
-        ModalDialog::selection("Reset Options".to_string(), options)
+        ModalDialogV2::selection("Reset Options".to_string(), options)
     }
 
-    fn create_reset_confirmation(&self, index: usize) -> ModalDialog {
+    fn create_reset_confirmation(&self, index: usize) -> ModalDialogV2 {
         let (target, reset_type) = match index {
             0 => ("HEAD", "hard"),
             1 => ("HEAD", "mixed"),
@@ -122,13 +122,13 @@ impl ModalProcessor {
             _ => ("HEAD", "hard"),
         };
 
-        ModalDialog::confirmation(
+        ModalDialogV2::confirmation(
             "Confirm Reset".to_string(),
             format!(
                 "Reset {} to {}?\nThis will discard changes.",
                 reset_type, target
             ),
-            Intent::None, // Will be replaced by event-driven flow
+            AppEvent::Git(GitEvent::ExecuteReset(index)),
         )
     }
 }
@@ -146,7 +146,7 @@ mod tests {
 
     fn mock_state_with_modal() -> crate::app::state::AppState {
         let mut state = mock_state();
-        state.active_modal = Some(crate::components::ModalDialog::help(
+        state.active_modal = Some(crate::components::dialogs::ModalDialogV2::help(
             "Test".to_string(),
             vec![],
         ));

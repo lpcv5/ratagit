@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use crossterm::event::{Event, KeyCode, KeyEventKind};
 use ratatui::{
     layout::Rect,
     style::{Color, Style},
@@ -15,8 +14,6 @@ use crate::components::core::{
     accent_primary_color, accent_secondary_color, multi_select_row_style, theme, MultiSelectState,
     MultiSelectableList, SelectableList, LIST_HIGHLIGHT_SYMBOL,
 };
-use crate::components::Component;
-use crate::components::Intent;
 
 /// 文件树面板组件
 pub struct TreePanel {
@@ -259,46 +256,9 @@ impl MultiSelectableList for TreePanel {
     }
 }
 
-impl Component for TreePanel {
-    fn handle_event(&mut self, event: &Event, _data: &CachedData) -> Intent {
-        if let Event::Key(key) = event {
-            if key.kind != KeyEventKind::Press {
-                return Intent::None;
-            }
-
-            match key.code {
-                KeyCode::Esc if self.is_multi_active() => {
-                    self.exit_multi_select();
-                    return Intent::None;
-                }
-                KeyCode::Char('v') if key.modifiers.is_empty() => {
-                    let visible_paths = self.visible_paths();
-                    self.toggle_multi_select(self.state.selected(), &visible_paths);
-                    return Intent::None;
-                }
-                KeyCode::Char('j') | KeyCode::Down => {
-                    self.select_next();
-                    return Intent::None;
-                }
-                KeyCode::Char('k') | KeyCode::Up => {
-                    self.select_previous();
-                    return Intent::None;
-                }
-                KeyCode::Enter => {
-                    self.toggle_node();
-                    return Intent::None;
-                }
-                KeyCode::Char(' ') if key.modifiers.is_empty() && self.enable_space_action => {
-                    return Intent::ToggleStageFile;
-                }
-                _ => {}
-            }
-        }
-
-        Intent::None
-    }
-
-    fn render(&mut self, frame: &mut Frame, area: Rect, is_focused: bool, _data: &CachedData) {
+impl TreePanel {
+    /// Temporary bridge method for old renderer (will be removed when renderer migrates to ComponentV2)
+    pub fn render_old(&mut self, frame: &mut Frame, area: Rect, is_focused: bool, _data: &CachedData) {
         let visible = self.visible_nodes();
         let multi_active = self.is_multi_active();
         let title = if multi_active {
@@ -408,54 +368,5 @@ mod tests {
 
         panel.select_previous();
         assert_eq!(panel.state.selected(), Some(0));
-    }
-
-    #[test]
-    fn v_toggles_contiguous_multi_selection() {
-        let nodes = vec![
-            TreeNode::new("a".to_string(), "a".to_string(), false, 0, None),
-            TreeNode::new("b".to_string(), "b".to_string(), false, 0, None),
-            TreeNode::new("c".to_string(), "c".to_string(), false, 0, None),
-        ];
-        let mut panel = TreePanel::new("Files".to_string(), nodes, false);
-        panel.state.select(Some(0));
-
-        let enter_multi = Event::Key(crossterm::event::KeyEvent::new(
-            KeyCode::Char('v'),
-            crossterm::event::KeyModifiers::NONE,
-        ));
-        panel.handle_event(&enter_multi, &CachedData::default());
-        panel.select_next();
-        panel.select_next();
-
-        let selected = panel.selected_targets();
-        assert_eq!(selected.len(), 3);
-        assert!(selected.iter().any(|(path, _)| path == "a"));
-        assert!(selected.iter().any(|(path, _)| path == "b"));
-        assert!(selected.iter().any(|(path, _)| path == "c"));
-    }
-
-    #[test]
-    fn esc_clears_multi_selection_only() {
-        let nodes = vec![
-            TreeNode::new("a".to_string(), "a".to_string(), false, 0, None),
-            TreeNode::new("b".to_string(), "b".to_string(), false, 0, None),
-        ];
-        let mut panel = TreePanel::new("Files".to_string(), nodes, false);
-
-        let enter_multi = Event::Key(crossterm::event::KeyEvent::new(
-            KeyCode::Char('v'),
-            crossterm::event::KeyModifiers::NONE,
-        ));
-        panel.handle_event(&enter_multi, &CachedData::default());
-        assert!(panel.is_multi_active());
-
-        let esc = Event::Key(crossterm::event::KeyEvent::new(
-            KeyCode::Esc,
-            crossterm::event::KeyModifiers::NONE,
-        ));
-        panel.handle_event(&esc, &CachedData::default());
-        assert!(!panel.is_multi_active());
-        assert_eq!(panel.selected_targets().len(), 1);
     }
 }
