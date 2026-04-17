@@ -167,4 +167,192 @@ mod tests {
             selected_before_sync
         );
     }
+
+    #[test]
+    fn test_push_log_basic() {
+        let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::channel(4);
+        let (_event_tx, event_rx) = tokio::sync::mpsc::channel(4);
+        let mut state = AppState::new(cmd_tx, event_rx);
+
+        state.push_log("Test message 1".to_string());
+        state.push_log("Test message 2".to_string());
+
+        assert_eq!(state.data_cache.log_entries.len(), 2);
+        assert_eq!(state.data_cache.log_entries[0], "Test message 1");
+        assert_eq!(state.data_cache.log_entries[1], "Test message 2");
+    }
+
+    #[test]
+    fn test_push_log_capacity_limit() {
+        let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::channel(4);
+        let (_event_tx, event_rx) = tokio::sync::mpsc::channel(4);
+        let mut state = AppState::new(cmd_tx, event_rx);
+
+        // Add 250 messages (exceeds 200 limit)
+        for i in 0..250 {
+            state.push_log(format!("Message {}", i));
+        }
+
+        // Should only keep last 200
+        assert_eq!(state.data_cache.log_entries.len(), 200);
+        assert_eq!(state.data_cache.log_entries[0], "Message 50"); // First 50 dropped
+        assert_eq!(state.data_cache.log_entries[199], "Message 249");
+    }
+
+    #[test]
+    fn test_sync_branch_list_state() {
+        let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::channel(4);
+        let (_event_tx, event_rx) = tokio::sync::mpsc::channel(4);
+        let mut state = AppState::new(cmd_tx, event_rx);
+
+        state.data_cache.branches = vec![
+            crate::backend::git_ops::BranchEntry {
+                name: "main".to_string(),
+                is_head: true,
+                upstream: None,
+            },
+            crate::backend::git_ops::BranchEntry {
+                name: "feature".to_string(),
+                is_head: false,
+                upstream: None,
+            },
+        ];
+
+        state.sync_branch_list_state();
+
+        // Should select first item
+        assert_eq!(state.components.branch_list_panel.selected_index(), Some(0));
+    }
+
+    #[test]
+    fn test_sync_commits_list_state() {
+        let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::channel(4);
+        let (_event_tx, event_rx) = tokio::sync::mpsc::channel(4);
+        let mut state = AppState::new(cmd_tx, event_rx);
+
+        state.data_cache.commits = vec![
+            crate::backend::git_ops::CommitEntry {
+                short_id: "abc123".to_string(),
+                id: "abc123def456".to_string(),
+                summary: "Commit 1".to_string(),
+                body: None,
+                author: "Author".to_string(),
+                timestamp: 1234567890,
+            },
+        ];
+
+        state.sync_commit_list_state();
+
+        // Should select first item
+        assert_eq!(state.components.commit_panel.selected_index(), Some(0));
+    }
+
+    #[test]
+    fn test_sync_stash_list_state() {
+        let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::channel(4);
+        let (_event_tx, event_rx) = tokio::sync::mpsc::channel(4);
+        let mut state = AppState::new(cmd_tx, event_rx);
+
+        state.data_cache.stashes = vec![
+            crate::backend::git_ops::StashEntry {
+                index: 0,
+                id: "stash@{0}".to_string(),
+                message: "Stash 1".to_string(),
+            },
+        ];
+
+        state.sync_stash_list_state();
+
+        // Should select first item
+        assert_eq!(state.components.stash_list_panel.selected_index(), Some(0));
+    }
+
+    #[test]
+    fn test_sync_empty_list() {
+        let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::channel(4);
+        let (_event_tx, event_rx) = tokio::sync::mpsc::channel(4);
+        let mut state = AppState::new(cmd_tx, event_rx);
+
+        // Empty data
+        state.data_cache.branches = vec![];
+        state.data_cache.commits = vec![];
+        state.data_cache.stashes = vec![];
+
+        state.sync_branch_list_state();
+        state.sync_commit_list_state();
+        state.sync_stash_list_state();
+
+        // Should have no selection
+        assert_eq!(state.components.branch_list_panel.selected_index(), None);
+        assert_eq!(state.components.commit_panel.selected_index(), None);
+        assert_eq!(state.components.stash_list_panel.selected_index(), None);
+    }
+
+    #[test]
+    fn test_sync_selected_out_of_bounds() {
+        let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::channel(4);
+        let (_event_tx, event_rx) = tokio::sync::mpsc::channel(4);
+        let mut state = AppState::new(cmd_tx, event_rx);
+
+        // Set selection to index 5
+        state.components.branch_list_panel.state_mut().select(Some(5));
+
+        // But only have 2 branches
+        state.data_cache.branches = vec![
+            crate::backend::git_ops::BranchEntry {
+                name: "main".to_string(),
+                is_head: true,
+                upstream: None,
+            },
+            crate::backend::git_ops::BranchEntry {
+                name: "feature".to_string(),
+                is_head: false,
+                upstream: None,
+            },
+        ];
+
+        state.sync_branch_list_state();
+
+        // Should clamp to last valid index
+        assert_eq!(state.components.branch_list_panel.selected_index(), Some(1));
+    }
+
+    #[test]
+    fn test_new_state_initialization() {
+        let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::channel(4);
+        let (_event_tx, event_rx) = tokio::sync::mpsc::channel(4);
+        let state = AppState::new(cmd_tx, event_rx);
+
+        // Verify initial state
+        assert_eq!(state.data_cache.log_entries.len(), 0);
+        assert_eq!(state.data_cache.files.len(), 0);
+        assert_eq!(state.data_cache.branches.len(), 0);
+        assert_eq!(state.data_cache.commits.len(), 0);
+        assert_eq!(state.data_cache.stashes.len(), 0);
+        assert!(state.active_modal.is_none());
+    }
+
+    #[test]
+    fn test_modal_state_management() {
+        let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::channel(4);
+        let (_event_tx, event_rx) = tokio::sync::mpsc::channel(4);
+        let mut state = AppState::new(cmd_tx, event_rx);
+
+        // Initially no modal
+        assert!(state.active_modal.is_none());
+
+        // Set a modal
+        let modal = crate::components::dialogs::ModalDialogV2::help(
+            "Test Help".to_string(),
+            vec![],
+        );
+        state.active_modal = Some(modal);
+
+        assert!(state.active_modal.is_some());
+
+        // Clear modal
+        state.active_modal = None;
+
+        assert!(state.active_modal.is_none());
+    }
 }

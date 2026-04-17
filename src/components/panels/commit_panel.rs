@@ -262,6 +262,12 @@ impl ComponentV2 for CommitPanel {
                     _ => AppEvent::None,
                 }
             }
+            // TODO: Add keybinding to toggle multi-select mode (e.g., 'v' for visual mode)
+            // KeyCode::Char('v') => {
+            //     let commit_ids = commit_ids(&state.data_cache.commits);
+            //     self.toggle_multi_select(self.state.selected(), &commit_ids);
+            //     AppEvent::None
+            // }
             _ => AppEvent::None,
         }
     }

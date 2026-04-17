@@ -259,6 +259,9 @@ impl MultiSelectableList for TreePanel {
     }
 }
 
+// TODO: Wire toggle_multi_select() to keybinding in FileListPanel
+// Consider 'v' key for visual mode or Shift+arrow for range selection
+
 impl TreePanel {
     /// Temporary bridge method for old renderer (will be removed when renderer migrates to ComponentV2)
     pub fn render_old(&mut self, frame: &mut Frame, area: Rect, is_focused: bool, _data: &CachedData) {

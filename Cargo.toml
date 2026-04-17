@@ -9,6 +9,10 @@ repository = "https://github.com/lpcv5/ratagit"
 keywords = ["git", "tui", "terminal", "ratatui"]
 categories = ["command-line-interface", "development-tools"]
 
+[lib]
+name = "ratagit"
+path = "src/lib.rs"
+
 [dependencies]
 anyhow = "1"
 crossterm = { version = "0.29", features = ["event-stream"] }

@@ -44,7 +44,7 @@ pub struct RefreshStatusHandler;
 impl CommandHandler for RefreshStatusHandler {
     fn handle(
         &self,
-        _envelope: &CommandEnvelope,
+        envelope: &CommandEnvelope,
         repo: &GitRepo,
         event_tx: &Sender<EventEnvelope>,
     ) -> Result<()> {
@@ -52,10 +52,10 @@ impl CommandHandler for RefreshStatusHandler {
             Ok(files) => {
                 send_event(
                     event_tx,
-                    EventEnvelope::new(None, FrontendEvent::FilesUpdated { files }),
+                    EventEnvelope::new(Some(envelope.request_id), FrontendEvent::FilesUpdated { files }),
                 );
             }
-            Err(error) => send_error(event_tx, None, "status", error),
+            Err(error) => send_error(event_tx, Some(envelope.request_id), "status", error),
         }
         Ok(())
     }
@@ -66,7 +66,7 @@ pub struct RefreshBranchesHandler;
 impl CommandHandler for RefreshBranchesHandler {
     fn handle(
         &self,
-        _envelope: &CommandEnvelope,
+        envelope: &CommandEnvelope,
         repo: &GitRepo,
         event_tx: &Sender<EventEnvelope>,
     ) -> Result<()> {
@@ -74,10 +74,10 @@ impl CommandHandler for RefreshBranchesHandler {
             Ok(branches) => {
                 send_event(
                     event_tx,
-                    EventEnvelope::new(None, FrontendEvent::BranchesUpdated { branches }),
+                    EventEnvelope::new(Some(envelope.request_id), FrontendEvent::BranchesUpdated { branches }),
                 );
             }
-            Err(error) => send_error(event_tx, None, "branches", error),
+            Err(error) => send_error(event_tx, Some(envelope.request_id), "branches", error),
         }
         Ok(())
     }
@@ -103,10 +103,10 @@ impl CommandHandler for RefreshCommitsHandler {
             Ok(commits) => {
                 send_event(
                     event_tx,
-                    EventEnvelope::new(None, FrontendEvent::CommitsUpdated { commits }),
+                    EventEnvelope::new(Some(envelope.request_id), FrontendEvent::CommitsUpdated { commits }),
                 );
             }
-            Err(error) => send_error(event_tx, None, "commits", error),
+            Err(error) => send_error(event_tx, Some(envelope.request_id), "commits", error),
         }
         Ok(())
     }

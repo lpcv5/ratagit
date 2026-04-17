@@ -24,10 +24,12 @@ Cargo.lock
 *.dylib
 
 # Test artifacts
-/coverage/
+coverage/
 
 # Documentation
-/doc/
+docs/
+!docs/track
+
 
 # OS generated
 .DS_Store

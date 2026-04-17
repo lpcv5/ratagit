@@ -78,6 +78,50 @@ mod render_tests {
         assert_eq!(event, AppEvent::None);
     }
 
+    #[test]
+    fn test_log_panel_ignores_all_keys() {
+        let mut panel = LogPanel::new();
+        let state = mock_state();
+
+        // Test various keys - all should return None
+        let keys = vec![
+            KeyCode::Char('j'),
+            KeyCode::Char('k'),
+            KeyCode::Up,
+            KeyCode::Down,
+            KeyCode::Enter,
+        ];
+
+        for key_code in keys {
+            let key = crossterm::event::KeyEvent::new(
+                key_code,
+                crossterm::event::KeyModifiers::NONE,
+            );
+            let event = panel.handle_key_event(key, &state);
+            assert_eq!(event, AppEvent::None, "Key {:?} should return None", key_code);
+        }
+    }
+
+    #[test]
+    fn test_log_panel_scroll_by() {
+        let mut panel = LogPanel::new();
+
+        // Test scroll_by method (currently reserved for future use)
+        panel.scroll_by(5);
+        panel.scroll_by(-3);
+
+        // No assertion needed - just verify it doesn't panic
+    }
+
+    #[test]
+    fn test_log_panel_default() {
+        let panel = LogPanel::default();
+
+        // Verify default construction works
+        assert_eq!(panel.scroll, 0);
+    }
+
+
     fn mock_state() -> AppState {
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::channel(100);
         let (_event_tx, event_rx) = tokio::sync::mpsc::channel(100);

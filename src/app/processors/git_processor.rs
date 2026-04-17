@@ -13,7 +13,7 @@
 
 use crate::app::events::GitEvent;
 use crate::app::state::AppState;
-use crate::BackendCommand;
+use crate::backend::BackendCommand;
 
 pub struct GitProcessor;
 

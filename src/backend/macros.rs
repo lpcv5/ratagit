@@ -1,7 +1,7 @@
 /// Generates CommandHandler implementations from declarative definitions
 ///
 /// Syntax:
-/// ```
+/// ```ignore
 /// define_handlers! {
 ///     CommandVariant => git_ops_function => SuccessEvent,
 ///     CommandVariant { field } => git_ops_function(&field) => SuccessEvent(result),

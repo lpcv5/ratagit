@@ -50,7 +50,9 @@ pub trait MultiSelectableList {
     fn multi_select_state(&self) -> &MultiSelectState<Self::Key>;
     fn multi_select_state_mut(&mut self) -> &mut MultiSelectState<Self::Key>;
 
-    #[allow(dead_code)] // Reserved for future multi-select functionality
+    // TODO: Wire to keybinding - currently no UI trigger for multi-select mode
+    // Suggested: 'v' key for visual mode (like Vim)
+    #[allow(dead_code)]
     fn toggle_multi_select(
         &mut self,
         cursor_index: Option<usize>,

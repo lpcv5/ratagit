@@ -97,6 +97,7 @@ impl ComponentV2 for BranchListPanel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crossterm::event::KeyModifiers;
 
     #[test]
     fn test_branch_panel_component_v2() {
@@ -122,6 +123,122 @@ mod tests {
         // Should return SelectionChanged for 'j' key
         assert_eq!(event, AppEvent::SelectionChanged);
     }
+
+    #[test]
+    fn test_branch_list_navigation_wraparound() {
+        let mut panel = BranchListPanel::new();
+        let mut state = mock_state();
+        state.data_cache.branches = vec![
+            crate::backend::git_ops::BranchEntry {
+                name: "main".to_string(),
+                is_head: true,
+                upstream: None,
+            },
+            crate::backend::git_ops::BranchEntry {
+                name: "feature".to_string(),
+                is_head: false,
+                upstream: None,
+            },
+        ];
+
+        // Start at first branch
+        panel.state_mut().select(Some(0));
+
+        // Navigate down twice (should stop at last item, not wrap)
+        let key_j = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
+        panel.handle_key_event(key_j, &state);
+        panel.handle_key_event(key_j, &state);
+
+        assert_eq!(panel.selected_index(), Some(1)); // Should be at last item
+    }
+
+    #[test]
+    fn test_branch_list_checkout_event() {
+        let mut panel = BranchListPanel::new();
+        let mut state = mock_state();
+        state.data_cache.branches = vec![
+            crate::backend::git_ops::BranchEntry {
+                name: "main".to_string(),
+                is_head: true,
+                upstream: None,
+            },
+            crate::backend::git_ops::BranchEntry {
+                name: "feature".to_string(),
+                is_head: false,
+                upstream: None,
+            },
+        ];
+
+        panel.state_mut().select(Some(1)); // Select feature branch
+
+        let key_enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        let event = panel.handle_key_event(key_enter, &state);
+
+        // Should return ActivatePanel event (which triggers branch checkout or commit view)
+        assert_eq!(event, AppEvent::ActivatePanel);
+    }
+
+    #[test]
+    fn test_branch_list_delete_non_current() {
+        let mut panel = BranchListPanel::new();
+        let mut state = mock_state();
+        state.data_cache.branches = vec![
+            crate::backend::git_ops::BranchEntry {
+                name: "main".to_string(),
+                is_head: true,
+                upstream: None,
+            },
+            crate::backend::git_ops::BranchEntry {
+                name: "feature".to_string(),
+                is_head: false,
+                upstream: None,
+            },
+        ];
+
+        panel.state_mut().select(Some(1)); // Select non-current branch
+
+        let key_d = KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE);
+        let event = panel.handle_key_event(key_d, &state);
+
+        // Should return Git event for discard (branch delete uses 'd' key)
+        assert!(matches!(event, AppEvent::Git(GitEvent::DiscardSelected)));
+    }
+
+    #[test]
+    fn test_branch_list_delete_current_branch() {
+        let mut panel = BranchListPanel::new();
+        let mut state = mock_state();
+        state.data_cache.branches = vec![
+            crate::backend::git_ops::BranchEntry {
+                name: "main".to_string(),
+                is_head: true,
+                upstream: None,
+            },
+        ];
+
+        panel.state_mut().select(Some(0)); // Select current branch
+
+        let key_d = KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE);
+        let event = panel.handle_key_event(key_d, &state);
+
+        // 'd' key always returns DiscardSelected event, regardless of branch
+        // The actual logic to prevent deleting current branch is in the processor/handler
+        assert!(matches!(event, AppEvent::Git(GitEvent::DiscardSelected)));
+    }
+
+    #[test]
+    fn test_branch_list_empty_state() {
+        let mut panel = BranchListPanel::new();
+        let state = mock_state();
+        // No branches in state
+
+        let key_j = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
+        let event = panel.handle_key_event(key_j, &state);
+
+        // Should return None when no branches
+        assert_eq!(event, AppEvent::None);
+    }
+
 
     fn mock_state() -> crate::app::AppState {
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::channel(100);
