@@ -13,6 +13,15 @@ impl RequestTracker {
         }
     }
 
+    pub fn track(&mut self, id: u64) {
+        self.pending.insert(id);
+    }
+
+    pub fn track_latest_branch_commits(&mut self, id: u64) {
+        self.track(id);
+        self.latest_branch_commits = Some(id);
+    }
+
     pub fn complete(&mut self, id: u64) -> bool {
         self.pending.remove(&id)
     }
@@ -36,8 +45,8 @@ mod tests {
     #[test]
     fn test_complete_removes_pending() {
         let mut tracker = RequestTracker::new();
-        tracker.pending.insert(1);
-        tracker.pending.insert(2);
+        tracker.track(1);
+        tracker.track(2);
 
         // Complete request 1
         let removed = tracker.complete(1);
@@ -58,7 +67,7 @@ mod tests {
         assert!(!tracker.is_latest_branch_commits(1));
 
         // Set latest
-        tracker.latest_branch_commits = Some(42);
+        tracker.track_latest_branch_commits(42);
         assert!(tracker.is_latest_branch_commits(42));
         assert!(!tracker.is_latest_branch_commits(43));
     }
@@ -68,9 +77,9 @@ mod tests {
         let mut tracker = RequestTracker::new();
 
         // Add multiple pending requests
-        tracker.pending.insert(1);
-        tracker.pending.insert(2);
-        tracker.pending.insert(3);
+        tracker.track(1);
+        tracker.track(2);
+        tracker.track(3);
 
         assert_eq!(tracker.pending.len(), 3);
 

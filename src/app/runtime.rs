@@ -60,10 +60,8 @@ impl App {
             AppEvent::None => {}
             AppEvent::Git(git_event) => {
                 let commands = self.git_processor.process(git_event, &self.state);
-                for cmd in commands {
-                    if let Err(e) = self.state.send_command(cmd) {
-                        self.state.push_log(format!("Failed to send command: {}", e));
-                    }
+                for command in commands {
+                    self.send_tracked_command(command);
                 }
             }
             AppEvent::Modal(modal_event) => {
@@ -132,8 +130,27 @@ impl App {
             BackendCommand::RefreshCommits { limit: 30 },
             BackendCommand::RefreshStashes,
         ] {
-            if let Err(e) = self.state.send_command(cmd) {
-                self.state.push_log(format!("Failed to send refresh command: {}", e));
+            self.send_tracked_command(cmd);
+        }
+    }
+
+    fn send_tracked_command(&mut self, command: crate::backend::BackendCommand) {
+        let is_branch_commits = matches!(
+            &command,
+            crate::backend::BackendCommand::GetBranchCommits { .. }
+        );
+        match self.state.send_command(command) {
+            Ok(0) => {}
+            Ok(request_id) => {
+                if is_branch_commits {
+                    self.requests.track_latest_branch_commits(request_id);
+                } else {
+                    self.requests.track(request_id);
+                }
+            }
+            Err(error) => {
+                self.state
+                    .push_log(format!("Failed to send command: {}", error));
             }
         }
     }
@@ -406,6 +423,30 @@ mod tests {
         // Should not panic
         app.process_event(AppEvent::None);
     }
+
+    #[test]
+    fn test_refresh_event_is_applied_after_tracking_request() {
+        let (cmd_tx, _cmd_rx) = mpsc::channel(100);
+        let (_event_tx, event_rx) = mpsc::channel(100);
+        let mut app = App::new(cmd_tx, event_rx);
+        app.request_refresh_all();
+
+        let envelope = EventEnvelope::new(
+            Some(1),
+            FrontendEvent::BranchesUpdated {
+                branches: vec![crate::backend::git_ops::BranchEntry {
+                    name: "main".to_string(),
+                    is_head: true,
+                    upstream: None,
+                }],
+            },
+        );
+
+        app.handle_backend_event(envelope).unwrap();
+
+        assert_eq!(app.state.data_cache.branches.len(), 1);
+        assert_eq!(app.state.data_cache.branches[0].name, "main");
+    }
 }
 #[allow(clippy::items_after_test_module)] // Helper function used by main code
 /// Helper function to shorten commit IDs for display
@@ -416,4 +457,3 @@ fn short_commit_id(id: &str) -> String {
         id.to_string()
     }
 }
-

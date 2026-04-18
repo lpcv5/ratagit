@@ -140,7 +140,7 @@ impl CommandHandler for RefreshStashesHandler {
 
     fn handle_mut(
         &self,
-        _envelope: &CommandEnvelope,
+        envelope: &CommandEnvelope,
         repo: &mut GitRepo,
         event_tx: &Sender<EventEnvelope>,
     ) -> Result<()> {
@@ -148,10 +148,13 @@ impl CommandHandler for RefreshStashesHandler {
             Ok(stashes) => {
                 send_event(
                     event_tx,
-                    EventEnvelope::new(None, FrontendEvent::StashesUpdated { stashes }),
+                    EventEnvelope::new(
+                        Some(envelope.request_id),
+                        FrontendEvent::StashesUpdated { stashes },
+                    ),
                 );
             }
-            Err(error) => send_error(event_tx, None, "stashes", error),
+            Err(error) => send_error(event_tx, Some(envelope.request_id), "stashes", error),
         }
         Ok(())
     }
