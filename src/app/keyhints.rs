@@ -16,6 +16,10 @@ pub fn keyhints_for_panel(panel: Panel) -> Vec<KeyHint> {
                 description: "stage/unstage",
             },
             KeyHint {
+                key: "a",
+                description: "stage all",
+            },
+            KeyHint {
                 key: "c",
                 description: "commit",
             },
@@ -38,6 +42,18 @@ pub fn keyhints_for_panel(panel: Panel) -> Vec<KeyHint> {
             KeyHint {
                 key: "i",
                 description: "ignore",
+            },
+            KeyHint {
+                key: "`",
+                description: "toggle tree",
+            },
+            KeyHint {
+                key: "-",
+                description: "collapse all",
+            },
+            KeyHint {
+                key: "=",
+                description: "expand all",
             },
             KeyHint {
                 key: "v",

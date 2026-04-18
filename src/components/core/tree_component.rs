@@ -172,7 +172,6 @@ impl TreePanel {
     }
 
     /// 切换目录的展开/折叠状态
-    #[allow(dead_code)] // Reserved for future tree expansion functionality
     fn toggle_node(&mut self) {
         let visible = self.visible_nodes();
         if let Some(selected_idx) = self.state.selected() {
@@ -191,6 +190,45 @@ impl TreePanel {
             let visible_paths = self.visible_paths();
             self.refresh_multi_range(self.state.selected(), &visible_paths);
         }
+    }
+
+    pub fn toggle_selected_dir(&mut self) -> bool {
+        let is_dir_selected = self
+            .selected_node()
+            .map(|node| node.is_dir)
+            .unwrap_or(false);
+        if !is_dir_selected {
+            return false;
+        }
+
+        self.toggle_node();
+        true
+    }
+
+    pub fn collapse_all_dirs(&mut self) {
+        let selected_path = self.selected_node().map(|node| node.path.clone());
+        let current = self.state.selected().unwrap_or(0);
+
+        for node in &mut self.all_nodes {
+            if node.is_dir {
+                node.is_expanded = false;
+            }
+        }
+
+        self.reselect_after_visibility_change(selected_path, current);
+    }
+
+    pub fn expand_all_dirs(&mut self) {
+        let selected_path = self.selected_node().map(|node| node.path.clone());
+        let current = self.state.selected().unwrap_or(0);
+
+        for node in &mut self.all_nodes {
+            if node.is_dir {
+                node.is_expanded = true;
+            }
+        }
+
+        self.reselect_after_visibility_change(selected_path, current);
     }
 
     /// 向前导航
@@ -245,6 +283,40 @@ impl TreePanel {
             .map(|node| node.path.clone())
             .collect()
     }
+
+    fn reselect_after_visibility_change(
+        &mut self,
+        selected_path: Option<String>,
+        fallback_idx: usize,
+    ) {
+        let visible = self.visible_nodes();
+        if visible.is_empty() {
+            self.state.select(None);
+            return;
+        }
+
+        if let Some(path) = selected_path {
+            if let Some(idx) = visible.iter().position(|node| node.path == path) {
+                self.state.select(Some(idx));
+                return;
+            }
+
+            let mut ancestor = Some(path);
+            while let Some(current) = ancestor {
+                let parent = current.rfind('/').map(|idx| current[..idx].to_string());
+                if let Some(parent_path) = &parent {
+                    if let Some(idx) = visible.iter().position(|node| node.path == *parent_path) {
+                        self.state.select(Some(idx));
+                        return;
+                    }
+                }
+                ancestor = parent;
+            }
+        }
+
+        self.state
+            .select(Some(fallback_idx.min(visible.len().saturating_sub(1))));
+    }
 }
 
 impl MultiSelectableList for TreePanel {
@@ -264,7 +336,13 @@ impl MultiSelectableList for TreePanel {
 
 impl TreePanel {
     /// Temporary bridge method for old renderer (will be removed when renderer migrates to ComponentV2)
-    pub fn render_old(&mut self, frame: &mut Frame, area: Rect, is_focused: bool, _data: &CachedData) {
+    pub fn render_old(
+        &mut self,
+        frame: &mut Frame,
+        area: Rect,
+        is_focused: bool,
+        _data: &CachedData,
+    ) {
         let visible = self.visible_nodes();
         let multi_active = self.is_multi_active();
         let title = if multi_active {
@@ -374,5 +452,75 @@ mod tests {
 
         panel.select_previous();
         assert_eq!(panel.state.selected(), Some(0));
+    }
+
+    #[test]
+    fn toggle_selected_dir_collapses_and_expands_selected_directory() {
+        let nodes = vec![
+            TreeNode::new("src".to_string(), "src".to_string(), true, 0, None),
+            TreeNode::new(
+                "src/main.rs".to_string(),
+                "main.rs".to_string(),
+                false,
+                1,
+                None,
+            ),
+        ];
+        let mut panel = TreePanel::new("Files".to_string(), nodes, false);
+        panel.state.select(Some(0));
+
+        assert!(panel.toggle_selected_dir());
+        panel.select_next();
+        assert_eq!(panel.selected_node().map(|n| n.path.as_str()), Some("src"),);
+
+        assert!(panel.toggle_selected_dir());
+        panel.select_next();
+        assert_eq!(
+            panel.selected_node().map(|n| n.path.as_str()),
+            Some("src/main.rs"),
+        );
+    }
+
+    #[test]
+    fn collapse_all_dirs_reselects_parent_when_file_becomes_hidden() {
+        let nodes = vec![
+            TreeNode::new("src".to_string(), "src".to_string(), true, 0, None),
+            TreeNode::new(
+                "src/main.rs".to_string(),
+                "main.rs".to_string(),
+                false,
+                1,
+                None,
+            ),
+        ];
+        let mut panel = TreePanel::new("Files".to_string(), nodes, false);
+        panel.state.select(Some(1));
+
+        panel.collapse_all_dirs();
+        assert_eq!(panel.selected_node().map(|n| n.path.as_str()), Some("src"),);
+    }
+
+    #[test]
+    fn expand_all_dirs_restores_visibility_of_children() {
+        let nodes = vec![
+            TreeNode::new("src".to_string(), "src".to_string(), true, 0, None),
+            TreeNode::new(
+                "src/main.rs".to_string(),
+                "main.rs".to_string(),
+                false,
+                1,
+                None,
+            ),
+        ];
+        let mut panel = TreePanel::new("Files".to_string(), nodes, false);
+        panel.state.select(Some(0));
+        panel.collapse_all_dirs();
+
+        panel.expand_all_dirs();
+        panel.select_next();
+        assert_eq!(
+            panel.selected_node().map(|n| n.path.as_str()),
+            Some("src/main.rs"),
+        );
     }
 }

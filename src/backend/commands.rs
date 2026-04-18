@@ -87,10 +87,6 @@ pub enum BackendCommand {
     IgnoreFiles {
         paths: Vec<String>,
     },
-    RenameFile {
-        old_path: String,
-        new_path: String,
-    },
     Quit,
 }
 

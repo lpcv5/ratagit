@@ -52,7 +52,10 @@ impl CommandHandler for RefreshStatusHandler {
             Ok(files) => {
                 send_event(
                     event_tx,
-                    EventEnvelope::new(Some(envelope.request_id), FrontendEvent::FilesUpdated { files }),
+                    EventEnvelope::new(
+                        Some(envelope.request_id),
+                        FrontendEvent::FilesUpdated { files },
+                    ),
                 );
             }
             Err(error) => send_error(event_tx, Some(envelope.request_id), "status", error),
@@ -74,7 +77,10 @@ impl CommandHandler for RefreshBranchesHandler {
             Ok(branches) => {
                 send_event(
                     event_tx,
-                    EventEnvelope::new(Some(envelope.request_id), FrontendEvent::BranchesUpdated { branches }),
+                    EventEnvelope::new(
+                        Some(envelope.request_id),
+                        FrontendEvent::BranchesUpdated { branches },
+                    ),
                 );
             }
             Err(error) => send_error(event_tx, Some(envelope.request_id), "branches", error),
@@ -103,7 +109,10 @@ impl CommandHandler for RefreshCommitsHandler {
             Ok(commits) => {
                 send_event(
                     event_tx,
-                    EventEnvelope::new(Some(envelope.request_id), FrontendEvent::CommitsUpdated { commits }),
+                    EventEnvelope::new(
+                        Some(envelope.request_id),
+                        FrontendEvent::CommitsUpdated { commits },
+                    ),
                 );
             }
             Err(error) => send_error(event_tx, Some(envelope.request_id), "commits", error),
@@ -1107,44 +1116,6 @@ impl CommandHandler for IgnoreFilesHandler {
                 refresh_files(event_tx, repo);
             }
             Err(error) => send_error(event_tx, Some(envelope.request_id), "ignore", error),
-        }
-        Ok(())
-    }
-}
-
-/// Rename file handler
-pub struct RenameFileHandler;
-impl CommandHandler for RenameFileHandler {
-    fn handle(
-        &self,
-        envelope: &CommandEnvelope,
-        repo: &GitRepo,
-        event_tx: &Sender<EventEnvelope>,
-    ) -> Result<()> {
-        let (old_path, new_path) =
-            if let crate::backend::BackendCommand::RenameFile { old_path, new_path } =
-                &envelope.command
-            {
-                (old_path.clone(), new_path.clone())
-            } else {
-                return Ok(());
-            };
-
-        match super::git_ops::rename_file(repo, &old_path, &new_path) {
-            Ok(()) => {
-                send_event(
-                    event_tx,
-                    EventEnvelope::new(
-                        Some(envelope.request_id),
-                        FrontendEvent::ActionSucceeded {
-                            request_id: envelope.request_id,
-                            message: format!("Renamed {} → {}", old_path, new_path),
-                        },
-                    ),
-                );
-                refresh_files(event_tx, repo);
-            }
-            Err(error) => send_error(event_tx, Some(envelope.request_id), "rename", error),
         }
         Ok(())
     }

@@ -10,9 +10,9 @@ use super::handlers::{
     DiscardFilesHandler, GetBranchCommitsHandler, GetBranchGraphHandler, GetCommitDiffBatchHandler,
     GetCommitDiffHandler, GetCommitFilesHandler, GetCommitMessageHandler, GetDiffBatchHandler,
     GetDiffHandler, IgnoreFilesHandler, RefreshBranchesHandler, RefreshCommitsHandler,
-    RefreshStashesHandler, RefreshStatusHandler, RenameFileHandler, ResetHardHandler,
-    ResetMixedHandler, ResetSoftHandler, StageAllHandler, StageFileHandler, StageFilesHandler,
-    StashFilesHandler, UnstageFileHandler, UnstageFilesHandler,
+    RefreshStashesHandler, RefreshStatusHandler, ResetHardHandler, ResetMixedHandler,
+    ResetSoftHandler, StageAllHandler, StageFileHandler, StageFilesHandler, StashFilesHandler,
+    UnstageFileHandler, UnstageFilesHandler,
 };
 use super::{CommandEnvelope, EventEnvelope, FrontendEvent};
 
@@ -47,7 +47,6 @@ enum CommandKey {
     ResetMixed,
     ResetSoft,
     IgnoreFiles,
-    RenameFile,
 }
 
 pub async fn run_backend(mut cmd_rx: Receiver<CommandEnvelope>, event_tx: Sender<EventEnvelope>) {
@@ -174,10 +173,6 @@ pub async fn run_backend(mut cmd_rx: Receiver<CommandEnvelope>, event_tx: Sender
         CommandKey::IgnoreFiles,
         Box::new(IgnoreFilesHandler) as Box<dyn CommandHandler>,
     );
-    handlers.insert(
-        CommandKey::RenameFile,
-        Box::new(RenameFileHandler) as Box<dyn CommandHandler>,
-    );
 
     while let Some(envelope) = cmd_rx.recv().await {
         let command_key = match &envelope.command {
@@ -221,7 +216,6 @@ pub async fn run_backend(mut cmd_rx: Receiver<CommandEnvelope>, event_tx: Sender
             crate::backend::BackendCommand::ResetMixed { .. } => Some(CommandKey::ResetMixed),
             crate::backend::BackendCommand::ResetSoft { .. } => Some(CommandKey::ResetSoft),
             crate::backend::BackendCommand::IgnoreFiles { .. } => Some(CommandKey::IgnoreFiles),
-            crate::backend::BackendCommand::RenameFile { .. } => Some(CommandKey::RenameFile),
             crate::backend::BackendCommand::Quit => None,
         };
 

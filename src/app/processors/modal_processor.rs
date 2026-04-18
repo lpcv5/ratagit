@@ -33,12 +33,6 @@ impl ModalProcessor {
                     "Enter commit message:".to_string(),
                 ));
             }
-            ModalEvent::ShowRenameDialog => {
-                state.active_modal = Some(ModalDialogV2::text_input(
-                    "Rename File".to_string(),
-                    "Enter new filename:".to_string(),
-                ));
-            }
             ModalEvent::ShowResetMenu => {
                 state.active_modal = Some(self.create_reset_menu());
             }
@@ -85,11 +79,15 @@ impl ModalProcessor {
                 ("j/k or ↑/↓".to_string(), AppEvent::None),
                 ("Space".to_string(), AppEvent::None),
                 ("a".to_string(), AppEvent::None),
+                ("A".to_string(), AppEvent::None),
                 ("c".to_string(), AppEvent::None),
                 ("d".to_string(), AppEvent::None),
+                ("D".to_string(), AppEvent::None),
                 ("s".to_string(), AppEvent::None),
                 ("i".to_string(), AppEvent::None),
-                ("r".to_string(), AppEvent::None),
+                ("`".to_string(), AppEvent::None),
+                ("-".to_string(), AppEvent::None),
+                ("=".to_string(), AppEvent::None),
             ],
             Panel::Branches => vec![
                 ("j/k or ↑/↓".to_string(), AppEvent::None),
@@ -191,15 +189,6 @@ mod tests {
         let processor = ModalProcessor;
         let mut state = mock_state();
         processor.process(ModalEvent::ShowCommitDialog, &mut state);
-
-        assert!(state.active_modal.is_some());
-    }
-
-    #[test]
-    fn test_show_rename_dialog() {
-        let processor = ModalProcessor;
-        let mut state = mock_state();
-        processor.process(ModalEvent::ShowRenameDialog, &mut state);
 
         assert!(state.active_modal.is_some());
     }

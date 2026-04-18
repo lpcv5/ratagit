@@ -46,7 +46,6 @@ pub enum GitEvent {
     AmendCommit,
     ExecuteReset(usize),
     IgnoreSelected,
-    RenameFile(String),
 }
 
 /// Modal/dialog events
@@ -59,7 +58,6 @@ pub enum GitEvent {
 pub enum ModalEvent {
     ShowHelp,
     ShowCommitDialog,
-    ShowRenameDialog,
     ShowResetMenu,
     ShowDiscardConfirmation,
     ShowStashConfirmation,

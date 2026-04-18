@@ -49,10 +49,6 @@ impl App {
                     self.process_event(AppEvent::SwitchPanel(prev));
                     return Ok(());
                 }
-                KeyCode::Char('r') if key.modifiers.is_empty() => {
-                    self.request_refresh_all();
-                    return Ok(());
-                }
                 KeyCode::Char('u') if key.modifiers == KeyModifiers::CONTROL => {
                     if self.state.ui_state.active_panel != Panel::Log {
                         self.scroll_main_view_by(-MAIN_VIEW_PAGE_SCROLL);
@@ -82,12 +78,36 @@ impl App {
             let state_ref = &self.state as *const AppState;
             let app_event = unsafe {
                 match active_panel {
-                    Panel::Files => self.state.components.file_list_panel.handle_key_event(key, &*state_ref),
-                    Panel::Branches => self.state.components.branch_list_panel.handle_key_event(key, &*state_ref),
-                    Panel::Commits => self.state.components.commit_panel.handle_key_event(key, &*state_ref),
-                    Panel::Stash => self.state.components.stash_list_panel.handle_key_event(key, &*state_ref),
-                    Panel::MainView => self.state.components.main_view_panel.handle_key_event(key, &*state_ref),
-                    Panel::Log => self.state.components.log_panel.handle_key_event(key, &*state_ref),
+                    Panel::Files => self
+                        .state
+                        .components
+                        .file_list_panel
+                        .handle_key_event(key, &*state_ref),
+                    Panel::Branches => self
+                        .state
+                        .components
+                        .branch_list_panel
+                        .handle_key_event(key, &*state_ref),
+                    Panel::Commits => self
+                        .state
+                        .components
+                        .commit_panel
+                        .handle_key_event(key, &*state_ref),
+                    Panel::Stash => self
+                        .state
+                        .components
+                        .stash_list_panel
+                        .handle_key_event(key, &*state_ref),
+                    Panel::MainView => self
+                        .state
+                        .components
+                        .main_view_panel
+                        .handle_key_event(key, &*state_ref),
+                    Panel::Log => self
+                        .state
+                        .components
+                        .log_panel
+                        .handle_key_event(key, &*state_ref),
                 }
             };
             self.process_event(app_event);
@@ -132,3 +152,27 @@ pub(super) fn previous_left_panel(current: Panel) -> Panel {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{Event, KeyEvent};
+    use tokio::sync::mpsc;
+    use tokio::sync::mpsc::error::TryRecvError;
+
+    fn create_test_app() -> (App, mpsc::Receiver<crate::backend::CommandEnvelope>) {
+        let (cmd_tx, cmd_rx) = mpsc::channel(8);
+        let (_event_tx, event_rx) = mpsc::channel(8);
+        (App::new(cmd_tx, event_rx), cmd_rx)
+    }
+
+    #[test]
+    fn r_key_no_longer_triggers_global_refresh() {
+        let (mut app, mut cmd_rx) = create_test_app();
+        app.state.ui_state.active_panel = Panel::Files;
+
+        let input = Event::Key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE));
+        app.handle_input_v2(input).expect("input handling failed");
+
+        assert!(matches!(cmd_rx.try_recv(), Err(TryRecvError::Empty)));
+    }
+}

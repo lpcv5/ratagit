@@ -33,7 +33,6 @@ impl GitProcessor {
             GitEvent::AmendCommit => self.amend_commit(state),
             GitEvent::ExecuteReset(index) => self.execute_reset(index),
             GitEvent::IgnoreSelected => self.ignore_selected(state),
-            GitEvent::RenameFile(new_name) => self.rename_file(state, new_name),
         }
     }
 
@@ -64,12 +63,7 @@ impl GitProcessor {
         };
 
         // Find the anchor file in the data cache to check its status
-        let Some(file) = state
-            .data_cache
-            .files
-            .iter()
-            .find(|e| e.path == pivot_path)
-        else {
+        let Some(file) = state.data_cache.files.iter().find(|e| e.path == pivot_path) else {
             return vec![];
         };
 
@@ -213,23 +207,6 @@ impl GitProcessor {
 
         let paths: Vec<String> = targets.into_iter().map(|(path, _)| path).collect();
         vec![BackendCommand::IgnoreFiles { paths }]
-    }
-
-    fn rename_file(&self, state: &AppState, new_name: String) -> Vec<BackendCommand> {
-        let selected = state.components.file_list_panel.selected_tree_node();
-        if let Some((old_path, is_dir)) = selected {
-            if is_dir {
-                // Directories not supported
-                return vec![];
-            }
-
-            vec![BackendCommand::RenameFile {
-                old_path,
-                new_path: new_name,
-            }]
-        } else {
-            vec![]
-        }
     }
 }
 
@@ -424,40 +401,6 @@ mod tests {
             }
             _ => panic!("Expected IgnoreFiles command"),
         }
-    }
-
-    #[test]
-    fn test_rename_file() {
-        let processor = GitProcessor;
-        let files = vec![StatusEntry {
-            path: "old.txt".to_string(),
-            is_staged: false,
-            is_unstaged: true,
-            is_untracked: false,
-        }];
-        let mut state = mock_state_with_files(files);
-        state.components.file_list_panel.state_mut().select(Some(0));
-
-        let commands = processor.process(GitEvent::RenameFile("new.txt".to_string()), &state);
-
-        assert_eq!(commands.len(), 1);
-        match &commands[0] {
-            BackendCommand::RenameFile { old_path, new_path } => {
-                assert_eq!(old_path, "old.txt");
-                assert_eq!(new_path, "new.txt");
-            }
-            _ => panic!("Expected RenameFile command"),
-        }
-    }
-
-    #[test]
-    fn test_rename_file_no_selection() {
-        let processor = GitProcessor;
-        let state = mock_state();
-
-        let commands = processor.process(GitEvent::RenameFile("new.txt".to_string()), &state);
-
-        assert_eq!(commands.len(), 0);
     }
 
     #[test]
