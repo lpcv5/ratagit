@@ -42,3 +42,7 @@ Run the full local gate before opening a PR:
   - linked issue (if applicable),
   - screenshots or terminal captures for TUI-visible changes.
 - Ensure CI passes on `dev`/`main` targets before requesting review.
+
+
+## Reference
+This project aim to rewrite lazygit to rust version, you can check how lazygit process the git and ui/ux from the local downloaded repo here D:\prj\lazygit

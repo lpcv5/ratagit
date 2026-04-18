@@ -27,8 +27,6 @@ Cargo.lock
 coverage/
 
 # Documentation
-docs/
-!docs/track
 
 
 # OS generated

@@ -102,11 +102,11 @@ pub fn amend_commit(repo: &GitRepo, message: &str) -> Result<()> {
     // Use commit.amend() to properly amend the commit
     commit.amend(
         Some("HEAD"),
-        None,  // author - None means keep original
-        None,  // committer - None means use current signature
-        None,  // message_encoding - None means UTF-8
+        None, // author - None means keep original
+        None, // committer - None means use current signature
+        None, // message_encoding - None means UTF-8
         Some(message),
-        None,  // tree - None means keep original tree
+        None, // tree - None means keep original tree
     )?;
 
     Ok(())
@@ -137,14 +137,7 @@ pub fn amend_commit_with_files(
 
     if commit.id() == head_commit.id() {
         // Amending HEAD - straightforward
-        commit.amend(
-            Some("HEAD"),
-            None,
-            None,
-            None,
-            Some(message),
-            Some(&tree),
-        )?;
+        commit.amend(Some("HEAD"), None, None, None, Some(message), Some(&tree))?;
     } else {
         // Amending a non-HEAD commit: rewrite the target commit and rebase descendants
         amend_non_head_commit(repo, &commit, message, &tree, &head_commit)?;
@@ -374,21 +367,37 @@ mod tests {
         assert_eq!(commits.len(), 4);
 
         // Find commits by summary (order is not guaranteed by get_commits)
-        let commit_b_id = commits.iter().find(|c| c.summary == "Commit B")
-            .expect("Commit B not found").id.clone();
-        let commit_a_id = commits.iter().find(|c| c.summary == "Commit A")
-            .expect("Commit A not found").id.clone();
-        let commit_c_id = commits.iter().find(|c| c.summary == "Commit C")
-            .expect("Commit C not found").id.clone();
+        let commit_b_id = commits
+            .iter()
+            .find(|c| c.summary == "Commit B")
+            .expect("Commit B not found")
+            .id
+            .clone();
+        let commit_a_id = commits
+            .iter()
+            .find(|c| c.summary == "Commit A")
+            .expect("Commit A not found")
+            .id
+            .clone();
+        let commit_c_id = commits
+            .iter()
+            .find(|c| c.summary == "Commit C")
+            .expect("Commit C not found")
+            .id
+            .clone();
 
         // Create a new file to amend into commit B
         let new_file = "amended_file.txt";
-        fs::write(temp_dir.path().join(new_file), "amended content")
-            .expect("Failed to write file");
+        fs::write(temp_dir.path().join(new_file), "amended content").expect("Failed to write file");
 
         // Amend commit B with the new file
-        amend_commit_with_files(&repo, &commit_b_id, "Commit B (amended)", &[new_file.to_string()])
-            .expect("Failed to amend commit");
+        amend_commit_with_files(
+            &repo,
+            &commit_b_id,
+            "Commit B (amended)",
+            &[new_file.to_string()],
+        )
+        .expect("Failed to amend commit");
 
         let new_commits = get_commits(&repo, 10).expect("Failed to get commits");
         assert_eq!(new_commits.len(), 4);
@@ -401,12 +410,21 @@ mod tests {
         assert!(!summaries.contains(&"Commit B")); // original B is gone
 
         // A is unchanged (it's before B in history)
-        let new_a = new_commits.iter().find(|c| c.summary == "Commit A").unwrap();
+        let new_a = new_commits
+            .iter()
+            .find(|c| c.summary == "Commit A")
+            .unwrap();
         assert_eq!(new_a.id, commit_a_id);
 
         // B and C have new IDs (history rewritten)
-        let new_b = new_commits.iter().find(|c| c.summary == "Commit B (amended)").unwrap();
-        let new_c = new_commits.iter().find(|c| c.summary == "Commit C").unwrap();
+        let new_b = new_commits
+            .iter()
+            .find(|c| c.summary == "Commit B (amended)")
+            .unwrap();
+        let new_c = new_commits
+            .iter()
+            .find(|c| c.summary == "Commit C")
+            .unwrap();
         assert_ne!(new_b.id, commit_b_id);
         assert_ne!(new_c.id, commit_c_id);
     }
