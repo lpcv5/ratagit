@@ -45,14 +45,8 @@ Thumbs.db
 *.swp
 
 # Project specific
-/.ratagit/
 logs/
-.track
-.serena
 .agents/
-.claude/
-skills-lock.json
-.omx/
 .codex/*
 !.codex/agents/
 !.codex/agents/**
