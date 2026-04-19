@@ -47,8 +47,13 @@ pub fn checkout_branch(repo: &GitRepo, branch_name: &str, force: bool) -> Result
 }
 
 pub fn create_branch(repo: &GitRepo, new_name: &str, from_branch: &str) -> Result<()> {
-    let source_branch = repo.repo.find_branch(from_branch, BranchType::Local)?;
-    let source_commit = source_branch.get().peel_to_commit()?;
+    let source_commit = if let Ok(branch) = repo.repo.find_branch(from_branch, BranchType::Local) {
+        branch.get().peel_to_commit()?
+    } else {
+        // Try as commit OID (e.g. when creating branch from a commit hash)
+        let oid = git2::Oid::from_str(from_branch)?;
+        repo.repo.find_commit(oid)?
+    };
     repo.repo.branch(new_name, &source_commit, false)?;
     checkout_branch(repo, new_name, false)
 }

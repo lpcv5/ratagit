@@ -546,4 +546,18 @@ mod tests {
             _ => panic!("Expected ShowBranchCreateDialog event, got {:?}", event),
         }
     }
+
+    #[test]
+    fn test_n_key_with_empty_commits_returns_none() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let mut panel = CommitPanel::new();
+        let state = mock_state();
+        // Empty commits list
+
+        let key = KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE);
+        let event = panel.handle_key_event(key, &state);
+
+        assert_eq!(event, AppEvent::None);
+    }
 }
