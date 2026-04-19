@@ -221,6 +221,13 @@ async fn test_revert_commit() {
     test_repo.stage_file("revert_me.txt");
     test_repo.commit("Commit to revert");
 
+    // Count commits before revert
+    let commit_count_before = {
+        let mut walk = test_repo.repo.revwalk().expect("revwalk");
+        walk.push_head().expect("push_head");
+        walk.count()
+    };
+
     // Get the commit OID to revert
     let commit_id = {
         let head = test_repo.repo.head().expect("Failed to get HEAD");
@@ -243,6 +250,30 @@ async fn test_revert_commit() {
         matches!(resp.event, FrontendEvent::ActionSucceeded { .. }),
         "Expected ActionSucceeded, got {:?}",
         resp.event
+    );
+
+    // Verify a new commit was actually created
+    let commit_count_after = {
+        let mut walk = test_repo.repo.revwalk().expect("revwalk");
+        walk.push_head().expect("push_head");
+        walk.count()
+    };
+    assert_eq!(
+        commit_count_after,
+        commit_count_before + 1,
+        "Expected one new commit after revert"
+    );
+
+    // Verify the new HEAD message contains "Revert"
+    let head_message = {
+        let head = test_repo.repo.head().expect("Failed to get HEAD");
+        let commit = head.peel_to_commit().expect("Failed to peel to commit");
+        commit.message().unwrap_or("").to_string()
+    };
+    assert!(
+        head_message.contains("Revert"),
+        "Expected HEAD message to contain 'Revert', got: {:?}",
+        head_message
     );
 
     cmd_tx.send(CommandEnvelope::new(999, BackendCommand::Quit)).await.ok();

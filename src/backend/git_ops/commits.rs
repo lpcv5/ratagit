@@ -225,6 +225,30 @@ pub fn revert_commit(repo: &GitRepo, commit_id: &str) -> Result<()> {
     let commit = repo.repo.find_commit(oid)?;
     let mut revert_opts = git2::RevertOptions::new();
     repo.repo.revert(&commit, Some(&mut revert_opts))?;
+
+    // Check for conflicts before committing
+    let mut index = repo.repo.index()?;
+    if index.has_conflicts() {
+        repo.repo.cleanup_state()?;
+        anyhow::bail!(
+            "Revert of {} produced conflicts — resolve them manually",
+            &commit_id[..commit_id.len().min(8)]
+        );
+    }
+
+    // Build the revert commit
+    let sig = repo.repo.signature()?;
+    let message = repo
+        .repo
+        .message()
+        .unwrap_or_else(|_| format!("Revert \"{}\"", commit.summary().unwrap_or(commit_id)));
+    let tree_id = index.write_tree()?;
+    let tree = repo.repo.find_tree(tree_id)?;
+    let head_commit = repo.repo.head()?.peel_to_commit()?;
+    repo.repo
+        .commit(Some("HEAD"), &sig, &sig, &message, &tree, &[&head_commit])?;
+
+    repo.repo.cleanup_state()?;
     Ok(())
 }
 
