@@ -145,7 +145,7 @@ and the default keybinding config in `pkg/config/user_config.go`.
 | `c` | Checkout by name | ❌ | ❌ |
 | `-` | Checkout previous branch | ❌ | ❌ |
 | `F` | Force checkout | ❌ | ❌ |
-| `d` | Delete | ✅ | ✅ |
+| `d` | View delete options (local / remote / local+remote) | ✅ | ✅ |
 | `r` | Rebase | ❌ | ❌ |
 | `M` | Merge | ❌ | ❌ |
 | `f` | Fast-forward | ❌ | ❌ |
@@ -496,7 +496,7 @@ and the default keybinding config in `pkg/config/user_config.go`.
 - Basic list navigation (`j`/`k`, arrows) in panels
 - Global quit/cancel/help (`q`, `<esc>`, `?`)
 - Files: stage/unstage, commit, amend, discard, ignore, stash, enter staging/file tree
-- Branches: checkout, new, delete, view commits
+- Branches: checkout, new, delete options (local/remote/both), view commits
 - Commits: view files
 - Stash: apply, drop, view files
 - Menus and commit message panels: confirm/cancel and execute

@@ -32,6 +32,40 @@ pub fn get_branches(repo: &GitRepo) -> Result<Vec<BranchEntry>> {
     Ok(branches)
 }
 
+pub fn checkout_branch(repo: &GitRepo, branch_name: &str, force: bool) -> Result<()> {
+    let full_ref = format!("refs/heads/{branch_name}");
+    repo.repo.set_head(&full_ref)?;
+
+    let mut builder = git2::build::CheckoutBuilder::new();
+    if force {
+        builder.force();
+    } else {
+        builder.safe();
+    }
+    repo.repo.checkout_head(Some(&mut builder))?;
+    Ok(())
+}
+
+pub fn create_branch(repo: &GitRepo, new_name: &str, from_branch: &str) -> Result<()> {
+    let source_branch = repo.repo.find_branch(from_branch, BranchType::Local)?;
+    let source_commit = source_branch.get().peel_to_commit()?;
+    repo.repo.branch(new_name, &source_commit, false)?;
+    checkout_branch(repo, new_name, false)
+}
+
+pub fn delete_local_branch(repo: &GitRepo, branch_name: &str) -> Result<()> {
+    let mut branch = repo.repo.find_branch(branch_name, BranchType::Local)?;
+    branch.delete()?;
+    Ok(())
+}
+
+pub fn delete_remote_branch(repo: &GitRepo, remote_name: &str, branch_name: &str) -> Result<()> {
+    let mut remote = repo.repo.find_remote(remote_name)?;
+    let delete_refspec = format!(":refs/heads/{branch_name}");
+    remote.push(&[delete_refspec.as_str()], None)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

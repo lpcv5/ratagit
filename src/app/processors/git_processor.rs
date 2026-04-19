@@ -11,7 +11,7 @@
 // GitProcessor is stateless - it reads from AppState but doesn't mutate it.
 // All state changes happen via BackendCommand → Backend → FrontendEvent → AppState.
 
-use crate::app::events::GitEvent;
+use crate::app::events::{BranchDeleteMode, GitEvent};
 use crate::app::state::AppState;
 use crate::backend::BackendCommand;
 
@@ -33,6 +33,21 @@ impl GitProcessor {
             GitEvent::AmendCommit => self.amend_commit(state),
             GitEvent::ExecuteReset(index) => self.execute_reset(index),
             GitEvent::IgnoreSelected => self.ignore_selected(state),
+            GitEvent::CheckoutBranch { branch_name, force } => {
+                self.checkout_branch(branch_name, force)
+            }
+            GitEvent::CreateBranch {
+                new_name,
+                from_branch,
+            } => self.create_branch(new_name, from_branch),
+            GitEvent::DeleteBranch {
+                local_branch,
+                remote,
+                mode,
+            } => self.delete_branch(local_branch, remote, mode),
+            GitEvent::LoadBranchCommits { branch_name, limit } => {
+                self.load_branch_commits(branch_name, limit)
+            }
         }
     }
 
@@ -208,11 +223,63 @@ impl GitProcessor {
         let paths: Vec<String> = targets.into_iter().map(|(path, _)| path).collect();
         vec![BackendCommand::IgnoreFiles { paths }]
     }
+
+    fn checkout_branch(&self, branch_name: String, force: bool) -> Vec<BackendCommand> {
+        vec![BackendCommand::CheckoutBranch { branch_name, force }]
+    }
+
+    fn create_branch(&self, new_name: String, from_branch: String) -> Vec<BackendCommand> {
+        vec![BackendCommand::CreateBranch {
+            new_name,
+            from_branch,
+        }]
+    }
+
+    fn delete_branch(
+        &self,
+        local_branch: String,
+        remote: Option<crate::app::events::BranchRemoteRef>,
+        mode: BranchDeleteMode,
+    ) -> Vec<BackendCommand> {
+        match mode {
+            BranchDeleteMode::Local => vec![BackendCommand::DeleteLocalBranch {
+                branch_name: local_branch,
+            }],
+            BranchDeleteMode::Remote => {
+                let Some(remote_ref) = remote else {
+                    return vec![];
+                };
+                vec![BackendCommand::DeleteRemoteBranch {
+                    remote_name: remote_ref.remote_name,
+                    branch_name: remote_ref.branch_name,
+                }]
+            }
+            BranchDeleteMode::LocalAndRemote => {
+                let Some(remote_ref) = remote else {
+                    return vec![];
+                };
+                vec![
+                    BackendCommand::DeleteRemoteBranch {
+                        remote_name: remote_ref.remote_name,
+                        branch_name: remote_ref.branch_name,
+                    },
+                    BackendCommand::DeleteLocalBranch {
+                        branch_name: local_branch,
+                    },
+                ]
+            }
+        }
+    }
+
+    fn load_branch_commits(&self, branch_name: String, limit: usize) -> Vec<BackendCommand> {
+        vec![BackendCommand::GetBranchCommits { branch_name, limit }]
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::events::{BranchDeleteMode, BranchRemoteRef};
     use crate::backend::git_ops::StatusEntry;
 
     fn mock_state() -> AppState {
@@ -503,5 +570,78 @@ mod tests {
         let commands = processor.process(GitEvent::AmendCommit, &state);
 
         assert_eq!(commands.len(), 0);
+    }
+
+    #[test]
+    fn test_checkout_branch_event_maps_to_backend_command() {
+        let processor = GitProcessor;
+        let state = mock_state();
+
+        let commands = processor.process(
+            GitEvent::CheckoutBranch {
+                branch_name: "feature".to_string(),
+                force: false,
+            },
+            &state,
+        );
+
+        assert_eq!(commands.len(), 1);
+        assert!(matches!(
+            &commands[0],
+            BackendCommand::CheckoutBranch { branch_name, force }
+                if branch_name == "feature" && !force
+        ));
+    }
+
+    #[test]
+    fn test_load_branch_commits_event_maps_to_backend_command() {
+        let processor = GitProcessor;
+        let state = mock_state();
+
+        let commands = processor.process(
+            GitEvent::LoadBranchCommits {
+                branch_name: "main".to_string(),
+                limit: 100,
+            },
+            &state,
+        );
+
+        assert_eq!(commands.len(), 1);
+        assert!(matches!(
+            &commands[0],
+            BackendCommand::GetBranchCommits { branch_name, limit }
+                if branch_name == "main" && *limit == 100
+        ));
+    }
+
+    #[test]
+    fn test_delete_branch_local_and_remote_maps_to_two_backend_commands() {
+        let processor = GitProcessor;
+        let state = mock_state();
+
+        let commands = processor.process(
+            GitEvent::DeleteBranch {
+                local_branch: "feature".to_string(),
+                remote: Some(BranchRemoteRef {
+                    remote_name: "origin".to_string(),
+                    branch_name: "feature".to_string(),
+                }),
+                mode: BranchDeleteMode::LocalAndRemote,
+            },
+            &state,
+        );
+
+        assert_eq!(commands.len(), 2);
+        assert!(matches!(
+            &commands[0],
+            BackendCommand::DeleteRemoteBranch {
+                remote_name,
+                branch_name
+            } if remote_name == "origin" && branch_name == "feature"
+        ));
+        assert!(matches!(
+            &commands[1],
+            BackendCommand::DeleteLocalBranch { branch_name } if branch_name == "feature"
+        ));
     }
 }

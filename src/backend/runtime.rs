@@ -6,7 +6,8 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use super::git_ops::GitRepo;
 use super::handlers::CommandHandler;
 use super::handlers::{
-    send_event, AmendCommitHandler, AmendCommitWithFilesHandler, CommitHandler,
+    send_event, AmendCommitHandler, AmendCommitWithFilesHandler, CheckoutBranchHandler,
+    CommitHandler, CreateBranchHandler, DeleteLocalBranchHandler, DeleteRemoteBranchHandler,
     DiscardFilesHandler, GetBranchCommitsHandler, GetBranchGraphHandler, GetCommitDiffBatchHandler,
     GetCommitDiffHandler, GetCommitFilesHandler, GetCommitMessageHandler, GetDiffBatchHandler,
     GetDiffHandler, IgnoreFilesHandler, RefreshBranchesHandler, RefreshCommitsHandler,
@@ -32,6 +33,10 @@ enum CommandKey {
     GetCommitDiffBatch,
     GetBranchGraph,
     GetBranchCommits,
+    CheckoutBranch,
+    CreateBranch,
+    DeleteLocalBranch,
+    DeleteRemoteBranch,
     StageFile,
     StageFiles,
     UnstageFile,
@@ -130,6 +135,22 @@ pub async fn run_backend(mut cmd_rx: Receiver<CommandEnvelope>, event_tx: Sender
         Box::new(GetBranchCommitsHandler) as Box<dyn CommandHandler>,
     );
     handlers.insert(
+        CommandKey::CheckoutBranch,
+        Box::new(CheckoutBranchHandler) as Box<dyn CommandHandler>,
+    );
+    handlers.insert(
+        CommandKey::CreateBranch,
+        Box::new(CreateBranchHandler) as Box<dyn CommandHandler>,
+    );
+    handlers.insert(
+        CommandKey::DeleteLocalBranch,
+        Box::new(DeleteLocalBranchHandler) as Box<dyn CommandHandler>,
+    );
+    handlers.insert(
+        CommandKey::DeleteRemoteBranch,
+        Box::new(DeleteRemoteBranchHandler) as Box<dyn CommandHandler>,
+    );
+    handlers.insert(
         CommandKey::StageAll,
         Box::new(StageAllHandler) as Box<dyn CommandHandler>,
     );
@@ -196,6 +217,16 @@ pub async fn run_backend(mut cmd_rx: Receiver<CommandEnvelope>, event_tx: Sender
             }
             crate::backend::BackendCommand::GetBranchCommits { .. } => {
                 Some(CommandKey::GetBranchCommits)
+            }
+            crate::backend::BackendCommand::CheckoutBranch { .. } => {
+                Some(CommandKey::CheckoutBranch)
+            }
+            crate::backend::BackendCommand::CreateBranch { .. } => Some(CommandKey::CreateBranch),
+            crate::backend::BackendCommand::DeleteLocalBranch { .. } => {
+                Some(CommandKey::DeleteLocalBranch)
+            }
+            crate::backend::BackendCommand::DeleteRemoteBranch { .. } => {
+                Some(CommandKey::DeleteRemoteBranch)
             }
             crate::backend::BackendCommand::StageFile { .. } => Some(CommandKey::StageFile),
             crate::backend::BackendCommand::StageFiles { .. } => Some(CommandKey::StageFiles),

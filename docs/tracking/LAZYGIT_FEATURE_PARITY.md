@@ -46,12 +46,12 @@ Related docs:
 - [x] Have test?
 - [x] Implemented? Open branch commits/detail (`Enter`)
 - [x] Have test?
-- [x] Implemented? Delete selected branch (`d`)
+- [x] Implemented? Delete selected branch (`d`, delete-options menu)
 - [x] Have test?
-- [ ] Implemented? Checkout selected branch with `Space`
-- [ ] Have test?
-- [ ] Implemented? Create branch (`n`)
-- [ ] Have test?
+- [x] Implemented? Checkout selected branch with `Space`
+- [x] Have test?
+- [x] Implemented? Create branch (`n`)
+- [x] Have test?
 - [ ] Implemented? Rename branch (`R`)
 - [ ] Have test?
 - [ ] Implemented? Merge/rebase from branches panel
@@ -197,7 +197,7 @@ Use this section to link concrete test tasks/PRs.
 ### Feature tests for new parity work
 - [ ] Search/filter flow tests
 - [ ] Undo/redo reflog behavior tests
-- [ ] Checkout/new-branch/rename branch tests
+- [ ] Rename branch (`R`) tests
 - [ ] Patch mode interaction tests
 
 ---

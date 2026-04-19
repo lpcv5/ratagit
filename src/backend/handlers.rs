@@ -466,6 +466,180 @@ impl CommandHandler for GetBranchGraphHandler {
     }
 }
 
+/// Checkout local branch handler
+pub struct CheckoutBranchHandler;
+impl CommandHandler for CheckoutBranchHandler {
+    fn handle(
+        &self,
+        envelope: &CommandEnvelope,
+        repo: &GitRepo,
+        event_tx: &Sender<EventEnvelope>,
+    ) -> Result<()> {
+        let (branch_name, force) =
+            if let crate::backend::BackendCommand::CheckoutBranch { branch_name, force } =
+                &envelope.command
+            {
+                (branch_name.clone(), *force)
+            } else {
+                return Ok(());
+            };
+
+        match super::git_ops::checkout_branch(repo, &branch_name, force) {
+            Ok(()) => {
+                send_event(
+                    event_tx,
+                    EventEnvelope::new(
+                        Some(envelope.request_id),
+                        FrontendEvent::ActionSucceeded {
+                            request_id: envelope.request_id,
+                            message: format!("Checked out branch: {branch_name}"),
+                        },
+                    ),
+                );
+                refresh_all(event_tx, repo);
+            }
+            Err(error) => send_error(
+                event_tx,
+                Some(envelope.request_id),
+                "checkout branch",
+                error,
+            ),
+        }
+
+        Ok(())
+    }
+}
+
+/// Create local branch handler
+pub struct CreateBranchHandler;
+impl CommandHandler for CreateBranchHandler {
+    fn handle(
+        &self,
+        envelope: &CommandEnvelope,
+        repo: &GitRepo,
+        event_tx: &Sender<EventEnvelope>,
+    ) -> Result<()> {
+        let (new_name, from_branch) = if let crate::backend::BackendCommand::CreateBranch {
+            new_name,
+            from_branch,
+        } = &envelope.command
+        {
+            (new_name.clone(), from_branch.clone())
+        } else {
+            return Ok(());
+        };
+
+        match super::git_ops::create_branch(repo, &new_name, &from_branch) {
+            Ok(()) => {
+                send_event(
+                    event_tx,
+                    EventEnvelope::new(
+                        Some(envelope.request_id),
+                        FrontendEvent::ActionSucceeded {
+                            request_id: envelope.request_id,
+                            message: format!("Created branch: {new_name} (from {from_branch})"),
+                        },
+                    ),
+                );
+                refresh_all(event_tx, repo);
+            }
+            Err(error) => send_error(event_tx, Some(envelope.request_id), "create branch", error),
+        }
+
+        Ok(())
+    }
+}
+
+/// Delete local branch handler
+pub struct DeleteLocalBranchHandler;
+impl CommandHandler for DeleteLocalBranchHandler {
+    fn handle(
+        &self,
+        envelope: &CommandEnvelope,
+        repo: &GitRepo,
+        event_tx: &Sender<EventEnvelope>,
+    ) -> Result<()> {
+        let branch_name = if let crate::backend::BackendCommand::DeleteLocalBranch { branch_name } =
+            &envelope.command
+        {
+            branch_name.clone()
+        } else {
+            return Ok(());
+        };
+
+        match super::git_ops::delete_local_branch(repo, &branch_name) {
+            Ok(()) => {
+                send_event(
+                    event_tx,
+                    EventEnvelope::new(
+                        Some(envelope.request_id),
+                        FrontendEvent::ActionSucceeded {
+                            request_id: envelope.request_id,
+                            message: format!("Deleted local branch: {branch_name}"),
+                        },
+                    ),
+                );
+                refresh_all(event_tx, repo);
+            }
+            Err(error) => send_error(
+                event_tx,
+                Some(envelope.request_id),
+                "delete local branch",
+                error,
+            ),
+        }
+        Ok(())
+    }
+}
+
+/// Delete remote branch handler
+pub struct DeleteRemoteBranchHandler;
+impl CommandHandler for DeleteRemoteBranchHandler {
+    fn handle(
+        &self,
+        envelope: &CommandEnvelope,
+        repo: &GitRepo,
+        event_tx: &Sender<EventEnvelope>,
+    ) -> Result<()> {
+        let (remote_name, branch_name) =
+            if let crate::backend::BackendCommand::DeleteRemoteBranch {
+                remote_name,
+                branch_name,
+            } = &envelope.command
+            {
+                (remote_name.clone(), branch_name.clone())
+            } else {
+                return Ok(());
+            };
+
+        match super::git_ops::delete_remote_branch(repo, &remote_name, &branch_name) {
+            Ok(()) => {
+                send_event(
+                    event_tx,
+                    EventEnvelope::new(
+                        Some(envelope.request_id),
+                        FrontendEvent::ActionSucceeded {
+                            request_id: envelope.request_id,
+                            message: format!(
+                                "Deleted remote branch: {}/{}",
+                                remote_name, branch_name
+                            ),
+                        },
+                    ),
+                );
+                refresh_all(event_tx, repo);
+            }
+            Err(error) => send_error(
+                event_tx,
+                Some(envelope.request_id),
+                "delete remote branch",
+                error,
+            ),
+        }
+        Ok(())
+    }
+}
+
 /// 暂存文件处理器
 pub struct StageFileHandler;
 impl CommandHandler for StageFileHandler {

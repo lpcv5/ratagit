@@ -10,7 +10,20 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::events::{AppEvent, ModalEvent};
+use crate::app::events::{AppEvent, GitEvent, ModalEvent};
+
+#[derive(Debug, Clone)]
+pub struct SelectionItemV2 {
+    pub label: String,
+    pub event: AppEvent,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone)]
+pub enum TextSubmitAction {
+    CommitMessage,
+    CreateBranch { from_branch: String },
+}
 
 /// Modal dialog types for V2 (AppEvent-based)
 #[derive(Debug, Clone)]
@@ -22,7 +35,7 @@ pub enum ModalTypeV2 {
     },
     Selection {
         title: String,
-        options: Vec<String>,
+        items: Vec<SelectionItemV2>,
         selected: usize,
     },
     Help {
@@ -34,6 +47,7 @@ pub enum ModalTypeV2 {
         title: String,
         prompt: String,
         buffer: String,
+        submit_action: TextSubmitAction,
     },
 }
 
@@ -53,11 +67,11 @@ impl ModalDialogV2 {
         }
     }
 
-    pub fn selection(title: String, options: Vec<String>) -> Self {
+    pub fn selection(title: String, items: Vec<SelectionItemV2>) -> Self {
         Self {
             modal_type: ModalTypeV2::Selection {
                 title,
-                options,
+                items,
                 selected: 0,
             },
         }
@@ -74,11 +88,20 @@ impl ModalDialogV2 {
     }
 
     pub fn text_input(title: String, prompt: String) -> Self {
+        Self::text_input_with_action(title, prompt, TextSubmitAction::CommitMessage)
+    }
+
+    pub fn text_input_with_action(
+        title: String,
+        prompt: String,
+        submit_action: TextSubmitAction,
+    ) -> Self {
         Self {
             modal_type: ModalTypeV2::TextInput {
                 title,
                 prompt,
                 buffer: String::new(),
+                submit_action,
             },
         }
     }
@@ -105,7 +128,9 @@ impl ModalDialogV2 {
                 }
                 _ => AppEvent::None,
             },
-            ModalTypeV2::Selection { options, selected, .. } => match key_code {
+            ModalTypeV2::Selection {
+                items, selected, ..
+            } => match key_code {
                 KeyCode::Up | KeyCode::Char('k') => {
                     if *selected > 0 {
                         *selected -= 1;
@@ -113,16 +138,22 @@ impl ModalDialogV2 {
                     AppEvent::None
                 }
                 KeyCode::Down | KeyCode::Char('j') => {
-                    if *selected < options.len().saturating_sub(1) {
+                    if *selected < items.len().saturating_sub(1) {
                         *selected += 1;
                     }
                     AppEvent::None
                 }
-                KeyCode::Enter => AppEvent::Modal(ModalEvent::ShowResetConfirmation(*selected)),
+                KeyCode::Enter => items
+                    .get(*selected)
+                    .filter(|item| item.enabled)
+                    .map(|item| item.event.clone())
+                    .unwrap_or(AppEvent::None),
                 KeyCode::Esc => AppEvent::Modal(ModalEvent::Close),
                 _ => AppEvent::None,
             },
-            ModalTypeV2::Help { items, selected, .. } => match key_code {
+            ModalTypeV2::Help {
+                items, selected, ..
+            } => match key_code {
                 KeyCode::Up | KeyCode::Char('k') => {
                     if *selected > 0 {
                         *selected -= 1;
@@ -136,14 +167,21 @@ impl ModalDialogV2 {
                     AppEvent::None
                 }
                 KeyCode::Enter => {
-                    let event = items.get(*selected).map(|(_, e)| e.clone()).unwrap_or(AppEvent::None);
+                    let event = items
+                        .get(*selected)
+                        .map(|(_, e)| e.clone())
+                        .unwrap_or(AppEvent::None);
                     // Return the event directly - the processor will handle closing the modal
                     event
                 }
                 KeyCode::Esc => AppEvent::Modal(ModalEvent::Close),
                 _ => AppEvent::None,
             },
-            ModalTypeV2::TextInput { buffer, .. } => match key_code {
+            ModalTypeV2::TextInput {
+                buffer,
+                submit_action,
+                ..
+            } => match key_code {
                 KeyCode::Char(c) => {
                     buffer.push(c);
                     AppEvent::None
@@ -153,12 +191,21 @@ impl ModalDialogV2 {
                     AppEvent::None
                 }
                 KeyCode::Enter => {
-                    if buffer.is_empty() {
+                    let value = buffer.trim();
+                    if value.is_empty() {
                         AppEvent::None
                     } else {
-                        AppEvent::Git(crate::app::events::GitEvent::CommitWithMessage(
-                            buffer.clone(),
-                        ))
+                        match submit_action {
+                            TextSubmitAction::CommitMessage => {
+                                AppEvent::Git(GitEvent::CommitWithMessage(value.to_string()))
+                            }
+                            TextSubmitAction::CreateBranch { from_branch } => {
+                                AppEvent::Git(GitEvent::CreateBranch {
+                                    new_name: value.to_string(),
+                                    from_branch: from_branch.clone(),
+                                })
+                            }
+                        }
                     }
                 }
                 KeyCode::Esc => AppEvent::Modal(ModalEvent::Close),
@@ -175,9 +222,9 @@ impl ModalDialogV2 {
             }
             ModalTypeV2::Selection {
                 title,
-                options,
+                items,
                 selected,
-            } => self.render_selection(frame, area, title, options, *selected),
+            } => self.render_selection(frame, area, title, items, *selected),
             ModalTypeV2::Help {
                 title,
                 items,
@@ -187,6 +234,7 @@ impl ModalDialogV2 {
                 title,
                 prompt,
                 buffer,
+                ..
             } => self.render_text_input(frame, area, title, prompt, buffer),
         }
     }
@@ -210,9 +258,17 @@ impl ModalDialogV2 {
             Line::from(message).style(Style::default().fg(Color::Rgb(248, 248, 242))),
             Line::from(""),
             Line::from(vec![
-                Span::styled("y", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "y",
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::raw(" - Yes  "),
-                Span::styled("n", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "n",
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                ),
                 Span::raw(" - No"),
             ]),
         ];
@@ -229,29 +285,31 @@ impl ModalDialogV2 {
         frame: &mut Frame,
         area: Rect,
         title: &str,
-        options: &[String],
+        items: &[SelectionItemV2],
         selected: usize,
     ) {
         let popup_area = centered_rect(60, 40, area);
 
         frame.render_widget(Clear, popup_area);
 
-        let items: Vec<ListItem> = options
+        let list_items: Vec<ListItem> = items
             .iter()
             .enumerate()
-            .map(|(i, opt)| {
-                let style = if i == selected {
+            .map(|(i, item)| {
+                let style = if !item.enabled {
+                    Style::default().fg(Color::DarkGray)
+                } else if i == selected {
                     Style::default()
                         .fg(Color::Rgb(80, 250, 123))
                         .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().fg(Color::Rgb(248, 248, 242))
                 };
-                ListItem::new(opt.as_str()).style(style)
+                ListItem::new(item.label.as_str()).style(style)
             })
             .collect();
 
-        let list = List::new(items)
+        let list = List::new(list_items)
             .block(
                 Block::default()
                     .title(title)
@@ -396,35 +454,48 @@ mod tests {
         );
 
         // Test Esc key returns Close event
-        let event = Event::Key(KeyEvent::new(KeyCode::Esc, crossterm::event::KeyModifiers::NONE));
+        let event = Event::Key(KeyEvent::new(
+            KeyCode::Esc,
+            crossterm::event::KeyModifiers::NONE,
+        ));
         let result = modal.handle_event_v2(&event);
         assert_eq!(result, AppEvent::Modal(ModalEvent::Close));
 
         // Test 'n' key returns Close event
-        let event = Event::Key(KeyEvent::new(KeyCode::Char('n'), crossterm::event::KeyModifiers::NONE));
+        let event = Event::Key(KeyEvent::new(
+            KeyCode::Char('n'),
+            crossterm::event::KeyModifiers::NONE,
+        ));
         let result = modal.handle_event_v2(&event);
         assert_eq!(result, AppEvent::Modal(ModalEvent::Close));
 
         // Test 'y' key returns the on_confirm event
-        let event = Event::Key(KeyEvent::new(KeyCode::Char('y'), crossterm::event::KeyModifiers::NONE));
+        let event = Event::Key(KeyEvent::new(
+            KeyCode::Char('y'),
+            crossterm::event::KeyModifiers::NONE,
+        ));
         let result = modal.handle_event_v2(&event);
         assert_eq!(result, AppEvent::Modal(ModalEvent::Close));
     }
 
     #[test]
     fn test_modal_v2_text_input_returns_app_event() {
-        let mut modal = ModalDialogV2::text_input(
-            "Commit".to_string(),
-            "Enter message:".to_string(),
-        );
+        let mut modal =
+            ModalDialogV2::text_input("Commit".to_string(), "Enter message:".to_string());
 
         // Test typing characters
-        let event = Event::Key(KeyEvent::new(KeyCode::Char('a'), crossterm::event::KeyModifiers::NONE));
+        let event = Event::Key(KeyEvent::new(
+            KeyCode::Char('a'),
+            crossterm::event::KeyModifiers::NONE,
+        ));
         let result = modal.handle_event_v2(&event);
         assert_eq!(result, AppEvent::None);
 
         // Test Esc returns Close
-        let event = Event::Key(KeyEvent::new(KeyCode::Esc, crossterm::event::KeyModifiers::NONE));
+        let event = Event::Key(KeyEvent::new(
+            KeyCode::Esc,
+            crossterm::event::KeyModifiers::NONE,
+        ));
         let result = modal.handle_event_v2(&event);
         assert_eq!(result, AppEvent::Modal(ModalEvent::Close));
     }
@@ -438,12 +509,18 @@ mod tests {
         let mut modal = ModalDialogV2::help("Help".to_string(), items);
 
         // Test Esc returns Close
-        let event = Event::Key(KeyEvent::new(KeyCode::Esc, crossterm::event::KeyModifiers::NONE));
+        let event = Event::Key(KeyEvent::new(
+            KeyCode::Esc,
+            crossterm::event::KeyModifiers::NONE,
+        ));
         let result = modal.handle_event_v2(&event);
         assert_eq!(result, AppEvent::Modal(ModalEvent::Close));
 
         // Test navigation returns None
-        let event = Event::Key(KeyEvent::new(KeyCode::Char('j'), crossterm::event::KeyModifiers::NONE));
+        let event = Event::Key(KeyEvent::new(
+            KeyCode::Char('j'),
+            crossterm::event::KeyModifiers::NONE,
+        ));
         let result = modal.handle_event_v2(&event);
         assert_eq!(result, AppEvent::None);
     }

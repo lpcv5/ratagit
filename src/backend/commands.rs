@@ -39,6 +39,21 @@ pub enum BackendCommand {
         branch_name: String,
         limit: usize,
     },
+    CheckoutBranch {
+        branch_name: String,
+        force: bool,
+    },
+    CreateBranch {
+        new_name: String,
+        from_branch: String,
+    },
+    DeleteLocalBranch {
+        branch_name: String,
+    },
+    DeleteRemoteBranch {
+        remote_name: String,
+        branch_name: String,
+    },
     StageFile {
         file_path: String,
     },

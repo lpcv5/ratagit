@@ -10,7 +10,10 @@ mod status;
 mod working_tree;
 
 pub use branch_graph::get_branch_graph;
-pub use branches::{get_branches, BranchEntry};
+pub use branches::{
+    checkout_branch, create_branch, delete_local_branch, delete_remote_branch, get_branches,
+    BranchEntry,
+};
 pub use commit_diff::get_commit_diff;
 pub use commit_files::get_commit_files;
 pub use commits::{
