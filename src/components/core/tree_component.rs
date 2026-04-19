@@ -273,6 +273,21 @@ impl TreePanel {
         self.is_multi_active()
     }
 
+    pub fn toggle_multi_select_at_cursor(&mut self) -> bool {
+        let visible_paths = self.visible_paths();
+        let active = self.toggle_multi_select(self.state.selected(), &visible_paths);
+        self.refresh_multi_range(self.state.selected(), &visible_paths);
+        active
+    }
+
+    pub fn clear_multi_select_if_active(&mut self) -> bool {
+        if !self.is_multi_active() {
+            return false;
+        }
+        self.clear_multi_select();
+        true
+    }
+
     fn visible_nodes(&self) -> Vec<&TreeNode> {
         get_visible_nodes(&self.all_nodes)
     }

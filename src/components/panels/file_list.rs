@@ -128,6 +128,14 @@ impl FileListPanel {
         self.tree.clear_multi_select();
     }
 
+    pub fn handle_escape(&mut self) -> AppEvent {
+        if self.tree.clear_multi_select_if_active() {
+            AppEvent::SelectionChanged
+        } else {
+            AppEvent::None
+        }
+    }
+
     /// 获取当前选中的文件节点
     #[allow(dead_code)]
     pub fn selected_node(&self) -> Option<&TreeNode> {
@@ -216,6 +224,14 @@ impl ComponentV2 for FileListPanel {
             KeyCode::Char('=') => {
                 self.tree.expand_all_dirs();
                 AppEvent::SelectionChanged
+            }
+            KeyCode::Char('v') => {
+                if self.tree.selected_node().is_some() {
+                    self.tree.toggle_multi_select_at_cursor();
+                    AppEvent::SelectionChanged
+                } else {
+                    AppEvent::None
+                }
             }
             _ => AppEvent::None,
         }
@@ -393,6 +409,28 @@ mod tests {
         let key_enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
         let event = panel.handle_key_event(key_enter, &state);
         assert_eq!(event, AppEvent::ActivatePanel);
+    }
+
+    #[test]
+    fn test_file_panel_v_and_esc_toggle_multi_select() {
+        let mut panel = FileListPanel::new();
+        let state = mock_state();
+        panel.update_files(&[StatusEntry {
+            path: "src/main.rs".to_string(),
+            is_staged: false,
+            is_unstaged: true,
+            is_untracked: false,
+        }]);
+        panel.state_mut().select(Some(0));
+
+        let key_v = KeyEvent::new(KeyCode::Char('v'), KeyModifiers::NONE);
+        let event = panel.handle_key_event(key_v, &state);
+        assert_eq!(event, AppEvent::SelectionChanged);
+        assert!(panel.is_multi_select_active());
+
+        let event = panel.handle_escape();
+        assert_eq!(event, AppEvent::SelectionChanged);
+        assert!(!panel.is_multi_select_active());
     }
 
     fn mock_state() -> crate::app::AppState {

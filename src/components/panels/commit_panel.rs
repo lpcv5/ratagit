@@ -1,16 +1,12 @@
-use ratatui::{
-    widgets::ListState,
-};
 use ratatui::layout::Rect;
+use ratatui::widgets::ListState;
 
-use crate::app::CachedData;
-use crate::backend::git_ops::CommitEntry;
-use crate::components::core::{
-    MultiSelectState, MultiSelectableList, TreePanel,
-};
-use crate::components::component_v2::ComponentV2;
 use crate::app::events::AppEvent;
 use crate::app::AppState;
+use crate::app::CachedData;
+use crate::backend::git_ops::CommitEntry;
+use crate::components::component_v2::ComponentV2;
+use crate::components::core::{MultiSelectState, MultiSelectableList, TreePanel};
 
 enum CommitMode {
     List,
@@ -20,9 +16,9 @@ enum CommitMode {
         summary: String,
     },
     FilesTree {
-    #[allow(dead_code)] // Used in mode transitions
+        #[allow(dead_code)] // Used in mode transitions
         commit_id: String,
-    #[allow(dead_code)] // Used in mode transitions
+        #[allow(dead_code)] // Used in mode transitions
         summary: String,
         tree: TreePanel,
     },
@@ -148,6 +144,29 @@ impl CommitPanel {
             CommitMode::FilesTree { tree, .. } if tree.multi_select_active()
         )
     }
+
+    pub fn handle_escape(&mut self) -> AppEvent {
+        match &mut self.mode {
+            CommitMode::List => {
+                if self.list_multi_select.is_active() {
+                    self.clear_list_multi_select();
+                    AppEvent::SelectionChanged
+                } else {
+                    AppEvent::None
+                }
+            }
+            CommitMode::FilesTree { tree, .. } => {
+                if tree.multi_select_active() {
+                    tree.clear_multi_select();
+                    AppEvent::SelectionChanged
+                } else {
+                    self.show_list();
+                    AppEvent::SelectionChanged
+                }
+            }
+            CommitMode::FilesLoading { .. } => AppEvent::None,
+        }
+    }
 }
 
 impl Default for CommitPanel {
@@ -170,11 +189,20 @@ impl MultiSelectableList for CommitPanel {
 
 impl CommitPanel {
     /// Temporary bridge method for old renderer (will be removed when renderer migrates to ComponentV2)
-    pub fn render(&mut self, frame: &mut ratatui::Frame, area: ratatui::layout::Rect, is_focused: bool, data: &CachedData) {
+    pub fn render(
+        &mut self,
+        frame: &mut ratatui::Frame,
+        area: ratatui::layout::Rect,
+        is_focused: bool,
+        data: &CachedData,
+    ) {
+        use crate::components::core::{
+            accent_primary_color, multi_select_row_style, muted_text_style, panel_block,
+            SelectableList, LIST_HIGHLIGHT_SYMBOL,
+        };
+        use ratatui::style::Style;
         use ratatui::text::{Line, Span};
         use ratatui::widgets::{ListItem, Paragraph};
-        use ratatui::style::Style;
-        use crate::components::core::{accent_primary_color, multi_select_row_style, muted_text_style, panel_block, SelectableList, LIST_HIGHLIGHT_SYMBOL};
 
         match &mut self.mode {
             CommitMode::List => {
@@ -234,6 +262,7 @@ impl ComponentV2 for CommitPanel {
                     let current = self.state.selected().unwrap_or(0);
                     let next = (current + 1).min(state.data_cache.commits.len() - 1);
                     self.state.select(Some(next));
+                    self.refresh_list_multi_range(&state.data_cache.commits);
                     AppEvent::SelectionChanged
                 } else {
                     AppEvent::None
@@ -244,6 +273,7 @@ impl ComponentV2 for CommitPanel {
                     let current = self.state.selected().unwrap_or(0);
                     let prev = current.saturating_sub(1);
                     self.state.select(Some(prev));
+                    self.refresh_list_multi_range(&state.data_cache.commits);
                     AppEvent::SelectionChanged
                 } else {
                     AppEvent::None
@@ -262,12 +292,16 @@ impl ComponentV2 for CommitPanel {
                     _ => AppEvent::None,
                 }
             }
-            // TODO: Add keybinding to toggle multi-select mode (e.g., 'v' for visual mode)
-            // KeyCode::Char('v') => {
-            //     let commit_ids = commit_ids(&state.data_cache.commits);
-            //     self.toggle_multi_select(self.state.selected(), &commit_ids);
-            //     AppEvent::None
-            // }
+            KeyCode::Char('v') => {
+                if matches!(self.mode, CommitMode::List) && !state.data_cache.commits.is_empty() {
+                    let commit_ids = commit_ids(&state.data_cache.commits);
+                    self.toggle_multi_select(self.state.selected(), &commit_ids);
+                    self.refresh_list_multi_range(&state.data_cache.commits);
+                    AppEvent::SelectionChanged
+                } else {
+                    AppEvent::None
+                }
+            }
             _ => AppEvent::None,
         }
     }
@@ -328,6 +362,91 @@ mod tests {
         let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
         let event = panel.handle_key_event(key, &state);
         assert_eq!(event, AppEvent::ActivatePanel);
+    }
+
+    #[test]
+    fn test_commit_panel_v_toggles_multi_select_mode() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let mut panel = CommitPanel::new();
+        let mut state = mock_state();
+        state.data_cache.commits = vec![CommitEntry {
+            short_id: "abc1234".to_string(),
+            id: "abc123".to_string(),
+            summary: "Test commit".to_string(),
+            body: None,
+            author: "Author".to_string(),
+            timestamp: 1704067200,
+        }];
+
+        let key_v = KeyEvent::new(KeyCode::Char('v'), KeyModifiers::NONE);
+        let event = panel.handle_key_event(key_v, &state);
+        assert_eq!(event, AppEvent::SelectionChanged);
+        assert!(panel.is_list_multi_select_active());
+
+        let key_v = KeyEvent::new(KeyCode::Char('v'), KeyModifiers::NONE);
+        let event = panel.handle_key_event(key_v, &state);
+        assert_eq!(event, AppEvent::SelectionChanged);
+        assert!(!panel.is_list_multi_select_active());
+    }
+
+    #[test]
+    fn test_commit_panel_esc_clears_multi_select_mode() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let mut panel = CommitPanel::new();
+        let mut state = mock_state();
+        state.data_cache.commits = vec![CommitEntry {
+            short_id: "abc1234".to_string(),
+            id: "abc123".to_string(),
+            summary: "Test commit".to_string(),
+            body: None,
+            author: "Author".to_string(),
+            timestamp: 1704067200,
+        }];
+
+        let key_v = KeyEvent::new(KeyCode::Char('v'), KeyModifiers::NONE);
+        let event = panel.handle_key_event(key_v, &state);
+        assert_eq!(event, AppEvent::SelectionChanged);
+        assert!(panel.is_list_multi_select_active());
+
+        let event = panel.handle_escape();
+        assert_eq!(event, AppEvent::SelectionChanged);
+        assert!(!panel.is_list_multi_select_active());
+    }
+
+    #[test]
+    fn test_commit_panel_esc_in_files_tree_returns_to_list() {
+        use crate::components::core::{GitFileStatus, TreeNode, TreePanel};
+
+        let mut panel = CommitPanel::new();
+        let mut state = mock_state();
+        state.data_cache.commits = vec![CommitEntry {
+            short_id: "abc1234".to_string(),
+            id: "abc123".to_string(),
+            summary: "Test commit".to_string(),
+            body: None,
+            author: "Author".to_string(),
+            timestamp: 1704067200,
+        }];
+
+        let tree = TreePanel::new(
+            "Files".to_string(),
+            vec![TreeNode::new(
+                "src/main.rs".to_string(),
+                "main.rs".to_string(),
+                false,
+                0,
+                Some(GitFileStatus::Modified),
+            )],
+            false,
+        );
+        panel.set_files_tree("abc123".to_string(), "Test commit".to_string(), tree);
+
+        let event = panel.handle_escape();
+
+        assert_eq!(event, AppEvent::SelectionChanged);
+        assert_eq!(panel.mode_view(), CommitModeView::List);
     }
 
     fn mock_state() -> AppState {

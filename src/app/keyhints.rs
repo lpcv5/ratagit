@@ -60,10 +60,24 @@ pub fn keyhints_for_panel(panel: Panel) -> Vec<KeyHint> {
                 description: "multi-select",
             },
         ],
-        Panel::Branches => vec![KeyHint {
-            key: "Enter",
-            description: "checkout / view commits",
-        }],
+        Panel::Branches => vec![
+            KeyHint {
+                key: "Space",
+                description: "checkout",
+            },
+            KeyHint {
+                key: "n",
+                description: "new branch",
+            },
+            KeyHint {
+                key: "d",
+                description: "delete options",
+            },
+            KeyHint {
+                key: "Enter",
+                description: "view commits",
+            },
+        ],
         Panel::Commits => vec![
             KeyHint {
                 key: "Enter",
@@ -99,6 +113,11 @@ pub fn keyhints_for_panel(panel: Panel) -> Vec<KeyHint> {
             },
         ],
     };
+
+    hints.push(KeyHint {
+        key: "Esc",
+        description: "cancel/back",
+    });
 
     // Always append the help hint last
     hints.push(KeyHint {

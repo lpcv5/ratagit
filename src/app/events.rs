@@ -26,8 +26,23 @@ pub enum AppEvent {
     ActivatePanel,
     /// Selection changed, refresh main view
     SelectionChanged,
+    /// Exit branch commits subview and return to branch list
+    ExitBranchCommitsSubview,
     /// Event handled internally by component
     None,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BranchDeleteMode {
+    Local,
+    Remote,
+    LocalAndRemote,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BranchRemoteRef {
+    pub remote_name: String,
+    pub branch_name: String,
 }
 
 /// Git operation events
@@ -46,6 +61,23 @@ pub enum GitEvent {
     AmendCommit,
     ExecuteReset(usize),
     IgnoreSelected,
+    CheckoutBranch {
+        branch_name: String,
+        force: bool,
+    },
+    CreateBranch {
+        new_name: String,
+        from_branch: String,
+    },
+    DeleteBranch {
+        local_branch: String,
+        remote: Option<BranchRemoteRef>,
+        mode: BranchDeleteMode,
+    },
+    LoadBranchCommits {
+        branch_name: String,
+        limit: usize,
+    },
 }
 
 /// Modal/dialog events
@@ -58,6 +90,19 @@ pub enum GitEvent {
 pub enum ModalEvent {
     ShowHelp,
     ShowCommitDialog,
+    ShowBranchCreateDialog {
+        from_branch: String,
+    },
+    ShowBranchDeleteMenu {
+        local_branch: String,
+        is_head: bool,
+        upstream: Option<String>,
+    },
+    ShowBranchDeleteConfirm {
+        local_branch: String,
+        remote: Option<BranchRemoteRef>,
+        mode: BranchDeleteMode,
+    },
     ShowResetMenu,
     ShowDiscardConfirmation,
     ShowStashConfirmation,

@@ -1,6 +1,7 @@
+use crate::app::events::AppEvent;
+use crate::app::Panel;
 use crate::components::panels::{
-    BranchListPanel, CommitPanel, FileListPanel, LogPanel, MainViewPanel,
-    StashListPanel,
+    BranchListPanel, CommitPanel, FileListPanel, LogPanel, MainViewPanel, StashListPanel,
 };
 
 /// 所有面板组件的容器
@@ -52,6 +53,19 @@ impl AppComponents {
 
     pub fn show_branch_commits(&mut self) {
         self.branch_list_panel.show_branch_commits();
+    }
+
+    pub fn hide_branch_commits(&mut self) {
+        self.branch_list_panel.hide_branch_commits();
+    }
+
+    pub fn handle_escape(&mut self, active_panel: Panel) -> AppEvent {
+        match active_panel {
+            Panel::Files => self.file_list_panel.handle_escape(),
+            Panel::Branches => self.branch_list_panel.handle_escape(),
+            Panel::Commits => self.commit_panel.handle_escape(),
+            Panel::Stash | Panel::MainView | Panel::Log => AppEvent::None,
+        }
     }
 
     #[allow(dead_code)]

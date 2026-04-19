@@ -17,6 +17,10 @@ impl App {
                 return Ok(());
             }
 
+            if self.try_handle_escape(key.code)? {
+                return Ok(());
+            }
+
             // Handle global keybindings first
             match key.code {
                 KeyCode::Char('q') => {
@@ -126,9 +130,32 @@ impl App {
             event,
             Event::Key(key) if matches!(
                 key.code,
-            KeyCode::Char('j') | KeyCode::Char('k') | KeyCode::Down | KeyCode::Up | KeyCode::Enter
+            KeyCode::Char('j')
+                | KeyCode::Char('k')
+                | KeyCode::Down
+                | KeyCode::Up
+                | KeyCode::Enter
+                | KeyCode::Esc
         )
         )
+    }
+
+    fn try_handle_escape(&mut self, key_code: KeyCode) -> anyhow::Result<bool> {
+        if key_code != KeyCode::Esc {
+            return Ok(false);
+        }
+
+        let event = self
+            .state
+            .components
+            .handle_escape(self.state.ui_state.active_panel);
+        if event == AppEvent::None {
+            return Ok(false);
+        }
+
+        self.process_event(event);
+        self.update_main_view_for_active_panel()?;
+        Ok(true)
     }
 }
 
@@ -174,5 +201,35 @@ mod tests {
         app.handle_input_v2(input).expect("input handling failed");
 
         assert!(matches!(cmd_rx.try_recv(), Err(TryRecvError::Empty)));
+    }
+
+    #[test]
+    fn esc_in_branch_commits_subview_uses_global_escape_dispatch() {
+        let (mut app, _cmd_rx) = create_test_app();
+        app.state.ui_state.active_panel = Panel::Branches;
+        app.state.components.show_branch_commits();
+        app.state.data_cache.saved_commits = Some(vec![crate::backend::git_ops::CommitEntry {
+            short_id: "old1234".to_string(),
+            id: "old123".to_string(),
+            summary: "Old commit".to_string(),
+            body: None,
+            author: "Author".to_string(),
+            timestamp: 1704067200,
+        }]);
+        app.state.data_cache.commits = vec![crate::backend::git_ops::CommitEntry {
+            short_id: "new1234".to_string(),
+            id: "new123".to_string(),
+            summary: "New commit".to_string(),
+            body: None,
+            author: "Author".to_string(),
+            timestamp: 1704153600,
+        }];
+
+        let input = Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        app.handle_input_v2(input).expect("input handling failed");
+
+        assert!(app.state.data_cache.saved_commits.is_none());
+        assert_eq!(app.state.data_cache.commits.len(), 1);
+        assert_eq!(app.state.data_cache.commits[0].id, "old123");
     }
 }

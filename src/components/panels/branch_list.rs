@@ -2,11 +2,11 @@ use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 
-use crate::app::CachedData;
+use crate::app::events::{AppEvent, GitEvent, ModalEvent};
 use crate::app::AppState;
-use crate::app::events::{AppEvent, GitEvent};
-use crate::components::core::{render_branches, SimpleListPanel};
+use crate::app::CachedData;
 use crate::components::component_v2::ComponentV2;
+use crate::components::core::{render_branches, SimpleListPanel};
 
 use super::CommitPanel;
 
@@ -42,8 +42,32 @@ impl BranchListPanel {
         };
     }
 
+    pub fn hide_branch_commits(&mut self) {
+        self.mode = BranchMode::List;
+    }
+
+    pub fn handle_escape(&mut self) -> AppEvent {
+        match &mut self.mode {
+            BranchMode::CommitsSub { panel } => {
+                let event = panel.handle_escape();
+                if event == AppEvent::None {
+                    AppEvent::ExitBranchCommitsSubview
+                } else {
+                    event
+                }
+            }
+            BranchMode::List => AppEvent::None,
+        }
+    }
+
     /// Temporary bridge method for old renderer (will be removed when renderer migrates to ComponentV2)
-    pub fn render(&mut self, frame: &mut ratatui::Frame, area: ratatui::layout::Rect, is_focused: bool, data: &CachedData) {
+    pub fn render(
+        &mut self,
+        frame: &mut ratatui::Frame,
+        area: ratatui::layout::Rect,
+        is_focused: bool,
+        data: &CachedData,
+    ) {
         match &mut self.mode {
             BranchMode::List => self.list.render(frame, area, is_focused, data),
             BranchMode::CommitsSub { panel } => {
@@ -61,6 +85,15 @@ impl Default for BranchListPanel {
 
 impl ComponentV2 for BranchListPanel {
     fn handle_key_event(&mut self, key: KeyEvent, state: &AppState) -> AppEvent {
+        if let BranchMode::CommitsSub { panel } = &mut self.mode {
+            return panel.handle_key_event(key, state);
+        }
+
+        let selected_branch = || {
+            self.selected_index()
+                .and_then(|index| state.data_cache.branches.get(index))
+        };
+
         match key.code {
             KeyCode::Char('j') | KeyCode::Down => {
                 if !state.data_cache.branches.is_empty() {
@@ -82,8 +115,42 @@ impl ComponentV2 for BranchListPanel {
                     AppEvent::None
                 }
             }
-            KeyCode::Enter => AppEvent::ActivatePanel,
-            KeyCode::Char('d') => AppEvent::Git(GitEvent::DiscardSelected),
+            KeyCode::Char(' ') => {
+                let Some(branch) = selected_branch() else {
+                    return AppEvent::None;
+                };
+                AppEvent::Git(GitEvent::CheckoutBranch {
+                    branch_name: branch.name.clone(),
+                    force: false,
+                })
+            }
+            KeyCode::Char('n') => {
+                let Some(branch) = selected_branch() else {
+                    return AppEvent::None;
+                };
+                AppEvent::Modal(ModalEvent::ShowBranchCreateDialog {
+                    from_branch: branch.name.clone(),
+                })
+            }
+            KeyCode::Enter => {
+                let Some(branch) = selected_branch() else {
+                    return AppEvent::None;
+                };
+                AppEvent::Git(GitEvent::LoadBranchCommits {
+                    branch_name: branch.name.clone(),
+                    limit: 100,
+                })
+            }
+            KeyCode::Char('d') => {
+                let Some(branch) = selected_branch() else {
+                    return AppEvent::None;
+                };
+                AppEvent::Modal(ModalEvent::ShowBranchDeleteMenu {
+                    local_branch: branch.name.clone(),
+                    is_head: branch.is_head,
+                    upstream: branch.upstream.clone(),
+                })
+            }
             _ => AppEvent::None,
         }
     }
@@ -101,21 +168,19 @@ mod tests {
 
     #[test]
     fn test_branch_panel_component_v2() {
-        use crate::components::component_v2::ComponentV2;
         use crate::app::events::AppEvent;
+        use crate::components::component_v2::ComponentV2;
         use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
         let mut panel = BranchListPanel::new();
         let mut state = mock_state();
 
         // Add a branch entry so navigation works
-        state.data_cache.branches = vec![
-            crate::backend::git_ops::BranchEntry {
-                name: "main".to_string(),
-                is_head: true,
-                upstream: None,
-            }
-        ];
+        state.data_cache.branches = vec![crate::backend::git_ops::BranchEntry {
+            name: "main".to_string(),
+            is_head: true,
+            upstream: None,
+        }];
 
         let key = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
         let event = panel.handle_key_event(key, &state);
@@ -153,7 +218,7 @@ mod tests {
     }
 
     #[test]
-    fn test_branch_list_checkout_event() {
+    fn test_branch_list_enter_loads_branch_commits() {
         let mut panel = BranchListPanel::new();
         let mut state = mock_state();
         state.data_cache.branches = vec![
@@ -174,12 +239,17 @@ mod tests {
         let key_enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
         let event = panel.handle_key_event(key_enter, &state);
 
-        // Should return ActivatePanel event (which triggers branch checkout or commit view)
-        assert_eq!(event, AppEvent::ActivatePanel);
+        assert_eq!(
+            event,
+            AppEvent::Git(GitEvent::LoadBranchCommits {
+                branch_name: "feature".to_string(),
+                limit: 100,
+            })
+        );
     }
 
     #[test]
-    fn test_branch_list_delete_non_current() {
+    fn test_branch_list_space_checkout_selected_branch() {
         let mut panel = BranchListPanel::new();
         let mut state = mock_state();
         state.data_cache.branches = vec![
@@ -195,35 +265,65 @@ mod tests {
             },
         ];
 
-        panel.state_mut().select(Some(1)); // Select non-current branch
+        panel.state_mut().select(Some(1)); // Select feature branch
 
-        let key_d = KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE);
-        let event = panel.handle_key_event(key_d, &state);
+        let key_space = KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE);
+        let event = panel.handle_key_event(key_space, &state);
 
-        // Should return Git event for discard (branch delete uses 'd' key)
-        assert!(matches!(event, AppEvent::Git(GitEvent::DiscardSelected)));
+        assert_eq!(
+            event,
+            AppEvent::Git(GitEvent::CheckoutBranch {
+                branch_name: "feature".to_string(),
+                force: false,
+            })
+        );
     }
 
     #[test]
-    fn test_branch_list_delete_current_branch() {
+    fn test_branch_list_n_opens_create_dialog() {
         let mut panel = BranchListPanel::new();
         let mut state = mock_state();
-        state.data_cache.branches = vec![
-            crate::backend::git_ops::BranchEntry {
-                name: "main".to_string(),
-                is_head: true,
-                upstream: None,
-            },
-        ];
+        state.data_cache.branches = vec![crate::backend::git_ops::BranchEntry {
+            name: "main".to_string(),
+            is_head: true,
+            upstream: None,
+        }];
 
         panel.state_mut().select(Some(0)); // Select current branch
+
+        let key_n = KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE);
+        let event = panel.handle_key_event(key_n, &state);
+
+        assert_eq!(
+            event,
+            AppEvent::Modal(ModalEvent::ShowBranchCreateDialog {
+                from_branch: "main".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn test_branch_list_d_opens_delete_menu_with_branch_state() {
+        let mut panel = BranchListPanel::new();
+        let mut state = mock_state();
+        state.data_cache.branches = vec![crate::backend::git_ops::BranchEntry {
+            name: "feature".to_string(),
+            is_head: false,
+            upstream: Some("refs/remotes/origin/feature".to_string()),
+        }];
+        panel.state_mut().select(Some(0));
 
         let key_d = KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE);
         let event = panel.handle_key_event(key_d, &state);
 
-        // 'd' key always returns DiscardSelected event, regardless of branch
-        // The actual logic to prevent deleting current branch is in the processor/handler
-        assert!(matches!(event, AppEvent::Git(GitEvent::DiscardSelected)));
+        assert_eq!(
+            event,
+            AppEvent::Modal(ModalEvent::ShowBranchDeleteMenu {
+                local_branch: "feature".to_string(),
+                is_head: false,
+                upstream: Some("refs/remotes/origin/feature".to_string()),
+            })
+        );
     }
 
     #[test]
@@ -239,6 +339,57 @@ mod tests {
         assert_eq!(event, AppEvent::None);
     }
 
+    #[test]
+    fn test_branch_commits_subview_delegates_navigation_to_commit_panel() {
+        let mut panel = BranchListPanel::new();
+        panel.show_branch_commits();
+
+        let mut state = mock_state();
+        state.data_cache.commits = vec![
+            crate::backend::git_ops::CommitEntry {
+                short_id: "abc1234".to_string(),
+                id: "abc123".to_string(),
+                summary: "Test commit 1".to_string(),
+                body: None,
+                author: "Author".to_string(),
+                timestamp: 1704067200,
+            },
+            crate::backend::git_ops::CommitEntry {
+                short_id: "def4567".to_string(),
+                id: "def456".to_string(),
+                summary: "Test commit 2".to_string(),
+                body: None,
+                author: "Author".to_string(),
+                timestamp: 1704153600,
+            },
+        ];
+        // Keep branches empty so list-mode handling would return None.
+
+        let key_j = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
+        let event = panel.handle_key_event(key_j, &state);
+
+        assert_eq!(event, AppEvent::SelectionChanged);
+    }
+
+    #[test]
+    fn test_branch_commits_subview_esc_exits_subview_when_not_selecting() {
+        let mut panel = BranchListPanel::new();
+        panel.show_branch_commits();
+
+        let mut state = mock_state();
+        state.data_cache.commits = vec![crate::backend::git_ops::CommitEntry {
+            short_id: "abc1234".to_string(),
+            id: "abc123".to_string(),
+            summary: "Test commit".to_string(),
+            body: None,
+            author: "Author".to_string(),
+            timestamp: 1704067200,
+        }];
+
+        let event = panel.handle_escape();
+
+        assert_eq!(event, AppEvent::ExitBranchCommitsSubview);
+    }
 
     fn mock_state() -> crate::app::AppState {
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::channel(100);
@@ -246,4 +397,3 @@ mod tests {
         crate::app::AppState::new(cmd_tx, event_rx)
     }
 }
-

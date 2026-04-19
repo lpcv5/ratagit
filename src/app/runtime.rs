@@ -4,7 +4,7 @@ use anyhow::Result;
 use crossterm::event;
 use tokio::sync::mpsc::error::TryRecvError;
 
-use super::events::AppEvent;
+use super::events::{AppEvent, ModalEvent};
 use super::processors::{git_processor::GitProcessor, modal_processor::ModalProcessor};
 use super::request_tracker::RequestTracker;
 use super::state::AppState;
@@ -76,6 +76,9 @@ impl App {
             AppEvent::SelectionChanged => {
                 // Selection changed - no action needed, just UI update
             }
+            AppEvent::ExitBranchCommitsSubview => {
+                self.exit_branch_commits_subview();
+            }
         }
     }
 
@@ -91,6 +94,15 @@ impl App {
             }
             // Handle other panels...
             _ => {}
+        }
+    }
+
+    fn exit_branch_commits_subview(&mut self) {
+        self.state.components.hide_branch_commits();
+
+        if let Some(saved_commits) = self.state.data_cache.saved_commits.take() {
+            self.state.data_cache.commits = saved_commits;
+            self.state.sync_commit_list_state();
         }
     }
 
@@ -111,8 +123,22 @@ impl App {
                 let input = event::read()?;
 
                 // If modal is active, let it handle the input first
-                if let Some(ref mut modal) = self.state.active_modal {
-                    let app_event = modal.handle_event_v2(&input);
+                if self.state.active_modal.is_some() {
+                    let app_event = {
+                        let modal = self
+                            .state
+                            .active_modal
+                            .as_mut()
+                            .expect("active_modal checked above");
+                        modal.handle_event_v2(&input)
+                    };
+                    let should_close_modal = !matches!(
+                        app_event,
+                        AppEvent::None | AppEvent::Modal(ModalEvent::Close)
+                    );
+                    if should_close_modal {
+                        self.state.active_modal = None;
+                    }
                     self.process_event(app_event);
                 } else {
                     self.handle_input_v2(input)?;
@@ -422,6 +448,35 @@ mod tests {
         let mut app = create_test_app();
         // Should not panic
         app.process_event(AppEvent::None);
+    }
+
+    #[test]
+    fn test_exit_branch_commits_subview_restores_saved_commits() {
+        let mut app = create_test_app();
+
+        app.state.data_cache.saved_commits = Some(vec![crate::backend::git_ops::CommitEntry {
+            short_id: "old1234".to_string(),
+            id: "old123".to_string(),
+            summary: "Old commit".to_string(),
+            body: None,
+            author: "Author".to_string(),
+            timestamp: 1704067200,
+        }]);
+        app.state.data_cache.commits = vec![crate::backend::git_ops::CommitEntry {
+            short_id: "new1234".to_string(),
+            id: "new123".to_string(),
+            summary: "New commit".to_string(),
+            body: None,
+            author: "Author".to_string(),
+            timestamp: 1704153600,
+        }];
+        app.state.components.show_branch_commits();
+
+        app.process_event(AppEvent::ExitBranchCommitsSubview);
+
+        assert!(app.state.data_cache.saved_commits.is_none());
+        assert_eq!(app.state.data_cache.commits.len(), 1);
+        assert_eq!(app.state.data_cache.commits[0].id, "old123");
     }
 
     #[test]
