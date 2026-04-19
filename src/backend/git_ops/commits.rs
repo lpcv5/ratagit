@@ -1,10 +1,32 @@
 use anyhow::{Context, Result};
-use git2::Sort;
+use git2::BranchType;
+use std::collections::HashSet;
 use std::process::Command;
 
 use super::repo::GitRepo;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[allow(dead_code)] // Reserved for rebasing/cherry-pick/conflict states parity
+pub enum CommitStatus {
+    #[default]
+    None,
+    Unpushed,
+    Pushed,
+    Merged,
+    Rebasing,
+    CherryPickingOrReverting,
+    Conflicted,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CommitDivergence {
+    #[default]
+    None,
+    Left,
+    Right,
+}
+
+#[derive(Debug, Clone, Default)]
 pub struct CommitEntry {
     pub short_id: String,
     pub id: String,
@@ -12,15 +34,29 @@ pub struct CommitEntry {
     pub body: Option<String>,
     #[allow(dead_code)] // Used in tests
     pub author: String,
+    #[allow(dead_code)] // Used by commit panel author column
+    pub author_name: String,
+    #[allow(dead_code)] // Reserved for future use
+    pub author_email: String,
     #[allow(dead_code)] // Reserved for future use
     pub timestamp: i64,
+    #[allow(dead_code)] // Reserved for future bisect/todo support
+    pub parents: Vec<String>,
+    #[allow(dead_code)] // Reserved for future divergence view
+    pub divergence: CommitDivergence,
+    #[allow(dead_code)] // Decorations from git log (%D)
+    pub decorations: String,
+    #[allow(dead_code)] // Parsed tags from decorations
+    pub tags: Vec<String>,
+    #[allow(dead_code)] // Commit status used for hash coloring
+    pub status: CommitStatus,
+    pub graph_cells: Vec<crate::backend::git_ops::GraphCell>,
+    #[allow(dead_code)] // Local branch head marker candidate
+    pub is_branch_head: bool,
 }
 
 pub fn get_commits(repo: &GitRepo, limit: usize) -> Result<Vec<CommitEntry>> {
-    let mut walk = repo.repo.revwalk()?;
-    walk.set_sorting(Sort::TIME)?;
-    walk.push_head()?;
-    collect_commits(repo, &mut walk, limit)
+    load_commits(repo, "HEAD", limit, current_branch_name(repo)?)
 }
 
 pub fn get_commits_for_branch(
@@ -28,45 +64,255 @@ pub fn get_commits_for_branch(
     branch_name: &str,
     limit: usize,
 ) -> Result<Vec<CommitEntry>> {
-    let branch = repo
-        .repo
-        .find_branch(branch_name, git2::BranchType::Local)?;
-    let commit = branch.get().peel_to_commit()?;
-    let mut walk = repo.repo.revwalk()?;
-    walk.set_sorting(Sort::TIME)?;
-    walk.push(commit.id())?;
-    collect_commits(repo, &mut walk, limit)
+    let ref_spec = format!("refs/heads/{branch_name}");
+    load_commits(repo, &ref_spec, limit, Some(branch_name.to_string()))
 }
 
-fn collect_commits(
+fn load_commits(
     repo: &GitRepo,
-    walk: &mut git2::Revwalk,
+    ref_spec: &str,
     limit: usize,
+    current_branch_name: Option<String>,
 ) -> Result<Vec<CommitEntry>> {
-    let mut commits = Vec::new();
-    for oid_result in walk.take(limit) {
-        let oid = oid_result?;
-        let commit = repo.repo.find_commit(oid)?;
-        let summary = commit.summary().unwrap_or("(no summary)").to_string();
-        let body = commit.body().map(str::trim).filter(|body| !body.is_empty());
-        let author = commit.author();
-        let author_name = author.name().unwrap_or("Unknown");
-        let author_email = author.email().unwrap_or("unknown@example.com");
-        let id = oid.to_string();
-        commits.push(CommitEntry {
-            short_id: short_oid(&id),
-            id,
-            summary,
-            body: body.map(str::to_string),
-            author: format!("{author_name} <{author_email}>"),
-            timestamp: commit.time().seconds(),
-        });
+    let workdir = repo
+        .repo
+        .workdir()
+        .context("Repository has no working directory")?;
+    let log_output = git_log_output(workdir, ref_spec, limit)?;
+    let main_branches = collect_main_branches(repo);
+    let branch_heads = collect_visualized_branch_heads(repo, current_branch_name, &main_branches);
+    let unmerged_hashes = if main_branches.is_empty() {
+        None
+    } else {
+        Some(git_rev_list_set(workdir, ref_spec, &main_branches))
+    };
+    let unpushed_hashes = upstream_ref(repo, ref_spec)
+        .map(|upstream| {
+            let mut excludes = Vec::with_capacity(main_branches.len() + 1);
+            excludes.push(upstream);
+            excludes.extend(main_branches.iter().cloned());
+            git_rev_list_set(workdir, ref_spec, &excludes)
+        })
+        .filter(|set| !set.is_empty());
+
+    let mut commits = parse_commit_records(&log_output)?;
+    let graph = super::commit_graph::render_commit_graph(&commits);
+    for (commit, cells) in commits.iter_mut().zip(graph.into_iter()) {
+        commit.graph_cells = cells;
+        commit.is_branch_head = branch_heads.contains(&commit.id);
+        commit.status = classify_commit_status(
+            &commit.id,
+            unmerged_hashes.as_ref(),
+            unpushed_hashes.as_ref(),
+        );
     }
+
     Ok(commits)
 }
 
 fn short_oid(oid: &str) -> String {
     oid.chars().take(8).collect()
+}
+
+fn current_branch_name(repo: &GitRepo) -> Result<Option<String>> {
+    let head = repo.repo.head()?;
+    if !head.is_branch() {
+        return Ok(None);
+    }
+    Ok(head.shorthand().map(str::to_string))
+}
+
+fn collect_main_branches(repo: &GitRepo) -> Vec<String> {
+    ["main", "master"]
+        .into_iter()
+        .filter(|branch| {
+            let full_ref = format!("refs/heads/{branch}");
+            repo.repo.find_reference(&full_ref).is_ok()
+        })
+        .map(|branch| format!("refs/heads/{branch}"))
+        .collect()
+}
+
+fn collect_visualized_branch_heads(
+    repo: &GitRepo,
+    current_branch_name: Option<String>,
+    main_branches: &[String],
+) -> HashSet<String> {
+    let current = current_branch_name.unwrap_or_default();
+    let main_names: HashSet<String> = main_branches
+        .iter()
+        .filter_map(|full_ref| full_ref.rsplit('/').next().map(str::to_string))
+        .collect();
+
+    let mut heads = HashSet::new();
+    if let Ok(branches) = repo.repo.branches(Some(BranchType::Local)) {
+        for branch_result in branches {
+            let Ok((branch, _)) = branch_result else {
+                continue;
+            };
+            let Ok(Some(name)) = branch.name() else {
+                continue;
+            };
+            if name == current || main_names.contains(name) {
+                continue;
+            }
+            if let Some(target) = branch.get().target() {
+                heads.insert(target.to_string());
+            }
+        }
+    }
+    heads
+}
+
+fn upstream_ref(repo: &GitRepo, ref_spec: &str) -> Option<String> {
+    let branch_name = if ref_spec == "HEAD" {
+        current_branch_name(repo).ok().flatten()?
+    } else {
+        ref_spec.strip_prefix("refs/heads/")?.to_string()
+    };
+    let branch = repo
+        .repo
+        .find_branch(&branch_name, BranchType::Local)
+        .ok()?;
+    let upstream = branch.upstream().ok()?;
+    upstream.name().ok().flatten().map(str::to_string)
+}
+
+fn git_log_output(workdir: &std::path::Path, ref_spec: &str, limit: usize) -> Result<String> {
+    // 0x1f (US) between fields, 0x1e (RS) between records.
+    let format = "%x1f%H%x1f%at%x1f%aN%x1f%ae%x1f%P%x1f%m%x1f%D%x1f%s%x1f%b%x1e";
+
+    let output = Command::new("git")
+        .current_dir(workdir)
+        .arg("log")
+        .arg(ref_spec)
+        .arg("--date-order")
+        .arg(format!("--max-count={limit}"))
+        .arg("--abbrev=40")
+        .arg("--no-show-signature")
+        .arg(format!("--pretty=format:{format}"))
+        .output()
+        .context("failed to execute git log for commits panel")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        anyhow::bail!("git log failed: {stderr}");
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+fn git_rev_list_set(
+    workdir: &std::path::Path,
+    include_ref: &str,
+    exclude_refs: &[String],
+) -> HashSet<String> {
+    let mut command = Command::new("git");
+    command
+        .current_dir(workdir)
+        .arg("rev-list")
+        .arg(include_ref);
+    for exclude_ref in exclude_refs {
+        command.arg(format!("^{exclude_ref}"));
+    }
+
+    let Ok(output) = command.output() else {
+        return HashSet::new();
+    };
+    if !output.status.success() {
+        return HashSet::new();
+    }
+
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+fn parse_commit_records(raw: &str) -> Result<Vec<CommitEntry>> {
+    let mut commits = Vec::new();
+    for record in raw.split('\u{1e}') {
+        if record.trim().is_empty() {
+            continue;
+        }
+
+        let trimmed = record.trim_start_matches('\n').trim_start_matches('\u{1f}');
+        let fields: Vec<&str> = trimmed.split('\u{1f}').collect();
+        if fields.len() < 9 {
+            anyhow::bail!("Malformed git log record for commits panel");
+        }
+
+        let id = fields[0].to_string();
+        let timestamp = fields[1].parse::<i64>().unwrap_or_default();
+        let author_name = fields[2].to_string();
+        let author_email = fields[3].to_string();
+        let parents = parse_parents(fields[4]);
+        let divergence = parse_divergence(fields[5]);
+        let decorations = fields[6].trim().to_string();
+        let summary = if fields[7].trim().is_empty() {
+            "(no summary)".to_string()
+        } else {
+            fields[7].to_string()
+        };
+        let body = fields[8].trim();
+        let tags = parse_tags(&decorations);
+
+        commits.push(CommitEntry {
+            short_id: short_oid(&id),
+            id,
+            summary,
+            body: (!body.is_empty()).then(|| body.to_string()),
+            author: format!("{author_name} <{author_email}>"),
+            author_name,
+            author_email,
+            timestamp,
+            parents,
+            divergence,
+            decorations,
+            tags,
+            status: CommitStatus::None,
+            graph_cells: vec![],
+            is_branch_head: false,
+        });
+    }
+
+    Ok(commits)
+}
+
+fn parse_parents(raw: &str) -> Vec<String> {
+    raw.split_whitespace().map(str::to_string).collect()
+}
+
+fn parse_divergence(raw: &str) -> CommitDivergence {
+    match raw {
+        "<" => CommitDivergence::Left,
+        ">" => CommitDivergence::Right,
+        _ => CommitDivergence::None,
+    }
+}
+
+fn parse_tags(decorations: &str) -> Vec<String> {
+    decorations
+        .split(',')
+        .filter_map(|part| part.trim().strip_prefix("tag: ").map(str::to_string))
+        .collect()
+}
+
+fn classify_commit_status(
+    commit_hash: &str,
+    unmerged_hashes: Option<&HashSet<String>>,
+    unpushed_hashes: Option<&HashSet<String>>,
+) -> CommitStatus {
+    let is_unmerged = unmerged_hashes.is_none_or(|set| set.contains(commit_hash));
+    if !is_unmerged {
+        return CommitStatus::Merged;
+    }
+    if unpushed_hashes.is_some_and(|set| set.contains(commit_hash)) {
+        return CommitStatus::Unpushed;
+    }
+    CommitStatus::Pushed
 }
 
 pub fn get_commit_message(repo: &GitRepo, commit_id: &str) -> Result<String> {

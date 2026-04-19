@@ -413,7 +413,7 @@ mod tests {
             decorations: String::new(),
             tags: vec![],
             status: CommitStatus::None,
-            graph_prefix: String::new(),
+            graph_cells: vec![],
             is_branch_head: false,
         }
     }

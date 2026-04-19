@@ -1,15 +1,32 @@
 use arboard::Clipboard;
 use ratatui::layout::Rect;
 use ratatui::widgets::ListState;
-use std::collections::HashSet;
+use std::sync::{Arc, Mutex};
 
 use crate::app::events::AppEvent;
 use crate::app::events::GitEvent;
 use crate::app::AppState;
 use crate::app::CachedData;
-use crate::backend::git_ops::CommitEntry;
+use crate::backend::git_ops::{CommitDivergence, CommitEntry, CommitStatus};
 use crate::components::component_v2::ComponentV2;
 use crate::components::core::{MultiSelectState, MultiSelectableList, TreePanel};
+
+#[derive(Debug, Clone, Default)]
+pub struct SharedCommitClipboard {
+    inner: Arc<Mutex<Vec<String>>>,
+}
+
+impl SharedCommitClipboard {
+    fn with_ids<R>(&self, f: impl FnOnce(&Vec<String>) -> R) -> R {
+        let guard = self.inner.lock().expect("shared clipboard poisoned");
+        f(&guard)
+    }
+
+    fn with_ids_mut<R>(&self, f: impl FnOnce(&mut Vec<String>) -> R) -> R {
+        let mut guard = self.inner.lock().expect("shared clipboard poisoned");
+        f(&mut guard)
+    }
+}
 
 enum CommitMode {
     List,
@@ -40,19 +57,23 @@ pub struct CommitPanel {
     state: ListState,
     mode: CommitMode,
     list_multi_select: MultiSelectState<String>,
-    copied_commit_ids: Vec<String>,
+    copied_commit_ids: SharedCommitClipboard,
 }
 
 #[allow(dead_code)] // Methods reserved for future use
 impl CommitPanel {
     pub fn new() -> Self {
+        Self::with_shared_clipboard(SharedCommitClipboard::default())
+    }
+
+    pub fn with_shared_clipboard(copied_commit_ids: SharedCommitClipboard) -> Self {
         let mut state = ListState::default();
         state.select(Some(0));
         Self {
             state,
             mode: CommitMode::List,
             list_multi_select: MultiSelectState::default(),
-            copied_commit_ids: Vec::new(),
+            copied_commit_ids,
         }
     }
 
@@ -139,15 +160,6 @@ impl CommitPanel {
         self.exit_multi_select();
     }
 
-    pub fn prune_copied_commits(&mut self, commits: &[CommitEntry]) {
-        if self.copied_commit_ids.is_empty() {
-            return;
-        }
-        let current_ids: HashSet<&str> = commits.iter().map(|commit| commit.id.as_str()).collect();
-        self.copied_commit_ids
-            .retain(|id| current_ids.contains(id.as_str()));
-    }
-
     pub fn is_list_multi_select_active(&self) -> bool {
         self.is_multi_active()
     }
@@ -201,49 +213,47 @@ impl CommitPanel {
         if selected_ids.is_empty() {
             return false;
         }
-
-        let all_selected_already_copied = selected_ids.iter().all(|id| {
-            self.copied_commit_ids
+        self.copied_commit_ids.with_ids_mut(|copied| {
+            let all_selected_already_copied = selected_ids
                 .iter()
-                .any(|copied_id| copied_id == id)
-        });
-
-        if all_selected_already_copied {
-            self.copied_commit_ids
-                .retain(|copied_id| !selected_ids.iter().any(|id| id == copied_id));
-            return true;
-        }
-
-        let mut changed = false;
-        for commit_id in selected_ids {
-            if !self.copied_commit_ids.iter().any(|id| id == &commit_id) {
-                self.copied_commit_ids.push(commit_id);
-                changed = true;
+                .all(|id| copied.iter().any(|copied_id| copied_id == id));
+            if all_selected_already_copied {
+                copied.retain(|copied_id| !selected_ids.iter().any(|id| id == copied_id));
+                return true;
             }
-        }
-        changed
+
+            let mut changed = false;
+            for commit_id in selected_ids {
+                if !copied.iter().any(|id| id == &commit_id) {
+                    copied.push(commit_id);
+                    changed = true;
+                }
+            }
+            changed
+        })
     }
 
     fn reset_copied_commits(&mut self) -> bool {
-        if self.copied_commit_ids.is_empty() {
-            return false;
-        }
-        self.copied_commit_ids.clear();
-        true
+        self.copied_commit_ids.with_ids_mut(|copied| {
+            if copied.is_empty() {
+                return false;
+            }
+            copied.clear();
+            true
+        })
     }
 
     fn copied_count(&self) -> usize {
-        self.copied_commit_ids.len()
+        self.copied_commit_ids.with_ids(Vec::len)
     }
 
     fn has_copied_commit(&self, commit_id: &str) -> bool {
         self.copied_commit_ids
-            .iter()
-            .any(|copied_id| copied_id == commit_id)
+            .with_ids(|copied| copied.iter().any(|copied_id| copied_id == commit_id))
     }
 
     fn copied_commits_for_paste(&self) -> Vec<String> {
-        self.copied_commit_ids.clone()
+        self.copied_commit_ids.with_ids(|copied| copied.clone())
     }
 }
 
@@ -265,6 +275,131 @@ impl MultiSelectableList for CommitPanel {
     }
 }
 
+#[derive(Debug)]
+struct CommitRowRenderData {
+    columns: [String; 6],
+    hash_style: ratatui::style::Style,
+    author_style: ratatui::style::Style,
+    graph_prefix: String,
+    branch_head_marker: bool,
+    tags: String,
+    summary: String,
+}
+
+fn author_with_length(author_name: &str, length: usize) -> String {
+    if length < 2 {
+        return String::new();
+    }
+    if length == 2 {
+        let parts: Vec<&str> = author_name.split_whitespace().collect();
+        return match parts.as_slice() {
+            [] => String::new(),
+            [single] => single.chars().take(2).collect(),
+            [first, second, ..] => {
+                let first_char = first.chars().next().unwrap_or_default();
+                let second_char = second.chars().next().unwrap_or_default();
+                format!("{first_char}{second_char}")
+            }
+        };
+    }
+
+    let mut result: String = author_name.chars().take(length).collect();
+    let padding = length.saturating_sub(result.chars().count());
+    if padding > 0 {
+        result.push_str(&" ".repeat(padding));
+    }
+    result
+}
+
+fn text_width(text: &str) -> usize {
+    text.chars().count()
+}
+
+fn right_pad(text: &str, width: usize) -> String {
+    let current = text_width(text);
+    if current >= width {
+        return text.to_string();
+    }
+    let mut result = String::with_capacity(width);
+    result.push_str(text);
+    result.push_str(&" ".repeat(width - current));
+    result
+}
+
+fn visible_columns(rows: &[CommitRowRenderData]) -> Vec<usize> {
+    (0..6)
+        .filter(|idx| rows.iter().any(|row| !row.columns[*idx].is_empty()))
+        .collect()
+}
+
+fn column_widths(rows: &[CommitRowRenderData], columns: &[usize]) -> [usize; 6] {
+    let mut widths = [0_usize; 6];
+    for column in columns {
+        widths[*column] = rows
+            .iter()
+            .map(|row| text_width(&row.columns[*column]))
+            .max()
+            .unwrap_or(0);
+    }
+    widths
+}
+
+fn commit_hash_style(commit: &CommitEntry, copied: bool) -> ratatui::style::Style {
+    use ratatui::style::Color;
+
+    if copied {
+        return ratatui::style::Style::default().fg(Color::Blue);
+    }
+    match commit.status {
+        CommitStatus::Unpushed => ratatui::style::Style::default().fg(Color::Red),
+        CommitStatus::Pushed => ratatui::style::Style::default().fg(Color::Yellow),
+        CommitStatus::Merged => ratatui::style::Style::default().fg(Color::Green),
+        CommitStatus::Rebasing
+        | CommitStatus::CherryPickingOrReverting
+        | CommitStatus::Conflicted => ratatui::style::Style::default().fg(Color::Blue),
+        CommitStatus::None => ratatui::style::Style::default(),
+    }
+}
+
+fn row_columns(commit: &CommitEntry, copied: bool) -> CommitRowRenderData {
+    use crate::components::core::accent_secondary_color;
+    use ratatui::style::Style;
+
+    let divergence = match commit.divergence {
+        CommitDivergence::Left => "↑".to_string(),
+        CommitDivergence::Right => "↓".to_string(),
+        CommitDivergence::None => String::new(),
+    };
+    let hash_style = commit_hash_style(commit, copied);
+    let author_name = if commit.author_name.is_empty() {
+        commit.author.as_str()
+    } else {
+        commit.author_name.as_str()
+    };
+    let author = author_with_length(author_name, 2);
+
+    CommitRowRenderData {
+        columns: [
+            divergence,
+            commit.short_id.clone(),
+            String::new(),
+            String::new(),
+            String::new(),
+            author,
+        ],
+        hash_style,
+        author_style: Style::default().fg(accent_secondary_color()),
+        graph_prefix: String::new(), // TODO: Task 5 will render graph_cells
+        branch_head_marker: commit.is_branch_head && commit.status != CommitStatus::Merged,
+        tags: if commit.tags.is_empty() {
+            String::new()
+        } else {
+            format!("{} ", commit.tags.join(" "))
+        },
+        summary: commit.summary.clone(),
+    }
+}
+
 impl CommitPanel {
     /// Temporary bridge method for old renderer (will be removed when renderer migrates to ComponentV2)
     pub fn render(
@@ -275,17 +410,15 @@ impl CommitPanel {
         data: &CachedData,
     ) {
         use crate::components::core::{
-            accent_primary_color, accent_secondary_color, multi_select_row_style, muted_text_style,
-            panel_block, SelectableList, LIST_HIGHLIGHT_SYMBOL,
+            multi_select_row_style, muted_text_style, panel_block, theme, SelectableList,
+            LIST_HIGHLIGHT_SYMBOL,
         };
-        use ratatui::style::Style;
+        use ratatui::style::{Modifier, Style};
         use ratatui::text::{Line, Span};
         use ratatui::widgets::{ListItem, Paragraph};
 
         match &mut self.mode {
             CommitMode::List => {
-                self.prune_copied_commits(&data.commits);
-
                 if data.commits.is_empty() {
                     SelectableList::render_empty(frame, area, "Commits", is_focused);
                     return;
@@ -299,25 +432,53 @@ impl CommitPanel {
                 if self.copied_count() > 0 {
                     title.push_str(&format!(" · COPIED:{}", self.copied_count()));
                 }
+
+                let rows: Vec<CommitRowRenderData> = data
+                    .commits
+                    .iter()
+                    .map(|commit| row_columns(commit, self.has_copied_commit(&commit.id)))
+                    .collect();
+                let visible = visible_columns(&rows);
+                let widths = column_widths(&rows, &visible);
+                let palette = theme();
+
                 let items: Vec<ListItem<'_>> = data
                     .commits
                     .iter()
-                    .map(|commit| {
-                        let mut item = ListItem::new(Line::from(vec![
-                            Span::styled(
-                                if self.has_copied_commit(&commit.id) {
-                                    "C "
-                                } else {
-                                    "  "
-                                },
-                                Style::default().fg(accent_secondary_color()),
-                            ),
-                            Span::styled(
-                                format!("{} ", commit.short_id),
-                                Style::default().fg(accent_primary_color()),
-                            ),
-                            Span::raw(commit.summary.clone()),
-                        ]));
+                    .zip(rows.iter())
+                    .map(|(commit, row)| {
+                        let mut spans: Vec<Span<'_>> = Vec::new();
+                        for column in &visible {
+                            let text = right_pad(&row.columns[*column], widths[*column]);
+                            let style = match *column {
+                                0 | 1 => row.hash_style,
+                                5 => row.author_style,
+                                _ => Style::default(),
+                            };
+                            spans.push(Span::styled(format!("{text} "), style));
+                        }
+                        if !row.graph_prefix.is_empty() {
+                            spans.push(Span::styled(row.graph_prefix.clone(), muted_text_style()));
+                        }
+                        if row.branch_head_marker {
+                            spans.push(Span::styled(
+                                "* ",
+                                Style::default()
+                                    .fg(palette.diff_header)
+                                    .add_modifier(Modifier::BOLD),
+                            ));
+                        }
+                        if !row.tags.is_empty() {
+                            spans.push(Span::styled(
+                                row.tags.clone(),
+                                Style::default()
+                                    .fg(palette.accent_primary)
+                                    .add_modifier(Modifier::BOLD),
+                            ));
+                        }
+                        spans.push(Span::raw(row.summary.clone()));
+
+                        let mut item = ListItem::new(Line::from(spans));
                         if multi_active && self.is_multi_selected_key(&commit.id) {
                             item = item.style(multi_select_row_style());
                         }
@@ -530,6 +691,7 @@ mod tests {
                 body: None,
                 author: "Author".to_string(),
                 timestamp: 1704067200,
+                ..Default::default()
             },
             CommitEntry {
                 short_id: "def4567".to_string(),
@@ -538,6 +700,7 @@ mod tests {
                 body: None,
                 author: "Author".to_string(),
                 timestamp: 1704153600,
+                ..Default::default()
             },
         ];
 
@@ -570,6 +733,7 @@ mod tests {
             body: None,
             author: "Author".to_string(),
             timestamp: 1704067200,
+            ..Default::default()
         }];
 
         let key_v = KeyEvent::new(KeyCode::Char('v'), KeyModifiers::NONE);
@@ -596,6 +760,7 @@ mod tests {
             body: None,
             author: "Author".to_string(),
             timestamp: 1704067200,
+            ..Default::default()
         }];
 
         let key_v = KeyEvent::new(KeyCode::Char('v'), KeyModifiers::NONE);
@@ -621,6 +786,7 @@ mod tests {
             body: None,
             author: "Author".to_string(),
             timestamp: 1704067200,
+            ..Default::default()
         }];
 
         let tree = TreePanel::new(
@@ -748,6 +914,7 @@ mod tests {
             body: None,
             author: "Test Author".to_string(),
             timestamp: 1234567890,
+            ..Default::default()
         }];
         panel.state.select(Some(0));
 
@@ -771,6 +938,7 @@ mod tests {
             author: "Author".to_string(),
             timestamp: 1234567890,
             body: None,
+            ..Default::default()
         }];
         panel.state.select(Some(0));
 
@@ -814,6 +982,7 @@ mod tests {
             body: None,
             author: "Test Author".to_string(),
             timestamp: 1234567890,
+            ..Default::default()
         }];
         panel.state.select(Some(0));
 
@@ -841,6 +1010,7 @@ mod tests {
             body: None,
             author: "Test Author".to_string(),
             timestamp: 1234567890,
+            ..Default::default()
         }];
         panel.state.select(Some(0));
 
@@ -870,6 +1040,7 @@ mod tests {
             body: None,
             author: "Test Author".to_string(),
             timestamp: 1234567890,
+            ..Default::default()
         }];
         panel.state.select(Some(0));
 
@@ -896,6 +1067,7 @@ mod tests {
             body: None,
             author: "Test Author".to_string(),
             timestamp: 1234567890,
+            ..Default::default()
         }];
         panel.state.select(Some(0));
 
