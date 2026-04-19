@@ -78,15 +78,24 @@ fn traverse(from: i16, to: i16, traversed: &mut HashSet<i16>, taken: &mut HashSe
 }
 
 fn next_available(exclude1: &HashSet<i16>, exclude2: &HashSet<i16>) -> i16 {
-    let mut i = 0i16;
-    loop {
+    for i in 0..i16::MAX {
         if !exclude1.contains(&i) && !exclude2.contains(&i) {
             return i;
         }
-        i += 1;
     }
+    panic!("No available position found (graph too wide - exceeded {} branches)", i16::MAX);
 }
 
+/// Computes the next set of pipes for a commit.
+///
+/// Algorithm phases:
+/// 1. Determine commit position (from incoming pipe or new rightmost)
+/// 2. Add STARTS pipe for first parent
+/// 3. Add TERMINATES pipes (incoming pipes ending at this commit)
+/// 4. Add CONTINUES pipes with to_pos < pos (moving right to avoid conflicts)
+/// 5. Add additional STARTS pipes for merge parents (2nd+ parents)
+/// 6. Add CONTINUES pipes with to_pos > pos (potentially moving left)
+/// 7. Sort by to_pos, then by kind priority
 fn get_next_pipes(prev_pipes: &[Pipe], commit: &CommitEntry, color_idx: u8) -> Vec<Pipe> {
     let max_pos = prev_pipes.iter().map(|p| p.to_pos).max().unwrap_or(-1);
 
@@ -115,6 +124,9 @@ fn get_next_pipes(prev_pipes: &[Pipe], commit: &CommitEntry, color_idx: u8) -> V
         .map(|p| p.to_pos)
         .collect();
 
+    // Reuse empty set to avoid repeated allocations
+    let empty_set = HashSet::new();
+
     // STARTS pipe for first parent
     let to_hash = commit.parents.first().cloned().unwrap_or_default();
     new_pipes.push(Pipe {
@@ -138,7 +150,7 @@ fn get_next_pipes(prev_pipes: &[Pipe], commit: &CommitEntry, color_idx: u8) -> V
     // CONTINUES pipes with to_pos < pos
     for pipe in &current {
         if pipe.to_hash != commit.id && pipe.to_pos < pos {
-            let avail = next_available(&traversed, &HashSet::new());
+            let avail = next_available(&traversed, &empty_set);
             new_pipes.push(Pipe {
                 from_pos: pipe.to_pos, to_pos: avail,
                 from_hash: pipe.from_hash.clone(), to_hash: pipe.to_hash.clone(),
