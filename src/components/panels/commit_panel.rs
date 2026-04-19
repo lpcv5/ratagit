@@ -280,7 +280,7 @@ struct CommitRowRenderData {
     columns: [String; 6],
     hash_style: ratatui::style::Style,
     author_style: ratatui::style::Style,
-    graph_prefix: String,
+    graph_cells: Vec<crate::backend::git_ops::GraphCell>,
     branch_head_marker: bool,
     tags: String,
     summary: String,
@@ -361,6 +361,22 @@ fn commit_hash_style(commit: &CommitEntry, copied: bool) -> ratatui::style::Styl
     }
 }
 
+fn graph_cell_style(color_idx: u8) -> ratatui::style::Style {
+    use ratatui::style::Color;
+    let color = match color_idx % 8 {
+        0 => Color::DarkGray,
+        1 => Color::Cyan,
+        2 => Color::Yellow,
+        3 => Color::Green,
+        4 => Color::Magenta,
+        5 => Color::Blue,
+        6 => Color::Red,
+        7 => Color::White,
+        _ => Color::DarkGray,
+    };
+    ratatui::style::Style::default().fg(color)
+}
+
 fn row_columns(commit: &CommitEntry, copied: bool) -> CommitRowRenderData {
     use crate::components::core::accent_secondary_color;
     use ratatui::style::Style;
@@ -389,7 +405,7 @@ fn row_columns(commit: &CommitEntry, copied: bool) -> CommitRowRenderData {
         ],
         hash_style,
         author_style: Style::default().fg(accent_secondary_color()),
-        graph_prefix: String::new(), // TODO: Task 5 will render graph_cells
+        graph_cells: commit.graph_cells.clone(),
         branch_head_marker: commit.is_branch_head && commit.status != CommitStatus::Merged,
         tags: if commit.tags.is_empty() {
             String::new()
@@ -457,8 +473,11 @@ impl CommitPanel {
                             };
                             spans.push(Span::styled(format!("{text} "), style));
                         }
-                        if !row.graph_prefix.is_empty() {
-                            spans.push(Span::styled(row.graph_prefix.clone(), muted_text_style()));
+                        for cell in &row.graph_cells {
+                            spans.push(Span::styled(
+                                cell.chars.clone(),
+                                graph_cell_style(cell.color_idx),
+                            ));
                         }
                         if row.branch_head_marker {
                             spans.push(Span::styled(
