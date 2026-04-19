@@ -449,6 +449,27 @@ mod tests {
         assert_eq!(panel.mode_view(), CommitModeView::List);
     }
 
+    #[test]
+    fn test_enter_key_activates_files() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let mut panel = CommitPanel::new();
+        let mut state = mock_state();
+        state.data_cache.commits = vec![CommitEntry {
+            short_id: "abc1234".to_string(),
+            id: "abc123".to_string(),
+            summary: "Test commit".to_string(),
+            body: None,
+            author: "Author".to_string(),
+            timestamp: 1704067200,
+        }];
+
+        let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        let event = panel.handle_key_event(key, &state);
+
+        assert_eq!(event, AppEvent::ActivatePanel);
+    }
+
     fn mock_state() -> AppState {
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::channel(100);
         let (_event_tx, event_rx) = tokio::sync::mpsc::channel(100);
