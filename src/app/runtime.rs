@@ -84,13 +84,53 @@ impl App {
 
     fn handle_activate_panel(&mut self) {
         match self.state.ui_state.active_panel {
+            Panel::Commits => {
+                let selected_commit = self
+                    .state
+                    .components
+                    .commit_panel
+                    .selected_commit(&self.state.data_cache.commits)
+                    .map(|commit| (commit.id.clone(), commit.summary.clone()));
+
+                if let Some((commit_id, summary)) = selected_commit {
+                    self.state
+                        .components
+                        .commit_panel
+                        .start_loading(commit_id.clone(), summary);
+                    self.send_tracked_command(crate::backend::BackendCommand::GetCommitFiles {
+                        commit_id,
+                    });
+                } else {
+                    self.state.push_log("No commit selected".to_string());
+                }
+            }
+            Panel::Branches => {
+                let selected_commit = self
+                    .state
+                    .components
+                    .branch_list_panel
+                    .selected_commit_in_subview(&self.state.data_cache.commits)
+                    .map(|commit| (commit.id.clone(), commit.summary.clone()));
+
+                if let Some((commit_id, summary)) = selected_commit {
+                    if self
+                        .state
+                        .components
+                        .branch_list_panel
+                        .subview_start_loading(commit_id.clone(), summary)
+                    {
+                        self.send_tracked_command(crate::backend::BackendCommand::GetCommitFiles {
+                            commit_id,
+                        });
+                    }
+                } else {
+                    // Checkout selected branch
+                    // (implementation depends on your checkout logic)
+                }
+            }
             Panel::Files => {
                 // Show diff for selected file
                 // (implementation depends on your diff logic)
-            }
-            Panel::Branches => {
-                // Checkout selected branch
-                // (implementation depends on your checkout logic)
             }
             // Handle other panels...
             _ => {}
@@ -300,7 +340,15 @@ impl App {
             FrontendEvent::CommitFilesLoaded {
                 commit_id, files, ..
             } => {
-                if self.state.components.commit_pending_commit_id() != Some(commit_id.as_str()) {
+                let matches_commits_panel =
+                    self.state.components.commit_pending_commit_id() == Some(commit_id.as_str());
+                let matches_branch_subview = self
+                    .state
+                    .components
+                    .branch_list_panel
+                    .subview_pending_commit_id()
+                    == Some(commit_id.as_str());
+                if !matches_commits_panel && !matches_branch_subview {
                     self.state.push_log(format!(
                         "Ignored stale commit files response for {}",
                         short_commit_id(&commit_id)
@@ -328,18 +376,35 @@ impl App {
                     crate::components::core::GitFileStatus,
                 > = files.iter().cloned().collect();
                 let tree_nodes = build_tree_from_paths(&paths, Some(&status_map));
-                let tree_panel = crate::components::core::TreePanel::new(
-                    format!("Files · {}", &summary),
-                    tree_nodes,
-                    false,
-                );
-                self.state.components.commit_panel.set_files_tree(
-                    commit_id.clone(),
-                    summary,
-                    tree_panel,
-                );
+                if matches_commits_panel {
+                    let tree_panel = crate::components::core::TreePanel::new(
+                        format!("Files · {}", &summary),
+                        tree_nodes.clone(),
+                        false,
+                    );
+                    self.state.components.commit_panel.set_files_tree(
+                        commit_id.clone(),
+                        summary.clone(),
+                        tree_panel,
+                    );
+                }
 
-                if self.state.ui_state.active_panel == Panel::Commits {
+                if matches_branch_subview {
+                    let tree_panel = crate::components::core::TreePanel::new(
+                        format!("Files · {}", &summary),
+                        tree_nodes,
+                        false,
+                    );
+                    self.state
+                        .components
+                        .branch_list_panel
+                        .subview_set_files_tree(commit_id.clone(), summary, tree_panel);
+                }
+
+                if matches!(
+                    self.state.ui_state.active_panel,
+                    Panel::Commits | Panel::Branches
+                ) {
                     self.update_main_view_for_active_panel()?;
                 }
             }
@@ -409,12 +474,19 @@ mod tests {
     use super::*;
     use crate::app::events::{AppEvent, GitEvent, ModalEvent};
     use crate::app::Panel;
+    use crate::backend::BackendCommand;
     use tokio::sync::mpsc;
 
     fn create_test_app() -> App {
         let (cmd_tx, _cmd_rx) = mpsc::channel(100);
         let (_event_tx, event_rx) = mpsc::channel(100);
         App::new(cmd_tx, event_rx)
+    }
+
+    fn create_test_app_with_cmd_rx() -> (App, mpsc::Receiver<crate::backend::CommandEnvelope>) {
+        let (cmd_tx, cmd_rx) = mpsc::channel(100);
+        let (_event_tx, event_rx) = mpsc::channel(100);
+        (App::new(cmd_tx, event_rx), cmd_rx)
     }
 
     #[test]
@@ -448,6 +520,122 @@ mod tests {
         let mut app = create_test_app();
         // Should not panic
         app.process_event(AppEvent::None);
+    }
+
+    #[test]
+    fn test_activate_panel_commits_starts_loading_and_requests_commit_files() {
+        let (mut app, mut cmd_rx) = create_test_app_with_cmd_rx();
+        app.state.ui_state.active_panel = Panel::Commits;
+        app.state.data_cache.commits = vec![crate::backend::git_ops::CommitEntry {
+            short_id: "abc1234".to_string(),
+            id: "abc123def456".to_string(),
+            summary: "Test commit".to_string(),
+            body: None,
+            author: "Author".to_string(),
+            timestamp: 1704067200,
+        }];
+        app.state.sync_commit_list_state();
+
+        app.process_event(AppEvent::ActivatePanel);
+
+        let envelope = cmd_rx.try_recv().expect("expected GetCommitFiles command");
+        match envelope.command {
+            BackendCommand::GetCommitFiles { commit_id } => {
+                assert_eq!(commit_id, "abc123def456");
+            }
+            other => panic!("expected GetCommitFiles command, got {other:?}"),
+        }
+        assert_eq!(
+            app.state.components.commit_pending_commit_id(),
+            Some("abc123def456")
+        );
+    }
+
+    #[test]
+    fn test_activate_panel_commits_with_empty_list_does_not_send_command() {
+        let (mut app, mut cmd_rx) = create_test_app_with_cmd_rx();
+        app.state.ui_state.active_panel = Panel::Commits;
+        app.state.data_cache.commits.clear();
+        app.state.sync_commit_list_state();
+
+        app.process_event(AppEvent::ActivatePanel);
+
+        assert!(matches!(cmd_rx.try_recv(), Err(TryRecvError::Empty)));
+        assert_eq!(app.state.components.commit_pending_commit_id(), None);
+    }
+
+    #[test]
+    fn test_activate_panel_branch_commits_subview_starts_loading_and_requests_commit_files() {
+        let (mut app, mut cmd_rx) = create_test_app_with_cmd_rx();
+        app.state.ui_state.active_panel = Panel::Branches;
+        app.state.data_cache.commits = vec![crate::backend::git_ops::CommitEntry {
+            short_id: "abc1234".to_string(),
+            id: "abc123def456".to_string(),
+            summary: "Test commit".to_string(),
+            body: None,
+            author: "Author".to_string(),
+            timestamp: 1704067200,
+        }];
+        app.state.components.show_branch_commits();
+
+        app.process_event(AppEvent::ActivatePanel);
+
+        let envelope = cmd_rx.try_recv().expect("expected GetCommitFiles command");
+        match envelope.command {
+            BackendCommand::GetCommitFiles { commit_id } => {
+                assert_eq!(commit_id, "abc123def456");
+            }
+            other => panic!("expected GetCommitFiles command, got {other:?}"),
+        }
+        assert_eq!(
+            app.state
+                .components
+                .branch_list_panel
+                .subview_pending_commit_id(),
+            Some("abc123def456")
+        );
+    }
+
+    #[test]
+    fn test_commit_files_loaded_updates_branch_commits_subview_tree() {
+        let mut app = create_test_app();
+        app.state.ui_state.active_panel = Panel::Branches;
+        app.state.data_cache.commits = vec![crate::backend::git_ops::CommitEntry {
+            short_id: "abc1234".to_string(),
+            id: "abc123def456".to_string(),
+            summary: "Test commit".to_string(),
+            body: None,
+            author: "Author".to_string(),
+            timestamp: 1704067200,
+        }];
+        app.state.components.show_branch_commits();
+        app.state
+            .components
+            .branch_list_panel
+            .subview_start_loading("abc123def456".to_string(), "Test commit".to_string());
+
+        let envelope = EventEnvelope::new(
+            None,
+            FrontendEvent::CommitFilesLoaded {
+                request_id: 1,
+                commit_id: "abc123def456".to_string(),
+                files: vec![(
+                    "src/main.rs".to_string(),
+                    crate::components::core::GitFileStatus::Modified,
+                )],
+            },
+        );
+
+        app.handle_backend_event(envelope)
+            .expect("event should be handled");
+
+        assert_eq!(
+            app.state
+                .components
+                .branch_list_panel
+                .subview_pending_commit_id(),
+            None
+        );
     }
 
     #[test]

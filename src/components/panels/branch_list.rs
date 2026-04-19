@@ -5,8 +5,9 @@ use ratatui::layout::Rect;
 use crate::app::events::{AppEvent, GitEvent, ModalEvent};
 use crate::app::AppState;
 use crate::app::CachedData;
+use crate::backend::git_ops::CommitEntry;
 use crate::components::component_v2::ComponentV2;
-use crate::components::core::{render_branches, SimpleListPanel};
+use crate::components::core::{render_branches, SimpleListPanel, TreePanel};
 
 use super::CommitPanel;
 
@@ -40,6 +41,48 @@ impl BranchListPanel {
         self.mode = BranchMode::CommitsSub {
             panel: Box::new(CommitPanel::new()),
         };
+    }
+
+    pub fn selected_commit_in_subview<'a>(
+        &self,
+        commits: &'a [CommitEntry],
+    ) -> Option<&'a CommitEntry> {
+        match &self.mode {
+            BranchMode::CommitsSub { panel } => panel.selected_commit(commits),
+            BranchMode::List => None,
+        }
+    }
+
+    pub fn subview_pending_commit_id(&self) -> Option<&str> {
+        match &self.mode {
+            BranchMode::CommitsSub { panel } => panel.pending_commit_id(),
+            BranchMode::List => None,
+        }
+    }
+
+    pub fn subview_start_loading(&mut self, commit_id: String, summary: String) -> bool {
+        match &mut self.mode {
+            BranchMode::CommitsSub { panel } => {
+                panel.start_loading(commit_id, summary);
+                true
+            }
+            BranchMode::List => false,
+        }
+    }
+
+    pub fn subview_set_files_tree(
+        &mut self,
+        commit_id: String,
+        summary: String,
+        tree: TreePanel,
+    ) -> bool {
+        match &mut self.mode {
+            BranchMode::CommitsSub { panel } => {
+                panel.set_files_tree(commit_id, summary, tree);
+                true
+            }
+            BranchMode::List => false,
+        }
     }
 
     pub fn hide_branch_commits(&mut self) {

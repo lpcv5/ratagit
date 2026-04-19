@@ -1,6 +1,7 @@
 use arboard::Clipboard;
 use ratatui::layout::Rect;
 use ratatui::widgets::ListState;
+use std::collections::HashSet;
 
 use crate::app::events::AppEvent;
 use crate::app::events::GitEvent;
@@ -39,6 +40,7 @@ pub struct CommitPanel {
     state: ListState,
     mode: CommitMode,
     list_multi_select: MultiSelectState<String>,
+    copied_commit_ids: Vec<String>,
 }
 
 #[allow(dead_code)] // Methods reserved for future use
@@ -50,6 +52,7 @@ impl CommitPanel {
             state,
             mode: CommitMode::List,
             list_multi_select: MultiSelectState::default(),
+            copied_commit_ids: Vec::new(),
         }
     }
 
@@ -136,6 +139,15 @@ impl CommitPanel {
         self.exit_multi_select();
     }
 
+    pub fn prune_copied_commits(&mut self, commits: &[CommitEntry]) {
+        if self.copied_commit_ids.is_empty() {
+            return;
+        }
+        let current_ids: HashSet<&str> = commits.iter().map(|commit| commit.id.as_str()).collect();
+        self.copied_commit_ids
+            .retain(|id| current_ids.contains(id.as_str()));
+    }
+
     pub fn is_list_multi_select_active(&self) -> bool {
         self.is_multi_active()
     }
@@ -169,6 +181,70 @@ impl CommitPanel {
             CommitMode::FilesLoading { .. } => AppEvent::None,
         }
     }
+
+    fn selected_commit_ids(&self, commits: &[CommitEntry]) -> Vec<String> {
+        if self.is_list_multi_select_active() {
+            let all_ids = commit_ids(commits);
+            let ids = self.multi_selected_keys(&all_ids);
+            if !ids.is_empty() {
+                return ids;
+            }
+        }
+
+        self.selected_commit(commits)
+            .map(|commit| vec![commit.id.clone()])
+            .unwrap_or_default()
+    }
+
+    fn toggle_copy_selection(&mut self, commits: &[CommitEntry]) -> bool {
+        let selected_ids = self.selected_commit_ids(commits);
+        if selected_ids.is_empty() {
+            return false;
+        }
+
+        let all_selected_already_copied = selected_ids.iter().all(|id| {
+            self.copied_commit_ids
+                .iter()
+                .any(|copied_id| copied_id == id)
+        });
+
+        if all_selected_already_copied {
+            self.copied_commit_ids
+                .retain(|copied_id| !selected_ids.iter().any(|id| id == copied_id));
+            return true;
+        }
+
+        let mut changed = false;
+        for commit_id in selected_ids {
+            if !self.copied_commit_ids.iter().any(|id| id == &commit_id) {
+                self.copied_commit_ids.push(commit_id);
+                changed = true;
+            }
+        }
+        changed
+    }
+
+    fn reset_copied_commits(&mut self) -> bool {
+        if self.copied_commit_ids.is_empty() {
+            return false;
+        }
+        self.copied_commit_ids.clear();
+        true
+    }
+
+    fn copied_count(&self) -> usize {
+        self.copied_commit_ids.len()
+    }
+
+    fn has_copied_commit(&self, commit_id: &str) -> bool {
+        self.copied_commit_ids
+            .iter()
+            .any(|copied_id| copied_id == commit_id)
+    }
+
+    fn copied_commits_for_paste(&self) -> Vec<String> {
+        self.copied_commit_ids.clone()
+    }
 }
 
 impl Default for CommitPanel {
@@ -199,8 +275,8 @@ impl CommitPanel {
         data: &CachedData,
     ) {
         use crate::components::core::{
-            accent_primary_color, multi_select_row_style, muted_text_style, panel_block,
-            SelectableList, LIST_HIGHLIGHT_SYMBOL,
+            accent_primary_color, accent_secondary_color, multi_select_row_style, muted_text_style,
+            panel_block, SelectableList, LIST_HIGHLIGHT_SYMBOL,
         };
         use ratatui::style::Style;
         use ratatui::text::{Line, Span};
@@ -208,22 +284,34 @@ impl CommitPanel {
 
         match &mut self.mode {
             CommitMode::List => {
+                self.prune_copied_commits(&data.commits);
+
                 if data.commits.is_empty() {
                     SelectableList::render_empty(frame, area, "Commits", is_focused);
                     return;
                 }
 
                 let multi_active = self.is_list_multi_select_active();
-                let title = if multi_active {
-                    format!("Commits · MULTI:{}", self.multi_selected_count())
-                } else {
-                    "Commits".to_string()
-                };
+                let mut title = "Commits".to_string();
+                if multi_active {
+                    title.push_str(&format!(" · MULTI:{}", self.multi_selected_count()));
+                }
+                if self.copied_count() > 0 {
+                    title.push_str(&format!(" · COPIED:{}", self.copied_count()));
+                }
                 let items: Vec<ListItem<'_>> = data
                     .commits
                     .iter()
                     .map(|commit| {
                         let mut item = ListItem::new(Line::from(vec![
+                            Span::styled(
+                                if self.has_copied_commit(&commit.id) {
+                                    "C "
+                                } else {
+                                    "  "
+                                },
+                                Style::default().fg(accent_secondary_color()),
+                            ),
                             Span::styled(
                                 format!("{} ", commit.short_id),
                                 Style::default().fg(accent_primary_color()),
@@ -258,85 +346,156 @@ impl ComponentV2 for CommitPanel {
     fn handle_key_event(&mut self, key: crossterm::event::KeyEvent, state: &AppState) -> AppEvent {
         use crossterm::event::KeyCode;
 
-        match key.code {
-            KeyCode::Char('j') | KeyCode::Down => {
-                if !state.data_cache.commits.is_empty() {
-                    let current = self.state.selected().unwrap_or(0);
-                    let next = (current + 1).min(state.data_cache.commits.len() - 1);
-                    self.state.select(Some(next));
-                    self.refresh_list_multi_range(&state.data_cache.commits);
+        match &mut self.mode {
+            CommitMode::FilesLoading { .. } => AppEvent::None,
+            CommitMode::FilesTree { tree, .. } => match key.code {
+                KeyCode::Char('j') | KeyCode::Down => {
+                    tree.select_next();
                     AppEvent::SelectionChanged
-                } else {
-                    AppEvent::None
                 }
-            }
-            KeyCode::Char('k') | KeyCode::Up => {
-                if !state.data_cache.commits.is_empty() {
-                    let current = self.state.selected().unwrap_or(0);
-                    let prev = current.saturating_sub(1);
-                    self.state.select(Some(prev));
-                    self.refresh_list_multi_range(&state.data_cache.commits);
+                KeyCode::Char('k') | KeyCode::Up => {
+                    tree.select_previous();
                     AppEvent::SelectionChanged
-                } else {
-                    AppEvent::None
                 }
-            }
-            KeyCode::Enter => {
-                // Only activate if in List mode and not in multi-select
-                match &self.mode {
-                    CommitMode::List => {
-                        if !self.list_multi_select.is_active() {
-                            AppEvent::ActivatePanel
-                        } else {
-                            AppEvent::None
-                        }
-                    }
-                    _ => AppEvent::None,
-                }
-            }
-            KeyCode::Char('v') => {
-                if matches!(self.mode, CommitMode::List) && !state.data_cache.commits.is_empty() {
-                    let commit_ids = commit_ids(&state.data_cache.commits);
-                    self.toggle_multi_select(self.state.selected(), &commit_ids);
-                    self.refresh_list_multi_range(&state.data_cache.commits);
+                KeyCode::Enter => {
+                    tree.toggle_selected_dir();
                     AppEvent::SelectionChanged
-                } else {
-                    AppEvent::None
                 }
-            }
-            KeyCode::Char('o') if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
-                if let Some(commit) = self.selected_commit(&state.data_cache.commits) {
-                    match Clipboard::new().and_then(|mut clip| clip.set_text(commit.id.clone())) {
-                        Ok(_) => {
-                            // Clipboard write succeeded, no UI feedback needed
-                        }
-                        Err(e) => {
-                            log::warn!("Failed to copy commit hash to clipboard: {}", e);
-                        }
+                KeyCode::Char('-') => {
+                    tree.collapse_all_dirs();
+                    AppEvent::SelectionChanged
+                }
+                KeyCode::Char('=') => {
+                    tree.expand_all_dirs();
+                    AppEvent::SelectionChanged
+                }
+                KeyCode::Char('v') => {
+                    if tree.selected_node().is_some() {
+                        tree.toggle_multi_select_at_cursor();
+                        AppEvent::SelectionChanged
+                    } else {
+                        AppEvent::None
                     }
                 }
-                AppEvent::None
-            }
-            KeyCode::Char('g') => AppEvent::Modal(crate::app::events::ModalEvent::ShowResetMenu),
-            KeyCode::Char('n') => {
-                if let Some(commit) = self.selected_commit(&state.data_cache.commits) {
-                    AppEvent::Modal(crate::app::events::ModalEvent::ShowBranchCreateDialog {
-                        from_branch: commit.id.clone(),
-                    })
-                } else {
+                _ => AppEvent::None,
+            },
+            CommitMode::List => match key.code {
+                KeyCode::Char('j') | KeyCode::Down => {
+                    if !state.data_cache.commits.is_empty() {
+                        let current = self.state.selected().unwrap_or(0);
+                        let next = (current + 1).min(state.data_cache.commits.len() - 1);
+                        self.state.select(Some(next));
+                        self.refresh_list_multi_range(&state.data_cache.commits);
+                        AppEvent::SelectionChanged
+                    } else {
+                        AppEvent::None
+                    }
+                }
+                KeyCode::Char('k') | KeyCode::Up => {
+                    if !state.data_cache.commits.is_empty() {
+                        let current = self.state.selected().unwrap_or(0);
+                        let prev = current.saturating_sub(1);
+                        self.state.select(Some(prev));
+                        self.refresh_list_multi_range(&state.data_cache.commits);
+                        AppEvent::SelectionChanged
+                    } else {
+                        AppEvent::None
+                    }
+                }
+                KeyCode::Enter => {
+                    if !self.list_multi_select.is_active() {
+                        AppEvent::ActivatePanel
+                    } else {
+                        AppEvent::None
+                    }
+                }
+                KeyCode::Char('v') => {
+                    if !state.data_cache.commits.is_empty() {
+                        let commit_ids = commit_ids(&state.data_cache.commits);
+                        self.toggle_multi_select(self.state.selected(), &commit_ids);
+                        self.refresh_list_multi_range(&state.data_cache.commits);
+                        AppEvent::SelectionChanged
+                    } else {
+                        AppEvent::None
+                    }
+                }
+                KeyCode::Char('o')
+                    if key
+                        .modifiers
+                        .contains(crossterm::event::KeyModifiers::CONTROL) =>
+                {
+                    if let Some(commit) = self.selected_commit(&state.data_cache.commits) {
+                        match Clipboard::new()
+                            .and_then(|mut clip| clip.set_text(commit.short_id.clone()))
+                        {
+                            Ok(_) => {
+                                // Clipboard write succeeded, no UI feedback needed
+                            }
+                            Err(e) => {
+                                log::warn!("Failed to copy commit hash to clipboard: {}", e);
+                            }
+                        }
+                    }
                     AppEvent::None
                 }
-            }
-            KeyCode::Char('t') => {
-                if let Some(commit) = self.selected_commit(&state.data_cache.commits) {
-                    AppEvent::Git(GitEvent::RevertCommit {
-                        commit_id: commit.id.clone(),
-                    })
-                } else {
-                    AppEvent::None
+                KeyCode::Char('C') => {
+                    if self.toggle_copy_selection(&state.data_cache.commits) {
+                        AppEvent::SelectionChanged
+                    } else {
+                        AppEvent::None
+                    }
                 }
-            }
-            _ => AppEvent::None,
+                KeyCode::Char('V') => {
+                    let commit_ids = self.copied_commits_for_paste();
+                    if commit_ids.is_empty() {
+                        AppEvent::None
+                    } else {
+                        AppEvent::Git(GitEvent::CherryPickCommits { commit_ids })
+                    }
+                }
+                KeyCode::Char('r')
+                    if key
+                        .modifiers
+                        .contains(crossterm::event::KeyModifiers::CONTROL) =>
+                {
+                    if self.reset_copied_commits() {
+                        AppEvent::SelectionChanged
+                    } else {
+                        AppEvent::None
+                    }
+                }
+                KeyCode::Char(' ') => {
+                    if let Some(commit) = self.selected_commit(&state.data_cache.commits) {
+                        AppEvent::Git(GitEvent::CheckoutCommit {
+                            commit_id: commit.id.clone(),
+                        })
+                    } else {
+                        AppEvent::None
+                    }
+                }
+                KeyCode::Char('g') => {
+                    AppEvent::Modal(crate::app::events::ModalEvent::ShowResetMenu)
+                }
+                KeyCode::Char('n') => {
+                    if let Some(commit) = self.selected_commit(&state.data_cache.commits) {
+                        AppEvent::Modal(crate::app::events::ModalEvent::ShowBranchCreateDialog {
+                            from_branch: commit.id.clone(),
+                        })
+                    } else {
+                        AppEvent::None
+                    }
+                }
+                KeyCode::Char('t') => {
+                    if let Some(commit) = self.selected_commit(&state.data_cache.commits) {
+                        AppEvent::Git(GitEvent::RevertCommit {
+                            commit_id: commit.id.clone(),
+                        })
+                    } else {
+                        AppEvent::None
+                    }
+                }
+                _ => AppEvent::None,
+            },
         }
     }
 
@@ -483,6 +642,77 @@ mod tests {
         assert_eq!(panel.mode_view(), CommitModeView::List);
     }
 
+    #[test]
+    fn test_commit_files_tree_navigation_shortcuts_work() {
+        use crate::components::core::{build_tree_from_paths, TreePanel};
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let mut panel = CommitPanel::new();
+        let state = mock_state();
+        let paths = vec!["README.md".to_string(), "src/main.rs".to_string()];
+        let tree_nodes = build_tree_from_paths(&paths, None);
+        panel.set_files_tree(
+            "abc123".to_string(),
+            "Test commit".to_string(),
+            TreePanel::new("Files".to_string(), tree_nodes, false),
+        );
+
+        // Move to `src` directory
+        let key_j = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
+        let event = panel.handle_key_event(key_j, &state);
+        assert_eq!(event, AppEvent::SelectionChanged);
+        assert_eq!(panel.selected_tree_node(), Some(("src".to_string(), true)));
+
+        // Collapse selected directory
+        let key_enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        let event = panel.handle_key_event(key_enter, &state);
+        assert_eq!(event, AppEvent::SelectionChanged);
+
+        // When collapsed, moving down stays on `src`
+        let key_j = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
+        let event = panel.handle_key_event(key_j, &state);
+        assert_eq!(event, AppEvent::SelectionChanged);
+        assert_eq!(panel.selected_tree_node(), Some(("src".to_string(), true)));
+
+        // Expand all and move into child file
+        let key_equal = KeyEvent::new(KeyCode::Char('='), KeyModifiers::NONE);
+        let event = panel.handle_key_event(key_equal, &state);
+        assert_eq!(event, AppEvent::SelectionChanged);
+
+        let key_j = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
+        let event = panel.handle_key_event(key_j, &state);
+        assert_eq!(event, AppEvent::SelectionChanged);
+        assert_eq!(
+            panel.selected_tree_node(),
+            Some(("src/main.rs".to_string(), false))
+        );
+
+        // Collapse all jumps/keeps selection on visible ancestor
+        let key_minus = KeyEvent::new(KeyCode::Char('-'), KeyModifiers::NONE);
+        let event = panel.handle_key_event(key_minus, &state);
+        assert_eq!(event, AppEvent::SelectionChanged);
+    }
+
+    #[test]
+    fn test_commit_files_tree_ignores_list_only_shortcuts() {
+        use crate::components::core::{build_tree_from_paths, TreePanel};
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let mut panel = CommitPanel::new();
+        let state = mock_state();
+        let paths = vec!["src/main.rs".to_string()];
+        let tree_nodes = build_tree_from_paths(&paths, None);
+        panel.set_files_tree(
+            "abc123".to_string(),
+            "Test commit".to_string(),
+            TreePanel::new("Files".to_string(), tree_nodes, false),
+        );
+
+        let key_space = KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE);
+        let event = panel.handle_key_event(key_space, &state);
+        assert_eq!(event, AppEvent::None);
+    }
+
     fn mock_state() -> AppState {
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::channel(100);
         let (_event_tx, event_rx) = tokio::sync::mpsc::channel(100);
@@ -569,5 +799,113 @@ mod tests {
         let event = panel.handle_key_event(key, &state);
 
         assert_eq!(event, AppEvent::None);
+    }
+
+    #[test]
+    fn test_c_key_toggles_copied_commit_selection() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let mut panel = CommitPanel::new();
+        let mut state = mock_state();
+        state.data_cache.commits = vec![CommitEntry {
+            short_id: "abc123de".to_string(),
+            id: "abc123def456".to_string(),
+            summary: "Test commit".to_string(),
+            body: None,
+            author: "Test Author".to_string(),
+            timestamp: 1234567890,
+        }];
+        panel.state.select(Some(0));
+
+        let key_copy = KeyEvent::new(KeyCode::Char('C'), KeyModifiers::SHIFT);
+        let event = panel.handle_key_event(key_copy, &state);
+        assert_eq!(event, AppEvent::SelectionChanged);
+        assert_eq!(panel.copied_count(), 1);
+
+        let key_copy = KeyEvent::new(KeyCode::Char('C'), KeyModifiers::SHIFT);
+        let event = panel.handle_key_event(key_copy, &state);
+        assert_eq!(event, AppEvent::SelectionChanged);
+        assert_eq!(panel.copied_count(), 0);
+    }
+
+    #[test]
+    fn test_v_key_pastes_copied_commits() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let mut panel = CommitPanel::new();
+        let mut state = mock_state();
+        state.data_cache.commits = vec![CommitEntry {
+            short_id: "abc123de".to_string(),
+            id: "abc123def456".to_string(),
+            summary: "Test commit".to_string(),
+            body: None,
+            author: "Test Author".to_string(),
+            timestamp: 1234567890,
+        }];
+        panel.state.select(Some(0));
+
+        let key_copy = KeyEvent::new(KeyCode::Char('C'), KeyModifiers::SHIFT);
+        let _ = panel.handle_key_event(key_copy, &state);
+
+        let key_paste = KeyEvent::new(KeyCode::Char('V'), KeyModifiers::SHIFT);
+        let event = panel.handle_key_event(key_paste, &state);
+        assert_eq!(
+            event,
+            AppEvent::Git(GitEvent::CherryPickCommits {
+                commit_ids: vec!["abc123def456".to_string()],
+            })
+        );
+    }
+
+    #[test]
+    fn test_ctrl_r_resets_copied_commits() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let mut panel = CommitPanel::new();
+        let mut state = mock_state();
+        state.data_cache.commits = vec![CommitEntry {
+            short_id: "abc123de".to_string(),
+            id: "abc123def456".to_string(),
+            summary: "Test commit".to_string(),
+            body: None,
+            author: "Test Author".to_string(),
+            timestamp: 1234567890,
+        }];
+        panel.state.select(Some(0));
+
+        let key_copy = KeyEvent::new(KeyCode::Char('C'), KeyModifiers::SHIFT);
+        let _ = panel.handle_key_event(key_copy, &state);
+        assert_eq!(panel.copied_count(), 1);
+
+        let key_reset = KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL);
+        let event = panel.handle_key_event(key_reset, &state);
+        assert_eq!(event, AppEvent::SelectionChanged);
+        assert_eq!(panel.copied_count(), 0);
+    }
+
+    #[test]
+    fn test_space_key_checkouts_selected_commit() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let mut panel = CommitPanel::new();
+        let mut state = mock_state();
+        state.data_cache.commits = vec![CommitEntry {
+            short_id: "abc123de".to_string(),
+            id: "abc123def456".to_string(),
+            summary: "Test commit".to_string(),
+            body: None,
+            author: "Test Author".to_string(),
+            timestamp: 1234567890,
+        }];
+        panel.state.select(Some(0));
+
+        let key = KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE);
+        let event = panel.handle_key_event(key, &state);
+        assert_eq!(
+            event,
+            AppEvent::Git(GitEvent::CheckoutCommit {
+                commit_id: "abc123def456".to_string(),
+            })
+        );
     }
 }

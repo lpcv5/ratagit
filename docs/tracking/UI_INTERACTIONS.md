@@ -167,7 +167,7 @@ and the default keybinding config in `pkg/config/user_config.go`.
 | Key | Action | Implemented? | Have test? |
 |-----|--------|--------------|------------|
 | `<c-o>` | Copy abbreviated commit hash to clipboard | ✅ | ✅ |
-| `<c-r>` | Reset copied (cherry-picked) commits selection | ❌ | ❌ |
+| `<c-r>` | Reset copied (cherry-picked) commits selection | ✅ | ✅ |
 | `b` | View bisect options | ❌ | ❌ |
 | `s` | Squash | ❌ | ❌ |
 | `f` | Fixup | ❌ | ❌ |
@@ -182,7 +182,7 @@ and the default keybinding config in `pkg/config/user_config.go`.
 | `S` | Apply fixup commits | ❌ | ❌ |
 | `<c-j>` | Move commit down one | ❌ | ❌ |
 | `<c-k>` | Move commit up one | ❌ | ❌ |
-| `V` | Paste (cherry-pick) | ❌ | ❌ |
+| `V` | Paste (cherry-pick) | ✅ | ✅ |
 | `B` | Mark as base commit for rebase | ❌ | ❌ |
 | `A` | Amend | ❌ | ❌ |
 | `a` | Amend commit attribute | ❌ | ❌ |
@@ -190,19 +190,24 @@ and the default keybinding config in `pkg/config/user_config.go`.
 | `T` | Tag commit | ❌ | ❌ |
 | `<c-l>` | View log options | ❌ | ❌ |
 | `G` | Open pull request in browser | ❌ | ❌ |
-| `<space>` | Checkout | ❌ | ❌ |
+| `<space>` | Checkout | ✅ | ✅ |
 | `y` | Copy commit attribute to clipboard | ❌ | ❌ |
 | `o` | Open commit in browser | ❌ | ❌ |
 | `n` | Create new branch off of commit | ✅ | ✅ |
 | `N` | Move commits to new branch | ❌ | ❌ |
 | `g` | Reset | ✅ | ✅ |
-| `C` | Copy (cherry-pick) | ❌ | ❌ |
+| `C` | Copy (cherry-pick) | ✅ | ✅ |
 | `<c-t>` | Open external diff tool (git difftool) | ❌ | ❌ |
 | `*` | Select commits of current branch | ❌ | ❌ |
 | `0` | Focus main view | ❌ | ❌ |
 | `<enter>` | View files | ✅ | ✅ |
 | `w` | View worktree options | ❌ | ❌ |
 | `/` | Search the current view by text | ❌ | ❌ |
+
+Implementation note (core parity):
+- `<enter>` in `Commits` list now triggers `GetCommitFiles`, switches the commit panel to a loading subview, and transitions to commit files tree after `CommitFilesLoaded`.
+- The same `<enter>` flow is wired for branch `commits subview` (inside `Branches` panel).
+- Stale `CommitFilesLoaded` responses are ignored via pending commit-id guard.
 
 ---
 
@@ -219,10 +224,10 @@ and the default keybinding config in `pkg/config/user_config.go`.
 | `<c-t>` | Open external diff tool (git difftool) | ❌ | ❌ |
 | `<space>` | Toggle file included in patch | ❌ | ❌ |
 | `a` | Toggle all files | ❌ | ❌ |
-| `<enter>` | Enter file / toggle directory collapsed | ❌ | ❌ |
+| `<enter>` | Enter file / toggle directory collapsed | ✅ | ✅ |
 | `` ` `` | Toggle file tree view | ❌ | ❌ |
-| `-` | Collapse all files | ❌ | ❌ |
-| `=` | Expand all files | ❌ | ❌ |
+| `-` | Collapse all files | ✅ | ✅ |
+| `=` | Expand all files | ✅ | ✅ |
 | `0` | Focus main view | ❌ | ❌ |
 | `/` | Filter the current view by text | ❌ | ❌ |
 
@@ -497,7 +502,7 @@ and the default keybinding config in `pkg/config/user_config.go`.
 - Global quit/cancel/help (`q`, `<esc>`, `?`)
 - Files: stage/unstage, commit, amend, discard, ignore, stash, enter staging/file tree
 - Branches: checkout, new, delete options (local/remote/both), view commits
-- Commits: view files
+- Commits: view files, copy/paste cherry-pick flow (`C`/`V`/`Ctrl+r`), checkout commit (`Space`), reset/new-branch/revert/copy-hash
 - Stash: apply, drop, view files
 - Menus and commit message panels: confirm/cancel and execute
 - Multi-select toggle (`v`)
