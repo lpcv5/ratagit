@@ -78,6 +78,9 @@ pub enum GitEvent {
         branch_name: String,
         limit: usize,
     },
+    RevertCommit {
+        commit_id: String,
+    },
 }
 
 /// Modal/dialog events

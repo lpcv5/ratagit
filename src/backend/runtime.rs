@@ -12,8 +12,8 @@ use super::handlers::{
     GetCommitDiffHandler, GetCommitFilesHandler, GetCommitMessageHandler, GetDiffBatchHandler,
     GetDiffHandler, IgnoreFilesHandler, RefreshBranchesHandler, RefreshCommitsHandler,
     RefreshStashesHandler, RefreshStatusHandler, ResetHardHandler, ResetMixedHandler,
-    ResetSoftHandler, StageAllHandler, StageFileHandler, StageFilesHandler, StashFilesHandler,
-    UnstageFileHandler, UnstageFilesHandler,
+    ResetSoftHandler, RevertCommitHandler, StageAllHandler, StageFileHandler, StageFilesHandler,
+    StashFilesHandler, UnstageFileHandler, UnstageFilesHandler,
 };
 use super::{CommandEnvelope, EventEnvelope, FrontendEvent};
 
@@ -51,6 +51,7 @@ enum CommandKey {
     ResetHard,
     ResetMixed,
     ResetSoft,
+    RevertCommit,
     IgnoreFiles,
 }
 
@@ -191,6 +192,10 @@ pub async fn run_backend(mut cmd_rx: Receiver<CommandEnvelope>, event_tx: Sender
         Box::new(ResetSoftHandler) as Box<dyn CommandHandler>,
     );
     handlers.insert(
+        CommandKey::RevertCommit,
+        Box::new(RevertCommitHandler) as Box<dyn CommandHandler>,
+    );
+    handlers.insert(
         CommandKey::IgnoreFiles,
         Box::new(IgnoreFilesHandler) as Box<dyn CommandHandler>,
     );
@@ -246,6 +251,7 @@ pub async fn run_backend(mut cmd_rx: Receiver<CommandEnvelope>, event_tx: Sender
             crate::backend::BackendCommand::ResetHard { .. } => Some(CommandKey::ResetHard),
             crate::backend::BackendCommand::ResetMixed { .. } => Some(CommandKey::ResetMixed),
             crate::backend::BackendCommand::ResetSoft { .. } => Some(CommandKey::ResetSoft),
+            crate::backend::BackendCommand::RevertCommit { .. } => Some(CommandKey::RevertCommit),
             crate::backend::BackendCommand::IgnoreFiles { .. } => Some(CommandKey::IgnoreFiles),
             crate::backend::BackendCommand::Quit => None,
         };

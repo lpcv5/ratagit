@@ -96,6 +96,10 @@ pub fn keyhints_for_panel(panel: Panel) -> Vec<KeyHint> {
                 description: "new branch",
             },
             KeyHint {
+                key: "t",
+                description: "revert",
+            },
+            KeyHint {
                 key: "v",
                 description: "multi-select",
             },

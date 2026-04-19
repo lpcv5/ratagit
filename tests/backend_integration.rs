@@ -212,3 +212,39 @@ async fn test_multiple_commands_sequence() {
     cmd_tx.send(CommandEnvelope::new(999, BackendCommand::Quit)).await.ok();
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_revert_commit() {
+    let test_repo = TestRepo::new();
+
+    // Create a commit to revert
+    test_repo.create_file("revert_me.txt", "content to revert");
+    test_repo.stage_file("revert_me.txt");
+    test_repo.commit("Commit to revert");
+
+    // Get the commit OID to revert
+    let commit_id = {
+        let head = test_repo.repo.head().expect("Failed to get HEAD");
+        let commit = head.peel_to_commit().expect("Failed to peel to commit");
+        commit.id().to_string()
+    };
+
+    let (cmd_tx, mut event_rx) = setup_backend(test_repo.path.to_str().unwrap()).await;
+
+    let resp = send_and_receive(
+        &cmd_tx,
+        &mut event_rx,
+        42,
+        BackendCommand::RevertCommit { commit_id },
+    )
+    .await
+    .expect("Should receive response");
+
+    assert!(
+        matches!(resp.event, FrontendEvent::ActionSucceeded { .. }),
+        "Expected ActionSucceeded, got {:?}",
+        resp.event
+    );
+
+    cmd_tx.send(CommandEnvelope::new(999, BackendCommand::Quit)).await.ok();
+}
+

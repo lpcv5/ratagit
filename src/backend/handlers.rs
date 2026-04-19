@@ -1262,6 +1262,42 @@ impl CommandHandler for ResetSoftHandler {
     }
 }
 
+/// Revert commit handler
+pub struct RevertCommitHandler;
+impl CommandHandler for RevertCommitHandler {
+    fn handle(
+        &self,
+        envelope: &CommandEnvelope,
+        repo: &GitRepo,
+        event_tx: &Sender<EventEnvelope>,
+    ) -> Result<()> {
+        let commit_id =
+            if let crate::backend::BackendCommand::RevertCommit { commit_id } = &envelope.command {
+                commit_id.clone()
+            } else {
+                return Ok(());
+            };
+
+        match super::git_ops::revert_commit(repo, &commit_id) {
+            Ok(()) => {
+                let short_id = &commit_id[..commit_id.len().min(8)];
+                send_event(
+                    event_tx,
+                    EventEnvelope::new(
+                        Some(envelope.request_id),
+                        FrontendEvent::ActionSucceeded {
+                            request_id: envelope.request_id,
+                            message: format!("Reverted commit {}", short_id),
+                        },
+                    ),
+                );
+                refresh_all(event_tx, repo);
+            }
+            Err(error) => send_error(event_tx, Some(envelope.request_id), "revert", error),
+        }
+        Ok(())
+    }
+}
 /// Ignore files handler
 pub struct IgnoreFilesHandler;
 impl CommandHandler for IgnoreFilesHandler {

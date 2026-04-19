@@ -220,6 +220,14 @@ pub fn reset_soft(repo: &GitRepo, target: &str) -> Result<()> {
     Ok(())
 }
 
+pub fn revert_commit(repo: &GitRepo, commit_id: &str) -> Result<()> {
+    let oid = git2::Oid::from_str(commit_id)?;
+    let commit = repo.repo.find_commit(oid)?;
+    let mut revert_opts = git2::RevertOptions::new();
+    repo.repo.revert(&commit, Some(&mut revert_opts))?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

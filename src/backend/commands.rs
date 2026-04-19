@@ -99,6 +99,9 @@ pub enum BackendCommand {
     ResetSoft {
         target: String,
     },
+    RevertCommit {
+        commit_id: String,
+    },
     IgnoreFiles {
         paths: Vec<String>,
     },

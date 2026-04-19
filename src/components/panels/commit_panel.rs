@@ -3,6 +3,7 @@ use ratatui::layout::Rect;
 use ratatui::widgets::ListState;
 
 use crate::app::events::AppEvent;
+use crate::app::events::GitEvent;
 use crate::app::AppState;
 use crate::app::CachedData;
 use crate::backend::git_ops::CommitEntry;
@@ -321,6 +322,15 @@ impl ComponentV2 for CommitPanel {
                 if let Some(commit) = self.selected_commit(&state.data_cache.commits) {
                     AppEvent::Modal(crate::app::events::ModalEvent::ShowBranchCreateDialog {
                         from_branch: commit.id.clone(),
+                    })
+                } else {
+                    AppEvent::None
+                }
+            }
+            KeyCode::Char('t') => {
+                if let Some(commit) = self.selected_commit(&state.data_cache.commits) {
+                    AppEvent::Git(GitEvent::RevertCommit {
+                        commit_id: commit.id.clone(),
                     })
                 } else {
                     AppEvent::None

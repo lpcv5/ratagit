@@ -48,6 +48,9 @@ impl GitProcessor {
             GitEvent::LoadBranchCommits { branch_name, limit } => {
                 self.load_branch_commits(branch_name, limit)
             }
+            GitEvent::RevertCommit { commit_id } => {
+                vec![BackendCommand::RevertCommit { commit_id }]
+            }
         }
     }
 
@@ -643,5 +646,26 @@ mod tests {
             &commands[1],
             BackendCommand::DeleteLocalBranch { branch_name } if branch_name == "feature"
         ));
+    }
+
+    #[test]
+    fn test_revert_commit_event() {
+        let processor = GitProcessor;
+        let state = mock_state();
+
+        let commands = processor.process(
+            GitEvent::RevertCommit {
+                commit_id: "abc123".to_string(),
+            },
+            &state,
+        );
+
+        assert_eq!(commands.len(), 1);
+        match &commands[0] {
+            BackendCommand::RevertCommit { commit_id } => {
+                assert_eq!(commit_id, "abc123");
+            }
+            _ => panic!("Expected RevertCommit command"),
+        }
     }
 }

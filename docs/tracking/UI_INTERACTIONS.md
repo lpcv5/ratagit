@@ -186,7 +186,7 @@ and the default keybinding config in `pkg/config/user_config.go`.
 | `B` | Mark as base commit for rebase | ❌ | ❌ |
 | `A` | Amend | ❌ | ❌ |
 | `a` | Amend commit attribute | ❌ | ❌ |
-| `t` | Revert | ❌ | ❌ |
+| `t` | Revert | ✅ | ✅ |
 | `T` | Tag commit | ❌ | ❌ |
 | `<c-l>` | View log options | ❌ | ❌ |
 | `G` | Open pull request in browser | ❌ | ❌ |
