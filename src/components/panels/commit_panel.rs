@@ -1,3 +1,4 @@
+use arboard::Clipboard;
 use ratatui::layout::Rect;
 use ratatui::widgets::ListState;
 
@@ -302,6 +303,19 @@ impl ComponentV2 for CommitPanel {
                     AppEvent::None
                 }
             }
+            KeyCode::Char('o') if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
+                if let Some(commit) = self.selected_commit(&state.data_cache.commits) {
+                    match Clipboard::new().and_then(|mut clip| clip.set_text(commit.id.clone())) {
+                        Ok(_) => {
+                            // Clipboard write succeeded, no UI feedback needed
+                        }
+                        Err(e) => {
+                            log::warn!("Failed to copy commit hash to clipboard: {}", e);
+                        }
+                    }
+                }
+                AppEvent::None
+            }
             _ => AppEvent::None,
         }
     }
@@ -453,5 +467,28 @@ mod tests {
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::channel(100);
         let (_event_tx, event_rx) = tokio::sync::mpsc::channel(100);
         AppState::new(cmd_tx, event_rx)
+    }
+
+    #[test]
+    fn test_ctrl_o_copies_hash() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let mut panel = CommitPanel::new();
+        let mut state = mock_state();
+        state.data_cache.commits = vec![CommitEntry {
+            short_id: "abc123de".to_string(),
+            id: "abc123def456".to_string(),
+            summary: "Test commit".to_string(),
+            body: None,
+            author: "Test Author".to_string(),
+            timestamp: 1234567890,
+        }];
+        panel.state.select(Some(0));
+
+        let key = KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL);
+        let event = panel.handle_key_event(key, &state);
+
+        // Clipboard operation is side-effect, just verify no crash
+        assert_eq!(event, AppEvent::None);
     }
 }

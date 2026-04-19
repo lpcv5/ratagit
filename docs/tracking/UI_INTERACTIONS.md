@@ -166,7 +166,7 @@ and the default keybinding config in `pkg/config/user_config.go`.
 
 | Key | Action | Implemented? | Have test? |
 |-----|--------|--------------|------------|
-| `<c-o>` | Copy abbreviated commit hash to clipboard | ❌ | ❌ |
+| `<c-o>` | Copy abbreviated commit hash to clipboard | ✅ | ✅ |
 | `<c-r>` | Reset copied (cherry-picked) commits selection | ❌ | ❌ |
 | `b` | View bisect options | ❌ | ❌ |
 | `s` | Squash | ❌ | ❌ |

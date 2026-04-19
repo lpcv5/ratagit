@@ -84,6 +84,10 @@ pub fn keyhints_for_panel(panel: Panel) -> Vec<KeyHint> {
                 description: "view files",
             },
             KeyHint {
+                key: "Ctrl+o",
+                description: "copy hash",
+            },
+            KeyHint {
                 key: "v",
                 description: "multi-select",
             },
