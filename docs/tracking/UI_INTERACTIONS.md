@@ -193,7 +193,7 @@ and the default keybinding config in `pkg/config/user_config.go`.
 | `<space>` | Checkout | ❌ | ❌ |
 | `y` | Copy commit attribute to clipboard | ❌ | ❌ |
 | `o` | Open commit in browser | ❌ | ❌ |
-| `n` | Create new branch off of commit | ❌ | ❌ |
+| `n` | Create new branch off of commit | ✅ | ✅ |
 | `N` | Move commits to new branch | ❌ | ❌ |
 | `g` | Reset | ✅ | ✅ |
 | `C` | Copy (cherry-pick) | ❌ | ❌ |

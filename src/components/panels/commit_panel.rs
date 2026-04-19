@@ -317,6 +317,15 @@ impl ComponentV2 for CommitPanel {
                 AppEvent::None
             }
             KeyCode::Char('g') => AppEvent::Modal(crate::app::events::ModalEvent::ShowResetMenu),
+            KeyCode::Char('n') => {
+                if let Some(commit) = self.selected_commit(&state.data_cache.commits) {
+                    AppEvent::Modal(crate::app::events::ModalEvent::ShowBranchCreateDialog {
+                        from_branch: commit.id.clone(),
+                    })
+                } else {
+                    AppEvent::None
+                }
+            }
             _ => AppEvent::None,
         }
     }
@@ -507,5 +516,34 @@ mod tests {
 
         // Clipboard operation is side-effect, just verify no crash
         assert_eq!(event, AppEvent::None);
+    }
+
+    #[test]
+    fn test_n_key_prompts_new_branch() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let mut panel = CommitPanel::new();
+        let mut state = mock_state();
+        state.data_cache.commits = vec![CommitEntry {
+            id: "abc123def456".to_string(),
+            short_id: "abc123de".to_string(),
+            summary: "Test".to_string(),
+            author: "Author".to_string(),
+            timestamp: 1234567890,
+            body: None,
+        }];
+        panel.state.select(Some(0));
+
+        let key = KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE);
+        let event = panel.handle_key_event(key, &state);
+
+        match event {
+            AppEvent::Modal(crate::app::events::ModalEvent::ShowBranchCreateDialog {
+                from_branch,
+            }) => {
+                assert_eq!(from_branch, "abc123def456");
+            }
+            _ => panic!("Expected ShowBranchCreateDialog event, got {:?}", event),
+        }
     }
 }
