@@ -43,6 +43,12 @@ pub enum BackendCommand {
         branch_name: String,
         force: bool,
     },
+    CheckoutCommit {
+        commit_id: String,
+    },
+    CherryPickCommits {
+        commit_ids: Vec<String>,
+    },
     CreateBranch {
         new_name: String,
         from_branch: String,

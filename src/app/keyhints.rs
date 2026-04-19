@@ -88,6 +88,22 @@ pub fn keyhints_for_panel(panel: Panel) -> Vec<KeyHint> {
                 description: "copy hash",
             },
             KeyHint {
+                key: "C",
+                description: "copy (cherry-pick)",
+            },
+            KeyHint {
+                key: "V",
+                description: "paste (cherry-pick)",
+            },
+            KeyHint {
+                key: "Ctrl+r",
+                description: "reset copied",
+            },
+            KeyHint {
+                key: "Space",
+                description: "checkout commit",
+            },
+            KeyHint {
                 key: "g",
                 description: "reset",
             },

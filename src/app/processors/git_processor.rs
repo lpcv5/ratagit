@@ -36,6 +36,8 @@ impl GitProcessor {
             GitEvent::CheckoutBranch { branch_name, force } => {
                 self.checkout_branch(branch_name, force)
             }
+            GitEvent::CheckoutCommit { commit_id } => self.checkout_commit(commit_id),
+            GitEvent::CherryPickCommits { commit_ids } => self.cherry_pick_commits(commit_ids),
             GitEvent::CreateBranch {
                 new_name,
                 from_branch,
@@ -229,6 +231,17 @@ impl GitProcessor {
 
     fn checkout_branch(&self, branch_name: String, force: bool) -> Vec<BackendCommand> {
         vec![BackendCommand::CheckoutBranch { branch_name, force }]
+    }
+
+    fn checkout_commit(&self, commit_id: String) -> Vec<BackendCommand> {
+        vec![BackendCommand::CheckoutCommit { commit_id }]
+    }
+
+    fn cherry_pick_commits(&self, commit_ids: Vec<String>) -> Vec<BackendCommand> {
+        if commit_ids.is_empty() {
+            return vec![];
+        }
+        vec![BackendCommand::CherryPickCommits { commit_ids }]
     }
 
     fn create_branch(&self, new_name: String, from_branch: String) -> Vec<BackendCommand> {
@@ -615,6 +628,56 @@ mod tests {
             BackendCommand::GetBranchCommits { branch_name, limit }
                 if branch_name == "main" && *limit == 100
         ));
+    }
+
+    #[test]
+    fn test_checkout_commit_event_maps_to_backend_command() {
+        let processor = GitProcessor;
+        let state = mock_state();
+
+        let commands = processor.process(
+            GitEvent::CheckoutCommit {
+                commit_id: "abc123".to_string(),
+            },
+            &state,
+        );
+
+        assert_eq!(commands.len(), 1);
+        assert!(matches!(
+            &commands[0],
+            BackendCommand::CheckoutCommit { commit_id } if commit_id == "abc123"
+        ));
+    }
+
+    #[test]
+    fn test_cherry_pick_commits_event_maps_to_backend_command() {
+        let processor = GitProcessor;
+        let state = mock_state();
+
+        let commands = processor.process(
+            GitEvent::CherryPickCommits {
+                commit_ids: vec!["abc123".to_string(), "def456".to_string()],
+            },
+            &state,
+        );
+
+        assert_eq!(commands.len(), 1);
+        assert!(matches!(
+            &commands[0],
+            BackendCommand::CherryPickCommits { commit_ids }
+                if commit_ids == &vec!["abc123".to_string(), "def456".to_string()]
+        ));
+    }
+
+    #[test]
+    fn test_cherry_pick_commits_event_with_empty_ids_returns_no_command() {
+        let processor = GitProcessor;
+        let state = mock_state();
+
+        let commands =
+            processor.process(GitEvent::CherryPickCommits { commit_ids: vec![] }, &state);
+
+        assert!(commands.is_empty());
     }
 
     #[test]

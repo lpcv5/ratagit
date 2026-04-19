@@ -100,6 +100,9 @@ impl AppState {
 
     pub fn sync_commit_list_state(&mut self) {
         self.components.commit_panel.clear_list_multi_select();
+        self.components
+            .commit_panel
+            .prune_copied_commits(&self.data_cache.commits);
         sync_list_state(
             self.components.commit_panel.state_mut(),
             self.data_cache.commits.len(),
@@ -230,16 +233,14 @@ mod tests {
         let (_event_tx, event_rx) = tokio::sync::mpsc::channel(4);
         let mut state = AppState::new(cmd_tx, event_rx);
 
-        state.data_cache.commits = vec![
-            crate::backend::git_ops::CommitEntry {
-                short_id: "abc123".to_string(),
-                id: "abc123def456".to_string(),
-                summary: "Commit 1".to_string(),
-                body: None,
-                author: "Author".to_string(),
-                timestamp: 1234567890,
-            },
-        ];
+        state.data_cache.commits = vec![crate::backend::git_ops::CommitEntry {
+            short_id: "abc123".to_string(),
+            id: "abc123def456".to_string(),
+            summary: "Commit 1".to_string(),
+            body: None,
+            author: "Author".to_string(),
+            timestamp: 1234567890,
+        }];
 
         state.sync_commit_list_state();
 
@@ -253,13 +254,11 @@ mod tests {
         let (_event_tx, event_rx) = tokio::sync::mpsc::channel(4);
         let mut state = AppState::new(cmd_tx, event_rx);
 
-        state.data_cache.stashes = vec![
-            crate::backend::git_ops::StashEntry {
-                index: 0,
-                id: "stash@{0}".to_string(),
-                message: "Stash 1".to_string(),
-            },
-        ];
+        state.data_cache.stashes = vec![crate::backend::git_ops::StashEntry {
+            index: 0,
+            id: "stash@{0}".to_string(),
+            message: "Stash 1".to_string(),
+        }];
 
         state.sync_stash_list_state();
 
@@ -295,7 +294,11 @@ mod tests {
         let mut state = AppState::new(cmd_tx, event_rx);
 
         // Set selection to index 5
-        state.components.branch_list_panel.state_mut().select(Some(5));
+        state
+            .components
+            .branch_list_panel
+            .state_mut()
+            .select(Some(5));
 
         // But only have 2 branches
         state.data_cache.branches = vec![
@@ -342,10 +345,8 @@ mod tests {
         assert!(state.active_modal.is_none());
 
         // Set a modal
-        let modal = crate::components::dialogs::ModalDialogV2::help(
-            "Test Help".to_string(),
-            vec![],
-        );
+        let modal =
+            crate::components::dialogs::ModalDialogV2::help("Test Help".to_string(), vec![]);
         state.active_modal = Some(modal);
 
         assert!(state.active_modal.is_some());

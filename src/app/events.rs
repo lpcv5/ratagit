@@ -69,6 +69,12 @@ pub enum GitEvent {
         new_name: String,
         from_branch: String,
     },
+    CheckoutCommit {
+        commit_id: String,
+    },
+    CherryPickCommits {
+        commit_ids: Vec<String>,
+    },
     DeleteBranch {
         local_branch: String,
         remote: Option<BranchRemoteRef>,

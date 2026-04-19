@@ -510,6 +510,92 @@ impl CommandHandler for CheckoutBranchHandler {
     }
 }
 
+/// Checkout commit handler (detached HEAD)
+pub struct CheckoutCommitHandler;
+impl CommandHandler for CheckoutCommitHandler {
+    fn handle(
+        &self,
+        envelope: &CommandEnvelope,
+        repo: &GitRepo,
+        event_tx: &Sender<EventEnvelope>,
+    ) -> Result<()> {
+        let commit_id = if let crate::backend::BackendCommand::CheckoutCommit { commit_id } =
+            &envelope.command
+        {
+            commit_id.clone()
+        } else {
+            return Ok(());
+        };
+
+        match super::git_ops::checkout_commit(repo, &commit_id) {
+            Ok(()) => {
+                let short_id = &commit_id[..commit_id.len().min(8)];
+                send_event(
+                    event_tx,
+                    EventEnvelope::new(
+                        Some(envelope.request_id),
+                        FrontendEvent::ActionSucceeded {
+                            request_id: envelope.request_id,
+                            message: format!("Checked out commit: {short_id} (detached HEAD)"),
+                        },
+                    ),
+                );
+                refresh_all(event_tx, repo);
+            }
+            Err(error) => send_error(
+                event_tx,
+                Some(envelope.request_id),
+                "checkout commit",
+                error,
+            ),
+        }
+
+        Ok(())
+    }
+}
+
+/// Cherry-pick copied commits handler
+pub struct CherryPickCommitsHandler;
+impl CommandHandler for CherryPickCommitsHandler {
+    fn handle(
+        &self,
+        envelope: &CommandEnvelope,
+        repo: &GitRepo,
+        event_tx: &Sender<EventEnvelope>,
+    ) -> Result<()> {
+        let commit_ids = if let crate::backend::BackendCommand::CherryPickCommits { commit_ids } =
+            &envelope.command
+        {
+            commit_ids.clone()
+        } else {
+            return Ok(());
+        };
+
+        if commit_ids.is_empty() {
+            return Ok(());
+        }
+
+        match super::git_ops::cherry_pick_commits(repo, &commit_ids) {
+            Ok(()) => {
+                send_event(
+                    event_tx,
+                    EventEnvelope::new(
+                        Some(envelope.request_id),
+                        FrontendEvent::ActionSucceeded {
+                            request_id: envelope.request_id,
+                            message: format!("Cherry-picked {} commit(s)", commit_ids.len()),
+                        },
+                    ),
+                );
+                refresh_all(event_tx, repo);
+            }
+            Err(error) => send_error(event_tx, Some(envelope.request_id), "cherry-pick", error),
+        }
+
+        Ok(())
+    }
+}
+
 /// Create local branch handler
 pub struct CreateBranchHandler;
 impl CommandHandler for CreateBranchHandler {

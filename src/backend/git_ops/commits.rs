@@ -1,5 +1,6 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use git2::Sort;
+use std::process::Command;
 
 use super::repo::GitRepo;
 
@@ -202,6 +203,57 @@ fn amend_non_head_commit(
     Ok(())
 }
 
+pub fn checkout_commit(repo: &GitRepo, commit_id: &str) -> Result<()> {
+    let oid = git2::Oid::from_str(commit_id)?;
+    let commit = repo.repo.find_commit(oid)?;
+    repo.repo.checkout_tree(commit.as_object(), None)?;
+    repo.repo.set_head_detached(oid)?;
+    Ok(())
+}
+
+pub fn cherry_pick_commits(repo: &GitRepo, commit_ids: &[String]) -> Result<()> {
+    if commit_ids.is_empty() {
+        return Ok(());
+    }
+
+    let workdir = repo
+        .repo
+        .workdir()
+        .context("Repository has no working directory")?;
+
+    let mut has_merge_commit = false;
+    for commit_id in commit_ids {
+        let oid = git2::Oid::from_str(commit_id)?;
+        let commit = repo.repo.find_commit(oid)?;
+        if commit.parent_count() > 1 {
+            has_merge_commit = true;
+            break;
+        }
+    }
+
+    let mut cmd = Command::new("git");
+    cmd.current_dir(workdir);
+    cmd.arg("cherry-pick").arg("--allow-empty");
+
+    if has_merge_commit {
+        cmd.arg("-m1");
+    }
+
+    for commit_id in commit_ids.iter().rev() {
+        cmd.arg(commit_id);
+    }
+
+    let output = cmd.output()?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "Failed to cherry-pick commits: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+
+    Ok(())
+}
+
 pub fn reset_hard(repo: &GitRepo, target: &str) -> Result<()> {
     let obj = repo.repo.revparse_single(target)?;
     repo.repo.reset(&obj, git2::ResetType::Hard, None)?;
@@ -384,6 +436,118 @@ mod tests {
         assert!(summaries.contains(&"Feature commit"));
         assert!(summaries.contains(&"Main commit"));
         assert!(summaries.contains(&"Initial commit"));
+    }
+
+    #[test]
+    fn test_checkout_commit_detaches_head() {
+        let (temp_dir, repo) = create_test_repo();
+        add_commit(&repo, &temp_dir, "Commit A");
+        add_commit(&repo, &temp_dir, "Commit B");
+
+        let commits = get_commits(&repo, 10).expect("Failed to get commits");
+        let target = commits
+            .iter()
+            .find(|c| c.summary == "Commit A")
+            .expect("Commit A not found")
+            .id
+            .clone();
+
+        checkout_commit(&repo, &target).expect("Failed to checkout commit");
+
+        assert!(repo
+            .repo
+            .head_detached()
+            .expect("Failed to check detached HEAD"));
+        let head_oid = repo
+            .repo
+            .head()
+            .expect("Failed to get HEAD")
+            .target()
+            .expect("HEAD has no target");
+        assert_eq!(head_oid.to_string(), target);
+    }
+
+    #[test]
+    fn test_cherry_pick_commits_applies_commit() {
+        let (temp_dir, repo) = create_test_repo();
+
+        let base_branch = repo
+            .repo
+            .head()
+            .expect("Failed to get HEAD")
+            .shorthand()
+            .expect("Failed to get branch name")
+            .to_string();
+        let base_ref = format!("refs/heads/{base_branch}");
+        let initial_commit = repo
+            .repo
+            .head()
+            .expect("Failed to get HEAD")
+            .peel_to_commit()
+            .expect("Failed to peel initial commit");
+
+        repo.repo
+            .branch("feature", &initial_commit, false)
+            .expect("Failed to create feature branch");
+        repo.repo
+            .set_head("refs/heads/feature")
+            .expect("Failed to switch to feature branch");
+        repo.repo
+            .checkout_head(Some(git2::build::CheckoutBuilder::new().force()))
+            .expect("Failed to checkout feature branch");
+
+        fs::write(temp_dir.path().join("feature.txt"), "feature change")
+            .expect("Failed to write feature file");
+        let mut index = repo.repo.index().expect("Failed to get index");
+        index
+            .add_path(Path::new("feature.txt"))
+            .expect("Failed to stage feature file");
+        index.write().expect("Failed to write index");
+        let sig = repo.repo.signature().expect("Failed to create signature");
+        let tree_id = index.write_tree().expect("Failed to write tree");
+        let tree = repo.repo.find_tree(tree_id).expect("Failed to find tree");
+        let parent = repo
+            .repo
+            .head()
+            .expect("Failed to get HEAD")
+            .peel_to_commit()
+            .expect("Failed to peel feature parent");
+        let feature_commit_oid = repo
+            .repo
+            .commit(
+                Some("HEAD"),
+                &sig,
+                &sig,
+                "Feature commit",
+                &tree,
+                &[&parent],
+            )
+            .expect("Failed to create feature commit");
+
+        repo.repo
+            .set_head(&base_ref)
+            .expect("Failed to switch back to base branch");
+        repo.repo
+            .checkout_head(Some(
+                git2::build::CheckoutBuilder::new()
+                    .force()
+                    .remove_untracked(true),
+            ))
+            .expect("Failed to checkout base branch");
+
+        cherry_pick_commits(&repo, &[feature_commit_oid.to_string()])
+            .expect("Failed to cherry-pick commit");
+
+        let head_summary = repo
+            .repo
+            .head()
+            .expect("Failed to get HEAD")
+            .peel_to_commit()
+            .expect("Failed to peel HEAD")
+            .summary()
+            .unwrap_or("")
+            .to_string();
+        assert_eq!(head_summary, "Feature commit");
     }
 
     #[test]

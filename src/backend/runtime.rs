@@ -7,8 +7,9 @@ use super::git_ops::GitRepo;
 use super::handlers::CommandHandler;
 use super::handlers::{
     send_event, AmendCommitHandler, AmendCommitWithFilesHandler, CheckoutBranchHandler,
-    CommitHandler, CreateBranchHandler, DeleteLocalBranchHandler, DeleteRemoteBranchHandler,
-    DiscardFilesHandler, GetBranchCommitsHandler, GetBranchGraphHandler, GetCommitDiffBatchHandler,
+    CheckoutCommitHandler, CherryPickCommitsHandler, CommitHandler, CreateBranchHandler,
+    DeleteLocalBranchHandler, DeleteRemoteBranchHandler, DiscardFilesHandler,
+    GetBranchCommitsHandler, GetBranchGraphHandler, GetCommitDiffBatchHandler,
     GetCommitDiffHandler, GetCommitFilesHandler, GetCommitMessageHandler, GetDiffBatchHandler,
     GetDiffHandler, IgnoreFilesHandler, RefreshBranchesHandler, RefreshCommitsHandler,
     RefreshStashesHandler, RefreshStatusHandler, ResetHardHandler, ResetMixedHandler,
@@ -34,6 +35,8 @@ enum CommandKey {
     GetBranchGraph,
     GetBranchCommits,
     CheckoutBranch,
+    CheckoutCommit,
+    CherryPickCommits,
     CreateBranch,
     DeleteLocalBranch,
     DeleteRemoteBranch,
@@ -140,6 +143,14 @@ pub async fn run_backend(mut cmd_rx: Receiver<CommandEnvelope>, event_tx: Sender
         Box::new(CheckoutBranchHandler) as Box<dyn CommandHandler>,
     );
     handlers.insert(
+        CommandKey::CheckoutCommit,
+        Box::new(CheckoutCommitHandler) as Box<dyn CommandHandler>,
+    );
+    handlers.insert(
+        CommandKey::CherryPickCommits,
+        Box::new(CherryPickCommitsHandler) as Box<dyn CommandHandler>,
+    );
+    handlers.insert(
         CommandKey::CreateBranch,
         Box::new(CreateBranchHandler) as Box<dyn CommandHandler>,
     );
@@ -225,6 +236,12 @@ pub async fn run_backend(mut cmd_rx: Receiver<CommandEnvelope>, event_tx: Sender
             }
             crate::backend::BackendCommand::CheckoutBranch { .. } => {
                 Some(CommandKey::CheckoutBranch)
+            }
+            crate::backend::BackendCommand::CheckoutCommit { .. } => {
+                Some(CommandKey::CheckoutCommit)
+            }
+            crate::backend::BackendCommand::CherryPickCommits { .. } => {
+                Some(CommandKey::CherryPickCommits)
             }
             crate::backend::BackendCommand::CreateBranch { .. } => Some(CommandKey::CreateBranch),
             crate::backend::BackendCommand::DeleteLocalBranch { .. } => {
