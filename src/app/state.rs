@@ -100,9 +100,6 @@ impl AppState {
 
     pub fn sync_commit_list_state(&mut self) {
         self.components.commit_panel.clear_list_multi_select();
-        self.components
-            .commit_panel
-            .prune_copied_commits(&self.data_cache.commits);
         sync_list_state(
             self.components.commit_panel.state_mut(),
             self.data_cache.commits.len(),
@@ -240,6 +237,7 @@ mod tests {
             body: None,
             author: "Author".to_string(),
             timestamp: 1234567890,
+            ..Default::default()
         }];
 
         state.sync_commit_list_state();

@@ -132,6 +132,7 @@ pub fn test_commit_entry(short_id: &str, summary: &str, author: &str) -> CommitE
         body: None,
         author: author.to_string(),
         timestamp: 1234567890,
+        ..Default::default()
     }
 }
 

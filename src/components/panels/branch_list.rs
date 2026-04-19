@@ -9,7 +9,7 @@ use crate::backend::git_ops::CommitEntry;
 use crate::components::component_v2::ComponentV2;
 use crate::components::core::{render_branches, SimpleListPanel, TreePanel};
 
-use super::CommitPanel;
+use super::{CommitPanel, SharedCommitClipboard};
 
 enum BranchMode {
     List,
@@ -19,13 +19,19 @@ enum BranchMode {
 pub struct BranchListPanel {
     list: SimpleListPanel,
     mode: BranchMode,
+    copied_commit_ids: SharedCommitClipboard,
 }
 
 impl BranchListPanel {
     pub fn new() -> Self {
+        Self::with_shared_clipboard(SharedCommitClipboard::default())
+    }
+
+    pub fn with_shared_clipboard(copied_commit_ids: SharedCommitClipboard) -> Self {
         Self {
             list: SimpleListPanel::new("Branches", render_branches),
             mode: BranchMode::List,
+            copied_commit_ids,
         }
     }
 
@@ -39,7 +45,9 @@ impl BranchListPanel {
 
     pub fn show_branch_commits(&mut self) {
         self.mode = BranchMode::CommitsSub {
-            panel: Box::new(CommitPanel::new()),
+            panel: Box::new(CommitPanel::with_shared_clipboard(
+                self.copied_commit_ids.clone(),
+            )),
         };
     }
 
@@ -396,6 +404,7 @@ mod tests {
                 body: None,
                 author: "Author".to_string(),
                 timestamp: 1704067200,
+                ..Default::default()
             },
             crate::backend::git_ops::CommitEntry {
                 short_id: "def4567".to_string(),
@@ -404,6 +413,7 @@ mod tests {
                 body: None,
                 author: "Author".to_string(),
                 timestamp: 1704153600,
+                ..Default::default()
             },
         ];
         // Keep branches empty so list-mode handling would return None.
@@ -427,11 +437,48 @@ mod tests {
             body: None,
             author: "Author".to_string(),
             timestamp: 1704067200,
+            ..Default::default()
         }];
 
         let event = panel.handle_escape();
 
         assert_eq!(event, AppEvent::ExitBranchCommitsSubview);
+    }
+
+    #[test]
+    fn test_copy_in_branch_subview_is_visible_to_main_commits_panel() {
+        let shared = SharedCommitClipboard::default();
+        let mut branch_panel = BranchListPanel::with_shared_clipboard(shared.clone());
+        let mut commit_panel = CommitPanel::with_shared_clipboard(shared);
+        branch_panel.show_branch_commits();
+
+        let mut state = mock_state();
+        state.data_cache.commits = vec![crate::backend::git_ops::CommitEntry {
+            short_id: "abc1234".to_string(),
+            id: "abc123".to_string(),
+            summary: "Test commit".to_string(),
+            body: None,
+            author: "Author".to_string(),
+            timestamp: 1704067200,
+            ..Default::default()
+        }];
+
+        let copy = branch_panel.handle_key_event(
+            KeyEvent::new(KeyCode::Char('C'), KeyModifiers::SHIFT),
+            &state,
+        );
+        assert_eq!(copy, AppEvent::SelectionChanged);
+
+        let paste = commit_panel.handle_key_event(
+            KeyEvent::new(KeyCode::Char('V'), KeyModifiers::SHIFT),
+            &state,
+        );
+        assert_eq!(
+            paste,
+            AppEvent::Git(GitEvent::CherryPickCommits {
+                commit_ids: vec!["abc123".to_string()],
+            })
+        );
     }
 
     fn mock_state() -> crate::app::AppState {

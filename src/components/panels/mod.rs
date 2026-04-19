@@ -6,7 +6,7 @@ mod main_view;
 mod stash_list;
 
 pub use branch_list::BranchListPanel;
-pub use commit_panel::CommitPanel;
+pub use commit_panel::{CommitPanel, SharedCommitClipboard};
 pub use file_list::FileListPanel;
 pub use log::LogPanel;
 pub use main_view::MainViewPanel;

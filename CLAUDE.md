@@ -14,6 +14,7 @@ cargo clippy --all-targets --all-features -- -D warnings
 ```
 
 Full local gate before a PR:
+
 ```bash
 cargo fmt --check && cargo check && cargo test && cargo clippy --all-targets --all-features -- -D warnings
 ```
@@ -30,10 +31,10 @@ main.rs
 
 **Channel protocol** — `CommandEnvelope` (UI → Backend) and `EventEnvelope` (Backend → UI), both carrying a `request_id: u64` for request tracking.
 
-| Direction | Type | Key variants |
-|-----------|------|-------------|
+| Direction    | Type             | Key variants                                                                                                                                                                                     |
+| ------------ | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | UI → Backend | `BackendCommand` | `RefreshStatus`, `RefreshBranches`, `RefreshCommits`, `RefreshStashes`, `GetDiff`, `GetDiffBatch`, `GetCommitFiles`, `GetCommitDiff`, `GetBranchCommits`, `StageFile/s`, `UnstageFile/s`, `Quit` |
-| Backend → UI | `FrontendEvent` | `FilesUpdated`, `BranchesUpdated`, `CommitsUpdated`, `StashesUpdated`, `DiffLoaded`, `CommitFilesLoaded`, `BranchGraphLoaded`, `BranchCommitsLoaded`, `ActionSucceeded`, `Error` |
+| Backend → UI | `FrontendEvent`  | `FilesUpdated`, `BranchesUpdated`, `CommitsUpdated`, `StashesUpdated`, `DiffLoaded`, `CommitFilesLoaded`, `BranchGraphLoaded`, `BranchCommitsLoaded`, `ActionSucceeded`, `Error`                 |
 
 **`App` (src/app/runtime.rs)** — main loop: drain backend events → draw → poll input (100 ms). Owns `AppState` and `RequestTracker`.
 
@@ -66,3 +67,7 @@ See `docs/ARCHITECTURE.md` for full details. Key points:
 - `GitProcessor` converts `GitEvent` to `BackendCommand` sequences
 - `ModalProcessor` updates `AppState.active_modal` to show/hide dialogs
 - All Git I/O happens asynchronously on the backend task
+
+## Reference
+
+This project aim to rewrite lazygit to rust version, you can check how lazygit process the git and ui/ux from the local downloaded repo here D:\prj\lazygit

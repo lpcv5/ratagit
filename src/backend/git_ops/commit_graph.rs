@@ -1,6 +1,6 @@
+use super::CommitEntry;
 #[allow(unused_imports)]
 use std::collections::HashSet;
-use super::CommitEntry;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct GraphCell {
@@ -26,12 +26,20 @@ struct Pipe {
 }
 
 impl Pipe {
-    fn left(&self) -> i16 { self.from_pos.min(self.to_pos) }
-    fn right(&self) -> i16 { self.from_pos.max(self.to_pos) }
+    fn left(&self) -> i16 {
+        self.from_pos.min(self.to_pos)
+    }
+    fn right(&self) -> i16 {
+        self.from_pos.max(self.to_pos)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
-enum CellType { Connection, Commit, Merge }
+enum CellType {
+    Connection,
+    Commit,
+    Merge,
+}
 
 #[derive(Debug, Clone)]
 struct Cell {
@@ -45,26 +53,37 @@ struct Cell {
 
 impl Cell {
     fn new() -> Self {
-        Cell { up: false, down: false, left: false, right: false,
-               cell_type: CellType::Connection, color_idx: 0 }
+        Cell {
+            up: false,
+            down: false,
+            left: false,
+            right: false,
+            cell_type: CellType::Connection,
+            color_idx: 0,
+        }
     }
 }
 
-fn get_box_drawing_chars(up: bool, down: bool, left: bool, right: bool) -> (&'static str, &'static str) {
+fn get_box_drawing_chars(
+    up: bool,
+    down: bool,
+    left: bool,
+    right: bool,
+) -> (&'static str, &'static str) {
     match (up, down, left, right) {
-        (true,  true,  _,     true)  => ("│", "─"),
-        (true,  true,  _,     false) => ("│", " "),
-        (true,  false, true,  true)  => ("┴", "─"),
-        (true,  false, true,  false) => ("╯", " "),
-        (true,  false, false, true)  => ("╰", "─"),
-        (true,  false, false, false) => ("╵", " "),
-        (false, true,  true,  true)  => ("┬", "─"),
-        (false, true,  true,  false) => ("╮", " "),
-        (false, true,  false, true)  => ("╭", "─"),
-        (false, true,  false, false) => ("╷", " "),
-        (false, false, true,  true)  => ("─", "─"),
-        (false, false, true,  false) => ("─", " "),
-        (false, false, false, true)  => ("╶", "─"),
+        (true, true, _, true) => ("│", "─"),
+        (true, true, _, false) => ("│", " "),
+        (true, false, true, true) => ("┴", "─"),
+        (true, false, true, false) => ("╯", " "),
+        (true, false, false, true) => ("╰", "─"),
+        (true, false, false, false) => ("╵", " "),
+        (false, true, true, true) => ("┬", "─"),
+        (false, true, true, false) => ("╮", " "),
+        (false, true, false, true) => ("╭", "─"),
+        (false, true, false, false) => ("╷", " "),
+        (false, false, true, true) => ("─", "─"),
+        (false, false, true, false) => ("─", " "),
+        (false, false, false, true) => ("╶", "─"),
         (false, false, false, false) => (" ", " "),
     }
 }
@@ -83,7 +102,10 @@ fn next_available(exclude1: &HashSet<i16>, exclude2: &HashSet<i16>) -> i16 {
             return i;
         }
     }
-    panic!("No available position found (graph too wide - exceeded {} branches)", i16::MAX);
+    panic!(
+        "No available position found (graph too wide - exceeded {} branches)",
+        i16::MAX
+    );
 }
 
 /// Computes the next set of pipes for a commit.
@@ -130,18 +152,24 @@ fn get_next_pipes(prev_pipes: &[Pipe], commit: &CommitEntry, color_idx: u8) -> V
     // STARTS pipe for first parent
     let to_hash = commit.parents.first().cloned().unwrap_or_default();
     new_pipes.push(Pipe {
-        from_pos: pos, to_pos: pos,
-        from_hash: commit.id.clone(), to_hash,
-        kind: PipeKind::Starts, color_idx,
+        from_pos: pos,
+        to_pos: pos,
+        from_hash: commit.id.clone(),
+        to_hash,
+        kind: PipeKind::Starts,
+        color_idx,
     });
 
     // TERMINATES pipes (pipes ending at this commit)
     for pipe in &current {
         if pipe.to_hash == commit.id {
             new_pipes.push(Pipe {
-                from_pos: pipe.to_pos, to_pos: pos,
-                from_hash: pipe.from_hash.clone(), to_hash: pipe.to_hash.clone(),
-                kind: PipeKind::Terminates, color_idx: pipe.color_idx,
+                from_pos: pipe.to_pos,
+                to_pos: pos,
+                from_hash: pipe.from_hash.clone(),
+                to_hash: pipe.to_hash.clone(),
+                kind: PipeKind::Terminates,
+                color_idx: pipe.color_idx,
             });
             traverse(pipe.to_pos, pos, &mut traversed, &mut taken);
         }
@@ -152,9 +180,12 @@ fn get_next_pipes(prev_pipes: &[Pipe], commit: &CommitEntry, color_idx: u8) -> V
         if pipe.to_hash != commit.id && pipe.to_pos < pos {
             let avail = next_available(&traversed, &empty_set);
             new_pipes.push(Pipe {
-                from_pos: pipe.to_pos, to_pos: avail,
-                from_hash: pipe.from_hash.clone(), to_hash: pipe.to_hash.clone(),
-                kind: PipeKind::Continues, color_idx: pipe.color_idx,
+                from_pos: pipe.to_pos,
+                to_pos: avail,
+                from_hash: pipe.from_hash.clone(),
+                to_hash: pipe.to_hash.clone(),
+                kind: PipeKind::Continues,
+                color_idx: pipe.color_idx,
             });
             traverse(pipe.to_pos, avail, &mut traversed, &mut taken);
         }
@@ -165,8 +196,10 @@ fn get_next_pipes(prev_pipes: &[Pipe], commit: &CommitEntry, color_idx: u8) -> V
         for (i, parent) in commit.parents[1..].iter().enumerate() {
             let avail = next_available(&taken, &continuing_spots);
             new_pipes.push(Pipe {
-                from_pos: pos, to_pos: avail,
-                from_hash: commit.id.clone(), to_hash: parent.clone(),
+                from_pos: pos,
+                to_pos: avail,
+                from_hash: commit.id.clone(),
+                to_hash: parent.clone(),
                 kind: PipeKind::Starts,
                 color_idx: color_idx.wrapping_add(1 + i as u8) % 8,
             });
@@ -185,9 +218,12 @@ fn get_next_pipes(prev_pipes: &[Pipe], commit: &CommitEntry, color_idx: u8) -> V
                 last = i;
             }
             new_pipes.push(Pipe {
-                from_pos: pipe.to_pos, to_pos: last,
-                from_hash: pipe.from_hash.clone(), to_hash: pipe.to_hash.clone(),
-                kind: PipeKind::Continues, color_idx: pipe.color_idx,
+                from_pos: pipe.to_pos,
+                to_pos: last,
+                from_hash: pipe.from_hash.clone(),
+                to_hash: pipe.to_hash.clone(),
+                kind: PipeKind::Continues,
+                color_idx: pipe.color_idx,
             });
             traverse(pipe.to_pos, last, &mut traversed, &mut taken);
         }
@@ -252,7 +288,11 @@ fn render_pipe_set(pipes: &[Pipe]) -> Vec<GraphCell> {
         return vec![];
     }
 
-    let max_pos = pipes.iter().map(|p| p.to_pos.max(p.from_pos)).max().unwrap_or(0) as usize;
+    let max_pos = pipes
+        .iter()
+        .map(|p| p.to_pos.max(p.from_pos))
+        .max()
+        .unwrap_or(0) as usize;
     let mut commit_pos = 0;
     let mut start_count = 0;
 
@@ -283,7 +323,11 @@ fn render_pipe_set(pipes: &[Pipe]) -> Vec<GraphCell> {
         }
     }
 
-    cells[commit_pos].cell_type = if is_merge { CellType::Merge } else { CellType::Commit };
+    cells[commit_pos].cell_type = if is_merge {
+        CellType::Merge
+    } else {
+        CellType::Commit
+    };
 
     cells
         .iter()
@@ -296,7 +340,10 @@ fn render_pipe_set(pipes: &[Pipe]) -> Vec<GraphCell> {
                     format!("{a}{b}")
                 }
             };
-            GraphCell { chars, color_idx: cell.color_idx }
+            GraphCell {
+                chars,
+                color_idx: cell.color_idx,
+            }
         })
         .collect()
 }
@@ -308,7 +355,8 @@ pub fn render_commit_graph(commits: &[CommitEntry]) -> Vec<Vec<GraphCell>> {
 
     let sentinel = "START".to_string();
     let mut pipes = vec![Pipe {
-        from_pos: 0, to_pos: 0,
+        from_pos: 0,
+        to_pos: 0,
         from_hash: sentinel.clone(),
         to_hash: commits[0].id.clone(),
         kind: PipeKind::Starts,
@@ -354,9 +402,12 @@ mod tests {
     fn test_render_pipe_set_single_commit() {
         // A single commit with no branches: one STARTS pipe at pos 0
         let pipes = vec![Pipe {
-            from_pos: 0, to_pos: 0,
-            from_hash: "abc".to_string(), to_hash: "def".to_string(),
-            kind: PipeKind::Starts, color_idx: 1,
+            from_pos: 0,
+            to_pos: 0,
+            from_hash: "abc".to_string(),
+            to_hash: "def".to_string(),
+            kind: PipeKind::Starts,
+            color_idx: 1,
         }];
         let cells = render_pipe_set(&pipes);
         assert_eq!(cells.len(), 1);
@@ -369,10 +420,22 @@ mod tests {
         // A commit at pos 0 with a continuing pipe at pos 1
         // STARTS at pos 0, CONTINUES from pos 1 to pos 1
         let pipes = vec![
-            Pipe { from_pos: 0, to_pos: 0, from_hash: "a".to_string(), to_hash: "b".to_string(),
-                   kind: PipeKind::Starts, color_idx: 1 },
-            Pipe { from_pos: 1, to_pos: 1, from_hash: "x".to_string(), to_hash: "y".to_string(),
-                   kind: PipeKind::Continues, color_idx: 2 },
+            Pipe {
+                from_pos: 0,
+                to_pos: 0,
+                from_hash: "a".to_string(),
+                to_hash: "b".to_string(),
+                kind: PipeKind::Starts,
+                color_idx: 1,
+            },
+            Pipe {
+                from_pos: 1,
+                to_pos: 1,
+                from_hash: "x".to_string(),
+                to_hash: "y".to_string(),
+                kind: PipeKind::Continues,
+                color_idx: 2,
+            },
         ];
         let cells = render_pipe_set(&pipes);
         assert_eq!(cells.len(), 2);
@@ -384,10 +447,22 @@ mod tests {
     fn test_render_pipe_set_merge() {
         // Merge commit: two STARTS pipes at pos 0
         let pipes = vec![
-            Pipe { from_pos: 0, to_pos: 0, from_hash: "a".to_string(), to_hash: "b".to_string(),
-                   kind: PipeKind::Starts, color_idx: 1 },
-            Pipe { from_pos: 0, to_pos: 1, from_hash: "a".to_string(), to_hash: "c".to_string(),
-                   kind: PipeKind::Starts, color_idx: 2 },
+            Pipe {
+                from_pos: 0,
+                to_pos: 0,
+                from_hash: "a".to_string(),
+                to_hash: "b".to_string(),
+                kind: PipeKind::Starts,
+                color_idx: 1,
+            },
+            Pipe {
+                from_pos: 0,
+                to_pos: 1,
+                from_hash: "a".to_string(),
+                to_hash: "c".to_string(),
+                kind: PipeKind::Starts,
+                color_idx: 2,
+            },
         ];
         let cells = render_pipe_set(&pipes);
         assert_eq!(cells.len(), 2);
@@ -420,10 +495,7 @@ mod tests {
 
     #[test]
     fn test_linear_graph_two_commits() {
-        let commits = vec![
-            make_commit("aaa", &["bbb"]),
-            make_commit("bbb", &[]),
-        ];
+        let commits = vec![make_commit("aaa", &["bbb"]), make_commit("bbb", &[])];
         let graph = render_commit_graph(&commits);
         assert_eq!(graph.len(), 2);
         // First commit: single commit symbol

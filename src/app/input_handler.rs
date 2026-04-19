@@ -215,6 +215,7 @@ mod tests {
             body: None,
             author: "Author".to_string(),
             timestamp: 1704067200,
+            ..Default::default()
         }]);
         app.state.data_cache.commits = vec![crate::backend::git_ops::CommitEntry {
             short_id: "new1234".to_string(),
@@ -223,6 +224,7 @@ mod tests {
             body: None,
             author: "Author".to_string(),
             timestamp: 1704153600,
+            ..Default::default()
         }];
 
         let input = Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));

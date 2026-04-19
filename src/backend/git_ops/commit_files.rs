@@ -136,6 +136,7 @@ mod tests {
                 body: None,
                 author: "Test User <test@example.com>".to_string(),
                 timestamp: 0,
+                ..Default::default()
             }
         };
 
@@ -159,6 +160,7 @@ mod tests {
             body: None,
             author: "Test".to_string(),
             timestamp: 0,
+            ..Default::default()
         };
 
         let result = get_commit_files(&repo, &invalid_commit);

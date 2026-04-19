@@ -1,7 +1,8 @@
 use crate::app::events::AppEvent;
 use crate::app::Panel;
 use crate::components::panels::{
-    BranchListPanel, CommitPanel, FileListPanel, LogPanel, MainViewPanel, StashListPanel,
+    BranchListPanel, CommitPanel, FileListPanel, LogPanel, MainViewPanel, SharedCommitClipboard,
+    StashListPanel,
 };
 
 /// 所有面板组件的容器
@@ -16,10 +17,11 @@ pub struct AppComponents {
 
 impl AppComponents {
     pub fn new() -> Self {
+        let copied_commit_ids = SharedCommitClipboard::default();
         Self {
             file_list_panel: FileListPanel::new(),
-            branch_list_panel: BranchListPanel::new(),
-            commit_panel: CommitPanel::new(),
+            branch_list_panel: BranchListPanel::with_shared_clipboard(copied_commit_ids.clone()),
+            commit_panel: CommitPanel::with_shared_clipboard(copied_commit_ids),
             stash_list_panel: StashListPanel::new(),
             main_view_panel: MainViewPanel::new(),
             log_panel: LogPanel::new(),

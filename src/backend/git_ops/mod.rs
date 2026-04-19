@@ -1,8 +1,8 @@
 mod branch_graph;
-mod commit_graph;
 mod branches;
 mod commit_diff;
 mod commit_files;
+mod commit_graph;
 mod commits;
 mod diff;
 mod repo;
@@ -11,13 +11,13 @@ mod status;
 mod working_tree;
 
 pub use branch_graph::get_branch_graph;
-pub use commit_graph::GraphCell;
 pub use branches::{
     checkout_branch, create_branch, delete_local_branch, delete_remote_branch, get_branches,
     BranchEntry,
 };
 pub use commit_diff::get_commit_diff;
 pub use commit_files::get_commit_files;
+pub use commit_graph::GraphCell;
 pub use commits::{
     amend_commit, amend_commit_with_files, checkout_commit, cherry_pick_commits, commit,
     get_commit_message, get_commits, get_commits_for_branch, reset_hard, reset_mixed, reset_soft,
