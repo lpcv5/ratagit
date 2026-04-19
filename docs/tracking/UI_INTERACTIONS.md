@@ -195,7 +195,7 @@ and the default keybinding config in `pkg/config/user_config.go`.
 | `o` | Open commit in browser | ❌ | ❌ |
 | `n` | Create new branch off of commit | ❌ | ❌ |
 | `N` | Move commits to new branch | ❌ | ❌ |
-| `g` | Reset | ❌ | ❌ |
+| `g` | Reset | ✅ | ✅ |
 | `C` | Copy (cherry-pick) | ❌ | ❌ |
 | `<c-t>` | Open external diff tool (git difftool) | ❌ | ❌ |
 | `*` | Select commits of current branch | ❌ | ❌ |

@@ -316,6 +316,7 @@ impl ComponentV2 for CommitPanel {
                 }
                 AppEvent::None
             }
+            KeyCode::Char('g') => AppEvent::Modal(crate::app::events::ModalEvent::ShowResetMenu),
             _ => AppEvent::None,
         }
     }
@@ -467,6 +468,22 @@ mod tests {
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::channel(100);
         let (_event_tx, event_rx) = tokio::sync::mpsc::channel(100);
         AppState::new(cmd_tx, event_rx)
+    }
+
+    #[test]
+    fn test_g_key_shows_reset_menu() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let mut panel = CommitPanel::new();
+        let state = mock_state();
+
+        let key = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::NONE);
+        let event = panel.handle_key_event(key, &state);
+
+        assert_eq!(
+            event,
+            AppEvent::Modal(crate::app::events::ModalEvent::ShowResetMenu)
+        );
     }
 
     #[test]
