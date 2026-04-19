@@ -27,7 +27,13 @@ impl SimpleListPanel {
     }
 
     /// Temporary bridge method for old renderer (will be removed when renderer migrates to ComponentV2)
-    pub fn render(&mut self, frame: &mut ratatui::Frame, area: ratatui::layout::Rect, is_focused: bool, data: &CachedData) {
+    pub fn render(
+        &mut self,
+        frame: &mut ratatui::Frame,
+        area: ratatui::layout::Rect,
+        is_focused: bool,
+        data: &CachedData,
+    ) {
         (self.render_fn)(frame, area, is_focused, data, &mut self.state);
     }
 }

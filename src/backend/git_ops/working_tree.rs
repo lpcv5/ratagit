@@ -295,5 +295,4 @@ mod tests {
         let content = fs::read_to_string(&gitignore_path).expect("Failed to read .gitignore");
         assert_eq!(content, "file1.txt\nfile2.txt\ndir/file3.txt\n");
     }
-
 }

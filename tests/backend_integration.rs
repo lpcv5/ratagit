@@ -1,13 +1,17 @@
 mod fixtures;
 
 use fixtures::TestRepo;
-use ratagit::backend::{run_backend, BackendCommand, CommandEnvelope, EventEnvelope, FrontendEvent};
+use ratagit::backend::{
+    run_backend, BackendCommand, CommandEnvelope, EventEnvelope, FrontendEvent,
+};
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::time::timeout;
 
 /// Helper to create backend channels and spawn backend task
-async fn setup_backend(repo_path: &str) -> (mpsc::Sender<CommandEnvelope>, mpsc::Receiver<EventEnvelope>) {
+async fn setup_backend(
+    repo_path: &str,
+) -> (mpsc::Sender<CommandEnvelope>, mpsc::Receiver<EventEnvelope>) {
     let (cmd_tx, cmd_rx) = mpsc::channel(100);
     let (event_tx, event_rx) = mpsc::channel(100);
 
@@ -34,7 +38,12 @@ async fn send_and_receive(
     // Wait up to 2 seconds for response with matching request_id
     let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
     loop {
-        match timeout(deadline.duration_since(tokio::time::Instant::now()), event_rx.recv()).await {
+        match timeout(
+            deadline.duration_since(tokio::time::Instant::now()),
+            event_rx.recv(),
+        )
+        .await
+        {
             Ok(Some(envelope)) => {
                 // Return the first event with matching request_id
                 if envelope.request_id == Some(request_id) {
@@ -46,7 +55,6 @@ async fn send_and_receive(
         }
     }
 }
-
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_refresh_status_command() {
@@ -70,7 +78,10 @@ async fn test_refresh_status_command() {
     }
 
     // Send Quit command
-    cmd_tx.send(CommandEnvelope::new(999, BackendCommand::Quit)).await.ok();
+    cmd_tx
+        .send(CommandEnvelope::new(999, BackendCommand::Quit))
+        .await
+        .ok();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -87,15 +98,20 @@ async fn test_refresh_branches_command() {
     match response.event {
         FrontendEvent::BranchesUpdated { branches } => {
             assert!(branches.len() >= 2); // default branch + feature
-            // Check that feature branch exists
+                                          // Check that feature branch exists
             assert!(branches.iter().any(|b| b.name == "feature"));
             // Check that we have at least one other branch (master or main)
-            assert!(branches.iter().any(|b| b.name == "master" || b.name == "main"));
+            assert!(branches
+                .iter()
+                .any(|b| b.name == "master" || b.name == "main"));
         }
         _ => panic!("Expected BranchesUpdated event"),
     }
 
-    cmd_tx.send(CommandEnvelope::new(999, BackendCommand::Quit)).await.ok();
+    cmd_tx
+        .send(CommandEnvelope::new(999, BackendCommand::Quit))
+        .await
+        .ok();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -104,9 +120,14 @@ async fn test_refresh_commits_command() {
 
     let (cmd_tx, mut event_rx) = setup_backend(test_repo.path.to_str().unwrap()).await;
 
-    let response = send_and_receive(&cmd_tx, &mut event_rx, 3, BackendCommand::RefreshCommits { limit: 100 })
-        .await
-        .expect("Should receive response");
+    let response = send_and_receive(
+        &cmd_tx,
+        &mut event_rx,
+        3,
+        BackendCommand::RefreshCommits { limit: 100 },
+    )
+    .await
+    .expect("Should receive response");
 
     assert_eq!(response.request_id, Some(3));
     match response.event {
@@ -116,7 +137,10 @@ async fn test_refresh_commits_command() {
         _ => panic!("Expected CommitsUpdated event"),
     }
 
-    cmd_tx.send(CommandEnvelope::new(999, BackendCommand::Quit)).await.ok();
+    cmd_tx
+        .send(CommandEnvelope::new(999, BackendCommand::Quit))
+        .await
+        .ok();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -145,7 +169,10 @@ async fn test_stage_file_command() {
         _ => panic!("Expected ActionSucceeded event"),
     }
 
-    cmd_tx.send(CommandEnvelope::new(999, BackendCommand::Quit)).await.ok();
+    cmd_tx
+        .send(CommandEnvelope::new(999, BackendCommand::Quit))
+        .await
+        .ok();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -173,7 +200,10 @@ async fn test_unstage_file_command() {
         _ => panic!("Expected ActionSucceeded event"),
     }
 
-    cmd_tx.send(CommandEnvelope::new(999, BackendCommand::Quit)).await.ok();
+    cmd_tx
+        .send(CommandEnvelope::new(999, BackendCommand::Quit))
+        .await
+        .ok();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -209,7 +239,10 @@ async fn test_multiple_commands_sequence() {
         .expect("Should receive response 3");
     assert_eq!(resp3.request_id, Some(12));
 
-    cmd_tx.send(CommandEnvelope::new(999, BackendCommand::Quit)).await.ok();
+    cmd_tx
+        .send(CommandEnvelope::new(999, BackendCommand::Quit))
+        .await
+        .ok();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -276,6 +309,8 @@ async fn test_revert_commit() {
         head_message
     );
 
-    cmd_tx.send(CommandEnvelope::new(999, BackendCommand::Quit)).await.ok();
+    cmd_tx
+        .send(CommandEnvelope::new(999, BackendCommand::Quit))
+        .await
+        .ok();
 }
-

@@ -1,7 +1,7 @@
-use crate::components::core::{render_stashes, SimpleListPanel};
-use crate::components::component_v2::ComponentV2;
 use crate::app::events::{AppEvent, GitEvent};
 use crate::app::AppState;
+use crate::components::component_v2::ComponentV2;
+use crate::components::core::{render_stashes, SimpleListPanel};
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -22,7 +22,13 @@ impl StashListPanel {
     }
 
     /// Temporary bridge method for old renderer (will be removed when renderer migrates to ComponentV2)
-    pub fn render(&mut self, frame: &mut ratatui::Frame, area: ratatui::layout::Rect, is_focused: bool, data: &crate::app::CachedData) {
+    pub fn render(
+        &mut self,
+        frame: &mut ratatui::Frame,
+        area: ratatui::layout::Rect,
+        is_focused: bool,
+        data: &crate::app::CachedData,
+    ) {
         self.0.render(frame, area, is_focused, data);
     }
 }
@@ -77,21 +83,19 @@ mod render_tests {
 
     #[test]
     fn test_stash_panel_component_v2() {
-        use crate::components::component_v2::ComponentV2;
         use crate::app::events::AppEvent;
+        use crate::components::component_v2::ComponentV2;
         use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
         let mut panel = StashListPanel::new();
         let mut state = mock_state();
 
         // Add a stash entry so navigation works
-        state.data_cache.stashes = vec![
-            crate::backend::git_ops::StashEntry {
-                index: 0,
-                id: "abc123".to_string(),
-                message: "Test stash".to_string(),
-            }
-        ];
+        state.data_cache.stashes = vec![crate::backend::git_ops::StashEntry {
+            index: 0,
+            id: "abc123".to_string(),
+            message: "Test stash".to_string(),
+        }];
 
         let key = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
         let event = panel.handle_key_event(key, &state);
@@ -136,13 +140,11 @@ mod render_tests {
     fn test_stash_list_apply_event() {
         let mut panel = StashListPanel::new();
         let mut state = mock_state();
-        state.data_cache.stashes = vec![
-            crate::backend::git_ops::StashEntry {
-                index: 0,
-                id: "abc123".to_string(),
-                message: "Test stash".to_string(),
-            },
-        ];
+        state.data_cache.stashes = vec![crate::backend::git_ops::StashEntry {
+            index: 0,
+            id: "abc123".to_string(),
+            message: "Test stash".to_string(),
+        }];
 
         panel.state_mut().select(Some(0));
 
@@ -157,13 +159,11 @@ mod render_tests {
     fn test_stash_list_pop_event() {
         let mut panel = StashListPanel::new();
         let mut state = mock_state();
-        state.data_cache.stashes = vec![
-            crate::backend::git_ops::StashEntry {
-                index: 0,
-                id: "abc123".to_string(),
-                message: "Test stash".to_string(),
-            },
-        ];
+        state.data_cache.stashes = vec![crate::backend::git_ops::StashEntry {
+            index: 0,
+            id: "abc123".to_string(),
+            message: "Test stash".to_string(),
+        }];
 
         panel.state_mut().select(Some(0));
 
@@ -178,13 +178,11 @@ mod render_tests {
     fn test_stash_list_drop_event() {
         let mut panel = StashListPanel::new();
         let mut state = mock_state();
-        state.data_cache.stashes = vec![
-            crate::backend::git_ops::StashEntry {
-                index: 0,
-                id: "abc123".to_string(),
-                message: "Test stash".to_string(),
-            },
-        ];
+        state.data_cache.stashes = vec![crate::backend::git_ops::StashEntry {
+            index: 0,
+            id: "abc123".to_string(),
+            message: "Test stash".to_string(),
+        }];
 
         panel.state_mut().select(Some(0));
 
@@ -208,11 +206,9 @@ mod render_tests {
         assert_eq!(event, AppEvent::None);
     }
 
-
     fn mock_state() -> crate::app::AppState {
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::channel(100);
         let (_event_tx, event_rx) = tokio::sync::mpsc::channel(100);
         crate::app::AppState::new(cmd_tx, event_rx)
     }
-
 }

@@ -1,15 +1,15 @@
+use ratatui::layout::Rect;
 use ratatui::{
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
 };
-use ratatui::layout::Rect;
 
 use crate::app::CachedData;
 
-use crate::components::core::theme;
-use crate::components::component_v2::ComponentV2;
 use crate::app::events::AppEvent;
 use crate::app::AppState;
+use crate::components::component_v2::ComponentV2;
+use crate::components::core::theme;
 use ratatui::buffer::Buffer;
 
 /// 主视面板组件（持有自身滚动状态）
@@ -37,9 +37,15 @@ impl MainViewPanel {
     }
 
     /// Temporary bridge method for old renderer (will be removed when renderer migrates to ComponentV2)
-    pub fn render(&mut self, frame: &mut ratatui::Frame, area: ratatui::layout::Rect, is_focused: bool, data: &CachedData) {
-        use ratatui::widgets::Paragraph;
+    pub fn render(
+        &mut self,
+        frame: &mut ratatui::Frame,
+        area: ratatui::layout::Rect,
+        is_focused: bool,
+        data: &CachedData,
+    ) {
         use crate::components::core::panel_block;
+        use ratatui::widgets::Paragraph;
 
         let title = if let Some((path, _)) = &data.current_diff {
             format!("Main View · Diff · {path}")
@@ -225,7 +231,11 @@ fn apply_sgr_sequence(seq: &str, style: &mut Style) {
 }
 
 impl ComponentV2 for MainViewPanel {
-    fn handle_key_event(&mut self, _key: crossterm::event::KeyEvent, _state: &AppState) -> AppEvent {
+    fn handle_key_event(
+        &mut self,
+        _key: crossterm::event::KeyEvent,
+        _state: &AppState,
+    ) -> AppEvent {
         // Display-only component - no keyboard input handling
         AppEvent::None
     }

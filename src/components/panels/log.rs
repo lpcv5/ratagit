@@ -2,9 +2,9 @@ use ratatui::layout::Rect;
 
 use crate::app::CachedData;
 
-use crate::components::component_v2::ComponentV2;
 use crate::app::events::AppEvent;
 use crate::app::AppState;
+use crate::components::component_v2::ComponentV2;
 use ratatui::buffer::Buffer;
 
 /// 日志面板组件（持有自身滚动状态）
@@ -27,7 +27,13 @@ impl LogPanel {
     }
 
     /// Temporary bridge method for old renderer (will be removed when renderer migrates to ComponentV2)
-    pub fn render(&mut self, frame: &mut ratatui::Frame, area: ratatui::layout::Rect, is_focused: bool, data: &CachedData) {
+    pub fn render(
+        &mut self,
+        frame: &mut ratatui::Frame,
+        area: ratatui::layout::Rect,
+        is_focused: bool,
+        data: &CachedData,
+    ) {
         use crate::components::core::ScrollableText;
 
         let content = if data.log_entries.is_empty() {
@@ -48,7 +54,11 @@ impl Default for LogPanel {
 }
 
 impl ComponentV2 for LogPanel {
-    fn handle_key_event(&mut self, _key: crossterm::event::KeyEvent, _state: &AppState) -> AppEvent {
+    fn handle_key_event(
+        &mut self,
+        _key: crossterm::event::KeyEvent,
+        _state: &AppState,
+    ) -> AppEvent {
         // Display-only component - no keyboard input handling
         AppEvent::None
     }
@@ -93,12 +103,15 @@ mod render_tests {
         ];
 
         for key_code in keys {
-            let key = crossterm::event::KeyEvent::new(
-                key_code,
-                crossterm::event::KeyModifiers::NONE,
-            );
+            let key =
+                crossterm::event::KeyEvent::new(key_code, crossterm::event::KeyModifiers::NONE);
             let event = panel.handle_key_event(key, &state);
-            assert_eq!(event, AppEvent::None, "Key {:?} should return None", key_code);
+            assert_eq!(
+                event,
+                AppEvent::None,
+                "Key {:?} should return None",
+                key_code
+            );
         }
     }
 
@@ -121,11 +134,9 @@ mod render_tests {
         assert_eq!(panel.scroll, 0);
     }
 
-
     fn mock_state() -> AppState {
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::channel(100);
         let (_event_tx, event_rx) = tokio::sync::mpsc::channel(100);
         AppState::new(cmd_tx, event_rx)
     }
-
 }
