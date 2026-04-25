@@ -2,33 +2,31 @@
 
 ## Goal
 
-Implement left-nav workspace layout:
+Refine left-nav workspace layout:
 
 - left: Files, Branches, Commits, Stash
 - right: Details, Log
-- bottom: shortcuts for current focused panel only
+- no top branch/focus/status summary
+- bottom: Git operation shortcuts for current focused panel only
 
 ## Vertical Slice
 
 1. Core state/action update
-- add 6-panel `PanelFocus`
-- add `UiAction::FocusPanel`
-- add `AppState.last_left_focus`
-- keep `FocusNext/FocusPrev` cycling on left panels only
+- keep existing `FocusNext` / `FocusPrev` state transitions
 
 2. UI render projection
-- switch to left/right workspace rows
-- render Details and Log from `AppState`
-- render bottom shortcut bar from current focus
+- remove top branch/focus/status summary from text and ratatui renderers
+- render bottom shortcut bar from current focus with Git operations only
 
 3. App input mapping
-- support `1..6` panel direct focus
-- keep existing action keys
+- map panel cycle to `h` / `l`
+- remove `Tab` / `Shift+Tab` panel navigation
+- keep existing Git action keys
 
 4. Tests
-- unit tests for focus transitions and right-panel movement constraints
-- snapshot tests for new panel structure and focus-driven shortcuts
-- harness scenario for direct focus switching and shortcut visibility
+- unit test for input mapping
+- snapshot tests for hidden top status and Git-operation-only shortcuts
+- harness scenario for current focused-panel Git shortcut visibility
 
 5. Docs and quality gates
 - update `PRODUCT.md` and `DESIGN.md`

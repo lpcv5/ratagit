@@ -25,11 +25,15 @@ fn snapshots_empty_repo_80x24() {
             height: 24,
         },
     );
-    assert!(text.contains("ratagit MVP"));
-    assert!(text.contains("summary=staged: 0, unstaged: 0"));
+    let first_lines = text.lines().take(2).collect::<Vec<_>>().join("\n");
+    assert!(!first_lines.contains("branch=main"));
+    assert!(!first_lines.contains("focus=Files"));
+    assert!(!first_lines.contains("summary=staged: 0, unstaged: 0"));
     assert!(text.contains("[Files]"));
     assert!(text.contains("[Details]"));
     assert!(text.contains("keys(files):"));
+    assert!(!text.contains("tab/shift+tab"));
+    assert!(!text.contains("1-6 focus panel"));
 }
 
 #[test]
@@ -99,8 +103,9 @@ fn snapshots_shortcuts_follow_current_focus() {
         },
     )
     .as_text();
-    assert!(text.contains("focus=Log"));
-    assert!(text.contains("keys(log):"));
+    assert!(!text.contains("focus=Log"));
+    assert!(!text.contains("keys(log):"));
+    assert!(!text.contains("tab/shift+tab"));
 }
 
 #[test]

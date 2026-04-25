@@ -53,48 +53,78 @@ fn run_tui() -> Result<(), Box<dyn Error>> {
         match key.code {
             KeyCode::Char('q') => break,
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => break,
-            KeyCode::Char('r') => runtime.dispatch_ui(UiAction::RefreshAll),
-            KeyCode::Tab => runtime.dispatch_ui(UiAction::FocusNext),
-            KeyCode::BackTab => runtime.dispatch_ui(UiAction::FocusPrev),
-            KeyCode::Down | KeyCode::Char('j') => runtime.dispatch_ui(UiAction::MoveDown),
-            KeyCode::Up | KeyCode::Char('k') => runtime.dispatch_ui(UiAction::MoveUp),
-            KeyCode::Char('1') => runtime.dispatch_ui(UiAction::FocusPanel {
-                panel: PanelFocus::Files,
-            }),
-            KeyCode::Char('2') => runtime.dispatch_ui(UiAction::FocusPanel {
-                panel: PanelFocus::Branches,
-            }),
-            KeyCode::Char('3') => runtime.dispatch_ui(UiAction::FocusPanel {
-                panel: PanelFocus::Commits,
-            }),
-            KeyCode::Char('4') => runtime.dispatch_ui(UiAction::FocusPanel {
-                panel: PanelFocus::Stash,
-            }),
-            KeyCode::Char('5') => runtime.dispatch_ui(UiAction::FocusPanel {
-                panel: PanelFocus::Details,
-            }),
-            KeyCode::Char('6') => runtime.dispatch_ui(UiAction::FocusPanel {
-                panel: PanelFocus::Log,
-            }),
-            KeyCode::Char('s') => runtime.dispatch_ui(UiAction::StageSelectedFile),
-            KeyCode::Char('u') => runtime.dispatch_ui(UiAction::UnstageSelectedFile),
-            KeyCode::Char('c') => runtime.dispatch_ui(UiAction::CreateCommit {
-                message: "mvp commit".to_string(),
-            }),
-            KeyCode::Char('b') => runtime.dispatch_ui(UiAction::CreateBranch {
-                name: "feature/new".to_string(),
-            }),
-            KeyCode::Char('o') => runtime.dispatch_ui(UiAction::CheckoutSelectedBranch),
-            KeyCode::Char('p') => runtime.dispatch_ui(UiAction::StashPush {
-                message: "savepoint".to_string(),
-            }),
-            KeyCode::Char('O') => runtime.dispatch_ui(UiAction::StashPopSelected),
-            _ => {}
+            _ => {
+                if let Some(action) = ui_action_for_key(key.code) {
+                    runtime.dispatch_ui(action);
+                }
+            }
         }
     }
 
     restore_terminal(&mut terminal)?;
     Ok(())
+}
+
+fn ui_action_for_key(code: KeyCode) -> Option<UiAction> {
+    match code {
+        KeyCode::Char('r') => Some(UiAction::RefreshAll),
+        KeyCode::Char('l') => Some(UiAction::FocusNext),
+        KeyCode::Char('h') => Some(UiAction::FocusPrev),
+        KeyCode::Down | KeyCode::Char('j') => Some(UiAction::MoveDown),
+        KeyCode::Up | KeyCode::Char('k') => Some(UiAction::MoveUp),
+        KeyCode::Char('1') => Some(UiAction::FocusPanel {
+            panel: PanelFocus::Files,
+        }),
+        KeyCode::Char('2') => Some(UiAction::FocusPanel {
+            panel: PanelFocus::Branches,
+        }),
+        KeyCode::Char('3') => Some(UiAction::FocusPanel {
+            panel: PanelFocus::Commits,
+        }),
+        KeyCode::Char('4') => Some(UiAction::FocusPanel {
+            panel: PanelFocus::Stash,
+        }),
+        KeyCode::Char('5') => Some(UiAction::FocusPanel {
+            panel: PanelFocus::Details,
+        }),
+        KeyCode::Char('6') => Some(UiAction::FocusPanel {
+            panel: PanelFocus::Log,
+        }),
+        KeyCode::Char('s') => Some(UiAction::StageSelectedFile),
+        KeyCode::Char('u') => Some(UiAction::UnstageSelectedFile),
+        KeyCode::Char('c') => Some(UiAction::CreateCommit {
+            message: "mvp commit".to_string(),
+        }),
+        KeyCode::Char('b') => Some(UiAction::CreateBranch {
+            name: "feature/new".to_string(),
+        }),
+        KeyCode::Char('o') => Some(UiAction::CheckoutSelectedBranch),
+        KeyCode::Char('p') => Some(UiAction::StashPush {
+            message: "savepoint".to_string(),
+        }),
+        KeyCode::Char('O') => Some(UiAction::StashPopSelected),
+        KeyCode::Tab | KeyCode::BackTab => None,
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn panel_navigation_uses_h_and_l_not_tab() {
+        assert_eq!(
+            ui_action_for_key(KeyCode::Char('l')),
+            Some(UiAction::FocusNext)
+        );
+        assert_eq!(
+            ui_action_for_key(KeyCode::Char('h')),
+            Some(UiAction::FocusPrev)
+        );
+        assert_eq!(ui_action_for_key(KeyCode::Tab), None);
+        assert_eq!(ui_action_for_key(KeyCode::BackTab), None);
+    }
 }
 
 fn setup_terminal() -> Result<Terminal<CrosstermBackend<Stdout>>, io::Error> {

@@ -28,9 +28,10 @@ MVP v0 includes a left-nav workspace layout with six panels:
 
 Navigation rules:
 
-- `Tab` / `Shift+Tab` cycles only in left panels: Files -> Branches -> Commits -> Stash
+- `h` / `l` cycles only in left panels: Files -> Branches -> Commits -> Stash
 - `1..6` focuses Files/Branches/Commits/Stash/Details/Log directly
-- bottom shortcut bar shows only shortcuts for the current focused panel
+- top branch/focus/status summary is hidden to prioritize panels
+- bottom shortcut bar shows only Git operation shortcuts for the current focused panel
 
 All features are keyboard-driven and deterministic.
 

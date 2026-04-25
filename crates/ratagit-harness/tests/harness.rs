@@ -8,7 +8,7 @@ fn harness_status_refresh() {
         "mvp_status_refresh",
         fixture_empty_repo(),
         &[UiAction::RefreshAll],
-        &["summary=staged: 0, unstaged: 0", "[Details]"],
+        &["[Files]", "[Details]"],
         &["refresh"],
     );
     assert!(result.is_ok(), "{result:?}");
@@ -126,7 +126,7 @@ fn harness_focus_panel_shortcuts_follow_focus() {
                 panel: ratagit_core::PanelFocus::Branches,
             },
         ],
-        &["[Details]", "[Log]", "keys(branches):", "focus=Branches"],
+        &["[Details]", "[Log]", "keys(branches):", "o checkout"],
         &["refresh"],
     );
     assert!(result.is_ok(), "{result:?}");

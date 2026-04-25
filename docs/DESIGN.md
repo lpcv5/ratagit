@@ -6,14 +6,14 @@ ratagit MVP uses a left-nav workspace interface with six visible panels:
 
 1. Left column (top -> bottom): Files, Branches, Commits, Stash
 2. Right column (top -> bottom): Details, Log
-3. Bottom row: current-focused-panel shortcuts only
+3. Bottom row: current-focused-panel Git operation shortcuts only
 
-The focused panel is highlighted. Left list panels keep deterministic selected row indexes. Right panels are read-only views derived from `AppState`.
+The focused panel is highlighted. Left list panels keep deterministic selected row indexes. Right panels are read-only views derived from `AppState`. The app does not render a top branch/focus/status summary.
 
 Focus model:
 
 - default focus starts at `Files`
-- `FocusNext` / `FocusPrev` cycles only left panels
+- `h` / `l` map to `FocusPrev` / `FocusNext` and cycle only left panels
 - `FocusPanel` supports direct focus selection (`1..6` in app input map)
 - `AppState.last_left_focus` tracks the last active left panel for `Details` projection
 
@@ -33,7 +33,7 @@ Focus model:
 
 - Git failures never crash the app.
 - Errors are stored in `AppState.status.last_error`.
-- The top summary line and `Log` panel display the latest error.
+- The `Log` panel displays the latest error.
 
 ---
 

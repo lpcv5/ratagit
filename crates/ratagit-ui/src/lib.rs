@@ -27,35 +27,7 @@ pub fn render(state: &AppState, size: TerminalSize) -> RenderedFrame {
     let height = size.height.max(1);
     let mut lines = Vec::with_capacity(height);
 
-    lines.push(pad_and_truncate(
-        format!(
-            "ratagit MVP | branch={} | focus={:?}",
-            state.status.current_branch, state.focus
-        ),
-        width,
-    ));
-    if height == 1 {
-        return RenderedFrame { lines };
-    }
-
-    lines.push(pad_and_truncate(
-        format!(
-            "summary={}{}",
-            state.status.summary,
-            state
-                .status
-                .last_error
-                .as_ref()
-                .map(|error| format!(" | error={error}"))
-                .unwrap_or_default()
-        ),
-        width,
-    ));
-    if height == 2 {
-        return RenderedFrame { lines };
-    }
-
-    let body_height = height.saturating_sub(3);
+    let body_height = height.saturating_sub(1);
     if body_height > 0 {
         lines.extend(render_workspace_rows(state, width, body_height));
     }
@@ -71,32 +43,11 @@ pub fn render_terminal(frame: &mut Frame<'_>, state: &AppState) {
     let area = frame.area();
     let root = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(2),
-            Constraint::Min(6),
-            Constraint::Length(3),
-        ])
+        .constraints([Constraint::Min(6), Constraint::Length(3)])
         .split(area);
 
-    render_summary(frame, state, root[0]);
-    render_panel_grid(frame, state, root[1]);
-    render_shortcuts(frame, state, root[2]);
-}
-
-fn render_summary(frame: &mut Frame<'_>, state: &AppState, area: Rect) {
-    let summary = format!(
-        "branch={}  focus={:?}  {}{}",
-        state.status.current_branch,
-        state.focus,
-        state.status.summary,
-        state
-            .status
-            .last_error
-            .as_ref()
-            .map(|error| format!("  error={error}"))
-            .unwrap_or_default()
-    );
-    frame.render_widget(Paragraph::new(summary), area);
+    render_panel_grid(frame, state, root[0]);
+    render_shortcuts(frame, state, root[1]);
 }
 
 fn render_panel_grid(frame: &mut Frame<'_>, state: &AppState, area: Rect) {
@@ -487,20 +438,11 @@ fn render_indexed_entries<T>(
 
 fn shortcuts_for_focus(focus: PanelFocus) -> &'static str {
     match focus {
-        PanelFocus::Files => {
-            "keys(files): j/k move | s stage | u unstage | tab/shift+tab left cycle | 1-6 focus panel"
-        }
-        PanelFocus::Branches => {
-            "keys(branches): j/k move | b create branch | o checkout | tab/shift+tab left cycle | 1-6 focus panel"
-        }
-        PanelFocus::Commits => {
-            "keys(commits): j/k move | c commit | tab/shift+tab left cycle | 1-6 focus panel"
-        }
-        PanelFocus::Stash => {
-            "keys(stash): j/k move | p stash push | O stash pop | tab/shift+tab left cycle | 1-6 focus panel"
-        }
-        PanelFocus::Details => "keys(details): 1-6 focus panel | tab/shift+tab return left cycle",
-        PanelFocus::Log => "keys(log): 1-6 focus panel | tab/shift+tab return left cycle",
+        PanelFocus::Files => "keys(files): s stage | u unstage",
+        PanelFocus::Branches => "keys(branches): b create branch | o checkout",
+        PanelFocus::Commits => "keys(commits): c commit",
+        PanelFocus::Stash => "keys(stash): p stash push | O stash pop",
+        PanelFocus::Details | PanelFocus::Log => "",
     }
 }
 
