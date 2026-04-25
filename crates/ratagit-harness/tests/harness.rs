@@ -8,7 +8,7 @@ fn harness_status_refresh() {
         "mvp_status_refresh",
         fixture_empty_repo(),
         &[UiAction::RefreshAll],
-        &["summary=staged: 0, unstaged: 0", "refresh_count=1"],
+        &["summary=staged: 0, unstaged: 0", "[Details]"],
         &["refresh"],
     );
     assert!(result.is_ok(), "{result:?}");
@@ -21,7 +21,6 @@ fn harness_files_stage_and_unstage() {
         fixture_dirty_repo(),
         &[
             UiAction::RefreshAll,
-            UiAction::FocusNext,
             UiAction::MoveDown,
             UiAction::StageSelectedFile,
             UiAction::UnstageSelectedFile,
@@ -58,8 +57,6 @@ fn harness_branches_create_and_checkout() {
         fixture_dirty_repo(),
         &[
             UiAction::RefreshAll,
-            UiAction::FocusNext,
-            UiAction::FocusNext,
             UiAction::FocusNext,
             UiAction::CreateBranch {
                 name: "feature/new".to_string(),
@@ -108,6 +105,29 @@ fn harness_error_visible_without_crash() {
         ],
         &["error=Failed to create commit"],
         &["commit:"],
+    );
+    assert!(result.is_ok(), "{result:?}");
+}
+
+#[test]
+fn harness_focus_panel_shortcuts_follow_focus() {
+    let result = run_mock_scenario(
+        "mvp_focus_panel_shortcuts_follow_focus",
+        fixture_dirty_repo(),
+        &[
+            UiAction::RefreshAll,
+            UiAction::FocusPanel {
+                panel: ratagit_core::PanelFocus::Details,
+            },
+            UiAction::FocusPanel {
+                panel: ratagit_core::PanelFocus::Log,
+            },
+            UiAction::FocusPanel {
+                panel: ratagit_core::PanelFocus::Branches,
+            },
+        ],
+        &["[Details]", "[Log]", "keys(branches):", "focus=Branches"],
+        &["refresh"],
     );
     assert!(result.is_ok(), "{result:?}");
 }

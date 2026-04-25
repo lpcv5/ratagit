@@ -1,31 +1,39 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PanelFocus {
-    Status,
     Files,
-    Commits,
     Branches,
+    Commits,
     Stash,
+    Details,
+    Log,
 }
 
 impl PanelFocus {
-    pub fn next(self) -> Self {
+    pub fn next_left(self) -> Self {
         match self {
-            Self::Status => Self::Files,
-            Self::Files => Self::Commits,
-            Self::Commits => Self::Branches,
-            Self::Branches => Self::Stash,
-            Self::Stash => Self::Status,
+            Self::Files => Self::Branches,
+            Self::Branches => Self::Commits,
+            Self::Commits => Self::Stash,
+            Self::Stash => Self::Files,
+            Self::Details | Self::Log => Self::Files,
         }
     }
 
-    pub fn prev(self) -> Self {
+    pub fn prev_left(self) -> Self {
         match self {
-            Self::Status => Self::Stash,
-            Self::Files => Self::Status,
-            Self::Commits => Self::Files,
-            Self::Branches => Self::Commits,
-            Self::Stash => Self::Branches,
+            Self::Files => Self::Stash,
+            Self::Branches => Self::Files,
+            Self::Commits => Self::Branches,
+            Self::Stash => Self::Commits,
+            Self::Details | Self::Log => Self::Stash,
         }
+    }
+
+    pub fn is_left_panel(self) -> bool {
+        matches!(
+            self,
+            Self::Files | Self::Branches | Self::Commits | Self::Stash
+        )
     }
 }
 
@@ -101,6 +109,7 @@ pub struct StashPanelState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppState {
     pub focus: PanelFocus,
+    pub last_left_focus: PanelFocus,
     pub status: StatusPanelState,
     pub files: FilesPanelState,
     pub commits: CommitsPanelState,
@@ -113,7 +122,8 @@ pub struct AppState {
 impl Default for AppState {
     fn default() -> Self {
         Self {
-            focus: PanelFocus::Status,
+            focus: PanelFocus::Files,
+            last_left_focus: PanelFocus::Files,
             status: StatusPanelState {
                 summary: "No data yet".to_string(),
                 current_branch: "unknown".to_string(),
@@ -149,6 +159,7 @@ pub enum UiAction {
     RefreshAll,
     FocusNext,
     FocusPrev,
+    FocusPanel { panel: PanelFocus },
     MoveUp,
     MoveDown,
     StageSelectedFile,
@@ -225,11 +236,20 @@ fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
     match action {
         UiAction::RefreshAll => vec![Command::RefreshAll],
         UiAction::FocusNext => {
-            state.focus = state.focus.next();
+            state.focus = state.focus.next_left();
+            state.last_left_focus = state.focus;
             Vec::new()
         }
         UiAction::FocusPrev => {
-            state.focus = state.focus.prev();
+            state.focus = state.focus.prev_left();
+            state.last_left_focus = state.focus;
+            Vec::new()
+        }
+        UiAction::FocusPanel { panel } => {
+            state.focus = panel;
+            if panel.is_left_panel() {
+                state.last_left_focus = panel;
+            }
             Vec::new()
         }
         UiAction::MoveUp => {
@@ -394,23 +414,23 @@ fn clamp_index(index: usize, len: usize) -> usize {
 
 fn move_selection(state: &mut AppState, move_up: bool) {
     match state.focus {
-        PanelFocus::Status => {}
         PanelFocus::Files => {
             move_index(&mut state.files.selected, state.files.items.len(), move_up)
         }
-        PanelFocus::Commits => move_index(
-            &mut state.commits.selected,
-            state.commits.items.len(),
-            move_up,
-        ),
         PanelFocus::Branches => move_index(
             &mut state.branches.selected,
             state.branches.items.len(),
             move_up,
         ),
+        PanelFocus::Commits => move_index(
+            &mut state.commits.selected,
+            state.commits.items.len(),
+            move_up,
+        ),
         PanelFocus::Stash => {
             move_index(&mut state.stash.selected, state.stash.items.len(), move_up)
         }
+        PanelFocus::Details | PanelFocus::Log => {}
     }
 }
 
@@ -546,5 +566,70 @@ mod tests {
                 .expect("error should be stored")
                 .contains("nothing staged")
         );
+    }
+
+    #[test]
+    fn focus_next_and_prev_cycle_only_left_panels() {
+        let mut state = AppState::default();
+        assert_eq!(state.focus, PanelFocus::Files);
+        assert_eq!(state.last_left_focus, PanelFocus::Files);
+
+        update(&mut state, Action::Ui(UiAction::FocusNext));
+        assert_eq!(state.focus, PanelFocus::Branches);
+        assert_eq!(state.last_left_focus, PanelFocus::Branches);
+
+        update(&mut state, Action::Ui(UiAction::FocusNext));
+        assert_eq!(state.focus, PanelFocus::Commits);
+        assert_eq!(state.last_left_focus, PanelFocus::Commits);
+
+        update(&mut state, Action::Ui(UiAction::FocusPrev));
+        assert_eq!(state.focus, PanelFocus::Branches);
+        assert_eq!(state.last_left_focus, PanelFocus::Branches);
+    }
+
+    #[test]
+    fn focus_panel_allows_right_focus_and_preserves_last_left() {
+        let mut state = AppState::default();
+        update(
+            &mut state,
+            Action::Ui(UiAction::FocusPanel {
+                panel: PanelFocus::Stash,
+            }),
+        );
+        assert_eq!(state.focus, PanelFocus::Stash);
+        assert_eq!(state.last_left_focus, PanelFocus::Stash);
+
+        update(
+            &mut state,
+            Action::Ui(UiAction::FocusPanel {
+                panel: PanelFocus::Details,
+            }),
+        );
+        assert_eq!(state.focus, PanelFocus::Details);
+        assert_eq!(state.last_left_focus, PanelFocus::Stash);
+    }
+
+    #[test]
+    fn move_selection_does_not_change_left_indexes_when_focus_is_right_panel() {
+        let mut state = AppState::default();
+        state.files.items = vec![
+            FileEntry {
+                path: "a".to_string(),
+                staged: false,
+            },
+            FileEntry {
+                path: "b".to_string(),
+                staged: false,
+            },
+        ];
+        state.files.selected = 1;
+        update(
+            &mut state,
+            Action::Ui(UiAction::FocusPanel {
+                panel: PanelFocus::Details,
+            }),
+        );
+        update(&mut state, Action::Ui(UiAction::MoveUp));
+        assert_eq!(state.files.selected, 1);
     }
 }

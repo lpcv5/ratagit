@@ -2,15 +2,20 @@
 
 ## MVP Design
 
-ratagit MVP uses a simple panel-oriented interface with five visible sections:
+ratagit MVP uses a left-nav workspace interface with six visible panels:
 
-1. Status
-2. Files
-3. Commits
-4. Branches
-5. Stash
+1. Left column (top -> bottom): Files, Branches, Commits, Stash
+2. Right column (top -> bottom): Details, Log
+3. Bottom row: current-focused-panel shortcuts only
 
-The focused panel is highlighted and all list panels keep a deterministic selected row index.
+The focused panel is highlighted. Left list panels keep deterministic selected row indexes. Right panels are read-only views derived from `AppState`.
+
+Focus model:
+
+- default focus starts at `Files`
+- `FocusNext` / `FocusPrev` cycles only left panels
+- `FocusPanel` supports direct focus selection (`1..6` in app input map)
+- `AppState.last_left_focus` tracks the last active left panel for `Details` projection
 
 ---
 
@@ -28,7 +33,7 @@ The focused panel is highlighted and all list panels keep a deterministic select
 
 - Git failures never crash the app.
 - Errors are stored in `AppState.status.last_error`.
-- The top summary line displays the latest error.
+- The top summary line and `Log` panel display the latest error.
 
 ---
 

@@ -6,23 +6,31 @@ ratagit aims to replicate lazygit UX with a Rust + ratatui implementation.
 
 ## Core Features
 
-- status view
 - file staging
 - commits
 - branches
 - stash
+- details view
+- log view
 
 ---
 
 ## MVP v0 Scope
 
-MVP v0 includes all five panels with minimum write capabilities:
+MVP v0 includes a left-nav workspace layout with six panels:
 
-- Status: refresh repository data
 - Files: stage and unstage selected file
-- Commits: create commit and refresh list
 - Branches: create branch and checkout selected branch
+- Commits: create commit and refresh list
 - Stash: stash push and stash pop selected entry
+- Details: show summary for the currently selected left panel item
+- Log: show latest error and recent notices
+
+Navigation rules:
+
+- `Tab` / `Shift+Tab` cycles only in left panels: Files -> Branches -> Commits -> Stash
+- `1..6` focuses Files/Branches/Commits/Stash/Details/Log directly
+- bottom shortcut bar shows only shortcuts for the current focused panel
 
 All features are keyboard-driven and deterministic.
 

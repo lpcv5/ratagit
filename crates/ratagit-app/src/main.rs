@@ -7,17 +7,14 @@ use crossterm::execute;
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
-use ratagit_core::{AppState, UiAction};
+use ratagit_core::{AppState, PanelFocus, UiAction};
 use ratagit_git::{CliGitBackend, GitBackend, MockGitBackend, is_git_repo};
 use ratagit_harness::Runtime;
 use ratagit_observe::{ObserveConfig, init_observability};
 use ratagit_testkit::fixture_dirty_repo;
-use ratagit_ui::{TerminalSize, render};
+use ratagit_ui::{TerminalSize, render_terminal};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
-use ratatui::layout::{Constraint, Direction, Layout};
-use ratatui::text::Line;
-use ratatui::widgets::{Block, Borders, Paragraph};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let _ = init_observability(&ObserveConfig::default());
@@ -39,27 +36,7 @@ fn run_tui() -> Result<(), Box<dyn Error>> {
 
     loop {
         terminal.draw(|frame| {
-            let area = frame.area();
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Min(1), Constraint::Length(2)])
-                .split(area);
-
-            let terminal_size = TerminalSize {
-                width: chunks[0].width as usize,
-                height: chunks[0].height as usize,
-            };
-            let rendered = render(runtime.state(), terminal_size);
-            let content = rendered.as_text();
-
-            let main = Paragraph::new(content).block(Block::default().borders(Borders::ALL));
-            frame.render_widget(main, chunks[0]);
-
-            let help = Paragraph::new(vec![Line::from(
-                "q:quit r:refresh tab/shift+tab:focus j/k:move s:stage u:unstage c:commit b:branch o:checkout p:stash push O:stash pop",
-            )])
-            .block(Block::default().borders(Borders::TOP));
-            frame.render_widget(help, chunks[1]);
+            render_terminal(frame, runtime.state());
         })?;
 
         if !event::poll(Duration::from_millis(100))? {
@@ -81,6 +58,24 @@ fn run_tui() -> Result<(), Box<dyn Error>> {
             KeyCode::BackTab => runtime.dispatch_ui(UiAction::FocusPrev),
             KeyCode::Down | KeyCode::Char('j') => runtime.dispatch_ui(UiAction::MoveDown),
             KeyCode::Up | KeyCode::Char('k') => runtime.dispatch_ui(UiAction::MoveUp),
+            KeyCode::Char('1') => runtime.dispatch_ui(UiAction::FocusPanel {
+                panel: PanelFocus::Files,
+            }),
+            KeyCode::Char('2') => runtime.dispatch_ui(UiAction::FocusPanel {
+                panel: PanelFocus::Branches,
+            }),
+            KeyCode::Char('3') => runtime.dispatch_ui(UiAction::FocusPanel {
+                panel: PanelFocus::Commits,
+            }),
+            KeyCode::Char('4') => runtime.dispatch_ui(UiAction::FocusPanel {
+                panel: PanelFocus::Stash,
+            }),
+            KeyCode::Char('5') => runtime.dispatch_ui(UiAction::FocusPanel {
+                panel: PanelFocus::Details,
+            }),
+            KeyCode::Char('6') => runtime.dispatch_ui(UiAction::FocusPanel {
+                panel: PanelFocus::Log,
+            }),
             KeyCode::Char('s') => runtime.dispatch_ui(UiAction::StageSelectedFile),
             KeyCode::Char('u') => runtime.dispatch_ui(UiAction::UnstageSelectedFile),
             KeyCode::Char('c') => runtime.dispatch_ui(UiAction::CreateCommit {
