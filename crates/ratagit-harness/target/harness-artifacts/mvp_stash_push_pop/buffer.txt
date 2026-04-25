@@ -1,0 +1,30 @@
+ratagit MVP | branch=main | focus=Stash                                                             
+summary=staged: 1, unstaged: 2                                                                      
+                                                                                                    
+  [Status]                                                                                          
+  detached_head=false                                                                               
+  refresh_count=3                                                                                   
+  [Files]                                                                                           
+> [S] src/main.rs                                                                                   
+  [ ] src/lib.rs                                                                                    
+  [ ] README.md                                                                                     
+  [Commits]                                                                                         
+> abc1234 init project                                                                              
+  def5678 wire commands                                                                             
+  draft=                                                                                            
+  [Branches]                                                                                        
+> * main                                                                                            
+    feature/mvp                                                                                     
+> [Stash]                                                                                           
+> stash@{0} WIP on main: local test                                                                 
+                                                                                                    
+notice=Stash popped: stash@{1}                                                                      
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    

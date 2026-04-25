@@ -1,0 +1,16 @@
+[workspace]
+members = [
+    "crates/ratagit-app",
+    "crates/ratagit-core",
+    "crates/ratagit-git",
+    "crates/ratagit-harness",
+    "crates/ratagit-observe",
+    "crates/ratagit-testkit",
+    "crates/ratagit-ui",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+version = "0.1.0"

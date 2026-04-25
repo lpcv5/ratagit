@@ -1,0 +1,7 @@
+[package]
+name = "ratagit-testkit"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ratagit-core = { path = "../ratagit-core" }

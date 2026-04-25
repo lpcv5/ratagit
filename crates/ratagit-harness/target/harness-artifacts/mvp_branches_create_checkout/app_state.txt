@@ -1,0 +1,75 @@
+AppState {
+    focus: Branches,
+    status: StatusPanelState {
+        summary: "staged: 1, unstaged: 2",
+        current_branch: "feature/mvp",
+        detached_head: false,
+        refresh_count: 3,
+        last_error: None,
+    },
+    files: FilesPanelState {
+        items: [
+            FileEntry {
+                path: "src/main.rs",
+                staged: true,
+            },
+            FileEntry {
+                path: "src/lib.rs",
+                staged: false,
+            },
+            FileEntry {
+                path: "README.md",
+                staged: false,
+            },
+        ],
+        selected: 0,
+    },
+    commits: CommitsPanelState {
+        items: [
+            CommitEntry {
+                id: "abc1234",
+                summary: "init project",
+            },
+            CommitEntry {
+                id: "def5678",
+                summary: "wire commands",
+            },
+        ],
+        selected: 0,
+        draft_message: "",
+    },
+    branches: BranchesPanelState {
+        items: [
+            BranchEntry {
+                name: "main",
+                is_current: false,
+            },
+            BranchEntry {
+                name: "feature/mvp",
+                is_current: true,
+            },
+            BranchEntry {
+                name: "feature/new",
+                is_current: false,
+            },
+        ],
+        selected: 1,
+    },
+    stash: StashPanelState {
+        items: [
+            StashEntry {
+                id: "stash@{0}",
+                summary: "WIP on main: local test",
+            },
+        ],
+        selected: 0,
+    },
+    notices: [
+        "Ready",
+        "Branch created: feature/new",
+        "Checked out: feature/mvp",
+    ],
+    last_operation: Some(
+        "checkout_branch",
+    ),
+}
