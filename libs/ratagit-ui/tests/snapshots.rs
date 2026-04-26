@@ -193,6 +193,42 @@ fn snapshots_files_shortcuts_include_reset_menu_key() {
 }
 
 #[test]
+fn terminal_snapshot_refresh_pending_loading() {
+    let mut state = AppState::default();
+    let commands = update(&mut state, Action::Ui(UiAction::RefreshAll));
+    assert_eq!(commands, vec![Command::RefreshAll]);
+
+    insta::assert_snapshot!(render_terminal_text(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    ));
+}
+
+#[test]
+fn terminal_snapshot_files_details_pending_loading() {
+    let mut state = AppState::default();
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::Refreshed(fixture_dirty_repo())),
+    );
+    assert!(matches!(
+        commands.as_slice(),
+        [Command::RefreshFilesDetailsDiff { .. }]
+    ));
+
+    insta::assert_snapshot!(render_terminal_text(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    ));
+}
+
+#[test]
 fn terminal_snapshot_files_reset_modal() {
     let mut state = AppState::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());

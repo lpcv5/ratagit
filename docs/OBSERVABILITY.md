@@ -17,6 +17,8 @@ Events:
 - state.updated
 - render.frame
 - git.command
+- git.refresh step timings: head, status, commits, branches, stashes
+- git.diff step timings: unstaged, untracked, staged
 
 ---
 

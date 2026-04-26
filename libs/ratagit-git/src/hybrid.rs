@@ -1,8 +1,9 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use git2::{
-    BranchType, Diff, DiffDelta, DiffFormat, DiffOptions, ErrorCode, Object, Oid, Repository, Sort,
+    BranchType, Diff, DiffDelta, DiffFormat, DiffOptions, ErrorCode, Object, Oid, Repository,
     Status, StatusEntry, StatusOptions, StatusShow, Tree,
 };
 use ratagit_core::{BranchEntry, CommitEntry, FileEntry, RepoSnapshot, ResetMode, StashEntry};
@@ -15,6 +16,7 @@ pub struct HybridGitBackend {
     repo: Repository,
     workdir: PathBuf,
     cli: GitCli,
+    last_files: Vec<FileEntry>,
 }
 
 impl HybridGitBackend {
@@ -25,7 +27,12 @@ impl HybridGitBackend {
             .ok_or_else(|| GitError::new("bare git repositories are not supported"))?
             .to_path_buf();
         let cli = GitCli::new(workdir.clone());
-        Ok(Self { repo, workdir, cli })
+        Ok(Self {
+            repo,
+            workdir,
+            cli,
+            last_files: Vec::new(),
+        })
     }
 
     fn collect_stashes(&mut self) -> Result<Vec<StashEntry>, GitError> {
@@ -81,12 +88,23 @@ impl fmt::Debug for HybridGitBackend {
 
 impl GitBackend for HybridGitBackend {
     fn refresh_snapshot(&mut self) -> Result<RepoSnapshot, GitError> {
+        let started = Instant::now();
         let (current_branch, detached_head) = current_head(&self.repo)?;
+        trace_step("head", started);
+        let started = Instant::now();
         let files = collect_files(&self.repo)?;
+        trace_step("status", started);
         let status_summary = summarize_files(&files);
+        let started = Instant::now();
         let commits = collect_commits(&self.repo)?;
+        trace_step("commits", started);
+        let started = Instant::now();
         let branches = collect_branches(&self.repo, &current_branch, detached_head)?;
+        trace_step("branches", started);
+        let started = Instant::now();
         let stashes = self.collect_stashes()?;
+        trace_step("stashes", started);
+        self.last_files = files.clone();
 
         Ok(RepoSnapshot {
             status_summary,
@@ -106,13 +124,21 @@ impl GitBackend for HybridGitBackend {
 
         let selected_paths = selected_pathspecs(paths)?;
         let mut unstaged_options = diff_options(&selected_paths);
+        let started = Instant::now();
         let mut unstaged = format_diff(
             &self
                 .repo
                 .diff_index_to_workdir(None, Some(&mut unstaged_options))?,
         )?;
-        let untracked =
-            format_untracked_diffs(&self.workdir, collect_files(&self.repo)?, &selected_paths)?;
+        trace_step("unstaged_diff", started);
+        let files = if self.last_files.is_empty() {
+            collect_files(&self.repo)?
+        } else {
+            self.last_files.clone()
+        };
+        let started = Instant::now();
+        let untracked = format_untracked_diffs(&self.workdir, files, &selected_paths)?;
+        trace_step("untracked_diff", started);
         if !untracked.is_empty() {
             if !unstaged.trim().is_empty() {
                 unstaged.push('\n');
@@ -122,11 +148,13 @@ impl GitBackend for HybridGitBackend {
 
         let head_tree = self.head_tree()?;
         let mut staged_options = diff_options(&selected_paths);
+        let started = Instant::now();
         let staged = format_diff(&self.repo.diff_tree_to_index(
             head_tree.as_ref(),
             None,
             Some(&mut staged_options),
         )?)?;
+        trace_step("staged_diff", started);
 
         let mut sections = Vec::new();
         if !unstaged.trim().is_empty() {
@@ -287,7 +315,6 @@ fn collect_files(repo: &Repository) -> Result<Vec<FileEntry>, GitError> {
 
 fn collect_commits(repo: &Repository) -> Result<Vec<CommitEntry>, GitError> {
     let mut revwalk = repo.revwalk()?;
-    revwalk.set_sorting(Sort::TIME)?;
     match revwalk.push_head() {
         Ok(()) => {}
         Err(error) if is_missing_head_error(&error) => return Ok(Vec::new()),
@@ -384,6 +411,15 @@ fn summarize_files(files: &[FileEntry]) -> String {
     let staged = files.iter().filter(|entry| entry.staged).count();
     let unstaged = files.len().saturating_sub(staged);
     format!("staged: {staged}, unstaged: {unstaged}")
+}
+
+fn trace_step(step: &'static str, started: Instant) {
+    tracing::debug!(
+        target: "ratagit.git",
+        step,
+        elapsed_ms = started.elapsed().as_millis(),
+        "git backend step completed"
+    );
 }
 
 fn branch_name_from_reference_name(name: &str) -> Option<&str> {

@@ -1,12 +1,97 @@
-use ratagit_core::{AppState, UiAction};
-use ratagit_git::MockGitBackend;
-use ratagit_harness::{MockScenario, Runtime, ScenarioExpectations, run_mock_scenario};
+use std::sync::mpsc::{Receiver, Sender};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use ratagit_core::{AppState, RepoSnapshot, ResetMode, UiAction};
+use ratagit_git::{GitBackend, GitError, MockGitBackend};
+use ratagit_harness::{
+    AsyncRuntime, MockScenario, Runtime, ScenarioExpectations, run_mock_scenario,
+};
 use ratagit_testkit::{fixture_dirty_repo, fixture_empty_repo, fixture_many_files};
 use ratagit_ui::{TerminalSize, render_terminal_buffer_with_cursor};
 
 fn assert_scenario(scenario: MockScenario<'_>) {
     let result = run_mock_scenario(scenario);
     assert!(result.is_ok(), "{result:?}");
+}
+
+#[derive(Debug)]
+struct BlockingBackend {
+    inner: Arc<Mutex<MockGitBackend>>,
+    refresh_started: Sender<()>,
+    refresh_release: Receiver<()>,
+}
+
+impl GitBackend for BlockingBackend {
+    fn refresh_snapshot(&mut self) -> Result<RepoSnapshot, GitError> {
+        let _ = self.refresh_started.send(());
+        self.refresh_release
+            .recv_timeout(Duration::from_secs(2))
+            .expect("test should release refresh");
+        self.inner.lock().expect("mock lock").refresh_snapshot()
+    }
+
+    fn files_details_diff(&mut self, paths: &[String]) -> Result<String, GitError> {
+        self.inner
+            .lock()
+            .expect("mock lock")
+            .files_details_diff(paths)
+    }
+
+    fn stage_file(&mut self, path: &str) -> Result<(), GitError> {
+        self.inner.lock().expect("mock lock").stage_file(path)
+    }
+
+    fn unstage_file(&mut self, path: &str) -> Result<(), GitError> {
+        self.inner.lock().expect("mock lock").unstage_file(path)
+    }
+
+    fn stage_files(&mut self, paths: &[String]) -> Result<(), GitError> {
+        self.inner.lock().expect("mock lock").stage_files(paths)
+    }
+
+    fn unstage_files(&mut self, paths: &[String]) -> Result<(), GitError> {
+        self.inner.lock().expect("mock lock").unstage_files(paths)
+    }
+
+    fn create_commit(&mut self, message: &str) -> Result<(), GitError> {
+        self.inner.lock().expect("mock lock").create_commit(message)
+    }
+
+    fn create_branch(&mut self, name: &str) -> Result<(), GitError> {
+        self.inner.lock().expect("mock lock").create_branch(name)
+    }
+
+    fn checkout_branch(&mut self, name: &str) -> Result<(), GitError> {
+        self.inner.lock().expect("mock lock").checkout_branch(name)
+    }
+
+    fn stash_push(&mut self, message: &str) -> Result<(), GitError> {
+        self.inner.lock().expect("mock lock").stash_push(message)
+    }
+
+    fn stash_files(&mut self, message: &str, paths: &[String]) -> Result<(), GitError> {
+        self.inner
+            .lock()
+            .expect("mock lock")
+            .stash_files(message, paths)
+    }
+
+    fn stash_pop(&mut self, stash_id: &str) -> Result<(), GitError> {
+        self.inner.lock().expect("mock lock").stash_pop(stash_id)
+    }
+
+    fn reset(&mut self, mode: ResetMode) -> Result<(), GitError> {
+        self.inner.lock().expect("mock lock").reset(mode)
+    }
+
+    fn nuke(&mut self) -> Result<(), GitError> {
+        self.inner.lock().expect("mock lock").nuke()
+    }
+
+    fn discard_files(&mut self, paths: &[String]) -> Result<(), GitError> {
+        self.inner.lock().expect("mock lock").discard_files(paths)
+    }
 }
 
 #[test]
@@ -25,6 +110,51 @@ fn harness_status_refresh() {
             git_state_contains: &["current_branch: \"main\""],
         },
     ));
+}
+
+#[test]
+fn async_runtime_renders_loading_before_refresh_finishes() {
+    let size = TerminalSize {
+        width: 100,
+        height: 30,
+    };
+    let inner = Arc::new(Mutex::new(MockGitBackend::new(fixture_dirty_repo())));
+    let (started_tx, started_rx) = std::sync::mpsc::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel();
+    let backend = BlockingBackend {
+        inner: Arc::clone(&inner),
+        refresh_started: started_tx,
+        refresh_release: release_rx,
+    };
+    let mut runtime = AsyncRuntime::new(AppState::default(), backend, size);
+
+    runtime.dispatch_ui(UiAction::RefreshAll);
+    started_rx
+        .recv_timeout(Duration::from_secs(2))
+        .expect("refresh should start on worker thread");
+
+    let loading_screen = runtime.render_terminal_text();
+    assert!(loading_screen.contains("work=refreshing repository"));
+    assert_eq!(runtime.state().status.refresh_count, 0);
+
+    release_tx.send(()).expect("refresh should be releasable");
+    for _ in 0..100 {
+        runtime.tick();
+        if runtime.state().status.refresh_count == 1 {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    assert_eq!(runtime.state().status.refresh_count, 1);
+    assert!(runtime.render_terminal_text().contains("README.md"));
+    assert!(
+        inner
+            .lock()
+            .expect("mock lock")
+            .operations()
+            .contains(&"refresh".to_string())
+    );
 }
 
 #[test]

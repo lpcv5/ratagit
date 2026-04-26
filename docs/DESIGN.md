@@ -26,6 +26,8 @@ Focus model:
 - `AppState.editor` stores active commit/stash editor modal state (type + fields + cursor indexes + scope)
 - `AppState.reset_menu` stores whether the Files reset menu is active and which reset choice is selected
 - `AppState.discard_confirm` stores whether the discard confirmation modal is active and the resolved target paths
+- `AppState.work` stores visible pending refresh/details/operation state and
+  the last completed command label
 - left-panel height baseline follows the Files/Branches/Commits/Stash ratio
 - when `Stash` is unfocused it collapses to one content row and freed height is
   redistributed by ratio to Files/Branches/Commits
@@ -40,6 +42,9 @@ Focus model:
 - Input is mapped to explicit `UiAction`.
 - `update()` applies state transitions and emits `Command`.
 - Command execution is delegated to `GitBackend`.
+- The real TUI sends commands to a single background Git worker and receives
+  `GitResult` values through a channel; the mock harness can still use the
+  synchronous runtime for deterministic scenario tests.
 - Backend output re-enters `update()` as `GitResult`.
 - UI rendering reads only `AppState`.
 - High-frequency side effects use runtime command debouncing keyed by
@@ -50,6 +55,8 @@ Files panel interaction:
 
 - `AppState.files` stores tree expansion, visible-row selection, visual selection anchor, batch rows, and search state.
 - File tree rows are derived from `RepoSnapshot.files`; no UI code reads external state.
+- `AppState.files.tree_rows`, `row_descendants`, and `row_index_by_path`
+  cache deterministic tree projection data after reducer-managed changes.
 - Backend status collection uses full untracked-file expansion so untracked
   nested files appear as explicit file rows in the tree.
 - Directories are display targets only and resolve to descendant files from the current snapshot.
@@ -84,6 +91,8 @@ Files panel interaction:
   downward movement; moving up does not jump to a top-reserve viewport.
 - `RefreshAll` and files selection navigation emit `RefreshFilesDetailsDiff` so
   the Details panel follows the current files cursor.
+- stale details-diff results are ignored when their path list no longer matches
+  the current Files selection.
 - while editor, reset, or discard modal is active, modal key handling has highest input priority
   over panel navigation mappings.
 - Files Details projection renders merged `unstaged` and `staged` diff sections
@@ -98,6 +107,8 @@ Files panel interaction:
 - Git failures never crash the app.
 - Errors are stored in `AppState.status.last_error`.
 - The `Log` panel displays the latest error.
+- The `Log` panel displays pending refresh and Git operation state while work is running.
+- The Files details projection displays a loading row while its diff command is pending.
 - Empty-state placeholders such as `<empty>` / `<none>` are not rendered; empty
   views remain visually blank.
 

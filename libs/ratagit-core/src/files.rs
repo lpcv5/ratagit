@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileEntry {
@@ -53,6 +53,9 @@ pub struct FilesPanelState {
     pub tree_initialized: bool,
     pub scroll_direction: Option<ScrollDirection>,
     pub scroll_direction_origin: usize,
+    pub tree_rows: Vec<FileTreeRow>,
+    pub row_descendants: BTreeMap<String, Vec<String>>,
+    pub row_index_by_path: BTreeMap<String, usize>,
 }
 
 impl Default for FilesPanelState {
@@ -70,6 +73,9 @@ impl Default for FilesPanelState {
             tree_initialized: false,
             scroll_direction: None,
             scroll_direction_origin: 0,
+            tree_rows: Vec::new(),
+            row_descendants: BTreeMap::new(),
+            row_index_by_path: BTreeMap::new(),
         }
     }
 }
@@ -80,14 +86,18 @@ pub fn initialize_tree_if_needed(state: &mut FilesPanelState) {
     }
     state.expanded_dirs = collect_directories(&state.items);
     state.tree_initialized = true;
+    refresh_tree_projection(state);
 }
 
 pub fn reconcile_after_items_changed(state: &mut FilesPanelState) {
-    let valid_rows = build_file_tree_rows(state)
-        .into_iter()
-        .map(|row| row.path)
+    refresh_tree_projection(state);
+    let valid_rows = state
+        .tree_rows
+        .iter()
+        .map(|row| row.path.clone())
         .collect::<BTreeSet<_>>();
     state.selected_rows.retain(|path| valid_rows.contains(path));
+    refresh_tree_projection(state);
     recompute_search_matches(state);
     clamp_selected(state);
     if state.mode == FileInputMode::MultiSelect {
@@ -146,6 +156,7 @@ pub fn toggle_selected_directory(state: &mut FilesPanelState) -> bool {
     } else {
         state.expanded_dirs.insert(row.path);
     }
+    refresh_tree_projection(state);
     clamp_selected(state);
     if state.mode == FileInputMode::MultiSelect {
         ensure_valid_selection_anchor(state);
@@ -172,6 +183,7 @@ pub fn leave_multi_select(state: &mut FilesPanelState) {
     state.mode = FileInputMode::Normal;
     state.selection_anchor = None;
     state.selected_rows.clear();
+    refresh_tree_projection(state);
 }
 
 pub fn start_search(state: &mut FilesPanelState) {
@@ -182,18 +194,22 @@ pub fn start_search(state: &mut FilesPanelState) {
     state.search_query.clear();
     state.search_matches.clear();
     state.current_match = None;
+    refresh_tree_projection(state);
 }
 
 pub fn push_search_char(state: &mut FilesPanelState, ch: char) {
     state.search_query.push(ch);
+    refresh_tree_projection(state);
 }
 
 pub fn pop_search_char(state: &mut FilesPanelState) {
     state.search_query.pop();
+    refresh_tree_projection(state);
 }
 
 pub fn confirm_search(state: &mut FilesPanelState) {
     state.mode = FileInputMode::Normal;
+    refresh_tree_projection(state);
     recompute_search_matches(state);
     if !state.search_matches.is_empty() {
         state.current_match = Some(0);
@@ -207,6 +223,7 @@ pub fn cancel_search(state: &mut FilesPanelState) {
         state.search_query.clear();
         state.search_matches.clear();
         state.current_match = None;
+        refresh_tree_projection(state);
     }
 }
 
@@ -240,7 +257,38 @@ pub fn selected_row(state: &FilesPanelState) -> Option<FileTreeRow> {
 }
 
 pub fn build_file_tree_rows(state: &FilesPanelState) -> Vec<FileTreeRow> {
+    if !state.tree_rows.is_empty() || state.items.is_empty() {
+        return state.tree_rows.clone();
+    }
+    compute_tree_projection(state).rows
+}
+
+pub fn file_tree_rows(state: &FilesPanelState) -> &[FileTreeRow] {
+    &state.tree_rows
+}
+
+pub fn refresh_tree_projection(state: &mut FilesPanelState) {
+    let projection = compute_tree_projection(state);
+    state.tree_rows = projection.rows;
+    state.row_descendants = projection.row_descendants;
+    state.row_index_by_path = projection.row_index_by_path;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TreeProjection {
+    rows: Vec<FileTreeRow>,
+    row_descendants: BTreeMap<String, Vec<String>>,
+    row_index_by_path: BTreeMap<String, usize>,
+}
+
+fn compute_tree_projection(state: &FilesPanelState) -> TreeProjection {
     let dirs = collect_directories(&state.items);
+    let descendants = collect_row_descendants(&state.items);
+    let entry_status = state
+        .items
+        .iter()
+        .map(|entry| (entry.path.clone(), (entry.staged, entry.untracked)))
+        .collect::<BTreeMap<_, _>>();
     let mut keys = dirs
         .iter()
         .map(|path| (path.clone(), FileRowKind::Directory))
@@ -255,13 +303,19 @@ pub fn build_file_tree_rows(state: &FilesPanelState) -> Vec<FileTreeRow> {
     keys.sort_by(compare_tree_keys);
 
     let query = state.search_query.to_lowercase();
-    keys.into_iter()
+    let rows = keys
+        .into_iter()
         .filter(|(path, _)| row_is_visible(path, &state.expanded_dirs))
         .map(|(path, kind)| {
-            let descendants = descendants_for_key(&state.items, &path, kind);
-            let staged = !descendants.is_empty() && descendants.iter().all(|entry| entry.staged);
-            let untracked =
-                !descendants.is_empty() && descendants.iter().all(|entry| entry.untracked);
+            let row_descendants = descendants.get(&path).cloned().unwrap_or_default();
+            let staged = !row_descendants.is_empty()
+                && row_descendants
+                    .iter()
+                    .all(|path| entry_status.get(path).is_some_and(|status| status.0));
+            let untracked = !row_descendants.is_empty()
+                && row_descendants
+                    .iter()
+                    .all(|path| entry_status.get(path).is_some_and(|status| status.1));
             let name = path
                 .rsplit('/')
                 .next()
@@ -281,7 +335,20 @@ pub fn build_file_tree_rows(state: &FilesPanelState) -> Vec<FileTreeRow> {
                 matched,
             }
         })
-        .collect()
+        .collect::<Vec<_>>();
+    let row_index_by_path = rows
+        .iter()
+        .enumerate()
+        .map(|(index, row)| (row.path.clone(), index))
+        .collect::<BTreeMap<_, _>>();
+    TreeProjection {
+        rows,
+        row_descendants: descendants
+            .into_iter()
+            .map(|(path, descendants)| (path, descendants.into_iter().collect()))
+            .collect(),
+        row_index_by_path,
+    }
 }
 
 pub fn collect_directories(items: &[FileEntry]) -> BTreeSet<String> {
@@ -301,6 +368,37 @@ pub fn collect_directories(items: &[FileEntry]) -> BTreeSet<String> {
         }
     }
     dirs
+}
+
+fn collect_row_descendants(items: &[FileEntry]) -> BTreeMap<String, BTreeSet<String>> {
+    let mut descendants = BTreeMap::<String, BTreeSet<String>>::new();
+    for item in items {
+        let normalized = normalize_tree_path(&item.path);
+        if normalized.is_empty() {
+            continue;
+        }
+        if is_directory_marker(&item.path) {
+            descendants
+                .entry(normalized.clone())
+                .or_default()
+                .insert(item.path.clone());
+        } else {
+            descendants
+                .entry(item.path.clone())
+                .or_default()
+                .insert(item.path.clone());
+        }
+
+        let mut parts = normalized.split('/').collect::<Vec<_>>();
+        while parts.len() > 1 {
+            parts.pop();
+            descendants
+                .entry(parts.join("/"))
+                .or_default()
+                .insert(item.path.clone());
+        }
+    }
+    descendants
 }
 
 fn recompute_search_matches(state: &mut FilesPanelState) {
@@ -342,12 +440,15 @@ fn refresh_multi_select_range(state: &mut FilesPanelState) {
     let rows = build_file_tree_rows(state);
     state.selected_rows.clear();
     let Some(anchor_path) = state.selection_anchor.clone() else {
+        refresh_tree_projection(state);
         return;
     };
     let Some(anchor_index) = rows.iter().position(|row| row.path == anchor_path) else {
+        refresh_tree_projection(state);
         return;
     };
     if rows.is_empty() {
+        refresh_tree_projection(state);
         return;
     }
     let selected_index = state.selected.min(rows.len() - 1);
@@ -356,6 +457,7 @@ fn refresh_multi_select_range(state: &mut FilesPanelState) {
     for row in &rows[start..=end] {
         state.selected_rows.insert(row.path.clone());
     }
+    refresh_tree_projection(state);
 }
 
 fn select_match(state: &mut FilesPanelState) {
@@ -366,10 +468,8 @@ fn select_match(state: &mut FilesPanelState) {
         return;
     };
     expand_ancestors(state, &path);
-    if let Some(index) = build_file_tree_rows(state)
-        .iter()
-        .position(|row| row.path == path)
-    {
+    refresh_tree_projection(state);
+    if let Some(index) = state.row_index_by_path.get(&path).copied() {
         state.selected = index;
     }
 }
@@ -383,34 +483,18 @@ fn expand_ancestors(state: &mut FilesPanelState, path: &str) {
 }
 
 fn resolve_row_keys_to_files(state: &FilesPanelState, keys: &[String]) -> Vec<String> {
-    let rows = build_file_tree_rows(state);
+    let descendants = if state.row_descendants.is_empty() && !state.items.is_empty() {
+        compute_tree_projection(state).row_descendants
+    } else {
+        state.row_descendants.clone()
+    };
     let mut paths = BTreeSet::new();
     for key in keys {
-        let Some(row) = rows.iter().find(|row| &row.path == key) else {
-            continue;
-        };
-        for entry in descendants_for_key(&state.items, &row.path, row.kind) {
-            paths.insert(entry.path.clone());
+        if let Some(row_descendants) = descendants.get(key) {
+            paths.extend(row_descendants.iter().cloned());
         }
     }
     paths.into_iter().collect()
-}
-
-fn descendants_for_key<'a>(
-    items: &'a [FileEntry],
-    key: &str,
-    kind: FileRowKind,
-) -> Vec<&'a FileEntry> {
-    match kind {
-        FileRowKind::File => items.iter().filter(|entry| entry.path == key).collect(),
-        FileRowKind::Directory => {
-            let prefix = format!("{key}/");
-            items
-                .iter()
-                .filter(|entry| entry.path.starts_with(&prefix))
-                .collect()
-        }
-    }
 }
 
 fn is_directory_marker(path: &str) -> bool {

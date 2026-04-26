@@ -5,16 +5,17 @@ pub use files::{
     FileEntry, FileInputMode, FileRowKind, FileTreeRow, FilesPanelState, ScrollDirection,
     build_file_tree_rows, cancel_search as cancel_file_search,
     clamp_selected as clamp_file_selection, collect_directories,
-    confirm_search as confirm_file_search, enter_multi_select, initialize_tree_if_needed,
-    jump_search_match, leave_multi_select, move_selected, pop_search_char, push_search_char,
-    reconcile_after_items_changed, selected_row, selected_target_paths,
-    start_search as start_file_search, toggle_current_row_selection, toggle_selected_directory,
+    confirm_search as confirm_file_search, enter_multi_select, file_tree_rows,
+    initialize_tree_if_needed, jump_search_match, leave_multi_select, move_selected,
+    pop_search_char, push_search_char, reconcile_after_items_changed, refresh_tree_projection,
+    selected_row, selected_target_paths, start_search as start_file_search,
+    toggle_current_row_selection, toggle_selected_directory,
 };
 pub use state::{
     AppState, BranchEntry, BranchesPanelState, CommitEntry, CommitField, CommitsPanelState,
     DetailsPanelState, DiscardConfirmState, EditorKind, EditorState, PanelFocus, RepoSnapshot,
     ResetChoice, ResetMenuState, ResetMode, StashEntry, StashPanelState, StashScope,
-    StatusPanelState,
+    StatusPanelState, WorkStatusState,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -164,6 +165,57 @@ pub fn debounce_key_for_command(command: &Command) -> Option<&'static str> {
     }
 }
 
+fn with_pending(state: &mut AppState, commands: Vec<Command>) -> Vec<Command> {
+    for command in &commands {
+        mark_command_pending(state, command);
+    }
+    commands
+}
+
+fn mark_command_pending(state: &mut AppState, command: &Command) {
+    match command {
+        Command::RefreshAll => {
+            state.work.refresh_pending = true;
+        }
+        Command::RefreshFilesDetailsDiff { .. } => {
+            state.work.details_pending = true;
+        }
+        Command::StageFiles { .. } => {
+            state.work.operation_pending = Some("stage".to_string());
+        }
+        Command::UnstageFiles { .. } => {
+            state.work.operation_pending = Some("unstage".to_string());
+        }
+        Command::StashFiles { .. } => {
+            state.work.operation_pending = Some("stash_files".to_string());
+        }
+        Command::Reset { mode } => {
+            state.work.operation_pending = Some(format!("reset_{}", reset_mode_name(*mode)));
+        }
+        Command::Nuke => {
+            state.work.operation_pending = Some("nuke".to_string());
+        }
+        Command::DiscardFiles { .. } => {
+            state.work.operation_pending = Some("discard_files".to_string());
+        }
+        Command::CreateCommit { .. } => {
+            state.work.operation_pending = Some("commit".to_string());
+        }
+        Command::CreateBranch { .. } => {
+            state.work.operation_pending = Some("create_branch".to_string());
+        }
+        Command::CheckoutBranch { .. } => {
+            state.work.operation_pending = Some("checkout_branch".to_string());
+        }
+        Command::StashPush { .. } => {
+            state.work.operation_pending = Some("stash_push".to_string());
+        }
+        Command::StashPop { .. } => {
+            state.work.operation_pending = Some("stash_pop".to_string());
+        }
+    }
+}
+
 pub fn update(state: &mut AppState, action: Action) -> Vec<Command> {
     match action {
         Action::Ui(ui_action) => update_ui(state, ui_action),
@@ -173,7 +225,7 @@ pub fn update(state: &mut AppState, action: Action) -> Vec<Command> {
 
 fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
     match action {
-        UiAction::RefreshAll => vec![Command::RefreshAll],
+        UiAction::RefreshAll => with_pending(state, vec![Command::RefreshAll]),
         UiAction::OpenCommitEditor => {
             open_commit_editor(state);
             Vec::new()
@@ -289,15 +341,18 @@ fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
                 return Vec::new();
             }
             if selected_targets_are_all_staged(state, &paths) {
-                vec![Command::UnstageFiles { paths }]
+                with_pending(state, vec![Command::UnstageFiles { paths }])
             } else {
                 let unstaged_paths = paths
                     .into_iter()
                     .filter(|path| file_staged(state, path) == Some(false))
                     .collect::<Vec<_>>();
-                vec![Command::StageFiles {
-                    paths: unstaged_paths,
-                }]
+                with_pending(
+                    state,
+                    vec![Command::StageFiles {
+                        paths: unstaged_paths,
+                    }],
+                )
             }
         }
         UiAction::ToggleFilesMultiSelect => {
@@ -350,7 +405,7 @@ fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
                 .filter(|path| file_staged(state, path) == Some(false))
                 .collect::<Vec<_>>();
             if !paths.is_empty() {
-                vec![Command::StageFiles { paths }]
+                with_pending(state, vec![Command::StageFiles { paths }])
             } else {
                 push_notice(state, "No unstaged file selected");
                 Vec::new()
@@ -362,7 +417,7 @@ fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
                 .filter(|path| file_staged(state, path) == Some(true))
                 .collect::<Vec<_>>();
             if !paths.is_empty() {
-                vec![Command::UnstageFiles { paths }]
+                with_pending(state, vec![Command::UnstageFiles { paths }])
             } else {
                 push_notice(state, "No staged file selected");
                 Vec::new()
@@ -374,29 +429,36 @@ fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
                 push_notice(state, "No file selected");
                 Vec::new()
             } else {
-                vec![Command::StashFiles {
-                    message: "savepoint".to_string(),
-                    paths,
-                }]
+                with_pending(
+                    state,
+                    vec![Command::StashFiles {
+                        message: "savepoint".to_string(),
+                        paths,
+                    }],
+                )
             }
         }
         UiAction::CreateCommit { message } => {
             state.commits.draft_message = message.clone();
-            vec![Command::CreateCommit { message }]
+            with_pending(state, vec![Command::CreateCommit { message }])
         }
-        UiAction::CreateBranch { name } => vec![Command::CreateBranch { name }],
+        UiAction::CreateBranch { name } => {
+            with_pending(state, vec![Command::CreateBranch { name }])
+        }
         UiAction::CheckoutSelectedBranch => {
             if let Some(branch) = selected_branch_name(state) {
-                vec![Command::CheckoutBranch { name: branch }]
+                with_pending(state, vec![Command::CheckoutBranch { name: branch }])
             } else {
                 push_notice(state, "No branch selected");
                 Vec::new()
             }
         }
-        UiAction::StashPush { message } => vec![Command::StashPush { message }],
+        UiAction::StashPush { message } => {
+            with_pending(state, vec![Command::StashPush { message }])
+        }
         UiAction::StashPopSelected => {
             if let Some(stash_id) = selected_stash_id(state) {
-                vec![Command::StashPop { stash_id }]
+                with_pending(state, vec![Command::StashPop { stash_id }])
             } else {
                 push_notice(state, "No stash selected");
                 Vec::new()
@@ -408,12 +470,19 @@ fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
 fn update_git_result(state: &mut AppState, result: GitResult) -> Vec<Command> {
     match result {
         GitResult::Refreshed(snapshot) => {
+            state.work.refresh_pending = false;
+            state.work.last_completed_command = Some("refresh".to_string());
             apply_snapshot(state, snapshot);
             state.status.refresh_count = state.status.refresh_count.saturating_add(1);
             state.status.last_error = None;
             refresh_files_details_command(state)
         }
         GitResult::FilesDetailsDiff { paths, result } => {
+            if paths != selected_target_paths(&state.files) {
+                return Vec::new();
+            }
+            state.work.details_pending = false;
+            state.work.last_completed_command = Some("details".to_string());
             state.details.files_targets = paths;
             match result {
                 Ok(diff) => {
@@ -431,6 +500,8 @@ fn update_git_result(state: &mut AppState, result: GitResult) -> Vec<Command> {
             Vec::new()
         }
         GitResult::RefreshFailed { error } => {
+            state.work.refresh_pending = false;
+            state.work.last_completed_command = Some("refresh".to_string());
             state.status.last_error = Some(format!("Failed to refresh: {error}"));
             push_notice(state, &format!("Failed to refresh: {error}"));
             Vec::new()
@@ -565,9 +636,9 @@ fn confirm_reset_menu(state: &mut AppState) -> Vec<Command> {
     let choice = state.reset_menu.selected;
     state.reset_menu.active = false;
     if choice == ResetChoice::Nuke {
-        vec![Command::Nuke]
+        with_pending(state, vec![Command::Nuke])
     } else if let Some(mode) = choice.reset_mode() {
-        vec![Command::Reset { mode }]
+        with_pending(state, vec![Command::Reset { mode }])
     } else {
         Vec::new()
     }
@@ -596,7 +667,7 @@ fn confirm_discard(state: &mut AppState) -> Vec<Command> {
         push_notice(state, "No file selected");
         Vec::new()
     } else {
-        vec![Command::DiscardFiles { paths }]
+        with_pending(state, vec![Command::DiscardFiles { paths }])
     }
 }
 
@@ -730,14 +801,17 @@ fn confirm_editor(state: &mut AppState) -> Vec<Command> {
             let commit_message = build_commit_message(&message, &body);
             state.commits.draft_message = message.trim().to_string();
             state.editor.kind = None;
-            vec![Command::CreateCommit {
-                message: commit_message,
-            }]
+            with_pending(
+                state,
+                vec![Command::CreateCommit {
+                    message: commit_message,
+                }],
+            )
         }
         EditorKind::Stash { title, scope, .. } => match scope {
             StashScope::All => {
                 state.editor.kind = None;
-                vec![Command::StashPush { message: title }]
+                with_pending(state, vec![Command::StashPush { message: title }])
             }
             StashScope::SelectedPaths(paths) => {
                 if paths.is_empty() {
@@ -746,10 +820,13 @@ fn confirm_editor(state: &mut AppState) -> Vec<Command> {
                 }
 
                 state.editor.kind = None;
-                vec![Command::StashFiles {
-                    message: title,
-                    paths,
-                }]
+                with_pending(
+                    state,
+                    vec![Command::StashFiles {
+                        message: title,
+                        paths,
+                    }],
+                )
             }
         },
     }
@@ -826,12 +903,16 @@ fn handle_operation_result(
 ) -> Vec<Command> {
     match result {
         Ok(()) => {
+            state.work.operation_pending = None;
+            state.work.last_completed_command = Some(operation_key.to_string());
             state.last_operation = Some(operation_key.to_string());
             push_notice(state, &success_message);
             state.status.last_error = None;
-            vec![Command::RefreshAll]
+            with_pending(state, vec![Command::RefreshAll])
         }
         Err(error_message) => {
+            state.work.operation_pending = None;
+            state.work.last_completed_command = Some(operation_key.to_string());
             state.last_operation = Some(operation_key.to_string());
             let full_error = format!("{failure_prefix}: {error_message}");
             state.status.last_error = Some(full_error.clone());
@@ -902,20 +983,20 @@ fn move_index(selected: &mut usize, len: usize, move_up: bool) {
     }
 }
 
-fn refresh_files_details_command(state: &AppState) -> Vec<Command> {
-    vec![Command::RefreshFilesDetailsDiff {
-        paths: selected_target_paths(&state.files),
-    }]
+fn refresh_files_details_command(state: &mut AppState) -> Vec<Command> {
+    let paths = selected_target_paths(&state.files);
+    state.details.files_targets = paths.clone();
+    with_pending(state, vec![Command::RefreshFilesDetailsDiff { paths }])
 }
 
-fn maybe_refresh_files_details_on_files_focus(state: &AppState) -> Vec<Command> {
+fn maybe_refresh_files_details_on_files_focus(state: &mut AppState) -> Vec<Command> {
     if state.focus == PanelFocus::Files {
         return refresh_files_details_command(state);
     }
     Vec::new()
 }
 
-fn maybe_refresh_files_details_on_files_navigation(state: &AppState) -> Vec<Command> {
+fn maybe_refresh_files_details_on_files_navigation(state: &mut AppState) -> Vec<Command> {
     if state.focus == PanelFocus::Files {
         return refresh_files_details_command(state);
     }

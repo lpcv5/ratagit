@@ -67,6 +67,11 @@ Commands:
 - async tasks
 - IO
 
+The real TUI executes commands through a single background Git worker. The UI
+thread remains responsible only for input, reducer updates, result draining, and
+pure rendering. Harness scenarios may use the synchronous runtime to keep mock
+state assertions deterministic.
+
 ---
 
 ### 5. Determinism
@@ -145,7 +150,8 @@ internal library packages under `libs/`.
   - `ratagit-harness`
 - Shared dependency versions and internal path dependencies live in the root
   `Cargo.toml` via workspace inheritance.
-- Runtime command execution uses `ratagit-harness::Runtime` to preserve:
+- Runtime command execution uses `ratagit-harness::AsyncRuntime` in the real TUI
+  and `ratagit-harness::Runtime` in deterministic harness scenarios to preserve:
   - single source of truth in `AppState`
   - side effects only through `Command` + `GitBackend`
   - pure rendering in `ratagit-ui::render`
@@ -155,10 +161,13 @@ internal library packages under `libs/`.
 ## Event Loop
 
 ```text
-read input
+drain GitResult channel
+→ render AppState
+→ read input
 → map to Action
 → update(AppState)
-→ run Commands
+→ enqueue Commands
+→ worker runs GitBackend
 → receive results
 → render
 ```

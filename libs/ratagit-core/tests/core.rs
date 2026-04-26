@@ -1,6 +1,7 @@
 use ratagit_core::{
     Action, AppState, BranchEntry, Command, CommitField, EditorKind, FileEntry, FileInputMode,
-    GitResult, PanelFocus, RepoSnapshot, ResetChoice, ResetMode, StashScope, UiAction, update,
+    GitResult, PanelFocus, RepoSnapshot, ResetChoice, ResetMode, StashScope, UiAction,
+    refresh_tree_projection, update,
 };
 
 #[test]
@@ -8,6 +9,7 @@ fn refresh_action_emits_refresh_command() {
     let mut state = AppState::default();
     let commands = update(&mut state, Action::Ui(UiAction::RefreshAll));
     assert_eq!(commands, vec![Command::RefreshAll]);
+    assert!(state.work.refresh_pending);
 }
 
 fn assert_details_refresh_for_paths(commands: Vec<Command>, expected_paths: Vec<String>) {
@@ -230,6 +232,13 @@ fn non_files_navigation_does_not_request_files_details_refresh() {
 #[test]
 fn files_details_diff_result_updates_state() {
     let mut state = AppState::default();
+    state.files.items = vec![FileEntry {
+        path: "src/lib.rs".to_string(),
+        staged: false,
+        untracked: false,
+    }];
+    state.files.expanded_dirs.insert("src".to_string());
+    refresh_tree_projection(&mut state.files);
     let commands = update(
         &mut state,
         Action::GitResult(GitResult::FilesDetailsDiff {
@@ -241,6 +250,72 @@ fn files_details_diff_result_updates_state() {
     assert_eq!(state.details.files_targets, vec!["src/lib.rs".to_string()]);
     assert!(state.details.files_error.is_none());
     assert!(state.details.files_diff.contains("diff --git"));
+}
+
+#[test]
+fn stale_files_details_diff_result_is_ignored() {
+    let mut state = AppState::default();
+    state.files.items = vec![
+        FileEntry {
+            path: "a.txt".to_string(),
+            staged: false,
+            untracked: false,
+        },
+        FileEntry {
+            path: "b.txt".to_string(),
+            staged: false,
+            untracked: false,
+        },
+    ];
+    refresh_tree_projection(&mut state.files);
+    state.files.selected = 1;
+    state.details.files_targets = vec!["b.txt".to_string()];
+    state.work.details_pending = true;
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::FilesDetailsDiff {
+            paths: vec!["a.txt".to_string()],
+            result: Ok("stale".to_string()),
+        }),
+    );
+
+    assert!(commands.is_empty());
+    assert!(state.details.files_diff.is_empty());
+    assert!(state.work.details_pending);
+}
+
+#[test]
+fn tree_projection_cache_tracks_rows_and_directory_descendants() {
+    let mut state = AppState::default();
+    state.files.items = vec![
+        FileEntry {
+            path: "src/lib.rs".to_string(),
+            staged: false,
+            untracked: false,
+        },
+        FileEntry {
+            path: "src/main.rs".to_string(),
+            staged: true,
+            untracked: false,
+        },
+    ];
+    state.files.expanded_dirs.insert("src".to_string());
+    refresh_tree_projection(&mut state.files);
+
+    assert_eq!(
+        state
+            .files
+            .tree_rows
+            .iter()
+            .map(|row| row.path.as_str())
+            .collect::<Vec<_>>(),
+        vec!["src", "src/lib.rs", "src/main.rs"]
+    );
+    assert_eq!(
+        state.files.row_descendants.get("src"),
+        Some(&vec!["src/lib.rs".to_string(), "src/main.rs".to_string()])
+    );
 }
 
 #[test]

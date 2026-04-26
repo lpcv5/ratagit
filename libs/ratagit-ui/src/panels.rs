@@ -1,6 +1,6 @@
 use ratagit_core::{
     AppState, BranchEntry, CommitEntry, FileInputMode, FileRowKind, FileTreeRow, PanelFocus,
-    ScrollDirection, StashEntry, build_file_tree_rows,
+    ScrollDirection, StashEntry, build_file_tree_rows, file_tree_rows,
 };
 
 use crate::theme::{
@@ -37,7 +37,13 @@ pub(crate) fn panel_title(panel: PanelFocus) -> &'static str {
 
 pub(crate) fn left_panel_content_len(state: &AppState, panel: PanelFocus) -> usize {
     match panel {
-        PanelFocus::Files => build_file_tree_rows(&state.files).len(),
+        PanelFocus::Files => {
+            if file_tree_rows(&state.files).is_empty() && !state.files.items.is_empty() {
+                build_file_tree_rows(&state.files).len()
+            } else {
+                file_tree_rows(&state.files).len()
+            }
+        }
         PanelFocus::Branches => state.branches.items.len(),
         PanelFocus::Commits => state.commits.items.len().saturating_add(1),
         PanelFocus::Stash => state.stash.items.len(),
@@ -46,7 +52,11 @@ pub(crate) fn left_panel_content_len(state: &AppState, panel: PanelFocus) -> usi
 }
 
 pub(crate) fn render_files_lines(state: &AppState, max_lines: usize) -> Vec<PanelLine> {
-    let rows = build_file_tree_rows(&state.files);
+    let rows = if file_tree_rows(&state.files).is_empty() && !state.files.items.is_empty() {
+        build_file_tree_rows(&state.files)
+    } else {
+        file_tree_rows(&state.files).to_vec()
+    };
     render_indexed_entries(
         &rows,
         state.files.selected,
@@ -125,6 +135,18 @@ pub(crate) fn render_details_lines(state: &AppState, max_lines: usize) -> Vec<Pa
 
 pub(crate) fn render_log_lines(state: &AppState, max_lines: usize) -> Vec<PanelLine> {
     let mut lines = Vec::new();
+    if state.work.refresh_pending {
+        lines.push(PanelLine::new(
+            "  work=refreshing repository",
+            RowRole::Notice,
+        ));
+    }
+    if let Some(operation) = &state.work.operation_pending {
+        lines.push(PanelLine::new(
+            format!("  work=running {operation}"),
+            RowRole::Notice,
+        ));
+    }
     if let Some(error) = &state.status.last_error {
         lines.push(PanelLine::new(format!("  error={error}"), RowRole::Error));
     }
@@ -149,6 +171,13 @@ fn render_files_details_lines(state: &AppState, max_lines: usize) -> Vec<PanelLi
 
     if let Some(error) = &state.details.files_error {
         return vec![PanelLine::new(format!("  error={error}"), RowRole::Error)];
+    }
+
+    if state.work.details_pending && state.details.files_diff.trim().is_empty() {
+        return vec![PanelLine::new(
+            "  details(files): loading diff",
+            RowRole::Muted,
+        )];
     }
 
     if state.details.files_diff.trim().is_empty() {

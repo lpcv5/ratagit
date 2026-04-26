@@ -26,8 +26,9 @@ MVP v0 includes a left-nav workspace layout with six panels:
 - Details:
   - Files focus projection: show merged `unstaged` then `staged` diff for the currently selected file/folder target
   - Untracked text files render as new-file patches in the `unstaged` diff section
+  - While a selected file diff is loading, Details shows a deterministic loading row instead of blocking input
   - Branches/Commits/Stash projection: placeholder text for now (to be implemented in later slices)
-- Log: show latest error and recent notices
+- Log: show latest error, recent notices, and pending refresh/operation state
 
 Navigation rules:
 
@@ -49,6 +50,8 @@ Files panel rules:
 - untracked entries are requested with full file granularity (equivalent to
   `git status --untracked-files=all`) so nested untracked files appear as file rows
 - folder operations apply to descendant files present in the tree model
+- file-tree rows and descendant targets are cached in `AppState` after status
+  refresh or tree/search changes, so rendering does not rebuild them every frame
 - `space` stages unstaged targets or unstages targets when all selected targets are staged
 - `c` opens a commit editor modal from Files focus
   - `message` and `body` fields are editable
@@ -77,6 +80,8 @@ Files panel rules:
 - `/` opens search input in the bottom bar; Enter confirms, Esc cancels or clears, `n` / `N` navigate matches
 - `Enter` still toggles directory expand/collapse; hunk editing and partial-stage flow are explicitly deferred
 - details-diff side effects for high-frequency files navigation are debounced to keep `j` / `k` scrolling smooth
+- real TUI Git work runs on a single background worker so initial refresh and
+  long operations do not block drawing or keyboard input
 
 All features are keyboard-driven and deterministic.
 

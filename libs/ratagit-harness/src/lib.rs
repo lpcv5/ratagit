@@ -10,6 +10,9 @@ use ratagit_ui::{
     buffer_contains_selected_text, render, render_terminal_buffer, render_terminal_text,
 };
 
+mod async_runtime;
+pub use async_runtime::AsyncRuntime;
+
 #[derive(Debug)]
 pub struct Runtime<B: GitBackend> {
     state: AppState,

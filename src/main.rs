@@ -9,7 +9,7 @@ use crossterm::terminal::{
 };
 use ratagit_core::{AppState, FileInputMode, PanelFocus, UiAction};
 use ratagit_git::{GitBackend, HybridGitBackend, MockGitBackend, is_git_repo};
-use ratagit_harness::Runtime;
+use ratagit_harness::AsyncRuntime;
 use ratagit_observe::{ObserveConfig, init_observability};
 use ratagit_testkit::fixture_dirty_repo;
 use ratagit_ui::{TerminalSize, render_terminal};
@@ -22,9 +22,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 
 fn run_tui() -> Result<(), Box<dyn Error>> {
-    let mut terminal = setup_terminal()?;
     let backend = select_backend()?;
-    let mut runtime = Runtime::new(
+    let mut terminal = setup_terminal()?;
+    let mut runtime = AsyncRuntime::new(
         AppState::default(),
         backend,
         TerminalSize {
@@ -36,11 +36,12 @@ fn run_tui() -> Result<(), Box<dyn Error>> {
     runtime.dispatch_ui(UiAction::RefreshAll);
 
     loop {
+        runtime.tick();
         terminal.draw(|frame| {
             render_terminal(frame, runtime.state());
         })?;
 
-        if !event::poll(Duration::from_millis(100))? {
+        if !event::poll(Duration::from_millis(16))? {
             runtime.tick();
             continue;
         }
@@ -54,7 +55,10 @@ fn run_tui() -> Result<(), Box<dyn Error>> {
 
         match key_effect_for_key(runtime.state(), key.code, key.modifiers) {
             KeyEffect::Quit => break,
-            KeyEffect::Dispatch(action) => runtime.dispatch_ui(action),
+            KeyEffect::Dispatch(action) => {
+                runtime.dispatch_ui(action);
+                runtime.tick();
+            }
             KeyEffect::Ignore => {}
         }
     }

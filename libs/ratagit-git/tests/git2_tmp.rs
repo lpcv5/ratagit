@@ -152,6 +152,33 @@ fn git2_refresh_snapshot_reads_status_refs_commits_and_stashes() {
 }
 
 #[test]
+fn git2_refresh_snapshot_reads_recent_commits_from_head_first() {
+    if !git_available() {
+        eprintln!(
+            "git is unavailable, skipping git2_refresh_snapshot_reads_recent_commits_from_head_first"
+        );
+        return;
+    }
+
+    let repo = seeded_repo_with_two_files("recent-commits");
+    for index in 1..=12 {
+        write(repo.path().join("a.txt"), format!("commit {index}\n"))
+            .expect("a.txt should be writable");
+        repo.run_git(&["add", "--", "a.txt"]);
+        repo.run_git(&["commit", "-m", &format!("commit {index}")]);
+    }
+
+    let mut backend = HybridGitBackend::open(repo.path()).expect("hybrid backend should open");
+    let snapshot = backend
+        .refresh_snapshot()
+        .expect("snapshot should refresh with recent commits");
+
+    assert_eq!(snapshot.commits.len(), 10);
+    assert_eq!(snapshot.commits[0].summary, "commit 12");
+    assert_eq!(snapshot.commits[9].summary, "commit 3");
+}
+
+#[test]
 fn git2_files_details_diff_emits_unstaged_and_staged_sections() {
     if !git_available() {
         eprintln!(

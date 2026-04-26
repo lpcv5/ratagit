@@ -77,6 +77,14 @@ pub struct StatusPanelState {
     pub last_error: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct WorkStatusState {
+    pub refresh_pending: bool,
+    pub details_pending: bool,
+    pub operation_pending: Option<String>,
+    pub last_completed_command: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommitsPanelState {
     pub items: Vec<CommitEntry>,
@@ -233,6 +241,7 @@ pub struct AppState {
     pub editor: EditorState,
     pub reset_menu: ResetMenuState,
     pub discard_confirm: DiscardConfirmState,
+    pub work: WorkStatusState,
     pub notices: Vec<String>,
     pub last_operation: Option<String>,
 }
@@ -271,6 +280,7 @@ impl Default for AppState {
             editor: EditorState::default(),
             reset_menu: ResetMenuState::default(),
             discard_confirm: DiscardConfirmState::default(),
+            work: WorkStatusState::default(),
             notices: vec!["Ready".to_string()],
             last_operation: None,
         }

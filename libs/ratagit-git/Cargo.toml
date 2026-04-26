@@ -7,3 +7,4 @@ license.workspace = true
 [dependencies]
 git2.workspace = true
 ratagit-core.workspace = true
+tracing.workspace = true
