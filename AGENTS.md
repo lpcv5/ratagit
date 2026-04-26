@@ -81,6 +81,29 @@ Before finishing:
 
 ---
 
+## Git Commit Rules
+
+Commit messages must use Conventional Commits:
+
+```text
+type(scope): summary
+```
+
+- `type` must be one of: `feat`, `fix`, `refactor`, `test`, `docs`,
+  `chore`, `style`, `perf`, `build`, `ci`, or `revert`
+- `scope` is required and should name the package or subsystem, such as
+  `ui`, `core`, `git`, `harness`, `docs`, or `repo`
+- `summary` must be concise, imperative, lowercase after the scope, and must
+  not end with a period
+- commit body is optional
+
+Examples:
+
+- `refactor(ui): add reusable modal system`
+- `docs(repo): add commit message rules`
+
+---
+
 ## Documentation
 
 - Behavior changes → update PRODUCT.md
