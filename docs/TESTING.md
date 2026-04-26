@@ -11,8 +11,10 @@ ratagit uses a layered testing approach:
 
 ## UI Testing
 
-- Use ratatui TestBackend
-- Use insta snapshots
+- Panel unit tests assert each panel's pure projection from `AppState`.
+- Full-screen integration tests render `render_terminal` with
+  `ratatui::TestBackend`.
+- Use insta snapshots for full-screen terminal buffers.
 - Fixed sizes:
   - 80x24
   - 100x30
@@ -45,8 +47,9 @@ All UI tests must use fixtures:
 Scenarios must:
 
 - simulate user input
-- assert UI
-- assert Git state
+- assert real `render_terminal` screen text
+- assert Git operation trace
+- assert final mock Git state
 
 ---
 
@@ -55,8 +58,10 @@ Scenarios must:
 On failure, store:
 
 - buffer snapshot
+- real screen snapshot
 - AppState dump
-- logs
+- Git operation trace
+- final mock Git state
 - input sequence
 
 ---

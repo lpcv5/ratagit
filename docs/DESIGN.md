@@ -50,12 +50,17 @@ Files panel interaction:
 
 ## Snapshot and Harness Design
 
-- UI tests render fixed terminal sizes.
-- Harness scenarios drive action sequences and assert both:
-  - rendered UI text
+- UI panel unit tests assert pure panel projections from `AppState`.
+- Full-screen UI tests render fixed terminal sizes through `render_terminal`
+  and `ratatui::TestBackend`.
+- Harness scenarios drive action sequences and assert:
+  - real terminal screen text
   - backend operation trace
+  - final mock Git state
 - On failure, harness writes artifacts:
-  - buffer
+  - compatibility text buffer
+  - real terminal screen
   - AppState dump
   - git operation trace
+  - final mock Git state
   - input sequence

@@ -2,42 +2,42 @@
 
 ## Goal
 
-Restructure the project into a standard Rust application workspace:
-
-- make the repository root the runnable `ratagit` application package
-- move internal libraries from `crates/` to `libs/`
-- centralize shared package metadata and dependency declarations in the root
-  `Cargo.toml`
-- preserve independent library packages and their per-package tests
+Enhance TUI verification so UI changes are validated through real panel
+projection, full-screen `ratatui` rendering, and command-to-render harness
+scenarios rather than only string-level guesses.
 
 ## Vertical Slice
 
-1. Workspace layout
-- move the app entrypoint to `src/main.rs`
-- move `ratagit-core`, `ratagit-ui`, `ratagit-git`, `ratagit-observe`,
-  `ratagit-testkit`, and `ratagit-harness` under `libs/`
-- remove tracked harness target artifacts from source control
+1. UI rendering modules
+- split `ratagit-ui` into focused modules for frame helpers, panel projection,
+  terminal rendering, and compatibility text rendering
+- keep the public API stable: `render`, `render_terminal`, `TerminalSize`, and
+  `RenderedFrame`
+- add `render_terminal_text` so tests and harness scenarios inspect the real
+  `render_terminal` buffer
 
-2. Cargo manifests
-- make the root `Cargo.toml` both the app manifest and workspace manifest
-- define workspace `default-members` so `cargo test` and clippy still cover the
-  root app plus all libraries
-- use workspace inheritance for version, edition, license, external dependency
-  versions, and internal path dependencies
-- keep each library `Cargo.toml` minimal while preserving crate boundaries
+2. Panel unit tests
+- test each panel's pure projection from `AppState`
+- cover focus-derived details, search/multi-select file rows, log errors, and
+  contextual keys
 
-3. Documentation
-- update `ARCHITECTURE.md` to describe the root app and `libs/` package layout
-- do not update `PRODUCT.md` or `DESIGN.md` because this change has no product
-  behavior or UI design impact
+3. Full-screen UI snapshots
+- add `insta` snapshots for fixed terminal sizes `80x24`, `100x30`, and
+  `120x40`
+- snapshot the real `ratatui::TestBackend` screen, including panel borders and
+  the bottom keys area
+- keep the old `render()` tests as compatibility checks until that path is
+  removed by an explicit design change
 
-4. Tests
-- run package-specific tests for core, UI snapshots, and harness scenarios
-- run the full workspace quality gates
+4. Harness scenarios
+- migrate scenarios to structured expectations for screen text, Git operation
+  trace, and final mock Git state
+- write failure artifacts for text render, real screen render, `AppState`, Git
+  operation trace, final mock state, and input sequence
 
 5. Quality gates
 - run `cargo fmt`
 - run `cargo clippy --all-targets -- -D warnings`
 - run `cargo test`
-- run `cargo test snapshots -- --nocapture`
-- run `cargo test harness -- --nocapture`
+- run `cargo test -p ratagit-ui`
+- run `cargo test -p ratagit-harness`

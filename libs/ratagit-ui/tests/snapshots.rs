@@ -3,9 +3,7 @@ use ratagit_testkit::{
     fixture_conflict, fixture_dirty_repo, fixture_empty_repo, fixture_many_files,
     fixture_unicode_paths,
 };
-use ratagit_ui::{TerminalSize, render, render_terminal};
-use ratatui::Terminal;
-use ratatui::backend::TestBackend;
+use ratagit_ui::{TerminalSize, render, render_terminal_text};
 
 fn render_snapshot(snapshot: ratagit_core::RepoSnapshot, size: TerminalSize) -> String {
     let mut state = AppState::default();
@@ -216,7 +214,25 @@ fn snapshots_files_list_scrolls_up_with_top_reserve() {
 }
 
 #[test]
-fn terminal_render_uses_real_panel_blocks() {
+fn terminal_snapshot_empty_repo_80x24() {
+    let mut state = AppState::default();
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::Refreshed(fixture_empty_repo())),
+    );
+    assert!(commands.is_empty());
+
+    insta::assert_snapshot!(render_terminal_text(
+        &state,
+        TerminalSize {
+            width: 80,
+            height: 24,
+        },
+    ));
+}
+
+#[test]
+fn terminal_snapshot_dirty_repo_100x30() {
     let mut state = AppState::default();
     let commands = update(
         &mut state,
@@ -224,16 +240,103 @@ fn terminal_render_uses_real_panel_blocks() {
     );
     assert!(commands.is_empty());
 
-    let backend = TestBackend::new(100, 30);
-    let mut terminal = Terminal::new(backend).expect("test terminal should initialize");
-    terminal
-        .draw(|frame| render_terminal(frame, &state))
-        .expect("terminal render should succeed");
+    insta::assert_snapshot!(render_terminal_text(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    ));
+}
 
-    let buffer = format!("{:?}", terminal.backend().buffer());
-    assert!(buffer.contains("Files"));
-    assert!(buffer.contains("Branches"));
-    assert!(buffer.contains("Details"));
-    assert!(buffer.contains("Keys"));
-    assert!(buffer.contains("main.rs"));
+#[test]
+fn terminal_snapshot_conflict_repo_120x40() {
+    let mut state = AppState::default();
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::Refreshed(fixture_conflict())),
+    );
+    assert!(commands.is_empty());
+
+    insta::assert_snapshot!(render_terminal_text(
+        &state,
+        TerminalSize {
+            width: 120,
+            height: 40,
+        },
+    ));
+}
+
+#[test]
+fn terminal_snapshot_focus_and_keys_follow_actions() {
+    let mut state = AppState::default();
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::Refreshed(fixture_dirty_repo())),
+    );
+    assert!(commands.is_empty());
+    update(&mut state, Action::Ui(UiAction::FocusNext));
+    update(&mut state, Action::Ui(UiAction::FocusNext));
+
+    let screen = render_terminal_text(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    );
+
+    assert!(screen.contains("Commits *"));
+    assert!(screen.contains("keys(commits): c commit"));
+}
+
+#[test]
+fn terminal_snapshot_files_search_updates_screen() {
+    let mut state = AppState::default();
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::Refreshed(fixture_dirty_repo())),
+    );
+    assert!(commands.is_empty());
+    update(&mut state, Action::Ui(UiAction::StartFileSearch));
+    update(&mut state, Action::Ui(UiAction::InputFileSearchChar('l')));
+    update(&mut state, Action::Ui(UiAction::InputFileSearchChar('i')));
+
+    let screen = render_terminal_text(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    );
+
+    assert!(screen.contains("search: li"));
+    assert!(screen.contains("!  [ ] lib.rs"));
+}
+
+#[test]
+fn terminal_snapshot_error_is_visible_in_log_panel() {
+    let mut state = AppState::default();
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::Refreshed(fixture_dirty_repo())),
+    );
+    assert!(commands.is_empty());
+    update(
+        &mut state,
+        Action::GitResult(GitResult::CreateCommit {
+            message: String::new(),
+            result: Err("nothing staged".to_string()),
+        }),
+    );
+
+    let screen = render_terminal_text(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    );
+
+    assert!(screen.contains("error=Failed to create commit"));
 }

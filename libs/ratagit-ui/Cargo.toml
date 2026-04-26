@@ -9,4 +9,5 @@ ratagit-core.workspace = true
 ratatui.workspace = true
 
 [dev-dependencies]
+insta.workspace = true
 ratagit-testkit.workspace = true

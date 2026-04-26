@@ -172,6 +172,62 @@ mod tests {
             Some(UiAction::CancelFileSearch)
         );
     }
+
+    #[test]
+    fn files_panel_git_keys_map_to_file_actions() {
+        let state = AppState::default();
+        assert_eq!(
+            ui_action_for_key(&state, KeyCode::Char(' ')),
+            Some(UiAction::ToggleSelectedFileStage)
+        );
+        assert_eq!(
+            ui_action_for_key(&state, KeyCode::Char('s')),
+            Some(UiAction::StashSelectedFiles)
+        );
+        assert_eq!(
+            ui_action_for_key(&state, KeyCode::Char('/')),
+            Some(UiAction::StartFileSearch)
+        );
+    }
+
+    #[test]
+    fn focused_panel_git_keys_map_to_panel_actions() {
+        let mut state = AppState {
+            focus: PanelFocus::Branches,
+            last_left_focus: PanelFocus::Branches,
+            ..AppState::default()
+        };
+        assert_eq!(
+            ui_action_for_key(&state, KeyCode::Char('b')),
+            Some(UiAction::CreateBranch {
+                name: "feature/new".to_string()
+            })
+        );
+        assert_eq!(
+            ui_action_for_key(&state, KeyCode::Char('o')),
+            Some(UiAction::CheckoutSelectedBranch)
+        );
+
+        state.focus = PanelFocus::Commits;
+        assert_eq!(
+            ui_action_for_key(&state, KeyCode::Char('c')),
+            Some(UiAction::CreateCommit {
+                message: "mvp commit".to_string()
+            })
+        );
+
+        state.focus = PanelFocus::Stash;
+        assert_eq!(
+            ui_action_for_key(&state, KeyCode::Char('p')),
+            Some(UiAction::StashPush {
+                message: "savepoint".to_string()
+            })
+        );
+        assert_eq!(
+            ui_action_for_key(&state, KeyCode::Char('O')),
+            Some(UiAction::StashPopSelected)
+        );
+    }
 }
 
 fn setup_terminal() -> Result<Terminal<CrosstermBackend<Stdout>>, io::Error> {

@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use ratagit_core::{Action, AppState, Command, UiAction, update};
 use ratagit_git::{GitBackend, MockGitBackend, execute_command};
-use ratagit_ui::{RenderedFrame, TerminalSize, render};
+use ratagit_ui::{RenderedFrame, TerminalSize, render, render_terminal_text};
 
 #[derive(Debug)]
 pub struct Runtime<B: GitBackend> {
@@ -43,6 +43,10 @@ impl<B: GitBackend> Runtime<B> {
         render(&self.state, self.terminal_size)
     }
 
+    pub fn render_terminal_text(&self) -> String {
+        render_terminal_text(&self.state, self.terminal_size)
+    }
+
     fn process_commands(&mut self, initial: Vec<Command>) {
         let mut queue = VecDeque::from(initial);
         while let Some(command) = queue.pop_front() {
@@ -61,39 +65,73 @@ pub struct ScenarioFailure {
     pub artifact_dir: PathBuf,
 }
 
-pub fn run_mock_scenario(
-    scenario_name: &str,
-    fixture: ratagit_core::RepoSnapshot,
-    inputs: &[UiAction],
-    expected_ui_contains: &[&str],
-    expected_git_ops_contains: &[&str],
-) -> Result<(), ScenarioFailure> {
+#[derive(Debug, Clone)]
+pub struct MockScenario<'a> {
+    pub name: &'a str,
+    pub fixture: ratagit_core::RepoSnapshot,
+    pub inputs: &'a [UiAction],
+    pub terminal_size: TerminalSize,
+    pub expectations: ScenarioExpectations<'a>,
+}
+
+impl<'a> MockScenario<'a> {
+    pub fn new(
+        name: &'a str,
+        fixture: ratagit_core::RepoSnapshot,
+        inputs: &'a [UiAction],
+        expectations: ScenarioExpectations<'a>,
+    ) -> Self {
+        Self {
+            name,
+            fixture,
+            inputs,
+            terminal_size: TerminalSize {
+                width: 100,
+                height: 30,
+            },
+            expectations,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ScenarioExpectations<'a> {
+    pub screen_contains: &'a [&'a str],
+    pub git_ops_contains: &'a [&'a str],
+    pub git_state_contains: &'a [&'a str],
+}
+
+pub fn run_mock_scenario(scenario: MockScenario<'_>) -> Result<(), ScenarioFailure> {
     let mut runtime = Runtime::new(
         AppState::default(),
-        MockGitBackend::new(fixture),
-        TerminalSize {
-            width: 100,
-            height: 30,
-        },
+        MockGitBackend::new(scenario.fixture),
+        scenario.terminal_size,
     );
 
-    for action in inputs {
+    for action in scenario.inputs {
         runtime.dispatch_ui(action.clone());
     }
 
-    let frame = runtime.render();
-    let frame_text = frame.as_text();
+    let compatibility_frame = runtime.render();
+    let frame_text = compatibility_frame.as_text();
+    let screen_text = runtime.render_terminal_text();
     let operations = runtime.backend().operations().join("\n");
+    let git_state = format!("{:#?}", runtime.backend().snapshot());
 
     let mut errors = Vec::new();
-    for needle in expected_ui_contains {
-        if !frame_text.contains(needle) {
-            errors.push(format!("UI missing expected text: {needle}"));
+    for needle in scenario.expectations.screen_contains {
+        if !screen_text.contains(needle) {
+            errors.push(format!("screen missing expected text: {needle}"));
         }
     }
-    for needle in expected_git_ops_contains {
+    for needle in scenario.expectations.git_ops_contains {
         if !operations.contains(needle) {
             errors.push(format!("Git ops missing expected text: {needle}"));
+        }
+    }
+    for needle in scenario.expectations.git_state_contains {
+        if !git_state.contains(needle) {
+            errors.push(format!("Git state missing expected text: {needle}"));
         }
     }
 
@@ -102,11 +140,13 @@ pub fn run_mock_scenario(
     }
 
     let artifact_dir = write_failure_artifacts(
-        scenario_name,
+        scenario.name,
         &frame_text,
+        &screen_text,
         &format!("{:#?}", runtime.state()),
         &operations,
-        &format!("{inputs:#?}"),
+        &git_state,
+        &format!("{:#?}", scenario.inputs),
     );
     Err(ScenarioFailure {
         message: errors.join(" | "),
@@ -117,20 +157,36 @@ pub fn run_mock_scenario(
 fn write_failure_artifacts(
     scenario_name: &str,
     frame_text: &str,
+    screen_text: &str,
     app_state_dump: &str,
     operations_text: &str,
+    git_state_text: &str,
     input_text: &str,
 ) -> PathBuf {
-    let base =
-        PathBuf::from(std::env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| "target".to_string()))
-            .join("harness-artifacts")
-            .join(sanitize_name(scenario_name));
+    let base = artifact_root()
+        .join("harness-artifacts")
+        .join(sanitize_name(scenario_name));
     let _ = create_dir_all(&base);
     let _ = write(base.join("buffer.txt"), frame_text);
+    let _ = write(base.join("screen.txt"), screen_text);
     let _ = write(base.join("app_state.txt"), app_state_dump);
-    let _ = write(base.join("git_state.txt"), operations_text);
+    let _ = write(base.join("git_ops.txt"), operations_text);
+    let _ = write(base.join("git_state.txt"), git_state_text);
     let _ = write(base.join("input_sequence.txt"), input_text);
     base
+}
+
+fn artifact_root() -> PathBuf {
+    if let Ok(target_dir) = std::env::var("CARGO_TARGET_DIR") {
+        return PathBuf::from(target_dir);
+    }
+
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    manifest_dir
+        .parent()
+        .and_then(|libs_dir| libs_dir.parent())
+        .map(|workspace_root| workspace_root.join("target"))
+        .unwrap_or_else(|| PathBuf::from("target"))
 }
 
 fn sanitize_name(name: &str) -> String {
