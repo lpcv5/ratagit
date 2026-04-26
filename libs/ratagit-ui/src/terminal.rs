@@ -16,7 +16,7 @@ pub fn render_terminal(frame: &mut Frame<'_>, state: &AppState) {
     let area = frame.area();
     let root = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(6), Constraint::Length(3)])
+        .constraints([Constraint::Min(6), Constraint::Length(1)])
         .split(area);
 
     render_panel_grid(frame, state, root[0]);
@@ -126,11 +126,6 @@ fn render_block_panel(
 }
 
 fn render_shortcuts(frame: &mut Frame<'_>, state: &AppState, area: Rect) {
-    let widget = Paragraph::new(shortcuts_for_state(state)).block(
-        Block::default()
-            .title(" Keys ")
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::DarkGray)),
-    );
+    let widget = Paragraph::new(shortcuts_for_state(state));
     frame.render_widget(widget, area);
 }

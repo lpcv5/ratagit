@@ -288,6 +288,13 @@ fn terminal_snapshot_focus_and_keys_follow_actions() {
 
     assert!(screen.contains("Commits *"));
     assert!(screen.contains("keys(commits): c commit"));
+    assert!(!screen.contains(" Keys "));
+    assert!(
+        screen
+            .lines()
+            .last()
+            .is_some_and(|line| line.starts_with("keys(commits): c commit"))
+    );
 }
 
 #[test]

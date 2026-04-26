@@ -6,7 +6,7 @@ ratagit MVP uses a left-nav workspace interface with six visible panels:
 
 1. Left column (top -> bottom): Files, Branches, Commits, Stash
 2. Right column (top -> bottom): Details, Log
-3. Bottom row: current-focused-panel Git operation shortcuts only
+3. Bottom row: unframed current-focused-panel Git operation shortcuts only
 
 The focused panel is highlighted. Left list panels keep deterministic selected row indexes. Right panels are read-only views derived from `AppState`. The app does not render a top branch/focus/status summary.
 

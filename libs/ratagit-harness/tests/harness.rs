@@ -15,7 +15,7 @@ fn harness_status_refresh() {
         fixture_empty_repo(),
         &inputs,
         ScenarioExpectations {
-            screen_contains: &["Files", "Details", "Keys"],
+            screen_contains: &["Files", "Details", "keys(files):"],
             git_ops_contains: &["refresh"],
             git_state_contains: &["current_branch: \"main\""],
         },

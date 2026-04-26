@@ -31,7 +31,7 @@ Navigation rules:
 - `h` / `l` cycles only in left panels: Files -> Branches -> Commits -> Stash
 - `1..6` focuses Files/Branches/Commits/Stash/Details/Log directly
 - top branch/focus/status summary is hidden to prioritize panels
-- bottom shortcut bar shows only Git operation shortcuts for the current focused panel
+- bottom keys row is unframed and shows only Git operation shortcuts for the current focused panel
 
 Files panel rules:
 

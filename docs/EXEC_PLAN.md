@@ -2,9 +2,9 @@
 
 ## Goal
 
-Enhance TUI verification so UI changes are validated through real panel
-projection, full-screen `ratatui` rendering, and command-to-render harness
-scenarios rather than only string-level guesses.
+Trim the bottom keys row so it no longer draws a bordered block, while keeping
+TUI behavior validated through real panel projection, full-screen `ratatui`
+rendering, and command-to-render harness scenarios.
 
 ## Vertical Slice
 
@@ -25,7 +25,7 @@ scenarios rather than only string-level guesses.
 - add `insta` snapshots for fixed terminal sizes `80x24`, `100x30`, and
   `120x40`
 - snapshot the real `ratatui::TestBackend` screen, including panel borders and
-  the bottom keys area
+  the unframed bottom keys row
 - keep the old `render()` tests as compatibility checks until that path is
   removed by an explicit design change
 

@@ -1,5 +1,6 @@
 ---
 source: libs/ratagit-ui/tests/snapshots.rs
+assertion_line: 261
 expression: "render_terminal_text(&state, TerminalSize { width: 120, height: 40, },)"
 ---
 ┌ Files * ──────────────────────────────┐┌ Details ────────────────────────────────────────────────────────────────────┐
@@ -8,6 +9,7 @@ expression: "render_terminal_text(&state, TerminalSize { width: 120, height: 40,
 │      [ ] conflict.rs (both modified)  ││  targets=1                                                                  │
 │                                       ││  staged=no                                                                  │
 │                                       ││  summary=staged: 0, unstaged: 2 (conflict)                                  │
+│                                       ││                                                                             │
 │                                       ││                                                                             │
 │                                       ││                                                                             │
 │                                       ││                                                                             │
@@ -38,7 +40,6 @@ expression: "render_terminal_text(&state, TerminalSize { width: 120, height: 40,
 │                                       ││                                                                             │
 │                                       ││                                                                             │
 │                                       ││                                                                             │
+│                                       ││                                                                             │
 └───────────────────────────────────────┘└─────────────────────────────────────────────────────────────────────────────┘
-┌ Keys ────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│keys(files): space stage/unstage | s stash | v multi | enter expand | / search                                        │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+keys(files): space stage/unstage | s stash | v multi | enter expand | / search
