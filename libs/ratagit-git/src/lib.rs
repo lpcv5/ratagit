@@ -125,7 +125,8 @@ impl CliGitBackend {
 
 impl GitBackend for CliGitBackend {
     fn refresh_snapshot(&mut self) -> Result<RepoSnapshot, GitError> {
-        let status_output = self.run_git(&["status", "--short", "--branch"])?;
+        let status_output =
+            self.run_git(&["status", "--short", "--branch", "--untracked-files=all"])?;
         let log_output = self.run_git(&["log", "--oneline", "-n", "10"])?;
         let branch_output = self.run_git(&["branch", "--list"])?;
         let stash_output = self.run_git(&["stash", "list"])?;
@@ -483,6 +484,27 @@ mod tests {
         assert!(files[1].staged);
         assert!(!files[0].untracked);
         assert!(files[2].untracked);
+    }
+
+    #[test]
+    fn parse_status_output_preserves_untracked_directory_marker_path() {
+        let output = "## main\n?? libs/ratagit-git/tests/\n";
+        let (_branch, _detached, _summary, files) = parse_status_output(output);
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].path, "libs/ratagit-git/tests/");
+        assert!(files[0].untracked);
+        assert!(!files[0].staged);
+    }
+
+    #[test]
+    fn parse_status_output_keeps_untracked_nested_file_path() {
+        let output = "## main\n?? libs/ratagit-git/tests/cli_tmp.rs\n";
+        let (_branch, _detached, summary, files) = parse_status_output(output);
+        assert_eq!(summary, "staged: 0, unstaged: 1");
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].path, "libs/ratagit-git/tests/cli_tmp.rs");
+        assert!(files[0].untracked);
+        assert!(!files[0].staged);
     }
 
     #[test]
