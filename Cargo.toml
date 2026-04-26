@@ -41,6 +41,7 @@ version = "0.1.0"
 
 [workspace.dependencies]
 crossterm = "0.29"
+git2 = "0.20.4"
 insta = "1"
 ratagit-core = { path = "libs/ratagit-core" }
 ratagit-git = { path = "libs/ratagit-git" }

@@ -8,7 +8,7 @@ use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
 use ratagit_core::{AppState, FileInputMode, PanelFocus, UiAction};
-use ratagit_git::{CliGitBackend, GitBackend, MockGitBackend, is_git_repo};
+use ratagit_git::{GitBackend, HybridGitBackend, MockGitBackend, is_git_repo};
 use ratagit_harness::Runtime;
 use ratagit_observe::{ObserveConfig, init_observability};
 use ratagit_testkit::fixture_dirty_repo;
@@ -454,79 +454,79 @@ fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result
     terminal.show_cursor()
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 enum AppBackend {
-    Cli(CliGitBackend),
+    Hybrid(HybridGitBackend),
     Mock(MockGitBackend),
 }
 
 impl GitBackend for AppBackend {
     fn refresh_snapshot(&mut self) -> Result<ratagit_core::RepoSnapshot, ratagit_git::GitError> {
         match self {
-            Self::Cli(inner) => inner.refresh_snapshot(),
+            Self::Hybrid(inner) => inner.refresh_snapshot(),
             Self::Mock(inner) => inner.refresh_snapshot(),
         }
     }
 
     fn files_details_diff(&mut self, paths: &[String]) -> Result<String, ratagit_git::GitError> {
         match self {
-            Self::Cli(inner) => inner.files_details_diff(paths),
+            Self::Hybrid(inner) => inner.files_details_diff(paths),
             Self::Mock(inner) => inner.files_details_diff(paths),
         }
     }
 
     fn stage_file(&mut self, path: &str) -> Result<(), ratagit_git::GitError> {
         match self {
-            Self::Cli(inner) => inner.stage_file(path),
+            Self::Hybrid(inner) => inner.stage_file(path),
             Self::Mock(inner) => inner.stage_file(path),
         }
     }
 
     fn unstage_file(&mut self, path: &str) -> Result<(), ratagit_git::GitError> {
         match self {
-            Self::Cli(inner) => inner.unstage_file(path),
+            Self::Hybrid(inner) => inner.unstage_file(path),
             Self::Mock(inner) => inner.unstage_file(path),
         }
     }
 
     fn stage_files(&mut self, paths: &[String]) -> Result<(), ratagit_git::GitError> {
         match self {
-            Self::Cli(inner) => inner.stage_files(paths),
+            Self::Hybrid(inner) => inner.stage_files(paths),
             Self::Mock(inner) => inner.stage_files(paths),
         }
     }
 
     fn unstage_files(&mut self, paths: &[String]) -> Result<(), ratagit_git::GitError> {
         match self {
-            Self::Cli(inner) => inner.unstage_files(paths),
+            Self::Hybrid(inner) => inner.unstage_files(paths),
             Self::Mock(inner) => inner.unstage_files(paths),
         }
     }
 
     fn create_commit(&mut self, message: &str) -> Result<(), ratagit_git::GitError> {
         match self {
-            Self::Cli(inner) => inner.create_commit(message),
+            Self::Hybrid(inner) => inner.create_commit(message),
             Self::Mock(inner) => inner.create_commit(message),
         }
     }
 
     fn create_branch(&mut self, name: &str) -> Result<(), ratagit_git::GitError> {
         match self {
-            Self::Cli(inner) => inner.create_branch(name),
+            Self::Hybrid(inner) => inner.create_branch(name),
             Self::Mock(inner) => inner.create_branch(name),
         }
     }
 
     fn checkout_branch(&mut self, name: &str) -> Result<(), ratagit_git::GitError> {
         match self {
-            Self::Cli(inner) => inner.checkout_branch(name),
+            Self::Hybrid(inner) => inner.checkout_branch(name),
             Self::Mock(inner) => inner.checkout_branch(name),
         }
     }
 
     fn stash_push(&mut self, message: &str) -> Result<(), ratagit_git::GitError> {
         match self {
-            Self::Cli(inner) => inner.stash_push(message),
+            Self::Hybrid(inner) => inner.stash_push(message),
             Self::Mock(inner) => inner.stash_push(message),
         }
     }
@@ -537,35 +537,35 @@ impl GitBackend for AppBackend {
         paths: &[String],
     ) -> Result<(), ratagit_git::GitError> {
         match self {
-            Self::Cli(inner) => inner.stash_files(message, paths),
+            Self::Hybrid(inner) => inner.stash_files(message, paths),
             Self::Mock(inner) => inner.stash_files(message, paths),
         }
     }
 
     fn stash_pop(&mut self, stash_id: &str) -> Result<(), ratagit_git::GitError> {
         match self {
-            Self::Cli(inner) => inner.stash_pop(stash_id),
+            Self::Hybrid(inner) => inner.stash_pop(stash_id),
             Self::Mock(inner) => inner.stash_pop(stash_id),
         }
     }
 
     fn reset(&mut self, mode: ratagit_core::ResetMode) -> Result<(), ratagit_git::GitError> {
         match self {
-            Self::Cli(inner) => inner.reset(mode),
+            Self::Hybrid(inner) => inner.reset(mode),
             Self::Mock(inner) => inner.reset(mode),
         }
     }
 
     fn nuke(&mut self) -> Result<(), ratagit_git::GitError> {
         match self {
-            Self::Cli(inner) => inner.nuke(),
+            Self::Hybrid(inner) => inner.nuke(),
             Self::Mock(inner) => inner.nuke(),
         }
     }
 
     fn discard_files(&mut self, paths: &[String]) -> Result<(), ratagit_git::GitError> {
         match self {
-            Self::Cli(inner) => inner.discard_files(paths),
+            Self::Hybrid(inner) => inner.discard_files(paths),
             Self::Mock(inner) => inner.discard_files(paths),
         }
     }
@@ -574,7 +574,7 @@ impl GitBackend for AppBackend {
 fn select_backend() -> Result<AppBackend, Box<dyn Error>> {
     let cwd = std::env::current_dir()?;
     if is_git_repo(&cwd) {
-        Ok(AppBackend::Cli(CliGitBackend::new(cwd)))
+        Ok(AppBackend::Hybrid(HybridGitBackend::open(cwd)?))
     } else {
         Ok(AppBackend::Mock(MockGitBackend::new(fixture_dirty_repo())))
     }

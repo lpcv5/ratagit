@@ -4,7 +4,7 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ratagit_core::ResetMode;
-use ratagit_git::{CliGitBackend, GitBackend};
+use ratagit_git::{GitBackend, HybridGitBackend};
 
 struct TmpGitRepo {
     path: PathBuf,
@@ -107,7 +107,7 @@ fn cli_create_commit_supports_multiline_message() {
     write(repo.path().join("a.txt"), "a2\n").expect("a.txt should be writable");
     repo.run_git(&["add", "--", "a.txt"]);
 
-    let mut backend = CliGitBackend::new(repo.path().to_path_buf());
+    let mut backend = HybridGitBackend::open(repo.path()).expect("hybrid backend should open");
     let message = "feat: multiline subject\n\nline 1\nline 2";
     backend
         .create_commit(message)
@@ -127,7 +127,7 @@ fn cli_stash_push_uses_title_for_all_changes() {
     let repo = seeded_repo_with_two_files("cli-stash-push");
     write(repo.path().join("a.txt"), "a2\n").expect("a.txt should be writable");
 
-    let mut backend = CliGitBackend::new(repo.path().to_path_buf());
+    let mut backend = HybridGitBackend::open(repo.path()).expect("hybrid backend should open");
     backend
         .stash_push("all stash title")
         .expect("stash_push should succeed");
@@ -147,7 +147,7 @@ fn cli_stash_push_includes_untracked_files() {
     write(repo.path().join("a.txt"), "a2\n").expect("a.txt should be writable");
     write(repo.path().join("new.txt"), "new\n").expect("new.txt should be writable");
 
-    let mut backend = CliGitBackend::new(repo.path().to_path_buf());
+    let mut backend = HybridGitBackend::open(repo.path()).expect("hybrid backend should open");
     backend
         .stash_push("all stash with untracked")
         .expect("stash_push should succeed");
@@ -177,7 +177,7 @@ fn cli_stash_files_limits_stash_to_selected_paths() {
     write(repo.path().join("a.txt"), "a2\n").expect("a.txt should be writable");
     write(repo.path().join("b.txt"), "b2\n").expect("b.txt should be writable");
 
-    let mut backend = CliGitBackend::new(repo.path().to_path_buf());
+    let mut backend = HybridGitBackend::open(repo.path()).expect("hybrid backend should open");
     backend
         .stash_files("selected stash", &["a.txt".to_string()])
         .expect("stash_files should succeed");
@@ -203,7 +203,7 @@ fn cli_reset_hard_clears_tracked_changes_but_keeps_untracked() {
     write(repo.path().join("a.txt"), "a2\n").expect("a.txt should be writable");
     write(repo.path().join("new.txt"), "new\n").expect("new.txt should be writable");
 
-    let mut backend = CliGitBackend::new(repo.path().to_path_buf());
+    let mut backend = HybridGitBackend::open(repo.path()).expect("hybrid backend should open");
     backend
         .reset(ResetMode::Hard)
         .expect("hard reset should succeed");
@@ -224,7 +224,7 @@ fn cli_nuke_clears_tracked_and_untracked_changes() {
     write(repo.path().join("a.txt"), "a2\n").expect("a.txt should be writable");
     write(repo.path().join("new.txt"), "new\n").expect("new.txt should be writable");
 
-    let mut backend = CliGitBackend::new(repo.path().to_path_buf());
+    let mut backend = HybridGitBackend::open(repo.path()).expect("hybrid backend should open");
     backend.nuke().expect("nuke should succeed");
 
     let status = repo.run_git_capture(&["status", "--short", "--untracked-files=all"]);

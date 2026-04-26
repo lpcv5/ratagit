@@ -108,7 +108,12 @@ internal library packages under `libs/`.
 ### ratagit-git
 
 - GitBackend trait
-- Implementations
+- Mock backend for deterministic harness scenarios
+- Hybrid real backend: `git2` handles repo discovery, snapshot refresh, file
+  diffs, stage, and unstage
+- Internal Git CLI executor handles operations not yet represented through
+  git2, such as commit, branch mutation, checkout, stash, reset, nuke, and
+  discard
 
 ### ratagit-observe
 

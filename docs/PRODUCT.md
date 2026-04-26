@@ -25,6 +25,7 @@ MVP v0 includes a left-nav workspace layout with six panels:
 - Stash: stash push and stash pop selected entry
 - Details:
   - Files focus projection: show merged `unstaged` then `staged` diff for the currently selected file/folder target
+  - Untracked text files render as new-file patches in the `unstaged` diff section
   - Branches/Commits/Stash projection: placeholder text for now (to be implemented in later slices)
 - Log: show latest error and recent notices
 

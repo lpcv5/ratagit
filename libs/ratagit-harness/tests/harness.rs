@@ -77,6 +77,28 @@ fn harness_files_details_follow_cursor_with_combined_diff_sections() {
 }
 
 #[test]
+fn harness_files_details_show_untracked_file_diff() {
+    let inputs = [UiAction::RefreshAll];
+    assert_scenario(MockScenario::new(
+        "files_details_untracked_file_diff",
+        fixture_dirty_repo(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &[
+                "### unstaged",
+                "diff --git a/README.md b/README.md",
+                "+new file README.md",
+            ],
+            screen_not_contains: &[],
+            selected_screen_rows: &[],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["details-diff:README.md"],
+            git_state_contains: &["path: \"README.md\"", "untracked: true"],
+        },
+    ));
+}
+
+#[test]
 fn harness_files_tree_expand_collapse() {
     let inputs = [
         UiAction::RefreshAll,
