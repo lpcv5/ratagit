@@ -2,31 +2,36 @@
 
 ## Current Slice
 
-Keep Commits scroll position continuous when an incremental commit page finishes
-loading.
+Add a Files subpanel inside Commits.
 
 ## Goal
 
-- preserve `GitBackend` and `AppState` boundaries
-- keep rendering pure and derived only from `AppState`
-- treat full refresh and incremental append as different reconciliation paths
-- preserve Commits scroll direction/origin when appending a page
-- keep boundary behavior that advances to the first new commit if the user was
-  waiting at the loaded tail
-- prevent the rendered window from jumping to the top-reserve position after a
-  page arrives
+- enter the subpanel from the selected commit with `Enter`
+- keep commit files and commit-file diffs inside `AppState`
+- load changed files only through `GitBackend`
+- reuse the Files tree projection and rendering shape
+- show changed-file status markers (`A/M/D/R/C/T`)
+- make Details follow the selected commit file/folder with path-limited patches
+- keep panel height stable while commit files are loading
+- allow commit-file folder rows to expand/collapse
+- defer commit-files local shortcuts beyond navigation and `Esc` return
 
 ## Vertical Slice
 
 1. State and input
-- add an append-specific Commits reconciliation helper
-- use it only for `GitResult::CommitsPage`
+- add commit-files substate under `CommitsPanelState`
+- add open/close actions and commit-files commands/results
+- map `Enter` from Commits to open, and `Esc` from Commit Files to return
+- map `Enter` inside Commit Files to directory expand/collapse
 
 2. Rendering
-- add a UI unit test that renders the list before and after page append
-- assert the first visible row moves continuously by one row rather than jumping
-  to the top-reserve layout
+- render Commit Files in the Commits panel frame
+- render commit-file status markers in the reused file-tree row format
+- render commit-file loading, empty, error, and diff states in Details
+- keep Commit Files loading height based on the parent Commits list to avoid a
+  one-frame layout jump
 
-3. Validation
-- keep existing prefetch/lazy-load/harness coverage passing
+3. Git and validation
+- add backend methods for changed files and selected file/folder commit diff
+- cover reducer behavior, snapshots, harness scenario, and real backend output
 - run `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, and `cargo test`

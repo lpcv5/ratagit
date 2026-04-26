@@ -1,6 +1,6 @@
 use ratagit_core::{
-    BranchDeleteMode, BranchEntry, COMMITS_PAGE_SIZE, CommitEntry, CommitHashStatus, RepoSnapshot,
-    ResetMode, StashEntry,
+    BranchDeleteMode, BranchEntry, COMMITS_PAGE_SIZE, CommitEntry, CommitFileDiffTarget,
+    CommitFileEntry, CommitFileStatus, CommitHashStatus, RepoSnapshot, ResetMode, StashEntry,
 };
 
 use crate::{GitBackend, GitError, resequence_stashes};
@@ -215,6 +215,62 @@ impl GitBackend for MockGitBackend {
             "commit {}\nAuthor: ratagit-tests <ratagit-tests@example.com>\n\n    {}\n\ndiff --git a/commit.txt b/commit.txt\n@@ -1 +1 @@\n-old {}\n+new {}",
             commit.full_id, commit.summary, commit.id, commit.id
         ))
+    }
+
+    fn commit_files(&mut self, commit_id: &str) -> Result<Vec<CommitFileEntry>, GitError> {
+        self.operations.push(format!("commit-files:{commit_id}"));
+        self.snapshot
+            .commits
+            .iter()
+            .find(|commit| commit_matches(commit, commit_id))
+            .ok_or_else(|| GitError::new(format!("commit not found: {commit_id}")))?;
+        Ok(vec![
+            CommitFileEntry {
+                path: "README.md".to_string(),
+                old_path: None,
+                status: CommitFileStatus::Modified,
+            },
+            CommitFileEntry {
+                path: "src/lib.rs".to_string(),
+                old_path: None,
+                status: CommitFileStatus::Added,
+            },
+            CommitFileEntry {
+                path: "src/new_name.rs".to_string(),
+                old_path: Some("src/old_name.rs".to_string()),
+                status: CommitFileStatus::Renamed,
+            },
+        ])
+    }
+
+    fn commit_file_diff(&mut self, target: &CommitFileDiffTarget) -> Result<String, GitError> {
+        let path_list = target
+            .paths
+            .iter()
+            .map(|path| path.path.as_str())
+            .collect::<Vec<_>>()
+            .join(",");
+        self.operations.push(format!(
+            "commit-file-diff:{}:{}",
+            target.commit_id, path_list
+        ));
+        self.snapshot
+            .commits
+            .iter()
+            .find(|commit| commit_matches(commit, &target.commit_id))
+            .ok_or_else(|| GitError::new(format!("commit not found: {}", target.commit_id)))?;
+        Ok(target
+            .paths
+            .iter()
+            .map(|path| {
+                let old_path = path.old_path.as_deref().unwrap_or(&path.path);
+                format!(
+                    "diff --git a/{old_path} b/{path}\n@@ -1 +1 @@\n-old {old_path}\n+new {path}",
+                    path = path.path
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n"))
     }
 
     fn stage_file(&mut self, path: &str) -> Result<(), GitError> {

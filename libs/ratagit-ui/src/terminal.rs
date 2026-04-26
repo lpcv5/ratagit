@@ -144,7 +144,7 @@ fn render_block_panel(
     } else {
         inactive_panel_style()
     };
-    let title = Line::styled(format!(" {} ", panel_title(panel)), border_style);
+    let title = Line::styled(format!(" {} ", panel_title(state, panel)), border_style);
     let items = lines
         .iter()
         .map(|line| ListItem::new(line_to_ratatui_line(line)).style(row_style(line.role)))

@@ -14,13 +14,17 @@ pub use commits::{
     selected_commit_ids, selected_commits, toggle_multi_select as toggle_commit_multi_select,
 };
 pub use files::{
-    FileEntry, FileInputMode, FileRowKind, FileTreeRow, FilesPanelState, build_file_tree_rows,
+    CommitFileEntry, CommitFileStatus, CommitFilesPanelState, FileEntry, FileInputMode,
+    FileRowKind, FileTreeRow, FilesPanelState, build_commit_file_tree_rows, build_file_tree_rows,
     cancel_search as cancel_file_search, clamp_selected as clamp_file_selection,
-    collect_directories, confirm_search as confirm_file_search, enter_multi_select, file_tree_rows,
-    initialize_tree_if_needed, jump_search_match, leave_multi_select, move_selected,
-    pop_search_char, push_search_char, reconcile_after_items_changed, refresh_tree_projection,
-    selected_row, selected_target_paths, start_search as start_file_search,
-    toggle_current_row_selection, toggle_selected_directory,
+    collect_directories, commit_file_tree_rows, confirm_search as confirm_file_search,
+    enter_multi_select, file_tree_rows, initialize_commit_files_tree, initialize_tree_if_needed,
+    jump_search_match, leave_multi_select, move_commit_file_selected, move_selected,
+    pop_search_char, push_search_char, reconcile_after_items_changed,
+    refresh_commit_files_tree_projection, refresh_tree_projection, selected_commit_file,
+    selected_commit_file_targets, selected_row, selected_target_paths,
+    start_search as start_file_search, toggle_commit_files_directory, toggle_current_row_selection,
+    toggle_selected_directory,
 };
 pub use scroll::ScrollDirection;
 pub use state::{
@@ -28,9 +32,10 @@ pub use state::{
     BranchDeleteMenuState, BranchDeleteMode, BranchEntry, BranchForceDeleteConfirmState,
     BranchRebaseChoice, BranchRebaseMenuState, BranchesPanelState, CachedBranchLog,
     CachedCommitDiff, CachedFilesDiff, CommitEditorIntent, CommitEntry, CommitField,
-    CommitHashStatus, CommitInputMode, CommitsPanelState, DetailsPanelState, DiscardConfirmState,
-    EditorKind, EditorState, PanelFocus, RepoSnapshot, ResetChoice, ResetMenuState, ResetMode,
-    StashEntry, StashPanelState, StashScope, StatusPanelState, WorkStatusState,
+    CommitFileDiffPath, CommitFileDiffTarget, CommitHashStatus, CommitInputMode, CommitsPanelState,
+    DetailsPanelState, DiscardConfirmState, EditorKind, EditorState, PanelFocus, RepoSnapshot,
+    ResetChoice, ResetMenuState, ResetMode, StashEntry, StashPanelState, StashScope,
+    StatusPanelState, WorkStatusState,
 };
 
 const DETAILS_DIFF_CACHE_LIMIT: usize = 16;
@@ -84,6 +89,9 @@ pub enum UiAction {
     EditorConfirm,
     EditorCancel,
     CreateCommit { message: String },
+    OpenCommitFilesPanel,
+    CloseCommitFilesPanel,
+    ToggleCommitFilesDirectory,
     ToggleCommitsMultiSelect,
     SquashSelectedCommits,
     FixupSelectedCommits,
@@ -132,6 +140,14 @@ pub enum GitResult {
     },
     CommitDetailsDiff {
         commit_id: String,
+        result: Result<String, String>,
+    },
+    CommitFiles {
+        commit_id: String,
+        result: Result<Vec<CommitFileEntry>, String>,
+    },
+    CommitFileDiff {
+        target: CommitFileDiffTarget,
         result: Result<String, String>,
     },
     RefreshFailed {
@@ -249,6 +265,12 @@ pub enum Command {
     RefreshCommitDetailsDiff {
         commit_id: String,
     },
+    RefreshCommitFiles {
+        commit_id: String,
+    },
+    RefreshCommitFileDiff {
+        target: CommitFileDiffTarget,
+    },
     StageFiles {
         paths: Vec<String>,
     },
@@ -317,8 +339,10 @@ pub fn debounce_key_for_command(command: &Command) -> Option<&'static str> {
         Command::RefreshFilesDetailsDiff { .. } => Some("files_details_diff"),
         Command::RefreshBranchDetailsLog { .. } => Some("branch_details_log"),
         Command::RefreshCommitDetailsDiff { .. } => Some("commit_details_diff"),
+        Command::RefreshCommitFileDiff { .. } => Some("commit_file_diff"),
         Command::RefreshAll
         | Command::LoadMoreCommits { .. }
+        | Command::RefreshCommitFiles { .. }
         | Command::StageFiles { .. }
         | Command::UnstageFiles { .. }
         | Command::StashFiles { .. }
@@ -362,6 +386,12 @@ fn mark_command_pending(state: &mut AppState, command: &Command) {
             state.work.details_pending = true;
         }
         Command::RefreshCommitDetailsDiff { .. } => {
+            state.work.details_pending = true;
+        }
+        Command::RefreshCommitFiles { .. } => {
+            state.commits.files.loading = true;
+        }
+        Command::RefreshCommitFileDiff { .. } => {
             state.work.details_pending = true;
         }
         Command::StageFiles { .. } => {
@@ -747,6 +777,16 @@ fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
             state.commits.draft_message = message.clone();
             with_pending(state, vec![Command::CreateCommit { message }])
         }
+        UiAction::OpenCommitFilesPanel => open_commit_files_panel(state),
+        UiAction::CloseCommitFilesPanel => close_commit_files_panel(state),
+        UiAction::ToggleCommitFilesDirectory => {
+            if toggle_commit_files_directory(&mut state.commits.files) {
+                refresh_commit_file_diff_command(state)
+            } else {
+                push_notice(state, "Selected commit file is not a directory");
+                Vec::new()
+            }
+        }
         UiAction::ToggleCommitsMultiSelect => {
             toggle_commit_multi_select(&mut state.commits);
             Vec::new()
@@ -863,6 +903,9 @@ fn update_git_result(state: &mut AppState, result: GitResult) -> Vec<Command> {
             if state.last_left_focus != PanelFocus::Commits {
                 return Vec::new();
             }
+            if state.commits.files.active {
+                return Vec::new();
+            }
             if Some(commit_id.as_str()) != selected_commit_id(state).as_deref() {
                 return Vec::new();
             }
@@ -880,6 +923,57 @@ fn update_git_result(state: &mut AppState, result: GitResult) -> Vec<Command> {
                     let message = format!("Failed to refresh commit details diff: {error}");
                     state.details.commit_diff.clear();
                     state.details.commit_diff_error = Some(message.clone());
+                    state.status.last_error = Some(message.clone());
+                    push_notice(state, &message);
+                }
+            }
+            Vec::new()
+        }
+        GitResult::CommitFiles { commit_id, result } => {
+            if !state.commits.files.active
+                || state.commits.files.commit_id.as_deref() != Some(commit_id.as_str())
+            {
+                return Vec::new();
+            }
+            state.commits.files.loading = false;
+            state.work.last_completed_command = Some("commit_files".to_string());
+            match result {
+                Ok(files) => {
+                    state.commits.files.items = files;
+                    state.commits.files.selected = 0;
+                    state.commits.files.scroll_direction = None;
+                    state.commits.files.scroll_direction_origin = 0;
+                    initialize_commit_files_tree(&mut state.commits.files);
+                    state.status.last_error = None;
+                    refresh_commit_file_diff_command(state)
+                }
+                Err(error) => {
+                    let message = format!("Failed to refresh commit files: {error}");
+                    state.status.last_error = Some(message.clone());
+                    state.details.commit_file_diff.clear();
+                    state.details.commit_file_diff_error = Some(message.clone());
+                    push_notice(state, &message);
+                    Vec::new()
+                }
+            }
+        }
+        GitResult::CommitFileDiff { target, result } => {
+            if !commit_file_diff_target_matches_selection(state, &target) {
+                return Vec::new();
+            }
+            state.work.details_pending = false;
+            state.work.last_completed_command = Some("commit_file_details".to_string());
+            state.details.commit_file_diff_target = Some(target.clone());
+            reset_details_scroll(state);
+            match result {
+                Ok(diff) => {
+                    state.details.commit_file_diff = diff;
+                    state.details.commit_file_diff_error = None;
+                }
+                Err(error) => {
+                    let message = format!("Failed to refresh commit file diff: {error}");
+                    state.details.commit_file_diff.clear();
+                    state.details.commit_file_diff_error = Some(message.clone());
                     state.status.last_error = Some(message.clone());
                     push_notice(state, &message);
                 }
@@ -1667,6 +1761,7 @@ fn apply_snapshot(state: &mut AppState, snapshot: RepoSnapshot) {
     initialize_tree_if_needed(&mut state.files);
     reconcile_after_items_changed(&mut state.files);
     state.commits.items = snapshot.commits;
+    state.commits.files = CommitFilesPanelState::default();
     state.commits.has_more = state.commits.items.len() >= COMMITS_PAGE_SIZE;
     state.commits.loading_more = false;
     state.commits.pending_select_after_load = false;
@@ -1681,6 +1776,12 @@ fn apply_snapshot(state: &mut AppState, snapshot: RepoSnapshot) {
     state.details.branch_log.clear();
     state.details.branch_log_error = None;
     state.details.branch_log_target = selected_branch_name(state);
+    state.details.commit_diff.clear();
+    state.details.commit_diff_error = None;
+    state.details.commit_diff_target = selected_commit_id(state);
+    state.details.commit_file_diff.clear();
+    state.details.commit_file_diff_error = None;
+    state.details.commit_file_diff_target = None;
     reset_details_scroll(state);
     clear_details_caches(state);
 }
@@ -1769,6 +1870,10 @@ fn move_selection(state: &mut AppState, move_up: bool) -> Vec<Command> {
             Vec::new()
         }
         PanelFocus::Commits => {
+            if state.commits.files.active {
+                move_commit_file_selected(&mut state.commits.files, move_up);
+                return Vec::new();
+            }
             let was_at_loaded_end = !move_up
                 && !state.commits.items.is_empty()
                 && state.commits.selected + 1 >= state.commits.items.len();
@@ -1894,6 +1999,103 @@ fn refresh_commit_details_diff_command(state: &mut AppState) -> Vec<Command> {
     with_pending(state, vec![Command::RefreshCommitDetailsDiff { commit_id }])
 }
 
+fn open_commit_files_panel(state: &mut AppState) -> Vec<Command> {
+    let Some(commit_id) = selected_commit_id(state) else {
+        push_notice(state, "No commit selected");
+        return Vec::new();
+    };
+    state.commits.files = CommitFilesPanelState {
+        active: true,
+        commit_id: Some(commit_id.clone()),
+        loading: true,
+        ..CommitFilesPanelState::default()
+    };
+    state.details.commit_file_diff.clear();
+    state.details.commit_file_diff_target = None;
+    state.details.commit_file_diff_error = None;
+    reset_details_scroll(state);
+    with_pending(state, vec![Command::RefreshCommitFiles { commit_id }])
+}
+
+fn close_commit_files_panel(state: &mut AppState) -> Vec<Command> {
+    if !state.commits.files.active {
+        return Vec::new();
+    }
+    state.commits.files.active = false;
+    state.commits.files.loading = false;
+    state.details.commit_file_diff.clear();
+    state.details.commit_file_diff_target = None;
+    state.details.commit_file_diff_error = None;
+    state.work.details_pending = false;
+    refresh_commit_details_diff_command(state)
+}
+
+fn refresh_commit_file_diff_command(state: &mut AppState) -> Vec<Command> {
+    if !state.commits.files.active {
+        return Vec::new();
+    }
+    let Some(commit_id) = state.commits.files.commit_id.clone() else {
+        clear_commit_file_details(state);
+        return Vec::new();
+    };
+    let files = selected_commit_file_targets(&state.commits.files);
+    if files.is_empty() {
+        clear_commit_file_details(state);
+        return Vec::new();
+    }
+    let target = CommitFileDiffTarget {
+        commit_id,
+        paths: files
+            .into_iter()
+            .map(|file| CommitFileDiffPath {
+                path: file.path,
+                old_path: file.old_path,
+            })
+            .collect(),
+    };
+    let target_changed = state.details.commit_file_diff_target.as_ref() != Some(&target);
+    state.details.commit_file_diff_target = Some(target.clone());
+    if target_changed {
+        reset_details_scroll(state);
+        state.details.commit_file_diff.clear();
+    }
+    with_pending(state, vec![Command::RefreshCommitFileDiff { target }])
+}
+
+fn clear_commit_file_details(state: &mut AppState) {
+    let target_changed = state.details.commit_file_diff_target.is_some();
+    state.details.commit_file_diff.clear();
+    state.details.commit_file_diff_target = None;
+    state.details.commit_file_diff_error = None;
+    if target_changed {
+        reset_details_scroll(state);
+    }
+    state.work.details_pending = false;
+}
+
+fn commit_file_diff_target_matches_selection(
+    state: &AppState,
+    target: &CommitFileDiffTarget,
+) -> bool {
+    if state.last_left_focus != PanelFocus::Commits || !state.commits.files.active {
+        return false;
+    }
+    let Some(commit_id) = state.commits.files.commit_id.as_deref() else {
+        return false;
+    };
+    if commit_id != target.commit_id {
+        return false;
+    }
+    let selected = selected_commit_file_targets(&state.commits.files)
+        .into_iter()
+        .map(|file| CommitFileDiffPath {
+            path: file.path,
+            old_path: file.old_path,
+        })
+        .collect::<Vec<_>>();
+    selected == target.paths
+}
+
 fn cached_files_details_diff(state: &AppState, paths: &[String]) -> Option<String> {
     state
         .details
@@ -1999,12 +2201,23 @@ fn details_scroll_max_offset(state: &AppState, visible_lines: usize) -> usize {
             .lines()
             .count()
             .saturating_sub(visible_lines),
-        PanelFocus::Commits => state
-            .details
-            .commit_diff
-            .lines()
-            .count()
-            .saturating_sub(visible_lines),
+        PanelFocus::Commits => {
+            if state.commits.files.active {
+                state
+                    .details
+                    .commit_file_diff
+                    .lines()
+                    .count()
+                    .saturating_sub(visible_lines)
+            } else {
+                state
+                    .details
+                    .commit_diff
+                    .lines()
+                    .count()
+                    .saturating_sub(visible_lines)
+            }
+        }
         PanelFocus::Stash | PanelFocus::Details | PanelFocus::Log => 0,
     }
 }
@@ -2017,6 +2230,9 @@ fn refresh_details_command_for_focus(state: &mut AppState) -> Vec<Command> {
         return refresh_branch_details_log_command(state);
     }
     if state.focus == PanelFocus::Commits {
+        if state.commits.files.active {
+            return refresh_commit_file_diff_command(state);
+        }
         return refresh_commit_details_diff_command(state);
     }
     Vec::new()

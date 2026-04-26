@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use crate::{FilesPanelState, ScrollDirection};
+use crate::{CommitFilesPanelState, FilesPanelState, ScrollDirection};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PanelFocus {
@@ -186,6 +186,7 @@ pub struct WorkStatusState {
 pub struct CommitsPanelState {
     pub items: Vec<CommitEntry>,
     pub selected: usize,
+    pub files: CommitFilesPanelState,
     pub selected_rows: BTreeSet<String>,
     pub selection_anchor: Option<String>,
     pub mode: CommitInputMode,
@@ -196,6 +197,18 @@ pub struct CommitsPanelState {
     pub pending_select_after_load: bool,
     pub pagination_epoch: u64,
     pub draft_message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommitFileDiffTarget {
+    pub commit_id: String,
+    pub paths: Vec<CommitFileDiffPath>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommitFileDiffPath {
+    pub path: String,
+    pub old_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -409,6 +422,9 @@ pub struct DetailsPanelState {
     pub commit_diff_target: Option<String>,
     pub commit_diff_error: Option<String>,
     pub cached_commit_diffs: Vec<CachedCommitDiff>,
+    pub commit_file_diff: String,
+    pub commit_file_diff_target: Option<CommitFileDiffTarget>,
+    pub commit_file_diff_error: Option<String>,
     pub scroll_offset: usize,
 }
 
@@ -464,6 +480,7 @@ impl Default for AppState {
             commits: CommitsPanelState {
                 items: Vec::new(),
                 selected: 0,
+                files: CommitFilesPanelState::default(),
                 selected_rows: BTreeSet::new(),
                 selection_anchor: None,
                 mode: CommitInputMode::Normal,
@@ -501,6 +518,9 @@ impl Default for AppState {
                 commit_diff_target: None,
                 commit_diff_error: None,
                 cached_commit_diffs: Vec::new(),
+                commit_file_diff: String::new(),
+                commit_file_diff_target: None,
+                commit_file_diff_error: None,
                 scroll_offset: 0,
             },
             editor: EditorState::default(),

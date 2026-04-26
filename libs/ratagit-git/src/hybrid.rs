@@ -198,6 +198,20 @@ impl GitBackend for HybridGitBackend {
         self.cli.commit_details_diff(commit_id)
     }
 
+    fn commit_files(
+        &mut self,
+        commit_id: &str,
+    ) -> Result<Vec<ratagit_core::CommitFileEntry>, GitError> {
+        self.cli.commit_files(commit_id)
+    }
+
+    fn commit_file_diff(
+        &mut self,
+        target: &ratagit_core::CommitFileDiffTarget,
+    ) -> Result<String, GitError> {
+        self.cli.commit_file_diff(target)
+    }
+
     fn stage_file(&mut self, path: &str) -> Result<(), GitError> {
         self.stage_files(&[path.to_string()])
     }

@@ -34,28 +34,28 @@ fn render_workspace_rows(state: &AppState, total_width: usize, body_height: usiz
 
     let left_panels = [
         render_panel(
-            panel_title(PanelFocus::Files),
+            panel_title(state, PanelFocus::Files),
             state.focus == PanelFocus::Files,
             left_width,
             left_heights.files,
             render_files_lines(state, left_heights.files.saturating_sub(1)),
         ),
         render_panel(
-            panel_title(PanelFocus::Branches),
+            panel_title(state, PanelFocus::Branches),
             state.focus == PanelFocus::Branches,
             left_width,
             left_heights.branches,
             render_branches_lines(state, left_heights.branches.saturating_sub(1)),
         ),
         render_panel(
-            panel_title(PanelFocus::Commits),
+            panel_title(state, PanelFocus::Commits),
             state.focus == PanelFocus::Commits,
             left_width,
             left_heights.commits,
             render_commits_lines(state, left_heights.commits.saturating_sub(1)),
         ),
         render_panel(
-            panel_title(PanelFocus::Stash),
+            panel_title(state, PanelFocus::Stash),
             state.focus == PanelFocus::Stash,
             left_width,
             left_heights.stash,
@@ -66,14 +66,14 @@ fn render_workspace_rows(state: &AppState, total_width: usize, body_height: usiz
 
     let right_panels = [
         render_panel(
-            panel_title(PanelFocus::Details),
+            panel_title(state, PanelFocus::Details),
             state.focus == PanelFocus::Details,
             right_width,
             right_heights[0],
             render_details_lines(state, right_heights[0].saturating_sub(1)),
         ),
         render_panel(
-            panel_title(PanelFocus::Log),
+            panel_title(state, PanelFocus::Log),
             state.focus == PanelFocus::Log,
             right_width,
             right_heights[1],

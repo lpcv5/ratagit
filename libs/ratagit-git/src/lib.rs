@@ -8,7 +8,8 @@ mod status_cli;
 mod untracked_diff;
 
 use ratagit_core::{
-    BranchDeleteMode, Command, CommitEntry, GitResult, RepoSnapshot, ResetMode, StashEntry,
+    BranchDeleteMode, Command, CommitEntry, CommitFileDiffTarget, CommitFileEntry, GitResult,
+    RepoSnapshot, ResetMode, StashEntry,
 };
 
 pub use hybrid::HybridGitBackend;
@@ -51,6 +52,8 @@ pub trait GitBackend {
     fn files_details_diff(&mut self, paths: &[String]) -> Result<String, GitError>;
     fn branch_details_log(&mut self, branch: &str, max_count: usize) -> Result<String, GitError>;
     fn commit_details_diff(&mut self, commit_id: &str) -> Result<String, GitError>;
+    fn commit_files(&mut self, commit_id: &str) -> Result<Vec<CommitFileEntry>, GitError>;
+    fn commit_file_diff(&mut self, target: &CommitFileDiffTarget) -> Result<String, GitError>;
     fn stage_file(&mut self, path: &str) -> Result<(), GitError>;
     fn unstage_file(&mut self, path: &str) -> Result<(), GitError>;
     fn stage_files(&mut self, paths: &[String]) -> Result<(), GitError> {
@@ -133,6 +136,18 @@ pub fn execute_command(backend: &mut dyn GitBackend, command: Command) -> GitRes
             commit_id: commit_id.clone(),
             result: backend
                 .commit_details_diff(&commit_id)
+                .map_err(|error| error.message),
+        },
+        Command::RefreshCommitFiles { commit_id } => GitResult::CommitFiles {
+            commit_id: commit_id.clone(),
+            result: backend
+                .commit_files(&commit_id)
+                .map_err(|error| error.message),
+        },
+        Command::RefreshCommitFileDiff { target } => GitResult::CommitFileDiff {
+            target: target.clone(),
+            result: backend
+                .commit_file_diff(&target)
                 .map_err(|error| error.message),
         },
         Command::StageFiles { paths } => GitResult::StageFiles {

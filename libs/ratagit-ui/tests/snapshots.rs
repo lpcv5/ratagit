@@ -1,6 +1,6 @@
 use ratagit_core::{
-    Action, AppState, Command, CommitHashStatus, FileEntry, GitResult, PanelFocus, ResetChoice,
-    UiAction, update,
+    Action, AppState, Command, CommitFileEntry, CommitFileStatus, CommitHashStatus, FileEntry,
+    GitResult, PanelFocus, ResetChoice, UiAction, update,
 };
 use ratagit_testkit::{
     fixture_commit, fixture_conflict, fixture_dirty_repo, fixture_empty_repo, fixture_many_files,
@@ -45,6 +45,41 @@ fn mock_commit_details_diff(commit_id: &str) -> String {
     format!(
         "commit {commit_id}\nAuthor: ratagit-tests <ratagit-tests@example.com>\n\n    selected commit\n\ndiff --git a/commit.txt b/commit.txt\n@@ -1 +1 @@\n-old {commit_id}\n+new {commit_id}"
     )
+}
+
+fn mock_commit_files() -> Vec<CommitFileEntry> {
+    vec![
+        CommitFileEntry {
+            path: "README.md".to_string(),
+            old_path: None,
+            status: CommitFileStatus::Modified,
+        },
+        CommitFileEntry {
+            path: "src/lib.rs".to_string(),
+            old_path: None,
+            status: CommitFileStatus::Added,
+        },
+        CommitFileEntry {
+            path: "src/new_name.rs".to_string(),
+            old_path: Some("src/old_name.rs".to_string()),
+            status: CommitFileStatus::Renamed,
+        },
+    ]
+}
+
+fn mock_commit_file_diff(target: &ratagit_core::CommitFileDiffTarget) -> String {
+    target
+        .paths
+        .iter()
+        .map(|path| {
+            let old_path = path.old_path.as_deref().unwrap_or(&path.path);
+            format!(
+                "diff --git a/{old_path} b/{path}\n@@ -1 +1 @@\n-old {old_path}\n+new {path}",
+                path = path.path
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn apply_refreshed_with_mock_details(state: &mut AppState, snapshot: ratagit_core::RepoSnapshot) {
@@ -104,6 +139,26 @@ fn apply_mock_details_commands(state: &mut AppState, commands: Vec<Command>) {
                 Action::GitResult(GitResult::CommitDetailsDiff {
                     commit_id: commit_id.clone(),
                     result: Ok(mock_commit_details_diff(commit_id)),
+                }),
+            );
+            assert!(follow_up.is_empty());
+        }
+        [Command::RefreshCommitFiles { commit_id }] => {
+            let follow_up = update(
+                state,
+                Action::GitResult(GitResult::CommitFiles {
+                    commit_id: commit_id.clone(),
+                    result: Ok(mock_commit_files()),
+                }),
+            );
+            apply_mock_details_commands(state, follow_up);
+        }
+        [Command::RefreshCommitFileDiff { target }] => {
+            let follow_up = update(
+                state,
+                Action::GitResult(GitResult::CommitFileDiff {
+                    target: target.clone(),
+                    result: Ok(mock_commit_file_diff(target)),
                 }),
             );
             assert!(follow_up.is_empty());
@@ -324,6 +379,113 @@ fn terminal_snapshot_commits_details_diff() {
         }),
     );
     apply_mock_details_commands(&mut state, commands);
+
+    insta::assert_snapshot!(render_terminal_text(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    ));
+}
+
+#[test]
+fn terminal_snapshot_commit_files_subpanel() {
+    let mut state = AppState::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+    let commands = update(
+        &mut state,
+        Action::Ui(UiAction::FocusPanel {
+            panel: PanelFocus::Commits,
+        }),
+    );
+    apply_mock_details_commands(&mut state, commands);
+    let commands = update(&mut state, Action::Ui(UiAction::OpenCommitFilesPanel));
+    apply_mock_details_commands(&mut state, commands);
+
+    insta::assert_snapshot!(render_terminal_text(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    ));
+}
+
+#[test]
+fn terminal_snapshot_commit_files_directory_diff() {
+    let mut state = AppState::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+    let commands = update(
+        &mut state,
+        Action::Ui(UiAction::FocusPanel {
+            panel: PanelFocus::Commits,
+        }),
+    );
+    apply_mock_details_commands(&mut state, commands);
+    let commands = update(&mut state, Action::Ui(UiAction::OpenCommitFilesPanel));
+    apply_mock_details_commands(&mut state, commands);
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+    apply_mock_details_commands(&mut state, commands);
+
+    insta::assert_snapshot!(render_terminal_text(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    ));
+}
+
+#[test]
+fn terminal_snapshot_commit_files_loading() {
+    let mut state = AppState::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+    let commands = update(
+        &mut state,
+        Action::Ui(UiAction::FocusPanel {
+            panel: PanelFocus::Commits,
+        }),
+    );
+    apply_mock_details_commands(&mut state, commands);
+    let commands = update(&mut state, Action::Ui(UiAction::OpenCommitFilesPanel));
+    assert!(matches!(
+        commands.as_slice(),
+        [Command::RefreshCommitFiles { .. }]
+    ));
+
+    insta::assert_snapshot!(render_terminal_text(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    ));
+}
+
+#[test]
+fn terminal_snapshot_commit_files_empty() {
+    let mut state = AppState::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+    let commands = update(
+        &mut state,
+        Action::Ui(UiAction::FocusPanel {
+            panel: PanelFocus::Commits,
+        }),
+    );
+    apply_mock_details_commands(&mut state, commands);
+    let commands = update(&mut state, Action::Ui(UiAction::OpenCommitFilesPanel));
+    let [Command::RefreshCommitFiles { commit_id }] = commands.as_slice() else {
+        panic!("expected commit files refresh");
+    };
+    let follow_up = update(
+        &mut state,
+        Action::GitResult(GitResult::CommitFiles {
+            commit_id: commit_id.clone(),
+            result: Ok(Vec::new()),
+        }),
+    );
+    assert!(follow_up.is_empty());
 
     insta::assert_snapshot!(render_terminal_text(
         &state,
@@ -716,13 +878,13 @@ fn terminal_snapshot_focus_and_keys_follow_actions() {
 
     assert!(screen.contains(" Commits"));
     assert!(!screen.contains("Commits *"));
-    assert!(screen.contains("keys(commits): s squash"));
+    assert!(screen.contains("keys(commits): enter files"));
     assert!(!screen.contains(" Keys "));
     assert!(
         screen
             .lines()
             .last()
-            .is_some_and(|line| line.starts_with("keys(commits): s squash"))
+            .is_some_and(|line| line.starts_with("keys(commits): enter files"))
     );
 }
 

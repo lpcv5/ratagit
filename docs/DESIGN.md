@@ -34,6 +34,9 @@ Focus model:
 - `AppState.reset_menu` stores whether the Files reset menu is active and which reset choice is selected
 - `AppState.discard_confirm` stores whether the discard confirmation modal is active and the resolved target paths
 - `AppState.commits` stores commit rows, cursor selection, visual selection anchor, and selected visual range
+- `AppState.commits.files` stores the active Commit Files subpanel state,
+  including selected commit id, changed-file rows, tree projection, and cursor
+  scroll state
 - `AppState.branches` stores local branch rows plus active branch creation,
   delete menu, rebase menu, and auto-stash confirmation state
 - `AppState.work` stores visible pending refresh/details/operation state and
@@ -130,7 +133,8 @@ Files panel interaction:
 - Branch rebase options are simple, interactive, and `origin/main`; simple and
   interactive rebase the current branch onto the selected branch.
 - Commits focus maps `s` to squash, `f` to fixup, `r` to reword, `d` to delete,
-  `space` to detached checkout, and `v` to visual multi-select.
+  `space` to detached checkout, `v` to visual multi-select, and `Enter` to
+  open Commit Files for the selected commit.
 - Commit visual multi-select is AppState-owned and follows the same continuous
   anchor-to-cursor model as Files visual selection.
 - Commit rewrite commands require a clean working tree, reject merge commits in
@@ -143,10 +147,29 @@ Files panel interaction:
 - Detached commit checkout uses `Command::CheckoutCommitDetached`; when the
   working tree is dirty it opens the shared auto-stash confirmation modal before
   dispatching with `auto_stash=true`.
+- Commit Files is an AppState-owned subpanel under Commits:
+  - opening emits `Command::RefreshCommitFiles` for the selected commit
+  - rows reuse the Files tree projection/rendering shape but use commit
+    changed-file status markers (`A/M/D/R/C/T`) instead of working-tree status
+  - `j` / `k` move the Commit Files cursor through the shared panel navigation
+    action path
+  - `Enter` toggles the selected directory row, while file rows leave a notice
+  - Details follows the selected file or folder via
+    `Command::RefreshCommitFileDiff`
+  - directory selections resolve to descendant commit files and request one
+    combined path-limited patch
+  - stale commit-files and commit-file-diff results are ignored when the user
+    has moved to another commit or file
+  - `Esc` closes the subpanel and restores the selected commit diff
+  - while changed files are loading, dynamic height calculations use the parent
+    Commits list length to avoid a one-frame panel jump
+  - additional local commit-files shortcuts are intentionally deferred
 - Files Details projection renders merged `unstaged` and `staged` diff sections
   for current file/folder targets from `GitBackend`.
 - Commits Details projection renders the selected commit's header and patch diff
   from `GitBackend`.
+- Commit Files Details projection renders the selected commit file or folder's
+  patch from `GitBackend`.
 - Files, Branches, and Commits Details projections apply the AppState-owned
   `scroll_offset`; loading, empty, and error rows ignore the offset.
 - Details scroll resets when the selected details target changes or accepted

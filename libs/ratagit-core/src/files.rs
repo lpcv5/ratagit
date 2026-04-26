@@ -10,6 +10,24 @@ pub struct FileEntry {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommitFileStatus {
+    Added,
+    Modified,
+    Deleted,
+    Renamed,
+    Copied,
+    TypeChanged,
+    Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommitFileEntry {
+    pub path: String,
+    pub old_path: Option<String>,
+    pub status: CommitFileStatus,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FileRowKind {
     Directory,
     File,
@@ -24,6 +42,7 @@ pub struct FileTreeRow {
     pub expanded: bool,
     pub staged: bool,
     pub untracked: bool,
+    pub commit_status: Option<CommitFileStatus>,
     pub selected_for_batch: bool,
     pub matched: bool,
 }
@@ -47,6 +66,21 @@ pub struct FilesPanelState {
     pub search_matches: Vec<String>,
     pub current_match: Option<usize>,
     pub tree_initialized: bool,
+    pub scroll_direction: Option<ScrollDirection>,
+    pub scroll_direction_origin: usize,
+    pub tree_rows: Vec<FileTreeRow>,
+    pub row_descendants: BTreeMap<String, Vec<String>>,
+    pub row_index_by_path: BTreeMap<String, usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct CommitFilesPanelState {
+    pub active: bool,
+    pub commit_id: Option<String>,
+    pub items: Vec<CommitFileEntry>,
+    pub selected: usize,
+    pub expanded_dirs: BTreeSet<String>,
+    pub loading: bool,
     pub scroll_direction: Option<ScrollDirection>,
     pub scroll_direction_origin: usize,
     pub tree_rows: Vec<FileTreeRow>,
@@ -83,6 +117,11 @@ pub fn initialize_tree_if_needed(state: &mut FilesPanelState) {
     state.expanded_dirs = collect_directories(&state.items);
     state.tree_initialized = true;
     refresh_tree_projection(state);
+}
+
+pub fn initialize_commit_files_tree(state: &mut CommitFilesPanelState) {
+    state.expanded_dirs = collect_directories_from_paths(state.items.iter().map(|item| &item.path));
+    refresh_commit_files_tree_projection(state);
 }
 
 pub fn reconcile_after_items_changed(state: &mut FilesPanelState) {
@@ -131,6 +170,17 @@ pub fn move_selected(state: &mut FilesPanelState, move_up: bool) {
     }
 }
 
+pub fn move_commit_file_selected(state: &mut CommitFilesPanelState, move_up: bool) {
+    let len = build_commit_file_tree_rows(state).len();
+    move_selected_index_with_scroll(
+        &mut state.selected,
+        len,
+        move_up,
+        &mut state.scroll_direction,
+        &mut state.scroll_direction_origin,
+    );
+}
+
 pub fn toggle_selected_directory(state: &mut FilesPanelState) -> bool {
     let Some(row) = selected_row(state) else {
         return false;
@@ -149,6 +199,22 @@ pub fn toggle_selected_directory(state: &mut FilesPanelState) -> bool {
         ensure_valid_selection_anchor(state);
         refresh_multi_select_range(state);
     }
+    true
+}
+
+pub fn toggle_commit_files_directory(state: &mut CommitFilesPanelState) -> bool {
+    let Some(row) = selected_commit_file_row(state) else {
+        return false;
+    };
+    if row.kind != FileRowKind::Directory {
+        return false;
+    }
+    if state.expanded_dirs.contains(&row.path) {
+        state.expanded_dirs.remove(&row.path);
+    } else {
+        state.expanded_dirs.insert(row.path);
+    }
+    refresh_commit_files_tree_projection(state);
     true
 }
 
@@ -243,6 +309,48 @@ pub fn selected_row(state: &FilesPanelState) -> Option<FileTreeRow> {
     build_file_tree_rows(state).into_iter().nth(state.selected)
 }
 
+pub fn selected_commit_file(state: &CommitFilesPanelState) -> Option<CommitFileEntry> {
+    let row = selected_commit_file_row(state)?;
+    if row.kind != FileRowKind::File {
+        return None;
+    }
+    state
+        .items
+        .iter()
+        .find(|item| item.path == row.path)
+        .cloned()
+}
+
+pub fn selected_commit_file_targets(state: &CommitFilesPanelState) -> Vec<CommitFileEntry> {
+    let Some(row) = selected_commit_file_row(state) else {
+        return Vec::new();
+    };
+    if row.kind == FileRowKind::File {
+        return selected_commit_file(state).into_iter().collect();
+    }
+    let descendants = if state.row_descendants.is_empty() && !state.items.is_empty() {
+        compute_commit_files_tree_projection(state).row_descendants
+    } else {
+        state.row_descendants.clone()
+    };
+    let Some(paths) = descendants.get(&row.path) else {
+        return Vec::new();
+    };
+    let path_set = paths.iter().collect::<BTreeSet<_>>();
+    state
+        .items
+        .iter()
+        .filter(|item| path_set.contains(&item.path))
+        .cloned()
+        .collect()
+}
+
+fn selected_commit_file_row(state: &CommitFilesPanelState) -> Option<FileTreeRow> {
+    build_commit_file_tree_rows(state)
+        .into_iter()
+        .nth(state.selected)
+}
+
 pub fn build_file_tree_rows(state: &FilesPanelState) -> Vec<FileTreeRow> {
     if !state.tree_rows.is_empty() || state.items.is_empty() {
         return state.tree_rows.clone();
@@ -250,7 +358,18 @@ pub fn build_file_tree_rows(state: &FilesPanelState) -> Vec<FileTreeRow> {
     compute_tree_projection(state).rows
 }
 
+pub fn build_commit_file_tree_rows(state: &CommitFilesPanelState) -> Vec<FileTreeRow> {
+    if !state.tree_rows.is_empty() || state.items.is_empty() {
+        return state.tree_rows.clone();
+    }
+    compute_commit_files_tree_projection(state).rows
+}
+
 pub fn file_tree_rows(state: &FilesPanelState) -> &[FileTreeRow] {
+    &state.tree_rows
+}
+
+pub fn commit_file_tree_rows(state: &CommitFilesPanelState) -> &[FileTreeRow] {
     &state.tree_rows
 }
 
@@ -259,6 +378,14 @@ pub fn refresh_tree_projection(state: &mut FilesPanelState) {
     state.tree_rows = projection.rows;
     state.row_descendants = projection.row_descendants;
     state.row_index_by_path = projection.row_index_by_path;
+}
+
+pub fn refresh_commit_files_tree_projection(state: &mut CommitFilesPanelState) {
+    let projection = compute_commit_files_tree_projection(state);
+    state.tree_rows = projection.rows;
+    state.row_descendants = projection.row_descendants;
+    state.row_index_by_path = projection.row_index_by_path;
+    clamp_commit_file_selected(state);
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -319,6 +446,7 @@ fn compute_tree_projection(state: &FilesPanelState) -> TreeProjection {
                 kind,
                 staged,
                 untracked,
+                commit_status: None,
                 matched,
             }
         })
@@ -338,14 +466,83 @@ fn compute_tree_projection(state: &FilesPanelState) -> TreeProjection {
     }
 }
 
+fn compute_commit_files_tree_projection(state: &CommitFilesPanelState) -> TreeProjection {
+    let dirs = collect_directories_from_paths(state.items.iter().map(|item| &item.path));
+    let descendants = collect_row_descendants_from_paths(state.items.iter().map(|item| &item.path));
+    let entry_status = state
+        .items
+        .iter()
+        .map(|entry| (entry.path.clone(), entry.status))
+        .collect::<BTreeMap<_, _>>();
+    let mut keys = dirs
+        .iter()
+        .map(|path| (path.clone(), FileRowKind::Directory))
+        .chain(
+            state
+                .items
+                .iter()
+                .filter(|entry| !is_directory_marker(&entry.path))
+                .map(|entry| (entry.path.clone(), FileRowKind::File)),
+        )
+        .collect::<Vec<_>>();
+    keys.sort_by(compare_tree_keys);
+
+    let rows = keys
+        .into_iter()
+        .filter(|(path, _)| row_is_visible(path, &state.expanded_dirs))
+        .map(|(path, kind)| {
+            let name = path
+                .rsplit('/')
+                .next()
+                .filter(|name| !name.is_empty())
+                .unwrap_or(&path)
+                .to_string();
+            let commit_status = if kind == FileRowKind::File {
+                entry_status.get(&path).copied()
+            } else {
+                None
+            };
+            FileTreeRow {
+                depth: path_depth(&path),
+                expanded: state.expanded_dirs.contains(&path),
+                selected_for_batch: false,
+                path,
+                name,
+                kind,
+                staged: false,
+                untracked: false,
+                commit_status,
+                matched: false,
+            }
+        })
+        .collect::<Vec<_>>();
+    let row_index_by_path = rows
+        .iter()
+        .enumerate()
+        .map(|(index, row)| (row.path.clone(), index))
+        .collect::<BTreeMap<_, _>>();
+    TreeProjection {
+        rows,
+        row_descendants: descendants
+            .into_iter()
+            .map(|(path, descendants)| (path, descendants.into_iter().collect()))
+            .collect(),
+        row_index_by_path,
+    }
+}
+
 pub fn collect_directories(items: &[FileEntry]) -> BTreeSet<String> {
+    collect_directories_from_paths(items.iter().map(|item| &item.path))
+}
+
+fn collect_directories_from_paths<'a>(paths: impl Iterator<Item = &'a String>) -> BTreeSet<String> {
     let mut dirs = BTreeSet::new();
-    for item in items {
-        let normalized = normalize_tree_path(&item.path);
+    for path in paths {
+        let normalized = normalize_tree_path(path);
         if normalized.is_empty() {
             continue;
         }
-        if is_directory_marker(&item.path) {
+        if is_directory_marker(path) {
             dirs.insert(normalized.clone());
         }
         let mut parts = normalized.split('/').collect::<Vec<_>>();
@@ -358,22 +555,28 @@ pub fn collect_directories(items: &[FileEntry]) -> BTreeSet<String> {
 }
 
 fn collect_row_descendants(items: &[FileEntry]) -> BTreeMap<String, BTreeSet<String>> {
+    collect_row_descendants_from_paths(items.iter().map(|item| &item.path))
+}
+
+fn collect_row_descendants_from_paths<'a>(
+    paths: impl Iterator<Item = &'a String>,
+) -> BTreeMap<String, BTreeSet<String>> {
     let mut descendants = BTreeMap::<String, BTreeSet<String>>::new();
-    for item in items {
-        let normalized = normalize_tree_path(&item.path);
+    for path in paths {
+        let normalized = normalize_tree_path(path);
         if normalized.is_empty() {
             continue;
         }
-        if is_directory_marker(&item.path) {
+        if is_directory_marker(path) {
             descendants
                 .entry(normalized.clone())
                 .or_default()
-                .insert(item.path.clone());
+                .insert(path.clone());
         } else {
             descendants
-                .entry(item.path.clone())
+                .entry(path.clone())
                 .or_default()
-                .insert(item.path.clone());
+                .insert(path.clone());
         }
 
         let mut parts = normalized.split('/').collect::<Vec<_>>();
@@ -382,10 +585,25 @@ fn collect_row_descendants(items: &[FileEntry]) -> BTreeMap<String, BTreeSet<Str
             descendants
                 .entry(parts.join("/"))
                 .or_default()
-                .insert(item.path.clone());
+                .insert(path.clone());
         }
     }
     descendants
+}
+
+fn clamp_commit_file_selected(state: &mut CommitFilesPanelState) {
+    let len = state.tree_rows.len();
+    state.selected = if len == 0 {
+        0
+    } else {
+        state.selected.min(len - 1)
+    };
+    reset_scroll_origin(
+        state.selected,
+        len,
+        &mut state.scroll_direction,
+        &mut state.scroll_direction_origin,
+    );
 }
 
 fn recompute_search_matches(state: &mut FilesPanelState) {

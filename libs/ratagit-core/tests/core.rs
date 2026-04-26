@@ -1,9 +1,10 @@
 use ratagit_core::{
     Action, AppState, AutoStashOperation, BranchDeleteChoice, BranchDeleteMode, BranchEntry,
     BranchRebaseChoice, COMMITS_PAGE_SIZE, COMMITS_PREFETCH_THRESHOLD, Command, CommitEditorIntent,
-    CommitEntry, CommitField, CommitHashStatus, CommitInputMode, EditorKind, FileEntry,
-    FileInputMode, GitResult, PanelFocus, RepoSnapshot, ResetChoice, ResetMode, StashScope,
-    UiAction, refresh_tree_projection, update,
+    CommitEntry, CommitField, CommitFileDiffPath, CommitFileDiffTarget, CommitFileEntry,
+    CommitFileStatus, CommitHashStatus, CommitInputMode, EditorKind, FileEntry, FileInputMode,
+    GitResult, PanelFocus, RepoSnapshot, ResetChoice, ResetMode, StashScope, UiAction,
+    refresh_tree_projection, update,
 };
 
 fn commit_entry(id: &str, summary: &str) -> CommitEntry {
@@ -535,6 +536,62 @@ fn assert_commit_diff_refresh(commands: Vec<Command>, expected_commit_id: &str) 
     );
 }
 
+fn commit_files_fixture() -> Vec<CommitFileEntry> {
+    vec![
+        CommitFileEntry {
+            path: "README.md".to_string(),
+            old_path: None,
+            status: CommitFileStatus::Modified,
+        },
+        CommitFileEntry {
+            path: "src/lib.rs".to_string(),
+            old_path: None,
+            status: CommitFileStatus::Added,
+        },
+    ]
+}
+
+fn assert_commit_file_diff_refresh(
+    commands: Vec<Command>,
+    expected_commit_id: &str,
+    expected_path: &str,
+) {
+    assert_eq!(
+        commands,
+        vec![Command::RefreshCommitFileDiff {
+            target: CommitFileDiffTarget {
+                commit_id: expected_commit_id.to_string(),
+                paths: vec![CommitFileDiffPath {
+                    path: expected_path.to_string(),
+                    old_path: None,
+                }],
+            },
+        }]
+    );
+}
+
+fn assert_commit_file_diff_refresh_for_paths(
+    commands: Vec<Command>,
+    expected_commit_id: &str,
+    expected_paths: Vec<&str>,
+) {
+    assert_eq!(
+        commands,
+        vec![Command::RefreshCommitFileDiff {
+            target: CommitFileDiffTarget {
+                commit_id: expected_commit_id.to_string(),
+                paths: expected_paths
+                    .into_iter()
+                    .map(|path| CommitFileDiffPath {
+                        path: path.to_string(),
+                        old_path: None,
+                    })
+                    .collect(),
+            },
+        }]
+    );
+}
+
 fn state_with_branches_and_files(files: Vec<FileEntry>) -> AppState {
     let mut state = AppState {
         focus: PanelFocus::Branches,
@@ -673,6 +730,209 @@ fn commit_selection_navigation_requests_selected_commit_diff() {
         state.details.commit_diff_target,
         Some("def5678-full".to_string())
     );
+}
+
+#[test]
+fn enter_opens_commit_files_panel_and_requests_files() {
+    let mut state = AppState {
+        focus: PanelFocus::Commits,
+        last_left_focus: PanelFocus::Commits,
+        ..AppState::default()
+    };
+    state.commits.items = vec![commit_entry("abc1234", "init project")];
+
+    let commands = update(&mut state, Action::Ui(UiAction::OpenCommitFilesPanel));
+
+    assert_eq!(
+        commands,
+        vec![Command::RefreshCommitFiles {
+            commit_id: "abc1234-full".to_string(),
+        }]
+    );
+    assert!(state.commits.files.active);
+    assert_eq!(
+        state.commits.files.commit_id,
+        Some("abc1234-full".to_string())
+    );
+}
+
+#[test]
+fn commit_files_result_populates_tree_and_requests_first_file_diff() {
+    let mut state = AppState {
+        focus: PanelFocus::Commits,
+        last_left_focus: PanelFocus::Commits,
+        ..AppState::default()
+    };
+    state.commits.items = vec![commit_entry("abc1234", "init project")];
+    update(&mut state, Action::Ui(UiAction::OpenCommitFilesPanel));
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::CommitFiles {
+            commit_id: "abc1234-full".to_string(),
+            result: Ok(commit_files_fixture()),
+        }),
+    );
+
+    assert_commit_file_diff_refresh(commands, "abc1234-full", "README.md");
+    assert_eq!(state.commits.files.items.len(), 2);
+    assert_eq!(state.commits.files.tree_rows[1].path, "src");
+    assert_eq!(state.commits.files.tree_rows[2].path, "src/lib.rs");
+}
+
+#[test]
+fn stale_commit_files_result_is_ignored() {
+    let mut state = AppState {
+        focus: PanelFocus::Commits,
+        last_left_focus: PanelFocus::Commits,
+        ..AppState::default()
+    };
+    state.commits.items = vec![
+        commit_entry("abc1234", "init project"),
+        commit_entry("def5678", "wire commands"),
+    ];
+    update(&mut state, Action::Ui(UiAction::OpenCommitFilesPanel));
+    state.commits.selected = 1;
+    update(&mut state, Action::Ui(UiAction::OpenCommitFilesPanel));
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::CommitFiles {
+            commit_id: "abc1234-full".to_string(),
+            result: Ok(commit_files_fixture()),
+        }),
+    );
+
+    assert!(commands.is_empty());
+    assert!(state.commits.files.items.is_empty());
+    assert_eq!(
+        state.commits.files.commit_id,
+        Some("def5678-full".to_string())
+    );
+}
+
+#[test]
+fn commit_files_navigation_refreshes_selected_file_diff() {
+    let mut state = AppState {
+        focus: PanelFocus::Commits,
+        last_left_focus: PanelFocus::Commits,
+        ..AppState::default()
+    };
+    state.commits.items = vec![commit_entry("abc1234", "init project")];
+    update(&mut state, Action::Ui(UiAction::OpenCommitFilesPanel));
+    update(
+        &mut state,
+        Action::GitResult(GitResult::CommitFiles {
+            commit_id: "abc1234-full".to_string(),
+            result: Ok(commit_files_fixture()),
+        }),
+    );
+
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+    assert_commit_file_diff_refresh_for_paths(commands, "abc1234-full", vec!["src/lib.rs"]);
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+
+    assert_commit_file_diff_refresh(commands, "abc1234-full", "src/lib.rs");
+}
+
+#[test]
+fn commit_files_directory_selection_refreshes_descendant_diffs() {
+    let mut state = AppState {
+        focus: PanelFocus::Commits,
+        last_left_focus: PanelFocus::Commits,
+        ..AppState::default()
+    };
+    state.commits.items = vec![commit_entry("abc1234", "init project")];
+    update(&mut state, Action::Ui(UiAction::OpenCommitFilesPanel));
+    update(
+        &mut state,
+        Action::GitResult(GitResult::CommitFiles {
+            commit_id: "abc1234-full".to_string(),
+            result: Ok(commit_files_fixture()),
+        }),
+    );
+
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+
+    assert_commit_file_diff_refresh_for_paths(commands, "abc1234-full", vec!["src/lib.rs"]);
+}
+
+#[test]
+fn commit_files_enter_toggles_selected_directory() {
+    let mut state = AppState {
+        focus: PanelFocus::Commits,
+        last_left_focus: PanelFocus::Commits,
+        ..AppState::default()
+    };
+    state.commits.items = vec![commit_entry("abc1234", "init project")];
+    update(&mut state, Action::Ui(UiAction::OpenCommitFilesPanel));
+    update(
+        &mut state,
+        Action::GitResult(GitResult::CommitFiles {
+            commit_id: "abc1234-full".to_string(),
+            result: Ok(commit_files_fixture()),
+        }),
+    );
+    update(&mut state, Action::Ui(UiAction::MoveDown));
+
+    let commands = update(&mut state, Action::Ui(UiAction::ToggleCommitFilesDirectory));
+
+    assert_commit_file_diff_refresh_for_paths(commands, "abc1234-full", vec!["src/lib.rs"]);
+    assert!(!state.commits.files.expanded_dirs.contains("src"));
+    assert_eq!(state.commits.files.tree_rows.len(), 2);
+}
+
+#[test]
+fn commit_file_diff_stale_result_is_ignored() {
+    let mut state = AppState {
+        focus: PanelFocus::Commits,
+        last_left_focus: PanelFocus::Commits,
+        ..AppState::default()
+    };
+    state.commits.items = vec![commit_entry("abc1234", "init project")];
+    update(&mut state, Action::Ui(UiAction::OpenCommitFilesPanel));
+    update(
+        &mut state,
+        Action::GitResult(GitResult::CommitFiles {
+            commit_id: "abc1234-full".to_string(),
+            result: Ok(commit_files_fixture()),
+        }),
+    );
+    state.work.details_pending = true;
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::CommitFileDiff {
+            target: CommitFileDiffTarget {
+                commit_id: "abc1234-full".to_string(),
+                paths: vec![CommitFileDiffPath {
+                    path: "src/lib.rs".to_string(),
+                    old_path: None,
+                }],
+            },
+            result: Ok("stale".to_string()),
+        }),
+    );
+
+    assert!(commands.is_empty());
+    assert!(state.details.commit_file_diff.is_empty());
+    assert!(state.work.details_pending);
+}
+
+#[test]
+fn close_commit_files_panel_restores_commit_diff() {
+    let mut state = AppState {
+        focus: PanelFocus::Commits,
+        last_left_focus: PanelFocus::Commits,
+        ..AppState::default()
+    };
+    state.commits.items = vec![commit_entry("abc1234", "init project")];
+    update(&mut state, Action::Ui(UiAction::OpenCommitFilesPanel));
+
+    let commands = update(&mut state, Action::Ui(UiAction::CloseCommitFilesPanel));
+
+    assert_commit_diff_refresh(commands, "abc1234-full");
+    assert!(!state.commits.files.active);
 }
 
 #[test]

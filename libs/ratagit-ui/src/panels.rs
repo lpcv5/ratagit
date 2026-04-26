@@ -1,7 +1,7 @@
 use ratagit_core::{
     AppState, BranchEntry, CommitEntry, CommitHashStatus, FileInputMode, FileRowKind, FileTreeRow,
-    PanelFocus, ScrollDirection, StashEntry, build_file_tree_rows, commit_is_selected_for_batch,
-    file_tree_rows,
+    PanelFocus, ScrollDirection, StashEntry, build_commit_file_tree_rows, build_file_tree_rows,
+    commit_file_tree_rows, commit_is_selected_for_batch, file_tree_rows,
 };
 use ratatui::style::{Color, Modifier, Style};
 use unicode_width::UnicodeWidthChar;
@@ -46,8 +46,12 @@ impl PanelLine {
     }
 }
 
-pub(crate) fn panel_title(panel: PanelFocus) -> &'static str {
-    panel_label(panel)
+pub(crate) fn panel_title(state: &AppState, panel: PanelFocus) -> &'static str {
+    if panel == PanelFocus::Commits && state.commits.files.active {
+        "[3]  Commit Files"
+    } else {
+        panel_label(panel)
+    }
 }
 
 pub(crate) fn left_panel_content_len(state: &AppState, panel: PanelFocus) -> usize {
@@ -57,6 +61,17 @@ pub(crate) fn left_panel_content_len(state: &AppState, panel: PanelFocus) -> usi
                 build_file_tree_rows(&state.files).len()
             } else {
                 file_tree_rows(&state.files).len()
+            }
+        }
+        PanelFocus::Commits if state.commits.files.active => {
+            if state.commits.files.loading && state.commits.files.items.is_empty() {
+                state.commits.items.len()
+            } else if commit_file_tree_rows(&state.commits.files).is_empty()
+                && !state.commits.files.items.is_empty()
+            {
+                build_commit_file_tree_rows(&state.commits.files).len()
+            } else {
+                commit_file_tree_rows(&state.commits.files).len()
             }
         }
         PanelFocus::Branches => state.branches.items.len(),
@@ -96,6 +111,9 @@ pub(crate) fn render_branches_lines(state: &AppState, max_lines: usize) -> Vec<P
 }
 
 pub(crate) fn render_commits_lines(state: &AppState, max_lines: usize) -> Vec<PanelLine> {
+    if state.commits.files.active {
+        return render_commit_file_lines(state, max_lines);
+    }
     render_indexed_entries_window_with(
         &state.commits.items,
         state.commits.selected,
@@ -112,6 +130,25 @@ pub(crate) fn render_commits_lines(state: &AppState, max_lines: usize) -> Vec<Pa
                 .selected(index == state.commits.selected)
                 .styled_spans(commit_entry_spans(entry))
         },
+    )
+}
+
+fn render_commit_file_lines(state: &AppState, max_lines: usize) -> Vec<PanelLine> {
+    let rows = if commit_file_tree_rows(&state.commits.files).is_empty()
+        && !state.commits.files.items.is_empty()
+    {
+        build_commit_file_tree_rows(&state.commits.files)
+    } else {
+        commit_file_tree_rows(&state.commits.files).to_vec()
+    };
+    render_indexed_entries(
+        &rows,
+        state.commits.files.selected,
+        state.commits.files.scroll_direction,
+        state.commits.files.scroll_direction_origin,
+        max_lines,
+        format_file_tree_row,
+        file_tree_row_role,
     )
 }
 
@@ -247,6 +284,9 @@ fn render_branch_details_lines(state: &AppState, max_lines: usize) -> Vec<PanelL
 }
 
 fn render_commit_details_lines(state: &AppState, max_lines: usize) -> Vec<PanelLine> {
+    if state.commits.files.active {
+        return render_commit_file_details_lines(state, max_lines);
+    }
     if max_lines == 0 {
         return Vec::new();
     }
@@ -277,6 +317,53 @@ fn render_commit_details_lines(state: &AppState, max_lines: usize) -> Vec<PanelL
     }
 
     let lines = state.details.commit_diff.lines().collect::<Vec<_>>();
+    let start = details_scroll_start(lines.len(), state.details.scroll_offset, max_lines);
+    lines
+        .into_iter()
+        .skip(start)
+        .map(|line| PanelLine::new(format!("  {line}"), classify_diff_row_role(line)))
+        .take(max_lines)
+        .collect()
+}
+
+fn render_commit_file_details_lines(state: &AppState, max_lines: usize) -> Vec<PanelLine> {
+    if max_lines == 0 {
+        return Vec::new();
+    }
+
+    if state.commits.files.loading {
+        return vec![PanelLine::new(
+            "  details(commit files): loading files",
+            RowRole::Muted,
+        )];
+    }
+
+    if state.details.commit_file_diff_target.is_none() {
+        return vec![PanelLine::new(
+            "  details(commit files): no file selected",
+            RowRole::Muted,
+        )];
+    }
+
+    if let Some(error) = &state.details.commit_file_diff_error {
+        return vec![PanelLine::new(format!("  error={error}"), RowRole::Error)];
+    }
+
+    if state.work.details_pending && state.details.commit_file_diff.trim().is_empty() {
+        return vec![PanelLine::new(
+            "  details(commit files): loading diff",
+            RowRole::Muted,
+        )];
+    }
+
+    if state.details.commit_file_diff.trim().is_empty() {
+        return vec![PanelLine::new(
+            "  details(commit files): no diff for current file",
+            RowRole::Muted,
+        )];
+    }
+
+    let lines = state.details.commit_file_diff.lines().collect::<Vec<_>>();
     let start = details_scroll_start(lines.len(), state.details.scroll_offset, max_lines);
     lines
         .into_iter()
@@ -475,8 +562,12 @@ pub(crate) fn shortcuts_for_state(state: &AppState) -> String {
             "keys(branches): space checkout | n new | d delete | r rebase".to_string()
         }
         PanelFocus::Commits => {
-            "keys(commits): s squash | f fixup | r reword | d delete | space detach | v multi | c commit"
-                .to_string()
+            if state.commits.files.active {
+                "keys(commit files): Esc back".to_string()
+            } else {
+                "keys(commits): enter files | s squash | f fixup | r reword | d delete | space detach | v multi"
+                    .to_string()
+            }
         }
         PanelFocus::Stash => "keys(stash): p stash push | O stash pop".to_string(),
         PanelFocus::Details | PanelFocus::Log => String::new(),
@@ -629,7 +720,9 @@ pub fn format_file_tree_row(row: &FileTreeRow) -> String {
             format!("{marker} {}/", row.name)
         }
         FileRowKind::File => {
-            let marker = if row.untracked {
+            let marker = if let Some(status) = row.commit_status {
+                commit_file_status_marker(status)
+            } else if row.untracked {
                 ICON_FILE_UNTRACKED
             } else if row.staged {
                 ICON_FILE_STAGED
@@ -640,6 +733,18 @@ pub fn format_file_tree_row(row: &FileTreeRow) -> String {
         }
     };
     format!("{batch}{matched} {indent}{body}")
+}
+
+fn commit_file_status_marker(status: ratagit_core::CommitFileStatus) -> &'static str {
+    match status {
+        ratagit_core::CommitFileStatus::Added => "A",
+        ratagit_core::CommitFileStatus::Modified => "M",
+        ratagit_core::CommitFileStatus::Deleted => "D",
+        ratagit_core::CommitFileStatus::Renamed => "R",
+        ratagit_core::CommitFileStatus::Copied => "C",
+        ratagit_core::CommitFileStatus::TypeChanged => "T",
+        ratagit_core::CommitFileStatus::Unknown => "?",
+    }
 }
 
 pub fn format_commit_entry(entry: &CommitEntry) -> String {
@@ -799,12 +904,27 @@ fn file_tree_row_role(row: &FileTreeRow) -> RowRole {
         RowRole::BatchSelected
     } else if row.matched {
         RowRole::SearchMatch
+    } else if let Some(status) = row.commit_status {
+        commit_file_status_role(status)
     } else if row.untracked {
         RowRole::FileUntracked
     } else if row.staged {
         RowRole::FileStaged
     } else {
         RowRole::Normal
+    }
+}
+
+fn commit_file_status_role(status: ratagit_core::CommitFileStatus) -> RowRole {
+    match status {
+        ratagit_core::CommitFileStatus::Added => RowRole::DiffAdd,
+        ratagit_core::CommitFileStatus::Deleted => RowRole::DiffRemove,
+        ratagit_core::CommitFileStatus::Renamed | ratagit_core::CommitFileStatus::Copied => {
+            RowRole::DiffMeta
+        }
+        ratagit_core::CommitFileStatus::Modified
+        | ratagit_core::CommitFileStatus::TypeChanged
+        | ratagit_core::CommitFileStatus::Unknown => RowRole::Normal,
     }
 }
 

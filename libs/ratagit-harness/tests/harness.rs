@@ -90,6 +90,26 @@ impl GitBackend for BlockingBackend {
             .commit_details_diff(commit_id)
     }
 
+    fn commit_files(
+        &mut self,
+        commit_id: &str,
+    ) -> Result<Vec<ratagit_core::CommitFileEntry>, GitError> {
+        self.inner
+            .lock()
+            .expect("mock lock")
+            .commit_files(commit_id)
+    }
+
+    fn commit_file_diff(
+        &mut self,
+        target: &ratagit_core::CommitFileDiffTarget,
+    ) -> Result<String, GitError> {
+        self.inner
+            .lock()
+            .expect("mock lock")
+            .commit_file_diff(target)
+    }
+
     fn stage_file(&mut self, path: &str) -> Result<(), GitError> {
         self.inner.lock().expect("mock lock").stage_file(path)
     }
@@ -1004,6 +1024,72 @@ fn harness_commits_details_follow_cursor_with_commit_diff() {
             batch_selected_screen_rows: &[],
             git_ops_contains: &["commit-diff:abc1234", "commit-diff:def5678"],
             git_state_contains: &["summary: \"wire commands\""],
+        },
+    ));
+}
+
+#[test]
+fn harness_commits_enter_files_subpanel_and_follow_file_cursor() {
+    let inputs = [
+        UiAction::RefreshAll,
+        UiAction::FocusNext,
+        UiAction::FocusNext,
+        UiAction::OpenCommitFilesPanel,
+        UiAction::MoveDown,
+        UiAction::MoveDown,
+    ];
+    assert_scenario(MockScenario::new(
+        "commits_files_subpanel_follow_file_cursor",
+        clean_three_commit_fixture(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &[
+                "Commit Files",
+                "A lib.rs",
+                "diff --git a/src/lib.rs b/src/lib.rs",
+            ],
+            screen_not_contains: &["details(commits): pending details implementation"],
+            selected_screen_rows: &["A lib.rs"],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &[
+                "commit-files:abc1234",
+                "commit-file-diff:abc1234:README.md",
+                "commit-file-diff:abc1234:src/lib.rs",
+            ],
+            git_state_contains: &["summary: \"init project\""],
+        },
+    ));
+}
+
+#[test]
+fn harness_commits_files_directory_shows_descendant_diff() {
+    let inputs = [
+        UiAction::RefreshAll,
+        UiAction::FocusNext,
+        UiAction::FocusNext,
+        UiAction::OpenCommitFilesPanel,
+        UiAction::MoveDown,
+        UiAction::ToggleCommitFilesDirectory,
+    ];
+    assert_scenario(MockScenario::new(
+        "commits_files_directory_diff",
+        clean_three_commit_fixture(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &[
+                "Commit Files",
+                " src/",
+                "diff --git a/src/lib.rs b/src/lib.rs",
+            ],
+            screen_not_contains: &["A lib.rs"],
+            selected_screen_rows: &[" src/"],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &[
+                "commit-files:abc1234",
+                "commit-file-diff:abc1234:README.md",
+                "commit-file-diff:abc1234:src/lib.rs",
+            ],
+            git_state_contains: &["summary: \"init project\""],
         },
     ));
 }

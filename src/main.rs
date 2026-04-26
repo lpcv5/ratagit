@@ -278,8 +278,17 @@ fn ui_action_for_key(
         }
     }
 
-    if state.focus == PanelFocus::Commits {
+    if state.focus == PanelFocus::Commits && state.commits.files.active {
+        if code == KeyCode::Esc {
+            return Some(UiAction::CloseCommitFilesPanel);
+        }
+        if code == KeyCode::Enter {
+            return Some(UiAction::ToggleCommitFilesDirectory);
+        }
+        // TODO(commit-files-shortcuts): add commit-files local file actions in a later slice.
+    } else if state.focus == PanelFocus::Commits {
         match code {
+            KeyCode::Enter => return Some(UiAction::OpenCommitFilesPanel),
             KeyCode::Char(' ') => return Some(UiAction::CheckoutSelectedCommitDetached),
             KeyCode::Char('c') => return Some(UiAction::OpenCommitEditor),
             KeyCode::Char('v') => return Some(UiAction::ToggleCommitsMultiSelect),
@@ -499,6 +508,20 @@ mod tests {
             map_key(&state, KeyCode::Char('c')),
             Some(UiAction::OpenCommitEditor)
         );
+        assert_eq!(
+            map_key(&state, KeyCode::Enter),
+            Some(UiAction::OpenCommitFilesPanel)
+        );
+        state.commits.files.active = true;
+        assert_eq!(
+            map_key(&state, KeyCode::Esc),
+            Some(UiAction::CloseCommitFilesPanel)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Enter),
+            Some(UiAction::ToggleCommitFilesDirectory)
+        );
+        assert_eq!(map_key(&state, KeyCode::Char('s')), None);
 
         state.focus = PanelFocus::Stash;
         assert_eq!(
@@ -766,6 +789,26 @@ impl GitBackend for AppBackend {
         match self {
             Self::Hybrid(inner) => inner.commit_details_diff(commit_id),
             Self::Mock(inner) => inner.commit_details_diff(commit_id),
+        }
+    }
+
+    fn commit_files(
+        &mut self,
+        commit_id: &str,
+    ) -> Result<Vec<ratagit_core::CommitFileEntry>, ratagit_git::GitError> {
+        match self {
+            Self::Hybrid(inner) => inner.commit_files(commit_id),
+            Self::Mock(inner) => inner.commit_files(commit_id),
+        }
+    }
+
+    fn commit_file_diff(
+        &mut self,
+        target: &ratagit_core::CommitFileDiffTarget,
+    ) -> Result<String, ratagit_git::GitError> {
+        match self {
+            Self::Hybrid(inner) => inner.commit_file_diff(target),
+            Self::Mock(inner) => inner.commit_file_diff(target),
         }
     }
 

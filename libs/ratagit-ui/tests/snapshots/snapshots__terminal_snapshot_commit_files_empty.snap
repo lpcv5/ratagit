@@ -3,15 +3,15 @@ source: libs/ratagit-ui/tests/snapshots.rs
 expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30, },)"
 ---
 ┌ [1] 󰈙 Files ───────────────────┐┌ [5]  Details ─────────────────────────────────────────────────┐
-│    README.md                  ││  commit abc1234                                                │
-│    src/                       ││  Author: ratagit-tests <ratagit-tests@example.com>             │
+│    README.md                  ││  details(commit files): no file selected                       │
+│    src/                       ││                                                                │
 │      lib.rs                   ││                                                                │
-│      main.rs                  ││      selected commit                                           │
+│      main.rs                  ││                                                                │
 │                                ││                                                                │
-│                                ││  diff --git a/commit.txt b/commit.txt                          │
-│                                ││  @@ -1 +1 @@                                                   │
-│                                ││  -old abc1234                                                  │
-│                                ││  +new abc1234                                                  │
+│                                ││                                                                │
+│                                ││                                                                │
+│                                ││                                                                │
+│                                ││                                                                │
 └────────────────────────────────┘│                                                                │
 ┌ [2]  Branches ────────────────┐│                                                                │
 │ main                          ││                                                                │
@@ -21,9 +21,9 @@ expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30,
 │                                ││                                                                │
 │                                ││                                                                │
 └────────────────────────────────┘│                                                                │
-┌ [3]  Commits ─────────────────┐└────────────────────────────────────────────────────────────────┘
-│●  abc1234  RT  init project    │┌ [6] 󰌱 Log ─────────────────────────────────────────────────────┐
-│●  def5678  RT  wire commands   ││  notice=Ready                                                  │
+┌ [3]  Commit Files ────────────┐└────────────────────────────────────────────────────────────────┘
+│                                │┌ [6] 󰌱 Log ─────────────────────────────────────────────────────┐
+│                                ││  notice=Ready                                                  │
 │                                ││                                                                │
 │                                ││                                                                │
 │                                ││                                                                │
@@ -31,4 +31,4 @@ expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30,
 ┌ [4]  Stash ───────────────────┐│                                                                │
 │ stash@{0} WIP on main: local t││                                                                │
 └────────────────────────────────┘└────────────────────────────────────────────────────────────────┘
-keys(commits): enter files | s squash | f fixup | r reword | d delete | space detach | v multi
+keys(commit files): Esc back

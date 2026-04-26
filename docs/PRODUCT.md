@@ -23,7 +23,7 @@ MVP v0 includes a left-nav workspace layout with six panels:
 - Branches: create branches from the selected local branch, checkout with
   optional auto-stash, delete local/`origin` branches, and rebase the current
   branch
-- Commits: create commit, refresh list, squash/fixup/reword/delete commits, visual multi-select, and detached checkout
+- Commits: create commit, refresh list, squash/fixup/reword/delete commits, visual multi-select, detached checkout, and a commit Files subpanel
 - Stash: stash push and stash pop selected entry
 - Details:
   - Files focus projection: show merged `unstaged` then `staged` diff for the currently selected file/folder target
@@ -31,6 +31,7 @@ MVP v0 includes a left-nav workspace layout with six panels:
   - While a selected file diff is loading, Details shows a deterministic loading row instead of blocking input
   - Branches focus projection: show the selected branch's native `git log --graph` output with Git's ASCII graph and ANSI colors preserved, limited to 50 commits
   - Commits focus projection: show the selected commit's header and patch diff
+  - Commit Files subpanel projection: show the selected file or folder's patch within the selected commit
   - Stash projection: placeholder text for now (to be implemented in a later slice)
   - `Ctrl+U` / `Ctrl+D` scroll Details content up/down globally by 2/5 of the Details content height without changing the focused panel
 - Log: show latest error, recent notices, and pending refresh/operation state
@@ -141,6 +142,14 @@ Commits panel rules:
 - rewrite actions require a clean working tree, only operate on red/unpushed commits, and reject merge commits in this slice
 - squash/fixup reject commits whose parent is the root commit in this slice
 - `space` checks out the selected commit as detached HEAD; dirty worktrees use the same explicit auto-stash confirmation as branch checkout
+- `Enter` opens a Files subpanel for the selected commit
+  - rows use the same tree display as the Files panel
+  - file rows show changed-file status markers: `A`, `M`, `D`, `R`, `C`, or `T`
+  - folder rows can be expanded/collapsed with `Enter`
+  - `j` / `k` move the file cursor, and Details follows with the selected file's patch in that commit
+  - selecting a folder shows a combined diff for descendant files in that commit
+  - `Esc` returns to the parent Commits panel and restores the selected commit diff
+  - additional commit-files local shortcuts are deferred
 
 All features are keyboard-driven and deterministic.
 

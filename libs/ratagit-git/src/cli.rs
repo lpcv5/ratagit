@@ -1,7 +1,10 @@
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 
-use ratagit_core::{BranchDeleteMode, FileEntry, ResetMode};
+use ratagit_core::{
+    BranchDeleteMode, CommitFileDiffTarget, CommitFileEntry, CommitFileStatus, FileEntry, ResetMode,
+};
 
 use crate::status_cli::parse_porcelain_v1_z;
 use crate::{GitError, validate_repo_relative_path};
@@ -98,6 +101,51 @@ impl GitCli {
             "--patch".to_string(),
             commit_id.to_string(),
         ])
+    }
+
+    pub(crate) fn commit_files(
+        &mut self,
+        commit_id: &str,
+    ) -> Result<Vec<CommitFileEntry>, GitError> {
+        let output = self.run_git_owned(vec![
+            "diff-tree".to_string(),
+            "--root".to_string(),
+            "--no-commit-id".to_string(),
+            "--name-status".to_string(),
+            "-r".to_string(),
+            "-M".to_string(),
+            "-C".to_string(),
+            commit_id.to_string(),
+        ])?;
+        parse_commit_files(&output)
+    }
+
+    pub(crate) fn commit_file_diff(
+        &mut self,
+        target: &CommitFileDiffTarget,
+    ) -> Result<String, GitError> {
+        let mut args = vec![
+            "show".to_string(),
+            "--no-color".to_string(),
+            "--format=".to_string(),
+            "--patch".to_string(),
+            "--find-renames".to_string(),
+            "--find-copies".to_string(),
+            target.commit_id.clone(),
+            "--".to_string(),
+        ];
+        let mut pushed = BTreeSet::new();
+        for path in &target.paths {
+            if let Some(old_path) = &path.old_path
+                && pushed.insert(old_path.clone())
+            {
+                args.push(old_path.clone());
+            }
+            if pushed.insert(path.path.clone()) {
+                args.push(path.path.clone());
+            }
+        }
+        self.run_git_owned(args)
     }
 
     pub(crate) fn create_commit(&mut self, message: &str) -> Result<(), GitError> {
@@ -499,6 +547,49 @@ impl GitCli {
         }
         Ok(None)
     }
+}
+
+fn parse_commit_files(output: &str) -> Result<Vec<CommitFileEntry>, GitError> {
+    output
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(parse_commit_file_line)
+        .collect()
+}
+
+fn parse_commit_file_line(line: &str) -> Result<CommitFileEntry, GitError> {
+    let parts = line.split('\t').collect::<Vec<_>>();
+    let Some(raw_status) = parts.first() else {
+        return Err(GitError::new("missing commit file status"));
+    };
+    let status = match raw_status.chars().next().unwrap_or('?') {
+        'A' => CommitFileStatus::Added,
+        'M' => CommitFileStatus::Modified,
+        'D' => CommitFileStatus::Deleted,
+        'R' => CommitFileStatus::Renamed,
+        'C' => CommitFileStatus::Copied,
+        'T' => CommitFileStatus::TypeChanged,
+        _ => CommitFileStatus::Unknown,
+    };
+    let (old_path, path) = match status {
+        CommitFileStatus::Renamed | CommitFileStatus::Copied => {
+            if parts.len() < 3 {
+                return Err(GitError::new(format!("invalid commit file line: {line}")));
+            }
+            (Some(parts[1].to_string()), parts[2].to_string())
+        }
+        _ => {
+            if parts.len() < 2 {
+                return Err(GitError::new(format!("invalid commit file line: {line}")));
+            }
+            (None, parts[1].to_string())
+        }
+    };
+    Ok(CommitFileEntry {
+        path,
+        old_path,
+        status,
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

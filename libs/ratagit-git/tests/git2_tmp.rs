@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use ratagit_core::{COMMITS_PAGE_SIZE, CommitHashStatus};
+use ratagit_core::{COMMITS_PAGE_SIZE, CommitFileStatus, CommitHashStatus};
 use ratagit_git::{GitBackend, HybridGitBackend, is_git_repo};
 
 struct TmpGitRepo {
@@ -480,6 +480,42 @@ fn git2_commit_details_diff_emits_header_and_patch() {
 
     assert!(diff.contains(&format!("commit {commit}")));
     assert!(diff.contains("Author:"));
+    assert!(diff.contains("diff --git a/b.txt b/b.txt"));
+    assert!(diff.contains("-b1"));
+    assert!(diff.contains("+third"));
+}
+
+#[test]
+fn git2_commit_files_and_file_diff_follow_selected_path() {
+    if !git_available() {
+        eprintln!(
+            "git is unavailable, skipping git2_commit_files_and_file_diff_follow_selected_path"
+        );
+        return;
+    }
+
+    let repo = repo_with_three_commits("commit-files");
+    let commit = commit_id(&repo, "HEAD");
+    let mut backend = HybridGitBackend::open(repo.path()).expect("hybrid backend should open");
+
+    let files = backend
+        .commit_files(&commit)
+        .expect("commit files should render");
+
+    assert!(files.iter().any(|file| {
+        file.path == "b.txt" && file.old_path.is_none() && file.status == CommitFileStatus::Modified
+    }));
+    let target = ratagit_core::CommitFileDiffTarget {
+        commit_id: commit,
+        paths: vec![ratagit_core::CommitFileDiffPath {
+            path: "b.txt".to_string(),
+            old_path: None,
+        }],
+    };
+    let diff = backend
+        .commit_file_diff(&target)
+        .expect("commit file diff should render");
+
     assert!(diff.contains("diff --git a/b.txt b/b.txt"));
     assert!(diff.contains("-b1"));
     assert!(diff.contains("+third"));
