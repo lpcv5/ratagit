@@ -44,8 +44,10 @@ fn snapshots_empty_repo_80x24() {
     assert!(!first_lines.contains("branch=main"));
     assert!(!first_lines.contains("focus=Files"));
     assert!(!first_lines.contains("summary=staged: 0, unstaged: 0"));
-    assert!(text.contains("[󰈙 Files]"));
-    assert!(text.contains("[ Details]"));
+    assert!(text.contains("[1] 󰈙 Files"));
+    assert!(text.contains("[5]  Details"));
+    assert!(!text.contains("<empty>"));
+    assert!(!text.contains("<none>"));
     assert!(text.contains("keys(files):"));
     assert_no_cursor_marker(&text);
     assert!(!text.contains("tab/shift+tab"));
@@ -61,12 +63,12 @@ fn snapshots_dirty_repo_100x30() {
             height: 30,
         },
     );
-    assert!(text.contains("[󰈙 Files]"));
-    assert!(text.contains("[ Commits]"));
-    assert!(text.contains("[ Branches]"));
-    assert!(text.contains("[ Stash]"));
-    assert!(text.contains("[ Details]"));
-    assert!(text.contains("[󰌱 Log]"));
+    assert!(text.contains("[1] 󰈙 Files"));
+    assert!(text.contains("[3]  Commits"));
+    assert!(text.contains("[2]  Branches"));
+    assert!(text.contains("[4]  Stash"));
+    assert!(text.contains("[5]  Details"));
+    assert!(text.contains("[6] 󰌱 Log"));
     assert!(text.contains(" src/"));
     assert!(text.contains(" main.rs"));
     assert!(text.contains(" lib.rs"));
@@ -239,7 +241,7 @@ fn snapshots_files_list_reversing_up_does_not_jump_to_top_reserve() {
     assert!(text.contains("    file-17.txt"));
     assert!(text.contains("    file-20.txt"));
     assert!(text.contains(" file-24.txt"));
-    assert!(!text.contains("file-16.txt"));
+    assert!(!text.contains("file-00.txt"));
     assert_no_cursor_marker(&text);
 
     let screen = render_terminal_snapshot_with_cursor_marker(
@@ -279,7 +281,7 @@ fn snapshots_files_list_reversing_down_does_not_jump_to_bottom_reserve() {
     assert!(text.contains("    file-17.txt"));
     assert!(text.contains("    file-21.txt"));
     assert!(text.contains(" file-24.txt"));
-    assert!(!text.contains("file-16.txt"));
+    assert!(!text.contains("file-00.txt"));
 
     update(&mut state, Action::Ui(UiAction::MoveDown));
     let text = render(
@@ -327,6 +329,24 @@ fn terminal_snapshot_dirty_repo_100x30() {
         TerminalSize {
             width: 100,
             height: 30,
+        },
+    ));
+}
+
+#[test]
+fn terminal_snapshot_many_files_focus_expands_left_panel() {
+    let mut state = AppState::default();
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::Refreshed(fixture_many_files())),
+    );
+    assert!(commands.is_empty());
+
+    insta::assert_snapshot!(render_terminal_text(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 24,
         },
     ));
 }

@@ -16,6 +16,7 @@ fn harness_status_refresh() {
         &inputs,
         ScenarioExpectations {
             screen_contains: &["Files", "Details", "keys(files):"],
+            screen_not_contains: &[],
             selected_screen_rows: &[],
             batch_selected_screen_rows: &[],
             git_ops_contains: &["refresh"],
@@ -38,6 +39,7 @@ fn harness_files_stage_and_unstage() {
         &inputs,
         ScenarioExpectations {
             screen_contains: &["Files", "src/lib.rs", "staged=no"],
+            screen_not_contains: &[],
             selected_screen_rows: &[],
             batch_selected_screen_rows: &[],
             git_ops_contains: &["stage-files:src/lib.rs", "unstage-files:src/lib.rs"],
@@ -59,6 +61,7 @@ fn harness_files_tree_expand_collapse() {
         &inputs,
         ScenarioExpectations {
             screen_contains: &["", "src/"],
+            screen_not_contains: &[],
             selected_screen_rows: &[],
             batch_selected_screen_rows: &[],
             git_ops_contains: &["refresh"],
@@ -80,6 +83,7 @@ fn harness_files_space_toggles_directory_stage() {
         &inputs,
         ScenarioExpectations {
             screen_contains: &["Staged src/lib.rs", "staged=yes"],
+            screen_not_contains: &[],
             selected_screen_rows: &[],
             batch_selected_screen_rows: &[],
             git_ops_contains: &["stage-files:src/lib.rs"],
@@ -102,6 +106,7 @@ fn harness_files_multi_select_stashes_selected_targets() {
         &inputs,
         ScenarioExpectations {
             screen_contains: &["Stashed 3 files", "savepoint"],
+            screen_not_contains: &[],
             selected_screen_rows: &[],
             batch_selected_screen_rows: &[],
             git_ops_contains: &["stash-files:savepoint:README.md,src/lib.rs,src/main.rs"],
@@ -123,6 +128,7 @@ fn harness_files_v_marks_individual_rows() {
         &inputs,
         ScenarioExpectations {
             screen_contains: &["✓   README.md", "✓   src/"],
+            screen_not_contains: &[],
             selected_screen_rows: &[],
             batch_selected_screen_rows: &[" src/"],
             git_ops_contains: &["refresh"],
@@ -149,6 +155,7 @@ fn harness_files_search_jumps_and_clears() {
         &inputs,
         ScenarioExpectations {
             screen_contains: &["src/lib.rs", "keys(files):"],
+            screen_not_contains: &[],
             selected_screen_rows: &[],
             batch_selected_screen_rows: &[],
             git_ops_contains: &["refresh"],
@@ -173,6 +180,7 @@ fn harness_files_scroll_keeps_selection_visible() {
                 "    file-20.txt",
                 "    file-23.txt",
             ],
+            screen_not_contains: &[],
             selected_screen_rows: &[" file-20.txt"],
             batch_selected_screen_rows: &[],
             git_ops_contains: &["refresh"],
@@ -193,6 +201,7 @@ fn harness_files_reversing_up_does_not_jump_to_top_reserve() {
         &inputs,
         ScenarioExpectations {
             screen_contains: &["    file-17.txt", "    file-20.txt", "    file-22.txt"],
+            screen_not_contains: &[],
             selected_screen_rows: &[" file-20.txt"],
             batch_selected_screen_rows: &[],
             git_ops_contains: &["refresh"],
@@ -214,6 +223,7 @@ fn harness_files_reversing_down_does_not_jump_to_bottom_reserve() {
         &inputs,
         ScenarioExpectations {
             screen_contains: &["    file-17.txt", "    file-21.txt", "    file-22.txt"],
+            screen_not_contains: &[],
             selected_screen_rows: &[" file-21.txt"],
             batch_selected_screen_rows: &[],
             git_ops_contains: &["refresh"],
@@ -238,6 +248,7 @@ fn harness_commits_create_and_refresh() {
         &inputs,
         ScenarioExpectations {
             screen_contains: &["mvp commit", " Commits"],
+            screen_not_contains: &[],
             selected_screen_rows: &[],
             batch_selected_screen_rows: &[],
             git_ops_contains: &["commit:mvp commit", "refresh"],
@@ -264,6 +275,7 @@ fn harness_branches_create_and_checkout() {
         &inputs,
         ScenarioExpectations {
             screen_contains: &["feature/new", "is_current=yes"],
+            screen_not_contains: &[],
             selected_screen_rows: &[],
             batch_selected_screen_rows: &[],
             git_ops_contains: &["create-branch:feature/new", "checkout-branch:feature/new"],
@@ -288,6 +300,7 @@ fn harness_stash_push_and_pop() {
         &inputs,
         ScenarioExpectations {
             screen_contains: &["Stash", "WIP on main: local test"],
+            screen_not_contains: &[],
             selected_screen_rows: &[],
             batch_selected_screen_rows: &[],
             git_ops_contains: &["stash-push:savepoint", "stash-pop:stash@{0}"],
@@ -312,6 +325,7 @@ fn harness_error_visible_without_crash() {
         &inputs,
         ScenarioExpectations {
             screen_contains: &["error=Failed to create commit"],
+            screen_not_contains: &[],
             selected_screen_rows: &[],
             batch_selected_screen_rows: &[],
             git_ops_contains: &["commit:"],
@@ -340,6 +354,32 @@ fn harness_focus_panel_shortcuts_follow_focus() {
         &inputs,
         ScenarioExpectations {
             screen_contains: &["Details", "Log", "keys(branches):", "o checkout"],
+            screen_not_contains: &[],
+            selected_screen_rows: &[],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["refresh"],
+            git_state_contains: &["current_branch: \"main\""],
+        },
+    ));
+}
+
+#[test]
+fn harness_panel_titles_are_numbered_and_empty_placeholders_hidden() {
+    let inputs = [UiAction::RefreshAll];
+    assert_scenario(MockScenario::new(
+        "ui_numbered_titles_no_empty_placeholders",
+        fixture_empty_repo(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &[
+                "[1] 󰈙 Files",
+                "[2]  Branches",
+                "[3]  Commits",
+                "[4]  Stash",
+                "[5]  Details",
+                "[6] 󰌱 Log",
+            ],
+            screen_not_contains: &["<empty>", "<none>", "error=<none>"],
             selected_screen_rows: &[],
             batch_selected_screen_rows: &[],
             git_ops_contains: &["refresh"],

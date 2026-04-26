@@ -1,4 +1,5 @@
 mod frame;
+mod layout;
 mod panels;
 mod terminal;
 mod text;

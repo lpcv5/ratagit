@@ -6,6 +6,7 @@ use ratatui::widgets::{Block, Borders, HighlightSpacing, List, ListItem, ListSta
 use ratatui::{Frame, Terminal};
 
 use crate::frame::{TerminalBuffer, TerminalSize, buffer_to_text};
+use crate::layout::compute_left_panel_heights;
 use crate::panels::{
     PanelLine, panel_title, render_branches_lines, render_commits_lines, render_details_lines,
     render_files_lines, render_log_lines, render_stash_lines, shortcuts_for_state,
@@ -44,13 +45,14 @@ fn render_panel_grid(frame: &mut Frame<'_>, state: &AppState, area: Rect) {
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(34), Constraint::Percentage(66)])
         .split(area);
+    let left_heights = compute_left_panel_heights(state, columns[0].height as usize, 2);
     let left = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Percentage(36),
-            Constraint::Percentage(22),
-            Constraint::Percentage(26),
-            Constraint::Percentage(16),
+            Constraint::Length(left_heights.files as u16),
+            Constraint::Length(left_heights.branches as u16),
+            Constraint::Length(left_heights.commits as u16),
+            Constraint::Length(left_heights.stash as u16),
         ])
         .split(columns[0]);
     let right = Layout::default()

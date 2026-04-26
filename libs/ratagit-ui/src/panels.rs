@@ -35,6 +35,16 @@ pub(crate) fn panel_title(panel: PanelFocus) -> &'static str {
     panel_label(panel)
 }
 
+pub(crate) fn left_panel_content_len(state: &AppState, panel: PanelFocus) -> usize {
+    match panel {
+        PanelFocus::Files => build_file_tree_rows(&state.files).len(),
+        PanelFocus::Branches => state.branches.items.len(),
+        PanelFocus::Commits => state.commits.items.len().saturating_add(1),
+        PanelFocus::Stash => state.stash.items.len(),
+        PanelFocus::Details | PanelFocus::Log => 0,
+    }
+}
+
 pub(crate) fn render_files_lines(state: &AppState, max_lines: usize) -> Vec<PanelLine> {
     let rows = build_file_tree_rows(&state.files);
     render_indexed_entries(
@@ -125,8 +135,6 @@ pub(crate) fn render_details_lines(state: &AppState, max_lines: usize) -> Vec<Pa
                         RowRole::Muted
                     },
                 ));
-            } else {
-                lines.push(PanelLine::new("  file=<empty>", RowRole::Muted));
             }
         }
         PanelFocus::Branches => {
@@ -146,8 +154,6 @@ pub(crate) fn render_details_lines(state: &AppState, max_lines: usize) -> Vec<Pa
                         RowRole::Muted
                     },
                 ));
-            } else {
-                lines.push(PanelLine::new("  branch=<empty>", RowRole::Muted));
             }
         }
         PanelFocus::Commits => {
@@ -156,8 +162,6 @@ pub(crate) fn render_details_lines(state: &AppState, max_lines: usize) -> Vec<Pa
                     format!("  commit={} {}", entry.id, entry.summary),
                     RowRole::Normal,
                 ));
-            } else {
-                lines.push(PanelLine::new("  commit=<empty>", RowRole::Muted));
             }
         }
         PanelFocus::Stash => {
@@ -166,8 +170,6 @@ pub(crate) fn render_details_lines(state: &AppState, max_lines: usize) -> Vec<Pa
                     format!("  stash={} {}", entry.id, entry.summary),
                     RowRole::Normal,
                 ));
-            } else {
-                lines.push(PanelLine::new("  stash=<empty>", RowRole::Muted));
             }
         }
         PanelFocus::Details | PanelFocus::Log => {}
@@ -183,8 +185,6 @@ pub(crate) fn render_log_lines(state: &AppState, max_lines: usize) -> Vec<PanelL
     let mut lines = Vec::new();
     if let Some(error) = &state.status.last_error {
         lines.push(PanelLine::new(format!("  error={error}"), RowRole::Error));
-    } else {
-        lines.push(PanelLine::new("  error=<none>", RowRole::Muted));
     }
 
     let keep = max_lines.saturating_sub(lines.len());
@@ -251,7 +251,7 @@ fn render_indexed_entries_window<T>(
         return Vec::new();
     }
     if items.is_empty() {
-        return vec![PanelLine::new("  <empty>", RowRole::Muted)];
+        return Vec::new();
     }
     let start = scroll_window_start(
         items.len(),
@@ -569,6 +569,34 @@ mod tests {
             lines
                 .iter()
                 .any(|line| line.text.contains("notice=Failed to create commit"))
+        );
+    }
+
+    #[test]
+    fn empty_lists_and_panels_render_without_empty_placeholders() {
+        let mut state = AppState::default();
+        let commands = update(
+            &mut state,
+            Action::GitResult(GitResult::Refreshed(fixture_empty_repo())),
+        );
+        assert!(commands.is_empty());
+
+        assert!(render_files_lines(&state, 5).is_empty());
+        assert!(render_stash_lines(&state, 5).is_empty());
+        assert!(
+            render_branches_lines(&state, 5)
+                .iter()
+                .all(|line| { !line.text.contains("<empty>") && !line.text.contains("<none>") })
+        );
+        assert!(
+            render_details_lines(&state, 5)
+                .iter()
+                .all(|line| { !line.text.contains("<empty>") && !line.text.contains("<none>") })
+        );
+        assert!(
+            render_log_lines(&state, 5)
+                .iter()
+                .all(|line| { !line.text.contains("<empty>") && !line.text.contains("<none>") })
         );
     }
 

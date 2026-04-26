@@ -1,6 +1,7 @@
 use ratagit_core::{AppState, PanelFocus};
 
 use crate::frame::{RenderedFrame, TerminalSize, normalize_lines, pad_and_truncate};
+use crate::layout::compute_left_panel_heights;
 use crate::panels::{
     PanelLine, panel_title, render_branches_lines, render_commits_lines, render_details_lines,
     render_files_lines, render_log_lines, render_stash_lines, shortcuts_for_state,
@@ -28,7 +29,7 @@ fn render_workspace_rows(state: &AppState, total_width: usize, body_height: usiz
     }
 
     let (left_width, right_width) = split_columns(total_width - separator_width);
-    let left_heights = split_vertical(body_height, &[36, 22, 26, 16]);
+    let left_heights = compute_left_panel_heights(state, body_height, 1);
     let right_heights = split_vertical(body_height, &[70, 30]);
 
     let left_panels = [
@@ -36,29 +37,29 @@ fn render_workspace_rows(state: &AppState, total_width: usize, body_height: usiz
             panel_title(PanelFocus::Files),
             state.focus == PanelFocus::Files,
             left_width,
-            left_heights[0],
-            render_files_lines(state, left_heights[0].saturating_sub(1)),
+            left_heights.files,
+            render_files_lines(state, left_heights.files.saturating_sub(1)),
         ),
         render_panel(
             panel_title(PanelFocus::Branches),
             state.focus == PanelFocus::Branches,
             left_width,
-            left_heights[1],
-            render_branches_lines(state, left_heights[1].saturating_sub(1)),
+            left_heights.branches,
+            render_branches_lines(state, left_heights.branches.saturating_sub(1)),
         ),
         render_panel(
             panel_title(PanelFocus::Commits),
             state.focus == PanelFocus::Commits,
             left_width,
-            left_heights[2],
-            render_commits_lines(state, left_heights[2].saturating_sub(1)),
+            left_heights.commits,
+            render_commits_lines(state, left_heights.commits.saturating_sub(1)),
         ),
         render_panel(
             panel_title(PanelFocus::Stash),
             state.focus == PanelFocus::Stash,
             left_width,
-            left_heights[3],
-            render_stash_lines(state, left_heights[3].saturating_sub(1)),
+            left_heights.stash,
+            render_stash_lines(state, left_heights.stash.saturating_sub(1)),
         ),
     ]
     .concat();
@@ -146,7 +147,7 @@ fn render_panel(
     }
 
     let mut lines = Vec::with_capacity(height);
-    let header = format!("  [{title}]");
+    let header = format!("  {title}");
     lines.push(pad_and_truncate(header, width));
 
     for line in content_lines.into_iter().take(height.saturating_sub(1)) {

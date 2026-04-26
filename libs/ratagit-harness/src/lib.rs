@@ -104,6 +104,7 @@ impl<'a> MockScenario<'a> {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ScenarioExpectations<'a> {
     pub screen_contains: &'a [&'a str],
+    pub screen_not_contains: &'a [&'a str],
     pub selected_screen_rows: &'a [&'a str],
     pub batch_selected_screen_rows: &'a [&'a str],
     pub git_ops_contains: &'a [&'a str],
@@ -132,6 +133,11 @@ pub fn run_mock_scenario(scenario: MockScenario<'_>) -> Result<(), ScenarioFailu
     for needle in scenario.expectations.screen_contains {
         if !screen_text.contains(needle) {
             errors.push(format!("screen missing expected text: {needle}"));
+        }
+    }
+    for needle in scenario.expectations.screen_not_contains {
+        if screen_text.contains(needle) {
+            errors.push(format!("screen contains forbidden text: {needle}"));
         }
     }
     for needle in scenario.expectations.selected_screen_rows {

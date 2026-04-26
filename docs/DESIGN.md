@@ -14,6 +14,7 @@ focused selectable panel, and inactive panels render their selected row as plain
 text. Left list panels keep deterministic selected row indexes. Right panels are
 read-only views derived from `AppState`. The app does not render a top
 branch/focus/status summary.
+Panel titles include numbered focus hints `[1]..[6]`.
 
 Focus model:
 
@@ -21,6 +22,12 @@ Focus model:
 - `h` / `l` map to `FocusPrev` / `FocusNext` and cycle only left panels
 - `FocusPanel` supports direct focus selection (`1..6` in app input map)
 - `AppState.last_left_focus` tracks the last active left panel for `Details` projection
+- left-panel height baseline follows the Files/Branches/Commits/Stash ratio
+- when `Stash` is unfocused it collapses to one content row and freed height is
+  redistributed by ratio to Files/Branches/Commits
+- when focus is in Files/Branches/Commits and content overflows, the focused
+  panel borrows height from other left panels in round-robin order while keeping
+  minimum readable rows
 
 ---
 
@@ -52,6 +59,8 @@ Files panel interaction:
 - Git failures never crash the app.
 - Errors are stored in `AppState.status.last_error`.
 - The `Log` panel displays the latest error.
+- Empty-state placeholders such as `<empty>` / `<none>` are not rendered; empty
+  views remain visually blank.
 
 ---
 

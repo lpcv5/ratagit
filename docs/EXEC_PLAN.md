@@ -2,44 +2,37 @@
 
 ## Current Slice
 
-Fix Files panel scrolling so reversing from a bottom-reserve viewport does not
-jump to a top-reserve viewport. Add regression coverage that moves deep into a
-long file list, reverses upward, and keeps the previous visible window stable
-until the cursor reaches the top reserve.
+Tune panel sizing and titles for the six-panel workspace while preserving pure
+rendering and existing keyboard behavior.
 
 ## Goal
 
-Refresh the TUI with a conservative lazygit-like theme: selection is shown by
-color only, inactive panels do not show cursor highlights, and panel/file state
-uses a small semantic Nerd Font icon set.
+- remove `<empty>` / `<none>` placeholders from all panels
+- collapse unfocused Stash panel to one content row
+- dynamically expand focused Files/Branches/Commits panel when content overflows
+- prefix all panel titles with `[1]..[6]` numeric focus hints
 
 ## Vertical Slice
 
-1. UI rendering modules
-- keep rendering pure and derived only from `AppState`
-- introduce semantic panel rows carrying text, selected state, and style role
-- keep public rendering APIs stable and add a testable terminal buffer helper
-- make fixed-width text rendering Unicode-width aware
+1. Shared layout calculator
+- add a pure left-panel height calculator used by both `terminal.rs` and
+  compatibility `text.rs`
+- keep deterministic ratio baseline and avoid layout drift across render paths
+- apply Stash collapse and focused-panel expansion rules in one place
 
-2. Theme behavior
-- remove visible `>` cursor markers from all panels and snapshots
-- remove the focused-title `*` marker
-- highlight only the selected row in the focused selectable panel
-- use icons for panels, directories, files, current branch, staged/untracked
-  state, multi-select, and search matches
+2. Panel rendering behavior
+- remove empty placeholders from list, details, and log projections
+- keep existing content rows, selection styles, and key hints
+- apply numbered titles consistently in both render paths
 
-3. UI tests
-- update panel projection tests for marker-free icon text
-- snapshot fixed terminal sizes `80x24`, `100x30`, and `120x40`
-- assert selection and focus styles through `ratatui::TestBackend` buffer cells
+3. Tests and harness
+- add unit tests for layout collapse/expand and deterministic borrowing
+- add unit tests that ensure empty placeholder text is absent
+- update terminal snapshots and add a long-list expansion snapshot
+- extend harness expectations with `screen_not_contains` and add a scenario that
+  verifies numbered titles plus no empty placeholders
 
-4. Harness scenarios
-- keep screen, Git operation, and Git state expectations
-- add a style-aware selected-row assertion for a files scenario
-- keep failure artifacts for compatibility text, real screen, state, Git trace,
-  final mock state, and input sequence
-
-5. Quality gates
+4. Quality gates
 - run `cargo fmt`
 - run `cargo clippy --all-targets -- -D warnings`
 - run `cargo test`

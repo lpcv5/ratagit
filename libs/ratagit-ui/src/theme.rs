@@ -69,11 +69,11 @@ pub(crate) fn row_style(role: RowRole) -> Style {
 
 pub(crate) fn panel_label(panel: PanelFocus) -> &'static str {
     match panel {
-        PanelFocus::Files => "󰈙 Files",
-        PanelFocus::Branches => " Branches",
-        PanelFocus::Commits => " Commits",
-        PanelFocus::Stash => " Stash",
-        PanelFocus::Details => " Details",
-        PanelFocus::Log => "󰌱 Log",
+        PanelFocus::Files => "[1] 󰈙 Files",
+        PanelFocus::Branches => "[2]  Branches",
+        PanelFocus::Commits => "[3]  Commits",
+        PanelFocus::Stash => "[4]  Stash",
+        PanelFocus::Details => "[5]  Details",
+        PanelFocus::Log => "[6] 󰌱 Log",
     }
 }

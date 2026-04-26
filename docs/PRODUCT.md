@@ -30,11 +30,15 @@ Navigation rules:
 
 - `h` / `l` cycles only in left panels: Files -> Branches -> Commits -> Stash
 - `1..6` focuses Files/Branches/Commits/Stash/Details/Log directly
+- all panel titles show numbered focus hints: `[1]..[6]`
 - top branch/focus/status summary is hidden to prioritize panels
 - bottom keys row is unframed and shows only Git operation shortcuts for the current focused panel
 - focused panels are indicated by a colored border/title accent, not by `*`
 - cursor rows are indicated by color only and only in the focused selectable panel
 - files selected for batch operations use a separate batch color
+- empty panels render blank content lines instead of `<empty>` / `<none>` placeholders
+- Stash panel shows one content row when unfocused and restores default height when focused
+- focused Files/Branches/Commits panels can grow dynamically when content overflows by borrowing height evenly from other left panels
 
 Files panel rules:
 
