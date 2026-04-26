@@ -41,18 +41,6 @@ For every feature:
 
 ---
 
-## Tooling Rules
-
-- Desktop Commander MCP is available for quick local operations such as reading
-  files, listing directories, searching content, checking file metadata, and
-  managing long-running terminal sessions.
-- Use Desktop Commander MCP for exploration or process/session control when it
-  is faster than plain shell commands.
-- Do not use Desktop Commander MCP text-editing or write-file tools for
-  repo-tracked code changes; use `apply_patch` for code edits.
-
----
-
 ## UI Rules
 
 - All UI must be snapshot-tested
