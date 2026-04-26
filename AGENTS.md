@@ -27,6 +27,7 @@ For every feature:
 - Use AppState as the only source of truth
 - Add tests before expanding scope
 - Update docs when behavior changes
+- Use the `apply_patch` tool for code edits instead of command-line file writes
 
 ---
 
@@ -37,6 +38,18 @@ For every feature:
 - Introduce hidden state
 - Modify multiple layers in one step without justification
 - Skip tests
+
+---
+
+## Tooling Rules
+
+- Desktop Commander MCP is available for quick local operations such as reading
+  files, listing directories, searching content, checking file metadata, and
+  managing long-running terminal sessions.
+- Use Desktop Commander MCP for exploration or process/session control when it
+  is faster than plain shell commands.
+- Do not use Desktop Commander MCP text-editing or write-file tools for
+  repo-tracked code changes; use `apply_patch` for code edits.
 
 ---
 
