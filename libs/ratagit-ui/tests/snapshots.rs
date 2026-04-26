@@ -479,6 +479,28 @@ fn terminal_commit_editor_cursor_follows_active_body_field() {
 }
 
 #[test]
+fn terminal_commit_editor_cursor_wraps_long_body_line() {
+    let mut state = AppState::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+    update(&mut state, Action::Ui(UiAction::OpenCommitEditor));
+    update(&mut state, Action::Ui(UiAction::EditorNextField));
+    for ch in "x".repeat(75).chars() {
+        update(&mut state, Action::Ui(UiAction::EditorInputChar(ch)));
+    }
+
+    let (_, cursor) = render_terminal_buffer_with_cursor(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    );
+    let cursor = cursor.expect("editor cursor should render");
+
+    assert_eq!((cursor.x, cursor.y), (20, 14));
+}
+
+#[test]
 fn terminal_commit_editor_cursor_follows_subject_field() {
     let mut state = AppState::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
@@ -496,6 +518,27 @@ fn terminal_commit_editor_cursor_follows_subject_field() {
     );
 
     assert_eq!(cursor.expect("editor cursor should render").y, 10);
+}
+
+#[test]
+fn terminal_commit_editor_cursor_wraps_long_subject() {
+    let mut state = AppState::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+    update(&mut state, Action::Ui(UiAction::OpenCommitEditor));
+    for ch in "x".repeat(75).chars() {
+        update(&mut state, Action::Ui(UiAction::EditorInputChar(ch)));
+    }
+
+    let (_, cursor) = render_terminal_buffer_with_cursor(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    );
+    let cursor = cursor.expect("editor cursor should render");
+
+    assert_eq!((cursor.x, cursor.y), (20, 11));
 }
 
 #[test]
@@ -536,6 +579,27 @@ fn terminal_stash_editor_cursor_follows_title() {
     );
 
     assert_eq!(cursor.expect("editor cursor should render").y, 12);
+}
+
+#[test]
+fn terminal_stash_editor_cursor_wraps_long_title() {
+    let mut state = AppState::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+    update(&mut state, Action::Ui(UiAction::OpenStashEditor));
+    for ch in "x".repeat(75).chars() {
+        update(&mut state, Action::Ui(UiAction::EditorInputChar(ch)));
+    }
+
+    let (_, cursor) = render_terminal_buffer_with_cursor(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    );
+    let cursor = cursor.expect("editor cursor should render");
+
+    assert_eq!((cursor.x, cursor.y), (20, 13));
 }
 
 #[test]

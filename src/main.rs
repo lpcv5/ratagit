@@ -52,19 +52,38 @@ fn run_tui() -> Result<(), Box<dyn Error>> {
             continue;
         }
 
-        match key.code {
-            KeyCode::Char('q') => break,
-            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => break,
-            _ => {
-                if let Some(action) = ui_action_for_key(runtime.state(), key.code, key.modifiers) {
-                    runtime.dispatch_ui(action);
-                }
-            }
+        match key_effect_for_key(runtime.state(), key.code, key.modifiers) {
+            KeyEffect::Quit => break,
+            KeyEffect::Dispatch(action) => runtime.dispatch_ui(action),
+            KeyEffect::Ignore => {}
         }
     }
 
     restore_terminal(&mut terminal)?;
     Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum KeyEffect {
+    Quit,
+    Dispatch(UiAction),
+    Ignore,
+}
+
+fn key_effect_for_key(state: &AppState, code: KeyCode, modifiers: KeyModifiers) -> KeyEffect {
+    if code == KeyCode::Char('c') && modifiers.contains(KeyModifiers::CONTROL) {
+        return KeyEffect::Quit;
+    }
+
+    if let Some(action) = ui_action_for_key(state, code, modifiers) {
+        return KeyEffect::Dispatch(action);
+    }
+
+    if code == KeyCode::Char('q') {
+        return KeyEffect::Quit;
+    }
+
+    KeyEffect::Ignore
 }
 
 fn ui_action_for_key(state: &AppState, code: KeyCode, modifiers: KeyModifiers) -> Option<UiAction> {
@@ -163,6 +182,18 @@ mod tests {
 
     fn map_key(state: &AppState, code: KeyCode) -> Option<UiAction> {
         ui_action_for_key(state, code, KeyModifiers::NONE)
+    }
+
+    fn active_commit_editor_state() -> AppState {
+        let mut state = AppState::default();
+        state.editor.kind = Some(ratagit_core::EditorKind::Commit {
+            message: String::new(),
+            message_cursor: 0,
+            body: String::new(),
+            body_cursor: 0,
+            active_field: ratagit_core::CommitField::Body,
+        });
+        state
     }
 
     #[test]
@@ -264,14 +295,7 @@ mod tests {
 
     #[test]
     fn editor_mode_maps_keys_before_any_other_mode() {
-        let mut state = AppState::default();
-        state.editor.kind = Some(ratagit_core::EditorKind::Commit {
-            message: String::new(),
-            message_cursor: 0,
-            body: String::new(),
-            body_cursor: 0,
-            active_field: ratagit_core::CommitField::Body,
-        });
+        let mut state = active_commit_editor_state();
         state.files.mode = FileInputMode::SearchInput;
 
         assert_eq!(
@@ -305,6 +329,26 @@ mod tests {
         assert_eq!(
             map_key(&state, KeyCode::Char('m')),
             Some(UiAction::EditorInputChar('m'))
+        );
+    }
+
+    #[test]
+    fn editor_mode_q_dispatches_instead_of_quitting() {
+        let state = active_commit_editor_state();
+
+        assert_eq!(
+            key_effect_for_key(&state, KeyCode::Char('q'), KeyModifiers::NONE),
+            KeyEffect::Dispatch(UiAction::EditorInputChar('q'))
+        );
+    }
+
+    #[test]
+    fn ctrl_c_quits_even_when_editor_is_active() {
+        let state = active_commit_editor_state();
+
+        assert_eq!(
+            key_effect_for_key(&state, KeyCode::Char('c'), KeyModifiers::CONTROL),
+            KeyEffect::Quit
         );
     }
 }

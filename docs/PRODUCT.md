@@ -57,7 +57,7 @@ Files panel rules:
   - `Ctrl+J` inserts a newline in body
   - `Enter` confirms, `Esc` cancels
 - `s` opens a stash editor modal from Files focus
-  - normal mode stashes all current changes
+  - normal mode stashes all current changes, including untracked files
   - `v` multi-select mode stashes only selected target paths
   - the title field shows a real terminal cursor
   - `Left` / `Right` / `Home` / `End` moves the cursor within the title

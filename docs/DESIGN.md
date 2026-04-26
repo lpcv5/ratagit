@@ -60,7 +60,7 @@ Files panel interaction:
   - `Ctrl+J` inserts newline in body
   - `Enter` confirms, `Esc` cancels
 - `s` opens stash editor modal:
-  - normal files mode -> stash all changes
+  - normal files mode -> stash all changes, including untracked files
   - visual multi-select mode -> stash selected target paths only
   - title cursor is stored in `AppState` and rendered with the terminal cursor
   - `Left` / `Right` / `Home` / `End` moves within the title field

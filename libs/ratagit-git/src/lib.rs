@@ -231,9 +231,10 @@ impl GitBackend for CliGitBackend {
 
     fn stash_push(&mut self, message: &str) -> Result<(), GitError> {
         if message.trim().is_empty() {
-            self.run_git(&["stash", "push"]).map(|_| ())
+            self.run_git(&["stash", "push", "-u"]).map(|_| ())
         } else {
-            self.run_git(&["stash", "push", "-m", message]).map(|_| ())
+            self.run_git(&["stash", "push", "-u", "-m", message])
+                .map(|_| ())
         }
     }
 

@@ -1,3 +1,4 @@
+mod editor_modal;
 mod frame;
 mod layout;
 mod panels;
