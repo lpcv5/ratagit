@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use ratagit_core::ResetMode;
 use ratagit_git::{CliGitBackend, GitBackend};
 
 struct TmpGitRepo {
@@ -187,4 +188,45 @@ fn cli_stash_files_limits_stash_to_selected_paths() {
 
     let stash_list = repo.run_git_capture(&["stash", "list"]);
     assert!(stash_list.contains("selected stash"));
+}
+
+#[test]
+fn cli_reset_hard_clears_tracked_changes_but_keeps_untracked() {
+    if !git_available() {
+        eprintln!(
+            "git is unavailable, skipping cli_reset_hard_clears_tracked_changes_but_keeps_untracked"
+        );
+        return;
+    }
+
+    let repo = seeded_repo_with_two_files("cli-reset-hard");
+    write(repo.path().join("a.txt"), "a2\n").expect("a.txt should be writable");
+    write(repo.path().join("new.txt"), "new\n").expect("new.txt should be writable");
+
+    let mut backend = CliGitBackend::new(repo.path().to_path_buf());
+    backend
+        .reset(ResetMode::Hard)
+        .expect("hard reset should succeed");
+
+    let status = repo.run_git_capture(&["status", "--short", "--untracked-files=all"]);
+    assert!(!status.contains("a.txt"));
+    assert!(status.contains("?? new.txt"));
+}
+
+#[test]
+fn cli_nuke_clears_tracked_and_untracked_changes() {
+    if !git_available() {
+        eprintln!("git is unavailable, skipping cli_nuke_clears_tracked_and_untracked_changes");
+        return;
+    }
+
+    let repo = seeded_repo_with_two_files("cli-nuke");
+    write(repo.path().join("a.txt"), "a2\n").expect("a.txt should be writable");
+    write(repo.path().join("new.txt"), "new\n").expect("new.txt should be writable");
+
+    let mut backend = CliGitBackend::new(repo.path().to_path_buf());
+    backend.nuke().expect("nuke should succeed");
+
+    let status = repo.run_git_capture(&["status", "--short", "--untracked-files=all"]);
+    assert_eq!(status.trim(), "");
 }

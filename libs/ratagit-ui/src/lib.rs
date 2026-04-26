@@ -2,6 +2,7 @@ mod editor_modal;
 mod frame;
 mod layout;
 mod panels;
+mod reset_modal;
 mod terminal;
 mod text;
 mod theme;

@@ -1,4 +1,6 @@
-use ratagit_core::{Action, AppState, Command, FileEntry, GitResult, PanelFocus, UiAction, update};
+use ratagit_core::{
+    Action, AppState, Command, FileEntry, GitResult, PanelFocus, ResetChoice, UiAction, update,
+};
 use ratagit_testkit::{
     fixture_conflict, fixture_dirty_repo, fixture_empty_repo, fixture_many_files,
     fixture_unicode_paths,
@@ -172,6 +174,53 @@ fn snapshots_files_search_input_replaces_shortcut_bar() {
     .as_text();
     assert!(text.contains("search: li"));
     assert!(!text.contains("keys(files):"));
+}
+
+#[test]
+fn snapshots_files_shortcuts_include_reset_menu_key() {
+    let mut state = AppState::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+
+    let text = render(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    )
+    .as_text();
+    assert!(text.contains("D reset"));
+}
+
+#[test]
+fn terminal_snapshot_files_reset_modal() {
+    let mut state = AppState::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+    update(&mut state, Action::Ui(UiAction::OpenResetMenu));
+
+    insta::assert_snapshot!(render_terminal_text(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    ));
+}
+
+#[test]
+fn terminal_snapshot_files_reset_modal_nuke_description() {
+    let mut state = AppState::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+    update(&mut state, Action::Ui(UiAction::OpenResetMenu));
+    state.reset_menu.selected = ResetChoice::Nuke;
+
+    insta::assert_snapshot!(render_terminal_text(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    ));
 }
 
 #[test]

@@ -1,6 +1,6 @@
 use ratagit_core::{
     Action, AppState, BranchEntry, Command, CommitField, EditorKind, FileEntry, FileInputMode,
-    GitResult, PanelFocus, RepoSnapshot, StashScope, UiAction, update,
+    GitResult, PanelFocus, RepoSnapshot, ResetChoice, ResetMode, StashScope, UiAction, update,
 };
 
 #[test]
@@ -458,6 +458,100 @@ fn stash_editor_confirms_selected_paths_scope_in_multiselect_mode() {
         }]
     );
     assert!(state.editor.kind.is_none());
+}
+
+#[test]
+fn reset_menu_opens_moves_and_cancels() {
+    let mut state = AppState::default();
+    assert!(update(&mut state, Action::Ui(UiAction::OpenResetMenu)).is_empty());
+    assert!(state.reset_menu.active);
+    assert_eq!(state.reset_menu.selected, ResetChoice::Mixed);
+
+    update(&mut state, Action::Ui(UiAction::MoveResetMenuDown));
+    assert_eq!(state.reset_menu.selected, ResetChoice::Soft);
+    update(&mut state, Action::Ui(UiAction::MoveResetMenuDown));
+    assert_eq!(state.reset_menu.selected, ResetChoice::Hard);
+    update(&mut state, Action::Ui(UiAction::MoveResetMenuDown));
+    assert_eq!(state.reset_menu.selected, ResetChoice::Nuke);
+    update(&mut state, Action::Ui(UiAction::MoveResetMenuDown));
+    assert_eq!(state.reset_menu.selected, ResetChoice::Nuke);
+    update(&mut state, Action::Ui(UiAction::MoveResetMenuUp));
+    assert_eq!(state.reset_menu.selected, ResetChoice::Hard);
+
+    assert!(update(&mut state, Action::Ui(UiAction::CancelResetMenu)).is_empty());
+    assert!(!state.reset_menu.active);
+}
+
+#[test]
+fn reset_menu_confirm_emits_selected_reset_command() {
+    let cases = [
+        (
+            ResetChoice::Mixed,
+            Command::Reset {
+                mode: ResetMode::Mixed,
+            },
+        ),
+        (
+            ResetChoice::Soft,
+            Command::Reset {
+                mode: ResetMode::Soft,
+            },
+        ),
+        (
+            ResetChoice::Hard,
+            Command::Reset {
+                mode: ResetMode::Hard,
+            },
+        ),
+        (ResetChoice::Nuke, Command::Nuke),
+    ];
+
+    for (choice, expected_command) in cases {
+        let mut state = AppState::default();
+        update(&mut state, Action::Ui(UiAction::OpenResetMenu));
+        state.reset_menu.selected = choice;
+
+        let commands = update(&mut state, Action::Ui(UiAction::ConfirmResetMenu));
+
+        assert_eq!(commands, vec![expected_command]);
+        assert!(!state.reset_menu.active);
+    }
+}
+
+#[test]
+fn reset_git_result_reports_success_and_failure() {
+    let mut state = AppState::default();
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::Reset {
+            mode: ResetMode::Mixed,
+            result: Ok(()),
+        }),
+    );
+    assert_eq!(commands, vec![Command::RefreshAll]);
+    assert_eq!(state.last_operation, Some("reset_mixed".to_string()));
+    assert!(
+        state
+            .notices
+            .iter()
+            .any(|notice| notice.contains("Reset mixed to HEAD"))
+    );
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::Nuke {
+            result: Err("blocked".to_string()),
+        }),
+    );
+    assert!(commands.is_empty());
+    assert_eq!(state.last_operation, Some("nuke".to_string()));
+    assert!(
+        state
+            .status
+            .last_error
+            .as_ref()
+            .is_some_and(|error| error.contains("blocked"))
+    );
 }
 
 #[test]

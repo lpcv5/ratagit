@@ -12,8 +12,8 @@ pub use files::{
 };
 pub use state::{
     AppState, BranchEntry, BranchesPanelState, CommitEntry, CommitField, CommitsPanelState,
-    DetailsPanelState, EditorKind, EditorState, PanelFocus, RepoSnapshot, StashEntry,
-    StashPanelState, StashScope, StatusPanelState,
+    DetailsPanelState, EditorKind, EditorState, PanelFocus, RepoSnapshot, ResetChoice,
+    ResetMenuState, ResetMode, StashEntry, StashPanelState, StashScope, StatusPanelState,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,6 +40,11 @@ pub enum UiAction {
     StashSelectedFiles,
     OpenCommitEditor,
     OpenStashEditor,
+    OpenResetMenu,
+    MoveResetMenuUp,
+    MoveResetMenuDown,
+    ConfirmResetMenu,
+    CancelResetMenu,
     EditorInputChar(char),
     EditorBackspace,
     EditorMoveCursorLeft,
@@ -81,6 +86,13 @@ pub enum GitResult {
         paths: Vec<String>,
         result: Result<(), String>,
     },
+    Reset {
+        mode: ResetMode,
+        result: Result<(), String>,
+    },
+    Nuke {
+        result: Result<(), String>,
+    },
     DiscardFiles {
         paths: Vec<String>,
         result: Result<(), String>,
@@ -120,6 +132,8 @@ pub enum Command {
     StageFiles { paths: Vec<String> },
     UnstageFiles { paths: Vec<String> },
     StashFiles { message: String, paths: Vec<String> },
+    Reset { mode: ResetMode },
+    Nuke,
     DiscardFiles { paths: Vec<String> },
     CreateCommit { message: String },
     CreateBranch { name: String },
@@ -135,6 +149,8 @@ pub fn debounce_key_for_command(command: &Command) -> Option<&'static str> {
         | Command::StageFiles { .. }
         | Command::UnstageFiles { .. }
         | Command::StashFiles { .. }
+        | Command::Reset { .. }
+        | Command::Nuke
         | Command::DiscardFiles { .. }
         | Command::CreateCommit { .. }
         | Command::CreateBranch { .. }
@@ -160,6 +176,23 @@ fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
         }
         UiAction::OpenStashEditor => {
             open_stash_editor(state);
+            Vec::new()
+        }
+        UiAction::OpenResetMenu => {
+            open_reset_menu(state);
+            Vec::new()
+        }
+        UiAction::MoveResetMenuUp => {
+            state.reset_menu.selected = state.reset_menu.selected.prev();
+            Vec::new()
+        }
+        UiAction::MoveResetMenuDown => {
+            state.reset_menu.selected = state.reset_menu.selected.next();
+            Vec::new()
+        }
+        UiAction::ConfirmResetMenu => confirm_reset_menu(state),
+        UiAction::CancelResetMenu => {
+            state.reset_menu.active = false;
             Vec::new()
         }
         UiAction::EditorInputChar(ch) => {
@@ -414,6 +447,20 @@ fn update_git_result(state: &mut AppState, result: GitResult) -> Vec<Command> {
             format!("Stashed {}: {message}", format_paths(&paths)),
             format!("Failed to stash {}", format_paths(&paths)),
         ),
+        GitResult::Reset { mode, result } => handle_operation_result(
+            state,
+            result,
+            &format!("reset_{}", reset_mode_name(mode)),
+            format!("Reset {} to HEAD", reset_mode_name(mode)),
+            format!("Failed to reset {}", reset_mode_name(mode)),
+        ),
+        GitResult::Nuke { result } => handle_operation_result(
+            state,
+            result,
+            "nuke",
+            "Nuked working tree".to_string(),
+            "Failed to nuke working tree".to_string(),
+        ),
         GitResult::DiscardFiles { paths, result } => handle_operation_result(
             state,
             result,
@@ -460,6 +507,7 @@ fn update_git_result(state: &mut AppState, result: GitResult) -> Vec<Command> {
 }
 
 fn open_commit_editor(state: &mut AppState) {
+    state.reset_menu.active = false;
     state.editor.kind = Some(EditorKind::Commit {
         message: String::new(),
         message_cursor: 0,
@@ -470,6 +518,7 @@ fn open_commit_editor(state: &mut AppState) {
 }
 
 fn open_stash_editor(state: &mut AppState) {
+    state.reset_menu.active = false;
     state.editor.kind = Some(EditorKind::Stash {
         title: String::new(),
         title_cursor: 0,
@@ -485,6 +534,27 @@ fn stash_scope_for_current_files_selection(state: &AppState) -> StashScope {
         }
     }
     StashScope::All
+}
+
+fn open_reset_menu(state: &mut AppState) {
+    state.editor.kind = None;
+    state.reset_menu.active = true;
+    state.reset_menu.selected = ResetChoice::Mixed;
+}
+
+fn confirm_reset_menu(state: &mut AppState) -> Vec<Command> {
+    if !state.reset_menu.active {
+        return Vec::new();
+    }
+    let choice = state.reset_menu.selected;
+    state.reset_menu.active = false;
+    if choice == ResetChoice::Nuke {
+        vec![Command::Nuke]
+    } else if let Some(mode) = choice.reset_mode() {
+        vec![Command::Reset { mode }]
+    } else {
+        Vec::new()
+    }
 }
 
 fn apply_editor_input_char(state: &mut AppState, ch: char) {
@@ -825,6 +895,14 @@ fn format_paths(paths: &[String]) -> String {
         [] => "<none>".to_string(),
         [only] => only.clone(),
         _ => format!("{} files", paths.len()),
+    }
+}
+
+fn reset_mode_name(mode: ResetMode) -> &'static str {
+    match mode {
+        ResetMode::Mixed => "mixed",
+        ResetMode::Soft => "soft",
+        ResetMode::Hard => "hard",
     }
 }
 

@@ -2,41 +2,31 @@
 
 ## Current Slice
 
-Polish Files-panel commit/stash editor modals and add real editor cursor
-support.
-
-## Follow-up Hotfix
-
-- fix Files tree rendering for untracked directory marker entries returned by
-  `git status` (for example `libs/ratagit-git/tests/`)
-- render them as directory nodes (`tests/`) instead of malformed file nodes
-  showing full path text
-- cover with core tree unit test + harness scenario
+Add a Files-panel repository reset menu on `D`.
 
 ## Goal
 
-- improve commit/stash editor modal readability with form-style fields
-- keep editor cursor state in `AppState`
-- render a real terminal cursor for the active editor field
-- support `Left` / `Right` / `Home` / `End` cursor movement
-- keep commit/stash backend command interfaces stable
+- open a deterministic reset select list from Files focus
+- support mixed, soft, hard, and Nuke choices
+- keep reset menu state in `AppState`
+- execute reset side effects only through `Command` + `GitBackend`
+- keep lowercase `d` available for a future file-targeted discard/reset flow
 
 ## Vertical Slice
 
 1. Core state and reducer
-- store commit subject/body cursor indexes and stash title cursor index in `AppState.editor`
-- add editor cursor movement `UiAction` variants
-- insert characters, newlines, and Backspace at the active field cursor
-- preserve UTF-8 char boundaries for cursor movement and deletion
+- add reset menu state and reset choice/mode types
+- add `UiAction` variants for open, move, confirm, and cancel
+- emit `Command::Reset` or `Command::Nuke` on confirm
+- report success/failure through notices, `last_operation`, and refresh follow-up
 
 2. Input mapping + UI modal overlay
-- map `Left` / `Right` / `Home` / `End` before other modes while editor is active
-- replace `>>` line prefixes with form-style input blocks
-- set ratatui frame cursor to the active editor field position
-- keep body viewport derived from the cursor line
+- map uppercase `D` in Files focus
+- while reset menu is active, map `j`/`k` and arrow keys to menu movement
+- render a reset modal with options and the selected option description
+- show reset-specific help in the bottom shortcut row
 
 3. Validation
-- add/adjust unit tests for cursor movement, insertion, deletion, unicode, and key mapping
-- update commit/stash editor snapshots
-- assert terminal cursor position for commit subject/body and stash title
+- add reducer, key mapping, mock backend, CLI backend, snapshot, and harness tests
+- update product/design docs for reset and Nuke behavior
 - run `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, `cargo test`

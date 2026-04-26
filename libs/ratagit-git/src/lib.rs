@@ -4,7 +4,7 @@ use std::process::Command as ProcessCommand;
 mod mock;
 
 use ratagit_core::{
-    BranchEntry, Command, CommitEntry, FileEntry, GitResult, RepoSnapshot, StashEntry,
+    BranchEntry, Command, CommitEntry, FileEntry, GitResult, RepoSnapshot, ResetMode, StashEntry,
 };
 
 pub use mock::MockGitBackend;
@@ -45,6 +45,8 @@ pub trait GitBackend {
     fn stash_push(&mut self, message: &str) -> Result<(), GitError>;
     fn stash_files(&mut self, message: &str, paths: &[String]) -> Result<(), GitError>;
     fn stash_pop(&mut self, stash_id: &str) -> Result<(), GitError>;
+    fn reset(&mut self, mode: ResetMode) -> Result<(), GitError>;
+    fn nuke(&mut self) -> Result<(), GitError>;
     fn discard_files(&mut self, paths: &[String]) -> Result<(), GitError>;
 }
 
@@ -256,6 +258,20 @@ impl GitBackend for CliGitBackend {
         self.run_git(&["stash", "pop", stash_id]).map(|_| ())
     }
 
+    fn reset(&mut self, mode: ResetMode) -> Result<(), GitError> {
+        let mode_arg = match mode {
+            ResetMode::Mixed => "--mixed",
+            ResetMode::Soft => "--soft",
+            ResetMode::Hard => "--hard",
+        };
+        self.run_git(&["reset", mode_arg, "HEAD"]).map(|_| ())
+    }
+
+    fn nuke(&mut self) -> Result<(), GitError> {
+        self.reset(ResetMode::Hard)?;
+        self.run_git(&["clean", "-fd"]).map(|_| ())
+    }
+
     fn discard_files(&mut self, paths: &[String]) -> Result<(), GitError> {
         for path in paths {
             if self
@@ -299,6 +315,13 @@ pub fn execute_command(backend: &mut dyn GitBackend, command: Command) -> GitRes
             result: backend
                 .stash_files(&message, &paths)
                 .map_err(|error| error.message),
+        },
+        Command::Reset { mode } => GitResult::Reset {
+            mode,
+            result: backend.reset(mode).map_err(|error| error.message),
+        },
+        Command::Nuke => GitResult::Nuke {
+            result: backend.nuke().map_err(|error| error.message),
         },
         Command::DiscardFiles { paths } => GitResult::DiscardFiles {
             paths: paths.clone(),
@@ -564,5 +587,55 @@ mod tests {
             }
             other => panic!("unexpected git result: {other:?}"),
         }
+    }
+
+    #[test]
+    fn mock_reset_modes_apply_expected_status_changes() {
+        let snapshot = RepoSnapshot {
+            status_summary: "dirty".to_string(),
+            current_branch: "main".to_string(),
+            detached_head: false,
+            files: vec![
+                FileEntry {
+                    path: "staged.txt".to_string(),
+                    staged: true,
+                    untracked: false,
+                },
+                FileEntry {
+                    path: "unstaged.txt".to_string(),
+                    staged: false,
+                    untracked: false,
+                },
+                FileEntry {
+                    path: "new.txt".to_string(),
+                    staged: false,
+                    untracked: true,
+                },
+            ],
+            commits: Vec::new(),
+            branches: Vec::new(),
+            stashes: Vec::new(),
+        };
+
+        let mut soft = MockGitBackend::new(snapshot.clone());
+        soft.reset(ResetMode::Soft).expect("soft reset should work");
+        assert_eq!(soft.snapshot().files, snapshot.files);
+
+        let mut mixed = MockGitBackend::new(snapshot.clone());
+        mixed
+            .reset(ResetMode::Mixed)
+            .expect("mixed reset should work");
+        assert!(mixed.snapshot().files.iter().all(|entry| !entry.staged));
+        assert!(mixed.snapshot().files.iter().any(|entry| entry.untracked));
+
+        let mut hard = MockGitBackend::new(snapshot.clone());
+        hard.reset(ResetMode::Hard).expect("hard reset should work");
+        assert_eq!(hard.snapshot().files.len(), 1);
+        assert_eq!(hard.snapshot().files[0].path, "new.txt");
+
+        let mut nuke = MockGitBackend::new(snapshot);
+        nuke.nuke().expect("nuke should work");
+        assert!(nuke.snapshot().files.is_empty());
+        assert_eq!(nuke.operations(), &["nuke".to_string()]);
     }
 }

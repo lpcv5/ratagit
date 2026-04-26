@@ -343,6 +343,85 @@ fn harness_files_search_jumps_and_clears() {
 }
 
 #[test]
+fn harness_files_reset_mixed_menu() {
+    let inputs = [
+        UiAction::RefreshAll,
+        UiAction::OpenResetMenu,
+        UiAction::ConfirmResetMenu,
+    ];
+    assert_scenario(MockScenario::new(
+        "files_reset_mixed_menu",
+        fixture_dirty_repo(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &["Reset mixed to HEAD", "keys(files):", "D reset"],
+            screen_not_contains: &[],
+            selected_screen_rows: &[],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["reset:mixed", "refresh"],
+            git_state_contains: &[
+                "path: \"src/main.rs\"",
+                "path: \"README.md\"",
+                "staged: false",
+            ],
+        },
+    ));
+}
+
+#[test]
+fn harness_files_reset_hard_menu() {
+    let inputs = [
+        UiAction::RefreshAll,
+        UiAction::OpenResetMenu,
+        UiAction::MoveResetMenuDown,
+        UiAction::MoveResetMenuDown,
+        UiAction::ConfirmResetMenu,
+    ];
+    assert_scenario(MockScenario::new(
+        "files_reset_hard_menu",
+        fixture_dirty_repo(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &["Reset hard to HEAD", "README.md"],
+            screen_not_contains: &[],
+            selected_screen_rows: &[],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["reset:hard", "refresh"],
+            git_state_contains: &[
+                "status_summary: \"staged: 0, unstaged: 1\"",
+                "path: \"README.md\"",
+                "untracked: true",
+            ],
+        },
+    ));
+}
+
+#[test]
+fn harness_files_reset_nuke_menu() {
+    let inputs = [
+        UiAction::RefreshAll,
+        UiAction::OpenResetMenu,
+        UiAction::MoveResetMenuDown,
+        UiAction::MoveResetMenuDown,
+        UiAction::MoveResetMenuDown,
+        UiAction::ConfirmResetMenu,
+    ];
+    assert_scenario(MockScenario::new(
+        "files_reset_nuke_menu",
+        fixture_dirty_repo(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &["Nuked working tree", "details(files): no diff"],
+            screen_not_contains: &[],
+            selected_screen_rows: &[],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["nuke", "refresh"],
+            git_state_contains: &["status_summary: \"staged: 0, unstaged: 0\"", "files: []"],
+        },
+    ));
+}
+
+#[test]
 fn harness_files_scroll_keeps_selection_visible() {
     let inputs = std::iter::once(UiAction::RefreshAll)
         .chain(std::iter::repeat_n(UiAction::MoveDown, 20))

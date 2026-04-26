@@ -1,4 +1,4 @@
-use ratagit_core::{BranchEntry, CommitEntry, RepoSnapshot, StashEntry};
+use ratagit_core::{BranchEntry, CommitEntry, RepoSnapshot, ResetMode, StashEntry};
 
 use crate::{GitBackend, GitError, resequence_stashes};
 
@@ -231,6 +231,33 @@ impl GitBackend for MockGitBackend {
         Ok(())
     }
 
+    fn reset(&mut self, mode: ResetMode) -> Result<(), GitError> {
+        self.operations
+            .push(format!("reset:{}", reset_mode_name(mode)));
+        match mode {
+            ResetMode::Soft => {}
+            ResetMode::Mixed => {
+                for entry in &mut self.snapshot.files {
+                    if !entry.untracked {
+                        entry.staged = false;
+                    }
+                }
+            }
+            ResetMode::Hard => {
+                self.snapshot.files.retain(|entry| entry.untracked);
+            }
+        }
+        refresh_status_summary(&mut self.snapshot);
+        Ok(())
+    }
+
+    fn nuke(&mut self) -> Result<(), GitError> {
+        self.operations.push("nuke".to_string());
+        self.snapshot.files.clear();
+        refresh_status_summary(&mut self.snapshot);
+        Ok(())
+    }
+
     fn discard_files(&mut self, paths: &[String]) -> Result<(), GitError> {
         self.operations
             .push(format!("discard-files:{}", paths.join(",")));
@@ -247,4 +274,26 @@ fn clean_stash_message(message: &str) -> String {
     } else {
         message.to_string()
     }
+}
+
+fn reset_mode_name(mode: ResetMode) -> &'static str {
+    match mode {
+        ResetMode::Mixed => "mixed",
+        ResetMode::Soft => "soft",
+        ResetMode::Hard => "hard",
+    }
+}
+
+fn refresh_status_summary(snapshot: &mut RepoSnapshot) {
+    let staged = snapshot
+        .files
+        .iter()
+        .filter(|entry| entry.staged && !entry.untracked)
+        .count();
+    let unstaged = snapshot
+        .files
+        .iter()
+        .filter(|entry| !entry.staged || entry.untracked)
+        .count();
+    snapshot.status_summary = format!("staged: {staged}, unstaged: {unstaged}");
 }

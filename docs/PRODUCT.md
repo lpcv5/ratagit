@@ -19,7 +19,7 @@ ratagit aims to replicate lazygit UX with a Rust + ratatui implementation.
 
 MVP v0 includes a left-nav workspace layout with six panels:
 
-- Files: tree view, folder expand/collapse, stage/unstage toggle, path-limited stash, multi-select, and search
+- Files: tree view, folder expand/collapse, stage/unstage toggle, path-limited stash, repository reset menu, multi-select, and search
 - Branches: create branch and checkout selected branch
 - Commits: create commit and refresh list
 - Stash: stash push and stash pop selected entry
@@ -62,9 +62,15 @@ Files panel rules:
   - the title field shows a real terminal cursor
   - `Left` / `Right` / `Home` / `End` moves the cursor within the title
   - `Enter` confirms, `Esc` cancels
+- `D` opens a repository reset menu from Files focus
+  - choices are `mixed`, `soft`, `hard`, and `Nuke`
+  - `j` / `k` or arrow keys move the menu selection
+  - `Enter` immediately confirms, `Esc` cancels
+  - reset choices target `HEAD`
+  - `Nuke` runs hard reset semantics and then removes untracked files/directories with `git clean -fd`
 - `v` enters visual multi-select at the current row; `j` / `k` extends or shrinks the selected range
 - `/` opens search input in the bottom bar; Enter confirms, Esc cancels or clears, `n` / `N` navigate matches
-- discard backend support exists, but `d` is not mapped until the confirmation dialog is available
+- discard backend support exists, but lowercase `d` is not mapped until the file-targeted confirmation dialog is available
 - `Enter` still toggles directory expand/collapse; hunk editing and partial-stage flow are explicitly deferred
 - details-diff side effects for high-frequency files navigation are debounced to keep `j` / `k` scrolling smooth
 

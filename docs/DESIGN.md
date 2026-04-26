@@ -24,6 +24,7 @@ Focus model:
 - `AppState.last_left_focus` tracks the last active left panel for `Details` projection
 - `AppState.details` stores files-detail diff text, target paths, and detail-refresh errors
 - `AppState.editor` stores active commit/stash editor modal state (type + fields + cursor indexes + scope)
+- `AppState.reset_menu` stores whether the Files reset menu is active and which reset choice is selected
 - left-panel height baseline follows the Files/Branches/Commits/Stash ratio
 - when `Stash` is unfocused it collapses to one content row and freed height is
   redistributed by ratio to Files/Branches/Commits
@@ -65,15 +66,21 @@ Files panel interaction:
   - title cursor is stored in `AppState` and rendered with the terminal cursor
   - `Left` / `Right` / `Home` / `End` moves within the title field
   - `Enter` confirms, `Esc` cancels
+- `D` opens a repository reset modal:
+  - choices are `mixed`, `soft`, `hard`, and `Nuke`
+  - `j` / `k` or arrow keys select an option
+  - the selected option controls the description rendered below the list
+  - `Enter` confirms immediately and emits a reset or nuke command, `Esc` cancels
+  - `Nuke` performs hard reset semantics followed by `git clean -fd`
 - `v` enters visual multi-select at the current row; `j` / `k` updates the continuous anchor-to-cursor range.
 - `/` switches the bottom keys area into search input until Enter or Esc.
-- `d` discard is intentionally not mapped to input until the reusable confirmation dialog exists.
+- lowercase `d` discard/reset for the current cursor or visual-selected file targets is intentionally not mapped until the reusable confirmation dialog exists.
 - Long file lists keep a stable bottom-reserve viewport while reversing from
   downward movement; moving up does not jump to a top-reserve viewport.
 - `RefreshAll` and files selection navigation emit `RefreshFilesDetailsDiff` so
   the Details panel follows the current files cursor.
-- while editor modal is active, editor key handling has highest input priority
-  over panel navigation/search mappings.
+- while editor or reset modal is active, modal key handling has highest input priority
+  over panel navigation mappings.
 - Files Details projection renders merged `unstaged` and `staged` diff sections
   for current file/folder targets from `GitBackend`.
 - Branches/Commits/Stash Details projections are placeholders in this slice and

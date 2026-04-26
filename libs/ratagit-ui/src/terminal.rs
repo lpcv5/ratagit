@@ -12,6 +12,7 @@ use crate::panels::{
     PanelLine, panel_title, render_branches_lines, render_commits_lines, render_details_lines,
     render_files_lines, render_log_lines, render_stash_lines, shortcuts_for_state,
 };
+use crate::reset_modal::render_reset_modal;
 use crate::theme::{
     RowRole, batch_selected_row_style, focused_panel_style, inactive_panel_style, row_style,
     selected_row_style,
@@ -27,6 +28,7 @@ pub fn render_terminal(frame: &mut Frame<'_>, state: &AppState) {
     render_panel_grid(frame, state, root[0]);
     render_shortcuts(frame, state, root[1]);
     render_editor_modal(frame, state, root[0]);
+    render_reset_modal(frame, state, root[0]);
 }
 
 pub fn render_terminal_text(state: &AppState, size: TerminalSize) -> String {

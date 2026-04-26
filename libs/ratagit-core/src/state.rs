@@ -109,6 +109,65 @@ pub enum StashScope {
     SelectedPaths(Vec<String>),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResetMode {
+    Mixed,
+    Soft,
+    Hard,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResetChoice {
+    Mixed,
+    Soft,
+    Hard,
+    Nuke,
+}
+
+impl ResetChoice {
+    pub const ALL: [Self; 4] = [Self::Mixed, Self::Soft, Self::Hard, Self::Nuke];
+
+    pub fn next(self) -> Self {
+        let index = Self::ALL
+            .iter()
+            .position(|choice| *choice == self)
+            .unwrap_or(0);
+        Self::ALL[(index + 1).min(Self::ALL.len() - 1)]
+    }
+
+    pub fn prev(self) -> Self {
+        let index = Self::ALL
+            .iter()
+            .position(|choice| *choice == self)
+            .unwrap_or(0);
+        Self::ALL[index.saturating_sub(1)]
+    }
+
+    pub fn reset_mode(self) -> Option<ResetMode> {
+        match self {
+            Self::Mixed => Some(ResetMode::Mixed),
+            Self::Soft => Some(ResetMode::Soft),
+            Self::Hard => Some(ResetMode::Hard),
+            Self::Nuke => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResetMenuState {
+    pub active: bool,
+    pub selected: ResetChoice,
+}
+
+impl Default for ResetMenuState {
+    fn default() -> Self {
+        Self {
+            active: false,
+            selected: ResetChoice::Mixed,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EditorKind {
     Commit {
@@ -166,6 +225,7 @@ pub struct AppState {
     pub stash: StashPanelState,
     pub details: DetailsPanelState,
     pub editor: EditorState,
+    pub reset_menu: ResetMenuState,
     pub notices: Vec<String>,
     pub last_operation: Option<String>,
 }
@@ -202,6 +262,7 @@ impl Default for AppState {
                 files_error: None,
             },
             editor: EditorState::default(),
+            reset_menu: ResetMenuState::default(),
             notices: vec!["Ready".to_string()],
             last_operation: None,
         }

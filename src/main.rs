@@ -110,6 +110,16 @@ fn ui_action_for_key(state: &AppState, code: KeyCode, modifiers: KeyModifiers) -
         };
     }
 
+    if state.reset_menu.active {
+        return match code {
+            KeyCode::Enter => Some(UiAction::ConfirmResetMenu),
+            KeyCode::Esc => Some(UiAction::CancelResetMenu),
+            KeyCode::Up | KeyCode::Char('k') => Some(UiAction::MoveResetMenuUp),
+            KeyCode::Down | KeyCode::Char('j') => Some(UiAction::MoveResetMenuDown),
+            _ => None,
+        };
+    }
+
     if state.focus == PanelFocus::Files && state.files.mode == FileInputMode::SearchInput {
         return match code {
             KeyCode::Enter => Some(UiAction::ConfirmFileSearch),
@@ -132,6 +142,7 @@ fn ui_action_for_key(state: &AppState, code: KeyCode, modifiers: KeyModifiers) -
             KeyCode::Esc => return Some(UiAction::CancelFileSearch),
             KeyCode::Char('c') => return Some(UiAction::OpenCommitEditor),
             KeyCode::Char('s') => return Some(UiAction::OpenStashEditor),
+            KeyCode::Char('D') => return Some(UiAction::OpenResetMenu),
             _ => {}
         }
     }
@@ -196,6 +207,12 @@ mod tests {
         state
     }
 
+    fn active_reset_menu_state() -> AppState {
+        let mut state = AppState::default();
+        state.reset_menu.active = true;
+        state
+    }
+
     #[test]
     fn panel_navigation_uses_h_and_l_not_tab() {
         let state = AppState::default();
@@ -218,6 +235,10 @@ mod tests {
         assert_eq!(
             map_key(&state, KeyCode::Char('r')),
             Some(UiAction::InputFileSearchChar('r'))
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Char('D')),
+            Some(UiAction::InputFileSearchChar('D'))
         );
         assert_eq!(
             map_key(&state, KeyCode::Enter),
@@ -243,6 +264,10 @@ mod tests {
         assert_eq!(
             map_key(&state, KeyCode::Char('s')),
             Some(UiAction::OpenStashEditor)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Char('D')),
+            Some(UiAction::OpenResetMenu)
         );
         assert_eq!(
             map_key(&state, KeyCode::Char('/')),
@@ -339,6 +364,36 @@ mod tests {
         assert_eq!(
             key_effect_for_key(&state, KeyCode::Char('q'), KeyModifiers::NONE),
             KeyEffect::Dispatch(UiAction::EditorInputChar('q'))
+        );
+    }
+
+    #[test]
+    fn reset_menu_maps_navigation_confirm_and_cancel_before_panels() {
+        let state = active_reset_menu_state();
+
+        assert_eq!(
+            map_key(&state, KeyCode::Down),
+            Some(UiAction::MoveResetMenuDown)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Char('j')),
+            Some(UiAction::MoveResetMenuDown)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Up),
+            Some(UiAction::MoveResetMenuUp)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Char('k')),
+            Some(UiAction::MoveResetMenuUp)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Enter),
+            Some(UiAction::ConfirmResetMenu)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Esc),
+            Some(UiAction::CancelResetMenu)
         );
     }
 
@@ -459,6 +514,20 @@ impl GitBackend for AppBackend {
         match self {
             Self::Cli(inner) => inner.stash_pop(stash_id),
             Self::Mock(inner) => inner.stash_pop(stash_id),
+        }
+    }
+
+    fn reset(&mut self, mode: ratagit_core::ResetMode) -> Result<(), ratagit_git::GitError> {
+        match self {
+            Self::Cli(inner) => inner.reset(mode),
+            Self::Mock(inner) => inner.reset(mode),
+        }
+    }
+
+    fn nuke(&mut self) -> Result<(), ratagit_git::GitError> {
+        match self {
+            Self::Cli(inner) => inner.nuke(),
+            Self::Mock(inner) => inner.nuke(),
         }
     }
 
