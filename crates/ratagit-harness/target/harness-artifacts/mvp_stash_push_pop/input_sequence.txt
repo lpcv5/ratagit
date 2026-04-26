@@ -1,8 +1,0 @@
-[
-    RefreshAll,
-    FocusPrev,
-    StashPush {
-        message: "savepoint",
-    },
-    StashPopSelected,
-]

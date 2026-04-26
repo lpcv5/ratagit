@@ -1,5 +1,0 @@
-refresh
-create-branch:feature/new
-refresh
-checkout-branch:feature/mvp
-refresh

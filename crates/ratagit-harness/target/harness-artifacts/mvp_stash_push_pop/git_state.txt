@@ -1,5 +1,0 @@
-refresh
-stash-push:savepoint
-refresh
-stash-pop:stash@{1}
-refresh

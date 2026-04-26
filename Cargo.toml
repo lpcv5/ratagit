@@ -1,12 +1,36 @@
+[package]
+name = "ratagit"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+crossterm.workspace = true
+ratagit-core.workspace = true
+ratagit-git.workspace = true
+ratagit-harness.workspace = true
+ratagit-observe.workspace = true
+ratagit-testkit.workspace = true
+ratagit-ui.workspace = true
+ratatui.workspace = true
+
 [workspace]
+default-members = [
+    ".",
+    "libs/ratagit-core",
+    "libs/ratagit-git",
+    "libs/ratagit-harness",
+    "libs/ratagit-observe",
+    "libs/ratagit-testkit",
+    "libs/ratagit-ui",
+]
 members = [
-    "crates/ratagit-app",
-    "crates/ratagit-core",
-    "crates/ratagit-git",
-    "crates/ratagit-harness",
-    "crates/ratagit-observe",
-    "crates/ratagit-testkit",
-    "crates/ratagit-ui",
+    "libs/ratagit-core",
+    "libs/ratagit-git",
+    "libs/ratagit-harness",
+    "libs/ratagit-observe",
+    "libs/ratagit-testkit",
+    "libs/ratagit-ui",
 ]
 resolver = "2"
 
@@ -14,3 +38,13 @@ resolver = "2"
 edition = "2024"
 license = "MIT"
 version = "0.1.0"
+
+[workspace.dependencies]
+crossterm = "0.29"
+ratagit-core = { path = "libs/ratagit-core" }
+ratagit-git = { path = "libs/ratagit-git" }
+ratagit-harness = { path = "libs/ratagit-harness" }
+ratagit-observe = { path = "libs/ratagit-observe" }
+ratagit-testkit = { path = "libs/ratagit-testkit" }
+ratagit-ui = { path = "libs/ratagit-ui" }
+ratatui = "0.29"

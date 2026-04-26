@@ -1,0 +1,13 @@
+[package]
+name = "ratagit-harness"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ratagit-core.workspace = true
+ratagit-git.workspace = true
+ratagit-ui.workspace = true
+
+[dev-dependencies]
+ratagit-testkit.workspace = true

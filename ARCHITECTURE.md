@@ -81,7 +81,16 @@ Must produce identical UI.
 
 ---
 
-## Modules
+## Packages
+
+The repository is a Cargo workspace with a root application package and
+internal library packages under `libs/`.
+
+### ratagit
+
+- TUI binary entrypoint
+- terminal setup and event loop
+- backend selection
 
 ### ratagit-core
 
@@ -121,14 +130,16 @@ Must produce identical UI.
 
 ## MVP Implementation Notes
 
-- The repository is organized as a Cargo workspace with crates:
+- The root package is `ratagit`; `cargo run` starts the TUI from `src/main.rs`.
+- Internal libraries are independent Cargo packages under `libs/`:
   - `ratagit-core`
   - `ratagit-ui`
   - `ratagit-git`
   - `ratagit-observe`
   - `ratagit-testkit`
   - `ratagit-harness`
-  - `ratagit-app`
+- Shared dependency versions and internal path dependencies live in the root
+  `Cargo.toml` via workspace inheritance.
 - Runtime command execution uses `ratagit-harness::Runtime` to preserve:
   - single source of truth in `AppState`
   - side effects only through `Command` + `GitBackend`
