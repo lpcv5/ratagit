@@ -598,6 +598,98 @@ fn files_details_diff_result_updates_state() {
 }
 
 #[test]
+fn details_scroll_actions_update_offset_and_clamp_to_content() {
+    let mut state = AppState::default();
+    state.details.files_diff = "line 1\nline 2\nline 3\nline 4\nline 5\nline 6".to_string();
+
+    assert!(
+        update(
+            &mut state,
+            Action::Ui(UiAction::DetailsScrollDown {
+                lines: 2,
+                visible_lines: 2,
+            })
+        )
+        .is_empty()
+    );
+    assert_eq!(state.details.scroll_offset, 2);
+    update(
+        &mut state,
+        Action::Ui(UiAction::DetailsScrollDown {
+            lines: 2,
+            visible_lines: 2,
+        }),
+    );
+    update(
+        &mut state,
+        Action::Ui(UiAction::DetailsScrollDown {
+            lines: 2,
+            visible_lines: 2,
+        }),
+    );
+    assert_eq!(state.details.scroll_offset, 4);
+
+    update(
+        &mut state,
+        Action::Ui(UiAction::DetailsScrollUp { lines: 2 }),
+    );
+    assert_eq!(state.details.scroll_offset, 2);
+    update(
+        &mut state,
+        Action::Ui(UiAction::DetailsScrollUp { lines: 5 }),
+    );
+    assert_eq!(state.details.scroll_offset, 0);
+}
+
+#[test]
+fn details_scroll_down_does_not_advance_past_last_visible_page() {
+    let mut state = AppState::default();
+    state.details.files_diff = "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7".to_string();
+    state.details.scroll_offset = 4;
+
+    update(
+        &mut state,
+        Action::Ui(UiAction::DetailsScrollDown {
+            lines: 3,
+            visible_lines: 3,
+        }),
+    );
+    assert_eq!(state.details.scroll_offset, 4);
+
+    update(
+        &mut state,
+        Action::Ui(UiAction::DetailsScrollUp { lines: 3 }),
+    );
+    assert_eq!(state.details.scroll_offset, 1);
+}
+
+#[test]
+fn details_scroll_resets_when_files_details_target_changes() {
+    let mut state = AppState::default();
+    state.files.items = vec![
+        FileEntry {
+            path: "a.txt".to_string(),
+            staged: false,
+            untracked: false,
+        },
+        FileEntry {
+            path: "b.txt".to_string(),
+            staged: false,
+            untracked: false,
+        },
+    ];
+    refresh_tree_projection(&mut state.files);
+    state.details.files_targets = vec!["a.txt".to_string()];
+    state.details.files_diff = "a1\na2".to_string();
+    state.details.scroll_offset = 1;
+
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+
+    assert_details_refresh_for_paths(commands, vec!["b.txt".to_string()]);
+    assert_eq!(state.details.scroll_offset, 0);
+}
+
+#[test]
 fn files_details_diff_cache_serves_repeated_selection_without_git_command() {
     let mut state = AppState::default();
     state.files.items = vec![

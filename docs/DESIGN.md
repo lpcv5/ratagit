@@ -25,6 +25,9 @@ Focus model:
 - `AppState.details` stores files-detail diff text, target paths, and detail-refresh errors
 - `AppState.details` also stores a bounded files-detail diff cache keyed by the
   exact target path list
+- `AppState.details.scroll_offset` stores the global Details viewport offset
+  used by `Ctrl+U` / `Ctrl+D`; the action carries terminal-size-derived scroll
+  and visible-line counts
 - `AppState.editor` stores active commit/stash editor modal state (type + fields + cursor indexes + scope)
 - `AppState.reset_menu` stores whether the Files reset menu is active and which reset choice is selected
 - `AppState.discard_confirm` stores whether the discard confirmation modal is active and the resolved target paths
@@ -44,6 +47,9 @@ Focus model:
 ## Interaction Model
 
 - Input is mapped to explicit `UiAction`.
+- `Ctrl+U` and `Ctrl+D` map to global Details scroll actions before
+  mode-specific key handling. The input layer computes the step as
+  `max(1, details_content_height * 2 / 5)` from the current terminal layout.
 - `update()` applies state transitions and emits `Command`.
 - Command execution is delegated to `GitBackend`.
 - The real TUI sends commands to a single background Git worker and receives
@@ -122,6 +128,12 @@ Files panel interaction:
   interactive rebase the current branch onto the selected branch.
 - Files Details projection renders merged `unstaged` and `staged` diff sections
   for current file/folder targets from `GitBackend`.
+- Files and Branches Details projections apply the AppState-owned
+  `scroll_offset`; loading, empty, and error rows ignore the offset.
+- Details scroll resets when the selected details target changes or accepted
+  details content refreshes.
+- Details downward scroll clamps `scroll_offset` to the last visible page
+  (`content_len - visible_lines`) to avoid hidden overscroll at the bottom.
 - Repeated Files Details selections reuse the AppState-owned diff cache without
   emitting a new Git command; the cache is cleared after snapshot refreshes and
   successful mutating Git operations.

@@ -31,12 +31,14 @@ MVP v0 includes a left-nav workspace layout with six panels:
   - While a selected file diff is loading, Details shows a deterministic loading row instead of blocking input
   - Branches focus projection: show the selected branch's native `git log --graph` output with Git's ASCII graph and ANSI colors preserved, limited to 50 commits
   - Commits/Stash projection: placeholder text for now (to be implemented in later slices)
+  - `Ctrl+U` / `Ctrl+D` scroll Details content up/down globally by 2/5 of the Details content height without changing the focused panel
 - Log: show latest error, recent notices, and pending refresh/operation state
 
 Navigation rules:
 
 - `h` / `l` cycles only in left panels: Files -> Branches -> Commits -> Stash
 - `1..6` focuses Files/Branches/Commits/Stash/Details/Log directly
+- `Ctrl+U` / `Ctrl+D` scrolls the Details panel content by 2/5 of its content height regardless of the current focus
 - all panel titles show numbered focus hints: `[1]..[6]`
 - top branch/focus/status summary is hidden to prioritize panels
 - bottom keys row is unframed and shows only Git operation shortcuts for the current focused panel

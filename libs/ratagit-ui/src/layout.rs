@@ -1,5 +1,6 @@
 use ratagit_core::{AppState, PanelFocus};
 
+use crate::frame::TerminalSize;
 use crate::panels::left_panel_content_len;
 
 const LEFT_PANEL_COUNT: usize = 4;
@@ -9,6 +10,8 @@ const FILES_INDEX: usize = 0;
 const BRANCHES_INDEX: usize = 1;
 const COMMITS_INDEX: usize = 2;
 const STASH_INDEX: usize = 3;
+const DETAILS_SCROLL_NUMERATOR: usize = 2;
+const DETAILS_SCROLL_DENOMINATOR: usize = 5;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct LeftPanelHeights {
@@ -109,6 +112,21 @@ pub(crate) fn compute_left_panel_heights(
         heights[index] = lines.saturating_add(panel_chrome_height);
     }
     LeftPanelHeights::from_array(heights)
+}
+
+pub fn details_scroll_lines_for_terminal_size(size: TerminalSize) -> usize {
+    let details_content_height = details_content_lines_for_terminal_size(size);
+    if details_content_height == 0 {
+        0
+    } else {
+        (details_content_height * DETAILS_SCROLL_NUMERATOR / DETAILS_SCROLL_DENOMINATOR).max(1)
+    }
+}
+
+pub fn details_content_lines_for_terminal_size(size: TerminalSize) -> usize {
+    let body_height = size.height.max(1).saturating_sub(1);
+    let details_panel_height = split_by_weights(body_height, &[70, 30])[0];
+    details_panel_height.saturating_sub(2)
 }
 
 fn collapse_stash_when_unfocused(
@@ -279,5 +297,23 @@ mod tests {
         borrow_lines_evenly(&mut content, FILES_INDEX, 12, &[1, 2, 3], &donor_mins);
 
         assert_eq!(content, [20, 1, 2, 1]);
+    }
+
+    #[test]
+    fn details_scroll_step_is_two_fifths_of_details_content_height() {
+        assert_eq!(
+            details_scroll_lines_for_terminal_size(TerminalSize {
+                width: 100,
+                height: 30,
+            }),
+            7
+        );
+        assert_eq!(
+            details_scroll_lines_for_terminal_size(TerminalSize {
+                width: 80,
+                height: 14,
+            }),
+            3
+        );
     }
 }

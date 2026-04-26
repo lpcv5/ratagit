@@ -367,6 +367,7 @@ pub struct DetailsPanelState {
     pub branch_log_target: Option<String>,
     pub branch_log_error: Option<String>,
     pub cached_branch_logs: Vec<CachedBranchLog>,
+    pub scroll_offset: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -439,6 +440,7 @@ impl Default for AppState {
                 branch_log_target: None,
                 branch_log_error: None,
                 cached_branch_logs: Vec::new(),
+                scroll_offset: 0,
             },
             editor: EditorState::default(),
             reset_menu: ResetMenuState::default(),

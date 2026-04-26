@@ -12,7 +12,10 @@ use ratagit_git::{GitBackend, HybridGitBackend, MockGitBackend, is_git_repo};
 use ratagit_harness::AsyncRuntime;
 use ratagit_observe::{ObserveConfig, init_observability};
 use ratagit_testkit::fixture_dirty_repo;
-use ratagit_ui::{TerminalSize, render_terminal};
+use ratagit_ui::{
+    TerminalSize, details_content_lines_for_terminal_size, details_scroll_lines_for_terminal_size,
+    render_terminal,
+};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 
@@ -53,7 +56,23 @@ fn run_tui() -> Result<(), Box<dyn Error>> {
             continue;
         }
 
-        match key_effect_for_key(runtime.state(), key.code, key.modifiers) {
+        let terminal_size = terminal.size()?;
+        let details_scroll_lines = details_scroll_lines_for_terminal_size(TerminalSize {
+            width: terminal_size.width as usize,
+            height: terminal_size.height as usize,
+        });
+        let details_visible_lines = details_content_lines_for_terminal_size(TerminalSize {
+            width: terminal_size.width as usize,
+            height: terminal_size.height as usize,
+        });
+
+        match key_effect_for_key(
+            runtime.state(),
+            key.code,
+            key.modifiers,
+            details_scroll_lines,
+            details_visible_lines,
+        ) {
             KeyEffect::Quit => break,
             KeyEffect::Dispatch(action) => {
                 runtime.dispatch_ui(action);
@@ -74,12 +93,24 @@ enum KeyEffect {
     Ignore,
 }
 
-fn key_effect_for_key(state: &AppState, code: KeyCode, modifiers: KeyModifiers) -> KeyEffect {
+fn key_effect_for_key(
+    state: &AppState,
+    code: KeyCode,
+    modifiers: KeyModifiers,
+    details_scroll_lines: usize,
+    details_visible_lines: usize,
+) -> KeyEffect {
     if code == KeyCode::Char('c') && modifiers.contains(KeyModifiers::CONTROL) {
         return KeyEffect::Quit;
     }
 
-    if let Some(action) = ui_action_for_key(state, code, modifiers) {
+    if let Some(action) = ui_action_for_key(
+        state,
+        code,
+        modifiers,
+        details_scroll_lines,
+        details_visible_lines,
+    ) {
         return KeyEffect::Dispatch(action);
     }
 
@@ -90,7 +121,30 @@ fn key_effect_for_key(state: &AppState, code: KeyCode, modifiers: KeyModifiers) 
     KeyEffect::Ignore
 }
 
-fn ui_action_for_key(state: &AppState, code: KeyCode, modifiers: KeyModifiers) -> Option<UiAction> {
+fn ui_action_for_key(
+    state: &AppState,
+    code: KeyCode,
+    modifiers: KeyModifiers,
+    details_scroll_lines: usize,
+    details_visible_lines: usize,
+) -> Option<UiAction> {
+    if modifiers.contains(KeyModifiers::CONTROL) {
+        match code {
+            KeyCode::Char('u') => {
+                return Some(UiAction::DetailsScrollUp {
+                    lines: details_scroll_lines,
+                });
+            }
+            KeyCode::Char('d') => {
+                return Some(UiAction::DetailsScrollDown {
+                    lines: details_scroll_lines,
+                    visible_lines: details_visible_lines,
+                });
+            }
+            _ => {}
+        }
+    }
+
     if state.editor.is_active() {
         return match code {
             KeyCode::Enter => Some(UiAction::EditorConfirm),
@@ -264,8 +318,17 @@ fn ui_action_for_key(state: &AppState, code: KeyCode, modifiers: KeyModifiers) -
 mod tests {
     use super::*;
 
+    const TEST_DETAILS_SCROLL_LINES: usize = 7;
+    const TEST_DETAILS_VISIBLE_LINES: usize = 18;
+
     fn map_key(state: &AppState, code: KeyCode) -> Option<UiAction> {
-        ui_action_for_key(state, code, KeyModifiers::NONE)
+        ui_action_for_key(
+            state,
+            code,
+            KeyModifiers::NONE,
+            TEST_DETAILS_SCROLL_LINES,
+            TEST_DETAILS_VISIBLE_LINES,
+        )
     }
 
     fn active_commit_editor_state() -> AppState {
@@ -444,7 +507,13 @@ mod tests {
             Some(UiAction::EditorMoveCursorEnd)
         );
         assert_eq!(
-            ui_action_for_key(&state, KeyCode::Char('j'), KeyModifiers::CONTROL),
+            ui_action_for_key(
+                &state,
+                KeyCode::Char('j'),
+                KeyModifiers::CONTROL,
+                TEST_DETAILS_SCROLL_LINES,
+                TEST_DETAILS_VISIBLE_LINES
+            ),
             Some(UiAction::EditorInsertNewline)
         );
         assert_eq!(
@@ -458,8 +527,64 @@ mod tests {
         let state = active_commit_editor_state();
 
         assert_eq!(
-            key_effect_for_key(&state, KeyCode::Char('q'), KeyModifiers::NONE),
+            key_effect_for_key(
+                &state,
+                KeyCode::Char('q'),
+                KeyModifiers::NONE,
+                TEST_DETAILS_SCROLL_LINES,
+                TEST_DETAILS_VISIBLE_LINES
+            ),
             KeyEffect::Dispatch(UiAction::EditorInputChar('q'))
+        );
+    }
+
+    #[test]
+    fn ctrl_u_and_ctrl_d_map_to_global_details_scroll() {
+        let state = AppState::default();
+
+        assert_eq!(
+            ui_action_for_key(
+                &state,
+                KeyCode::Char('u'),
+                KeyModifiers::CONTROL,
+                TEST_DETAILS_SCROLL_LINES,
+                TEST_DETAILS_VISIBLE_LINES
+            ),
+            Some(UiAction::DetailsScrollUp {
+                lines: TEST_DETAILS_SCROLL_LINES
+            })
+        );
+        assert_eq!(
+            ui_action_for_key(
+                &state,
+                KeyCode::Char('d'),
+                KeyModifiers::CONTROL,
+                TEST_DETAILS_SCROLL_LINES,
+                TEST_DETAILS_VISIBLE_LINES
+            ),
+            Some(UiAction::DetailsScrollDown {
+                lines: TEST_DETAILS_SCROLL_LINES,
+                visible_lines: TEST_DETAILS_VISIBLE_LINES
+            })
+        );
+    }
+
+    #[test]
+    fn global_details_scroll_keys_work_while_editor_is_active() {
+        let state = active_commit_editor_state();
+
+        assert_eq!(
+            ui_action_for_key(
+                &state,
+                KeyCode::Char('d'),
+                KeyModifiers::CONTROL,
+                TEST_DETAILS_SCROLL_LINES,
+                TEST_DETAILS_VISIBLE_LINES
+            ),
+            Some(UiAction::DetailsScrollDown {
+                lines: TEST_DETAILS_SCROLL_LINES,
+                visible_lines: TEST_DETAILS_VISIBLE_LINES
+            })
         );
     }
 
@@ -532,7 +657,13 @@ mod tests {
         let state = active_commit_editor_state();
 
         assert_eq!(
-            key_effect_for_key(&state, KeyCode::Char('c'), KeyModifiers::CONTROL),
+            key_effect_for_key(
+                &state,
+                KeyCode::Char('c'),
+                KeyModifiers::CONTROL,
+                TEST_DETAILS_SCROLL_LINES,
+                TEST_DETAILS_VISIBLE_LINES
+            ),
             KeyEffect::Quit
         );
     }

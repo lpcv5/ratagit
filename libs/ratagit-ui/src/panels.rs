@@ -198,10 +198,11 @@ fn render_files_details_lines(state: &AppState, max_lines: usize) -> Vec<PanelLi
     }
 
     // TODO(files-hunks): upgrade details rows into selectable hunk models for partial staging.
-    state
-        .details
-        .files_diff
-        .lines()
+    let lines = state.details.files_diff.lines().collect::<Vec<_>>();
+    let start = details_scroll_start(lines.len(), state.details.scroll_offset, max_lines);
+    lines
+        .into_iter()
+        .skip(start)
         .map(|line| PanelLine::new(format!("  {line}"), classify_diff_row_role(line)))
         .take(max_lines)
         .collect()
@@ -237,13 +238,18 @@ fn render_branch_details_lines(state: &AppState, max_lines: usize) -> Vec<PanelL
         )];
     }
 
-    state
-        .details
-        .branch_log
-        .lines()
+    let lines = state.details.branch_log.lines().collect::<Vec<_>>();
+    let start = details_scroll_start(lines.len(), state.details.scroll_offset, max_lines);
+    lines
+        .into_iter()
+        .skip(start)
         .map(|line| ansi_branch_log_line(line, "  "))
         .take(max_lines)
         .collect()
+}
+
+fn details_scroll_start(content_len: usize, requested_offset: usize, max_lines: usize) -> usize {
+    requested_offset.min(content_len.saturating_sub(max_lines))
 }
 
 fn render_placeholder_details_lines(message: &str, max_lines: usize) -> Vec<PanelLine> {
@@ -808,6 +814,18 @@ mod tests {
         assert_eq!(lines[2].role, RowRole::DiffHunk);
         assert_eq!(lines[3].role, RowRole::DiffRemove);
         assert_eq!(lines[4].role, RowRole::DiffAdd);
+    }
+
+    #[test]
+    fn details_panel_applies_app_state_scroll_offset() {
+        let mut state = state_with_dirty_repo();
+        state.details.scroll_offset = 2;
+
+        let lines = render_details_lines(&state, 3);
+
+        assert_eq!(lines[0].text, "  @@ -1 +1 @@");
+        assert_eq!(lines[1].text, "  -old README.md");
+        assert_eq!(lines[2].text, "  +new README.md");
     }
 
     #[test]

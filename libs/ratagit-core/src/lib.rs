@@ -33,6 +33,8 @@ pub enum UiAction {
     FocusPanel { panel: PanelFocus },
     MoveUp,
     MoveDown,
+    DetailsScrollUp { lines: usize },
+    DetailsScrollDown { lines: usize, visible_lines: usize },
     ToggleSelectedDirectory,
     ToggleSelectedFileStage,
     ToggleFilesMultiSelect,
@@ -508,6 +510,21 @@ fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
             move_selection(state, false);
             maybe_refresh_details_on_navigation(state)
         }
+        UiAction::DetailsScrollUp { lines } => {
+            state.details.scroll_offset = state.details.scroll_offset.saturating_sub(lines);
+            Vec::new()
+        }
+        UiAction::DetailsScrollDown {
+            lines,
+            visible_lines,
+        } => {
+            state.details.scroll_offset = state
+                .details
+                .scroll_offset
+                .saturating_add(lines)
+                .min(details_scroll_max_offset(state, visible_lines));
+            Vec::new()
+        }
         UiAction::ToggleSelectedDirectory => {
             if toggle_selected_directory(&mut state.files) {
                 refresh_files_details_command(state)
@@ -662,6 +679,7 @@ fn update_git_result(state: &mut AppState, result: GitResult) -> Vec<Command> {
             state.work.details_pending = false;
             state.work.last_completed_command = Some("details".to_string());
             state.details.files_targets = paths.clone();
+            reset_details_scroll(state);
             match result {
                 Ok(diff) => {
                     cache_files_details_diff(state, &paths, &diff);
@@ -688,6 +706,7 @@ fn update_git_result(state: &mut AppState, result: GitResult) -> Vec<Command> {
             state.work.details_pending = false;
             state.work.last_completed_command = Some("branch_details".to_string());
             state.details.branch_log_target = Some(branch.clone());
+            reset_details_scroll(state);
             match result {
                 Ok(log) => {
                     cache_branch_details_log(state, &branch, &log);
@@ -1234,6 +1253,7 @@ fn apply_snapshot(state: &mut AppState, snapshot: RepoSnapshot) {
     state.details.branch_log.clear();
     state.details.branch_log_error = None;
     state.details.branch_log_target = selected_branch_name(state);
+    reset_details_scroll(state);
     clear_details_caches(state);
 }
 
@@ -1284,7 +1304,11 @@ fn move_index(selected: &mut usize, len: usize, move_up: bool) {
 
 fn refresh_files_details_command(state: &mut AppState) -> Vec<Command> {
     let paths = selected_target_paths(&state.files);
+    let target_changed = state.details.files_targets != paths;
     state.details.files_targets = paths.clone();
+    if target_changed {
+        reset_details_scroll(state);
+    }
     if paths.is_empty() {
         state.details.files_diff.clear();
         state.details.files_error = None;
@@ -1302,13 +1326,21 @@ fn refresh_files_details_command(state: &mut AppState) -> Vec<Command> {
 
 fn refresh_branch_details_log_command(state: &mut AppState) -> Vec<Command> {
     let Some(branch) = selected_branch_name(state) else {
+        let target_changed = state.details.branch_log_target.is_some();
         state.details.branch_log.clear();
         state.details.branch_log_target = None;
         state.details.branch_log_error = None;
+        if target_changed {
+            reset_details_scroll(state);
+        }
         state.work.details_pending = false;
         return Vec::new();
     };
+    let target_changed = state.details.branch_log_target.as_ref() != Some(&branch);
     state.details.branch_log_target = Some(branch.clone());
+    if target_changed {
+        reset_details_scroll(state);
+    }
     if let Some(log) = cached_branch_details_log(state, &branch) {
         state.details.branch_log = log;
         state.details.branch_log_error = None;
@@ -1381,6 +1413,28 @@ fn cache_branch_details_log(state: &mut AppState, branch: &str, log: &str) {
 fn clear_details_caches(state: &mut AppState) {
     state.details.cached_files_diffs.clear();
     state.details.cached_branch_logs.clear();
+}
+
+fn reset_details_scroll(state: &mut AppState) {
+    state.details.scroll_offset = 0;
+}
+
+fn details_scroll_max_offset(state: &AppState, visible_lines: usize) -> usize {
+    match state.last_left_focus {
+        PanelFocus::Files => state
+            .details
+            .files_diff
+            .lines()
+            .count()
+            .saturating_sub(visible_lines),
+        PanelFocus::Branches => state
+            .details
+            .branch_log
+            .lines()
+            .count()
+            .saturating_sub(visible_lines),
+        PanelFocus::Commits | PanelFocus::Stash | PanelFocus::Details | PanelFocus::Log => 0,
+    }
 }
 
 fn refresh_details_command_for_focus(state: &mut AppState) -> Vec<Command> {

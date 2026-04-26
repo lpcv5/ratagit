@@ -7,8 +7,10 @@ use ratagit_testkit::{
 };
 use ratagit_ui::{
     TerminalSize, batch_selected_row_style, buffer_contains_selected_text,
-    buffer_contains_text_with_style, buffer_to_text_with_selected_marker, focused_panel_style,
-    render, render_terminal_buffer, render_terminal_buffer_with_cursor, render_terminal_text,
+    buffer_contains_text_with_style, buffer_to_text_with_selected_marker,
+    details_content_lines_for_terminal_size, details_scroll_lines_for_terminal_size,
+    focused_panel_style, render, render_terminal_buffer, render_terminal_buffer_with_cursor,
+    render_terminal_text,
 };
 use ratatui::style::{Color, Modifier, Style};
 
@@ -248,6 +250,27 @@ fn terminal_snapshot_files_details_pending_loading() {
             height: 30,
         },
     ));
+}
+
+#[test]
+fn terminal_snapshot_files_details_scrolled_down() {
+    let mut state = AppState::default();
+    let size = TerminalSize {
+        width: 80,
+        height: 14,
+    };
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+    apply_mock_details_commands(&mut state, commands);
+    update(
+        &mut state,
+        Action::Ui(UiAction::DetailsScrollDown {
+            lines: details_scroll_lines_for_terminal_size(size),
+            visible_lines: details_content_lines_for_terminal_size(size),
+        }),
+    );
+
+    insta::assert_snapshot!(render_terminal_text(&state, size));
 }
 
 #[test]

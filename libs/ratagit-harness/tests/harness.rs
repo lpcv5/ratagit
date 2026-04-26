@@ -8,7 +8,10 @@ use ratagit_harness::{
     AsyncRuntime, MockScenario, Runtime, ScenarioExpectations, run_mock_scenario,
 };
 use ratagit_testkit::{fixture_dirty_repo, fixture_empty_repo, fixture_many_files};
-use ratagit_ui::{TerminalSize, render_terminal_buffer_with_cursor};
+use ratagit_ui::{
+    TerminalSize, details_content_lines_for_terminal_size, details_scroll_lines_for_terminal_size,
+    render_terminal_buffer_with_cursor,
+};
 
 fn assert_scenario(scenario: MockScenario<'_>) {
     let result = run_mock_scenario(scenario);
@@ -304,6 +307,41 @@ fn harness_files_details_show_untracked_file_diff() {
             git_state_contains: &["path: \"README.md\"", "untracked: true"],
         },
     ));
+}
+
+#[test]
+fn harness_files_details_ctrl_scroll_moves_details_content_without_git_change() {
+    let size = TerminalSize {
+        width: 80,
+        height: 14,
+    };
+    let inputs = [
+        UiAction::RefreshAll,
+        UiAction::MoveDown,
+        UiAction::DetailsScrollDown {
+            lines: details_scroll_lines_for_terminal_size(size),
+            visible_lines: details_content_lines_for_terminal_size(size),
+        },
+    ];
+    let mut scenario = MockScenario::new(
+        "files_details_global_scroll",
+        fixture_dirty_repo(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &["@@ -1 +1 @@", "-old src/lib.rs", "+new src/lib.rs"],
+            screen_not_contains: &["### unstaged", "diff --git a/src/lib.rs b/src/lib.rs"],
+            selected_screen_rows: &[],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &[
+                "refresh",
+                "details-diff:README.md",
+                "details-diff:src/lib.rs,src/main.rs",
+            ],
+            git_state_contains: &["path: \"src/lib.rs\"", "current_branch: \"main\""],
+        },
+    );
+    scenario.terminal_size = size;
+    assert_scenario(scenario);
 }
 
 #[test]

@@ -1,0 +1,18 @@
+---
+source: libs/ratagit-ui/tests/snapshots.rs
+expression: "render_terminal_text(&state, size)"
+---
+┌ [1] 󰈙 Files ────────────┐┌ [5]  Details ────────────────────────────────────┐
+│      lib.rs            ││  diff --git a/src/lib.rs b/src/lib.rs             │
+│      main.rs           ││  @@ -1 +1 @@                                      │
+└─────────────────────────┘│  -old src/lib.rs                                  │
+┌ [2]  Branches ─────────┐│  +new src/lib.rs                                  │
+│  feature/mvp            ││  diff --git a/src/main.rs b/src/main.rs           │
+└─────────────────────────┘│  @@ -1 +1 @@                                      │
+┌ [3]  Commits ──────────┐│  -old src/main.rs                                 │
+│  draft=                 │└───────────────────────────────────────────────────┘
+└─────────────────────────┘┌ [6] 󰌱 Log ────────────────────────────────────────┐
+┌ [4]  Stash ────────────┐│  notice=Ready                                     │
+│ stash@{0} WIP on main: ││                                                   │
+└─────────────────────────┘└───────────────────────────────────────────────────┘
+keys(files): space stage/unstage | d discard | c commit | s stash(all|selected)
