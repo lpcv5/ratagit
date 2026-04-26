@@ -1,4 +1,6 @@
-use crate::FilesPanelState;
+use std::collections::BTreeSet;
+
+use crate::{FilesPanelState, ScrollDirection};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PanelFocus {
@@ -42,7 +44,26 @@ impl PanelFocus {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommitEntry {
     pub id: String,
+    pub full_id: String,
     pub summary: String,
+    pub message: String,
+    pub author_name: String,
+    pub graph: String,
+    pub hash_status: CommitHashStatus,
+    pub is_merge: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommitHashStatus {
+    MergedToMain,
+    Pushed,
+    Unpushed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommitInputMode {
+    Normal,
+    MultiSelect,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -123,6 +144,7 @@ impl BranchRebaseChoice {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AutoStashOperation {
     Checkout { branch: String },
+    CheckoutCommitDetached { commit_id: String },
     Rebase { target: String, interactive: bool },
 }
 
@@ -164,6 +186,15 @@ pub struct WorkStatusState {
 pub struct CommitsPanelState {
     pub items: Vec<CommitEntry>,
     pub selected: usize,
+    pub selected_rows: BTreeSet<String>,
+    pub selection_anchor: Option<String>,
+    pub mode: CommitInputMode,
+    pub scroll_direction: Option<ScrollDirection>,
+    pub scroll_direction_origin: usize,
+    pub has_more: bool,
+    pub loading_more: bool,
+    pub pending_select_after_load: bool,
+    pub pagination_epoch: u64,
     pub draft_message: String,
 }
 
@@ -265,12 +296,19 @@ pub enum EditorKind {
         body: String,
         body_cursor: usize,
         active_field: CommitField,
+        intent: CommitEditorIntent,
     },
     Stash {
         title: String,
         title_cursor: usize,
         scope: StashScope,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CommitEditorIntent {
+    Create,
+    Reword { commit_id: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -416,6 +454,15 @@ impl Default for AppState {
             commits: CommitsPanelState {
                 items: Vec::new(),
                 selected: 0,
+                selected_rows: BTreeSet::new(),
+                selection_anchor: None,
+                mode: CommitInputMode::Normal,
+                scroll_direction: None,
+                scroll_direction_origin: 0,
+                has_more: false,
+                loading_more: false,
+                pending_select_after_load: false,
+                pagination_epoch: 0,
                 draft_message: String::new(),
             },
             branches: BranchesPanelState {

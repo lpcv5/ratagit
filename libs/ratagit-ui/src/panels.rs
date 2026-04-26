@@ -1,13 +1,14 @@
 use ratagit_core::{
-    AppState, BranchEntry, CommitEntry, FileInputMode, FileRowKind, FileTreeRow, PanelFocus,
-    ScrollDirection, StashEntry, build_file_tree_rows, file_tree_rows,
+    AppState, BranchEntry, CommitEntry, CommitHashStatus, FileInputMode, FileRowKind, FileTreeRow,
+    PanelFocus, ScrollDirection, StashEntry, build_file_tree_rows, commit_is_selected_for_batch,
+    file_tree_rows,
 };
 use ratatui::style::{Color, Modifier, Style};
+use unicode_width::UnicodeWidthChar;
 
 use crate::theme::{
-    ICON_BATCH_SELECTED, ICON_BRANCH, ICON_COMMIT, ICON_DIRECTORY_CLOSED, ICON_DIRECTORY_OPEN,
-    ICON_FILE, ICON_FILE_STAGED, ICON_FILE_UNTRACKED, ICON_SEARCH_MATCH, ICON_STASH, RowRole,
-    panel_label,
+    ICON_BATCH_SELECTED, ICON_BRANCH, ICON_DIRECTORY_CLOSED, ICON_DIRECTORY_OPEN, ICON_FILE,
+    ICON_FILE_STAGED, ICON_FILE_UNTRACKED, ICON_SEARCH_MATCH, ICON_STASH, RowRole, panel_label,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -59,7 +60,7 @@ pub(crate) fn left_panel_content_len(state: &AppState, panel: PanelFocus) -> usi
             }
         }
         PanelFocus::Branches => state.branches.items.len(),
-        PanelFocus::Commits => state.commits.items.len().saturating_add(1),
+        PanelFocus::Commits => state.commits.items.len(),
         PanelFocus::Stash => state.stash.items.len(),
         PanelFocus::Details | PanelFocus::Log => 0,
     }
@@ -95,22 +96,23 @@ pub(crate) fn render_branches_lines(state: &AppState, max_lines: usize) -> Vec<P
 }
 
 pub(crate) fn render_commits_lines(state: &AppState, max_lines: usize) -> Vec<PanelLine> {
-    let mut lines = render_indexed_entries(
+    render_indexed_entries_window_with(
         &state.commits.items,
         state.commits.selected,
-        None,
-        state.commits.selected,
-        max_lines.saturating_sub(1),
-        format_commit_entry,
-        |_| RowRole::Normal,
-    );
-    if max_lines > 0 {
-        lines.push(PanelLine::new(
-            format!("  draft={}", state.commits.draft_message),
-            RowRole::Muted,
-        ));
-    }
-    lines
+        state.commits.scroll_direction,
+        state.commits.scroll_direction_origin,
+        max_lines,
+        |index, entry| {
+            let role = if commit_is_selected_for_batch(&state.commits, entry) {
+                RowRole::BatchSelected
+            } else {
+                RowRole::Normal
+            };
+            PanelLine::new(format_commit_entry(entry), role)
+                .selected(index == state.commits.selected)
+                .styled_spans(commit_entry_spans(entry))
+        },
+    )
 }
 
 pub(crate) fn render_stash_lines(state: &AppState, max_lines: usize) -> Vec<PanelLine> {
@@ -436,7 +438,10 @@ pub(crate) fn shortcuts_for_state(state: &AppState) -> String {
         PanelFocus::Branches => {
             "keys(branches): space checkout | n new | d delete | r rebase".to_string()
         }
-        PanelFocus::Commits => "keys(commits): c commit".to_string(),
+        PanelFocus::Commits => {
+            "keys(commits): s squash | f fixup | r reword | d delete | space detach | v multi | c commit"
+                .to_string()
+        }
         PanelFocus::Stash => "keys(stash): p stash push | O stash pop".to_string(),
         PanelFocus::Details | PanelFocus::Log => String::new(),
     }
@@ -471,6 +476,26 @@ fn render_indexed_entries_window<T>(
     format_item: impl Fn(&T) -> String,
     item_role: impl Fn(&T) -> RowRole,
 ) -> Vec<PanelLine> {
+    render_indexed_entries_window_with(
+        items,
+        selected,
+        scroll_direction,
+        scroll_direction_origin,
+        max_lines,
+        |index, item| {
+            PanelLine::new(format_item(item), item_role(item)).selected(index == selected)
+        },
+    )
+}
+
+fn render_indexed_entries_window_with<T>(
+    items: &[T],
+    selected: usize,
+    scroll_direction: Option<ScrollDirection>,
+    scroll_direction_origin: usize,
+    max_lines: usize,
+    render_item: impl Fn(usize, &T) -> PanelLine,
+) -> Vec<PanelLine> {
     const SCROLL_RESERVE: usize = 3;
 
     if max_lines == 0 {
@@ -492,9 +517,7 @@ fn render_indexed_entries_window<T>(
         .enumerate()
         .skip(start)
         .take(max_lines)
-        .map(|(index, item)| {
-            PanelLine::new(format_item(item), item_role(item)).selected(index == selected)
-        })
+        .map(|(index, item)| render_item(index, item))
         .collect()
 }
 
@@ -584,7 +607,143 @@ pub fn format_file_tree_row(row: &FileTreeRow) -> String {
 }
 
 pub fn format_commit_entry(entry: &CommitEntry) -> String {
-    format!("{ICON_COMMIT} {} {}", entry.id, entry.summary)
+    let graph = fixed_width(commit_graph(entry), 1);
+    let hash = fixed_width(&entry.id, 7);
+    let author = fixed_width(&author_initials(&entry.author_name), 2);
+    format!(
+        "{}  {}  {}  {}",
+        graph,
+        hash,
+        author,
+        commit_message_summary(entry)
+    )
+}
+
+fn commit_entry_spans(entry: &CommitEntry) -> Vec<PanelSpan> {
+    let graph = fixed_width(commit_graph(entry), 1);
+    let hash = fixed_width(&entry.id, 7);
+    let author = fixed_width(&author_initials(&entry.author_name), 2);
+    vec![
+        PanelSpan {
+            text: graph,
+            style: Style::default().fg(Color::DarkGray),
+        },
+        PanelSpan {
+            text: "  ".to_string(),
+            style: Style::default(),
+        },
+        PanelSpan {
+            text: hash,
+            style: commit_hash_style(entry.hash_status),
+        },
+        PanelSpan {
+            text: "  ".to_string(),
+            style: Style::default(),
+        },
+        PanelSpan {
+            text: author,
+            style: author_style(&entry.author_name),
+        },
+        PanelSpan {
+            text: "  ".to_string(),
+            style: Style::default(),
+        },
+        PanelSpan {
+            text: commit_message_summary(entry),
+            style: Style::default(),
+        },
+    ]
+}
+
+fn fixed_width(text: &str, width: usize) -> String {
+    let mut output = String::new();
+    let mut used = 0usize;
+    for ch in text.chars() {
+        let ch_width = UnicodeWidthChar::width(ch).unwrap_or(0);
+        if used + ch_width > width {
+            break;
+        }
+        output.push(ch);
+        used += ch_width;
+    }
+    format!("{}{}", output, " ".repeat(width.saturating_sub(used)))
+}
+
+fn commit_graph(entry: &CommitEntry) -> &str {
+    if entry.graph.is_empty() {
+        "●"
+    } else {
+        &entry.graph
+    }
+}
+
+fn commit_message_summary(entry: &CommitEntry) -> String {
+    if entry.summary.is_empty() {
+        entry
+            .message
+            .lines()
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_string()
+    } else {
+        entry.summary.clone()
+    }
+}
+
+fn commit_hash_style(status: CommitHashStatus) -> Style {
+    match status {
+        CommitHashStatus::MergedToMain => Style::default().fg(Color::Green),
+        CommitHashStatus::Pushed => Style::default().fg(Color::Yellow),
+        CommitHashStatus::Unpushed => Style::default().fg(Color::Red),
+    }
+}
+
+fn author_style(author_name: &str) -> Style {
+    const PALETTE: [Color; 8] = [
+        Color::Cyan,
+        Color::Magenta,
+        Color::Blue,
+        Color::LightGreen,
+        Color::LightBlue,
+        Color::LightMagenta,
+        Color::LightCyan,
+        Color::White,
+    ];
+    let hash = author_name.bytes().fold(0usize, |accumulator, byte| {
+        accumulator.wrapping_mul(31).wrapping_add(byte as usize)
+    });
+    Style::default()
+        .fg(PALETTE[hash % PALETTE.len()])
+        .add_modifier(Modifier::BOLD)
+}
+
+fn author_initials(author_name: &str) -> String {
+    let words = author_name
+        .split(|ch: char| !ch.is_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .collect::<Vec<_>>();
+    let mut chars = if words.len() >= 2 {
+        words
+            .iter()
+            .filter_map(|word| word.chars().next())
+            .take(2)
+            .collect::<Vec<_>>()
+    } else {
+        author_name
+            .chars()
+            .filter(|ch| ch.is_alphanumeric())
+            .take(2)
+            .collect::<Vec<_>>()
+    };
+    while chars.len() < 2 {
+        chars.push('?');
+    }
+    chars
+        .into_iter()
+        .flat_map(char::to_uppercase)
+        .take(2)
+        .collect()
 }
 
 pub fn format_branch_entry(entry: &BranchEntry) -> String {
@@ -623,8 +782,10 @@ fn branch_entry_role(entry: &BranchEntry) -> RowRole {
 
 #[cfg(test)]
 mod tests {
-    use ratagit_core::{Action, Command, GitResult, PanelFocus, UiAction, update};
-    use ratagit_testkit::{fixture_dirty_repo, fixture_empty_repo};
+    use ratagit_core::{
+        Action, COMMITS_PAGE_SIZE, Command, GitResult, PanelFocus, UiAction, update,
+    };
+    use ratagit_testkit::{fixture_commit, fixture_dirty_repo, fixture_empty_repo};
 
     use super::*;
 
@@ -661,6 +822,21 @@ mod tests {
             panic!("unexpected commands after refresh: {commands:?}");
         }
         state
+    }
+
+    fn commit_scroll_state(count: usize) -> AppState {
+        let mut state = state_with_dirty_repo();
+        state.focus = PanelFocus::Commits;
+        state.commits.items = (0..count)
+            .map(|index| fixture_commit(&format!("{index:07x}"), &format!("commit {index}")))
+            .collect();
+        state
+    }
+
+    fn commit_page(start: usize, count: usize) -> Vec<ratagit_core::CommitEntry> {
+        (start..start + count)
+            .map(|index| fixture_commit(&format!("{index:07x}"), &format!("commit {index}")))
+            .collect()
     }
 
     #[test]
@@ -750,17 +926,86 @@ mod tests {
     }
 
     #[test]
-    fn commits_panel_projects_selected_commit_and_draft() {
+    fn commits_panel_projects_four_commit_columns_and_selection() {
         let mut state = state_with_dirty_repo();
         state.commits.selected = 1;
-        state.commits.draft_message = "ship it".to_string();
 
         let lines = render_commits_lines(&state, 3);
 
-        assert_eq!(lines[0].text, " abc1234 init project");
-        assert_eq!(lines[1].text, " def5678 wire commands");
-        assert_eq!(lines[2].text, "  draft=ship it");
+        assert_eq!(lines[0].text, "●  abc1234  RT  init project");
+        assert_eq!(lines[1].text, "●  def5678  RT  wire commands");
+        assert_eq!(lines[0].spans.as_ref().map(Vec::len), Some(7));
         assert!(lines[1].selected);
+    }
+
+    #[test]
+    fn commits_panel_uses_three_row_threshold_scroll_window() {
+        let mut state = commit_scroll_state(30);
+
+        for _ in 0..4 {
+            update(&mut state, Action::Ui(UiAction::MoveDown));
+        }
+        let lines = render_commits_lines(&state, 8);
+        assert!(lines[0].text.contains("commit 0"));
+        assert!(lines[4].selected);
+
+        update(&mut state, Action::Ui(UiAction::MoveDown));
+        let lines = render_commits_lines(&state, 8);
+        assert!(lines[0].text.contains("commit 1"));
+        assert!(lines[4].text.contains("commit 5"));
+        assert!(lines[4].selected);
+    }
+
+    #[test]
+    fn commits_panel_reversing_up_waits_for_top_threshold() {
+        let mut state = commit_scroll_state(30);
+        for _ in 0..10 {
+            update(&mut state, Action::Ui(UiAction::MoveDown));
+        }
+
+        update(&mut state, Action::Ui(UiAction::MoveUp));
+        let lines = render_commits_lines(&state, 8);
+        assert!(lines[0].text.contains("commit 6"));
+        assert!(lines[3].text.contains("commit 9"));
+        assert!(lines[3].selected);
+
+        update(&mut state, Action::Ui(UiAction::MoveUp));
+        let lines = render_commits_lines(&state, 8);
+        assert!(lines[0].text.contains("commit 5"));
+        assert!(lines[3].text.contains("commit 8"));
+        assert!(lines[3].selected);
+    }
+
+    #[test]
+    fn commits_panel_keeps_window_continuous_after_page_append() {
+        let mut state = commit_scroll_state(COMMITS_PAGE_SIZE);
+        state.commits.has_more = true;
+
+        for _ in 0..COMMITS_PAGE_SIZE - 1 {
+            update(&mut state, Action::Ui(UiAction::MoveDown));
+        }
+        let lines = render_commits_lines(&state, 8);
+        assert!(lines[0].text.contains("commit 92"));
+        assert!(lines[7].text.contains("commit 99"));
+        assert!(lines[7].selected);
+
+        update(&mut state, Action::Ui(UiAction::MoveDown));
+
+        let epoch = state.commits.pagination_epoch;
+        update(
+            &mut state,
+            Action::GitResult(GitResult::CommitsPage {
+                offset: COMMITS_PAGE_SIZE,
+                limit: COMMITS_PAGE_SIZE,
+                epoch,
+                result: Ok(commit_page(COMMITS_PAGE_SIZE, COMMITS_PAGE_SIZE)),
+            }),
+        );
+
+        let lines = render_commits_lines(&state, 8);
+        assert!(lines[0].text.contains("commit 96"));
+        assert!(lines[4].text.contains("commit 100"));
+        assert!(lines[4].selected);
     }
 
     #[test]

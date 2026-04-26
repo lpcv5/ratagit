@@ -278,6 +278,19 @@ fn ui_action_for_key(
         }
     }
 
+    if state.focus == PanelFocus::Commits {
+        match code {
+            KeyCode::Char(' ') => return Some(UiAction::CheckoutSelectedCommitDetached),
+            KeyCode::Char('c') => return Some(UiAction::OpenCommitEditor),
+            KeyCode::Char('v') => return Some(UiAction::ToggleCommitsMultiSelect),
+            KeyCode::Char('s') => return Some(UiAction::SquashSelectedCommits),
+            KeyCode::Char('f') => return Some(UiAction::FixupSelectedCommits),
+            KeyCode::Char('r') => return Some(UiAction::OpenCommitRewordEditor),
+            KeyCode::Char('d') => return Some(UiAction::DeleteSelectedCommits),
+            _ => {}
+        }
+    }
+
     match code {
         KeyCode::Char('r') => Some(UiAction::RefreshAll),
         KeyCode::Char('l') => Some(UiAction::FocusNext),
@@ -339,6 +352,7 @@ mod tests {
             body: String::new(),
             body_cursor: 0,
             active_field: ratagit_core::CommitField::Body,
+            intent: ratagit_core::CommitEditorIntent::Create,
         });
         state
     }
@@ -458,10 +472,32 @@ mod tests {
 
         state.focus = PanelFocus::Commits;
         assert_eq!(
+            map_key(&state, KeyCode::Char('s')),
+            Some(UiAction::SquashSelectedCommits)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Char('f')),
+            Some(UiAction::FixupSelectedCommits)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Char('r')),
+            Some(UiAction::OpenCommitRewordEditor)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Char('d')),
+            Some(UiAction::DeleteSelectedCommits)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Char(' ')),
+            Some(UiAction::CheckoutSelectedCommitDetached)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Char('v')),
+            Some(UiAction::ToggleCommitsMultiSelect)
+        );
+        assert_eq!(
             map_key(&state, KeyCode::Char('c')),
-            Some(UiAction::CreateCommit {
-                message: "mvp commit".to_string()
-            })
+            Some(UiAction::OpenCommitEditor)
         );
 
         state.focus = PanelFocus::Stash;
@@ -697,6 +733,17 @@ impl GitBackend for AppBackend {
         }
     }
 
+    fn load_more_commits(
+        &mut self,
+        offset: usize,
+        limit: usize,
+    ) -> Result<Vec<ratagit_core::CommitEntry>, ratagit_git::GitError> {
+        match self {
+            Self::Hybrid(inner) => inner.load_more_commits(offset, limit),
+            Self::Mock(inner) => inner.load_more_commits(offset, limit),
+        }
+    }
+
     fn files_details_diff(&mut self, paths: &[String]) -> Result<String, ratagit_git::GitError> {
         match self {
             Self::Hybrid(inner) => inner.files_details_diff(paths),
@@ -793,6 +840,49 @@ impl GitBackend for AppBackend {
         match self {
             Self::Hybrid(inner) => inner.rebase_branch(target, interactive, auto_stash),
             Self::Mock(inner) => inner.rebase_branch(target, interactive, auto_stash),
+        }
+    }
+
+    fn squash_commits(&mut self, commit_ids: &[String]) -> Result<(), ratagit_git::GitError> {
+        match self {
+            Self::Hybrid(inner) => inner.squash_commits(commit_ids),
+            Self::Mock(inner) => inner.squash_commits(commit_ids),
+        }
+    }
+
+    fn fixup_commits(&mut self, commit_ids: &[String]) -> Result<(), ratagit_git::GitError> {
+        match self {
+            Self::Hybrid(inner) => inner.fixup_commits(commit_ids),
+            Self::Mock(inner) => inner.fixup_commits(commit_ids),
+        }
+    }
+
+    fn reword_commit(
+        &mut self,
+        commit_id: &str,
+        message: &str,
+    ) -> Result<(), ratagit_git::GitError> {
+        match self {
+            Self::Hybrid(inner) => inner.reword_commit(commit_id, message),
+            Self::Mock(inner) => inner.reword_commit(commit_id, message),
+        }
+    }
+
+    fn delete_commits(&mut self, commit_ids: &[String]) -> Result<(), ratagit_git::GitError> {
+        match self {
+            Self::Hybrid(inner) => inner.delete_commits(commit_ids),
+            Self::Mock(inner) => inner.delete_commits(commit_ids),
+        }
+    }
+
+    fn checkout_commit_detached(
+        &mut self,
+        commit_id: &str,
+        auto_stash: bool,
+    ) -> Result<(), ratagit_git::GitError> {
+        match self {
+            Self::Hybrid(inner) => inner.checkout_commit_detached(commit_id, auto_stash),
+            Self::Mock(inner) => inner.checkout_commit_detached(commit_id, auto_stash),
         }
     }
 

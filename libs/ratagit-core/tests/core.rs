@@ -1,9 +1,29 @@
 use ratagit_core::{
     Action, AppState, AutoStashOperation, BranchDeleteChoice, BranchDeleteMode, BranchEntry,
-    BranchRebaseChoice, Command, CommitField, EditorKind, FileEntry, FileInputMode, GitResult,
-    PanelFocus, RepoSnapshot, ResetChoice, ResetMode, StashScope, UiAction,
-    refresh_tree_projection, update,
+    BranchRebaseChoice, COMMITS_PAGE_SIZE, COMMITS_PREFETCH_THRESHOLD, Command, CommitEditorIntent,
+    CommitEntry, CommitField, CommitHashStatus, CommitInputMode, EditorKind, FileEntry,
+    FileInputMode, GitResult, PanelFocus, RepoSnapshot, ResetChoice, ResetMode, StashScope,
+    UiAction, refresh_tree_projection, update,
 };
+
+fn commit_entry(id: &str, summary: &str) -> CommitEntry {
+    CommitEntry {
+        id: id.to_string(),
+        full_id: format!("{id}-full"),
+        summary: summary.to_string(),
+        message: summary.to_string(),
+        author_name: "ratagit-tests".to_string(),
+        graph: "●".to_string(),
+        hash_status: CommitHashStatus::Unpushed,
+        is_merge: false,
+    }
+}
+
+fn commit_entries(count: usize) -> Vec<CommitEntry> {
+    (0..count)
+        .map(|index| commit_entry(&format!("{index:07x}"), &format!("commit {index}")))
+        .collect()
+}
 
 #[test]
 fn refresh_action_emits_refresh_command() {
@@ -11,6 +31,233 @@ fn refresh_action_emits_refresh_command() {
     let commands = update(&mut state, Action::Ui(UiAction::RefreshAll));
     assert_eq!(commands, vec![Command::RefreshAll]);
     assert!(state.work.refresh_pending);
+}
+
+#[test]
+fn refreshed_commit_page_tracks_pagination_state() {
+    let mut state = AppState::default();
+
+    update(
+        &mut state,
+        Action::GitResult(GitResult::Refreshed(RepoSnapshot {
+            status_summary: "clean".to_string(),
+            current_branch: "main".to_string(),
+            detached_head: false,
+            files: Vec::new(),
+            commits: commit_entries(COMMITS_PAGE_SIZE),
+            branches: Vec::new(),
+            stashes: Vec::new(),
+        })),
+    );
+
+    assert_eq!(state.commits.items.len(), COMMITS_PAGE_SIZE);
+    assert!(state.commits.has_more);
+    assert!(!state.commits.loading_more);
+    assert!(!state.commits.pending_select_after_load);
+    assert_eq!(state.commits.pagination_epoch, 1);
+}
+
+#[test]
+fn commits_move_down_past_loaded_page_requests_and_appends_next_page() {
+    let mut state = AppState {
+        focus: PanelFocus::Commits,
+        last_left_focus: PanelFocus::Commits,
+        ..AppState::default()
+    };
+    update(
+        &mut state,
+        Action::GitResult(GitResult::Refreshed(RepoSnapshot {
+            status_summary: "clean".to_string(),
+            current_branch: "main".to_string(),
+            detached_head: false,
+            files: Vec::new(),
+            commits: commit_entries(COMMITS_PAGE_SIZE),
+            branches: Vec::new(),
+            stashes: Vec::new(),
+        })),
+    );
+    state.commits.selected = COMMITS_PAGE_SIZE - 1;
+
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+
+    assert_eq!(
+        commands,
+        vec![Command::LoadMoreCommits {
+            offset: COMMITS_PAGE_SIZE,
+            limit: COMMITS_PAGE_SIZE,
+            epoch: state.commits.pagination_epoch,
+        }]
+    );
+    assert!(state.commits.loading_more);
+    assert!(state.commits.pending_select_after_load);
+
+    let next_page = (COMMITS_PAGE_SIZE..COMMITS_PAGE_SIZE * 2)
+        .map(|index| commit_entry(&format!("{index:07x}"), &format!("commit {index}")))
+        .collect::<Vec<_>>();
+    let epoch = state.commits.pagination_epoch;
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::CommitsPage {
+            offset: COMMITS_PAGE_SIZE,
+            limit: COMMITS_PAGE_SIZE,
+            epoch,
+            result: Ok(next_page),
+        }),
+    );
+
+    assert!(commands.is_empty());
+    assert_eq!(state.commits.items.len(), COMMITS_PAGE_SIZE * 2);
+    assert_eq!(state.commits.selected, COMMITS_PAGE_SIZE);
+    assert!(state.commits.has_more);
+    assert!(!state.commits.loading_more);
+}
+
+#[test]
+fn commits_prefetch_before_loaded_tail_without_jumping_selection() {
+    let mut state = AppState {
+        focus: PanelFocus::Commits,
+        last_left_focus: PanelFocus::Commits,
+        ..AppState::default()
+    };
+    update(
+        &mut state,
+        Action::GitResult(GitResult::Refreshed(RepoSnapshot {
+            status_summary: "clean".to_string(),
+            current_branch: "main".to_string(),
+            detached_head: false,
+            files: Vec::new(),
+            commits: commit_entries(COMMITS_PAGE_SIZE),
+            branches: Vec::new(),
+            stashes: Vec::new(),
+        })),
+    );
+    state.commits.selected = COMMITS_PAGE_SIZE - COMMITS_PREFETCH_THRESHOLD - 2;
+
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+
+    assert_eq!(
+        commands,
+        vec![Command::LoadMoreCommits {
+            offset: COMMITS_PAGE_SIZE,
+            limit: COMMITS_PAGE_SIZE,
+            epoch: state.commits.pagination_epoch,
+        }]
+    );
+    assert!(state.commits.loading_more);
+    assert!(!state.commits.pending_select_after_load);
+    assert_eq!(
+        state.commits.selected,
+        COMMITS_PAGE_SIZE - COMMITS_PREFETCH_THRESHOLD - 1
+    );
+
+    let next_page = (COMMITS_PAGE_SIZE..COMMITS_PAGE_SIZE * 2)
+        .map(|index| commit_entry(&format!("{index:07x}"), &format!("commit {index}")))
+        .collect::<Vec<_>>();
+    let epoch = state.commits.pagination_epoch;
+    update(
+        &mut state,
+        Action::GitResult(GitResult::CommitsPage {
+            offset: COMMITS_PAGE_SIZE,
+            limit: COMMITS_PAGE_SIZE,
+            epoch,
+            result: Ok(next_page),
+        }),
+    );
+
+    assert_eq!(state.commits.items.len(), COMMITS_PAGE_SIZE * 2);
+    assert_eq!(
+        state.commits.selected,
+        COMMITS_PAGE_SIZE - COMMITS_PREFETCH_THRESHOLD - 1
+    );
+    assert!(!state.commits.loading_more);
+}
+
+#[test]
+fn commits_prefetch_pending_advances_when_user_reaches_loaded_tail() {
+    let mut state = AppState {
+        focus: PanelFocus::Commits,
+        last_left_focus: PanelFocus::Commits,
+        ..AppState::default()
+    };
+    update(
+        &mut state,
+        Action::GitResult(GitResult::Refreshed(RepoSnapshot {
+            status_summary: "clean".to_string(),
+            current_branch: "main".to_string(),
+            detached_head: false,
+            files: Vec::new(),
+            commits: commit_entries(COMMITS_PAGE_SIZE),
+            branches: Vec::new(),
+            stashes: Vec::new(),
+        })),
+    );
+    state.commits.selected = COMMITS_PAGE_SIZE - COMMITS_PREFETCH_THRESHOLD - 2;
+    update(&mut state, Action::Ui(UiAction::MoveDown));
+    state.commits.selected = COMMITS_PAGE_SIZE - 1;
+
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+
+    assert!(commands.is_empty());
+    assert!(state.commits.loading_more);
+    assert!(state.commits.pending_select_after_load);
+
+    let next_page = (COMMITS_PAGE_SIZE..COMMITS_PAGE_SIZE * 2)
+        .map(|index| commit_entry(&format!("{index:07x}"), &format!("commit {index}")))
+        .collect::<Vec<_>>();
+    let epoch = state.commits.pagination_epoch;
+    update(
+        &mut state,
+        Action::GitResult(GitResult::CommitsPage {
+            offset: COMMITS_PAGE_SIZE,
+            limit: COMMITS_PAGE_SIZE,
+            epoch,
+            result: Ok(next_page),
+        }),
+    );
+
+    assert_eq!(state.commits.selected, COMMITS_PAGE_SIZE);
+    assert!(!state.commits.pending_select_after_load);
+}
+
+#[test]
+fn short_commit_page_stops_incremental_loading() {
+    let mut state = AppState {
+        focus: PanelFocus::Commits,
+        last_left_focus: PanelFocus::Commits,
+        ..AppState::default()
+    };
+    update(
+        &mut state,
+        Action::GitResult(GitResult::Refreshed(RepoSnapshot {
+            status_summary: "clean".to_string(),
+            current_branch: "main".to_string(),
+            detached_head: false,
+            files: Vec::new(),
+            commits: commit_entries(COMMITS_PAGE_SIZE),
+            branches: Vec::new(),
+            stashes: Vec::new(),
+        })),
+    );
+    state.commits.selected = COMMITS_PAGE_SIZE - 1;
+    update(&mut state, Action::Ui(UiAction::MoveDown));
+
+    let epoch = state.commits.pagination_epoch;
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::CommitsPage {
+            offset: COMMITS_PAGE_SIZE,
+            limit: COMMITS_PAGE_SIZE,
+            epoch,
+            result: Ok(vec![commit_entry("page101", "last commit")]),
+        }),
+    );
+
+    assert!(commands.is_empty());
+    assert_eq!(state.commits.items.len(), COMMITS_PAGE_SIZE + 1);
+    assert!(!state.commits.has_more);
+    state.commits.selected = COMMITS_PAGE_SIZE;
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+    assert!(commands.is_empty());
 }
 
 #[test]
@@ -510,6 +757,178 @@ fn v_visual_mode_extends_range_with_jk_movement() {
 }
 
 #[test]
+fn commit_visual_mode_extends_range_and_squash_uses_selected_commits() {
+    let mut state = AppState {
+        focus: PanelFocus::Commits,
+        last_left_focus: PanelFocus::Commits,
+        ..AppState::default()
+    };
+    state.commits.items = vec![
+        commit_entry("aaa1111", "head"),
+        commit_entry("bbb2222", "middle"),
+        commit_entry("ccc3333", "base"),
+    ];
+
+    update(&mut state, Action::Ui(UiAction::ToggleCommitsMultiSelect));
+    assert_eq!(state.commits.mode, CommitInputMode::MultiSelect);
+    update(&mut state, Action::Ui(UiAction::MoveDown));
+    assert_eq!(
+        state
+            .commits
+            .selected_rows
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec!["aaa1111-full".to_string(), "bbb2222-full".to_string()]
+    );
+
+    let commands = update(&mut state, Action::Ui(UiAction::SquashSelectedCommits));
+    assert_eq!(
+        commands,
+        vec![Command::SquashCommits {
+            commit_ids: vec!["aaa1111-full".to_string(), "bbb2222-full".to_string()]
+        }]
+    );
+    assert_eq!(state.commits.mode, CommitInputMode::Normal);
+}
+
+#[test]
+fn commit_rewrite_requires_clean_worktree() {
+    let mut state = AppState {
+        focus: PanelFocus::Commits,
+        ..AppState::default()
+    };
+    state.commits.items = vec![commit_entry("aaa1111", "head")];
+    state.files.items = vec![FileEntry {
+        path: "dirty.txt".to_string(),
+        staged: false,
+        untracked: false,
+    }];
+
+    let commands = update(&mut state, Action::Ui(UiAction::DeleteSelectedCommits));
+
+    assert!(commands.is_empty());
+    assert!(
+        state
+            .notices
+            .iter()
+            .any(|notice| { notice.contains("Commit rewrite requires a clean working tree") })
+    );
+}
+
+#[test]
+fn commit_rewrite_blocks_pushed_or_merged_commits() {
+    let mut state = AppState {
+        focus: PanelFocus::Commits,
+        ..AppState::default()
+    };
+    let mut commit = commit_entry("aaa1111", "already public");
+    commit.hash_status = CommitHashStatus::Pushed;
+    state.commits.items = vec![commit];
+
+    let commands = update(&mut state, Action::Ui(UiAction::SquashSelectedCommits));
+
+    assert!(commands.is_empty());
+    assert!(
+        state
+            .notices
+            .iter()
+            .any(|notice| notice.contains("only supports unpushed commits"))
+    );
+}
+
+#[test]
+fn commit_reword_reuses_commit_editor_modal_and_confirms_command() {
+    let mut state = AppState {
+        focus: PanelFocus::Commits,
+        ..AppState::default()
+    };
+    let mut commit = commit_entry("aaa1111", "feat: old");
+    commit.message = "feat: old\n\nbody line".to_string();
+    state.commits.items = vec![commit];
+
+    update(&mut state, Action::Ui(UiAction::OpenCommitRewordEditor));
+
+    assert!(matches!(
+        state.editor.kind,
+        Some(EditorKind::Commit {
+            ref message,
+            ref body,
+            intent: CommitEditorIntent::Reword { ref commit_id },
+            ..
+        }) if message == "feat: old" && body == "body line" && commit_id == "aaa1111-full"
+    ));
+
+    let commands = update(&mut state, Action::Ui(UiAction::EditorConfirm));
+    assert_eq!(
+        commands,
+        vec![Command::RewordCommit {
+            commit_id: "aaa1111-full".to_string(),
+            message: "feat: old\n\nbody line".to_string(),
+        }]
+    );
+}
+
+#[test]
+fn auto_stash_operation_failure_refreshes_after_possible_partial_mutation() {
+    let mut state = AppState::default();
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::CheckoutCommitDetached {
+            commit_id: "abc1234".to_string(),
+            auto_stash: true,
+            result: Err("stash pop failed".to_string()),
+        }),
+    );
+
+    assert_eq!(commands, vec![Command::RefreshAll]);
+    assert!(state.work.refresh_pending);
+    assert!(
+        state
+            .status
+            .last_error
+            .as_ref()
+            .expect("error should be stored")
+            .contains("stash pop failed")
+    );
+}
+
+#[test]
+fn detached_checkout_with_dirty_worktree_uses_auto_stash_confirmation() {
+    let mut state = AppState {
+        focus: PanelFocus::Commits,
+        ..AppState::default()
+    };
+    state.commits.items = vec![commit_entry("aaa1111", "head")];
+    state.files.items = vec![FileEntry {
+        path: "dirty.txt".to_string(),
+        staged: false,
+        untracked: false,
+    }];
+
+    let commands = update(
+        &mut state,
+        Action::Ui(UiAction::CheckoutSelectedCommitDetached),
+    );
+    assert!(commands.is_empty());
+    assert!(matches!(
+        state.branches.auto_stash_confirm.operation,
+        Some(AutoStashOperation::CheckoutCommitDetached { ref commit_id })
+            if commit_id == "aaa1111-full"
+    ));
+
+    let commands = update(&mut state, Action::Ui(UiAction::ConfirmAutoStash));
+    assert_eq!(
+        commands,
+        vec![Command::CheckoutCommitDetached {
+            commit_id: "aaa1111-full".to_string(),
+            auto_stash: true,
+        }]
+    );
+}
+
+#[test]
 fn refreshed_snapshot_updates_state_and_clamps_indexes() {
     let mut state = AppState::default();
     state.files.selected = 99;
@@ -955,6 +1374,7 @@ fn commit_editor_confirms_subject_and_multiline_body() {
             body: String::new(),
             body_cursor: 0,
             active_field: CommitField::Message,
+            intent: CommitEditorIntent::Create,
         })
     );
 
@@ -1261,6 +1681,7 @@ fn commit_editor_edits_subject_at_cursor() {
             body: String::new(),
             body_cursor: 0,
             active_field: CommitField::Message,
+            intent: CommitEditorIntent::Create,
         })
     );
 }
@@ -1329,6 +1750,7 @@ fn editor_cursor_respects_unicode_boundaries() {
             body: String::new(),
             body_cursor: 0,
             active_field: CommitField::Message,
+            intent: CommitEditorIntent::Create,
         })
     );
 }

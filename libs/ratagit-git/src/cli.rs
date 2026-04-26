@@ -197,6 +197,234 @@ impl GitCli {
         Ok(())
     }
 
+    pub(crate) fn squash_commits(&mut self, commit_ids: &[String]) -> Result<(), GitError> {
+        self.replay_commits(commit_ids, ReplayMode::Squash)
+    }
+
+    pub(crate) fn fixup_commits(&mut self, commit_ids: &[String]) -> Result<(), GitError> {
+        self.replay_commits(commit_ids, ReplayMode::Fixup)
+    }
+
+    pub(crate) fn reword_commit(&mut self, commit_id: &str, message: &str) -> Result<(), GitError> {
+        self.replay_commits(
+            &[commit_id.to_string()],
+            ReplayMode::Reword(message.to_string()),
+        )
+    }
+
+    pub(crate) fn delete_commits(&mut self, commit_ids: &[String]) -> Result<(), GitError> {
+        self.replay_commits(commit_ids, ReplayMode::Delete)
+    }
+
+    pub(crate) fn checkout_commit_detached(
+        &mut self,
+        commit_id: &str,
+        auto_stash: bool,
+    ) -> Result<(), GitError> {
+        if auto_stash {
+            return self.with_auto_stash("ratagit auto-stash before detached checkout", |cli| {
+                cli.run_git(&["checkout", "--detach", commit_id])
+                    .map(|_| ())
+            });
+        }
+        self.run_git(&["checkout", "--detach", commit_id])
+            .map(|_| ())
+    }
+
+    fn replay_commits(&mut self, commit_ids: &[String], mode: ReplayMode) -> Result<(), GitError> {
+        if commit_ids.is_empty() {
+            return Err(GitError::new("no commits selected"));
+        }
+        self.ensure_clean_worktree()?;
+        let targets = commit_ids
+            .iter()
+            .map(|id| self.resolve_commit(id))
+            .collect::<Result<Vec<_>, GitError>>()?;
+        self.ensure_commits_are_private(&targets)?;
+        let history = self.rev_list_reverse_head()?;
+        let target_positions = targets
+            .iter()
+            .map(|target| {
+                history
+                    .iter()
+                    .position(|commit| commit == target)
+                    .ok_or_else(|| {
+                        GitError::new(format!("commit is not reachable from HEAD: {target}"))
+                    })
+            })
+            .collect::<Result<Vec<_>, GitError>>()?;
+        let start = *target_positions
+            .iter()
+            .min()
+            .ok_or_else(|| GitError::new("no commits selected"))?;
+        if start == 0 {
+            return Err(GitError::new("cannot rewrite root commit"));
+        }
+        if start == 1 && matches!(mode, ReplayMode::Squash | ReplayMode::Fixup) {
+            return Err(GitError::new("cannot squash or fixup into root commit"));
+        }
+        let replay_commits = history[start..].to_vec();
+        for commit in &replay_commits {
+            if self.parent_count(commit)? > 1 {
+                return Err(GitError::new(
+                    "commit rewrite does not support merge commits yet",
+                ));
+            }
+        }
+        let base = history[start - 1].clone();
+        let original_head = self.resolve_commit("HEAD")?;
+        self.run_git_owned(vec!["reset".to_string(), "--hard".to_string(), base])?;
+        let result = self.replay_from_targets(&replay_commits, &targets, &mode);
+        if let Err(error) = result {
+            let _ = self.run_git(&["cherry-pick", "--abort"]);
+            let _ = self.run_git_owned(vec![
+                "reset".to_string(),
+                "--hard".to_string(),
+                original_head,
+            ]);
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    fn replay_from_targets(
+        &self,
+        replay_commits: &[String],
+        targets: &[String],
+        mode: &ReplayMode,
+    ) -> Result<(), GitError> {
+        for commit in replay_commits {
+            let targeted = targets.iter().any(|target| target == commit);
+            match (targeted, mode) {
+                (true, ReplayMode::Delete) => {}
+                (true, ReplayMode::Fixup) => {
+                    self.run_git_owned(vec![
+                        "cherry-pick".to_string(),
+                        "--no-commit".to_string(),
+                        commit.clone(),
+                    ])?;
+                    self.run_git(&["commit", "--amend", "--no-edit"])?;
+                }
+                (true, ReplayMode::Squash) => {
+                    let current_message = self.commit_message("HEAD")?;
+                    let target_message = self.commit_message(commit)?;
+                    let message = combine_squash_messages(&current_message, &target_message);
+                    self.run_git_owned(vec![
+                        "cherry-pick".to_string(),
+                        "--no-commit".to_string(),
+                        commit.clone(),
+                    ])?;
+                    self.amend_message(&message)?;
+                }
+                (true, ReplayMode::Reword(message)) => {
+                    self.run_git_owned(vec!["cherry-pick".to_string(), commit.clone()])?;
+                    self.amend_message(message)?;
+                }
+                (false, _) => {
+                    self.run_git_owned(vec!["cherry-pick".to_string(), commit.clone()])?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn ensure_clean_worktree(&self) -> Result<(), GitError> {
+        let output = self.run_git(&["status", "--porcelain"])?;
+        if output.trim().is_empty() {
+            Ok(())
+        } else {
+            Err(GitError::new("working tree must be clean"))
+        }
+    }
+
+    fn ensure_commits_are_private(&self, commit_ids: &[String]) -> Result<(), GitError> {
+        let main = self.try_resolve_commit("refs/heads/main");
+        let upstream = self.try_resolve_commit("@{upstream}");
+        for commit_id in commit_ids {
+            if let Some(main) = &main
+                && self.commit_is_ancestor_of(commit_id, main)?
+            {
+                return Err(GitError::new(format!(
+                    "commit is already merged to main: {commit_id}"
+                )));
+            }
+            if let Some(upstream) = &upstream
+                && self.commit_is_ancestor_of(commit_id, upstream)?
+            {
+                return Err(GitError::new(format!(
+                    "commit is already pushed upstream: {commit_id}"
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    fn resolve_commit(&self, commit_id: &str) -> Result<String, GitError> {
+        let spec = format!("{commit_id}^{{commit}}");
+        Ok(self
+            .run_git_owned(vec!["rev-parse".to_string(), "--verify".to_string(), spec])?
+            .trim()
+            .to_string())
+    }
+
+    fn try_resolve_commit(&self, commit_id: &str) -> Option<String> {
+        self.resolve_commit(commit_id).ok()
+    }
+
+    fn commit_is_ancestor_of(&self, commit_id: &str, tip: &str) -> Result<bool, GitError> {
+        let output = ProcessCommand::new("git")
+            .args(["merge-base", "--is-ancestor", commit_id, tip])
+            .current_dir(&self.repo_path)
+            .output()
+            .map_err(|err| GitError::new(format!("failed to start git merge-base: {err}")))?;
+        if output.status.success() {
+            return Ok(true);
+        }
+        if output.status.code() == Some(1) {
+            return Ok(false);
+        }
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        Err(GitError::new(format!("git merge-base failed: {stderr}")))
+    }
+
+    fn rev_list_reverse_head(&self) -> Result<Vec<String>, GitError> {
+        Ok(self
+            .run_git(&["rev-list", "--reverse", "HEAD"])?
+            .lines()
+            .map(str::to_string)
+            .collect())
+    }
+
+    fn parent_count(&self, commit_id: &str) -> Result<usize, GitError> {
+        let output = self.run_git_owned(vec![
+            "rev-list".to_string(),
+            "--parents".to_string(),
+            "-n".to_string(),
+            "1".to_string(),
+            commit_id.to_string(),
+        ])?;
+        Ok(output.split_whitespace().count().saturating_sub(1))
+    }
+
+    fn commit_message(&self, commit_id: &str) -> Result<String, GitError> {
+        self.run_git_owned(vec![
+            "log".to_string(),
+            "-1".to_string(),
+            "--format=%B".to_string(),
+            commit_id.to_string(),
+        ])
+    }
+
+    fn amend_message(&self, message: &str) -> Result<(), GitError> {
+        self.run_git_owned(vec![
+            "commit".to_string(),
+            "--amend".to_string(),
+            "-m".to_string(),
+            message.to_string(),
+        ])
+        .map(|_| ())
+    }
+
     fn delete_local_branch(&mut self, name: &str, force: bool) -> Result<(), GitError> {
         if let Some(path) = self.worktree_path_for_branch(name)? {
             return Err(GitError::new(format!(
@@ -260,6 +488,26 @@ impl GitCli {
             }
         }
         Ok(None)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ReplayMode {
+    Squash,
+    Fixup,
+    Reword(String),
+    Delete,
+}
+
+fn combine_squash_messages(current: &str, target: &str) -> String {
+    let current = current.trim_end();
+    let target = target.trim_end();
+    if target.is_empty() {
+        current.to_string()
+    } else if current.is_empty() {
+        target.to_string()
+    } else {
+        format!("{current}\n\n{target}")
     }
 }
 

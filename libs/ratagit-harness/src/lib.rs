@@ -197,6 +197,11 @@ fn command_is_mutation(command: &Command) -> bool {
             | Command::CheckoutBranch { .. }
             | Command::DeleteBranch { .. }
             | Command::RebaseBranch { .. }
+            | Command::SquashCommits { .. }
+            | Command::FixupCommits { .. }
+            | Command::RewordCommit { .. }
+            | Command::DeleteCommits { .. }
+            | Command::CheckoutCommitDetached { .. }
             | Command::StashPush { .. }
             | Command::StashPop { .. }
     )

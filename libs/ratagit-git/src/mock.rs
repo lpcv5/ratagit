@@ -1,5 +1,6 @@
 use ratagit_core::{
-    BranchDeleteMode, BranchEntry, CommitEntry, RepoSnapshot, ResetMode, StashEntry,
+    BranchDeleteMode, BranchEntry, COMMITS_PAGE_SIZE, CommitEntry, CommitHashStatus, RepoSnapshot,
+    ResetMode, StashEntry,
 };
 
 use crate::{GitBackend, GitError, resequence_stashes};
@@ -27,12 +28,109 @@ impl MockGitBackend {
     pub fn snapshot(&self) -> &RepoSnapshot {
         &self.snapshot
     }
+
+    fn merge_selected_commits_into_parents(
+        &mut self,
+        commit_ids: &[String],
+        keep_messages: bool,
+    ) -> Result<(), GitError> {
+        if commit_ids.is_empty() {
+            return Err(GitError::new("no commits selected"));
+        }
+        if self
+            .snapshot
+            .commits
+            .iter()
+            .any(|commit| commit_ids.iter().any(|id| commit_matches(commit, id)) && commit.is_merge)
+        {
+            return Err(GitError::new("merge commits are not supported"));
+        }
+        if self.snapshot.commits.iter().any(|commit| {
+            commit_ids.iter().any(|id| commit_matches(commit, id))
+                && commit.hash_status != CommitHashStatus::Unpushed
+        }) {
+            return Err(GitError::new("commit is not private"));
+        }
+        let target_indexes = self
+            .snapshot
+            .commits
+            .iter()
+            .enumerate()
+            .filter_map(|(index, commit)| {
+                commit_ids
+                    .iter()
+                    .any(|id| commit_matches(commit, id))
+                    .then_some(index)
+            })
+            .collect::<Vec<_>>();
+        if target_indexes.is_empty() {
+            return Err(GitError::new("commit not found"));
+        }
+        if target_indexes
+            .iter()
+            .any(|index| index.saturating_add(2) >= self.snapshot.commits.len())
+        {
+            return Err(GitError::new("cannot squash or fixup into root commit"));
+        }
+        let mut removed_any = false;
+        let mut index = 0;
+        while index < self.snapshot.commits.len() {
+            if !commit_ids
+                .iter()
+                .any(|id| commit_matches(&self.snapshot.commits[index], id))
+            {
+                index += 1;
+                continue;
+            }
+            let removed = self.snapshot.commits.remove(index);
+            let Some(parent) = self.snapshot.commits.get_mut(index) else {
+                return Err(GitError::new("cannot rewrite root commit"));
+            };
+            if keep_messages {
+                parent.summary = format!("{} + {}", parent.summary, removed.summary);
+                parent.message = format!(
+                    "{}\n\n{}",
+                    parent.message.trim_end(),
+                    removed.message.trim_end()
+                );
+            }
+            removed_any = true;
+        }
+        if removed_any {
+            Ok(())
+        } else {
+            Err(GitError::new("commit not found"))
+        }
+    }
+}
+
+fn commit_matches(commit: &CommitEntry, id: &str) -> bool {
+    commit.full_id == id || commit.id == id
 }
 
 impl GitBackend for MockGitBackend {
     fn refresh_snapshot(&mut self) -> Result<RepoSnapshot, GitError> {
         self.operations.push("refresh".to_string());
-        Ok(self.snapshot.clone())
+        let mut snapshot = self.snapshot.clone();
+        snapshot.commits.truncate(COMMITS_PAGE_SIZE);
+        Ok(snapshot)
+    }
+
+    fn load_more_commits(
+        &mut self,
+        offset: usize,
+        limit: usize,
+    ) -> Result<Vec<CommitEntry>, GitError> {
+        self.operations
+            .push(format!("commits-page:{offset}:{limit}"));
+        Ok(self
+            .snapshot
+            .commits
+            .iter()
+            .skip(offset)
+            .take(limit)
+            .cloned()
+            .collect())
     }
 
     fn files_details_diff(&mut self, paths: &[String]) -> Result<String, GitError> {
@@ -169,7 +267,13 @@ impl GitBackend for MockGitBackend {
             0,
             CommitEntry {
                 id: format!("mock-{:04}", self.commit_sequence),
+                full_id: format!("mock-{:04}", self.commit_sequence),
                 summary,
+                message: message.trim_end().to_string(),
+                author_name: "ratagit-tests".to_string(),
+                graph: "●".to_string(),
+                hash_status: CommitHashStatus::Unpushed,
+                is_merge: false,
             },
         );
         self.commit_sequence = self.commit_sequence.saturating_add(1);
@@ -250,6 +354,102 @@ impl GitBackend for MockGitBackend {
         }
         let mode = if interactive { "interactive" } else { "simple" };
         self.operations.push(format!("rebase:{mode}:{target}"));
+        if auto_stash {
+            self.operations.push("auto-stash-pop".to_string());
+        }
+        Ok(())
+    }
+
+    fn squash_commits(&mut self, commit_ids: &[String]) -> Result<(), GitError> {
+        self.operations
+            .push(format!("squash:{}", commit_ids.join(",")));
+        self.merge_selected_commits_into_parents(commit_ids, true)
+    }
+
+    fn fixup_commits(&mut self, commit_ids: &[String]) -> Result<(), GitError> {
+        self.operations
+            .push(format!("fixup:{}", commit_ids.join(",")));
+        self.merge_selected_commits_into_parents(commit_ids, false)
+    }
+
+    fn reword_commit(&mut self, commit_id: &str, message: &str) -> Result<(), GitError> {
+        self.operations
+            .push(format!("reword:{commit_id}:{message}"));
+        let commit = self
+            .snapshot
+            .commits
+            .iter_mut()
+            .find(|commit| commit_matches(commit, commit_id))
+            .ok_or_else(|| GitError::new(format!("commit not found: {commit_id}")))?;
+        if commit.hash_status != CommitHashStatus::Unpushed {
+            return Err(GitError::new("commit is not private"));
+        }
+        if commit.is_merge {
+            return Err(GitError::new("merge commits are not supported"));
+        }
+        commit.summary = message.lines().next().unwrap_or("").trim().to_string();
+        commit.message = message.trim_end().to_string();
+        Ok(())
+    }
+
+    fn delete_commits(&mut self, commit_ids: &[String]) -> Result<(), GitError> {
+        self.operations
+            .push(format!("delete-commits:{}", commit_ids.join(",")));
+        if self.snapshot.commits.iter().any(|commit| {
+            commit_ids.iter().any(|id| commit_matches(commit, id))
+                && commit.hash_status != CommitHashStatus::Unpushed
+        }) {
+            return Err(GitError::new("commit is not private"));
+        }
+        if self
+            .snapshot
+            .commits
+            .iter()
+            .any(|commit| commit_ids.iter().any(|id| commit_matches(commit, id)) && commit.is_merge)
+        {
+            return Err(GitError::new("merge commits are not supported"));
+        }
+        if self
+            .snapshot
+            .commits
+            .last()
+            .is_some_and(|commit| commit_ids.iter().any(|id| commit_matches(commit, id)))
+        {
+            return Err(GitError::new("cannot rewrite root commit"));
+        }
+        let before = self.snapshot.commits.len();
+        self.snapshot
+            .commits
+            .retain(|commit| !commit_ids.iter().any(|id| commit_matches(commit, id)));
+        if self.snapshot.commits.len() == before {
+            return Err(GitError::new("commit not found"));
+        }
+        Ok(())
+    }
+
+    fn checkout_commit_detached(
+        &mut self,
+        commit_id: &str,
+        auto_stash: bool,
+    ) -> Result<(), GitError> {
+        if auto_stash {
+            self.operations.push("auto-stash-push".to_string());
+        }
+        self.operations
+            .push(format!("checkout-detached:{commit_id}"));
+        if !self
+            .snapshot
+            .commits
+            .iter()
+            .any(|commit| commit_matches(commit, commit_id))
+        {
+            return Err(GitError::new(format!("commit not found: {commit_id}")));
+        }
+        for branch in &mut self.snapshot.branches {
+            branch.is_current = false;
+        }
+        self.snapshot.current_branch = commit_id.to_string();
+        self.snapshot.detached_head = true;
         if auto_stash {
             self.operations.push("auto-stash-pop".to_string());
         }

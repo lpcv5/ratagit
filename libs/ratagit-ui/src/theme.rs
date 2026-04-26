@@ -21,7 +21,6 @@ pub(crate) enum RowRole {
 
 pub(crate) const ICON_BATCH_SELECTED: &str = "✓";
 pub(crate) const ICON_BRANCH: &str = "";
-pub(crate) const ICON_COMMIT: &str = "";
 pub(crate) const ICON_DIRECTORY_CLOSED: &str = "";
 pub(crate) const ICON_DIRECTORY_OPEN: &str = "";
 pub(crate) const ICON_FILE: &str = "";

@@ -7,7 +7,8 @@ use git2::{
     Status, StatusEntry, StatusOptions, StatusShow, Tree,
 };
 use ratagit_core::{
-    BranchDeleteMode, BranchEntry, CommitEntry, FileEntry, RepoSnapshot, ResetMode, StashEntry,
+    BranchDeleteMode, BranchEntry, COMMITS_PAGE_SIZE, CommitEntry, CommitHashStatus, FileEntry,
+    RepoSnapshot, ResetMode, StashEntry,
 };
 
 use crate::cli::GitCli;
@@ -98,7 +99,13 @@ impl GitBackend for HybridGitBackend {
         trace_step("status", started);
         let status_summary = summarize_files(&files);
         let started = Instant::now();
-        let commits = collect_commits(&self.repo)?;
+        let commits = collect_commits_page(
+            &self.repo,
+            &current_branch,
+            detached_head,
+            0,
+            COMMITS_PAGE_SIZE,
+        )?;
         trace_step("commits", started);
         let started = Instant::now();
         let branches = collect_branches(&self.repo, &current_branch, detached_head)?;
@@ -117,6 +124,15 @@ impl GitBackend for HybridGitBackend {
             branches,
             stashes,
         })
+    }
+
+    fn load_more_commits(
+        &mut self,
+        offset: usize,
+        limit: usize,
+    ) -> Result<Vec<CommitEntry>, GitError> {
+        let (current_branch, detached_head) = current_head(&self.repo)?;
+        collect_commits_page(&self.repo, &current_branch, detached_head, offset, limit)
     }
 
     fn files_details_diff(&mut self, paths: &[String]) -> Result<String, GitError> {
@@ -261,6 +277,30 @@ impl GitBackend for HybridGitBackend {
         self.cli.rebase_branch(target, interactive, auto_stash)
     }
 
+    fn squash_commits(&mut self, commit_ids: &[String]) -> Result<(), GitError> {
+        self.cli.squash_commits(commit_ids)
+    }
+
+    fn fixup_commits(&mut self, commit_ids: &[String]) -> Result<(), GitError> {
+        self.cli.fixup_commits(commit_ids)
+    }
+
+    fn reword_commit(&mut self, commit_id: &str, message: &str) -> Result<(), GitError> {
+        self.cli.reword_commit(commit_id, message)
+    }
+
+    fn delete_commits(&mut self, commit_ids: &[String]) -> Result<(), GitError> {
+        self.cli.delete_commits(commit_ids)
+    }
+
+    fn checkout_commit_detached(
+        &mut self,
+        commit_id: &str,
+        auto_stash: bool,
+    ) -> Result<(), GitError> {
+        self.cli.checkout_commit_detached(commit_id, auto_stash)
+    }
+
     fn stash_push(&mut self, message: &str) -> Result<(), GitError> {
         self.cli.stash_push(message)
     }
@@ -355,7 +395,13 @@ fn collect_files_with_git2(repo: &Repository) -> Result<Vec<FileEntry>, GitError
     Ok(files)
 }
 
-fn collect_commits(repo: &Repository) -> Result<Vec<CommitEntry>, GitError> {
+fn collect_commits_page(
+    repo: &Repository,
+    current_branch: &str,
+    detached_head: bool,
+    offset: usize,
+    limit: usize,
+) -> Result<Vec<CommitEntry>, GitError> {
     let mut revwalk = repo.revwalk()?;
     match revwalk.push_head() {
         Ok(()) => {}
@@ -363,20 +409,80 @@ fn collect_commits(repo: &Repository) -> Result<Vec<CommitEntry>, GitError> {
         Err(error) => return Err(error.into()),
     }
 
+    let main_oid = repo.refname_to_id("refs/heads/main").ok();
+    let upstream_oid = if detached_head {
+        None
+    } else {
+        upstream_oid(repo, current_branch)?
+    };
     let mut commits = Vec::new();
-    for oid in revwalk.take(10) {
+    for oid in revwalk.skip(offset).take(limit) {
         let oid = oid?;
         let commit = repo.find_commit(oid)?;
         let summary = commit.summary().unwrap_or("").trim();
         if summary.is_empty() {
             continue;
         }
+        let message = commit.message().unwrap_or("").trim_end().to_string();
+        let author_name = commit
+            .author()
+            .name()
+            .unwrap_or("unknown")
+            .trim()
+            .to_string();
         commits.push(CommitEntry {
             id: short_oid(oid),
+            full_id: oid.to_string(),
             summary: summary.to_string(),
+            message,
+            author_name,
+            graph: "●".to_string(),
+            hash_status: commit_hash_status(repo, oid, main_oid, upstream_oid)?,
+            is_merge: commit.parent_count() > 1,
         });
     }
     Ok(commits)
+}
+
+fn upstream_oid(repo: &Repository, current_branch: &str) -> Result<Option<Oid>, GitError> {
+    let branch = match repo.find_branch(current_branch, BranchType::Local) {
+        Ok(branch) => branch,
+        Err(error) if is_missing_head_error(&error) || error.code() == ErrorCode::NotFound => {
+            return Ok(None);
+        }
+        Err(error) => return Err(error.into()),
+    };
+    match branch.upstream() {
+        Ok(upstream) => Ok(upstream.get().target()),
+        Err(error) if error.code() == ErrorCode::NotFound => Ok(None),
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn commit_hash_status(
+    repo: &Repository,
+    oid: Oid,
+    main_oid: Option<Oid>,
+    upstream_oid: Option<Oid>,
+) -> Result<CommitHashStatus, GitError> {
+    if let Some(main_oid) = main_oid
+        && commit_is_reachable_from(repo, oid, main_oid)?
+    {
+        return Ok(CommitHashStatus::MergedToMain);
+    }
+    if let Some(upstream_oid) = upstream_oid
+        && commit_is_reachable_from(repo, oid, upstream_oid)?
+    {
+        return Ok(CommitHashStatus::Pushed);
+    }
+    Ok(CommitHashStatus::Unpushed)
+}
+
+fn commit_is_reachable_from(repo: &Repository, oid: Oid, tip: Oid) -> Result<bool, GitError> {
+    if oid == tip {
+        return Ok(true);
+    }
+    repo.graph_descendant_of(tip, oid).map_err(Into::into)
 }
 
 fn collect_branches(

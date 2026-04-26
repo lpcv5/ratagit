@@ -228,6 +228,13 @@ pub(crate) fn confirm_auto_stash(state: &mut AppState) -> Vec<Command> {
                 auto_stash: true,
             }],
         ),
+        Some(AutoStashOperation::CheckoutCommitDetached { commit_id }) => with_pending(
+            state,
+            vec![Command::CheckoutCommitDetached {
+                commit_id,
+                auto_stash: true,
+            }],
+        ),
         Some(AutoStashOperation::Rebase {
             target,
             interactive,
@@ -310,7 +317,7 @@ fn rebase_or_confirm_stash(
     )
 }
 
-fn open_auto_stash_confirm(state: &mut AppState, operation: AutoStashOperation) {
+pub(crate) fn open_auto_stash_confirm(state: &mut AppState, operation: AutoStashOperation) {
     state.editor.kind = None;
     state.reset_menu.active = false;
     close_discard_confirm(state);

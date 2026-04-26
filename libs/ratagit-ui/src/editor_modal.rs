@@ -28,6 +28,7 @@ pub(crate) fn render_editor_modal(frame: &mut Frame<'_>, state: &AppState, area:
             body,
             body_cursor,
             active_field,
+            ..
         } => render_commit_editor(
             frame,
             modal.content,
@@ -235,6 +236,7 @@ fn editor_cursor_position(state: &AppState, area: Rect) -> Option<TerminalCursor
             body,
             body_cursor,
             active_field,
+            ..
         } => {
             let rows = Layout::default()
                 .direction(Direction::Vertical)

@@ -7,7 +7,7 @@ use ratagit_git::{GitBackend, GitError, MockGitBackend};
 use ratagit_harness::{
     AsyncRuntime, MockScenario, Runtime, ScenarioExpectations, run_mock_scenario,
 };
-use ratagit_testkit::{fixture_dirty_repo, fixture_empty_repo, fixture_many_files};
+use ratagit_testkit::{fixture_commit, fixture_dirty_repo, fixture_empty_repo, fixture_many_files};
 use ratagit_ui::{
     TerminalSize, details_content_lines_for_terminal_size, details_scroll_lines_for_terminal_size,
     render_terminal_buffer_with_cursor,
@@ -16,6 +16,30 @@ use ratagit_ui::{
 fn assert_scenario(scenario: MockScenario<'_>) {
     let result = run_mock_scenario(scenario);
     assert!(result.is_ok(), "{result:?}");
+}
+
+fn clean_commit_fixture() -> RepoSnapshot {
+    let mut fixture = fixture_dirty_repo();
+    fixture.status_summary = "clean".to_string();
+    fixture.files.clear();
+    fixture
+}
+
+fn clean_three_commit_fixture() -> RepoSnapshot {
+    let mut fixture = clean_commit_fixture();
+    fixture
+        .commits
+        .push(fixture_commit("ghi9012", "older base"));
+    fixture.commits.push(fixture_commit("jkl3456", "root base"));
+    fixture
+}
+
+fn clean_many_commit_fixture(count: usize) -> RepoSnapshot {
+    let mut fixture = clean_commit_fixture();
+    fixture.commits = (0..count)
+        .map(|index| fixture_commit(&format!("c{index:06}"), &format!("commit {index}")))
+        .collect();
+    fixture
 }
 
 #[derive(Debug)]
@@ -32,6 +56,17 @@ impl GitBackend for BlockingBackend {
             .recv_timeout(Duration::from_secs(2))
             .expect("test should release refresh");
         self.inner.lock().expect("mock lock").refresh_snapshot()
+    }
+
+    fn load_more_commits(
+        &mut self,
+        offset: usize,
+        limit: usize,
+    ) -> Result<Vec<ratagit_core::CommitEntry>, GitError> {
+        self.inner
+            .lock()
+            .expect("mock lock")
+            .load_more_commits(offset, limit)
     }
 
     fn files_details_diff(&mut self, paths: &[String]) -> Result<String, GitError> {
@@ -104,6 +139,45 @@ impl GitBackend for BlockingBackend {
             .lock()
             .expect("mock lock")
             .rebase_branch(target, interactive, auto_stash)
+    }
+
+    fn squash_commits(&mut self, commit_ids: &[String]) -> Result<(), GitError> {
+        self.inner
+            .lock()
+            .expect("mock lock")
+            .squash_commits(commit_ids)
+    }
+
+    fn fixup_commits(&mut self, commit_ids: &[String]) -> Result<(), GitError> {
+        self.inner
+            .lock()
+            .expect("mock lock")
+            .fixup_commits(commit_ids)
+    }
+
+    fn reword_commit(&mut self, commit_id: &str, message: &str) -> Result<(), GitError> {
+        self.inner
+            .lock()
+            .expect("mock lock")
+            .reword_commit(commit_id, message)
+    }
+
+    fn delete_commits(&mut self, commit_ids: &[String]) -> Result<(), GitError> {
+        self.inner
+            .lock()
+            .expect("mock lock")
+            .delete_commits(commit_ids)
+    }
+
+    fn checkout_commit_detached(
+        &mut self,
+        commit_id: &str,
+        auto_stash: bool,
+    ) -> Result<(), GitError> {
+        self.inner
+            .lock()
+            .expect("mock lock")
+            .checkout_commit_detached(commit_id, auto_stash)
     }
 
     fn stash_push(&mut self, message: &str) -> Result<(), GitError> {
@@ -872,6 +946,211 @@ fn harness_commits_create_and_refresh() {
             batch_selected_screen_rows: &[],
             git_ops_contains: &["commit:mvp commit", "refresh"],
             git_state_contains: &["summary: \"mvp commit\""],
+        },
+    ));
+}
+
+#[test]
+fn harness_commits_visual_multiselect_marks_rows() {
+    let inputs = [
+        UiAction::RefreshAll,
+        UiAction::FocusNext,
+        UiAction::FocusNext,
+        UiAction::ToggleCommitsMultiSelect,
+        UiAction::MoveDown,
+    ];
+    assert_scenario(MockScenario::new(
+        "commits_visual_multiselect_marks_rows",
+        clean_three_commit_fixture(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &["init project", "wire commands"],
+            screen_not_contains: &[],
+            selected_screen_rows: &[],
+            batch_selected_screen_rows: &["abc1234", "def5678"],
+            git_ops_contains: &["refresh"],
+            git_state_contains: &["summary: \"init project\""],
+        },
+    ));
+}
+
+#[test]
+fn harness_commits_lazy_loads_next_page_when_scrolling_past_first_hundred() {
+    let mut inputs = vec![
+        UiAction::RefreshAll,
+        UiAction::FocusNext,
+        UiAction::FocusNext,
+    ];
+    inputs.extend((0..100).map(|_| UiAction::MoveDown));
+
+    assert_scenario(MockScenario::new(
+        "commits_lazy_load_next_page",
+        clean_many_commit_fixture(125),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &["commit 100"],
+            screen_not_contains: &[],
+            selected_screen_rows: &["commit 100"],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["refresh", "commits-page:100:100"],
+            git_state_contains: &["summary: \"commit 124\""],
+        },
+    ));
+}
+
+#[test]
+fn harness_commits_prefetches_next_page_before_tail() {
+    let mut inputs = vec![
+        UiAction::RefreshAll,
+        UiAction::FocusNext,
+        UiAction::FocusNext,
+    ];
+    inputs.extend((0..79).map(|_| UiAction::MoveDown));
+
+    assert_scenario(MockScenario::new(
+        "commits_prefetch_next_page_before_tail",
+        clean_many_commit_fixture(125),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &["commit 79"],
+            screen_not_contains: &[],
+            selected_screen_rows: &["commit 79"],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["refresh", "commits-page:100:100"],
+            git_state_contains: &["summary: \"commit 124\""],
+        },
+    ));
+}
+
+#[test]
+fn harness_commits_squash_multiselect() {
+    let inputs = [
+        UiAction::RefreshAll,
+        UiAction::FocusNext,
+        UiAction::FocusNext,
+        UiAction::ToggleCommitsMultiSelect,
+        UiAction::MoveDown,
+        UiAction::SquashSelectedCommits,
+    ];
+    assert_scenario(MockScenario::new(
+        "commits_squash_multiselect",
+        clean_three_commit_fixture(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &["Squashed 2 commits", "older base"],
+            screen_not_contains: &[],
+            selected_screen_rows: &[],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["squash:abc1234,def5678", "refresh"],
+            git_state_contains: &["summary: \"older base + wire commands + init project\""],
+        },
+    ));
+}
+
+#[test]
+fn harness_commits_fixup_selected() {
+    let inputs = [
+        UiAction::RefreshAll,
+        UiAction::FocusNext,
+        UiAction::FocusNext,
+        UiAction::FixupSelectedCommits,
+    ];
+    assert_scenario(MockScenario::new(
+        "commits_fixup_selected",
+        clean_three_commit_fixture(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &["Fixed up 1 commit", "wire commands"],
+            screen_not_contains: &["init project"],
+            selected_screen_rows: &[],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["fixup:abc1234", "refresh"],
+            git_state_contains: &["summary: \"wire commands\""],
+        },
+    ));
+}
+
+#[test]
+fn harness_commits_reword_selected() {
+    let inputs = [
+        UiAction::RefreshAll,
+        UiAction::FocusNext,
+        UiAction::FocusNext,
+        UiAction::OpenCommitRewordEditor,
+        UiAction::EditorMoveCursorEnd,
+        UiAction::EditorInputChar(' '),
+        UiAction::EditorInputChar('u'),
+        UiAction::EditorInputChar('p'),
+        UiAction::EditorInputChar('d'),
+        UiAction::EditorInputChar('a'),
+        UiAction::EditorInputChar('t'),
+        UiAction::EditorInputChar('e'),
+        UiAction::EditorInputChar('d'),
+        UiAction::EditorConfirm,
+    ];
+    assert_scenario(MockScenario::new(
+        "commits_reword_selected",
+        clean_commit_fixture(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &["Reworded abc1234", "init project updated"],
+            screen_not_contains: &[],
+            selected_screen_rows: &[],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["reword:abc1234:init project updated", "refresh"],
+            git_state_contains: &["summary: \"init project updated\""],
+        },
+    ));
+}
+
+#[test]
+fn harness_commits_delete_selected() {
+    let inputs = [
+        UiAction::RefreshAll,
+        UiAction::FocusNext,
+        UiAction::FocusNext,
+        UiAction::DeleteSelectedCommits,
+    ];
+    assert_scenario(MockScenario::new(
+        "commits_delete_selected",
+        clean_commit_fixture(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &["Deleted 1 commit", "wire commands"],
+            screen_not_contains: &["init project"],
+            selected_screen_rows: &[],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["delete-commits:abc1234", "refresh"],
+            git_state_contains: &["summary: \"wire commands\""],
+        },
+    ));
+}
+
+#[test]
+fn harness_commits_detached_checkout_uses_auto_stash() {
+    let inputs = [
+        UiAction::RefreshAll,
+        UiAction::FocusNext,
+        UiAction::FocusNext,
+        UiAction::CheckoutSelectedCommitDetached,
+        UiAction::ConfirmAutoStash,
+    ];
+    assert_scenario(MockScenario::new(
+        "commits_detached_checkout_auto_stash",
+        fixture_dirty_repo(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &["Checked out detached with auto-stash", "abc1234"],
+            screen_not_contains: &[],
+            selected_screen_rows: &[],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &[
+                "auto-stash-push",
+                "checkout-detached:abc1234",
+                "auto-stash-pop",
+                "refresh",
+            ],
+            git_state_contains: &["detached_head: true", "current_branch: \"abc1234\""],
         },
     ));
 }

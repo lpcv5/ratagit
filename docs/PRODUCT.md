@@ -23,7 +23,7 @@ MVP v0 includes a left-nav workspace layout with six panels:
 - Branches: create branches from the selected local branch, checkout with
   optional auto-stash, delete local/`origin` branches, and rebase the current
   branch
-- Commits: create commit and refresh list
+- Commits: create commit, refresh list, squash/fixup/reword/delete commits, visual multi-select, and detached checkout
 - Stash: stash push and stash pop selected entry
 - Details:
   - Files focus projection: show merged `unstaged` then `staged` diff for the currently selected file/folder target
@@ -120,6 +120,26 @@ Branches panel rules:
   - interactive rebase runs Git interactive rebase onto the selected branch
   - origin/main rebase rebases the current branch onto `origin/main`
   - dirty rebase uses the same explicit auto-stash confirmation as checkout
+
+Commits panel rules:
+
+- commit rows render four columns: Unicode graph placeholder, hash, two-letter author, and message
+- initial refresh loads the first 100 commits; moving into the last 20 loaded commits prefetches the next 100 commits
+- commit list scrolling keeps the visible window still while the cursor remains inside the middle rows; it scrolls only after crossing the top or bottom three-row reserve
+- the graph column uses a deterministic `●` placeholder in this slice
+- author initials are derived from the author name and colored deterministically per author
+- commit hashes are colored by reachability:
+  - green when reachable from local `main`
+  - yellow when not on `main` but reachable from the current branch upstream
+  - red when not reachable from the upstream or when upstream/main data is unavailable
+- `v` enters visual multi-select at the current commit; `j` / `k` updates the continuous anchor-to-cursor range
+- `s` squashes the selected commit or visual-selected commits into their parent lineage
+- `f` fixups the selected commit or visual-selected commits into their parent lineage
+- `r` opens the commit message modal prefilled with the selected commit message and rewords one commit
+- `d` deletes the selected commit or visual-selected commits
+- rewrite actions require a clean working tree, only operate on red/unpushed commits, and reject merge commits in this slice
+- squash/fixup reject commits whose parent is the root commit in this slice
+- `space` checks out the selected commit as detached HEAD; dirty worktrees use the same explicit auto-stash confirmation as branch checkout
 
 All features are keyboard-driven and deterministic.
 

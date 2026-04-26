@@ -1,4 +1,19 @@
-use ratagit_core::{BranchEntry, CommitEntry, FileEntry, RepoSnapshot, StashEntry};
+use ratagit_core::{
+    BranchEntry, CommitEntry, CommitHashStatus, FileEntry, RepoSnapshot, StashEntry,
+};
+
+pub fn fixture_commit(id: &str, summary: &str) -> CommitEntry {
+    CommitEntry {
+        id: id.to_string(),
+        full_id: id.to_string(),
+        summary: summary.to_string(),
+        message: summary.to_string(),
+        author_name: "ratagit-tests".to_string(),
+        graph: "●".to_string(),
+        hash_status: CommitHashStatus::Unpushed,
+        is_merge: false,
+    }
+}
 
 pub fn fixture_empty_repo() -> RepoSnapshot {
     RepoSnapshot {
@@ -38,14 +53,8 @@ pub fn fixture_dirty_repo() -> RepoSnapshot {
             },
         ],
         commits: vec![
-            CommitEntry {
-                id: "abc1234".to_string(),
-                summary: "init project".to_string(),
-            },
-            CommitEntry {
-                id: "def5678".to_string(),
-                summary: "wire commands".to_string(),
-            },
+            fixture_commit("abc1234", "init project"),
+            fixture_commit("def5678", "wire commands"),
         ],
         branches: vec![
             BranchEntry {

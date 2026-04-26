@@ -31,6 +31,7 @@ Focus model:
 - `AppState.editor` stores active commit/stash editor modal state (type + fields + cursor indexes + scope)
 - `AppState.reset_menu` stores whether the Files reset menu is active and which reset choice is selected
 - `AppState.discard_confirm` stores whether the discard confirmation modal is active and the resolved target paths
+- `AppState.commits` stores commit rows, cursor selection, visual selection anchor, and selected visual range
 - `AppState.branches` stores local branch rows plus active branch creation,
   delete menu, rebase menu, and auto-stash confirmation state
 - `AppState.work` stores visible pending refresh/details/operation state and
@@ -126,6 +127,20 @@ Files panel interaction:
   deletion to `git branch -D`.
 - Branch rebase options are simple, interactive, and `origin/main`; simple and
   interactive rebase the current branch onto the selected branch.
+- Commits focus maps `s` to squash, `f` to fixup, `r` to reword, `d` to delete,
+  `space` to detached checkout, and `v` to visual multi-select.
+- Commit visual multi-select is AppState-owned and follows the same continuous
+  anchor-to-cursor model as Files visual selection.
+- Commit rewrite commands require a clean working tree, reject merge commits in
+  this slice, only accept unpushed commits, and are executed only through
+  `GitBackend`.
+- Squash/fixup reject root-parent targets in this slice because the replay path
+  amends the selected commit into its parent.
+- Commit reword reuses the existing commit editor modal with a reword intent
+  stored in `AppState.editor`; confirming emits `Command::RewordCommit`.
+- Detached commit checkout uses `Command::CheckoutCommitDetached`; when the
+  working tree is dirty it opens the shared auto-stash confirmation modal before
+  dispatching with `auto_stash=true`.
 - Files Details projection renders merged `unstaged` and `staged` diff sections
   for current file/folder targets from `GitBackend`.
 - Files and Branches Details projections apply the AppState-owned
@@ -161,6 +176,15 @@ Files panel interaction:
 - File rows use icons for folders, files, staged files, untracked files,
   batch membership, and search matches.
 - Visual-selected file rows use a color distinct from cursor selection.
+- Commit rows use fixed graph/hash/author/message columns; the graph is a `●`
+  placeholder until a later topology pass, hash colors represent main/upstream
+  reachability, and author initials use deterministic per-author colors.
+- Files and Commits share the same AppState-owned scroll direction/origin helper
+  so list windows move only after the cursor crosses the three-row top/bottom
+  reserve.
+- Commit pagination is AppState-owned: refresh stores the first 100 commits,
+  Commits navigation prefetches the next 100 when the cursor enters the last 20
+  loaded commits, and successful pages append to `AppState.commits.items`.
 - Visible cursor markers such as `>` are not rendered; selection is tested
   through buffer styles.
 - Modal overlays use the internal `ratagit-ui` modal system for deterministic

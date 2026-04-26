@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use ratagit_core::{COMMITS_PAGE_SIZE, CommitHashStatus};
 use ratagit_git::{GitBackend, HybridGitBackend, is_git_repo};
 
 struct TmpGitRepo {
@@ -97,6 +98,38 @@ fn seeded_repo_with_two_files(case_name: &str) -> TmpGitRepo {
     repo
 }
 
+fn repo_with_three_commits(case_name: &str) -> TmpGitRepo {
+    let repo = seeded_repo_with_two_files(case_name);
+    for (file, message) in [("a.txt", "second"), ("b.txt", "third")] {
+        write(repo.path().join(file), format!("{message}\n")).expect("file should be writable");
+        repo.run_git(&["add", "--", file]);
+        repo.run_git(&["commit", "-m", message]);
+    }
+    repo
+}
+
+fn feature_repo_with_three_commits(case_name: &str) -> TmpGitRepo {
+    let repo = seeded_repo_with_two_files(case_name);
+    repo.run_git(&["checkout", "-b", "feature/rewrite"]);
+    for (file, message) in [("a.txt", "second"), ("b.txt", "third")] {
+        write(repo.path().join(file), format!("{message}\n")).expect("file should be writable");
+        repo.run_git(&["add", "--", file]);
+        repo.run_git(&["commit", "-m", message]);
+    }
+    repo
+}
+
+fn commit_id(repo: &TmpGitRepo, rev: &str) -> String {
+    repo.run_git_capture(&["rev-parse", rev]).trim().to_string()
+}
+
+fn log_subjects(repo: &TmpGitRepo) -> Vec<String> {
+    repo.run_git_capture(&["log", "--format=%s"])
+        .lines()
+        .map(str::to_string)
+        .collect()
+}
+
 #[test]
 fn git2_refresh_snapshot_reads_status_refs_commits_and_stashes() {
     if !git_available() {
@@ -173,9 +206,184 @@ fn git2_refresh_snapshot_reads_recent_commits_from_head_first() {
         .refresh_snapshot()
         .expect("snapshot should refresh with recent commits");
 
-    assert_eq!(snapshot.commits.len(), 10);
+    assert_eq!(snapshot.commits.len(), 13);
     assert_eq!(snapshot.commits[0].summary, "commit 12");
-    assert_eq!(snapshot.commits[9].summary, "commit 3");
+    assert_eq!(snapshot.commits[12].summary, "init");
+}
+
+#[test]
+fn git2_commit_snapshot_and_pages_load_one_hundred_at_a_time() {
+    if !git_available() {
+        eprintln!(
+            "git is unavailable, skipping git2_commit_snapshot_and_pages_load_one_hundred_at_a_time"
+        );
+        return;
+    }
+
+    let repo = seeded_repo_with_two_files("commit-pages");
+    for index in 1..=125 {
+        write(repo.path().join("a.txt"), format!("commit {index}\n"))
+            .expect("a.txt should be writable");
+        repo.run_git(&["add", "--", "a.txt"]);
+        repo.run_git(&["commit", "-m", &format!("commit {index}")]);
+    }
+
+    let mut backend = HybridGitBackend::open(repo.path()).expect("hybrid backend should open");
+    let snapshot = backend
+        .refresh_snapshot()
+        .expect("snapshot should refresh with first commit page");
+    assert_eq!(snapshot.commits.len(), COMMITS_PAGE_SIZE);
+    assert_eq!(snapshot.commits[0].summary, "commit 125");
+    assert_eq!(snapshot.commits[99].summary, "commit 26");
+
+    let page = backend
+        .load_more_commits(COMMITS_PAGE_SIZE, COMMITS_PAGE_SIZE)
+        .expect("second commit page should load");
+    assert_eq!(page.len(), 26);
+    assert_eq!(page[0].summary, "commit 25");
+    assert_eq!(page[25].summary, "init");
+}
+
+#[test]
+fn git2_refresh_snapshot_reads_commit_metadata_and_hash_status() {
+    if !git_available() {
+        eprintln!(
+            "git is unavailable, skipping git2_refresh_snapshot_reads_commit_metadata_and_hash_status"
+        );
+        return;
+    }
+
+    let repo = seeded_repo_with_two_files("commit-metadata");
+    repo.run_git(&["checkout", "-b", "feature/status"]);
+    repo.run_git(&["config", "user.name", "Alice Baker"]);
+    write(repo.path().join("a.txt"), "pushed\n").expect("a.txt should be writable");
+    repo.run_git(&["add", "--", "a.txt"]);
+    repo.run_git(&["commit", "-m", "pushed commit", "-m", "pushed body"]);
+    repo.run_git(&["branch", "feature/upstream"]);
+    repo.run_git(&["branch", "--set-upstream-to=feature/upstream"]);
+    write(repo.path().join("a.txt"), "unpushed\n").expect("a.txt should be writable");
+    repo.run_git(&["add", "--", "a.txt"]);
+    repo.run_git(&["commit", "-m", "unpushed commit"]);
+
+    let mut backend = HybridGitBackend::open(repo.path()).expect("hybrid backend should open");
+    let snapshot = backend
+        .refresh_snapshot()
+        .expect("snapshot should refresh commit metadata");
+
+    assert_eq!(snapshot.commits[0].summary, "unpushed commit");
+    assert_eq!(snapshot.commits[0].hash_status, CommitHashStatus::Unpushed);
+    assert_eq!(snapshot.commits[1].summary, "pushed commit");
+    assert_eq!(snapshot.commits[1].author_name, "Alice Baker");
+    assert!(snapshot.commits[1].message.contains("pushed body"));
+    assert_eq!(snapshot.commits[1].graph, "●");
+    assert_eq!(snapshot.commits[1].hash_status, CommitHashStatus::Pushed);
+    assert_eq!(
+        snapshot.commits[2].hash_status,
+        CommitHashStatus::MergedToMain
+    );
+}
+
+#[test]
+fn hybrid_backend_checks_out_commit_as_detached_head() {
+    if !git_available() {
+        eprintln!("git is unavailable, skipping hybrid_backend_checks_out_commit_as_detached_head");
+        return;
+    }
+
+    let repo = repo_with_three_commits("detached-commit");
+    let target = commit_id(&repo, "HEAD~1");
+    let mut backend = HybridGitBackend::open(repo.path()).expect("hybrid backend should open");
+
+    backend
+        .checkout_commit_detached(&target, false)
+        .expect("detached checkout should succeed");
+
+    assert_eq!(
+        repo.run_git_capture(&["rev-parse", "--abbrev-ref", "HEAD"])
+            .trim(),
+        "HEAD"
+    );
+    assert_eq!(repo.run_git_capture(&["rev-parse", "HEAD"]).trim(), target);
+}
+
+#[test]
+fn hybrid_backend_replays_linear_commit_rewrites() {
+    if !git_available() {
+        eprintln!("git is unavailable, skipping hybrid_backend_replays_linear_commit_rewrites");
+        return;
+    }
+
+    let delete_repo = feature_repo_with_three_commits("delete-commits");
+    let delete_target = commit_id(&delete_repo, "HEAD~1");
+    HybridGitBackend::open(delete_repo.path())
+        .expect("hybrid backend should open")
+        .delete_commits(&[delete_target])
+        .expect("delete should replay history");
+    assert_eq!(log_subjects(&delete_repo), vec!["third", "init"]);
+
+    let fixup_repo = feature_repo_with_three_commits("fixup-commits");
+    let fixup_target = commit_id(&fixup_repo, "HEAD");
+    HybridGitBackend::open(fixup_repo.path())
+        .expect("hybrid backend should open")
+        .fixup_commits(&[fixup_target])
+        .expect("fixup should replay history");
+    assert_eq!(log_subjects(&fixup_repo), vec!["second", "init"]);
+
+    let squash_repo = feature_repo_with_three_commits("squash-commits");
+    let squash_target = commit_id(&squash_repo, "HEAD");
+    HybridGitBackend::open(squash_repo.path())
+        .expect("hybrid backend should open")
+        .squash_commits(&[squash_target])
+        .expect("squash should replay history");
+    assert_eq!(log_subjects(&squash_repo), vec!["second", "init"]);
+    assert!(
+        squash_repo
+            .run_git_capture(&["log", "-1", "--format=%B"])
+            .contains("third")
+    );
+
+    let reword_repo = feature_repo_with_three_commits("reword-commits");
+    let reword_target = commit_id(&reword_repo, "HEAD");
+    HybridGitBackend::open(reword_repo.path())
+        .expect("hybrid backend should open")
+        .reword_commit(&reword_target, "third reworded\n\nnew body")
+        .expect("reword should replay history");
+    assert_eq!(log_subjects(&reword_repo)[0], "third reworded");
+    assert!(
+        reword_repo
+            .run_git_capture(&["log", "-1", "--format=%B"])
+            .contains("new body")
+    );
+}
+
+#[test]
+fn hybrid_backend_rejects_public_and_root_parent_rewrites() {
+    if !git_available() {
+        eprintln!(
+            "git is unavailable, skipping hybrid_backend_rejects_public_and_root_parent_rewrites"
+        );
+        return;
+    }
+
+    let public_repo = repo_with_three_commits("rewrite-public-history");
+    let public_target = commit_id(&public_repo, "HEAD");
+    let error = HybridGitBackend::open(public_repo.path())
+        .expect("hybrid backend should open")
+        .delete_commits(&[public_target])
+        .expect_err("main-reachable commits should not be rewritten");
+    assert!(error.message.contains("merged to main"));
+
+    let root_parent_repo = seeded_repo_with_two_files("rewrite-root-parent");
+    root_parent_repo.run_git(&["checkout", "-b", "feature/root-parent"]);
+    write(root_parent_repo.path().join("a.txt"), "feature\n").expect("a.txt should be writable");
+    root_parent_repo.run_git(&["add", "--", "a.txt"]);
+    root_parent_repo.run_git(&["commit", "-m", "feature change"]);
+    let root_parent_target = commit_id(&root_parent_repo, "HEAD");
+    let error = HybridGitBackend::open(root_parent_repo.path())
+        .expect("hybrid backend should open")
+        .fixup_commits(&[root_parent_target])
+        .expect_err("squash/fixup into root should be rejected");
+    assert!(error.message.contains("cannot squash or fixup into root"));
 }
 
 #[test]

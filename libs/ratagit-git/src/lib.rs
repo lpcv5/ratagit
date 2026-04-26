@@ -7,7 +7,9 @@ mod mock;
 mod status_cli;
 mod untracked_diff;
 
-use ratagit_core::{BranchDeleteMode, Command, GitResult, RepoSnapshot, ResetMode, StashEntry};
+use ratagit_core::{
+    BranchDeleteMode, Command, CommitEntry, GitResult, RepoSnapshot, ResetMode, StashEntry,
+};
 
 pub use hybrid::HybridGitBackend;
 pub use mock::MockGitBackend;
@@ -41,6 +43,11 @@ impl std::error::Error for GitError {}
 
 pub trait GitBackend {
     fn refresh_snapshot(&mut self) -> Result<RepoSnapshot, GitError>;
+    fn load_more_commits(
+        &mut self,
+        offset: usize,
+        limit: usize,
+    ) -> Result<Vec<CommitEntry>, GitError>;
     fn files_details_diff(&mut self, paths: &[String]) -> Result<String, GitError>;
     fn branch_details_log(&mut self, branch: &str, max_count: usize) -> Result<String, GitError>;
     fn stage_file(&mut self, path: &str) -> Result<(), GitError>;
@@ -72,6 +79,15 @@ pub trait GitBackend {
         interactive: bool,
         auto_stash: bool,
     ) -> Result<(), GitError>;
+    fn squash_commits(&mut self, commit_ids: &[String]) -> Result<(), GitError>;
+    fn fixup_commits(&mut self, commit_ids: &[String]) -> Result<(), GitError>;
+    fn reword_commit(&mut self, commit_id: &str, message: &str) -> Result<(), GitError>;
+    fn delete_commits(&mut self, commit_ids: &[String]) -> Result<(), GitError>;
+    fn checkout_commit_detached(
+        &mut self,
+        commit_id: &str,
+        auto_stash: bool,
+    ) -> Result<(), GitError>;
     fn stash_push(&mut self, message: &str) -> Result<(), GitError>;
     fn stash_files(&mut self, message: &str, paths: &[String]) -> Result<(), GitError>;
     fn stash_pop(&mut self, stash_id: &str) -> Result<(), GitError>;
@@ -87,6 +103,18 @@ pub fn execute_command(backend: &mut dyn GitBackend, command: Command) -> GitRes
             Err(error) => GitResult::RefreshFailed {
                 error: error.message,
             },
+        },
+        Command::LoadMoreCommits {
+            offset,
+            limit,
+            epoch,
+        } => GitResult::CommitsPage {
+            offset,
+            limit,
+            epoch,
+            result: backend
+                .load_more_commits(offset, limit)
+                .map_err(|error| error.message),
         },
         Command::RefreshFilesDetailsDiff { paths } => GitResult::FilesDetailsDiff {
             paths: paths.clone(),
@@ -166,6 +194,41 @@ pub fn execute_command(backend: &mut dyn GitBackend, command: Command) -> GitRes
                 .rebase_branch(&target, interactive, auto_stash)
                 .map_err(|error| error.message),
         },
+        Command::SquashCommits { commit_ids } => GitResult::SquashCommits {
+            commit_ids: commit_ids.clone(),
+            result: backend
+                .squash_commits(&commit_ids)
+                .map_err(|error| error.message),
+        },
+        Command::FixupCommits { commit_ids } => GitResult::FixupCommits {
+            commit_ids: commit_ids.clone(),
+            result: backend
+                .fixup_commits(&commit_ids)
+                .map_err(|error| error.message),
+        },
+        Command::RewordCommit { commit_id, message } => GitResult::RewordCommit {
+            commit_id: commit_id.clone(),
+            message: message.clone(),
+            result: backend
+                .reword_commit(&commit_id, &message)
+                .map_err(|error| error.message),
+        },
+        Command::DeleteCommits { commit_ids } => GitResult::DeleteCommits {
+            commit_ids: commit_ids.clone(),
+            result: backend
+                .delete_commits(&commit_ids)
+                .map_err(|error| error.message),
+        },
+        Command::CheckoutCommitDetached {
+            commit_id,
+            auto_stash,
+        } => GitResult::CheckoutCommitDetached {
+            commit_id: commit_id.clone(),
+            auto_stash,
+            result: backend
+                .checkout_commit_detached(&commit_id, auto_stash)
+                .map_err(|error| error.message),
+        },
         Command::StashPush { message } => GitResult::StashPush {
             message: message.clone(),
             result: backend.stash_push(&message).map_err(|error| error.message),
@@ -208,9 +271,46 @@ pub(crate) fn validate_repo_relative_path(path: &str) -> Result<&Path, GitError>
 
 #[cfg(test)]
 mod tests {
-    use ratagit_core::{BranchDeleteMode, BranchEntry, CommitEntry, FileEntry, ResetMode};
+    use ratagit_core::{
+        BranchDeleteMode, BranchEntry, COMMITS_PAGE_SIZE, CommitEntry, CommitHashStatus, FileEntry,
+        ResetMode,
+    };
 
     use super::*;
+
+    fn test_commit(id: &str, summary: &str) -> CommitEntry {
+        CommitEntry {
+            id: id.to_string(),
+            full_id: id.to_string(),
+            summary: summary.to_string(),
+            message: summary.to_string(),
+            author_name: "ratagit-tests".to_string(),
+            graph: "●".to_string(),
+            hash_status: CommitHashStatus::Unpushed,
+            is_merge: false,
+        }
+    }
+
+    fn test_snapshot_with_commits(commits: Vec<CommitEntry>) -> RepoSnapshot {
+        RepoSnapshot {
+            status_summary: "clean".to_string(),
+            current_branch: "main".to_string(),
+            detached_head: false,
+            files: Vec::new(),
+            commits,
+            branches: vec![BranchEntry {
+                name: "main".to_string(),
+                is_current: true,
+            }],
+            stashes: Vec::new(),
+        }
+    }
+
+    fn test_commits(count: usize) -> Vec<CommitEntry> {
+        (0..count)
+            .map(|index| test_commit(&format!("{index:07x}"), &format!("commit {index}")))
+            .collect()
+    }
 
     #[test]
     fn mock_backend_mutates_state() {
@@ -311,6 +411,111 @@ mod tests {
     }
 
     #[test]
+    fn mock_commit_operations_update_snapshot_and_trace() {
+        let mut backend = MockGitBackend::new(RepoSnapshot {
+            status_summary: "clean".to_string(),
+            current_branch: "main".to_string(),
+            detached_head: false,
+            files: Vec::new(),
+            commits: vec![
+                test_commit("aaa1111", "head"),
+                test_commit("bbb2222", "middle"),
+                test_commit("ccc3333", "base"),
+            ],
+            branches: vec![BranchEntry {
+                name: "main".to_string(),
+                is_current: true,
+            }],
+            stashes: Vec::new(),
+        });
+
+        backend
+            .fixup_commits(&["aaa1111".to_string()])
+            .expect("fixup should work");
+        assert_eq!(backend.snapshot().commits[0].summary, "middle");
+        backend
+            .reword_commit("bbb2222", "middle reworded")
+            .expect("reword should work");
+        assert_eq!(backend.snapshot().commits[0].summary, "middle reworded");
+        backend
+            .checkout_commit_detached("bbb2222", true)
+            .expect("detached checkout should work");
+        assert!(backend.snapshot().detached_head);
+        assert_eq!(
+            backend.operations(),
+            &[
+                "fixup:aaa1111".to_string(),
+                "reword:bbb2222:middle reworded".to_string(),
+                "auto-stash-push".to_string(),
+                "checkout-detached:bbb2222".to_string(),
+                "auto-stash-pop".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn mock_refresh_and_commit_pages_use_page_size() {
+        let mut backend = MockGitBackend::new(test_snapshot_with_commits(test_commits(
+            COMMITS_PAGE_SIZE + 25,
+        )));
+
+        let snapshot = backend.refresh_snapshot().expect("refresh should work");
+        assert_eq!(snapshot.commits.len(), COMMITS_PAGE_SIZE);
+
+        let page = backend
+            .load_more_commits(COMMITS_PAGE_SIZE, COMMITS_PAGE_SIZE)
+            .expect("page should load");
+        assert_eq!(page.len(), 25);
+        assert_eq!(page[0].summary, "commit 100");
+        assert_eq!(
+            backend.operations(),
+            &[
+                "refresh".to_string(),
+                format!("commits-page:{}:{}", COMMITS_PAGE_SIZE, COMMITS_PAGE_SIZE),
+            ]
+        );
+    }
+
+    #[test]
+    fn mock_commit_rewrites_reject_public_merge_and_root_parent_cases() {
+        let mut public = test_commit("aaa1111", "public");
+        public.hash_status = CommitHashStatus::Pushed;
+        let mut backend = MockGitBackend::new(test_snapshot_with_commits(vec![
+            public,
+            test_commit("bbb2222", "base"),
+            test_commit("ccc3333", "root"),
+        ]));
+
+        let error = backend
+            .delete_commits(&["aaa1111".to_string()])
+            .expect_err("public commits should not be rewritten");
+        assert!(error.message.contains("not private"));
+
+        let mut merge = test_commit("ddd4444", "merge");
+        merge.is_merge = true;
+        let mut backend = MockGitBackend::new(test_snapshot_with_commits(vec![
+            merge,
+            test_commit("eee5555", "base"),
+            test_commit("fff6666", "root"),
+        ]));
+
+        let error = backend
+            .reword_commit("ddd4444", "merge reworded")
+            .expect_err("merge commits should not be rewritten");
+        assert!(error.message.contains("merge commits"));
+
+        let mut backend = MockGitBackend::new(test_snapshot_with_commits(vec![
+            test_commit("ggg7777", "head"),
+            test_commit("hhh8888", "root"),
+        ]));
+
+        let error = backend
+            .fixup_commits(&["ggg7777".to_string()])
+            .expect_err("fixup into root should be rejected");
+        assert!(error.message.contains("cannot squash or fixup into root"));
+    }
+
+    #[test]
     fn mock_delete_current_branch_reports_error() {
         let mut backend = MockGitBackend::new(RepoSnapshot {
             status_summary: "clean".to_string(),
@@ -350,10 +555,7 @@ mod tests {
                     untracked: false,
                 },
             ],
-            commits: vec![CommitEntry {
-                id: "mock-0001".to_string(),
-                summary: "initial".to_string(),
-            }],
+            commits: vec![test_commit("mock-0001", "initial")],
             branches: vec![BranchEntry {
                 name: "main".to_string(),
                 is_current: true,
@@ -391,10 +593,7 @@ mod tests {
             current_branch: "main".to_string(),
             detached_head: false,
             files: Vec::new(),
-            commits: vec![CommitEntry {
-                id: "abc1234".to_string(),
-                summary: "initial".to_string(),
-            }],
+            commits: vec![test_commit("abc1234", "initial")],
             branches: vec![BranchEntry {
                 name: "main".to_string(),
                 is_current: true,

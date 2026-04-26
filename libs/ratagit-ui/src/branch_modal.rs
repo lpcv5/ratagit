@@ -365,6 +365,9 @@ fn branch_rebase_description(choice: BranchRebaseChoice, selected_target: &str) 
 fn auto_stash_operation_label(operation: Option<&AutoStashOperation>) -> String {
     match operation {
         Some(AutoStashOperation::Checkout { branch }) => format!("checkout {branch}"),
+        Some(AutoStashOperation::CheckoutCommitDetached { commit_id }) => {
+            format!("checkout detached {commit_id}")
+        }
         Some(AutoStashOperation::Rebase {
             target,
             interactive,

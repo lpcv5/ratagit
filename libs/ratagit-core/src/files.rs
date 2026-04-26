@@ -1,5 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::scroll::{ScrollDirection, move_selected_index_with_scroll, reset_scroll_origin};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileEntry {
     pub path: String,
@@ -31,12 +33,6 @@ pub enum FileInputMode {
     Normal,
     MultiSelect,
     SearchInput,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ScrollDirection {
-    Up,
-    Down,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -113,32 +109,23 @@ pub fn clamp_selected(state: &mut FilesPanelState) {
     } else {
         state.selected.min(len - 1)
     };
-    state.scroll_direction_origin = state.selected;
+    reset_scroll_origin(
+        state.selected,
+        len,
+        &mut state.scroll_direction,
+        &mut state.scroll_direction_origin,
+    );
 }
 
 pub fn move_selected(state: &mut FilesPanelState, move_up: bool) {
     let len = build_file_tree_rows(state).len();
-    if len == 0 {
-        state.selected = 0;
-        state.scroll_direction = None;
-        state.scroll_direction_origin = 0;
-        return;
-    }
-    let old_selected = state.selected;
-    let next_direction = if move_up {
-        ScrollDirection::Up
-    } else {
-        ScrollDirection::Down
-    };
-    if move_up {
-        state.selected = state.selected.saturating_sub(1);
-    } else {
-        state.selected = (state.selected + 1).min(len - 1);
-    }
-    if state.selected != old_selected && state.scroll_direction != Some(next_direction) {
-        state.scroll_direction = Some(next_direction);
-        state.scroll_direction_origin = old_selected;
-    }
+    move_selected_index_with_scroll(
+        &mut state.selected,
+        len,
+        move_up,
+        &mut state.scroll_direction,
+        &mut state.scroll_direction_origin,
+    );
     if state.mode == FileInputMode::MultiSelect {
         refresh_multi_select_range(state);
     }

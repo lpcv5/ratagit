@@ -1,29 +1,42 @@
 mod branches;
+mod commits;
 mod files;
+mod scroll;
 mod state;
 
+pub use commits::{
+    clamp_selected as clamp_commit_selection, commit_key,
+    enter_multi_select as enter_commit_multi_select,
+    is_selected_for_batch as commit_is_selected_for_batch,
+    leave_multi_select as leave_commit_multi_select, move_selected as move_commit_selected,
+    reconcile_after_items_appended as reconcile_commits_after_items_appended,
+    reconcile_after_items_changed as reconcile_commits_after_items_changed, selected_commit,
+    selected_commit_ids, selected_commits, toggle_multi_select as toggle_commit_multi_select,
+};
 pub use files::{
-    FileEntry, FileInputMode, FileRowKind, FileTreeRow, FilesPanelState, ScrollDirection,
-    build_file_tree_rows, cancel_search as cancel_file_search,
-    clamp_selected as clamp_file_selection, collect_directories,
-    confirm_search as confirm_file_search, enter_multi_select, file_tree_rows,
+    FileEntry, FileInputMode, FileRowKind, FileTreeRow, FilesPanelState, build_file_tree_rows,
+    cancel_search as cancel_file_search, clamp_selected as clamp_file_selection,
+    collect_directories, confirm_search as confirm_file_search, enter_multi_select, file_tree_rows,
     initialize_tree_if_needed, jump_search_match, leave_multi_select, move_selected,
     pop_search_char, push_search_char, reconcile_after_items_changed, refresh_tree_projection,
     selected_row, selected_target_paths, start_search as start_file_search,
     toggle_current_row_selection, toggle_selected_directory,
 };
+pub use scroll::ScrollDirection;
 pub use state::{
     AppState, AutoStashConfirmState, AutoStashOperation, BranchCreateState, BranchDeleteChoice,
     BranchDeleteMenuState, BranchDeleteMode, BranchEntry, BranchForceDeleteConfirmState,
     BranchRebaseChoice, BranchRebaseMenuState, BranchesPanelState, CachedBranchLog,
-    CachedFilesDiff, CommitEntry, CommitField, CommitsPanelState, DetailsPanelState,
-    DiscardConfirmState, EditorKind, EditorState, PanelFocus, RepoSnapshot, ResetChoice,
-    ResetMenuState, ResetMode, StashEntry, StashPanelState, StashScope, StatusPanelState,
-    WorkStatusState,
+    CachedFilesDiff, CommitEditorIntent, CommitEntry, CommitField, CommitHashStatus,
+    CommitInputMode, CommitsPanelState, DetailsPanelState, DiscardConfirmState, EditorKind,
+    EditorState, PanelFocus, RepoSnapshot, ResetChoice, ResetMenuState, ResetMode, StashEntry,
+    StashPanelState, StashScope, StatusPanelState, WorkStatusState,
 };
 
 const DETAILS_DIFF_CACHE_LIMIT: usize = 16;
 pub const BRANCH_DETAILS_LOG_MAX_COUNT: usize = 50;
+pub const COMMITS_PAGE_SIZE: usize = 100;
+pub const COMMITS_PREFETCH_THRESHOLD: usize = 20;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UiAction {
@@ -71,6 +84,12 @@ pub enum UiAction {
     EditorConfirm,
     EditorCancel,
     CreateCommit { message: String },
+    ToggleCommitsMultiSelect,
+    SquashSelectedCommits,
+    FixupSelectedCommits,
+    OpenCommitRewordEditor,
+    DeleteSelectedCommits,
+    CheckoutSelectedCommitDetached,
     OpenBranchCreateInput,
     BranchCreateInputChar(char),
     BranchCreateBackspace,
@@ -113,6 +132,12 @@ pub enum GitResult {
     },
     RefreshFailed {
         error: String,
+    },
+    CommitsPage {
+        offset: usize,
+        limit: usize,
+        epoch: u64,
+        result: Result<Vec<CommitEntry>, String>,
     },
     StageFiles {
         paths: Vec<String>,
@@ -164,6 +189,28 @@ pub enum GitResult {
         auto_stash: bool,
         result: Result<(), String>,
     },
+    SquashCommits {
+        commit_ids: Vec<String>,
+        result: Result<(), String>,
+    },
+    FixupCommits {
+        commit_ids: Vec<String>,
+        result: Result<(), String>,
+    },
+    RewordCommit {
+        commit_id: String,
+        message: String,
+        result: Result<(), String>,
+    },
+    DeleteCommits {
+        commit_ids: Vec<String>,
+        result: Result<(), String>,
+    },
+    CheckoutCommitDetached {
+        commit_id: String,
+        auto_stash: bool,
+        result: Result<(), String>,
+    },
     StashPush {
         message: String,
         result: Result<(), String>,
@@ -183,6 +230,11 @@ pub enum Action {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     RefreshAll,
+    LoadMoreCommits {
+        offset: usize,
+        limit: usize,
+        epoch: u64,
+    },
     RefreshFilesDetailsDiff {
         paths: Vec<String>,
     },
@@ -228,6 +280,23 @@ pub enum Command {
         interactive: bool,
         auto_stash: bool,
     },
+    SquashCommits {
+        commit_ids: Vec<String>,
+    },
+    FixupCommits {
+        commit_ids: Vec<String>,
+    },
+    RewordCommit {
+        commit_id: String,
+        message: String,
+    },
+    DeleteCommits {
+        commit_ids: Vec<String>,
+    },
+    CheckoutCommitDetached {
+        commit_id: String,
+        auto_stash: bool,
+    },
     StashPush {
         message: String,
     },
@@ -241,6 +310,7 @@ pub fn debounce_key_for_command(command: &Command) -> Option<&'static str> {
         Command::RefreshFilesDetailsDiff { .. } => Some("files_details_diff"),
         Command::RefreshBranchDetailsLog { .. } => Some("branch_details_log"),
         Command::RefreshAll
+        | Command::LoadMoreCommits { .. }
         | Command::StageFiles { .. }
         | Command::UnstageFiles { .. }
         | Command::StashFiles { .. }
@@ -252,6 +322,11 @@ pub fn debounce_key_for_command(command: &Command) -> Option<&'static str> {
         | Command::CheckoutBranch { .. }
         | Command::DeleteBranch { .. }
         | Command::RebaseBranch { .. }
+        | Command::SquashCommits { .. }
+        | Command::FixupCommits { .. }
+        | Command::RewordCommit { .. }
+        | Command::DeleteCommits { .. }
+        | Command::CheckoutCommitDetached { .. }
         | Command::StashPush { .. }
         | Command::StashPop { .. } => None,
     }
@@ -268,6 +343,9 @@ fn mark_command_pending(state: &mut AppState, command: &Command) {
     match command {
         Command::RefreshAll => {
             state.work.refresh_pending = true;
+        }
+        Command::LoadMoreCommits { .. } => {
+            state.commits.loading_more = true;
         }
         Command::RefreshFilesDetailsDiff { .. } => {
             state.work.details_pending = true;
@@ -313,6 +391,21 @@ fn mark_command_pending(state: &mut AppState, command: &Command) {
                 "simple"
             };
             state.work.operation_pending = Some(format!("rebase_branch_{mode}"));
+        }
+        Command::SquashCommits { .. } => {
+            state.work.operation_pending = Some("squash_commits".to_string());
+        }
+        Command::FixupCommits { .. } => {
+            state.work.operation_pending = Some("fixup_commits".to_string());
+        }
+        Command::RewordCommit { .. } => {
+            state.work.operation_pending = Some("reword_commit".to_string());
+        }
+        Command::DeleteCommits { .. } => {
+            state.work.operation_pending = Some("delete_commits".to_string());
+        }
+        Command::CheckoutCommitDetached { .. } => {
+            state.work.operation_pending = Some("checkout_detached".to_string());
         }
         Command::StashPush { .. } => {
             state.work.operation_pending = Some("stash_push".to_string());
@@ -503,12 +596,14 @@ fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
             maybe_refresh_details_on_focus(state)
         }
         UiAction::MoveUp => {
-            move_selection(state, true);
-            maybe_refresh_details_on_navigation(state)
+            let mut commands = move_selection(state, true);
+            commands.extend(maybe_refresh_details_on_navigation(state));
+            commands
         }
         UiAction::MoveDown => {
-            move_selection(state, false);
-            maybe_refresh_details_on_navigation(state)
+            let mut commands = move_selection(state, false);
+            commands.extend(maybe_refresh_details_on_navigation(state));
+            commands
         }
         UiAction::DetailsScrollUp { lines } => {
             state.details.scroll_offset = state.details.scroll_offset.saturating_sub(lines);
@@ -641,6 +736,30 @@ fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
             state.commits.draft_message = message.clone();
             with_pending(state, vec![Command::CreateCommit { message }])
         }
+        UiAction::ToggleCommitsMultiSelect => {
+            toggle_commit_multi_select(&mut state.commits);
+            Vec::new()
+        }
+        UiAction::SquashSelectedCommits => {
+            rewrite_selected_commits(state, CommitRewriteKind::Squash, "squash", |commit_ids| {
+                Command::SquashCommits { commit_ids }
+            })
+        }
+        UiAction::FixupSelectedCommits => {
+            rewrite_selected_commits(state, CommitRewriteKind::Fixup, "fixup", |commit_ids| {
+                Command::FixupCommits { commit_ids }
+            })
+        }
+        UiAction::OpenCommitRewordEditor => {
+            open_commit_reword_editor(state);
+            Vec::new()
+        }
+        UiAction::DeleteSelectedCommits => {
+            rewrite_selected_commits(state, CommitRewriteKind::Delete, "delete", |commit_ids| {
+                Command::DeleteCommits { commit_ids }
+            })
+        }
+        UiAction::CheckoutSelectedCommitDetached => checkout_selected_commit_detached(state),
         UiAction::CreateBranch { name, start_point } => {
             with_pending(state, vec![Command::CreateBranch { name, start_point }])
         }
@@ -669,6 +788,12 @@ fn update_git_result(state: &mut AppState, result: GitResult) -> Vec<Command> {
             state.status.last_error = None;
             refresh_details_command_for_focus(state)
         }
+        GitResult::CommitsPage {
+            offset,
+            limit,
+            epoch,
+            result,
+        } => handle_commits_page_result(state, offset, limit, epoch, result),
         GitResult::FilesDetailsDiff { paths, result } => {
             if state.last_left_focus != PanelFocus::Files {
                 return Vec::new();
@@ -798,17 +923,31 @@ fn update_git_result(state: &mut AppState, result: GitResult) -> Vec<Command> {
             name,
             auto_stash,
             result,
-        } => handle_operation_result(
-            state,
-            result,
-            "checkout_branch",
-            if auto_stash {
+        } => {
+            let success_message = if auto_stash {
                 format!("Checked out with auto-stash: {name}")
             } else {
                 format!("Checked out: {name}")
-            },
-            format!("Failed to checkout branch: {name}"),
-        ),
+            };
+            let failure_prefix = format!("Failed to checkout branch: {name}");
+            if auto_stash {
+                handle_operation_result_refreshing_after_failure(
+                    state,
+                    result,
+                    "checkout_branch",
+                    success_message,
+                    failure_prefix,
+                )
+            } else {
+                handle_operation_result(
+                    state,
+                    result,
+                    "checkout_branch",
+                    success_message,
+                    failure_prefix,
+                )
+            }
+        }
         GitResult::DeleteBranch {
             name,
             mode,
@@ -827,17 +966,90 @@ fn update_git_result(state: &mut AppState, result: GitResult) -> Vec<Command> {
                 "rebase_branch_simple"
             };
             let mode = if interactive { "interactive" } else { "simple" };
-            handle_operation_result(
-                state,
-                result,
-                operation_key,
-                if auto_stash {
-                    format!("Rebased with auto-stash ({mode}) onto {target}")
-                } else {
-                    format!("Rebased ({mode}) onto {target}")
-                },
-                format!("Failed to rebase onto {target}"),
-            )
+            let success_message = if auto_stash {
+                format!("Rebased with auto-stash ({mode}) onto {target}")
+            } else {
+                format!("Rebased ({mode}) onto {target}")
+            };
+            let failure_prefix = format!("Failed to rebase onto {target}");
+            if auto_stash {
+                handle_operation_result_refreshing_after_failure(
+                    state,
+                    result,
+                    operation_key,
+                    success_message,
+                    failure_prefix,
+                )
+            } else {
+                handle_operation_result(
+                    state,
+                    result,
+                    operation_key,
+                    success_message,
+                    failure_prefix,
+                )
+            }
+        }
+        GitResult::SquashCommits { commit_ids, result } => handle_operation_result(
+            state,
+            result,
+            "squash_commits",
+            format!("Squashed {}", format_commit_count(commit_ids.len())),
+            "Failed to squash commits".to_string(),
+        ),
+        GitResult::FixupCommits { commit_ids, result } => handle_operation_result(
+            state,
+            result,
+            "fixup_commits",
+            format!("Fixed up {}", format_commit_count(commit_ids.len())),
+            "Failed to fixup commits".to_string(),
+        ),
+        GitResult::RewordCommit {
+            commit_id,
+            message,
+            result,
+        } => handle_operation_result(
+            state,
+            result,
+            "reword_commit",
+            format!("Reworded {commit_id}: {}", first_line(&message)),
+            format!("Failed to reword commit: {commit_id}"),
+        ),
+        GitResult::DeleteCommits { commit_ids, result } => handle_operation_result(
+            state,
+            result,
+            "delete_commits",
+            format!("Deleted {}", format_commit_count(commit_ids.len())),
+            "Failed to delete commits".to_string(),
+        ),
+        GitResult::CheckoutCommitDetached {
+            commit_id,
+            auto_stash,
+            result,
+        } => {
+            let success_message = if auto_stash {
+                format!("Checked out detached with auto-stash: {commit_id}")
+            } else {
+                format!("Checked out detached: {commit_id}")
+            };
+            let failure_prefix = format!("Failed to checkout detached: {commit_id}");
+            if auto_stash {
+                handle_operation_result_refreshing_after_failure(
+                    state,
+                    result,
+                    "checkout_detached",
+                    success_message,
+                    failure_prefix,
+                )
+            } else {
+                handle_operation_result(
+                    state,
+                    result,
+                    "checkout_detached",
+                    success_message,
+                    failure_prefix,
+                )
+            }
         }
         GitResult::StashPush { message, result } => handle_operation_result(
             state,
@@ -856,6 +1068,120 @@ fn update_git_result(state: &mut AppState, result: GitResult) -> Vec<Command> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CommitRewriteKind {
+    Squash,
+    Fixup,
+    Delete,
+}
+
+fn rewrite_selected_commits(
+    state: &mut AppState,
+    _kind: CommitRewriteKind,
+    action_label: &str,
+    command: impl FnOnce(Vec<String>) -> Command,
+) -> Vec<Command> {
+    if repository_has_uncommitted_changes(state) {
+        push_notice(state, "Commit rewrite requires a clean working tree");
+        return Vec::new();
+    }
+    let commits = selected_commits(&state.commits);
+    if commits.is_empty() {
+        push_notice(state, "No commit selected");
+        return Vec::new();
+    }
+    if commits
+        .iter()
+        .any(|commit| commit.hash_status != CommitHashStatus::Unpushed)
+    {
+        push_notice(state, "Commit rewrite only supports unpushed commits");
+        return Vec::new();
+    }
+    if commits.iter().any(|commit| commit.is_merge) {
+        push_notice(state, "Commit rewrite does not support merge commits yet");
+        return Vec::new();
+    }
+    let commit_ids = selected_commit_ids(&state.commits);
+    if commit_ids.is_empty() {
+        push_notice(state, "No commit selected");
+        return Vec::new();
+    }
+    if state.commits.mode == CommitInputMode::MultiSelect {
+        leave_commit_multi_select(&mut state.commits);
+    }
+    push_notice(
+        state,
+        &format!(
+            "Queued {action_label} for {}",
+            format_commit_count(commit_ids.len())
+        ),
+    );
+    with_pending(state, vec![command(commit_ids)])
+}
+
+fn open_commit_reword_editor(state: &mut AppState) {
+    if state.commits.mode == CommitInputMode::MultiSelect {
+        push_notice(state, "Reword supports one commit at a time");
+        return;
+    }
+    if repository_has_uncommitted_changes(state) {
+        push_notice(state, "Commit rewrite requires a clean working tree");
+        return;
+    }
+    let Some(commit) = selected_commit(&state.commits) else {
+        push_notice(state, "No commit selected");
+        return;
+    };
+    if commit.is_merge {
+        push_notice(state, "Commit rewrite does not support merge commits yet");
+        return;
+    }
+    if commit.hash_status != CommitHashStatus::Unpushed {
+        push_notice(state, "Commit rewrite only supports unpushed commits");
+        return;
+    }
+    state.reset_menu.active = false;
+    close_discard_confirm(state);
+    branches::close_popovers(state);
+    let (message, body) = split_commit_message(&commit.message);
+    state.editor.kind = Some(EditorKind::Commit {
+        message_cursor: message.len(),
+        body_cursor: body.len(),
+        message,
+        body,
+        active_field: CommitField::Message,
+        intent: CommitEditorIntent::Reword {
+            commit_id: commit_key(&commit),
+        },
+    });
+}
+
+fn checkout_selected_commit_detached(state: &mut AppState) -> Vec<Command> {
+    if state.commits.mode == CommitInputMode::MultiSelect {
+        push_notice(state, "Detached checkout supports one commit at a time");
+        return Vec::new();
+    }
+    let Some(commit) = selected_commit(&state.commits) else {
+        push_notice(state, "No commit selected");
+        return Vec::new();
+    };
+    let commit_id = commit_key(&commit);
+    if repository_has_uncommitted_changes(state) {
+        branches::open_auto_stash_confirm(
+            state,
+            AutoStashOperation::CheckoutCommitDetached { commit_id },
+        );
+        return Vec::new();
+    }
+    with_pending(
+        state,
+        vec![Command::CheckoutCommitDetached {
+            commit_id,
+            auto_stash: false,
+        }],
+    )
+}
+
 fn open_commit_editor(state: &mut AppState) {
     state.reset_menu.active = false;
     close_discard_confirm(state);
@@ -866,6 +1192,7 @@ fn open_commit_editor(state: &mut AppState) {
         body: String::new(),
         body_cursor: 0,
         active_field: CommitField::Message,
+        intent: CommitEditorIntent::Create,
     });
 }
 
@@ -958,6 +1285,7 @@ fn apply_editor_input_char(state: &mut AppState, ch: char) {
             body,
             body_cursor,
             active_field,
+            ..
         } => match active_field {
             CommitField::Message => insert_char_at_cursor(message, message_cursor, ch),
             CommitField::Body => insert_char_at_cursor(body, body_cursor, ch),
@@ -982,6 +1310,7 @@ fn apply_editor_backspace(state: &mut AppState) {
             body,
             body_cursor,
             active_field,
+            ..
         } => match active_field {
             CommitField::Message => backspace_at_cursor(message, message_cursor),
             CommitField::Body => backspace_at_cursor(body, body_cursor),
@@ -1014,6 +1343,7 @@ fn move_editor_cursor(state: &mut AppState, movement: EditorCursorMove) {
             body,
             body_cursor,
             active_field,
+            ..
         } => match active_field {
             CommitField::Message => move_cursor_in_text(message, message_cursor, movement),
             CommitField::Body => move_cursor_in_text(body, body_cursor, movement),
@@ -1062,7 +1392,12 @@ fn confirm_editor(state: &mut AppState) -> Vec<Command> {
     };
 
     match editor {
-        EditorKind::Commit { message, body, .. } => {
+        EditorKind::Commit {
+            message,
+            body,
+            intent,
+            ..
+        } => {
             if message.trim().is_empty() {
                 push_notice(state, "Commit message cannot be empty");
                 return Vec::new();
@@ -1071,12 +1406,21 @@ fn confirm_editor(state: &mut AppState) -> Vec<Command> {
             let commit_message = build_commit_message(&message, &body);
             state.commits.draft_message = message.trim().to_string();
             state.editor.kind = None;
-            with_pending(
-                state,
-                vec![Command::CreateCommit {
-                    message: commit_message,
-                }],
-            )
+            match intent {
+                CommitEditorIntent::Create => with_pending(
+                    state,
+                    vec![Command::CreateCommit {
+                        message: commit_message,
+                    }],
+                ),
+                CommitEditorIntent::Reword { commit_id } => with_pending(
+                    state,
+                    vec![Command::RewordCommit {
+                        commit_id,
+                        message: commit_message,
+                    }],
+                ),
+            }
         }
         EditorKind::Stash { title, scope, .. } => match scope {
             StashScope::All => {
@@ -1110,6 +1454,20 @@ fn build_commit_message(subject: &str, body: &str) -> String {
     } else {
         format!("{clean_subject}\n\n{clean_body}")
     }
+}
+
+fn split_commit_message(message: &str) -> (String, String) {
+    let clean = message.trim_end();
+    let mut parts = clean.splitn(2, '\n');
+    let subject = parts.next().unwrap_or("").trim().to_string();
+    let remainder = parts.next().unwrap_or("");
+    let body = remainder.strip_prefix('\n').unwrap_or(remainder);
+    let body = body.trim_end().to_string();
+    (subject, body)
+}
+
+fn first_line(message: &str) -> &str {
+    message.lines().next().unwrap_or("").trim()
 }
 
 fn insert_char_at_cursor(text: &mut String, cursor: &mut usize, ch: char) {
@@ -1193,6 +1551,33 @@ fn handle_operation_result(
     }
 }
 
+fn handle_operation_result_refreshing_after_failure(
+    state: &mut AppState,
+    result: Result<(), String>,
+    operation_key: &str,
+    success_message: String,
+    failure_prefix: String,
+) -> Vec<Command> {
+    match result {
+        Ok(()) => handle_operation_result(
+            state,
+            Ok(()),
+            operation_key,
+            success_message,
+            failure_prefix,
+        ),
+        Err(error_message) => {
+            state.work.operation_pending = None;
+            state.work.last_completed_command = Some(operation_key.to_string());
+            state.last_operation = Some(operation_key.to_string());
+            let full_error = format!("{failure_prefix}: {error_message}");
+            state.status.last_error = Some(full_error.clone());
+            push_notice(state, &full_error);
+            with_pending(state, vec![Command::RefreshAll])
+        }
+    }
+}
+
 fn handle_delete_branch_result(
     state: &mut AppState,
     name: String,
@@ -1244,6 +1629,11 @@ fn apply_snapshot(state: &mut AppState, snapshot: RepoSnapshot) {
     initialize_tree_if_needed(&mut state.files);
     reconcile_after_items_changed(&mut state.files);
     state.commits.items = snapshot.commits;
+    state.commits.has_more = state.commits.items.len() >= COMMITS_PAGE_SIZE;
+    state.commits.loading_more = false;
+    state.commits.pending_select_after_load = false;
+    state.commits.pagination_epoch = state.commits.pagination_epoch.wrapping_add(1);
+    reconcile_commits_after_items_changed(&mut state.commits);
     state.branches.items = snapshot.branches;
     state.stash.items = snapshot.stashes;
     clamp_selection_indexes(state);
@@ -1257,9 +1647,67 @@ fn apply_snapshot(state: &mut AppState, snapshot: RepoSnapshot) {
     clear_details_caches(state);
 }
 
+fn load_more_commits_command(state: &mut AppState, select_first_new: bool) -> Vec<Command> {
+    if !state.commits.has_more || state.commits.items.is_empty() {
+        return Vec::new();
+    }
+    if state.commits.loading_more {
+        state.commits.pending_select_after_load |= select_first_new;
+        return Vec::new();
+    }
+    state.commits.pending_select_after_load |= select_first_new;
+    with_pending(
+        state,
+        vec![Command::LoadMoreCommits {
+            offset: state.commits.items.len(),
+            limit: COMMITS_PAGE_SIZE,
+            epoch: state.commits.pagination_epoch,
+        }],
+    )
+}
+
+fn handle_commits_page_result(
+    state: &mut AppState,
+    offset: usize,
+    limit: usize,
+    epoch: u64,
+    result: Result<Vec<CommitEntry>, String>,
+) -> Vec<Command> {
+    if epoch != state.commits.pagination_epoch {
+        return Vec::new();
+    }
+    state.commits.loading_more = false;
+    state.work.last_completed_command = Some("load_more_commits".to_string());
+    match result {
+        Ok(mut commits) => {
+            if offset != state.commits.items.len() {
+                state.commits.pending_select_after_load = false;
+                return Vec::new();
+            }
+            let first_new_index = state.commits.items.len();
+            let loaded = commits.len();
+            state.commits.items.append(&mut commits);
+            state.commits.has_more = loaded >= limit;
+            if state.commits.pending_select_after_load && loaded > 0 {
+                state.commits.selected = first_new_index;
+            }
+            state.commits.pending_select_after_load = false;
+            state.status.last_error = None;
+            reconcile_commits_after_items_appended(&mut state.commits);
+        }
+        Err(error) => {
+            state.commits.pending_select_after_load = false;
+            let message = format!("Failed to load more commits: {error}");
+            state.status.last_error = Some(message.clone());
+            push_notice(state, &message);
+        }
+    }
+    Vec::new()
+}
+
 fn clamp_selection_indexes(state: &mut AppState) {
     clamp_file_selection(&mut state.files);
-    state.commits.selected = clamp_index(state.commits.selected, state.commits.items.len());
+    clamp_commit_selection(&mut state.commits);
     state.branches.selected = clamp_index(state.branches.selected, state.branches.items.len());
     state.stash.selected = clamp_index(state.stash.selected, state.stash.items.len());
 }
@@ -1268,26 +1716,52 @@ fn clamp_index(index: usize, len: usize) -> usize {
     if len == 0 { 0 } else { index.min(len - 1) }
 }
 
-fn move_selection(state: &mut AppState, move_up: bool) {
+fn move_selection(state: &mut AppState, move_up: bool) -> Vec<Command> {
     match state.focus {
         PanelFocus::Files => {
             move_selected(&mut state.files, move_up);
+            Vec::new()
         }
-        PanelFocus::Branches => move_index(
-            &mut state.branches.selected,
-            state.branches.items.len(),
-            move_up,
-        ),
-        PanelFocus::Commits => move_index(
-            &mut state.commits.selected,
-            state.commits.items.len(),
-            move_up,
-        ),
+        PanelFocus::Branches => {
+            move_index(
+                &mut state.branches.selected,
+                state.branches.items.len(),
+                move_up,
+            );
+            Vec::new()
+        }
+        PanelFocus::Commits => {
+            let was_at_loaded_end = !move_up
+                && !state.commits.items.is_empty()
+                && state.commits.selected + 1 >= state.commits.items.len();
+            move_commit_selected(&mut state.commits, move_up);
+            if was_at_loaded_end {
+                load_more_commits_command(state, true)
+            } else if should_prefetch_commits(state, move_up) {
+                load_more_commits_command(state, false)
+            } else {
+                Vec::new()
+            }
+        }
         PanelFocus::Stash => {
-            move_index(&mut state.stash.selected, state.stash.items.len(), move_up)
+            move_index(&mut state.stash.selected, state.stash.items.len(), move_up);
+            Vec::new()
         }
-        PanelFocus::Details | PanelFocus::Log => {}
+        PanelFocus::Details | PanelFocus::Log => Vec::new(),
     }
+}
+
+fn should_prefetch_commits(state: &AppState, move_up: bool) -> bool {
+    !move_up
+        && state.commits.has_more
+        && !state.commits.items.is_empty()
+        && state
+            .commits
+            .items
+            .len()
+            .saturating_sub(1)
+            .saturating_sub(state.commits.selected)
+            <= COMMITS_PREFETCH_THRESHOLD
 }
 
 fn move_index(selected: &mut usize, len: usize, move_up: bool) {
@@ -1479,11 +1953,23 @@ fn file_staged(state: &AppState, path: &str) -> Option<bool> {
         .map(|entry| entry.staged)
 }
 
+fn repository_has_uncommitted_changes(state: &AppState) -> bool {
+    !state.files.items.is_empty()
+}
+
 fn format_paths(paths: &[String]) -> String {
     match paths {
         [] => "<none>".to_string(),
         [only] => only.clone(),
         _ => format!("{} files", paths.len()),
+    }
+}
+
+fn format_commit_count(count: usize) -> String {
+    if count == 1 {
+        "1 commit".to_string()
+    } else {
+        format!("{count} commits")
     }
 }
 

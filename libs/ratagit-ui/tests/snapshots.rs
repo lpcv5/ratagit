@@ -1,8 +1,9 @@
 use ratagit_core::{
-    Action, AppState, Command, FileEntry, GitResult, PanelFocus, ResetChoice, UiAction, update,
+    Action, AppState, Command, CommitHashStatus, FileEntry, GitResult, PanelFocus, ResetChoice,
+    UiAction, update,
 };
 use ratagit_testkit::{
-    fixture_conflict, fixture_dirty_repo, fixture_empty_repo, fixture_many_files,
+    fixture_commit, fixture_conflict, fixture_dirty_repo, fixture_empty_repo, fixture_many_files,
     fixture_unicode_paths,
 };
 use ratagit_ui::{
@@ -43,6 +44,29 @@ fn mock_branch_details_log(branch: &str) -> String {
 fn apply_refreshed_with_mock_details(state: &mut AppState, snapshot: ratagit_core::RepoSnapshot) {
     let commands = update(state, Action::GitResult(GitResult::Refreshed(snapshot)));
     apply_mock_details_commands(state, commands);
+}
+
+fn buffer_contains_text_with_exact_fg(
+    buffer: &ratagit_ui::TerminalBuffer,
+    needle: &str,
+    color: Color,
+) -> bool {
+    let width = buffer.area.width as usize;
+    if width == 0 {
+        return false;
+    }
+    buffer.content().chunks(width).any(|cells| {
+        let line = cells.iter().map(|cell| cell.symbol()).collect::<String>();
+        let Some(byte_start) = line.find(needle) else {
+            return false;
+        };
+        let start = line[..byte_start].chars().count();
+        cells
+            .iter()
+            .skip(start)
+            .take(needle.len())
+            .all(|cell| cell.fg == color)
+    })
 }
 
 fn apply_mock_details_commands(state: &mut AppState, commands: Vec<Command>) {
@@ -655,14 +679,65 @@ fn terminal_snapshot_focus_and_keys_follow_actions() {
 
     assert!(screen.contains(" Commits"));
     assert!(!screen.contains("Commits *"));
-    assert!(screen.contains("keys(commits): c commit"));
+    assert!(screen.contains("keys(commits): s squash"));
     assert!(!screen.contains(" Keys "));
     assert!(
         screen
             .lines()
             .last()
-            .is_some_and(|line| line.starts_with("keys(commits): c commit"))
+            .is_some_and(|line| line.starts_with("keys(commits): s squash"))
     );
+}
+
+#[test]
+fn terminal_commits_panel_colors_hashes_and_authors() {
+    let mut snapshot = fixture_dirty_repo();
+    let mut main_commit = fixture_commit("aaa1111", "merged");
+    main_commit.hash_status = CommitHashStatus::MergedToMain;
+    main_commit.author_name = "Alice Baker".to_string();
+    let mut pushed_commit = fixture_commit("bbb2222", "pushed");
+    pushed_commit.hash_status = CommitHashStatus::Pushed;
+    pushed_commit.author_name = "Bea Clark".to_string();
+    let mut unpushed_commit = fixture_commit("ccc3333", "unpushed");
+    unpushed_commit.hash_status = CommitHashStatus::Unpushed;
+    unpushed_commit.author_name = "Alice Baker".to_string();
+    snapshot.commits = vec![main_commit, pushed_commit, unpushed_commit];
+
+    let mut state = AppState::default();
+    apply_refreshed_with_mock_details(&mut state, snapshot);
+    let buffer = render_terminal_buffer(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    );
+
+    assert!(buffer_contains_text_with_exact_fg(
+        &buffer,
+        "aaa1111",
+        Color::Green
+    ));
+    assert!(buffer_contains_text_with_exact_fg(
+        &buffer,
+        "bbb2222",
+        Color::Yellow
+    ));
+    assert!(buffer_contains_text_with_exact_fg(
+        &buffer,
+        "ccc3333",
+        Color::Red
+    ));
+    assert!(buffer_contains_text_with_exact_fg(
+        &buffer,
+        "AB",
+        Color::Magenta
+    ));
+    assert!(buffer_contains_text_with_exact_fg(
+        &buffer,
+        "BC",
+        Color::White
+    ));
 }
 
 #[test]
