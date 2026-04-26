@@ -75,6 +75,21 @@ impl GitCli {
         parse_porcelain_v1_z(&output)
     }
 
+    pub(crate) fn branch_details_log(
+        &mut self,
+        branch: &str,
+        max_count: usize,
+    ) -> Result<String, GitError> {
+        self.run_git_owned(vec![
+            "log".to_string(),
+            "--graph".to_string(),
+            "--color=always".to_string(),
+            "-n".to_string(),
+            max_count.to_string(),
+            branch.to_string(),
+        ])
+    }
+
     pub(crate) fn create_commit(&mut self, message: &str) -> Result<(), GitError> {
         self.run_git(&["commit", "-m", message]).map(|_| ())
     }

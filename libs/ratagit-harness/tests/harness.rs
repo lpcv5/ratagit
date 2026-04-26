@@ -38,6 +38,13 @@ impl GitBackend for BlockingBackend {
             .files_details_diff(paths)
     }
 
+    fn branch_details_log(&mut self, branch: &str, max_count: usize) -> Result<String, GitError> {
+        self.inner
+            .lock()
+            .expect("mock lock")
+            .branch_details_log(branch, max_count)
+    }
+
     fn stage_file(&mut self, path: &str) -> Result<(), GitError> {
         self.inner.lock().expect("mock lock").stage_file(path)
     }
@@ -850,20 +857,45 @@ fn harness_branches_create_and_checkout() {
         fixture_dirty_repo(),
         &inputs,
         ScenarioExpectations {
-            screen_contains: &[
-                "feature/new",
-                "details(branches): pending git log --graph implementation",
-            ],
+            screen_contains: &["feature/new", "commit abc1234"],
             screen_not_contains: &[],
             selected_screen_rows: &[],
             batch_selected_screen_rows: &[],
             git_ops_contains: &[
+                "branch-log:main:50",
                 "create-branch:feature/new:main",
+                "branch-log:feature/new:50",
                 "auto-stash-push",
                 "checkout-branch:feature/new",
                 "auto-stash-pop",
             ],
             git_state_contains: &["current_branch: \"feature/new\""],
+        },
+    ));
+}
+
+#[test]
+fn harness_branch_details_follow_cursor_with_log_graph() {
+    let inputs = [
+        UiAction::RefreshAll,
+        UiAction::FocusNext,
+        UiAction::MoveDown,
+    ];
+    assert_scenario(MockScenario::new(
+        "branches_details_follow_cursor_log_graph",
+        fixture_dirty_repo(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &[
+                "* commit abc1234",
+                "init project on feature/mvp",
+                "keys(branches):",
+            ],
+            screen_not_contains: &["details(branches): pending"],
+            selected_screen_rows: &[],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["branch-log:main:50", "branch-log:feature/mvp:50"],
+            git_state_contains: &["current_branch: \"main\"", "name: \"feature/mvp\""],
         },
     ));
 }

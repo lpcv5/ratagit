@@ -2,6 +2,7 @@ use ratagit_core::{
     AppState, BranchEntry, CommitEntry, FileInputMode, FileRowKind, FileTreeRow, PanelFocus,
     ScrollDirection, StashEntry, build_file_tree_rows, file_tree_rows,
 };
+use ratatui::style::{Color, Modifier, Style};
 
 use crate::theme::{
     ICON_BATCH_SELECTED, ICON_BRANCH, ICON_COMMIT, ICON_DIRECTORY_CLOSED, ICON_DIRECTORY_OPEN,
@@ -14,6 +15,13 @@ pub(crate) struct PanelLine {
     pub(crate) text: String,
     pub(crate) selected: bool,
     pub(crate) role: RowRole,
+    pub(crate) spans: Option<Vec<PanelSpan>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PanelSpan {
+    pub(crate) text: String,
+    pub(crate) style: Style,
 }
 
 impl PanelLine {
@@ -22,11 +30,17 @@ impl PanelLine {
             text: text.into(),
             selected: false,
             role,
+            spans: None,
         }
     }
 
     fn selected(mut self, selected: bool) -> Self {
         self.selected = selected;
+        self
+    }
+
+    fn styled_spans(mut self, spans: Vec<PanelSpan>) -> Self {
+        self.spans = Some(spans);
         self
     }
 }
@@ -114,11 +128,7 @@ pub(crate) fn render_stash_lines(state: &AppState, max_lines: usize) -> Vec<Pane
 pub(crate) fn render_details_lines(state: &AppState, max_lines: usize) -> Vec<PanelLine> {
     match state.last_left_focus {
         PanelFocus::Files => render_files_details_lines(state, max_lines),
-        // TODO(details-branches): replace placeholder with selected-branch git log graph.
-        PanelFocus::Branches => render_placeholder_details_lines(
-            "  details(branches): pending git log --graph implementation",
-            max_lines,
-        ),
+        PanelFocus::Branches => render_branch_details_lines(state, max_lines),
         // TODO(details-commits): replace placeholder with commit-focused details projection.
         PanelFocus::Commits => render_placeholder_details_lines(
             "  details(commits): pending details implementation",
@@ -197,6 +207,45 @@ fn render_files_details_lines(state: &AppState, max_lines: usize) -> Vec<PanelLi
         .collect()
 }
 
+fn render_branch_details_lines(state: &AppState, max_lines: usize) -> Vec<PanelLine> {
+    if max_lines == 0 {
+        return Vec::new();
+    }
+
+    if state.details.branch_log_target.is_none() {
+        return vec![PanelLine::new(
+            "  details(branches): no branch selected",
+            RowRole::Muted,
+        )];
+    }
+
+    if let Some(error) = &state.details.branch_log_error {
+        return vec![PanelLine::new(format!("  error={error}"), RowRole::Error)];
+    }
+
+    if state.work.details_pending && state.details.branch_log.trim().is_empty() {
+        return vec![PanelLine::new(
+            "  details(branches): loading log graph",
+            RowRole::Muted,
+        )];
+    }
+
+    if state.details.branch_log.trim().is_empty() {
+        return vec![PanelLine::new(
+            "  details(branches): no log graph for current selection",
+            RowRole::Muted,
+        )];
+    }
+
+    state
+        .details
+        .branch_log
+        .lines()
+        .map(|line| ansi_branch_log_line(line, "  "))
+        .take(max_lines)
+        .collect()
+}
+
 fn render_placeholder_details_lines(message: &str, max_lines: usize) -> Vec<PanelLine> {
     if max_lines == 0 {
         return Vec::new();
@@ -225,6 +274,109 @@ fn classify_diff_row_role(line: &str) -> RowRole {
         return RowRole::DiffRemove;
     }
     RowRole::Normal
+}
+
+fn ansi_branch_log_line(line: &str, prefix: &str) -> PanelLine {
+    let mut text = prefix.to_string();
+    let mut spans = vec![PanelSpan {
+        text: prefix.to_string(),
+        style: Style::default(),
+    }];
+    let mut style = Style::default();
+    let mut plain = String::new();
+    let mut chars = line.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '\u{1b}' && chars.peek() == Some(&'[') {
+            chars.next();
+            let mut code = String::new();
+            for next in chars.by_ref() {
+                if next == 'm' {
+                    break;
+                }
+                code.push(next);
+            }
+            if !plain.is_empty() {
+                text.push_str(&plain);
+                spans.push(PanelSpan {
+                    text: std::mem::take(&mut plain),
+                    style,
+                });
+            }
+            style = apply_sgr_codes(style, &code);
+        } else {
+            plain.push(ch);
+        }
+    }
+
+    if !plain.is_empty() {
+        text.push_str(&plain);
+        spans.push(PanelSpan { text: plain, style });
+    }
+
+    PanelLine::new(text, RowRole::Normal).styled_spans(spans)
+}
+
+fn apply_sgr_codes(mut style: Style, code: &str) -> Style {
+    let parts = if code.is_empty() {
+        vec![0]
+    } else {
+        code.split(';')
+            .filter_map(|part| part.parse::<u8>().ok())
+            .collect::<Vec<_>>()
+    };
+    let mut index = 0;
+    while index < parts.len() {
+        match parts[index] {
+            0 => style = Style::default(),
+            1 => style = style.add_modifier(Modifier::BOLD),
+            22 => style = style.remove_modifier(Modifier::BOLD),
+            30..=37 => style = style.fg(ansi_color(parts[index] - 30, false)),
+            39 => style = style.fg(Color::Reset),
+            90..=97 => style = style.fg(ansi_color(parts[index] - 90, true)),
+            38 if parts.get(index + 1) == Some(&5) => {
+                if let Some(color) = parts.get(index + 2) {
+                    style = style.fg(Color::Indexed(*color));
+                    index += 2;
+                }
+            }
+            38 if parts.get(index + 1) == Some(&2) => {
+                if let (Some(red), Some(green), Some(blue)) = (
+                    parts.get(index + 2),
+                    parts.get(index + 3),
+                    parts.get(index + 4),
+                ) {
+                    style = style.fg(Color::Rgb(*red, *green, *blue));
+                    index += 4;
+                }
+            }
+            _ => {}
+        }
+        index += 1;
+    }
+    style
+}
+
+fn ansi_color(index: u8, bright: bool) -> Color {
+    match (index, bright) {
+        (0, false) => Color::Black,
+        (1, false) => Color::Red,
+        (2, false) => Color::Green,
+        (3, false) => Color::Yellow,
+        (4, false) => Color::Blue,
+        (5, false) => Color::Magenta,
+        (6, false) => Color::Cyan,
+        (7, false) => Color::Gray,
+        (0, true) => Color::DarkGray,
+        (1, true) => Color::LightRed,
+        (2, true) => Color::LightGreen,
+        (3, true) => Color::LightYellow,
+        (4, true) => Color::LightBlue,
+        (5, true) => Color::LightMagenta,
+        (6, true) => Color::LightCyan,
+        (7, true) => Color::White,
+        _ => Color::Reset,
+    }
 }
 
 pub(crate) fn shortcuts_for_state(state: &AppState) -> String {
@@ -626,6 +778,13 @@ mod tests {
         );
         update(
             &mut state,
+            Action::GitResult(GitResult::BranchDetailsLog {
+                branch: "main".to_string(),
+                result: Ok("\u{1b}[33m*\u{1b}[m \u{1b}[33mcommit abc1234\u{1b}[m".to_string()),
+            }),
+        );
+        update(
+            &mut state,
             Action::Ui(UiAction::FocusPanel {
                 panel: PanelFocus::Details,
             }),
@@ -633,10 +792,8 @@ mod tests {
 
         let lines = render_details_lines(&state, 4);
 
-        assert_eq!(
-            lines[0].text,
-            "  details(branches): pending git log --graph implementation"
-        );
+        assert_eq!(lines[0].text, "  * commit abc1234");
+        assert!(lines[0].spans.is_some());
     }
 
     #[test]

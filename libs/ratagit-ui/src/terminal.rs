@@ -1,7 +1,7 @@
 use ratagit_core::{AppState, PanelFocus};
 use ratatui::backend::{Backend, TestBackend};
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::text::Line;
+use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, HighlightSpacing, List, ListItem, ListState, Paragraph};
 use ratatui::{Frame, Terminal};
 
@@ -147,7 +147,7 @@ fn render_block_panel(
     let title = Line::styled(format!(" {} ", panel_title(panel)), border_style);
     let items = lines
         .iter()
-        .map(|line| ListItem::new(Line::from(line.text.clone())).style(row_style(line.role)))
+        .map(|line| ListItem::new(line_to_ratatui_line(line)).style(row_style(line.role)))
         .collect::<Vec<_>>();
     let mut list_state = ListState::default();
     let selected_index = lines.iter().position(|line| line.selected);
@@ -173,6 +173,18 @@ fn render_block_panel(
                 .border_style(border_style),
         );
     frame.render_stateful_widget(widget, area, &mut list_state);
+}
+
+fn line_to_ratatui_line(line: &PanelLine) -> Line<'static> {
+    if let Some(spans) = &line.spans {
+        return Line::from(
+            spans
+                .iter()
+                .map(|span| Span::styled(span.text.clone(), span.style))
+                .collect::<Vec<_>>(),
+        );
+    }
+    Line::from(line.text.clone())
 }
 
 fn render_shortcuts(frame: &mut Frame<'_>, state: &AppState, area: Rect) {

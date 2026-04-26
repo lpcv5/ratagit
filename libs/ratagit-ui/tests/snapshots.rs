@@ -32,8 +32,18 @@ fn mock_files_details_diff(paths: &[String]) -> String {
     format!("### unstaged\n{}", blocks.join("\n"))
 }
 
+fn mock_branch_details_log(branch: &str) -> String {
+    format!(
+        "\u{1b}[33m*\u{1b}[m \u{1b}[33mcommit abc1234\u{1b}[m\nAuthor: ratagit-tests <ratagit-tests@example.com>\n\n    init project on {branch}"
+    )
+}
+
 fn apply_refreshed_with_mock_details(state: &mut AppState, snapshot: ratagit_core::RepoSnapshot) {
     let commands = update(state, Action::GitResult(GitResult::Refreshed(snapshot)));
+    apply_mock_details_commands(state, commands);
+}
+
+fn apply_mock_details_commands(state: &mut AppState, commands: Vec<Command>) {
     match commands.as_slice() {
         [] => {}
         [Command::RefreshFilesDetailsDiff { paths }] => {
@@ -42,6 +52,16 @@ fn apply_refreshed_with_mock_details(state: &mut AppState, snapshot: ratagit_cor
                 Action::GitResult(GitResult::FilesDetailsDiff {
                     paths: paths.clone(),
                     result: Ok(mock_files_details_diff(paths)),
+                }),
+            );
+            assert!(follow_up.is_empty());
+        }
+        [Command::RefreshBranchDetailsLog { branch, .. }] => {
+            let follow_up = update(
+                state,
+                Action::GitResult(GitResult::BranchDetailsLog {
+                    branch: branch.clone(),
+                    result: Ok(mock_branch_details_log(branch)),
                 }),
             );
             assert!(follow_up.is_empty());
@@ -297,13 +317,15 @@ fn terminal_snapshot_files_discard_confirm_multiselect_modal() {
 fn terminal_snapshot_branches_create_modal() {
     let mut state = AppState::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
-    update(
+    let commands = update(
         &mut state,
         Action::Ui(UiAction::FocusPanel {
             panel: PanelFocus::Branches,
         }),
     );
-    update(&mut state, Action::Ui(UiAction::MoveDown));
+    apply_mock_details_commands(&mut state, commands);
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+    apply_mock_details_commands(&mut state, commands);
     update(&mut state, Action::Ui(UiAction::OpenBranchCreateInput));
     for ch in "feature/new".chars() {
         update(&mut state, Action::Ui(UiAction::BranchCreateInputChar(ch)));
@@ -322,13 +344,15 @@ fn terminal_snapshot_branches_create_modal() {
 fn terminal_snapshot_branches_delete_modal() {
     let mut state = AppState::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
-    update(
+    let commands = update(
         &mut state,
         Action::Ui(UiAction::FocusPanel {
             panel: PanelFocus::Branches,
         }),
     );
-    update(&mut state, Action::Ui(UiAction::MoveDown));
+    apply_mock_details_commands(&mut state, commands);
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+    apply_mock_details_commands(&mut state, commands);
     update(&mut state, Action::Ui(UiAction::OpenBranchDeleteMenu));
 
     insta::assert_snapshot!(render_terminal_text(
@@ -367,13 +391,15 @@ fn terminal_snapshot_branches_force_delete_confirm_modal() {
 fn terminal_snapshot_branches_rebase_modal() {
     let mut state = AppState::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
-    update(
+    let commands = update(
         &mut state,
         Action::Ui(UiAction::FocusPanel {
             panel: PanelFocus::Branches,
         }),
     );
-    update(&mut state, Action::Ui(UiAction::MoveDown));
+    apply_mock_details_commands(&mut state, commands);
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+    apply_mock_details_commands(&mut state, commands);
     update(&mut state, Action::Ui(UiAction::OpenBranchRebaseMenu));
     update(&mut state, Action::Ui(UiAction::MoveBranchRebaseMenuDown));
 
@@ -390,13 +416,15 @@ fn terminal_snapshot_branches_rebase_modal() {
 fn terminal_snapshot_branches_auto_stash_confirm_modal() {
     let mut state = AppState::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
-    update(
+    let commands = update(
         &mut state,
         Action::Ui(UiAction::FocusPanel {
             panel: PanelFocus::Branches,
         }),
     );
-    update(&mut state, Action::Ui(UiAction::MoveDown));
+    apply_mock_details_commands(&mut state, commands);
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+    apply_mock_details_commands(&mut state, commands);
     update(&mut state, Action::Ui(UiAction::CheckoutSelectedBranch));
 
     insta::assert_snapshot!(render_terminal_text(
@@ -981,6 +1009,38 @@ fn terminal_buffer_styles_files_details_diff_rows_by_semantics() {
         &buffer,
         "+new README.md",
         Style::default().fg(Color::Green),
+    ));
+}
+
+#[test]
+fn terminal_buffer_styles_branch_details_log_from_ansi() {
+    let mut state = AppState::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+    let commands = update(
+        &mut state,
+        Action::Ui(UiAction::FocusPanel {
+            panel: PanelFocus::Branches,
+        }),
+    );
+    apply_mock_details_commands(&mut state, commands);
+
+    let buffer = render_terminal_buffer(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    );
+
+    assert!(buffer_contains_text_with_style(
+        &buffer,
+        "*",
+        Style::default().fg(Color::Yellow),
+    ));
+    assert!(buffer_contains_text_with_style(
+        &buffer,
+        "commit abc1234",
+        Style::default().fg(Color::Yellow),
     ));
 }
 

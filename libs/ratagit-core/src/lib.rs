@@ -15,13 +15,15 @@ pub use files::{
 pub use state::{
     AppState, AutoStashConfirmState, AutoStashOperation, BranchCreateState, BranchDeleteChoice,
     BranchDeleteMenuState, BranchDeleteMode, BranchEntry, BranchForceDeleteConfirmState,
-    BranchRebaseChoice, BranchRebaseMenuState, BranchesPanelState, CachedFilesDiff, CommitEntry,
-    CommitField, CommitsPanelState, DetailsPanelState, DiscardConfirmState, EditorKind,
-    EditorState, PanelFocus, RepoSnapshot, ResetChoice, ResetMenuState, ResetMode, StashEntry,
-    StashPanelState, StashScope, StatusPanelState, WorkStatusState,
+    BranchRebaseChoice, BranchRebaseMenuState, BranchesPanelState, CachedBranchLog,
+    CachedFilesDiff, CommitEntry, CommitField, CommitsPanelState, DetailsPanelState,
+    DiscardConfirmState, EditorKind, EditorState, PanelFocus, RepoSnapshot, ResetChoice,
+    ResetMenuState, ResetMode, StashEntry, StashPanelState, StashScope, StatusPanelState,
+    WorkStatusState,
 };
 
 const DETAILS_DIFF_CACHE_LIMIT: usize = 16;
+pub const BRANCH_DETAILS_LOG_MAX_COUNT: usize = 50;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UiAction {
@@ -103,6 +105,10 @@ pub enum GitResult {
         paths: Vec<String>,
         result: Result<String, String>,
     },
+    BranchDetailsLog {
+        branch: String,
+        result: Result<String, String>,
+    },
     RefreshFailed {
         error: String,
     },
@@ -178,6 +184,10 @@ pub enum Command {
     RefreshFilesDetailsDiff {
         paths: Vec<String>,
     },
+    RefreshBranchDetailsLog {
+        branch: String,
+        max_count: usize,
+    },
     StageFiles {
         paths: Vec<String>,
     },
@@ -227,6 +237,7 @@ pub enum Command {
 pub fn debounce_key_for_command(command: &Command) -> Option<&'static str> {
     match command {
         Command::RefreshFilesDetailsDiff { .. } => Some("files_details_diff"),
+        Command::RefreshBranchDetailsLog { .. } => Some("branch_details_log"),
         Command::RefreshAll
         | Command::StageFiles { .. }
         | Command::UnstageFiles { .. }
@@ -257,6 +268,9 @@ fn mark_command_pending(state: &mut AppState, command: &Command) {
             state.work.refresh_pending = true;
         }
         Command::RefreshFilesDetailsDiff { .. } => {
+            state.work.details_pending = true;
+        }
+        Command::RefreshBranchDetailsLog { .. } => {
             state.work.details_pending = true;
         }
         Command::StageFiles { .. } => {
@@ -472,27 +486,27 @@ fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
         UiAction::FocusNext => {
             state.focus = state.focus.next_left();
             state.last_left_focus = state.focus;
-            maybe_refresh_files_details_on_files_focus(state)
+            maybe_refresh_details_on_focus(state)
         }
         UiAction::FocusPrev => {
             state.focus = state.focus.prev_left();
             state.last_left_focus = state.focus;
-            maybe_refresh_files_details_on_files_focus(state)
+            maybe_refresh_details_on_focus(state)
         }
         UiAction::FocusPanel { panel } => {
             state.focus = panel;
             if panel.is_left_panel() {
                 state.last_left_focus = panel;
             }
-            maybe_refresh_files_details_on_files_focus(state)
+            maybe_refresh_details_on_focus(state)
         }
         UiAction::MoveUp => {
             move_selection(state, true);
-            maybe_refresh_files_details_on_files_navigation(state)
+            maybe_refresh_details_on_navigation(state)
         }
         UiAction::MoveDown => {
             move_selection(state, false);
-            maybe_refresh_files_details_on_files_navigation(state)
+            maybe_refresh_details_on_navigation(state)
         }
         UiAction::ToggleSelectedDirectory => {
             if toggle_selected_directory(&mut state.files) {
@@ -636,9 +650,12 @@ fn update_git_result(state: &mut AppState, result: GitResult) -> Vec<Command> {
             apply_snapshot(state, snapshot);
             state.status.refresh_count = state.status.refresh_count.saturating_add(1);
             state.status.last_error = None;
-            refresh_files_details_command(state)
+            refresh_details_command_for_focus(state)
         }
         GitResult::FilesDetailsDiff { paths, result } => {
+            if state.last_left_focus != PanelFocus::Files {
+                return Vec::new();
+            }
             if paths != selected_target_paths(&state.files) {
                 return Vec::new();
             }
@@ -655,6 +672,32 @@ fn update_git_result(state: &mut AppState, result: GitResult) -> Vec<Command> {
                     let message = format!("Failed to refresh files details diff: {error}");
                     state.details.files_diff.clear();
                     state.details.files_error = Some(message.clone());
+                    state.status.last_error = Some(message.clone());
+                    push_notice(state, &message);
+                }
+            }
+            Vec::new()
+        }
+        GitResult::BranchDetailsLog { branch, result } => {
+            if state.last_left_focus != PanelFocus::Branches {
+                return Vec::new();
+            }
+            if Some(branch.as_str()) != selected_branch_name(state).as_deref() {
+                return Vec::new();
+            }
+            state.work.details_pending = false;
+            state.work.last_completed_command = Some("branch_details".to_string());
+            state.details.branch_log_target = Some(branch.clone());
+            match result {
+                Ok(log) => {
+                    cache_branch_details_log(state, &branch, &log);
+                    state.details.branch_log = log;
+                    state.details.branch_log_error = None;
+                }
+                Err(error) => {
+                    let message = format!("Failed to refresh branch log graph: {error}");
+                    state.details.branch_log.clear();
+                    state.details.branch_log_error = Some(message.clone());
                     state.status.last_error = Some(message.clone());
                     push_notice(state, &message);
                 }
@@ -1111,7 +1154,7 @@ fn handle_operation_result(
 ) -> Vec<Command> {
     match result {
         Ok(()) => {
-            clear_files_details_cache(state);
+            clear_details_caches(state);
             state.work.operation_pending = None;
             state.work.last_completed_command = Some(operation_key.to_string());
             state.last_operation = Some(operation_key.to_string());
@@ -1188,7 +1231,10 @@ fn apply_snapshot(state: &mut AppState, snapshot: RepoSnapshot) {
     state.details.files_diff.clear();
     state.details.files_error = None;
     state.details.files_targets = selected_target_paths(&state.files);
-    clear_files_details_cache(state);
+    state.details.branch_log.clear();
+    state.details.branch_log_error = None;
+    state.details.branch_log_target = selected_branch_name(state);
+    clear_details_caches(state);
 }
 
 fn clamp_selection_indexes(state: &mut AppState) {
@@ -1254,6 +1300,30 @@ fn refresh_files_details_command(state: &mut AppState) -> Vec<Command> {
     with_pending(state, vec![Command::RefreshFilesDetailsDiff { paths }])
 }
 
+fn refresh_branch_details_log_command(state: &mut AppState) -> Vec<Command> {
+    let Some(branch) = selected_branch_name(state) else {
+        state.details.branch_log.clear();
+        state.details.branch_log_target = None;
+        state.details.branch_log_error = None;
+        state.work.details_pending = false;
+        return Vec::new();
+    };
+    state.details.branch_log_target = Some(branch.clone());
+    if let Some(log) = cached_branch_details_log(state, &branch) {
+        state.details.branch_log = log;
+        state.details.branch_log_error = None;
+        state.work.details_pending = false;
+        return Vec::new();
+    }
+    with_pending(
+        state,
+        vec![Command::RefreshBranchDetailsLog {
+            branch,
+            max_count: BRANCH_DETAILS_LOG_MAX_COUNT,
+        }],
+    )
+}
+
 fn cached_files_details_diff(state: &AppState, paths: &[String]) -> Option<String> {
     state
         .details
@@ -1281,22 +1351,62 @@ fn cache_files_details_diff(state: &mut AppState, paths: &[String], diff: &str) 
         .truncate(DETAILS_DIFF_CACHE_LIMIT);
 }
 
-fn clear_files_details_cache(state: &mut AppState) {
+fn cached_branch_details_log(state: &AppState, branch: &str) -> Option<String> {
+    state
+        .details
+        .cached_branch_logs
+        .iter()
+        .find(|entry| entry.branch == branch)
+        .map(|entry| entry.log.clone())
+}
+
+fn cache_branch_details_log(state: &mut AppState, branch: &str, log: &str) {
+    state
+        .details
+        .cached_branch_logs
+        .retain(|entry| entry.branch != branch);
+    state.details.cached_branch_logs.insert(
+        0,
+        CachedBranchLog {
+            branch: branch.to_string(),
+            log: log.to_string(),
+        },
+    );
+    state
+        .details
+        .cached_branch_logs
+        .truncate(DETAILS_DIFF_CACHE_LIMIT);
+}
+
+fn clear_details_caches(state: &mut AppState) {
     state.details.cached_files_diffs.clear();
+    state.details.cached_branch_logs.clear();
 }
 
-fn maybe_refresh_files_details_on_files_focus(state: &mut AppState) -> Vec<Command> {
+fn refresh_details_command_for_focus(state: &mut AppState) -> Vec<Command> {
     if state.focus == PanelFocus::Files {
         return refresh_files_details_command(state);
+    }
+    if state.focus == PanelFocus::Branches {
+        return refresh_branch_details_log_command(state);
     }
     Vec::new()
 }
 
-fn maybe_refresh_files_details_on_files_navigation(state: &mut AppState) -> Vec<Command> {
-    if state.focus == PanelFocus::Files {
-        return refresh_files_details_command(state);
-    }
-    Vec::new()
+fn maybe_refresh_details_on_focus(state: &mut AppState) -> Vec<Command> {
+    refresh_details_command_for_focus(state)
+}
+
+fn maybe_refresh_details_on_navigation(state: &mut AppState) -> Vec<Command> {
+    refresh_details_command_for_focus(state)
+}
+
+fn selected_branch_name(state: &AppState) -> Option<String> {
+    state
+        .branches
+        .items
+        .get(state.branches.selected)
+        .map(|branch| branch.name.clone())
 }
 
 fn selected_targets_are_all_staged(state: &AppState, paths: &[String]) -> bool {

@@ -363,12 +363,22 @@ pub struct DetailsPanelState {
     pub files_targets: Vec<String>,
     pub files_error: Option<String>,
     pub cached_files_diffs: Vec<CachedFilesDiff>,
+    pub branch_log: String,
+    pub branch_log_target: Option<String>,
+    pub branch_log_error: Option<String>,
+    pub cached_branch_logs: Vec<CachedBranchLog>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CachedFilesDiff {
     pub paths: Vec<String>,
     pub diff: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CachedBranchLog {
+    pub branch: String,
+    pub log: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -425,6 +435,10 @@ impl Default for AppState {
                 files_targets: Vec::new(),
                 files_error: None,
                 cached_files_diffs: Vec::new(),
+                branch_log: String::new(),
+                branch_log_target: None,
+                branch_log_error: None,
+                cached_branch_logs: Vec::new(),
             },
             editor: EditorState::default(),
             reset_menu: ResetMenuState::default(),

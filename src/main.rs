@@ -573,6 +573,17 @@ impl GitBackend for AppBackend {
         }
     }
 
+    fn branch_details_log(
+        &mut self,
+        branch: &str,
+        max_count: usize,
+    ) -> Result<String, ratagit_git::GitError> {
+        match self {
+            Self::Hybrid(inner) => inner.branch_details_log(branch, max_count),
+            Self::Mock(inner) => inner.branch_details_log(branch, max_count),
+        }
+    }
+
     fn stage_file(&mut self, path: &str) -> Result<(), ratagit_git::GitError> {
         match self {
             Self::Hybrid(inner) => inner.stage_file(path),

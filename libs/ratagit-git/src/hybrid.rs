@@ -174,6 +174,10 @@ impl GitBackend for HybridGitBackend {
         Ok(sections.join("\n"))
     }
 
+    fn branch_details_log(&mut self, branch: &str, max_count: usize) -> Result<String, GitError> {
+        self.cli.branch_details_log(branch, max_count)
+    }
+
     fn stage_file(&mut self, path: &str) -> Result<(), GitError> {
         self.stage_files(&[path.to_string()])
     }

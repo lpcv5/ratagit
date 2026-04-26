@@ -42,6 +42,7 @@ impl std::error::Error for GitError {}
 pub trait GitBackend {
     fn refresh_snapshot(&mut self) -> Result<RepoSnapshot, GitError>;
     fn files_details_diff(&mut self, paths: &[String]) -> Result<String, GitError>;
+    fn branch_details_log(&mut self, branch: &str, max_count: usize) -> Result<String, GitError>;
     fn stage_file(&mut self, path: &str) -> Result<(), GitError>;
     fn unstage_file(&mut self, path: &str) -> Result<(), GitError>;
     fn stage_files(&mut self, paths: &[String]) -> Result<(), GitError> {
@@ -91,6 +92,12 @@ pub fn execute_command(backend: &mut dyn GitBackend, command: Command) -> GitRes
             paths: paths.clone(),
             result: backend
                 .files_details_diff(&paths)
+                .map_err(|error| error.message),
+        },
+        Command::RefreshBranchDetailsLog { branch, max_count } => GitResult::BranchDetailsLog {
+            branch: branch.clone(),
+            result: backend
+                .branch_details_log(&branch, max_count)
                 .map_err(|error| error.message),
         },
         Command::StageFiles { paths } => GitResult::StageFiles {
@@ -372,6 +379,44 @@ mod tests {
                 assert!(diff.contains("### staged"));
                 assert!(diff.contains("diff --git a/src/lib.rs b/src/lib.rs"));
                 assert!(diff.contains("diff --git a/src/main.rs b/src/main.rs"));
+            }
+            other => panic!("unexpected git result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn execute_command_refresh_branch_details_log_uses_backend_output() {
+        let mut backend = MockGitBackend::new(RepoSnapshot {
+            status_summary: "clean".to_string(),
+            current_branch: "main".to_string(),
+            detached_head: false,
+            files: Vec::new(),
+            commits: vec![CommitEntry {
+                id: "abc1234".to_string(),
+                summary: "initial".to_string(),
+            }],
+            branches: vec![BranchEntry {
+                name: "main".to_string(),
+                is_current: true,
+            }],
+            stashes: Vec::new(),
+        });
+
+        let result = execute_command(
+            &mut backend,
+            Command::RefreshBranchDetailsLog {
+                branch: "main".to_string(),
+                max_count: 50,
+            },
+        );
+
+        match result {
+            GitResult::BranchDetailsLog { branch, result } => {
+                assert_eq!(branch, "main");
+                let graph = result.expect("mock graph should succeed");
+                assert!(graph.contains("\u{1b}[33m*"));
+                assert!(graph.contains("commit abc1234"));
+                assert_eq!(backend.operations(), &["branch-log:main:50".to_string()]);
             }
             other => panic!("unexpected git result: {other:?}"),
         }

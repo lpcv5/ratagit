@@ -29,7 +29,8 @@ MVP v0 includes a left-nav workspace layout with six panels:
   - Files focus projection: show merged `unstaged` then `staged` diff for the currently selected file/folder target
   - Untracked text files render as new-file patches in the `unstaged` diff section
   - While a selected file diff is loading, Details shows a deterministic loading row instead of blocking input
-  - Branches/Commits/Stash projection: placeholder text for now (to be implemented in later slices)
+  - Branches focus projection: show the selected branch's native `git log --graph` output with Git's ASCII graph and ANSI colors preserved, limited to 50 commits
+  - Commits/Stash projection: placeholder text for now (to be implemented in later slices)
 - Log: show latest error, recent notices, and pending refresh/operation state
 
 Navigation rules:
@@ -86,6 +87,8 @@ Files panel rules:
 - details-diff side effects for high-frequency files navigation are debounced to keep `j` / `k` scrolling smooth
 - queued refresh/details work is coalesced so stale duplicate details commands do
   not delay the latest selection
+- branch-details log graph output is cached in `AppState` and reused when the
+  same branch is selected again during the current snapshot
 - real TUI Git work runs on a single background worker so initial refresh and
   long operations do not block drawing or keyboard input
 - real backend file status refresh uses Git porcelain status inside `GitBackend`

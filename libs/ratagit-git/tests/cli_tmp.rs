@@ -118,6 +118,31 @@ fn cli_create_commit_supports_multiline_message() {
 }
 
 #[test]
+fn cli_branch_details_log_returns_colored_graph_limited_by_count() {
+    if !git_available() {
+        eprintln!(
+            "git is unavailable, skipping cli_branch_details_log_returns_colored_graph_limited_by_count"
+        );
+        return;
+    }
+
+    let repo = seeded_repo_with_two_files("cli-branch-details-log");
+    write(repo.path().join("a.txt"), "a2\n").expect("a.txt should be writable");
+    repo.run_git(&["add", "--", "a.txt"]);
+    repo.run_git(&["commit", "-m", "second"]);
+
+    let mut backend = HybridGitBackend::open(repo.path()).expect("hybrid backend should open");
+    let graph = backend
+        .branch_details_log("HEAD", 1)
+        .expect("branch details log should succeed");
+
+    assert!(graph.contains("\u{1b}["));
+    assert!(graph.contains("*"));
+    assert!(graph.contains("second"));
+    assert!(!graph.contains("init"));
+}
+
+#[test]
 fn cli_stash_push_uses_title_for_all_changes() {
     if !git_available() {
         eprintln!("git is unavailable, skipping cli_stash_push_uses_title_for_all_changes");

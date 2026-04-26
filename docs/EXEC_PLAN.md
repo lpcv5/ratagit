@@ -2,36 +2,34 @@
 
 ## Current Slice
 
-Complete the first practical Branches panel workflow while keeping the panel
-local-branch-only for now.
+Show selected-branch log graph output in Details while keeping rendering pure
+and Git access behind `GitBackend`.
 
 ## Goal
 
 - preserve `GitBackend` and `AppState` boundaries
 - keep rendering pure and derived only from `AppState`
-- replace placeholder branch shortcuts with focused branch operations
-- protect dirty working trees with explicit auto-stash confirmation
-- protect current/worktree-occupied branches from local deletion
-- keep remote deletion scoped to `origin/<selected-local-branch>`
+- display the selected branch's native `git log --graph` output in Details
+- preserve Git's original ASCII graph text and ANSI colors
+- limit branch details log output to 50 commits
+- keep high-frequency branch navigation deterministic through AppState-owned
+  details cache
 
 ## Vertical Slice
 
-1. Branch state and input
-- add AppState-owned Branches modal state for branch creation, deletion, rebase,
-  and auto-stash confirmation
-- map Branches focus shortcuts to `space` checkout, `n` new branch, `d` delete,
-  and `r` rebase
-- create new branches from the selected local branch start point
+1. Branch details state
+- add AppState-owned branch details target, raw ANSI log output, error state,
+  and a bounded per-branch log cache
+- request branch details when Branches gains focus or the branch cursor moves
+- ignore stale branch-log results for branches that are no longer selected
 
-2. Git commands
-- extend `GitBackend` with create-from-start-point, auto-stash checkout,
-  branch delete, and rebase commands
-- implement local deletion with `git branch -d`
-- when safe local deletion reports an unmerged branch, open a force-delete
-  confirmation before retrying with `git branch -D`
-- implement remote deletion with `git push origin --delete <branch>`
-- block local deletion when the branch is checked out in any worktree
+2. Git and rendering
+- extend `GitBackend` with a read-only branch log method
+- real backend runs `git log --graph --color=always -n 50 <branch>`
+- render Branches Details by parsing ANSI SGR into ratatui spans while keeping
+  plain text snapshots deterministic
 
 3. Validation
-- add core reducer, mock Git, real Git worktree, UI snapshot, and harness tests
+- add core reducer, mock Git, real Git CLI, UI snapshot, color-style, and harness
+  tests
 - run `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, and `cargo test`

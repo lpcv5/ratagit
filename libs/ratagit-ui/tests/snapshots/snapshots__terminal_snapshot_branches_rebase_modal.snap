@@ -1,13 +1,13 @@
 ---
 source: libs/ratagit-ui/tests/snapshots.rs
-assertion_line: 357
+assertion_line: 406
 expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30, },)"
 ---
 ┌ [1] 󰈙 Files ───────────────────┐┌ [5]  Details ─────────────────────────────────────────────────┐
-│    README.md                  ││  details(branches): pending git log --graph implementation     │
-│    src/                       ││                                                                │
+│    README.md                  ││  * commit abc1234                                              │
+│    src/                       ││  Author: ratagit-tests <ratagit-tests@example.com>             │
 │      lib.rs                   ││                                                                │
-│      main.rs                  ││                                                                │
+│      main.rs                  ││      init project on feature/mvp                               │
 │                                ││                                                                │
 │                                ││                                                                │
 │                                ││                                                                │

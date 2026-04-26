@@ -82,6 +82,29 @@ impl GitBackend for MockGitBackend {
         Ok(sections.join("\n"))
     }
 
+    fn branch_details_log(&mut self, branch: &str, max_count: usize) -> Result<String, GitError> {
+        self.operations
+            .push(format!("branch-log:{branch}:{max_count}"));
+        if !self
+            .snapshot
+            .branches
+            .iter()
+            .any(|entry| entry.name == branch)
+        {
+            return Err(GitError::new(format!("branch not found: {branch}")));
+        }
+        let commit = self
+            .snapshot
+            .commits
+            .first()
+            .map(|entry| (entry.id.as_str(), entry.summary.as_str()))
+            .unwrap_or(("mock-0000", "no commits"));
+        Ok(format!(
+            "\u{1b}[33m*\u{1b}[m \u{1b}[33mcommit {}\u{1b}[m\nAuthor: ratagit-tests <ratagit-tests@example.com>\n\n    {} on {}",
+            commit.0, commit.1, branch
+        ))
+    }
+
     fn stage_file(&mut self, path: &str) -> Result<(), GitError> {
         self.operations.push(format!("stage:{path}"));
         let entry = self

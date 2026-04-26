@@ -259,6 +259,16 @@ fn assert_details_refresh_for_paths(commands: Vec<Command>, expected_paths: Vec<
     );
 }
 
+fn assert_branch_log_refresh(commands: Vec<Command>, expected_branch: &str) {
+    assert_eq!(
+        commands,
+        vec![Command::RefreshBranchDetailsLog {
+            branch: expected_branch.to_string(),
+            max_count: ratagit_core::BRANCH_DETAILS_LOG_MAX_COUNT,
+        }]
+    );
+}
+
 fn state_with_branches_and_files(files: Vec<FileEntry>) -> AppState {
     let mut state = AppState {
         focus: PanelFocus::Branches,
@@ -277,6 +287,82 @@ fn state_with_branches_and_files(files: Vec<FileEntry>) -> AppState {
     ];
     state.files.items = files;
     state
+}
+
+#[test]
+fn branch_focus_requests_selected_branch_log_graph() {
+    let mut state = state_with_branches_and_files(Vec::new());
+    state.focus = PanelFocus::Files;
+    state.last_left_focus = PanelFocus::Files;
+
+    let commands = update(
+        &mut state,
+        Action::Ui(UiAction::FocusPanel {
+            panel: PanelFocus::Branches,
+        }),
+    );
+
+    assert_branch_log_refresh(commands, "main");
+    assert_eq!(state.details.branch_log_target, Some("main".to_string()));
+    assert!(state.work.details_pending);
+}
+
+#[test]
+fn branch_selection_navigation_requests_selected_branch_log_graph() {
+    let mut state = state_with_branches_and_files(Vec::new());
+
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+
+    assert_branch_log_refresh(commands, "feature/mvp");
+    assert_eq!(
+        state.details.branch_log_target,
+        Some("feature/mvp".to_string())
+    );
+}
+
+#[test]
+fn branch_log_cache_serves_repeated_selection_without_git_command() {
+    let mut state = state_with_branches_and_files(Vec::new());
+
+    update(
+        &mut state,
+        Action::GitResult(GitResult::BranchDetailsLog {
+            branch: "main".to_string(),
+            result: Ok("\u{1b}[33m*\u{1b}[m commit abc1234".to_string()),
+        }),
+    );
+    assert_eq!(state.details.cached_branch_logs.len(), 1);
+
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+    assert_branch_log_refresh(commands, "feature/mvp");
+
+    let commands = update(&mut state, Action::Ui(UiAction::MoveUp));
+    assert!(commands.is_empty());
+    assert_eq!(
+        state.details.branch_log,
+        "\u{1b}[33m*\u{1b}[m commit abc1234"
+    );
+    assert!(!state.work.details_pending);
+}
+
+#[test]
+fn stale_branch_log_result_is_ignored() {
+    let mut state = state_with_branches_and_files(Vec::new());
+    state.branches.selected = 1;
+    state.details.branch_log_target = Some("feature/mvp".to_string());
+    state.work.details_pending = true;
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::BranchDetailsLog {
+            branch: "main".to_string(),
+            result: Ok("stale".to_string()),
+        }),
+    );
+
+    assert!(commands.is_empty());
+    assert!(state.details.branch_log.is_empty());
+    assert!(state.work.details_pending);
 }
 
 #[test]
