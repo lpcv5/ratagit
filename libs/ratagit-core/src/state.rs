@@ -113,11 +113,14 @@ pub enum StashScope {
 pub enum EditorKind {
     Commit {
         message: String,
+        message_cursor: usize,
         body: String,
+        body_cursor: usize,
         active_field: CommitField,
     },
     Stash {
         title: String,
+        title_cursor: usize,
         scope: StashScope,
     },
 }

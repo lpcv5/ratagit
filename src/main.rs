@@ -73,6 +73,10 @@ fn ui_action_for_key(state: &AppState, code: KeyCode, modifiers: KeyModifiers) -
             KeyCode::Enter => Some(UiAction::EditorConfirm),
             KeyCode::Esc => Some(UiAction::EditorCancel),
             KeyCode::Backspace => Some(UiAction::EditorBackspace),
+            KeyCode::Left => Some(UiAction::EditorMoveCursorLeft),
+            KeyCode::Right => Some(UiAction::EditorMoveCursorRight),
+            KeyCode::Home => Some(UiAction::EditorMoveCursorHome),
+            KeyCode::End => Some(UiAction::EditorMoveCursorEnd),
             KeyCode::Tab => Some(UiAction::EditorNextField),
             KeyCode::BackTab => Some(UiAction::EditorPrevField),
             KeyCode::Char('j') if modifiers.contains(KeyModifiers::CONTROL) => {
@@ -263,7 +267,9 @@ mod tests {
         let mut state = AppState::default();
         state.editor.kind = Some(ratagit_core::EditorKind::Commit {
             message: String::new(),
+            message_cursor: 0,
             body: String::new(),
+            body_cursor: 0,
             active_field: ratagit_core::CommitField::Body,
         });
         state.files.mode = FileInputMode::SearchInput;
@@ -275,6 +281,22 @@ mod tests {
         assert_eq!(
             map_key(&state, KeyCode::Tab),
             Some(UiAction::EditorNextField)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Left),
+            Some(UiAction::EditorMoveCursorLeft)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Right),
+            Some(UiAction::EditorMoveCursorRight)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Home),
+            Some(UiAction::EditorMoveCursorHome)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::End),
+            Some(UiAction::EditorMoveCursorEnd)
         );
         assert_eq!(
             ui_action_for_key(&state, KeyCode::Char('j'), KeyModifiers::CONTROL),

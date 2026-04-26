@@ -202,11 +202,11 @@ pub(crate) fn shortcuts_for_state(state: &AppState) -> String {
     if let Some(editor) = &state.editor.kind {
         return match editor {
             ratagit_core::EditorKind::Commit { .. } => {
-                "commit editor: Tab switch | Ctrl+J newline(body) | Enter confirm | Esc cancel"
+                "commit editor: Tab field | arrows/Home/End cursor | Ctrl+J newline | Enter confirm | Esc cancel"
                     .to_string()
             }
             ratagit_core::EditorKind::Stash { .. } => {
-                "stash editor: Enter confirm | Esc cancel".to_string()
+                "stash editor: arrows/Home/End cursor | Enter confirm | Esc cancel".to_string()
             }
         };
     }
@@ -687,7 +687,7 @@ mod tests {
         update(&mut state, Action::Ui(UiAction::OpenStashEditor));
         assert_eq!(
             shortcuts_for_state(&state),
-            "stash editor: Enter confirm | Esc cancel"
+            "stash editor: arrows/Home/End cursor | Enter confirm | Esc cancel"
         );
     }
 }

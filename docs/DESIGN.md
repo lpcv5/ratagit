@@ -23,7 +23,7 @@ Focus model:
 - `FocusPanel` supports direct focus selection (`1..6` in app input map)
 - `AppState.last_left_focus` tracks the last active left panel for `Details` projection
 - `AppState.details` stores files-detail diff text, target paths, and detail-refresh errors
-- `AppState.editor` stores active commit/stash editor modal state (type + fields + scope)
+- `AppState.editor` stores active commit/stash editor modal state (type + fields + cursor indexes + scope)
 - left-panel height baseline follows the Files/Branches/Commits/Stash ratio
 - when `Stash` is unfocused it collapses to one content row and freed height is
   redistributed by ratio to Files/Branches/Commits
@@ -54,12 +54,16 @@ Files panel interaction:
 - `space` toggles stage state for the current target or visual-selected batch.
 - `c` opens commit editor modal:
   - commit message + multiline body fields
+  - active field cursor is stored in `AppState` and rendered with the terminal cursor
+  - `Left` / `Right` / `Home` / `End` moves within the active field
   - `Tab` / `Shift+Tab` field switching
   - `Ctrl+J` inserts newline in body
   - `Enter` confirms, `Esc` cancels
 - `s` opens stash editor modal:
   - normal files mode -> stash all changes
   - visual multi-select mode -> stash selected target paths only
+  - title cursor is stored in `AppState` and rendered with the terminal cursor
+  - `Left` / `Right` / `Home` / `End` moves within the title field
   - `Enter` confirms, `Esc` cancels
 - `v` enters visual multi-select at the current row; `j` / `k` updates the continuous anchor-to-cursor range.
 - `/` switches the bottom keys area into search input until Enter or Esc.

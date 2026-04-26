@@ -12,6 +12,12 @@ pub struct TerminalSize {
     pub height: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TerminalCursor {
+    pub x: u16,
+    pub y: u16,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RenderedFrame {
     pub lines: Vec<String>,

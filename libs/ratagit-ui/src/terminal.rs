@@ -1,14 +1,15 @@
 use ratagit_core::{AppState, CommitField, EditorKind, PanelFocus, StashScope};
-use ratatui::backend::TestBackend;
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::backend::{Backend, TestBackend};
+use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
 use ratatui::style::Style;
 use ratatui::text::Line;
 use ratatui::widgets::{
     Block, Borders, Clear, HighlightSpacing, List, ListItem, ListState, Paragraph, Wrap,
 };
 use ratatui::{Frame, Terminal};
+use unicode_width::UnicodeWidthStr;
 
-use crate::frame::{TerminalBuffer, TerminalSize, buffer_to_text};
+use crate::frame::{TerminalBuffer, TerminalCursor, TerminalSize, buffer_to_text};
 use crate::layout::compute_left_panel_heights;
 use crate::panels::{
     PanelLine, panel_title, render_branches_lines, render_commits_lines, render_details_lines,
@@ -36,12 +37,31 @@ pub fn render_terminal_text(state: &AppState, size: TerminalSize) -> String {
 }
 
 pub fn render_terminal_buffer(state: &AppState, size: TerminalSize) -> TerminalBuffer {
+    render_terminal_buffer_with_cursor(state, size).0
+}
+
+pub fn render_terminal_buffer_with_cursor(
+    state: &AppState,
+    size: TerminalSize,
+) -> (TerminalBuffer, Option<TerminalCursor>) {
     let backend = TestBackend::new(size.width.max(1) as u16, size.height.max(1) as u16);
     let mut terminal = Terminal::new(backend).expect("test terminal should initialize");
     terminal
         .draw(|frame| render_terminal(frame, state))
         .expect("terminal render should succeed");
-    terminal.backend().buffer().clone()
+    let cursor = if state.editor.is_active() {
+        let position = terminal
+            .backend_mut()
+            .get_cursor_position()
+            .expect("test backend should expose cursor position");
+        Some(TerminalCursor {
+            x: position.x,
+            y: position.y,
+        })
+    } else {
+        None
+    };
+    (terminal.backend().buffer().clone(), cursor)
 }
 
 fn render_panel_grid(frame: &mut Frame<'_>, state: &AppState, area: Rect) {
@@ -162,96 +182,291 @@ fn render_editor_modal(frame: &mut Frame<'_>, state: &AppState, area: Rect) {
         return;
     };
 
-    let target_height = match editor {
-        EditorKind::Commit { .. } => 12,
-        EditorKind::Stash { .. } => 8,
-    };
-    let modal = centered_rect(area, 76, target_height);
-    if modal.width < 6 || modal.height < 4 {
+    let Some(modal) = editor_modal_rect(editor, area) else {
         return;
-    }
-
-    let (title, lines) = match editor {
-        EditorKind::Commit {
-            message,
-            body,
-            active_field,
-        } => build_commit_editor_lines(message, body, *active_field),
-        EditorKind::Stash { title, scope } => build_stash_editor_lines(title, scope),
     };
+    let block = Block::default()
+        .title(format!(" {} ", editor_modal_title(editor)))
+        .borders(Borders::ALL)
+        .border_style(focused_panel_style());
+    let inner = block.inner(modal);
+    let content = inset_rect(inner, 1, 0);
 
     frame.render_widget(Clear, modal);
-    frame.render_widget(
-        Paragraph::new(lines).wrap(Wrap { trim: false }).block(
-            Block::default()
-                .title(format!(" {title} "))
-                .borders(Borders::ALL)
-                .border_style(focused_panel_style()),
+    frame.render_widget(block, modal);
+
+    match editor {
+        EditorKind::Commit {
+            message,
+            message_cursor,
+            body,
+            body_cursor,
+            active_field,
+        } => render_commit_editor(
+            frame,
+            content,
+            message,
+            *message_cursor,
+            body,
+            *body_cursor,
+            *active_field,
         ),
-        modal,
+        EditorKind::Stash {
+            title,
+            title_cursor,
+            scope,
+        } => render_stash_editor(frame, content, title, *title_cursor, scope),
+    }
+
+    if let Some(cursor) = editor_cursor_position(state, area) {
+        frame.set_cursor_position(Position::new(cursor.x, cursor.y));
+    }
+}
+
+fn editor_modal_rect(editor: &EditorKind, area: Rect) -> Option<Rect> {
+    let target_height = match editor {
+        EditorKind::Commit { .. } => 15,
+        EditorKind::Stash { .. } => 10,
+    };
+    let modal = centered_rect(area, 76, target_height);
+    (modal.width >= 20 && modal.height >= 6).then_some(modal)
+}
+
+fn editor_modal_title(editor: &EditorKind) -> &'static str {
+    match editor {
+        EditorKind::Commit { .. } => "Commit Message",
+        EditorKind::Stash { .. } => "Stash Message",
+    }
+}
+
+fn render_commit_editor(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    message: &str,
+    _message_cursor: usize,
+    body: &str,
+    body_cursor: usize,
+    active_field: CommitField,
+) {
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(3),
+            Constraint::Min(3),
+            Constraint::Length(2),
+        ])
+        .split(area);
+    frame.render_widget(
+        Paragraph::new("Edit the commit subject and optional body."),
+        rows[0],
+    );
+    render_input_block(
+        frame,
+        rows[1],
+        "Subject",
+        vec![Line::from(message.to_string())],
+        active_field == CommitField::Message,
+    );
+    let body_lines = body_visible_lines(body, body_cursor, rows[2].height.saturating_sub(2));
+    render_input_block(
+        frame,
+        rows[2],
+        "Body",
+        body_lines,
+        active_field == CommitField::Body,
+    );
+    frame.render_widget(
+        Paragraph::new("Tab/Shift+Tab field  |  Left/Right/Home/End cursor\nCtrl+J newline  |  Enter confirm  |  Esc cancel"),
+        rows[3],
     );
 }
 
-fn build_commit_editor_lines(
-    message: &str,
-    body: &str,
-    active_field: CommitField,
-) -> (&'static str, Vec<Line<'static>>) {
-    let mut lines = Vec::new();
-    let message_style = if active_field == CommitField::Message {
-        focused_panel_style()
-    } else {
-        Style::default()
-    };
-    let body_style = if active_field == CommitField::Body {
-        focused_panel_style()
-    } else {
-        Style::default()
-    };
-    let message_prefix = if active_field == CommitField::Message {
-        ">>"
-    } else {
-        "  "
-    };
-    let body_prefix = if active_field == CommitField::Body {
-        ">>"
-    } else {
-        "  "
-    };
-    lines.push(Line::styled(
-        format!("{message_prefix} message: {message}"),
-        message_style,
-    ));
-    lines.push(Line::styled(format!("{body_prefix} body:"), body_style));
-    if body.is_empty() {
-        lines.push(Line::from("    "));
-    } else {
-        for line in body.split('\n').take(4) {
-            lines.push(Line::from(format!("    {line}")));
-        }
-    }
-    lines.push(Line::from(""));
-    lines.push(Line::from(
-        "    Tab/Shift+Tab switch | Ctrl+J newline(body)",
-    ));
-    lines.push(Line::from("    Enter confirm | Esc cancel"));
-    ("Commit Editor", lines)
-}
-
-fn build_stash_editor_lines(title: &str, scope: &StashScope) -> (&'static str, Vec<Line<'static>>) {
-    let mut lines = Vec::new();
-    lines.push(Line::styled(
-        format!(">> title: {title}"),
-        focused_panel_style(),
-    ));
+fn render_stash_editor(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    title: &str,
+    _title_cursor: usize,
+    scope: &StashScope,
+) {
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(3),
+            Constraint::Length(1),
+            Constraint::Length(2),
+        ])
+        .split(area);
+    frame.render_widget(Paragraph::new("Name the stash before saving."), rows[0]);
+    render_input_block(
+        frame,
+        rows[1],
+        "Title",
+        vec![Line::from(title.to_string())],
+        true,
+    );
     let scope_text = match scope {
         StashScope::All => "all changes".to_string(),
         StashScope::SelectedPaths(paths) => format!("selected files ({})", paths.len()),
     };
-    lines.push(Line::from(format!("   scope: {scope_text}")));
-    lines.push(Line::from(""));
-    lines.push(Line::from("   Enter confirm | Esc cancel"));
-    ("Stash Editor", lines)
+    frame.render_widget(Paragraph::new(format!("Scope: {scope_text}")), rows[2]);
+    frame.render_widget(
+        Paragraph::new("Left/Right/Home/End cursor\nEnter confirm  |  Esc cancel"),
+        rows[3],
+    );
+}
+
+fn render_input_block(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    title: &'static str,
+    lines: Vec<Line<'static>>,
+    active: bool,
+) {
+    let border_style = if active {
+        focused_panel_style()
+    } else {
+        Style::default()
+    };
+    let content = if lines.is_empty() {
+        vec![Line::from(" ")]
+    } else {
+        lines
+    };
+    frame.render_widget(
+        Paragraph::new(content).wrap(Wrap { trim: false }).block(
+            Block::default()
+                .title(format!(" {title} "))
+                .borders(Borders::ALL)
+                .border_style(border_style),
+        ),
+        area,
+    );
+}
+
+fn body_visible_lines(body: &str, cursor: usize, visible_height: u16) -> Vec<Line<'static>> {
+    let visible_height = visible_height.max(1) as usize;
+    let lines = body_lines(body);
+    let cursor_line = line_index_at_cursor(body, cursor);
+    let start = cursor_line.saturating_add(1).saturating_sub(visible_height);
+    lines
+        .into_iter()
+        .skip(start)
+        .take(visible_height)
+        .map(Line::from)
+        .collect()
+}
+
+fn body_lines(body: &str) -> Vec<String> {
+    if body.is_empty() {
+        return vec![String::new()];
+    }
+    body.split('\n').map(str::to_string).collect()
+}
+
+fn editor_cursor_position(state: &AppState, area: Rect) -> Option<TerminalCursor> {
+    let editor = state.editor.kind.as_ref()?;
+    let modal = editor_modal_rect(editor, area)?;
+    let content = inset_rect(Block::default().borders(Borders::ALL).inner(modal), 1, 0);
+    match editor {
+        EditorKind::Commit {
+            message,
+            message_cursor,
+            body,
+            body_cursor,
+            active_field,
+        } => {
+            let rows = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(1),
+                    Constraint::Length(3),
+                    Constraint::Min(3),
+                    Constraint::Length(2),
+                ])
+                .split(content);
+            match active_field {
+                CommitField::Message => {
+                    single_line_cursor_position(rows[1], message, *message_cursor)
+                }
+                CommitField::Body => multiline_cursor_position(rows[2], body, *body_cursor),
+            }
+        }
+        EditorKind::Stash {
+            title,
+            title_cursor,
+            ..
+        } => {
+            let rows = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(1),
+                    Constraint::Length(3),
+                    Constraint::Length(1),
+                    Constraint::Length(2),
+                ])
+                .split(content);
+            single_line_cursor_position(rows[1], title, *title_cursor)
+        }
+    }
+}
+
+fn single_line_cursor_position(area: Rect, text: &str, cursor: usize) -> Option<TerminalCursor> {
+    if area.width < 3 || area.height < 3 {
+        return None;
+    }
+    let cursor = cursor.min(text.len());
+    let before_cursor = text.get(..cursor).unwrap_or(text);
+    let x = content_cursor_x(area, UnicodeWidthStr::width(before_cursor));
+    Some(TerminalCursor {
+        x,
+        y: area.y.saturating_add(1),
+    })
+}
+
+fn multiline_cursor_position(area: Rect, text: &str, cursor: usize) -> Option<TerminalCursor> {
+    if area.width < 3 || area.height < 3 {
+        return None;
+    }
+    let cursor = cursor.min(text.len());
+    let visible_height = area.height.saturating_sub(2).max(1) as usize;
+    let cursor_line = line_index_at_cursor(text, cursor);
+    let start = cursor_line.saturating_add(1).saturating_sub(visible_height);
+    let visible_line = cursor_line.saturating_sub(start);
+    let before_cursor = text.get(..cursor).unwrap_or(text);
+    let line_before_cursor = before_cursor.rsplit('\n').next().unwrap_or("");
+    let x = content_cursor_x(area, UnicodeWidthStr::width(line_before_cursor));
+    Some(TerminalCursor {
+        x,
+        y: area.y.saturating_add(1 + visible_line as u16),
+    })
+}
+
+fn content_cursor_x(area: Rect, text_width: usize) -> u16 {
+    let content_width = area.width.saturating_sub(2) as usize;
+    let offset = text_width.min(content_width.saturating_sub(1)) as u16;
+    area.x.saturating_add(1).saturating_add(offset)
+}
+
+fn line_index_at_cursor(text: &str, cursor: usize) -> usize {
+    let cursor = cursor.min(text.len());
+    text.get(..cursor)
+        .unwrap_or(text)
+        .chars()
+        .filter(|ch| *ch == '\n')
+        .count()
+}
+
+fn inset_rect(area: Rect, horizontal: u16, vertical: u16) -> Rect {
+    let shrink_x = horizontal.saturating_mul(2).min(area.width);
+    let shrink_y = vertical.saturating_mul(2).min(area.height);
+    Rect::new(
+        area.x.saturating_add(horizontal.min(area.width)),
+        area.y.saturating_add(vertical.min(area.height)),
+        area.width.saturating_sub(shrink_x),
+        area.height.saturating_sub(shrink_y),
+    )
 }
 
 fn centered_rect(area: Rect, target_width: u16, target_height: u16) -> Rect {

@@ -6,7 +6,7 @@ use ratagit_testkit::{
 use ratagit_ui::{
     TerminalSize, batch_selected_row_style, buffer_contains_selected_text,
     buffer_contains_text_with_style, buffer_to_text_with_selected_marker, focused_panel_style,
-    render, render_terminal_buffer, render_terminal_text,
+    render, render_terminal_buffer, render_terminal_buffer_with_cursor, render_terminal_text,
 };
 use ratatui::style::{Color, Style};
 
@@ -451,6 +451,54 @@ fn terminal_snapshot_files_commit_editor_modal() {
 }
 
 #[test]
+fn terminal_commit_editor_cursor_follows_active_body_field() {
+    let mut state = AppState::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+    update(&mut state, Action::Ui(UiAction::OpenCommitEditor));
+    for ch in "feat".chars() {
+        update(&mut state, Action::Ui(UiAction::EditorInputChar(ch)));
+    }
+    update(&mut state, Action::Ui(UiAction::EditorNextField));
+    for ch in "line 1".chars() {
+        update(&mut state, Action::Ui(UiAction::EditorInputChar(ch)));
+    }
+    update(&mut state, Action::Ui(UiAction::EditorInsertNewline));
+    for ch in "line 2".chars() {
+        update(&mut state, Action::Ui(UiAction::EditorInputChar(ch)));
+    }
+
+    let (_, cursor) = render_terminal_buffer_with_cursor(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    );
+
+    assert_eq!(cursor.expect("editor cursor should render").y, 14);
+}
+
+#[test]
+fn terminal_commit_editor_cursor_follows_subject_field() {
+    let mut state = AppState::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+    update(&mut state, Action::Ui(UiAction::OpenCommitEditor));
+    for ch in "feat".chars() {
+        update(&mut state, Action::Ui(UiAction::EditorInputChar(ch)));
+    }
+
+    let (_, cursor) = render_terminal_buffer_with_cursor(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    );
+
+    assert_eq!(cursor.expect("editor cursor should render").y, 10);
+}
+
+#[test]
 fn terminal_snapshot_files_stash_editor_modal() {
     let mut state = AppState::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
@@ -468,6 +516,26 @@ fn terminal_snapshot_files_stash_editor_modal() {
             height: 30,
         },
     ));
+}
+
+#[test]
+fn terminal_stash_editor_cursor_follows_title() {
+    let mut state = AppState::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+    update(&mut state, Action::Ui(UiAction::OpenStashEditor));
+    for ch in "pick".chars() {
+        update(&mut state, Action::Ui(UiAction::EditorInputChar(ch)));
+    }
+
+    let (_, cursor) = render_terminal_buffer_with_cursor(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    );
+
+    assert_eq!(cursor.expect("editor cursor should render").y, 12);
 }
 
 #[test]

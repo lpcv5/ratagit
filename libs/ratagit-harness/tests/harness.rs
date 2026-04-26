@@ -1,6 +1,8 @@
-use ratagit_core::UiAction;
-use ratagit_harness::{MockScenario, ScenarioExpectations, run_mock_scenario};
+use ratagit_core::{AppState, UiAction};
+use ratagit_git::MockGitBackend;
+use ratagit_harness::{MockScenario, Runtime, ScenarioExpectations, run_mock_scenario};
 use ratagit_testkit::{fixture_dirty_repo, fixture_empty_repo, fixture_many_files};
+use ratagit_ui::{TerminalSize, render_terminal_buffer_with_cursor};
 
 fn assert_scenario(scenario: MockScenario<'_>) {
     let result = run_mock_scenario(scenario);
@@ -186,6 +188,41 @@ fn harness_files_commit_editor_multiline_confirm() {
             git_state_contains: &["summary: \"feat: files\""],
         },
     ));
+}
+
+#[test]
+fn harness_files_commit_editor_reports_terminal_cursor() {
+    let size = TerminalSize {
+        width: 100,
+        height: 30,
+    };
+    let mut runtime = Runtime::new(
+        AppState::default(),
+        MockGitBackend::new(fixture_dirty_repo()),
+        size,
+    );
+    runtime.dispatch_ui(UiAction::RefreshAll);
+    runtime.dispatch_ui(UiAction::OpenCommitEditor);
+    for ch in "feat".chars() {
+        runtime.dispatch_ui(UiAction::EditorInputChar(ch));
+    }
+    runtime.dispatch_ui(UiAction::EditorNextField);
+    for ch in "line 1".chars() {
+        runtime.dispatch_ui(UiAction::EditorInputChar(ch));
+    }
+    runtime.dispatch_ui(UiAction::EditorInsertNewline);
+    for ch in "line 2".chars() {
+        runtime.dispatch_ui(UiAction::EditorInputChar(ch));
+    }
+
+    let (_, cursor) = render_terminal_buffer_with_cursor(runtime.state(), size);
+    assert_eq!(cursor.expect("editor cursor should render").y, 14);
+    assert!(
+        runtime
+            .backend()
+            .operations()
+            .contains(&"refresh".to_string())
+    );
 }
 
 #[test]

@@ -339,7 +339,9 @@ fn commit_editor_confirms_subject_and_multiline_body() {
         state.editor.kind,
         Some(EditorKind::Commit {
             message: String::new(),
+            message_cursor: 0,
             body: String::new(),
+            body_cursor: 0,
             active_field: CommitField::Message,
         })
     );
@@ -399,6 +401,7 @@ fn stash_editor_confirms_all_scope_outside_multiselect() {
         state.editor.kind,
         Some(EditorKind::Stash {
             title: String::new(),
+            title_cursor: 0,
             scope: StashScope::All,
         })
     );
@@ -438,6 +441,7 @@ fn stash_editor_confirms_selected_paths_scope_in_multiselect_mode() {
         state.editor.kind,
         Some(EditorKind::Stash {
             title: String::new(),
+            title_cursor: 0,
             scope: StashScope::SelectedPaths(vec!["a.txt".to_string()]),
         })
     );
@@ -454,4 +458,100 @@ fn stash_editor_confirms_selected_paths_scope_in_multiselect_mode() {
         }]
     );
     assert!(state.editor.kind.is_none());
+}
+
+#[test]
+fn commit_editor_edits_subject_at_cursor() {
+    let mut state = AppState::default();
+    update(&mut state, Action::Ui(UiAction::OpenCommitEditor));
+    for ch in "feat ship".chars() {
+        update(&mut state, Action::Ui(UiAction::EditorInputChar(ch)));
+    }
+    for _ in 0..5 {
+        update(&mut state, Action::Ui(UiAction::EditorMoveCursorLeft));
+    }
+    update(&mut state, Action::Ui(UiAction::EditorInputChar(':')));
+    update(&mut state, Action::Ui(UiAction::EditorMoveCursorHome));
+    update(&mut state, Action::Ui(UiAction::EditorBackspace));
+    update(&mut state, Action::Ui(UiAction::EditorMoveCursorEnd));
+    update(&mut state, Action::Ui(UiAction::EditorInputChar('!')));
+
+    assert_eq!(
+        state.editor.kind,
+        Some(EditorKind::Commit {
+            message: "feat: ship!".to_string(),
+            message_cursor: "feat: ship!".len(),
+            body: String::new(),
+            body_cursor: 0,
+            active_field: CommitField::Message,
+        })
+    );
+}
+
+#[test]
+fn commit_editor_edits_multiline_body_at_cursor() {
+    let mut state = AppState::default();
+    update(&mut state, Action::Ui(UiAction::OpenCommitEditor));
+    update(&mut state, Action::Ui(UiAction::EditorNextField));
+    for ch in "ab".chars() {
+        update(&mut state, Action::Ui(UiAction::EditorInputChar(ch)));
+    }
+    update(&mut state, Action::Ui(UiAction::EditorMoveCursorLeft));
+    update(&mut state, Action::Ui(UiAction::EditorInsertNewline));
+
+    assert!(matches!(
+        state.editor.kind,
+        Some(EditorKind::Commit {
+            body,
+            body_cursor: 2,
+            active_field: CommitField::Body,
+            ..
+        }) if body == "a\nb"
+    ));
+}
+
+#[test]
+fn stash_editor_edits_title_at_cursor() {
+    let mut state = AppState::default();
+    update(&mut state, Action::Ui(UiAction::OpenStashEditor));
+    for ch in "save point".chars() {
+        update(&mut state, Action::Ui(UiAction::EditorInputChar(ch)));
+    }
+    for _ in 0..5 {
+        update(&mut state, Action::Ui(UiAction::EditorMoveCursorLeft));
+    }
+    update(&mut state, Action::Ui(UiAction::EditorBackspace));
+    update(&mut state, Action::Ui(UiAction::EditorInputChar('-')));
+
+    assert_eq!(
+        state.editor.kind,
+        Some(EditorKind::Stash {
+            title: "save-point".to_string(),
+            title_cursor: "save-".len(),
+            scope: StashScope::All,
+        })
+    );
+}
+
+#[test]
+fn editor_cursor_respects_unicode_boundaries() {
+    let mut state = AppState::default();
+    update(&mut state, Action::Ui(UiAction::OpenCommitEditor));
+    for ch in "修复".chars() {
+        update(&mut state, Action::Ui(UiAction::EditorInputChar(ch)));
+    }
+    update(&mut state, Action::Ui(UiAction::EditorMoveCursorLeft));
+    update(&mut state, Action::Ui(UiAction::EditorBackspace));
+    update(&mut state, Action::Ui(UiAction::EditorInputChar('改')));
+
+    assert_eq!(
+        state.editor.kind,
+        Some(EditorKind::Commit {
+            message: "改复".to_string(),
+            message_cursor: "改".len(),
+            body: String::new(),
+            body_cursor: 0,
+            active_field: CommitField::Message,
+        })
+    );
 }

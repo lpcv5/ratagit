@@ -42,6 +42,10 @@ pub enum UiAction {
     OpenStashEditor,
     EditorInputChar(char),
     EditorBackspace,
+    EditorMoveCursorLeft,
+    EditorMoveCursorRight,
+    EditorMoveCursorHome,
+    EditorMoveCursorEnd,
     EditorNextField,
     EditorPrevField,
     EditorInsertNewline,
@@ -164,6 +168,22 @@ fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
         }
         UiAction::EditorBackspace => {
             apply_editor_backspace(state);
+            Vec::new()
+        }
+        UiAction::EditorMoveCursorLeft => {
+            move_editor_cursor(state, EditorCursorMove::Left);
+            Vec::new()
+        }
+        UiAction::EditorMoveCursorRight => {
+            move_editor_cursor(state, EditorCursorMove::Right);
+            Vec::new()
+        }
+        UiAction::EditorMoveCursorHome => {
+            move_editor_cursor(state, EditorCursorMove::Home);
+            Vec::new()
+        }
+        UiAction::EditorMoveCursorEnd => {
+            move_editor_cursor(state, EditorCursorMove::End);
             Vec::new()
         }
         UiAction::EditorNextField => {
@@ -442,7 +462,9 @@ fn update_git_result(state: &mut AppState, result: GitResult) -> Vec<Command> {
 fn open_commit_editor(state: &mut AppState) {
     state.editor.kind = Some(EditorKind::Commit {
         message: String::new(),
+        message_cursor: 0,
         body: String::new(),
+        body_cursor: 0,
         active_field: CommitField::Message,
     });
 }
@@ -450,6 +472,7 @@ fn open_commit_editor(state: &mut AppState) {
 fn open_stash_editor(state: &mut AppState) {
     state.editor.kind = Some(EditorKind::Stash {
         title: String::new(),
+        title_cursor: 0,
         scope: stash_scope_for_current_files_selection(state),
     });
 }
@@ -472,13 +495,19 @@ fn apply_editor_input_char(state: &mut AppState, ch: char) {
     match editor {
         EditorKind::Commit {
             message,
+            message_cursor,
             body,
+            body_cursor,
             active_field,
         } => match active_field {
-            CommitField::Message => message.push(ch),
-            CommitField::Body => body.push(ch),
+            CommitField::Message => insert_char_at_cursor(message, message_cursor, ch),
+            CommitField::Body => insert_char_at_cursor(body, body_cursor, ch),
         },
-        EditorKind::Stash { title, .. } => title.push(ch),
+        EditorKind::Stash {
+            title,
+            title_cursor,
+            ..
+        } => insert_char_at_cursor(title, title_cursor, ch),
     }
 }
 
@@ -490,19 +519,51 @@ fn apply_editor_backspace(state: &mut AppState) {
     match editor {
         EditorKind::Commit {
             message,
+            message_cursor,
             body,
+            body_cursor,
             active_field,
         } => match active_field {
-            CommitField::Message => {
-                message.pop();
-            }
-            CommitField::Body => {
-                body.pop();
-            }
+            CommitField::Message => backspace_at_cursor(message, message_cursor),
+            CommitField::Body => backspace_at_cursor(body, body_cursor),
         },
-        EditorKind::Stash { title, .. } => {
-            title.pop();
-        }
+        EditorKind::Stash {
+            title,
+            title_cursor,
+            ..
+        } => backspace_at_cursor(title, title_cursor),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EditorCursorMove {
+    Left,
+    Right,
+    Home,
+    End,
+}
+
+fn move_editor_cursor(state: &mut AppState, movement: EditorCursorMove) {
+    let Some(editor) = state.editor.kind.as_mut() else {
+        return;
+    };
+
+    match editor {
+        EditorKind::Commit {
+            message,
+            message_cursor,
+            body,
+            body_cursor,
+            active_field,
+        } => match active_field {
+            CommitField::Message => move_cursor_in_text(message, message_cursor, movement),
+            CommitField::Body => move_cursor_in_text(body, body_cursor, movement),
+        },
+        EditorKind::Stash {
+            title,
+            title_cursor,
+            ..
+        } => move_cursor_in_text(title, title_cursor, movement),
     }
 }
 
@@ -527,11 +588,12 @@ fn apply_editor_newline(state: &mut AppState) {
 
     if let EditorKind::Commit {
         body,
+        body_cursor,
         active_field: CommitField::Body,
         ..
     } = editor
     {
-        body.push('\n');
+        insert_char_at_cursor(body, body_cursor, '\n');
     }
 }
 
@@ -554,7 +616,7 @@ fn confirm_editor(state: &mut AppState) -> Vec<Command> {
                 message: commit_message,
             }]
         }
-        EditorKind::Stash { title, scope } => match scope {
+        EditorKind::Stash { title, scope, .. } => match scope {
             StashScope::All => {
                 state.editor.kind = None;
                 vec![Command::StashPush { message: title }]
@@ -583,6 +645,58 @@ fn build_commit_message(subject: &str, body: &str) -> String {
     } else {
         format!("{clean_subject}\n\n{clean_body}")
     }
+}
+
+fn insert_char_at_cursor(text: &mut String, cursor: &mut usize, ch: char) {
+    *cursor = clamp_to_char_boundary(text, *cursor);
+    text.insert(*cursor, ch);
+    *cursor += ch.len_utf8();
+}
+
+fn backspace_at_cursor(text: &mut String, cursor: &mut usize) {
+    *cursor = clamp_to_char_boundary(text, *cursor);
+    let Some(previous) = previous_char_boundary(text, *cursor) else {
+        return;
+    };
+    text.drain(previous..*cursor);
+    *cursor = previous;
+}
+
+fn move_cursor_in_text(text: &str, cursor: &mut usize, movement: EditorCursorMove) {
+    *cursor = clamp_to_char_boundary(text, *cursor);
+    *cursor = match movement {
+        EditorCursorMove::Left => previous_char_boundary(text, *cursor).unwrap_or(0),
+        EditorCursorMove::Right => next_char_boundary(text, *cursor).unwrap_or(text.len()),
+        EditorCursorMove::Home => 0,
+        EditorCursorMove::End => text.len(),
+    };
+}
+
+fn clamp_to_char_boundary(text: &str, cursor: usize) -> usize {
+    if cursor >= text.len() {
+        return text.len();
+    }
+    if text.is_char_boundary(cursor) {
+        return cursor;
+    }
+    text.char_indices()
+        .map(|(index, _)| index)
+        .take_while(|index| *index < cursor)
+        .last()
+        .unwrap_or(0)
+}
+
+fn previous_char_boundary(text: &str, cursor: usize) -> Option<usize> {
+    text.char_indices()
+        .map(|(index, _)| index)
+        .take_while(|index| *index < cursor)
+        .last()
+}
+
+fn next_char_boundary(text: &str, cursor: usize) -> Option<usize> {
+    text.char_indices()
+        .map(|(index, _)| index)
+        .find(|index| *index > cursor)
 }
 
 fn handle_operation_result(

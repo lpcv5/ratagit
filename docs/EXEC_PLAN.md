@@ -2,8 +2,8 @@
 
 ## Current Slice
 
-Implement Files-panel commit/stash editor modals and unify real Git CLI tests
-under workspace `tmp/`.
+Polish Files-panel commit/stash editor modals and add real editor cursor
+support.
 
 ## Follow-up Hotfix
 
@@ -15,47 +15,28 @@ under workspace `tmp/`.
 
 ## Goal
 
-- add a commit editor flow from Files (`c`) with:
-  - subject + multiline body
-  - `Tab` / `Shift+Tab` field switch
-  - `Ctrl+J` newline in body
-  - `Enter` confirm, `Esc` cancel
-- add a stash editor flow from Files (`s`) with:
-  - normal mode -> stash all changes
-  - visual mode -> stash selected target paths
-  - `Enter` confirm, `Esc` cancel
+- improve commit/stash editor modal readability with form-style fields
+- keep editor cursor state in `AppState`
+- render a real terminal cursor for the active editor field
+- support `Left` / `Right` / `Home` / `End` cursor movement
 - keep commit/stash backend command interfaces stable
-- ensure real Git integration tests run in `tmp/git-tests/*` repos only
 
 ## Vertical Slice
 
 1. Core state and reducer
-- add `AppState.editor` as editor source of truth
-- add editor-focused `UiAction` variants (open/input/switch/newline/confirm/cancel)
-- keep existing `Command`/`GitResult` types for commit/stash execution
-- compose commit message in core (`subject + optional body`)
-- freeze stash scope at modal open (`All` vs `SelectedPaths`)
+- store commit subject/body cursor indexes and stash title cursor index in `AppState.editor`
+- add editor cursor movement `UiAction` variants
+- insert characters, newlines, and Backspace at the active field cursor
+- preserve UTF-8 char boundaries for cursor movement and deletion
 
 2. Input mapping + UI modal overlay
-- add editor-mode key mapping precedence in `src/main.rs`
-- map Files `c/s` to open editor actions
-- render centered commit/stash modal overlay in terminal renderer
-- show editor-specific shortcuts while modal is active
+- map `Left` / `Right` / `Home` / `End` before other modes while editor is active
+- replace `>>` line prefixes with form-style input blocks
+- set ratatui frame cursor to the active editor field position
+- keep body viewport derived from the cursor line
 
-3. Git behavior + tests
-- mock backend commit summary uses first line for commit list projection
-- add real CLI integration tests under `libs/ratagit-git/tests`:
-  - multiline commit message
-  - stash push all
-  - stash files selected paths
-- build temporary repos under `<workspace>/tmp/git-tests/<unique-case>`
-- ignore `/tmp/` in git
-
-4. Validation
-- add/adjust unit tests (core/main) for editor state machine and key mapping
-- add UI snapshot coverage for commit/stash modal states
-- add harness scenarios for:
-  - `files_commit_editor_multiline_confirm`
-  - `files_stash_editor_all_mode`
-  - `files_stash_editor_multiselect_mode`
+3. Validation
+- add/adjust unit tests for cursor movement, insertion, deletion, unicode, and key mapping
+- update commit/stash editor snapshots
+- assert terminal cursor position for commit subject/body and stash title
 - run `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, `cargo test`

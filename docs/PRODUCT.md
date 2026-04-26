@@ -51,12 +51,16 @@ Files panel rules:
 - `space` stages unstaged targets or unstages targets when all selected targets are staged
 - `c` opens a commit editor modal from Files focus
   - `message` and `body` fields are editable
+  - the active field shows a real terminal cursor
+  - `Left` / `Right` / `Home` / `End` moves the cursor within the active field
   - `Tab` / `Shift+Tab` switches active field
   - `Ctrl+J` inserts a newline in body
   - `Enter` confirms, `Esc` cancels
 - `s` opens a stash editor modal from Files focus
   - normal mode stashes all current changes
   - `v` multi-select mode stashes only selected target paths
+  - the title field shows a real terminal cursor
+  - `Left` / `Right` / `Home` / `End` moves the cursor within the title
   - `Enter` confirms, `Esc` cancels
 - `v` enters visual multi-select at the current row; `j` / `k` extends or shrinks the selected range
 - `/` opens search input in the bottom bar; Enter confirms, Esc cancels or clears, `n` / `N` navigate matches

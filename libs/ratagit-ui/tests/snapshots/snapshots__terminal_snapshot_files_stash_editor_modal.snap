@@ -1,6 +1,6 @@
 ---
 source: libs/ratagit-ui/tests/snapshots.rs
-assertion_line: 464
+assertion_line: 512
 expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30, },)"
 ---
 ┌ [1] 󰈙 Files ───────────────────┐┌ [5]  Details ─────────────────────────────────────────────────┐
@@ -12,16 +12,16 @@ expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30,
 │                                ││                                                                │
 │                                ││                                                                │
 │                                ││                                                                │
-│                                ││                                                                │
-└───────────┌ Stash Editor ────────────────────────────────────────────────────────────┐           │
-┌ [2]  Bran│>> title: pick files                                                      │           │
-│ main     │   scope: selected files (3)                                              │           │
-│  feature/m│                                                                          │           │
-│           │   Enter confirm | Esc cancel                                             │           │
+│           ┌ Stash Message ───────────────────────────────────────────────────────────┐           │
+└───────────│ Name the stash before saving.                                            │           │
+┌ [2]  Bran│ ┌ Title ───────────────────────────────────────────────────────────────┐ │           │
+│ main     │ │pick files                                                            │ │           │
+│  feature/m│ └──────────────────────────────────────────────────────────────────────┘ │           │
+│           │ Scope: selected files (3)                                                │           │
+│           │ Left/Right/Home/End cursor                                               │           │
+│           │ Enter confirm  |  Esc cancel                                             │           │
 │           │                                                                          │           │
-│           │                                                                          │           │
-│           └──────────────────────────────────────────────────────────────────────────┘           │
-└────────────────────────────────┘│                                                                │
+└───────────└──────────────────────────────────────────────────────────────────────────┘           │
 ┌ [3]  Commits ─────────────────┐└────────────────────────────────────────────────────────────────┘
 │ abc1234 init project          │┌ [6] 󰌱 Log ─────────────────────────────────────────────────────┐
 │ def5678 wire commands         ││  notice=Ready                                                  │
@@ -32,4 +32,4 @@ expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30,
 ┌ [4]  Stash ───────────────────┐│                                                                │
 │ stash@{0} WIP on main: local t││                                                                │
 └────────────────────────────────┘└────────────────────────────────────────────────────────────────┘
-stash editor: Enter confirm | Esc cancel
+stash editor: arrows/Home/End cursor | Enter confirm | Esc cancel
