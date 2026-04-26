@@ -4,7 +4,10 @@ use std::path::PathBuf;
 
 use ratagit_core::{Action, AppState, Command, UiAction, update};
 use ratagit_git::{GitBackend, MockGitBackend, execute_command};
-use ratagit_ui::{RenderedFrame, TerminalSize, render, render_terminal_text};
+use ratagit_ui::{
+    RenderedFrame, TerminalBuffer, TerminalSize, buffer_contains_selected_text, render,
+    render_terminal_buffer, render_terminal_text,
+};
 
 #[derive(Debug)]
 pub struct Runtime<B: GitBackend> {
@@ -45,6 +48,10 @@ impl<B: GitBackend> Runtime<B> {
 
     pub fn render_terminal_text(&self) -> String {
         render_terminal_text(&self.state, self.terminal_size)
+    }
+
+    pub fn render_terminal_buffer(&self) -> TerminalBuffer {
+        render_terminal_buffer(&self.state, self.terminal_size)
     }
 
     fn process_commands(&mut self, initial: Vec<Command>) {
@@ -97,6 +104,7 @@ impl<'a> MockScenario<'a> {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ScenarioExpectations<'a> {
     pub screen_contains: &'a [&'a str],
+    pub selected_screen_rows: &'a [&'a str],
     pub git_ops_contains: &'a [&'a str],
     pub git_state_contains: &'a [&'a str],
 }
@@ -115,6 +123,7 @@ pub fn run_mock_scenario(scenario: MockScenario<'_>) -> Result<(), ScenarioFailu
     let compatibility_frame = runtime.render();
     let frame_text = compatibility_frame.as_text();
     let screen_text = runtime.render_terminal_text();
+    let screen_buffer = runtime.render_terminal_buffer();
     let operations = runtime.backend().operations().join("\n");
     let git_state = format!("{:#?}", runtime.backend().snapshot());
 
@@ -122,6 +131,11 @@ pub fn run_mock_scenario(scenario: MockScenario<'_>) -> Result<(), ScenarioFailu
     for needle in scenario.expectations.screen_contains {
         if !screen_text.contains(needle) {
             errors.push(format!("screen missing expected text: {needle}"));
+        }
+    }
+    for needle in scenario.expectations.selected_screen_rows {
+        if !buffer_contains_selected_text(&screen_buffer, needle) {
+            errors.push(format!("screen row missing selected style: {needle}"));
         }
     }
     for needle in scenario.expectations.git_ops_contains {

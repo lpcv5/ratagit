@@ -8,7 +8,12 @@ ratagit MVP uses a left-nav workspace interface with six visible panels:
 2. Right column (top -> bottom): Details, Log
 3. Bottom row: unframed current-focused-panel Git operation shortcuts only
 
-The focused panel is highlighted. Left list panels keep deterministic selected row indexes. Right panels are read-only views derived from `AppState`. The app does not render a top branch/focus/status summary.
+The focused panel is highlighted with a border/title accent. Selectable rows use
+color-only cursor highlighting: the selected row is highlighted only inside the
+focused selectable panel, and inactive panels render their selected row as plain
+text. Left list panels keep deterministic selected row indexes. Right panels are
+read-only views derived from `AppState`. The app does not render a top
+branch/focus/status summary.
 
 Focus model:
 
@@ -48,13 +53,27 @@ Files panel interaction:
 
 ---
 
+## Visual Theme
+
+- The UI assumes Unicode/Nerd Font support.
+- Panel titles include semantic icons and never use `*` to show focus.
+- File rows use icons for folders, files, staged files, untracked files,
+  multi-select membership, and search matches.
+- Visible cursor markers such as `>` are not rendered; selection is tested
+  through buffer styles.
+
+---
+
 ## Snapshot and Harness Design
 
 - UI panel unit tests assert pure panel projections from `AppState`.
 - Full-screen UI tests render fixed terminal sizes through `render_terminal`
   and `ratatui::TestBackend`.
+- Style-sensitive assertions inspect terminal buffer cells instead of relying on
+  text snapshots for invisible color state.
 - Harness scenarios drive action sequences and assert:
   - real terminal screen text
+  - selected-row style when needed
   - backend operation trace
   - final mock Git state
 - On failure, harness writes artifacts:

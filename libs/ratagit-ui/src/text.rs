@@ -2,7 +2,7 @@ use ratagit_core::{AppState, PanelFocus};
 
 use crate::frame::{RenderedFrame, TerminalSize, normalize_lines, pad_and_truncate};
 use crate::panels::{
-    panel_title, render_branches_lines, render_commits_lines, render_details_lines,
+    PanelLine, panel_title, render_branches_lines, render_commits_lines, render_details_lines,
     render_files_lines, render_log_lines, render_stash_lines, shortcuts_for_state,
 };
 
@@ -136,25 +136,21 @@ fn split_vertical(total_height: usize, ratios: &[usize]) -> Vec<usize> {
 
 fn render_panel(
     title: &str,
-    focused: bool,
+    _focused: bool,
     width: usize,
     height: usize,
-    content_lines: Vec<String>,
+    content_lines: Vec<PanelLine>,
 ) -> Vec<String> {
     if height == 0 {
         return Vec::new();
     }
 
     let mut lines = Vec::with_capacity(height);
-    let header = if focused {
-        format!("> [{title}]")
-    } else {
-        format!("  [{title}]")
-    };
+    let header = format!("  [{title}]");
     lines.push(pad_and_truncate(header, width));
 
     for line in content_lines.into_iter().take(height.saturating_sub(1)) {
-        lines.push(pad_and_truncate(line, width));
+        lines.push(pad_and_truncate(line.text, width));
     }
     while lines.len() < height {
         lines.push(" ".repeat(width));

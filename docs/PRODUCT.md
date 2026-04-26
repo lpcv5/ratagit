@@ -32,6 +32,8 @@ Navigation rules:
 - `1..6` focuses Files/Branches/Commits/Stash/Details/Log directly
 - top branch/focus/status summary is hidden to prioritize panels
 - bottom keys row is unframed and shows only Git operation shortcuts for the current focused panel
+- focused panels are indicated by a colored border/title accent, not by `*`
+- selected rows are indicated by color only and only in the focused selectable panel
 
 Files panel rules:
 
@@ -44,6 +46,10 @@ Files panel rules:
 - discard backend support exists, but `d` is not mapped until the confirmation dialog is available
 
 All features are keyboard-driven and deterministic.
+
+The visual theme is Unicode/Nerd Font first. Panel titles and file, branch, and
+status rows use a compact semantic icon set while preserving deterministic text
+layout.
 
 ---
 

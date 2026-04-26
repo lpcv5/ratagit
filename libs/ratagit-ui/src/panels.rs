@@ -3,18 +3,39 @@ use ratagit_core::{
     ScrollDirection, StashEntry, build_file_tree_rows, selected_row, selected_target_paths,
 };
 
-pub(crate) fn panel_title(panel: PanelFocus) -> &'static str {
-    match panel {
-        PanelFocus::Files => "Files",
-        PanelFocus::Branches => "Branches",
-        PanelFocus::Commits => "Commits",
-        PanelFocus::Stash => "Stash",
-        PanelFocus::Details => "Details",
-        PanelFocus::Log => "Log",
+use crate::theme::{
+    ICON_BATCH_SELECTED, ICON_BRANCH, ICON_COMMIT, ICON_DIRECTORY_CLOSED, ICON_DIRECTORY_OPEN,
+    ICON_FILE, ICON_FILE_STAGED, ICON_FILE_UNTRACKED, ICON_SEARCH_MATCH, ICON_STASH, RowRole,
+    panel_label,
+};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PanelLine {
+    pub(crate) text: String,
+    pub(crate) selected: bool,
+    pub(crate) role: RowRole,
+}
+
+impl PanelLine {
+    fn new(text: impl Into<String>, role: RowRole) -> Self {
+        Self {
+            text: text.into(),
+            selected: false,
+            role,
+        }
+    }
+
+    fn selected(mut self, selected: bool) -> Self {
+        self.selected = selected;
+        self
     }
 }
 
-pub(crate) fn render_files_lines(state: &AppState, max_lines: usize) -> Vec<String> {
+pub(crate) fn panel_title(panel: PanelFocus) -> &'static str {
+    panel_label(panel)
+}
+
+pub(crate) fn render_files_lines(state: &AppState, max_lines: usize) -> Vec<PanelLine> {
     let rows = build_file_tree_rows(&state.files);
     render_indexed_entries_with_direction(
         &rows,
@@ -22,109 +43,151 @@ pub(crate) fn render_files_lines(state: &AppState, max_lines: usize) -> Vec<Stri
         state.files.last_scroll_direction,
         max_lines,
         format_file_tree_row,
+        file_tree_row_role,
     )
 }
 
-pub(crate) fn render_branches_lines(state: &AppState, max_lines: usize) -> Vec<String> {
+pub(crate) fn render_branches_lines(state: &AppState, max_lines: usize) -> Vec<PanelLine> {
     render_indexed_entries(
         &state.branches.items,
         state.branches.selected,
         max_lines,
         format_branch_entry,
+        branch_entry_role,
     )
 }
 
-pub(crate) fn render_commits_lines(state: &AppState, max_lines: usize) -> Vec<String> {
+pub(crate) fn render_commits_lines(state: &AppState, max_lines: usize) -> Vec<PanelLine> {
     let mut lines = render_indexed_entries(
         &state.commits.items,
         state.commits.selected,
         max_lines.saturating_sub(1),
         format_commit_entry,
+        |_| RowRole::Normal,
     );
     if max_lines > 0 {
-        lines.push(format!("  draft={}", state.commits.draft_message));
+        lines.push(PanelLine::new(
+            format!("  draft={}", state.commits.draft_message),
+            RowRole::Muted,
+        ));
     }
     lines
 }
 
-pub(crate) fn render_stash_lines(state: &AppState, max_lines: usize) -> Vec<String> {
+pub(crate) fn render_stash_lines(state: &AppState, max_lines: usize) -> Vec<PanelLine> {
     render_indexed_entries(
         &state.stash.items,
         state.stash.selected,
         max_lines,
         format_stash_entry,
+        |_| RowRole::Normal,
     )
 }
 
-pub(crate) fn render_details_lines(state: &AppState, max_lines: usize) -> Vec<String> {
+pub(crate) fn render_details_lines(state: &AppState, max_lines: usize) -> Vec<PanelLine> {
     let mut lines = Vec::new();
-    lines.push(format!("  current={:?}", state.last_left_focus));
+    lines.push(PanelLine::new(
+        format!("  current={:?}", state.last_left_focus),
+        RowRole::Muted,
+    ));
     match state.last_left_focus {
         PanelFocus::Files => {
             if let Some(row) = selected_row(&state.files) {
                 let target_count = selected_target_paths(&state.files).len();
-                lines.push(format!(
-                    "  {}={}",
-                    if row.kind == FileRowKind::Directory {
-                        "dir"
-                    } else {
-                        "file"
-                    },
-                    row.path
+                lines.push(PanelLine::new(
+                    format!(
+                        "  {}={}",
+                        if row.kind == FileRowKind::Directory {
+                            "dir"
+                        } else {
+                            "file"
+                        },
+                        row.path
+                    ),
+                    RowRole::Normal,
                 ));
-                lines.push(format!("  targets={target_count}"));
-                lines.push(format!(
-                    "  staged={}",
-                    if row.staged { "yes" } else { "no" }
+                lines.push(PanelLine::new(
+                    format!("  targets={target_count}"),
+                    RowRole::Muted,
+                ));
+                lines.push(PanelLine::new(
+                    format!("  staged={}", if row.staged { "yes" } else { "no" }),
+                    if row.staged {
+                        RowRole::FileStaged
+                    } else {
+                        RowRole::Muted
+                    },
                 ));
             } else {
-                lines.push("  file=<empty>".to_string());
+                lines.push(PanelLine::new("  file=<empty>", RowRole::Muted));
             }
         }
         PanelFocus::Branches => {
             if let Some(entry) = state.branches.items.get(state.branches.selected) {
-                lines.push(format!("  branch={}", entry.name));
-                lines.push(format!(
-                    "  is_current={}",
-                    if entry.is_current { "yes" } else { "no" }
+                lines.push(PanelLine::new(
+                    format!("  branch={}", entry.name),
+                    branch_entry_role(entry),
+                ));
+                lines.push(PanelLine::new(
+                    format!(
+                        "  is_current={}",
+                        if entry.is_current { "yes" } else { "no" }
+                    ),
+                    if entry.is_current {
+                        RowRole::CurrentBranch
+                    } else {
+                        RowRole::Muted
+                    },
                 ));
             } else {
-                lines.push("  branch=<empty>".to_string());
+                lines.push(PanelLine::new("  branch=<empty>", RowRole::Muted));
             }
         }
         PanelFocus::Commits => {
             if let Some(entry) = state.commits.items.get(state.commits.selected) {
-                lines.push(format!("  commit={} {}", entry.id, entry.summary));
+                lines.push(PanelLine::new(
+                    format!("  commit={} {}", entry.id, entry.summary),
+                    RowRole::Normal,
+                ));
             } else {
-                lines.push("  commit=<empty>".to_string());
+                lines.push(PanelLine::new("  commit=<empty>", RowRole::Muted));
             }
         }
         PanelFocus::Stash => {
             if let Some(entry) = state.stash.items.get(state.stash.selected) {
-                lines.push(format!("  stash={} {}", entry.id, entry.summary));
+                lines.push(PanelLine::new(
+                    format!("  stash={} {}", entry.id, entry.summary),
+                    RowRole::Normal,
+                ));
             } else {
-                lines.push("  stash=<empty>".to_string());
+                lines.push(PanelLine::new("  stash=<empty>", RowRole::Muted));
             }
         }
         PanelFocus::Details | PanelFocus::Log => {}
     }
-    lines.push(format!("  summary={}", state.status.summary));
+    lines.push(PanelLine::new(
+        format!("  summary={}", state.status.summary),
+        RowRole::Muted,
+    ));
     lines.into_iter().take(max_lines).collect()
 }
 
-pub(crate) fn render_log_lines(state: &AppState, max_lines: usize) -> Vec<String> {
+pub(crate) fn render_log_lines(state: &AppState, max_lines: usize) -> Vec<PanelLine> {
     let mut lines = Vec::new();
     if let Some(error) = &state.status.last_error {
-        lines.push(format!("  error={error}"));
+        lines.push(PanelLine::new(format!("  error={error}"), RowRole::Error));
     } else {
-        lines.push("  error=<none>".to_string());
+        lines.push(PanelLine::new("  error=<none>", RowRole::Muted));
     }
 
     let keep = max_lines.saturating_sub(lines.len());
     if keep > 0 {
         let start = state.notices.len().saturating_sub(keep);
         for notice in &state.notices[start..] {
-            lines.push(format!("  notice={notice}"));
+            lines.push(PanelLine::new(
+                format!("  notice={notice}"),
+                RowRole::Notice,
+            ));
         }
     }
     lines.into_iter().take(max_lines).collect()
@@ -151,13 +214,15 @@ fn render_indexed_entries<T>(
     selected: usize,
     max_lines: usize,
     format_item: impl Fn(&T) -> String,
-) -> Vec<String> {
+    item_role: impl Fn(&T) -> RowRole,
+) -> Vec<PanelLine> {
     render_indexed_entries_with_direction(
         items,
         selected,
         ScrollDirection::Down,
         max_lines,
         format_item,
+        item_role,
     )
 }
 
@@ -167,14 +232,15 @@ fn render_indexed_entries_with_direction<T>(
     direction: ScrollDirection,
     max_lines: usize,
     format_item: impl Fn(&T) -> String,
-) -> Vec<String> {
+    item_role: impl Fn(&T) -> RowRole,
+) -> Vec<PanelLine> {
     const SCROLL_RESERVE: usize = 3;
 
     if max_lines == 0 {
         return Vec::new();
     }
     if items.is_empty() {
-        return vec!["  <empty>".to_string()];
+        return vec![PanelLine::new("  <empty>", RowRole::Muted)];
     }
     let max_start = items.len().saturating_sub(max_lines);
     let start = match direction {
@@ -190,52 +256,76 @@ fn render_indexed_entries_with_direction<T>(
         .skip(start)
         .take(max_lines)
         .map(|(index, item)| {
-            if index == selected {
-                format!("> {}", format_item(item))
-            } else {
-                format!("  {}", format_item(item))
-            }
+            PanelLine::new(format_item(item), item_role(item)).selected(index == selected)
         })
         .collect()
 }
 
 pub fn format_file_tree_row(row: &FileTreeRow) -> String {
     let indent = "  ".repeat(row.depth);
-    let batch = if row.selected_for_batch { "*" } else { " " };
-    let matched = if row.matched { "!" } else { " " };
+    let batch = if row.selected_for_batch {
+        ICON_BATCH_SELECTED
+    } else {
+        " "
+    };
+    let matched = if row.matched { ICON_SEARCH_MATCH } else { " " };
     let body = match row.kind {
         FileRowKind::Directory => {
-            let marker = if row.expanded { "[-]" } else { "[+]" };
+            let marker = if row.expanded {
+                ICON_DIRECTORY_OPEN
+            } else {
+                ICON_DIRECTORY_CLOSED
+            };
             format!("{marker} {}/", row.name)
         }
         FileRowKind::File => {
             let marker = if row.untracked {
-                "[?]"
+                ICON_FILE_UNTRACKED
             } else if row.staged {
-                "[S]"
+                ICON_FILE_STAGED
             } else {
-                "[ ]"
+                ICON_FILE
             };
             format!("{marker} {}", row.name)
         }
     };
-    format!("{batch}{matched}{indent}{body}")
+    format!("{batch}{matched} {indent}{body}")
 }
 
 pub fn format_commit_entry(entry: &CommitEntry) -> String {
-    format!("{} {}", entry.id, entry.summary)
+    format!("{ICON_COMMIT} {} {}", entry.id, entry.summary)
 }
 
 pub fn format_branch_entry(entry: &BranchEntry) -> String {
-    format!(
-        "{} {}",
-        if entry.is_current { "*" } else { " " },
-        entry.name
-    )
+    if entry.is_current {
+        format!("{ICON_BRANCH} {}", entry.name)
+    } else {
+        format!("  {}", entry.name)
+    }
 }
 
 pub fn format_stash_entry(entry: &StashEntry) -> String {
-    format!("{} {}", entry.id, entry.summary)
+    format!("{ICON_STASH} {} {}", entry.id, entry.summary)
+}
+
+fn file_tree_row_role(row: &FileTreeRow) -> RowRole {
+    if row.matched {
+        RowRole::SearchMatch
+    } else if row.untracked {
+        RowRole::FileUntracked
+    } else if row.staged {
+        RowRole::FileStaged
+    } else {
+        RowRole::Normal
+    }
+}
+
+fn branch_entry_role(entry: &BranchEntry) -> RowRole {
+    if entry.is_current {
+        RowRole::CurrentBranch
+    } else {
+        RowRole::Normal
+    }
 }
 
 #[cfg(test)]
@@ -262,10 +352,12 @@ mod tests {
 
         let lines = render_files_lines(&state, 4);
 
-        assert_eq!(lines[0], "    [?] README.md");
-        assert_eq!(lines[1], ">   [-] src/");
-        assert_eq!(lines[2], "      [ ] lib.rs");
-        assert_eq!(lines[3], "      [S] main.rs");
+        assert_eq!(lines[0].text, "    README.md");
+        assert_eq!(lines[1].text, "    src/");
+        assert_eq!(lines[2].text, "      lib.rs");
+        assert_eq!(lines[3].text, "      main.rs");
+        assert!(lines[1].selected);
+        assert!(!lines.iter().any(|line| line.text.contains('>')));
     }
 
     #[test]
@@ -277,8 +369,9 @@ mod tests {
 
         let lines = render_files_lines(&state, 2);
 
-        assert_eq!(lines[0], "    [?] README.md");
-        assert_eq!(lines[1], "> * [+] src/");
+        assert_eq!(lines[0].text, "    README.md");
+        assert_eq!(lines[1].text, "✓   src/");
+        assert!(lines[1].selected);
     }
 
     #[test]
@@ -290,7 +383,7 @@ mod tests {
 
         let lines = render_files_lines(&state, 4);
 
-        assert!(lines.iter().any(|line| line.contains("!  [ ] lib.rs")));
+        assert!(lines.iter().any(|line| line.text.contains("    lib.rs")));
     }
 
     #[test]
@@ -300,8 +393,9 @@ mod tests {
 
         let lines = render_branches_lines(&state, 2);
 
-        assert_eq!(lines[0], "  * main");
-        assert_eq!(lines[1], ">   feature/mvp");
+        assert_eq!(lines[0].text, " main");
+        assert_eq!(lines[1].text, "  feature/mvp");
+        assert!(lines[1].selected);
     }
 
     #[test]
@@ -312,9 +406,10 @@ mod tests {
 
         let lines = render_commits_lines(&state, 3);
 
-        assert_eq!(lines[0], "  abc1234 init project");
-        assert_eq!(lines[1], "> def5678 wire commands");
-        assert_eq!(lines[2], "  draft=ship it");
+        assert_eq!(lines[0].text, " abc1234 init project");
+        assert_eq!(lines[1].text, " def5678 wire commands");
+        assert_eq!(lines[2].text, "  draft=ship it");
+        assert!(lines[1].selected);
     }
 
     #[test]
@@ -323,7 +418,8 @@ mod tests {
 
         let lines = render_stash_lines(&state, 1);
 
-        assert_eq!(lines[0], "> stash@{0} WIP on main: local test");
+        assert_eq!(lines[0].text, " stash@{0} WIP on main: local test");
+        assert!(lines[0].selected);
     }
 
     #[test]
@@ -344,9 +440,9 @@ mod tests {
 
         let lines = render_details_lines(&state, 4);
 
-        assert_eq!(lines[0], "  current=Branches");
-        assert_eq!(lines[1], "  branch=main");
-        assert_eq!(lines[2], "  is_current=yes");
+        assert_eq!(lines[0].text, "  current=Branches");
+        assert_eq!(lines[1].text, "  branch=main");
+        assert_eq!(lines[2].text, "  is_current=yes");
     }
 
     #[test]
@@ -368,11 +464,11 @@ mod tests {
 
         let lines = render_log_lines(&state, 3);
 
-        assert!(lines[0].contains("error=Failed to create commit"));
+        assert!(lines[0].text.contains("error=Failed to create commit"));
         assert!(
             lines
                 .iter()
-                .any(|line| line.contains("notice=Failed to create commit"))
+                .any(|line| line.text.contains("notice=Failed to create commit"))
         );
     }
 

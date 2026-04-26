@@ -527,6 +527,7 @@ dependencies = [
  "ratagit-core",
  "ratagit-testkit",
  "ratatui",
+ "unicode-width 0.2.0",
 ]
 
 [[package]]

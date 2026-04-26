@@ -2,38 +2,35 @@
 
 ## Goal
 
-Trim the bottom keys row so it no longer draws a bordered block, while keeping
-TUI behavior validated through real panel projection, full-screen `ratatui`
-rendering, and command-to-render harness scenarios.
+Refresh the TUI with a conservative lazygit-like theme: selection is shown by
+color only, inactive panels do not show cursor highlights, and panel/file state
+uses a small semantic Nerd Font icon set.
 
 ## Vertical Slice
 
 1. UI rendering modules
-- split `ratagit-ui` into focused modules for frame helpers, panel projection,
-  terminal rendering, and compatibility text rendering
-- keep the public API stable: `render`, `render_terminal`, `TerminalSize`, and
-  `RenderedFrame`
-- add `render_terminal_text` so tests and harness scenarios inspect the real
-  `render_terminal` buffer
+- keep rendering pure and derived only from `AppState`
+- introduce semantic panel rows carrying text, selected state, and style role
+- keep public rendering APIs stable and add a testable terminal buffer helper
+- make fixed-width text rendering Unicode-width aware
 
-2. Panel unit tests
-- test each panel's pure projection from `AppState`
-- cover focus-derived details, search/multi-select file rows, log errors, and
-  contextual keys
+2. Theme behavior
+- remove visible `>` cursor markers from all panels and snapshots
+- remove the focused-title `*` marker
+- highlight only the selected row in the focused selectable panel
+- use icons for panels, directories, files, current branch, staged/untracked
+  state, multi-select, and search matches
 
-3. Full-screen UI snapshots
-- add `insta` snapshots for fixed terminal sizes `80x24`, `100x30`, and
-  `120x40`
-- snapshot the real `ratatui::TestBackend` screen, including panel borders and
-  the unframed bottom keys row
-- keep the old `render()` tests as compatibility checks until that path is
-  removed by an explicit design change
+3. UI tests
+- update panel projection tests for marker-free icon text
+- snapshot fixed terminal sizes `80x24`, `100x30`, and `120x40`
+- assert selection and focus styles through `ratatui::TestBackend` buffer cells
 
 4. Harness scenarios
-- migrate scenarios to structured expectations for screen text, Git operation
-  trace, and final mock Git state
-- write failure artifacts for text render, real screen render, `AppState`, Git
-  operation trace, final mock state, and input sequence
+- keep screen, Git operation, and Git state expectations
+- add a style-aware selected-row assertion for a files scenario
+- keep failure artifacts for compatibility text, real screen, state, Git trace,
+  final mock state, and input sequence
 
 5. Quality gates
 - run `cargo fmt`

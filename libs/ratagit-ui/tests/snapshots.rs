@@ -3,7 +3,11 @@ use ratagit_testkit::{
     fixture_conflict, fixture_dirty_repo, fixture_empty_repo, fixture_many_files,
     fixture_unicode_paths,
 };
-use ratagit_ui::{TerminalSize, render, render_terminal_text};
+use ratagit_ui::{
+    TerminalSize, buffer_contains_selected_text, buffer_contains_text_with_style,
+    buffer_to_text_with_selected_marker, focused_panel_style, render, render_terminal_buffer,
+    render_terminal_text,
+};
 
 fn render_snapshot(snapshot: ratagit_core::RepoSnapshot, size: TerminalSize) -> String {
     let mut state = AppState::default();
@@ -13,6 +17,18 @@ fn render_snapshot(snapshot: ratagit_core::RepoSnapshot, size: TerminalSize) -> 
     );
     assert!(commands.is_empty());
     render(&state, size).as_text()
+}
+
+fn assert_no_cursor_marker(text: &str) {
+    assert!(
+        !text
+            .lines()
+            .any(|line| { line.trim_start().starts_with("> ") || line.contains("│>") })
+    );
+}
+
+fn render_terminal_snapshot_with_cursor_marker(state: &AppState, size: TerminalSize) -> String {
+    buffer_to_text_with_selected_marker(&render_terminal_buffer(state, size))
 }
 
 #[test]
@@ -28,9 +44,10 @@ fn snapshots_empty_repo_80x24() {
     assert!(!first_lines.contains("branch=main"));
     assert!(!first_lines.contains("focus=Files"));
     assert!(!first_lines.contains("summary=staged: 0, unstaged: 0"));
-    assert!(text.contains("[Files]"));
-    assert!(text.contains("[Details]"));
+    assert!(text.contains("[󰈙 Files]"));
+    assert!(text.contains("[ Details]"));
     assert!(text.contains("keys(files):"));
+    assert_no_cursor_marker(&text);
     assert!(!text.contains("tab/shift+tab"));
     assert!(!text.contains("1-6 focus panel"));
 }
@@ -44,16 +61,17 @@ fn snapshots_dirty_repo_100x30() {
             height: 30,
         },
     );
-    assert!(text.contains("[Files]"));
-    assert!(text.contains("[Commits]"));
-    assert!(text.contains("[Branches]"));
-    assert!(text.contains("[Stash]"));
-    assert!(text.contains("[Details]"));
-    assert!(text.contains("[Log]"));
-    assert!(text.contains("[-] src/"));
-    assert!(text.contains("[S] main.rs"));
-    assert!(text.contains("[ ] lib.rs"));
-    assert!(text.contains("[?] README.md"));
+    assert!(text.contains("[󰈙 Files]"));
+    assert!(text.contains("[ Commits]"));
+    assert!(text.contains("[ Branches]"));
+    assert!(text.contains("[ Stash]"));
+    assert!(text.contains("[ Details]"));
+    assert!(text.contains("[󰌱 Log]"));
+    assert!(text.contains(" src/"));
+    assert!(text.contains(" main.rs"));
+    assert!(text.contains(" lib.rs"));
+    assert!(text.contains(" README.md"));
+    assert_no_cursor_marker(&text);
 }
 
 #[test]
@@ -153,7 +171,8 @@ fn snapshots_files_multi_select_marks_selected_rows() {
         },
     )
     .as_text();
-    assert!(text.contains("> * [?] README.md"));
+    assert!(text.contains("✓   README.md"));
+    assert_no_cursor_marker(&text);
 }
 
 #[test]
@@ -176,12 +195,22 @@ fn snapshots_files_list_scrolls_to_keep_selection_visible() {
         },
     )
     .as_text();
-    assert!(text.contains("    [S] file-16.txt"));
-    assert!(text.contains("    [ ] file-17.txt"));
-    assert!(text.contains(">   [S] file-20.txt"));
-    assert!(text.contains("[ ] file-23.txt"));
+    assert!(text.contains("    file-16.txt"));
+    assert!(text.contains("    file-17.txt"));
+    assert!(text.contains("    file-20.txt"));
+    assert!(text.contains(" file-23.txt"));
+    assert_no_cursor_marker(&text);
     assert!(!text.contains("file-24.txt"));
     assert!(!text.contains("file-00.txt"));
+
+    let screen = render_terminal_snapshot_with_cursor_marker(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    );
+    assert!(screen.contains(">│    file-20.txt"));
 }
 
 #[test]
@@ -208,9 +237,19 @@ fn snapshots_files_list_scrolls_up_with_top_reserve() {
     )
     .as_text();
     assert!(!text.contains("file-16.txt"));
-    assert!(text.contains("    [ ] file-17.txt"));
-    assert!(text.contains(">   [S] file-20.txt"));
-    assert!(text.contains("[S] file-24.txt"));
+    assert!(text.contains("    file-17.txt"));
+    assert!(text.contains("    file-20.txt"));
+    assert!(text.contains(" file-24.txt"));
+    assert_no_cursor_marker(&text);
+
+    let screen = render_terminal_snapshot_with_cursor_marker(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    );
+    assert!(screen.contains(">│    file-20.txt"));
 }
 
 #[test]
@@ -286,7 +325,8 @@ fn terminal_snapshot_focus_and_keys_follow_actions() {
         },
     );
 
-    assert!(screen.contains("Commits *"));
+    assert!(screen.contains(" Commits"));
+    assert!(!screen.contains("Commits *"));
     assert!(screen.contains("keys(commits): c commit"));
     assert!(!screen.contains(" Keys "));
     assert!(
@@ -318,7 +358,8 @@ fn terminal_snapshot_files_search_updates_screen() {
     );
 
     assert!(screen.contains("search: li"));
-    assert!(screen.contains("!  [ ] lib.rs"));
+    assert!(screen.contains("    lib.rs"));
+    assert_no_cursor_marker(&screen);
 }
 
 #[test]
@@ -346,4 +387,81 @@ fn terminal_snapshot_error_is_visible_in_log_panel() {
     );
 
     assert!(screen.contains("error=Failed to create commit"));
+}
+
+#[test]
+fn terminal_buffer_highlights_selected_row_only_in_focused_panel() {
+    let mut state = AppState::default();
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::Refreshed(fixture_dirty_repo())),
+    );
+    assert!(commands.is_empty());
+
+    let buffer = render_terminal_buffer(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    );
+
+    assert!(buffer_contains_selected_text(&buffer, " README.md"));
+    assert!(!buffer_contains_selected_text(&buffer, " main"));
+}
+
+#[test]
+fn terminal_buffer_moves_selection_highlight_with_focus() {
+    let mut state = AppState::default();
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::Refreshed(fixture_dirty_repo())),
+    );
+    assert!(commands.is_empty());
+    update(
+        &mut state,
+        Action::Ui(UiAction::FocusPanel {
+            panel: PanelFocus::Branches,
+        }),
+    );
+
+    let buffer = render_terminal_buffer(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    );
+
+    assert!(!buffer_contains_selected_text(&buffer, " README.md"));
+    assert!(buffer_contains_selected_text(&buffer, " main"));
+}
+
+#[test]
+fn terminal_buffer_styles_focused_panel_title() {
+    let mut state = AppState::default();
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::Refreshed(fixture_dirty_repo())),
+    );
+    assert!(commands.is_empty());
+
+    let buffer = render_terminal_buffer(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    );
+
+    assert!(buffer_contains_text_with_style(
+        &buffer,
+        "󰈙 Files",
+        focused_panel_style()
+    ));
+    assert!(!buffer_contains_text_with_style(
+        &buffer,
+        " Branches",
+        focused_panel_style()
+    ));
 }

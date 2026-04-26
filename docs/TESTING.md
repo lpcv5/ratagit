@@ -15,6 +15,9 @@ ratagit uses a layered testing approach:
 - Full-screen integration tests render `render_terminal` with
   `ratatui::TestBackend`.
 - Use insta snapshots for full-screen terminal buffers.
+- Cursor/selection color is asserted through `ratatui::TestBackend` buffer cell
+  styles because text snapshots intentionally do not encode terminal colors.
+- Text snapshots must not rely on visible cursor markers such as `>`.
 - Fixed sizes:
   - 80x24
   - 100x30

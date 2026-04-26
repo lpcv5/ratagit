@@ -16,6 +16,7 @@ fn harness_status_refresh() {
         &inputs,
         ScenarioExpectations {
             screen_contains: &["Files", "Details", "keys(files):"],
+            selected_screen_rows: &[],
             git_ops_contains: &["refresh"],
             git_state_contains: &["current_branch: \"main\""],
         },
@@ -36,6 +37,7 @@ fn harness_files_stage_and_unstage() {
         &inputs,
         ScenarioExpectations {
             screen_contains: &["Files", "src/lib.rs", "staged=no"],
+            selected_screen_rows: &[],
             git_ops_contains: &["stage-files:src/lib.rs", "unstage-files:src/lib.rs"],
             git_state_contains: &["path: \"src/lib.rs\"", "staged: false"],
         },
@@ -54,7 +56,8 @@ fn harness_files_tree_expand_collapse() {
         fixture_dirty_repo(),
         &inputs,
         ScenarioExpectations {
-            screen_contains: &["[+]", "src/"],
+            screen_contains: &["", "src/"],
+            selected_screen_rows: &[],
             git_ops_contains: &["refresh"],
             git_state_contains: &["path: \"src/main.rs\""],
         },
@@ -74,6 +77,7 @@ fn harness_files_space_toggles_directory_stage() {
         &inputs,
         ScenarioExpectations {
             screen_contains: &["Staged src/lib.rs", "staged=yes"],
+            selected_screen_rows: &[],
             git_ops_contains: &["stage-files:src/lib.rs"],
             git_state_contains: &["path: \"src/lib.rs\"", "staged: true"],
         },
@@ -95,6 +99,7 @@ fn harness_files_multi_select_stashes_selected_targets() {
         &inputs,
         ScenarioExpectations {
             screen_contains: &["Stashed 3 files", "savepoint"],
+            selected_screen_rows: &[],
             git_ops_contains: &["stash-files:savepoint:README.md,src/lib.rs,src/main.rs"],
             git_state_contains: &["summary: \"savepoint\""],
         },
@@ -119,6 +124,7 @@ fn harness_files_search_jumps_and_clears() {
         &inputs,
         ScenarioExpectations {
             screen_contains: &["src/lib.rs", "keys(files):"],
+            selected_screen_rows: &[],
             git_ops_contains: &["refresh"],
             git_state_contains: &["current_branch: \"main\""],
         },
@@ -136,11 +142,12 @@ fn harness_files_scroll_keeps_selection_visible() {
         &inputs,
         ScenarioExpectations {
             screen_contains: &[
-                "    [S] file-18.txt",
-                "    [ ] file-19.txt",
-                ">   [S] file-20.txt",
-                "    [ ] file-23.txt",
+                "    file-18.txt",
+                "    file-19.txt",
+                "    file-20.txt",
+                "    file-23.txt",
             ],
+            selected_screen_rows: &[" file-20.txt"],
             git_ops_contains: &["refresh"],
             git_state_contains: &["path: \"file-20.txt\""],
         },
@@ -158,11 +165,8 @@ fn harness_files_scroll_up_uses_top_reserve() {
         fixture_many_files(),
         &inputs,
         ScenarioExpectations {
-            screen_contains: &[
-                "    [ ] file-17.txt",
-                ">   [S] file-20.txt",
-                "    [S] file-22.txt",
-            ],
+            screen_contains: &["    file-17.txt", "    file-20.txt", "    file-22.txt"],
+            selected_screen_rows: &[" file-20.txt"],
             git_ops_contains: &["refresh"],
             git_state_contains: &["path: \"file-24.txt\""],
         },
@@ -184,7 +188,8 @@ fn harness_commits_create_and_refresh() {
         fixture_dirty_repo(),
         &inputs,
         ScenarioExpectations {
-            screen_contains: &["mvp commit", "Commits *"],
+            screen_contains: &["mvp commit", " Commits"],
+            selected_screen_rows: &[],
             git_ops_contains: &["commit:mvp commit", "refresh"],
             git_state_contains: &["summary: \"mvp commit\""],
         },
@@ -209,6 +214,7 @@ fn harness_branches_create_and_checkout() {
         &inputs,
         ScenarioExpectations {
             screen_contains: &["feature/new", "is_current=yes"],
+            selected_screen_rows: &[],
             git_ops_contains: &["create-branch:feature/new", "checkout-branch:feature/new"],
             git_state_contains: &["current_branch: \"feature/new\""],
         },
@@ -231,6 +237,7 @@ fn harness_stash_push_and_pop() {
         &inputs,
         ScenarioExpectations {
             screen_contains: &["Stash", "WIP on main: local test"],
+            selected_screen_rows: &[],
             git_ops_contains: &["stash-push:savepoint", "stash-pop:stash@{0}"],
             git_state_contains: &["summary: \"WIP on main: local test\""],
         },
@@ -253,6 +260,7 @@ fn harness_error_visible_without_crash() {
         &inputs,
         ScenarioExpectations {
             screen_contains: &["error=Failed to create commit"],
+            selected_screen_rows: &[],
             git_ops_contains: &["commit:"],
             git_state_contains: &["current_branch: \"main\""],
         },
@@ -279,6 +287,7 @@ fn harness_focus_panel_shortcuts_follow_focus() {
         &inputs,
         ScenarioExpectations {
             screen_contains: &["Details", "Log", "keys(branches):", "o checkout"],
+            selected_screen_rows: &[],
             git_ops_contains: &["refresh"],
             git_state_contains: &["current_branch: \"main\""],
         },

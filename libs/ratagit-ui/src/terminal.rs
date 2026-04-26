@@ -1,16 +1,16 @@
 use ratagit_core::{AppState, PanelFocus};
 use ratatui::backend::TestBackend;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Line;
-use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::widgets::{Block, Borders, HighlightSpacing, List, ListItem, ListState, Paragraph};
 use ratatui::{Frame, Terminal};
 
-use crate::frame::{TerminalSize, buffer_to_text};
+use crate::frame::{TerminalBuffer, TerminalSize, buffer_to_text};
 use crate::panels::{
-    panel_title, render_branches_lines, render_commits_lines, render_details_lines,
+    PanelLine, panel_title, render_branches_lines, render_commits_lines, render_details_lines,
     render_files_lines, render_log_lines, render_stash_lines, shortcuts_for_state,
 };
+use crate::theme::{focused_panel_style, inactive_panel_style, row_style, selected_row_style};
 
 pub fn render_terminal(frame: &mut Frame<'_>, state: &AppState) {
     let area = frame.area();
@@ -24,12 +24,16 @@ pub fn render_terminal(frame: &mut Frame<'_>, state: &AppState) {
 }
 
 pub fn render_terminal_text(state: &AppState, size: TerminalSize) -> String {
+    buffer_to_text(&render_terminal_buffer(state, size))
+}
+
+pub fn render_terminal_buffer(state: &AppState, size: TerminalSize) -> TerminalBuffer {
     let backend = TestBackend::new(size.width.max(1) as u16, size.height.max(1) as u16);
     let mut terminal = Terminal::new(backend).expect("test terminal should initialize");
     terminal
         .draw(|frame| render_terminal(frame, state))
         .expect("terminal render should succeed");
-    buffer_to_text(terminal.backend().buffer())
+    terminal.backend().buffer().clone()
 }
 
 fn render_panel_grid(frame: &mut Frame<'_>, state: &AppState, area: Rect) {
@@ -100,29 +104,33 @@ fn render_block_panel(
     state: &AppState,
     panel: PanelFocus,
     area: Rect,
-    lines: Vec<String>,
+    lines: Vec<PanelLine>,
 ) {
     let focused = state.focus == panel;
     let border_style = if focused {
-        Style::default()
-            .fg(Color::Yellow)
-            .add_modifier(Modifier::BOLD)
+        focused_panel_style()
     } else {
-        Style::default().fg(Color::DarkGray)
+        inactive_panel_style()
     };
-    let title = if focused {
-        format!(" {} * ", panel_title(panel))
-    } else {
-        format!(" {} ", panel_title(panel))
-    };
-    let text = lines.into_iter().map(Line::from).collect::<Vec<_>>();
-    let widget = Paragraph::new(text).block(
-        Block::default()
-            .title(title)
-            .borders(Borders::ALL)
-            .border_style(border_style),
-    );
-    frame.render_widget(widget, area);
+    let title = Line::styled(format!(" {} ", panel_title(panel)), border_style);
+    let items = lines
+        .iter()
+        .map(|line| ListItem::new(Line::from(line.text.clone())).style(row_style(line.role)))
+        .collect::<Vec<_>>();
+    let mut list_state = ListState::default();
+    if focused && let Some(index) = lines.iter().position(|line| line.selected) {
+        list_state.select(Some(index));
+    }
+    let widget = List::new(items)
+        .highlight_style(selected_row_style())
+        .highlight_spacing(HighlightSpacing::Never)
+        .block(
+            Block::default()
+                .title(title)
+                .borders(Borders::ALL)
+                .border_style(border_style),
+        );
+    frame.render_stateful_widget(widget, area, &mut list_state);
 }
 
 fn render_shortcuts(frame: &mut Frame<'_>, state: &AppState, area: Rect) {

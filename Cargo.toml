@@ -49,3 +49,4 @@ ratagit-observe = { path = "libs/ratagit-observe" }
 ratagit-testkit = { path = "libs/ratagit-testkit" }
 ratagit-ui = { path = "libs/ratagit-ui" }
 ratatui = "0.29"
+unicode-width = "0.2"
