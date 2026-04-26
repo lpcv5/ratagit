@@ -82,11 +82,16 @@ fn commits_move_down_past_loaded_page_requests_and_appends_next_page() {
 
     assert_eq!(
         commands,
-        vec![Command::LoadMoreCommits {
-            offset: COMMITS_PAGE_SIZE,
-            limit: COMMITS_PAGE_SIZE,
-            epoch: state.commits.pagination_epoch,
-        }]
+        vec![
+            Command::LoadMoreCommits {
+                offset: COMMITS_PAGE_SIZE,
+                limit: COMMITS_PAGE_SIZE,
+                epoch: state.commits.pagination_epoch,
+            },
+            Command::RefreshCommitDetailsDiff {
+                commit_id: "0000063-full".to_string(),
+            },
+        ]
     );
     assert!(state.commits.loading_more);
     assert!(state.commits.pending_select_after_load);
@@ -137,11 +142,16 @@ fn commits_prefetch_before_loaded_tail_without_jumping_selection() {
 
     assert_eq!(
         commands,
-        vec![Command::LoadMoreCommits {
-            offset: COMMITS_PAGE_SIZE,
-            limit: COMMITS_PAGE_SIZE,
-            epoch: state.commits.pagination_epoch,
-        }]
+        vec![
+            Command::LoadMoreCommits {
+                offset: COMMITS_PAGE_SIZE,
+                limit: COMMITS_PAGE_SIZE,
+                epoch: state.commits.pagination_epoch,
+            },
+            Command::RefreshCommitDetailsDiff {
+                commit_id: "000004f-full".to_string(),
+            },
+        ]
     );
     assert!(state.commits.loading_more);
     assert!(!state.commits.pending_select_after_load);
@@ -197,7 +207,7 @@ fn commits_prefetch_pending_advances_when_user_reaches_loaded_tail() {
 
     let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
 
-    assert!(commands.is_empty());
+    assert_commit_diff_refresh(commands, "0000063-full");
     assert!(state.commits.loading_more);
     assert!(state.commits.pending_select_after_load);
 
@@ -257,7 +267,7 @@ fn short_commit_page_stops_incremental_loading() {
     assert!(!state.commits.has_more);
     state.commits.selected = COMMITS_PAGE_SIZE;
     let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
-    assert!(commands.is_empty());
+    assert_commit_diff_refresh(commands, "page101-full");
 }
 
 #[test]
@@ -516,6 +526,15 @@ fn assert_branch_log_refresh(commands: Vec<Command>, expected_branch: &str) {
     );
 }
 
+fn assert_commit_diff_refresh(commands: Vec<Command>, expected_commit_id: &str) {
+    assert_eq!(
+        commands,
+        vec![Command::RefreshCommitDetailsDiff {
+            commit_id: expected_commit_id.to_string(),
+        }]
+    );
+}
+
 fn state_with_branches_and_files(files: Vec<FileEntry>) -> AppState {
     let mut state = AppState {
         focus: PanelFocus::Branches,
@@ -609,6 +628,134 @@ fn stale_branch_log_result_is_ignored() {
 
     assert!(commands.is_empty());
     assert!(state.details.branch_log.is_empty());
+    assert!(state.work.details_pending);
+}
+
+#[test]
+fn commit_focus_requests_selected_commit_diff() {
+    let mut state = AppState::default();
+    state.commits.items = vec![
+        commit_entry("abc1234", "init project"),
+        commit_entry("def5678", "wire commands"),
+    ];
+
+    let commands = update(
+        &mut state,
+        Action::Ui(UiAction::FocusPanel {
+            panel: PanelFocus::Commits,
+        }),
+    );
+
+    assert_commit_diff_refresh(commands, "abc1234-full");
+    assert_eq!(
+        state.details.commit_diff_target,
+        Some("abc1234-full".to_string())
+    );
+    assert!(state.work.details_pending);
+}
+
+#[test]
+fn commit_selection_navigation_requests_selected_commit_diff() {
+    let mut state = AppState {
+        focus: PanelFocus::Commits,
+        last_left_focus: PanelFocus::Commits,
+        ..AppState::default()
+    };
+    state.commits.items = vec![
+        commit_entry("abc1234", "init project"),
+        commit_entry("def5678", "wire commands"),
+    ];
+
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+
+    assert_commit_diff_refresh(commands, "def5678-full");
+    assert_eq!(
+        state.details.commit_diff_target,
+        Some("def5678-full".to_string())
+    );
+}
+
+#[test]
+fn commit_details_diff_result_updates_state() {
+    let mut state = AppState {
+        focus: PanelFocus::Commits,
+        last_left_focus: PanelFocus::Commits,
+        ..AppState::default()
+    };
+    state.commits.items = vec![commit_entry("abc1234", "init project")];
+    state.details.commit_diff_target = Some("abc1234-full".to_string());
+    state.work.details_pending = true;
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::CommitDetailsDiff {
+            commit_id: "abc1234-full".to_string(),
+            result: Ok("commit abc1234\ndiff --git a/a.txt b/a.txt".to_string()),
+        }),
+    );
+
+    assert!(commands.is_empty());
+    assert!(state.details.commit_diff_error.is_none());
+    assert!(state.details.commit_diff.contains("diff --git"));
+    assert_eq!(state.details.cached_commit_diffs.len(), 1);
+}
+
+#[test]
+fn commit_details_diff_cache_serves_repeated_selection_without_git_command() {
+    let mut state = AppState {
+        focus: PanelFocus::Commits,
+        last_left_focus: PanelFocus::Commits,
+        ..AppState::default()
+    };
+    state.commits.items = vec![
+        commit_entry("abc1234", "init project"),
+        commit_entry("def5678", "wire commands"),
+    ];
+
+    update(
+        &mut state,
+        Action::GitResult(GitResult::CommitDetailsDiff {
+            commit_id: "abc1234-full".to_string(),
+            result: Ok("cached abc diff".to_string()),
+        }),
+    );
+    assert_eq!(state.details.cached_commit_diffs.len(), 1);
+
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+    assert_commit_diff_refresh(commands, "def5678-full");
+    assert!(state.work.details_pending);
+
+    let commands = update(&mut state, Action::Ui(UiAction::MoveUp));
+    assert!(commands.is_empty());
+    assert_eq!(state.details.commit_diff, "cached abc diff");
+    assert!(!state.work.details_pending);
+}
+
+#[test]
+fn stale_commit_details_diff_result_is_ignored() {
+    let mut state = AppState {
+        focus: PanelFocus::Commits,
+        last_left_focus: PanelFocus::Commits,
+        ..AppState::default()
+    };
+    state.commits.items = vec![
+        commit_entry("abc1234", "init project"),
+        commit_entry("def5678", "wire commands"),
+    ];
+    state.commits.selected = 1;
+    state.details.commit_diff_target = Some("def5678-full".to_string());
+    state.work.details_pending = true;
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::CommitDetailsDiff {
+            commit_id: "abc1234-full".to_string(),
+            result: Ok("stale".to_string()),
+        }),
+    );
+
+    assert!(commands.is_empty());
+    assert!(state.details.commit_diff.is_empty());
     assert!(state.work.details_pending);
 }
 
@@ -1080,6 +1227,27 @@ fn details_scroll_down_does_not_advance_past_last_visible_page() {
         Action::Ui(UiAction::DetailsScrollUp { lines: 3 }),
     );
     assert_eq!(state.details.scroll_offset, 1);
+}
+
+#[test]
+fn details_scroll_down_clamps_to_commit_diff_content() {
+    let mut state = AppState {
+        focus: PanelFocus::Commits,
+        last_left_focus: PanelFocus::Commits,
+        ..AppState::default()
+    };
+    state.details.commit_diff =
+        "commit abc1234\nline 2\nline 3\nline 4\nline 5\nline 6".to_string();
+
+    update(
+        &mut state,
+        Action::Ui(UiAction::DetailsScrollDown {
+            lines: 10,
+            visible_lines: 2,
+        }),
+    );
+
+    assert_eq!(state.details.scroll_offset, 4);
 }
 
 #[test]

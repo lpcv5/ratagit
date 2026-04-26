@@ -131,11 +131,7 @@ pub(crate) fn render_details_lines(state: &AppState, max_lines: usize) -> Vec<Pa
     match state.last_left_focus {
         PanelFocus::Files => render_files_details_lines(state, max_lines),
         PanelFocus::Branches => render_branch_details_lines(state, max_lines),
-        // TODO(details-commits): replace placeholder with commit-focused details projection.
-        PanelFocus::Commits => render_placeholder_details_lines(
-            "  details(commits): pending details implementation",
-            max_lines,
-        ),
+        PanelFocus::Commits => render_commit_details_lines(state, max_lines),
         // TODO(details-stash): replace placeholder with stash entry details projection.
         PanelFocus::Stash => render_placeholder_details_lines(
             "  details(stash): pending details implementation",
@@ -246,6 +242,46 @@ fn render_branch_details_lines(state: &AppState, max_lines: usize) -> Vec<PanelL
         .into_iter()
         .skip(start)
         .map(|line| ansi_branch_log_line(line, "  "))
+        .take(max_lines)
+        .collect()
+}
+
+fn render_commit_details_lines(state: &AppState, max_lines: usize) -> Vec<PanelLine> {
+    if max_lines == 0 {
+        return Vec::new();
+    }
+
+    if state.details.commit_diff_target.is_none() {
+        return vec![PanelLine::new(
+            "  details(commits): no commit selected",
+            RowRole::Muted,
+        )];
+    }
+
+    if let Some(error) = &state.details.commit_diff_error {
+        return vec![PanelLine::new(format!("  error={error}"), RowRole::Error)];
+    }
+
+    if state.work.details_pending && state.details.commit_diff.trim().is_empty() {
+        return vec![PanelLine::new(
+            "  details(commits): loading diff",
+            RowRole::Muted,
+        )];
+    }
+
+    if state.details.commit_diff.trim().is_empty() {
+        return vec![PanelLine::new(
+            "  details(commits): no diff for current selection",
+            RowRole::Muted,
+        )];
+    }
+
+    let lines = state.details.commit_diff.lines().collect::<Vec<_>>();
+    let start = details_scroll_start(lines.len(), state.details.scroll_offset, max_lines);
+    lines
+        .into_iter()
+        .skip(start)
+        .map(|line| PanelLine::new(format!("  {line}"), classify_diff_row_role(line)))
         .take(max_lines)
         .collect()
 }
@@ -1059,6 +1095,25 @@ mod tests {
         assert_eq!(lines[2].role, RowRole::DiffHunk);
         assert_eq!(lines[3].role, RowRole::DiffRemove);
         assert_eq!(lines[4].role, RowRole::DiffAdd);
+    }
+
+    #[test]
+    fn details_panel_projects_commit_diff_with_colored_patch_roles() {
+        let mut state = state_with_dirty_repo();
+        state.last_left_focus = PanelFocus::Commits;
+        state.details.commit_diff_target = Some("abc1234".to_string());
+        state.details.commit_diff =
+            "commit abc1234\nAuthor: ratagit-tests\n\ndiff --git a/a.txt b/a.txt\n@@ -1 +1 @@\n-old\n+new"
+                .to_string();
+
+        let lines = render_details_lines(&state, 7);
+
+        assert_eq!(lines[0].text, "  commit abc1234");
+        assert_eq!(lines[0].role, RowRole::Normal);
+        assert_eq!(lines[3].role, RowRole::DiffMeta);
+        assert_eq!(lines[4].role, RowRole::DiffHunk);
+        assert_eq!(lines[5].role, RowRole::DiffRemove);
+        assert_eq!(lines[6].role, RowRole::DiffAdd);
     }
 
     #[test]

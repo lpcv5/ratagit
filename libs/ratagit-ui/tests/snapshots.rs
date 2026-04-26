@@ -41,6 +41,12 @@ fn mock_branch_details_log(branch: &str) -> String {
     )
 }
 
+fn mock_commit_details_diff(commit_id: &str) -> String {
+    format!(
+        "commit {commit_id}\nAuthor: ratagit-tests <ratagit-tests@example.com>\n\n    selected commit\n\ndiff --git a/commit.txt b/commit.txt\n@@ -1 +1 @@\n-old {commit_id}\n+new {commit_id}"
+    )
+}
+
 fn apply_refreshed_with_mock_details(state: &mut AppState, snapshot: ratagit_core::RepoSnapshot) {
     let commands = update(state, Action::GitResult(GitResult::Refreshed(snapshot)));
     apply_mock_details_commands(state, commands);
@@ -88,6 +94,16 @@ fn apply_mock_details_commands(state: &mut AppState, commands: Vec<Command>) {
                 Action::GitResult(GitResult::BranchDetailsLog {
                     branch: branch.clone(),
                     result: Ok(mock_branch_details_log(branch)),
+                }),
+            );
+            assert!(follow_up.is_empty());
+        }
+        [Command::RefreshCommitDetailsDiff { commit_id }] => {
+            let follow_up = update(
+                state,
+                Action::GitResult(GitResult::CommitDetailsDiff {
+                    commit_id: commit_id.clone(),
+                    result: Ok(mock_commit_details_diff(commit_id)),
                 }),
             );
             assert!(follow_up.is_empty());
@@ -295,6 +311,27 @@ fn terminal_snapshot_files_details_scrolled_down() {
     );
 
     insta::assert_snapshot!(render_terminal_text(&state, size));
+}
+
+#[test]
+fn terminal_snapshot_commits_details_diff() {
+    let mut state = AppState::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+    let commands = update(
+        &mut state,
+        Action::Ui(UiAction::FocusPanel {
+            panel: PanelFocus::Commits,
+        }),
+    );
+    apply_mock_details_commands(&mut state, commands);
+
+    insta::assert_snapshot!(render_terminal_text(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    ));
 }
 
 #[test]

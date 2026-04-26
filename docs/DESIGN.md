@@ -25,6 +25,8 @@ Focus model:
 - `AppState.details` stores files-detail diff text, target paths, and detail-refresh errors
 - `AppState.details` also stores a bounded files-detail diff cache keyed by the
   exact target path list
+- `AppState.details` stores commit-detail diff text, selected commit target,
+  detail-refresh errors, and a bounded commit-detail cache keyed by full commit id
 - `AppState.details.scroll_offset` stores the global Details viewport offset
   used by `Ctrl+U` / `Ctrl+D`; the action carries terminal-size-derived scroll
   and visible-line counts
@@ -143,7 +145,9 @@ Files panel interaction:
   dispatching with `auto_stash=true`.
 - Files Details projection renders merged `unstaged` and `staged` diff sections
   for current file/folder targets from `GitBackend`.
-- Files and Branches Details projections apply the AppState-owned
+- Commits Details projection renders the selected commit's header and patch diff
+  from `GitBackend`.
+- Files, Branches, and Commits Details projections apply the AppState-owned
   `scroll_offset`; loading, empty, and error rows ignore the offset.
 - Details scroll resets when the selected details target changes or accepted
   details content refreshes.
@@ -152,8 +156,11 @@ Files panel interaction:
 - Repeated Files Details selections reuse the AppState-owned diff cache without
   emitting a new Git command; the cache is cleared after snapshot refreshes and
   successful mutating Git operations.
-- Branches/Commits/Stash Details projections are placeholders in this slice and
-  intentionally marked for follow-up implementation.
+- Repeated Commit Details selections reuse the AppState-owned diff cache without
+  emitting a new Git command; the cache is cleared after snapshot refreshes and
+  successful mutating Git operations.
+- Stash Details projection is a placeholder in this slice and intentionally
+  marked for follow-up implementation.
 
 ---
 

@@ -405,6 +405,10 @@ pub struct DetailsPanelState {
     pub branch_log_target: Option<String>,
     pub branch_log_error: Option<String>,
     pub cached_branch_logs: Vec<CachedBranchLog>,
+    pub commit_diff: String,
+    pub commit_diff_target: Option<String>,
+    pub commit_diff_error: Option<String>,
+    pub cached_commit_diffs: Vec<CachedCommitDiff>,
     pub scroll_offset: usize,
 }
 
@@ -418,6 +422,12 @@ pub struct CachedFilesDiff {
 pub struct CachedBranchLog {
     pub branch: String,
     pub log: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CachedCommitDiff {
+    pub commit_id: String,
+    pub diff: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -487,6 +497,10 @@ impl Default for AppState {
                 branch_log_target: None,
                 branch_log_error: None,
                 cached_branch_logs: Vec::new(),
+                commit_diff: String::new(),
+                commit_diff_target: None,
+                commit_diff_error: None,
+                cached_commit_diffs: Vec::new(),
                 scroll_offset: 0,
             },
             editor: EditorState::default(),

@@ -464,6 +464,28 @@ fn git2_files_details_diff_treats_selected_paths_as_literals() {
 }
 
 #[test]
+fn git2_commit_details_diff_emits_header_and_patch() {
+    if !git_available() {
+        eprintln!("git is unavailable, skipping git2_commit_details_diff_emits_header_and_patch");
+        return;
+    }
+
+    let repo = repo_with_three_commits("commit-details-diff");
+    let commit = commit_id(&repo, "HEAD");
+    let mut backend = HybridGitBackend::open(repo.path()).expect("hybrid backend should open");
+
+    let diff = backend
+        .commit_details_diff(&commit)
+        .expect("commit details diff should render");
+
+    assert!(diff.contains(&format!("commit {commit}")));
+    assert!(diff.contains("Author:"));
+    assert!(diff.contains("diff --git a/b.txt b/b.txt"));
+    assert!(diff.contains("-b1"));
+    assert!(diff.contains("+third"));
+}
+
+#[test]
 fn git2_stage_and_unstage_files_preserves_worktree_changes() {
     if !git_available() {
         eprintln!(

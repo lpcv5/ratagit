@@ -194,6 +194,10 @@ impl GitBackend for HybridGitBackend {
         self.cli.branch_details_log(branch, max_count)
     }
 
+    fn commit_details_diff(&mut self, commit_id: &str) -> Result<String, GitError> {
+        self.cli.commit_details_diff(commit_id)
+    }
+
     fn stage_file(&mut self, path: &str) -> Result<(), GitError> {
         self.stage_files(&[path.to_string()])
     }

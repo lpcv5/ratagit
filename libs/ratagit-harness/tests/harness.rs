@@ -83,6 +83,13 @@ impl GitBackend for BlockingBackend {
             .branch_details_log(branch, max_count)
     }
 
+    fn commit_details_diff(&mut self, commit_id: &str) -> Result<String, GitError> {
+        self.inner
+            .lock()
+            .expect("mock lock")
+            .commit_details_diff(commit_id)
+    }
+
     fn stage_file(&mut self, path: &str) -> Result<(), GitError> {
         self.inner.lock().expect("mock lock").stage_file(path)
     }
@@ -970,6 +977,33 @@ fn harness_commits_visual_multiselect_marks_rows() {
             batch_selected_screen_rows: &["abc1234", "def5678"],
             git_ops_contains: &["refresh"],
             git_state_contains: &["summary: \"init project\""],
+        },
+    ));
+}
+
+#[test]
+fn harness_commits_details_follow_cursor_with_commit_diff() {
+    let inputs = [
+        UiAction::RefreshAll,
+        UiAction::FocusNext,
+        UiAction::FocusNext,
+        UiAction::MoveDown,
+    ];
+    assert_scenario(MockScenario::new(
+        "commits_details_follow_cursor_with_commit_diff",
+        clean_three_commit_fixture(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &[
+                "commit def5678",
+                "Author: ratagit-tests",
+                "diff --git a/commit.txt b/commit.txt",
+            ],
+            screen_not_contains: &["details(commits): pending details implementation"],
+            selected_screen_rows: &["def5678"],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["commit-diff:abc1234", "commit-diff:def5678"],
+            git_state_contains: &["summary: \"wire commands\""],
         },
     ));
 }

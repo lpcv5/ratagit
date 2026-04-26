@@ -762,6 +762,13 @@ impl GitBackend for AppBackend {
         }
     }
 
+    fn commit_details_diff(&mut self, commit_id: &str) -> Result<String, ratagit_git::GitError> {
+        match self {
+            Self::Hybrid(inner) => inner.commit_details_diff(commit_id),
+            Self::Mock(inner) => inner.commit_details_diff(commit_id),
+        }
+    }
+
     fn stage_file(&mut self, path: &str) -> Result<(), ratagit_git::GitError> {
         match self {
             Self::Hybrid(inner) => inner.stage_file(path),

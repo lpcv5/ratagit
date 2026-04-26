@@ -179,6 +179,20 @@ fn enqueue_coalesced_command(queue: &mut VecDeque<Command>, command: Command) {
             }
             queue.push_back(command);
         }
+        Command::RefreshCommitDetailsDiff { .. } => {
+            if let Some(index) =
+                queue
+                    .iter()
+                    .enumerate()
+                    .skip(search_start)
+                    .find_map(|(index, queued)| {
+                        matches!(queued, Command::RefreshCommitDetailsDiff { .. }).then_some(index)
+                    })
+            {
+                queue.remove(index);
+            }
+            queue.push_back(command);
+        }
         _ => queue.push_back(command),
     }
 }

@@ -90,6 +90,16 @@ impl GitCli {
         ])
     }
 
+    pub(crate) fn commit_details_diff(&mut self, commit_id: &str) -> Result<String, GitError> {
+        self.run_git_owned(vec![
+            "show".to_string(),
+            "--no-color".to_string(),
+            "--format=fuller".to_string(),
+            "--patch".to_string(),
+            commit_id.to_string(),
+        ])
+    }
+
     pub(crate) fn create_commit(&mut self, message: &str) -> Result<(), GitError> {
         self.run_git(&["commit", "-m", message]).map(|_| ())
     }

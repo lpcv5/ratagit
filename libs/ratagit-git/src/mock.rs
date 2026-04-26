@@ -203,6 +203,20 @@ impl GitBackend for MockGitBackend {
         ))
     }
 
+    fn commit_details_diff(&mut self, commit_id: &str) -> Result<String, GitError> {
+        self.operations.push(format!("commit-diff:{commit_id}"));
+        let commit = self
+            .snapshot
+            .commits
+            .iter()
+            .find(|commit| commit_matches(commit, commit_id))
+            .ok_or_else(|| GitError::new(format!("commit not found: {commit_id}")))?;
+        Ok(format!(
+            "commit {}\nAuthor: ratagit-tests <ratagit-tests@example.com>\n\n    {}\n\ndiff --git a/commit.txt b/commit.txt\n@@ -1 +1 @@\n-old {}\n+new {}",
+            commit.full_id, commit.summary, commit.id, commit.id
+        ))
+    }
+
     fn stage_file(&mut self, path: &str) -> Result<(), GitError> {
         self.operations.push(format!("stage:{path}"));
         let entry = self

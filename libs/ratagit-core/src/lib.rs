@@ -27,10 +27,10 @@ pub use state::{
     AppState, AutoStashConfirmState, AutoStashOperation, BranchCreateState, BranchDeleteChoice,
     BranchDeleteMenuState, BranchDeleteMode, BranchEntry, BranchForceDeleteConfirmState,
     BranchRebaseChoice, BranchRebaseMenuState, BranchesPanelState, CachedBranchLog,
-    CachedFilesDiff, CommitEditorIntent, CommitEntry, CommitField, CommitHashStatus,
-    CommitInputMode, CommitsPanelState, DetailsPanelState, DiscardConfirmState, EditorKind,
-    EditorState, PanelFocus, RepoSnapshot, ResetChoice, ResetMenuState, ResetMode, StashEntry,
-    StashPanelState, StashScope, StatusPanelState, WorkStatusState,
+    CachedCommitDiff, CachedFilesDiff, CommitEditorIntent, CommitEntry, CommitField,
+    CommitHashStatus, CommitInputMode, CommitsPanelState, DetailsPanelState, DiscardConfirmState,
+    EditorKind, EditorState, PanelFocus, RepoSnapshot, ResetChoice, ResetMenuState, ResetMode,
+    StashEntry, StashPanelState, StashScope, StatusPanelState, WorkStatusState,
 };
 
 const DETAILS_DIFF_CACHE_LIMIT: usize = 16;
@@ -128,6 +128,10 @@ pub enum GitResult {
     },
     BranchDetailsLog {
         branch: String,
+        result: Result<String, String>,
+    },
+    CommitDetailsDiff {
+        commit_id: String,
         result: Result<String, String>,
     },
     RefreshFailed {
@@ -242,6 +246,9 @@ pub enum Command {
         branch: String,
         max_count: usize,
     },
+    RefreshCommitDetailsDiff {
+        commit_id: String,
+    },
     StageFiles {
         paths: Vec<String>,
     },
@@ -309,6 +316,7 @@ pub fn debounce_key_for_command(command: &Command) -> Option<&'static str> {
     match command {
         Command::RefreshFilesDetailsDiff { .. } => Some("files_details_diff"),
         Command::RefreshBranchDetailsLog { .. } => Some("branch_details_log"),
+        Command::RefreshCommitDetailsDiff { .. } => Some("commit_details_diff"),
         Command::RefreshAll
         | Command::LoadMoreCommits { .. }
         | Command::StageFiles { .. }
@@ -351,6 +359,9 @@ fn mark_command_pending(state: &mut AppState, command: &Command) {
             state.work.details_pending = true;
         }
         Command::RefreshBranchDetailsLog { .. } => {
+            state.work.details_pending = true;
+        }
+        Command::RefreshCommitDetailsDiff { .. } => {
             state.work.details_pending = true;
         }
         Command::StageFiles { .. } => {
@@ -842,6 +853,33 @@ fn update_git_result(state: &mut AppState, result: GitResult) -> Vec<Command> {
                     let message = format!("Failed to refresh branch log graph: {error}");
                     state.details.branch_log.clear();
                     state.details.branch_log_error = Some(message.clone());
+                    state.status.last_error = Some(message.clone());
+                    push_notice(state, &message);
+                }
+            }
+            Vec::new()
+        }
+        GitResult::CommitDetailsDiff { commit_id, result } => {
+            if state.last_left_focus != PanelFocus::Commits {
+                return Vec::new();
+            }
+            if Some(commit_id.as_str()) != selected_commit_id(state).as_deref() {
+                return Vec::new();
+            }
+            state.work.details_pending = false;
+            state.work.last_completed_command = Some("commit_details".to_string());
+            state.details.commit_diff_target = Some(commit_id.clone());
+            reset_details_scroll(state);
+            match result {
+                Ok(diff) => {
+                    cache_commit_details_diff(state, &commit_id, &diff);
+                    state.details.commit_diff = diff;
+                    state.details.commit_diff_error = None;
+                }
+                Err(error) => {
+                    let message = format!("Failed to refresh commit details diff: {error}");
+                    state.details.commit_diff.clear();
+                    state.details.commit_diff_error = Some(message.clone());
                     state.status.last_error = Some(message.clone());
                     push_notice(state, &message);
                 }
@@ -1830,6 +1868,32 @@ fn refresh_branch_details_log_command(state: &mut AppState) -> Vec<Command> {
     )
 }
 
+fn refresh_commit_details_diff_command(state: &mut AppState) -> Vec<Command> {
+    let Some(commit_id) = selected_commit_id(state) else {
+        let target_changed = state.details.commit_diff_target.is_some();
+        state.details.commit_diff.clear();
+        state.details.commit_diff_target = None;
+        state.details.commit_diff_error = None;
+        if target_changed {
+            reset_details_scroll(state);
+        }
+        state.work.details_pending = false;
+        return Vec::new();
+    };
+    let target_changed = state.details.commit_diff_target.as_ref() != Some(&commit_id);
+    state.details.commit_diff_target = Some(commit_id.clone());
+    if target_changed {
+        reset_details_scroll(state);
+    }
+    if let Some(diff) = cached_commit_details_diff(state, &commit_id) {
+        state.details.commit_diff = diff;
+        state.details.commit_diff_error = None;
+        state.work.details_pending = false;
+        return Vec::new();
+    }
+    with_pending(state, vec![Command::RefreshCommitDetailsDiff { commit_id }])
+}
+
 fn cached_files_details_diff(state: &AppState, paths: &[String]) -> Option<String> {
     state
         .details
@@ -1884,9 +1948,37 @@ fn cache_branch_details_log(state: &mut AppState, branch: &str, log: &str) {
         .truncate(DETAILS_DIFF_CACHE_LIMIT);
 }
 
+fn cached_commit_details_diff(state: &AppState, commit_id: &str) -> Option<String> {
+    state
+        .details
+        .cached_commit_diffs
+        .iter()
+        .find(|entry| entry.commit_id == commit_id)
+        .map(|entry| entry.diff.clone())
+}
+
+fn cache_commit_details_diff(state: &mut AppState, commit_id: &str, diff: &str) {
+    state
+        .details
+        .cached_commit_diffs
+        .retain(|entry| entry.commit_id != commit_id);
+    state.details.cached_commit_diffs.insert(
+        0,
+        CachedCommitDiff {
+            commit_id: commit_id.to_string(),
+            diff: diff.to_string(),
+        },
+    );
+    state
+        .details
+        .cached_commit_diffs
+        .truncate(DETAILS_DIFF_CACHE_LIMIT);
+}
+
 fn clear_details_caches(state: &mut AppState) {
     state.details.cached_files_diffs.clear();
     state.details.cached_branch_logs.clear();
+    state.details.cached_commit_diffs.clear();
 }
 
 fn reset_details_scroll(state: &mut AppState) {
@@ -1907,7 +1999,13 @@ fn details_scroll_max_offset(state: &AppState, visible_lines: usize) -> usize {
             .lines()
             .count()
             .saturating_sub(visible_lines),
-        PanelFocus::Commits | PanelFocus::Stash | PanelFocus::Details | PanelFocus::Log => 0,
+        PanelFocus::Commits => state
+            .details
+            .commit_diff
+            .lines()
+            .count()
+            .saturating_sub(visible_lines),
+        PanelFocus::Stash | PanelFocus::Details | PanelFocus::Log => 0,
     }
 }
 
@@ -1917,6 +2015,9 @@ fn refresh_details_command_for_focus(state: &mut AppState) -> Vec<Command> {
     }
     if state.focus == PanelFocus::Branches {
         return refresh_branch_details_log_command(state);
+    }
+    if state.focus == PanelFocus::Commits {
+        return refresh_commit_details_diff_command(state);
     }
     Vec::new()
 }
@@ -1935,6 +2036,10 @@ fn selected_branch_name(state: &AppState) -> Option<String> {
         .items
         .get(state.branches.selected)
         .map(|branch| branch.name.clone())
+}
+
+fn selected_commit_id(state: &AppState) -> Option<String> {
+    selected_commit(&state.commits).map(|commit| commit_key(&commit))
 }
 
 fn selected_targets_are_all_staged(state: &AppState, paths: &[String]) -> bool {
