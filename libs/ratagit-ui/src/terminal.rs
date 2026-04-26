@@ -5,6 +5,7 @@ use ratatui::text::Line;
 use ratatui::widgets::{Block, Borders, HighlightSpacing, List, ListItem, ListState, Paragraph};
 use ratatui::{Frame, Terminal};
 
+use crate::discard_modal::render_discard_modal;
 use crate::editor_modal::render_editor_modal;
 use crate::frame::{TerminalBuffer, TerminalCursor, TerminalSize, buffer_to_text};
 use crate::layout::compute_left_panel_heights;
@@ -29,6 +30,7 @@ pub fn render_terminal(frame: &mut Frame<'_>, state: &AppState) {
     render_shortcuts(frame, state, root[1]);
     render_editor_modal(frame, state, root[0]);
     render_reset_modal(frame, state, root[0]);
+    render_discard_modal(frame, state, root[0]);
 }
 
 pub fn render_terminal_text(state: &AppState, size: TerminalSize) -> String {

@@ -1,6 +1,6 @@
 ---
 source: libs/ratagit-ui/tests/snapshots.rs
-assertion_line: 400
+assertion_line: 232
 expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30, },)"
 ---
 ┌ [1] 󰈙 Files ───────────────────┐┌ [5]  Details ─────────────────────────────────────────────────┐
@@ -12,17 +12,17 @@ expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30,
 │                                ││                                                                │
 │                                ││                                                                │
 │                                ││                                                                │
-│                                ││                                                                │
-└────────────────────────────────┘│                                                                │
-┌ [2]  Branches ────────────────┐│                                                                │
-│ main                          ││                                                                │
-│  feature/mvp                   ││                                                                │
-│                                ││                                                                │
-│                                ││                                                                │
-│                                ││                                                                │
-│                                ││                                                                │
-└────────────────────────────────┘│                                                                │
-┌ [3]  Commits ─────────────────┐└────────────────────────────────────────────────────────────────┘
+│             ┌ Discard Changes ─────────────────────────────────────────────────────┐             │
+└─────────────│ Discard selected file changes?                                       │             │
+┌ [2]  Branch│ Targets: 1 file                                                      │             │
+│ main       │ - README.md                                                          │             │
+│  feature/mvp│                                                                      │             │
+│             │                                                                      │             │
+│             │                                                                      │             │
+│             │                                                                      │             │
+│             │ This removes tracked changes and deletes untracked targets.          │             │
+└─────────────│ Enter discard  |  Esc cancel                                         │             │
+┌ [3]  Commit└──────────────────────────────────────────────────────────────────────┘─────────────┘
 │ abc1234 init project          │┌ [6] 󰌱 Log ─────────────────────────────────────────────────────┐
 │ def5678 wire commands         ││  notice=Ready                                                  │
 │  draft=                        ││                                                                │
@@ -32,4 +32,4 @@ expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30,
 ┌ [4]  Stash ───────────────────┐│                                                                │
 │ stash@{0} WIP on main: local t││                                                                │
 └────────────────────────────────┘└────────────────────────────────────────────────────────────────┘
-keys(files): space stage/unstage | d discard | c commit | s stash(all|selected) | D reset | v multi
+discard: Enter confirm | Esc cancel

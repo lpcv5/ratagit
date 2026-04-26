@@ -120,6 +120,14 @@ fn ui_action_for_key(state: &AppState, code: KeyCode, modifiers: KeyModifiers) -
         };
     }
 
+    if state.discard_confirm.active {
+        return match code {
+            KeyCode::Enter => Some(UiAction::ConfirmDiscard),
+            KeyCode::Esc => Some(UiAction::CancelDiscard),
+            _ => None,
+        };
+    }
+
     if state.focus == PanelFocus::Files && state.files.mode == FileInputMode::SearchInput {
         return match code {
             KeyCode::Enter => Some(UiAction::ConfirmFileSearch),
@@ -142,6 +150,7 @@ fn ui_action_for_key(state: &AppState, code: KeyCode, modifiers: KeyModifiers) -
             KeyCode::Esc => return Some(UiAction::CancelFileSearch),
             KeyCode::Char('c') => return Some(UiAction::OpenCommitEditor),
             KeyCode::Char('s') => return Some(UiAction::OpenStashEditor),
+            KeyCode::Char('d') => return Some(UiAction::OpenDiscardConfirm),
             KeyCode::Char('D') => return Some(UiAction::OpenResetMenu),
             _ => {}
         }
@@ -213,6 +222,13 @@ mod tests {
         state
     }
 
+    fn active_discard_confirm_state() -> AppState {
+        let mut state = AppState::default();
+        state.discard_confirm.active = true;
+        state.discard_confirm.paths = vec!["a.txt".to_string()];
+        state
+    }
+
     #[test]
     fn panel_navigation_uses_h_and_l_not_tab() {
         let state = AppState::default();
@@ -264,6 +280,10 @@ mod tests {
         assert_eq!(
             map_key(&state, KeyCode::Char('s')),
             Some(UiAction::OpenStashEditor)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Char('d')),
+            Some(UiAction::OpenDiscardConfirm)
         );
         assert_eq!(
             map_key(&state, KeyCode::Char('D')),
@@ -395,6 +415,18 @@ mod tests {
             map_key(&state, KeyCode::Esc),
             Some(UiAction::CancelResetMenu)
         );
+    }
+
+    #[test]
+    fn discard_confirm_maps_confirm_and_cancel_before_panels() {
+        let state = active_discard_confirm_state();
+
+        assert_eq!(
+            map_key(&state, KeyCode::Enter),
+            Some(UiAction::ConfirmDiscard)
+        );
+        assert_eq!(map_key(&state, KeyCode::Esc), Some(UiAction::CancelDiscard));
+        assert_eq!(map_key(&state, KeyCode::Char('d')), None);
     }
 
     #[test]

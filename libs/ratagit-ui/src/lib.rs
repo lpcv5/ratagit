@@ -1,3 +1,4 @@
+mod discard_modal;
 mod editor_modal;
 mod frame;
 mod layout;

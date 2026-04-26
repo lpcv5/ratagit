@@ -68,9 +68,12 @@ Files panel rules:
   - `Enter` immediately confirms, `Esc` cancels
   - reset choices target `HEAD`
   - `Nuke` runs hard reset semantics and then removes untracked files/directories with `git clean -fd`
+- `d` opens a discard confirmation modal for the current Files target
+  - normal mode targets the current file row or all descendant files for the current directory row
+  - `v` multi-select mode targets the selected visual range
+  - `Enter` discards tracked changes and removes selected untracked targets, `Esc` cancels
 - `v` enters visual multi-select at the current row; `j` / `k` extends or shrinks the selected range
 - `/` opens search input in the bottom bar; Enter confirms, Esc cancels or clears, `n` / `N` navigate matches
-- discard backend support exists, but lowercase `d` is not mapped until the file-targeted confirmation dialog is available
 - `Enter` still toggles directory expand/collapse; hunk editing and partial-stage flow are explicitly deferred
 - details-diff side effects for high-frequency files navigation are debounced to keep `j` / `k` scrolling smooth
 

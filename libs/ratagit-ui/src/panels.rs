@@ -215,12 +215,16 @@ pub(crate) fn shortcuts_for_state(state: &AppState) -> String {
         return "reset: j/k select | Enter confirm | Esc cancel".to_string();
     }
 
+    if state.discard_confirm.active {
+        return "discard: Enter confirm | Esc cancel".to_string();
+    }
+
     if state.focus == PanelFocus::Files && state.files.mode == FileInputMode::SearchInput {
         return format!("search: {}", state.files.search_query);
     }
     match state.focus {
         PanelFocus::Files => {
-            "keys(files): space stage/unstage | c commit | s stash(all|selected) | D reset | v multi | enter expand | / search".to_string()
+            "keys(files): space stage/unstage | d discard | c commit | s stash(all|selected) | D reset | v multi | enter expand | / search".to_string()
         }
         PanelFocus::Branches => "keys(branches): b create branch | o checkout".to_string(),
         PanelFocus::Commits => "keys(commits): c commit".to_string(),
@@ -657,6 +661,7 @@ mod tests {
         let mut state = state_with_dirty_repo();
         let files_shortcuts = shortcuts_for_state(&state);
         assert!(files_shortcuts.contains("keys(files):"));
+        assert!(files_shortcuts.contains("d discard"));
         assert!(files_shortcuts.contains("c commit"));
         assert!(files_shortcuts.contains("s stash(all|selected)"));
         assert!(files_shortcuts.contains("D reset"));
@@ -700,6 +705,13 @@ mod tests {
         assert_eq!(
             shortcuts_for_state(&state),
             "reset: j/k select | Enter confirm | Esc cancel"
+        );
+
+        update(&mut state, Action::Ui(UiAction::CancelResetMenu));
+        update(&mut state, Action::Ui(UiAction::OpenDiscardConfirm));
+        assert_eq!(
+            shortcuts_for_state(&state),
+            "discard: Enter confirm | Esc cancel"
         );
     }
 }

@@ -555,6 +555,77 @@ fn reset_git_result_reports_success_and_failure() {
 }
 
 #[test]
+fn discard_confirm_opens_for_current_file_and_confirms_command() {
+    let mut state = AppState::default();
+    state.files.items = vec![FileEntry {
+        path: "a.txt".to_string(),
+        staged: false,
+        untracked: false,
+    }];
+
+    assert!(update(&mut state, Action::Ui(UiAction::OpenDiscardConfirm)).is_empty());
+    assert!(state.discard_confirm.active);
+    assert_eq!(state.discard_confirm.paths, vec!["a.txt".to_string()]);
+
+    let commands = update(&mut state, Action::Ui(UiAction::ConfirmDiscard));
+
+    assert_eq!(
+        commands,
+        vec![Command::DiscardFiles {
+            paths: vec!["a.txt".to_string()]
+        }]
+    );
+    assert!(!state.discard_confirm.active);
+    assert!(state.discard_confirm.paths.is_empty());
+}
+
+#[test]
+fn discard_confirm_uses_visual_selected_targets_and_can_cancel() {
+    let mut state = AppState::default();
+    state.files.items = vec![
+        FileEntry {
+            path: "a.txt".to_string(),
+            staged: false,
+            untracked: false,
+        },
+        FileEntry {
+            path: "b.txt".to_string(),
+            staged: true,
+            untracked: false,
+        },
+    ];
+    state.files.mode = FileInputMode::MultiSelect;
+    state.files.selected_rows.insert("a.txt".to_string());
+    state.files.selected_rows.insert("b.txt".to_string());
+
+    update(&mut state, Action::Ui(UiAction::OpenDiscardConfirm));
+    assert_eq!(
+        state.discard_confirm.paths,
+        vec!["a.txt".to_string(), "b.txt".to_string()]
+    );
+
+    assert!(update(&mut state, Action::Ui(UiAction::CancelDiscard)).is_empty());
+    assert!(!state.discard_confirm.active);
+    assert!(state.discard_confirm.paths.is_empty());
+}
+
+#[test]
+fn discard_confirm_without_selection_reports_notice() {
+    let mut state = AppState::default();
+
+    let commands = update(&mut state, Action::Ui(UiAction::OpenDiscardConfirm));
+
+    assert!(commands.is_empty());
+    assert!(!state.discard_confirm.active);
+    assert!(
+        state
+            .notices
+            .iter()
+            .any(|notice| notice.contains("No file selected"))
+    );
+}
+
+#[test]
 fn commit_editor_edits_subject_at_cursor() {
     let mut state = AppState::default();
     update(&mut state, Action::Ui(UiAction::OpenCommitEditor));

@@ -25,6 +25,7 @@ Focus model:
 - `AppState.details` stores files-detail diff text, target paths, and detail-refresh errors
 - `AppState.editor` stores active commit/stash editor modal state (type + fields + cursor indexes + scope)
 - `AppState.reset_menu` stores whether the Files reset menu is active and which reset choice is selected
+- `AppState.discard_confirm` stores whether the discard confirmation modal is active and the resolved target paths
 - left-panel height baseline follows the Files/Branches/Commits/Stash ratio
 - when `Stash` is unfocused it collapses to one content row and freed height is
   redistributed by ratio to Files/Branches/Commits
@@ -72,14 +73,18 @@ Files panel interaction:
   - the selected option controls the description rendered below the list
   - `Enter` confirms immediately and emits a reset or nuke command, `Esc` cancels
   - `Nuke` performs hard reset semantics followed by `git clean -fd`
+- `d` opens a file-targeted discard confirmation modal:
+  - targets are resolved when the modal opens from the current cursor target or visual-selected rows
+  - directory rows resolve to descendant files in the current snapshot
+  - `Enter` emits `Command::DiscardFiles`, `Esc` cancels
+  - confirmation text and path summary are rendered only from `AppState.discard_confirm`
 - `v` enters visual multi-select at the current row; `j` / `k` updates the continuous anchor-to-cursor range.
 - `/` switches the bottom keys area into search input until Enter or Esc.
-- lowercase `d` discard/reset for the current cursor or visual-selected file targets is intentionally not mapped until the reusable confirmation dialog exists.
 - Long file lists keep a stable bottom-reserve viewport while reversing from
   downward movement; moving up does not jump to a top-reserve viewport.
 - `RefreshAll` and files selection navigation emit `RefreshFilesDetailsDiff` so
   the Details panel follows the current files cursor.
-- while editor or reset modal is active, modal key handling has highest input priority
+- while editor, reset, or discard modal is active, modal key handling has highest input priority
   over panel navigation mappings.
 - Files Details projection renders merged `unstaged` and `staged` diff sections
   for current file/folder targets from `GitBackend`.

@@ -224,6 +224,38 @@ fn terminal_snapshot_files_reset_modal_nuke_description() {
 }
 
 #[test]
+fn terminal_snapshot_files_discard_confirm_modal() {
+    let mut state = AppState::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+    update(&mut state, Action::Ui(UiAction::OpenDiscardConfirm));
+
+    insta::assert_snapshot!(render_terminal_text(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    ));
+}
+
+#[test]
+fn terminal_snapshot_files_discard_confirm_multiselect_modal() {
+    let mut state = AppState::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+    update(&mut state, Action::Ui(UiAction::ToggleFilesMultiSelect));
+    update(&mut state, Action::Ui(UiAction::MoveDown));
+    update(&mut state, Action::Ui(UiAction::OpenDiscardConfirm));
+
+    insta::assert_snapshot!(render_terminal_text(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    ));
+}
+
+#[test]
 fn snapshots_files_multi_select_marks_selected_rows() {
     let mut state = AppState::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());

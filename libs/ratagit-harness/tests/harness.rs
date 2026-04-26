@@ -422,6 +422,74 @@ fn harness_files_reset_nuke_menu() {
 }
 
 #[test]
+fn harness_files_discard_current_target_with_confirmation() {
+    let inputs = [
+        UiAction::RefreshAll,
+        UiAction::OpenDiscardConfirm,
+        UiAction::ConfirmDiscard,
+    ];
+    assert_scenario(MockScenario::new(
+        "files_discard_current_target_confirm",
+        fixture_dirty_repo(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &["Discarded README.md", "keys(files):"],
+            screen_not_contains: &[" README.md"],
+            selected_screen_rows: &[],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["discard-files:README.md", "refresh"],
+            git_state_contains: &["path: \"src/lib.rs\"", "path: \"src/main.rs\""],
+        },
+    ));
+}
+
+#[test]
+fn harness_files_discard_visual_targets_with_confirmation() {
+    let inputs = [
+        UiAction::RefreshAll,
+        UiAction::ToggleFilesMultiSelect,
+        UiAction::MoveDown,
+        UiAction::OpenDiscardConfirm,
+        UiAction::ConfirmDiscard,
+    ];
+    assert_scenario(MockScenario::new(
+        "files_discard_visual_targets_confirm",
+        fixture_dirty_repo(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &["Discarded 3 files", "details(files): no diff"],
+            screen_not_contains: &[" README.md", " lib.rs", " main.rs"],
+            selected_screen_rows: &[],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["discard-files:README.md,src/lib.rs,src/main.rs", "refresh"],
+            git_state_contains: &["files: []"],
+        },
+    ));
+}
+
+#[test]
+fn harness_files_discard_confirmation_can_cancel() {
+    let inputs = [
+        UiAction::RefreshAll,
+        UiAction::OpenDiscardConfirm,
+        UiAction::CancelDiscard,
+    ];
+    assert_scenario(MockScenario::new(
+        "files_discard_confirm_cancel",
+        fixture_dirty_repo(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &["README.md", "keys(files):"],
+            screen_not_contains: &["Discarded README.md"],
+            selected_screen_rows: &[],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["refresh"],
+            git_state_contains: &["path: \"README.md\""],
+        },
+    ));
+}
+
+#[test]
 fn harness_files_scroll_keeps_selection_visible() {
     let inputs = std::iter::once(UiAction::RefreshAll)
         .chain(std::iter::repeat_n(UiAction::MoveDown, 20))

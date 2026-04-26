@@ -168,6 +168,12 @@ impl Default for ResetMenuState {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct DiscardConfirmState {
+    pub active: bool,
+    pub paths: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EditorKind {
     Commit {
@@ -226,6 +232,7 @@ pub struct AppState {
     pub details: DetailsPanelState,
     pub editor: EditorState,
     pub reset_menu: ResetMenuState,
+    pub discard_confirm: DiscardConfirmState,
     pub notices: Vec<String>,
     pub last_operation: Option<String>,
 }
@@ -263,6 +270,7 @@ impl Default for AppState {
             },
             editor: EditorState::default(),
             reset_menu: ResetMenuState::default(),
+            discard_confirm: DiscardConfirmState::default(),
             notices: vec!["Ready".to_string()],
             last_operation: None,
         }

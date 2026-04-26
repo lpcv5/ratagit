@@ -12,8 +12,9 @@ pub use files::{
 };
 pub use state::{
     AppState, BranchEntry, BranchesPanelState, CommitEntry, CommitField, CommitsPanelState,
-    DetailsPanelState, EditorKind, EditorState, PanelFocus, RepoSnapshot, ResetChoice,
-    ResetMenuState, ResetMode, StashEntry, StashPanelState, StashScope, StatusPanelState,
+    DetailsPanelState, DiscardConfirmState, EditorKind, EditorState, PanelFocus, RepoSnapshot,
+    ResetChoice, ResetMenuState, ResetMode, StashEntry, StashPanelState, StashScope,
+    StatusPanelState,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,6 +46,9 @@ pub enum UiAction {
     MoveResetMenuDown,
     ConfirmResetMenu,
     CancelResetMenu,
+    OpenDiscardConfirm,
+    ConfirmDiscard,
+    CancelDiscard,
     EditorInputChar(char),
     EditorBackspace,
     EditorMoveCursorLeft,
@@ -193,6 +197,15 @@ fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
         UiAction::ConfirmResetMenu => confirm_reset_menu(state),
         UiAction::CancelResetMenu => {
             state.reset_menu.active = false;
+            Vec::new()
+        }
+        UiAction::OpenDiscardConfirm => {
+            open_discard_confirm(state);
+            Vec::new()
+        }
+        UiAction::ConfirmDiscard => confirm_discard(state),
+        UiAction::CancelDiscard => {
+            close_discard_confirm(state);
             Vec::new()
         }
         UiAction::EditorInputChar(ch) => {
@@ -508,6 +521,7 @@ fn update_git_result(state: &mut AppState, result: GitResult) -> Vec<Command> {
 
 fn open_commit_editor(state: &mut AppState) {
     state.reset_menu.active = false;
+    close_discard_confirm(state);
     state.editor.kind = Some(EditorKind::Commit {
         message: String::new(),
         message_cursor: 0,
@@ -519,6 +533,7 @@ fn open_commit_editor(state: &mut AppState) {
 
 fn open_stash_editor(state: &mut AppState) {
     state.reset_menu.active = false;
+    close_discard_confirm(state);
     state.editor.kind = Some(EditorKind::Stash {
         title: String::new(),
         title_cursor: 0,
@@ -538,6 +553,7 @@ fn stash_scope_for_current_files_selection(state: &AppState) -> StashScope {
 
 fn open_reset_menu(state: &mut AppState) {
     state.editor.kind = None;
+    close_discard_confirm(state);
     state.reset_menu.active = true;
     state.reset_menu.selected = ResetChoice::Mixed;
 }
@@ -555,6 +571,38 @@ fn confirm_reset_menu(state: &mut AppState) -> Vec<Command> {
     } else {
         Vec::new()
     }
+}
+
+fn open_discard_confirm(state: &mut AppState) {
+    let paths = selected_target_paths(&state.files);
+    if paths.is_empty() {
+        push_notice(state, "No file selected");
+        return;
+    }
+
+    state.editor.kind = None;
+    state.reset_menu.active = false;
+    state.discard_confirm.active = true;
+    state.discard_confirm.paths = paths;
+}
+
+fn confirm_discard(state: &mut AppState) -> Vec<Command> {
+    if !state.discard_confirm.active {
+        return Vec::new();
+    }
+    let paths = state.discard_confirm.paths.clone();
+    close_discard_confirm(state);
+    if paths.is_empty() {
+        push_notice(state, "No file selected");
+        Vec::new()
+    } else {
+        vec![Command::DiscardFiles { paths }]
+    }
+}
+
+fn close_discard_confirm(state: &mut AppState) {
+    state.discard_confirm.active = false;
+    state.discard_confirm.paths.clear();
 }
 
 fn apply_editor_input_char(state: &mut AppState, ch: char) {
