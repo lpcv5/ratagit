@@ -51,7 +51,6 @@ pub struct FileTreeRow {
 pub enum FileInputMode {
     Normal,
     MultiSelect,
-    SearchInput,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,9 +61,6 @@ pub struct FilesPanelState {
     pub selected_rows: BTreeSet<String>,
     pub selection_anchor: Option<String>,
     pub mode: FileInputMode,
-    pub search_query: String,
-    pub search_matches: Vec<String>,
-    pub current_match: Option<usize>,
     pub tree_initialized: bool,
     pub scroll_direction: Option<ScrollDirection>,
     pub scroll_direction_origin: usize,
@@ -97,9 +93,6 @@ impl Default for FilesPanelState {
             selected_rows: BTreeSet::new(),
             selection_anchor: None,
             mode: FileInputMode::Normal,
-            search_query: String::new(),
-            search_matches: Vec::new(),
-            current_match: None,
             tree_initialized: false,
             scroll_direction: None,
             scroll_direction_origin: 0,
@@ -133,7 +126,6 @@ pub fn reconcile_after_items_changed(state: &mut FilesPanelState) {
         .collect::<BTreeSet<_>>();
     state.selected_rows.retain(|path| valid_rows.contains(path));
     refresh_tree_projection(state);
-    recompute_search_matches(state);
     clamp_selected(state);
     if state.mode == FileInputMode::MultiSelect {
         ensure_valid_selection_anchor(state);
@@ -239,61 +231,6 @@ pub fn leave_multi_select(state: &mut FilesPanelState) {
     refresh_tree_projection(state);
 }
 
-pub fn start_search(state: &mut FilesPanelState) {
-    if state.mode == FileInputMode::MultiSelect {
-        leave_multi_select(state);
-    }
-    state.mode = FileInputMode::SearchInput;
-    state.search_query.clear();
-    state.search_matches.clear();
-    state.current_match = None;
-    refresh_tree_projection(state);
-}
-
-pub fn push_search_char(state: &mut FilesPanelState, ch: char) {
-    state.search_query.push(ch);
-    refresh_tree_projection(state);
-}
-
-pub fn pop_search_char(state: &mut FilesPanelState) {
-    state.search_query.pop();
-    refresh_tree_projection(state);
-}
-
-pub fn confirm_search(state: &mut FilesPanelState) {
-    state.mode = FileInputMode::Normal;
-    refresh_tree_projection(state);
-    recompute_search_matches(state);
-    if !state.search_matches.is_empty() {
-        state.current_match = Some(0);
-        select_match(state);
-    }
-}
-
-pub fn cancel_search(state: &mut FilesPanelState) {
-    if state.mode == FileInputMode::SearchInput || !state.search_query.is_empty() {
-        state.mode = FileInputMode::Normal;
-        state.search_query.clear();
-        state.search_matches.clear();
-        state.current_match = None;
-        refresh_tree_projection(state);
-    }
-}
-
-pub fn jump_search_match(state: &mut FilesPanelState, previous: bool) {
-    if state.search_matches.is_empty() {
-        return;
-    }
-    let len = state.search_matches.len();
-    let next = match (state.current_match, previous) {
-        (Some(index), true) => (index + len - 1) % len,
-        (Some(index), false) => (index + 1) % len,
-        (None, _) => 0,
-    };
-    state.current_match = Some(next);
-    select_match(state);
-}
-
 pub fn selected_target_paths(state: &FilesPanelState) -> Vec<String> {
     let keys = if state.mode == FileInputMode::MultiSelect && !state.selected_rows.is_empty() {
         state.selected_rows.iter().cloned().collect::<Vec<_>>()
@@ -343,6 +280,26 @@ pub fn selected_commit_file_targets(state: &CommitFilesPanelState) -> Vec<Commit
         .filter(|item| path_set.contains(&item.path))
         .cloned()
         .collect()
+}
+
+pub fn select_file_tree_path(state: &mut FilesPanelState, path: &str) -> bool {
+    expand_ancestors(&mut state.expanded_dirs, path);
+    refresh_tree_projection(state);
+    if let Some(index) = state.row_index_by_path.get(path).copied() {
+        state.selected = index;
+        return true;
+    }
+    false
+}
+
+pub fn select_commit_file_tree_path(state: &mut CommitFilesPanelState, path: &str) -> bool {
+    expand_ancestors(&mut state.expanded_dirs, path);
+    refresh_commit_files_tree_projection(state);
+    if let Some(index) = state.row_index_by_path.get(path).copied() {
+        state.selected = index;
+        return true;
+    }
+    false
 }
 
 fn selected_commit_file_row(state: &CommitFilesPanelState) -> Option<FileTreeRow> {
@@ -416,7 +373,6 @@ fn compute_tree_projection(state: &FilesPanelState) -> TreeProjection {
         .collect::<Vec<_>>();
     keys.sort_by(compare_tree_keys);
 
-    let query = state.search_query.to_lowercase();
     let rows = keys
         .into_iter()
         .filter(|(path, _)| row_is_visible(path, &state.expanded_dirs))
@@ -436,7 +392,6 @@ fn compute_tree_projection(state: &FilesPanelState) -> TreeProjection {
                 .filter(|name| !name.is_empty())
                 .unwrap_or(&path)
                 .to_string();
-            let matched = !query.is_empty() && path.to_lowercase().contains(&query);
             FileTreeRow {
                 depth: path_depth(&path),
                 expanded: state.expanded_dirs.contains(&path),
@@ -447,7 +402,7 @@ fn compute_tree_projection(state: &FilesPanelState) -> TreeProjection {
                 staged,
                 untracked,
                 commit_status: None,
-                matched,
+                matched: false,
             }
         })
         .collect::<Vec<_>>();
@@ -606,30 +561,6 @@ fn clamp_commit_file_selected(state: &mut CommitFilesPanelState) {
     );
 }
 
-fn recompute_search_matches(state: &mut FilesPanelState) {
-    if state.search_query.is_empty() {
-        state.search_matches.clear();
-        state.current_match = None;
-        return;
-    }
-    let query = state.search_query.to_lowercase();
-    state.search_matches = build_file_tree_rows(state)
-        .into_iter()
-        .filter(|row| row.path.to_lowercase().contains(&query))
-        .map(|row| row.path)
-        .collect();
-    if state.search_matches.is_empty() {
-        state.current_match = None;
-    } else {
-        state.current_match = Some(
-            state
-                .current_match
-                .unwrap_or(0)
-                .min(state.search_matches.len() - 1),
-        );
-    }
-}
-
 fn ensure_valid_selection_anchor(state: &mut FilesPanelState) {
     let rows = build_file_tree_rows(state);
     let anchor_is_valid = state
@@ -665,25 +596,11 @@ fn refresh_multi_select_range(state: &mut FilesPanelState) {
     refresh_tree_projection(state);
 }
 
-fn select_match(state: &mut FilesPanelState) {
-    let Some(match_index) = state.current_match else {
-        return;
-    };
-    let Some(path) = state.search_matches.get(match_index).cloned() else {
-        return;
-    };
-    expand_ancestors(state, &path);
-    refresh_tree_projection(state);
-    if let Some(index) = state.row_index_by_path.get(&path).copied() {
-        state.selected = index;
-    }
-}
-
-fn expand_ancestors(state: &mut FilesPanelState, path: &str) {
+fn expand_ancestors(expanded_dirs: &mut BTreeSet<String>, path: &str) {
     let mut parts = path.split('/').collect::<Vec<_>>();
     while parts.len() > 1 {
         parts.pop();
-        state.expanded_dirs.insert(parts.join("/"));
+        expanded_dirs.insert(parts.join("/"));
     }
 }
 
@@ -807,22 +724,17 @@ mod tests {
     }
 
     #[test]
-    fn search_confirm_selects_first_match_and_navigates() {
+    fn select_file_tree_path_expands_ancestors() {
         let mut state = files();
-        start_search(&mut state);
-        for ch in "src".chars() {
-            push_search_char(&mut state, ch);
-        }
-        confirm_search(&mut state);
-        assert_eq!(
-            selected_row(&state).map(|row| row.path),
-            Some("src".to_string())
-        );
-        jump_search_match(&mut state, false);
+        state.expanded_dirs.remove("src");
+        refresh_tree_projection(&mut state);
+
+        assert!(select_file_tree_path(&mut state, "src/main.rs"));
         assert_eq!(
             selected_row(&state).map(|row| row.path),
             Some("src/main.rs".to_string())
         );
+        assert!(state.expanded_dirs.contains("src"));
     }
 
     #[test]

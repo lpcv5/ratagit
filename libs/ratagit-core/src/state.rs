@@ -12,6 +12,42 @@ pub enum PanelFocus {
     Log,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SearchScope {
+    Files,
+    Branches,
+    Commits,
+    Stash,
+    CommitFiles,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SearchState {
+    pub active: bool,
+    pub scope: Option<SearchScope>,
+    pub query: String,
+    pub matches: Vec<String>,
+    pub current_match: Option<usize>,
+}
+
+impl SearchState {
+    pub fn is_input_active_for(&self, scope: SearchScope) -> bool {
+        self.active && self.scope == Some(scope)
+    }
+
+    pub fn has_query_for(&self, scope: SearchScope) -> bool {
+        self.scope == Some(scope) && !self.query.is_empty()
+    }
+
+    pub fn clear(&mut self) {
+        self.active = false;
+        self.scope = None;
+        self.query.clear();
+        self.matches.clear();
+        self.current_match = None;
+    }
+}
+
 impl PanelFocus {
     pub fn next_left(self) -> Self {
         match self {
@@ -450,6 +486,7 @@ pub struct CachedCommitDiff {
 pub struct AppState {
     pub focus: PanelFocus,
     pub last_left_focus: PanelFocus,
+    pub search: SearchState,
     pub status: StatusPanelState,
     pub files: FilesPanelState,
     pub commits: CommitsPanelState,
@@ -469,6 +506,7 @@ impl Default for AppState {
         Self {
             focus: PanelFocus::Files,
             last_left_focus: PanelFocus::Files,
+            search: SearchState::default(),
             status: StatusPanelState {
                 summary: "No data yet".to_string(),
                 current_branch: "unknown".to_string(),
@@ -529,6 +567,19 @@ impl Default for AppState {
             work: WorkStatusState::default(),
             notices: vec!["Ready".to_string()],
             last_operation: None,
+        }
+    }
+}
+
+impl AppState {
+    pub fn active_search_scope(&self) -> Option<SearchScope> {
+        match self.focus {
+            PanelFocus::Files => Some(SearchScope::Files),
+            PanelFocus::Branches => Some(SearchScope::Branches),
+            PanelFocus::Commits if self.commits.files.active => Some(SearchScope::CommitFiles),
+            PanelFocus::Commits => Some(SearchScope::Commits),
+            PanelFocus::Stash => Some(SearchScope::Stash),
+            PanelFocus::Details | PanelFocus::Log => None,
         }
     }
 }

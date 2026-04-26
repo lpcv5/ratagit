@@ -688,13 +688,13 @@ fn harness_files_v_marks_individual_rows() {
 fn harness_files_search_jumps_and_clears() {
     let inputs = [
         UiAction::RefreshAll,
-        UiAction::StartFileSearch,
-        UiAction::InputFileSearchChar('l'),
-        UiAction::InputFileSearchChar('i'),
-        UiAction::ConfirmFileSearch,
-        UiAction::NextFileSearchMatch,
-        UiAction::PrevFileSearchMatch,
-        UiAction::CancelFileSearch,
+        UiAction::StartSearch,
+        UiAction::InputSearchChar('l'),
+        UiAction::InputSearchChar('i'),
+        UiAction::ConfirmSearch,
+        UiAction::NextSearchMatch,
+        UiAction::PrevSearchMatch,
+        UiAction::CancelSearch,
     ];
     assert_scenario(MockScenario::new(
         "files_search_jumps_and_clears",
@@ -707,6 +707,68 @@ fn harness_files_search_jumps_and_clears() {
             batch_selected_screen_rows: &[],
             git_ops_contains: &["refresh"],
             git_state_contains: &["current_branch: \"main\""],
+        },
+    ));
+}
+
+#[test]
+fn harness_left_panel_search_selects_branch_and_commit_matches() {
+    let inputs = [
+        UiAction::RefreshAll,
+        UiAction::FocusNext,
+        UiAction::StartSearch,
+        UiAction::InputSearchChar('f'),
+        UiAction::InputSearchChar('e'),
+        UiAction::InputSearchChar('a'),
+        UiAction::InputSearchChar('t'),
+        UiAction::ConfirmSearch,
+        UiAction::FocusNext,
+        UiAction::StartSearch,
+        UiAction::InputSearchChar('w'),
+        UiAction::InputSearchChar('i'),
+        UiAction::InputSearchChar('r'),
+        UiAction::InputSearchChar('e'),
+        UiAction::ConfirmSearch,
+    ];
+    assert_scenario(MockScenario::new(
+        "left_panel_search_selects_branch_and_commit_matches",
+        fixture_dirty_repo(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &["feature/mvp", "def5678", "commit def5678"],
+            screen_not_contains: &["/ search"],
+            selected_screen_rows: &["def5678"],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["branch-log:feature/mvp:50", "commit-diff:def5678"],
+            git_state_contains: &["current_branch: \"main\"", "name: \"feature/mvp\""],
+        },
+    ));
+}
+
+#[test]
+fn harness_stash_search_selects_match_without_git_operation() {
+    let inputs = [
+        UiAction::RefreshAll,
+        UiAction::FocusPanel {
+            panel: ratagit_core::PanelFocus::Stash,
+        },
+        UiAction::StartSearch,
+        UiAction::InputSearchChar('w'),
+        UiAction::InputSearchChar('i'),
+        UiAction::InputSearchChar('p'),
+        UiAction::ConfirmSearch,
+    ];
+    assert_scenario(MockScenario::new(
+        "stash_search_selects_match_without_git_operation",
+        fixture_dirty_repo(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &["stash@{0} WIP on main", "keys(stash):"],
+            screen_not_contains: &["/ search"],
+            selected_screen_rows: &["stash@{0}"],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["refresh"],
+            git_state_contains: &["current_branch: \"main\"", "id: \"stash@{0}\""],
         },
     ));
 }
@@ -1049,6 +1111,42 @@ fn harness_commits_enter_files_subpanel_and_follow_file_cursor() {
                 "diff --git a/src/lib.rs b/src/lib.rs",
             ],
             screen_not_contains: &["details(commits): pending details implementation"],
+            selected_screen_rows: &["A lib.rs"],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &[
+                "commit-files:abc1234",
+                "commit-file-diff:abc1234:README.md",
+                "commit-file-diff:abc1234:src/lib.rs",
+            ],
+            git_state_contains: &["summary: \"init project\""],
+        },
+    ));
+}
+
+#[test]
+fn harness_commit_files_search_selects_file_and_refreshes_diff() {
+    let inputs = [
+        UiAction::RefreshAll,
+        UiAction::FocusNext,
+        UiAction::FocusNext,
+        UiAction::OpenCommitFilesPanel,
+        UiAction::StartSearch,
+        UiAction::InputSearchChar('l'),
+        UiAction::InputSearchChar('i'),
+        UiAction::InputSearchChar('b'),
+        UiAction::ConfirmSearch,
+    ];
+    assert_scenario(MockScenario::new(
+        "commit_files_search_selects_file_and_refreshes_diff",
+        clean_three_commit_fixture(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &[
+                "Commit Files",
+                "A lib.rs",
+                "diff --git a/src/lib.rs b/src/lib.rs",
+            ],
+            screen_not_contains: &["/ search"],
             selected_screen_rows: &["A lib.rs"],
             batch_selected_screen_rows: &[],
             git_ops_contains: &[

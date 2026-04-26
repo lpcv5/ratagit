@@ -33,6 +33,8 @@ Focus model:
 - `AppState.editor` stores active commit/stash editor modal state (type + fields + cursor indexes + scope)
 - `AppState.reset_menu` stores whether the Files reset menu is active and which reset choice is selected
 - `AppState.discard_confirm` stores whether the discard confirmation modal is active and the resolved target paths
+- `AppState.search` stores generic panel-scoped search input, query, matches,
+  and current match index for searchable left panels and subpanels
 - `AppState.commits` stores commit rows, cursor selection, visual selection anchor, and selected visual range
 - `AppState.commits.files` stores the active Commit Files subpanel state,
   including selected commit id, changed-file rows, tree projection, and cursor
@@ -69,9 +71,31 @@ Focus model:
   `ratagit_core::debounce_key_for_command`, so rapid navigation can collapse to
   the latest command while keeping state transitions deterministic.
 
+Search interaction:
+
+- `/` activates `AppState.search` for the current Files, Branches, Commits,
+  Stash, or Commit Files scope.
+- Search input replaces the bottom shortcuts with `search: <query>` until
+  `Enter` confirms or `Esc` cancels.
+- Normal bottom shortcuts list only panel-specific common actions; baseline
+  navigation/search keys are omitted.
+- Matches are case-insensitive and deterministic:
+  - Files and Commit Files match full paths
+  - Branches match branch names
+  - Commits match visible row identity: short hash, author initials, and
+    summary/message first line
+  - Stash matches stash id plus summary
+- Search styling is character-level: visible matching substrings receive the
+  search style while the rest of the row keeps its normal semantic styling.
+  File-tree rows still show the search marker when the full path matches but
+  the matching path segment is not visible in the compact row label.
+- `n` / `N` navigate confirmed matches in the active scope. Files, Branches,
+  Commits, and Commit Files refresh their Details projection after selection
+  changes; Stash only updates its selected row in this slice.
+
 Files panel interaction:
 
-- `AppState.files` stores tree expansion, visible-row selection, visual selection anchor, batch rows, and search state.
+- `AppState.files` stores tree expansion, visible-row selection, visual selection anchor, and batch rows.
 - File tree rows are derived from `RepoSnapshot.files`; no UI code reads external state.
 - `AppState.files.tree_rows`, `row_descendants`, and `row_index_by_path`
   cache deterministic tree projection data after reducer-managed changes.
@@ -107,7 +131,8 @@ Files panel interaction:
   - `Enter` emits `Command::DiscardFiles`, `Esc` cancels
   - confirmation text and path summary are rendered only from `AppState.discard_confirm`
 - `v` enters visual multi-select at the current row; `j` / `k` updates the continuous anchor-to-cursor range.
-- `/` switches the bottom keys area into search input until Enter or Esc.
+- `/` switches the bottom keys area into search input until Enter or Esc using
+  the generic search model.
 - Long file lists keep a stable bottom-reserve viewport while reversing from
   downward movement; moving up does not jump to a top-reserve viewport.
 - `RefreshAll` and files selection navigation emit `RefreshFilesDetailsDiff` so
@@ -132,6 +157,7 @@ Files panel interaction:
   deletion to `git branch -D`.
 - Branch rebase options are simple, interactive, and `origin/main`; simple and
   interactive rebase the current branch onto the selected branch.
+- Branches search selects matching branches and refreshes the branch details log.
 - Commits focus maps `s` to squash, `f` to fixup, `r` to reword, `d` to delete,
   `space` to detached checkout, `v` to visual multi-select, and `Enter` to
   open Commit Files for the selected commit.
@@ -144,6 +170,8 @@ Files panel interaction:
   amends the selected commit into its parent.
 - Commit reword reuses the existing commit editor modal with a reword intent
   stored in `AppState.editor`; confirming emits `Command::RewordCommit`.
+- Commits search selects matching loaded commits and refreshes the commit diff;
+  it does not request additional pages.
 - Detached commit checkout uses `Command::CheckoutCommitDetached`; when the
   working tree is dirty it opens the shared auto-stash confirmation modal before
   dispatching with `auto_stash=true`.
@@ -163,6 +191,7 @@ Files panel interaction:
   - `Esc` closes the subpanel and restores the selected commit diff
   - while changed files are loading, dynamic height calculations use the parent
     Commits list length to avoid a one-frame panel jump
+  - `/` searches changed-file paths and refreshes the selected file/folder diff
   - additional local commit-files shortcuts are intentionally deferred
 - Files Details projection renders merged `unstaged` and `staged` diff sections
   for current file/folder targets from `GitBackend`.

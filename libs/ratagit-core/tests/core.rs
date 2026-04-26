@@ -3,8 +3,8 @@ use ratagit_core::{
     BranchRebaseChoice, COMMITS_PAGE_SIZE, COMMITS_PREFETCH_THRESHOLD, Command, CommitEditorIntent,
     CommitEntry, CommitField, CommitFileDiffPath, CommitFileDiffTarget, CommitFileEntry,
     CommitFileStatus, CommitHashStatus, CommitInputMode, EditorKind, FileEntry, FileInputMode,
-    GitResult, PanelFocus, RepoSnapshot, ResetChoice, ResetMode, StashScope, UiAction,
-    refresh_tree_projection, update,
+    GitResult, PanelFocus, RepoSnapshot, ResetChoice, ResetMode, SearchScope, StashEntry,
+    StashScope, UiAction, refresh_tree_projection, selected_row, update,
 };
 
 fn commit_entry(id: &str, summary: &str) -> CommitEntry {
@@ -527,6 +527,19 @@ fn assert_branch_log_refresh(commands: Vec<Command>, expected_branch: &str) {
     );
 }
 
+fn assert_files_diff_refresh(commands: Vec<Command>, expected_path: &str) {
+    assert_files_diff_refresh_for_paths(commands, vec![expected_path]);
+}
+
+fn assert_files_diff_refresh_for_paths(commands: Vec<Command>, expected_paths: Vec<&str>) {
+    assert_eq!(
+        commands,
+        vec![Command::RefreshFilesDetailsDiff {
+            paths: expected_paths.into_iter().map(str::to_string).collect(),
+        }]
+    );
+}
+
 fn assert_commit_diff_refresh(commands: Vec<Command>, expected_commit_id: &str) {
     assert_eq!(
         commands,
@@ -833,6 +846,162 @@ fn commit_files_navigation_refreshes_selected_file_diff() {
     let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
 
     assert_commit_file_diff_refresh(commands, "abc1234-full", "src/lib.rs");
+}
+
+#[test]
+fn search_selects_matches_across_left_panels() {
+    let mut state = AppState {
+        focus: PanelFocus::Branches,
+        last_left_focus: PanelFocus::Branches,
+        ..AppState::default()
+    };
+    state.branches.items = vec![
+        BranchEntry {
+            name: "main".to_string(),
+            is_current: true,
+        },
+        BranchEntry {
+            name: "feature/search".to_string(),
+            is_current: false,
+        },
+    ];
+    update(&mut state, Action::Ui(UiAction::StartSearch));
+    for ch in "feature".chars() {
+        update(&mut state, Action::Ui(UiAction::InputSearchChar(ch)));
+    }
+    assert_eq!(state.search.scope, Some(SearchScope::Branches));
+    let commands = update(&mut state, Action::Ui(UiAction::ConfirmSearch));
+    assert_branch_log_refresh(commands, "feature/search");
+    assert_eq!(state.branches.selected, 1);
+
+    update(
+        &mut state,
+        Action::Ui(UiAction::FocusPanel {
+            panel: PanelFocus::Commits,
+        }),
+    );
+    state.commits.items = vec![
+        commit_entry("abc1234", "init project"),
+        commit_entry("def5678", "wire commands"),
+    ];
+    update(&mut state, Action::Ui(UiAction::StartSearch));
+    for ch in "wire".chars() {
+        update(&mut state, Action::Ui(UiAction::InputSearchChar(ch)));
+    }
+    let commands = update(&mut state, Action::Ui(UiAction::ConfirmSearch));
+    assert_commit_diff_refresh(commands, "def5678-full");
+    assert_eq!(state.commits.selected, 1);
+
+    update(
+        &mut state,
+        Action::Ui(UiAction::FocusPanel {
+            panel: PanelFocus::Stash,
+        }),
+    );
+    state.stash.items = vec![
+        StashEntry {
+            id: "stash@{0}".to_string(),
+            summary: "WIP on main".to_string(),
+        },
+        StashEntry {
+            id: "stash@{1}".to_string(),
+            summary: "checkpoint search".to_string(),
+        },
+    ];
+    update(&mut state, Action::Ui(UiAction::StartSearch));
+    for ch in "checkpoint".chars() {
+        update(&mut state, Action::Ui(UiAction::InputSearchChar(ch)));
+    }
+    let commands = update(&mut state, Action::Ui(UiAction::ConfirmSearch));
+    assert!(commands.is_empty());
+    assert_eq!(state.stash.selected, 1);
+}
+
+#[test]
+fn search_selects_files_and_commit_files_and_navigates() {
+    let mut state = AppState::default();
+    state.files.items = vec![
+        FileEntry {
+            path: "README.md".to_string(),
+            staged: false,
+            untracked: false,
+        },
+        FileEntry {
+            path: "src/lib.rs".to_string(),
+            staged: false,
+            untracked: false,
+        },
+        FileEntry {
+            path: "src/main.rs".to_string(),
+            staged: false,
+            untracked: false,
+        },
+    ];
+    state.files.expanded_dirs.insert("src".to_string());
+    refresh_tree_projection(&mut state.files);
+    update(&mut state, Action::Ui(UiAction::StartSearch));
+    for ch in "src".chars() {
+        update(&mut state, Action::Ui(UiAction::InputSearchChar(ch)));
+    }
+    let commands = update(&mut state, Action::Ui(UiAction::ConfirmSearch));
+    assert_files_diff_refresh_for_paths(commands, vec!["src/lib.rs", "src/main.rs"]);
+    assert_eq!(
+        selected_row(&state.files).map(|row| row.path),
+        Some("src".to_string())
+    );
+    let commands = update(&mut state, Action::Ui(UiAction::NextSearchMatch));
+    assert_files_diff_refresh(commands, "src/lib.rs");
+    assert_eq!(
+        selected_row(&state.files).map(|row| row.path),
+        Some("src/lib.rs".to_string())
+    );
+
+    state.focus = PanelFocus::Commits;
+    state.last_left_focus = PanelFocus::Commits;
+    state.commits.items = vec![commit_entry("abc1234", "init project")];
+    update(&mut state, Action::Ui(UiAction::OpenCommitFilesPanel));
+    update(
+        &mut state,
+        Action::GitResult(GitResult::CommitFiles {
+            commit_id: "abc1234-full".to_string(),
+            result: Ok(commit_files_fixture()),
+        }),
+    );
+    update(&mut state, Action::Ui(UiAction::StartSearch));
+    for ch in "lib".chars() {
+        update(&mut state, Action::Ui(UiAction::InputSearchChar(ch)));
+    }
+    let commands = update(&mut state, Action::Ui(UiAction::ConfirmSearch));
+    assert_commit_file_diff_refresh(commands, "abc1234-full", "src/lib.rs");
+    assert_eq!(state.commits.files.selected, 2);
+}
+
+#[test]
+fn starting_search_exits_visual_multi_select_modes() {
+    let mut state = AppState::default();
+    state.files.items = vec![FileEntry {
+        path: "a.txt".to_string(),
+        staged: false,
+        untracked: false,
+    }];
+    refresh_tree_projection(&mut state.files);
+    update(&mut state, Action::Ui(UiAction::ToggleFilesMultiSelect));
+    assert_eq!(state.files.mode, FileInputMode::MultiSelect);
+    update(&mut state, Action::Ui(UiAction::StartSearch));
+    assert_eq!(state.files.mode, FileInputMode::Normal);
+    assert!(state.files.selected_rows.is_empty());
+
+    state.focus = PanelFocus::Commits;
+    state.last_left_focus = PanelFocus::Commits;
+    state.commits.items = vec![
+        commit_entry("abc1234", "init project"),
+        commit_entry("def5678", "wire commands"),
+    ];
+    update(&mut state, Action::Ui(UiAction::ToggleCommitsMultiSelect));
+    assert_eq!(state.commits.mode, CommitInputMode::MultiSelect);
+    update(&mut state, Action::Ui(UiAction::StartSearch));
+    assert_eq!(state.commits.mode, CommitInputMode::Normal);
+    assert!(state.commits.selected_rows.is_empty());
 }
 
 #[test]

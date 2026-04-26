@@ -2,36 +2,32 @@
 
 ## Current Slice
 
-Add a Files subpanel inside Commits.
+Generalize `/` search across left panels and subpanels.
 
 ## Goal
 
-- enter the subpanel from the selected commit with `Enter`
-- keep commit files and commit-file diffs inside `AppState`
-- load changed files only through `GitBackend`
-- reuse the Files tree projection and rendering shape
-- show changed-file status markers (`A/M/D/R/C/T`)
-- make Details follow the selected commit file/folder with path-limited patches
-- keep panel height stable while commit files are loading
-- allow commit-file folder rows to expand/collapse
-- defer commit-files local shortcuts beyond navigation and `Esc` return
+- keep search state in `AppState` as a generic panel-scoped model
+- support Files, Branches, Commits, Stash, and Commit Files
+- keep rendering pure and deterministic
+- match case-insensitive text from the visible row identity
+- let `Enter`, `n`, and `N` move selection through matches
+- refresh Details after search navigation when the focused panel owns a Details projection
+- keep `/` search available as a baseline key without listing it in the normal shortcut bar
 
 ## Vertical Slice
 
 1. State and input
-- add commit-files substate under `CommitsPanelState`
-- add open/close actions and commit-files commands/results
-- map `Enter` from Commits to open, and `Esc` from Commit Files to return
-- map `Enter` inside Commit Files to directory expand/collapse
+- add generic search scope/state under `AppState`
+- replace Files-only search actions with generic search actions
+- map `/`, search text input, `Enter`, `Esc`, `n`, and `N` for all searchable left contexts
 
 2. Rendering
-- render Commit Files in the Commits panel frame
-- render commit-file status markers in the reused file-tree row format
-- render commit-file loading, empty, error, and diff states in Details
-- keep Commit Files loading height based on the parent Commits list to avoid a
-  one-frame layout jump
+- highlight search matches in all searchable panels from `AppState.search`
+- preserve the `search: <query>` input bar while typing
+- leave normal bottom shortcuts focused on panel-specific common actions only
 
-3. Git and validation
-- add backend methods for changed files and selected file/folder commit diff
-- cover reducer behavior, snapshots, harness scenario, and real backend output
+3. Validation
+- cover reducer behavior for all search scopes
+- update UI snapshots and panel unit tests
+- add harness scenarios for normal left-panel search and Commit Files search
 - run `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, and `cargo test`

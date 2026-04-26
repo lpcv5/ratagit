@@ -279,9 +279,9 @@ fn snapshots_shortcuts_follow_current_focus() {
 fn snapshots_files_search_input_replaces_shortcut_bar() {
     let mut state = AppState::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
-    update(&mut state, Action::Ui(UiAction::StartFileSearch));
-    update(&mut state, Action::Ui(UiAction::InputFileSearchChar('l')));
-    update(&mut state, Action::Ui(UiAction::InputFileSearchChar('i')));
+    update(&mut state, Action::Ui(UiAction::StartSearch));
+    update(&mut state, Action::Ui(UiAction::InputSearchChar('l')));
+    update(&mut state, Action::Ui(UiAction::InputSearchChar('i')));
 
     let text = render(
         &state,
@@ -943,9 +943,9 @@ fn terminal_commits_panel_colors_hashes_and_authors() {
 fn terminal_snapshot_files_search_updates_screen() {
     let mut state = AppState::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
-    update(&mut state, Action::Ui(UiAction::StartFileSearch));
-    update(&mut state, Action::Ui(UiAction::InputFileSearchChar('l')));
-    update(&mut state, Action::Ui(UiAction::InputFileSearchChar('i')));
+    update(&mut state, Action::Ui(UiAction::StartSearch));
+    update(&mut state, Action::Ui(UiAction::InputSearchChar('l')));
+    update(&mut state, Action::Ui(UiAction::InputSearchChar('i')));
 
     let screen = render_terminal_text(
         &state,

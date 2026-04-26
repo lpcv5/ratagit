@@ -16,14 +16,12 @@ pub use commits::{
 pub use files::{
     CommitFileEntry, CommitFileStatus, CommitFilesPanelState, FileEntry, FileInputMode,
     FileRowKind, FileTreeRow, FilesPanelState, build_commit_file_tree_rows, build_file_tree_rows,
-    cancel_search as cancel_file_search, clamp_selected as clamp_file_selection,
-    collect_directories, commit_file_tree_rows, confirm_search as confirm_file_search,
+    clamp_selected as clamp_file_selection, collect_directories, commit_file_tree_rows,
     enter_multi_select, file_tree_rows, initialize_commit_files_tree, initialize_tree_if_needed,
-    jump_search_match, leave_multi_select, move_commit_file_selected, move_selected,
-    pop_search_char, push_search_char, reconcile_after_items_changed,
-    refresh_commit_files_tree_projection, refresh_tree_projection, selected_commit_file,
-    selected_commit_file_targets, selected_row, selected_target_paths,
-    start_search as start_file_search, toggle_commit_files_directory, toggle_current_row_selection,
+    leave_multi_select, move_commit_file_selected, move_selected, reconcile_after_items_changed,
+    refresh_commit_files_tree_projection, refresh_tree_projection, select_commit_file_tree_path,
+    select_file_tree_path, selected_commit_file, selected_commit_file_targets, selected_row,
+    selected_target_paths, toggle_commit_files_directory, toggle_current_row_selection,
     toggle_selected_directory,
 };
 pub use scroll::ScrollDirection;
@@ -34,8 +32,8 @@ pub use state::{
     CachedCommitDiff, CachedFilesDiff, CommitEditorIntent, CommitEntry, CommitField,
     CommitFileDiffPath, CommitFileDiffTarget, CommitHashStatus, CommitInputMode, CommitsPanelState,
     DetailsPanelState, DiscardConfirmState, EditorKind, EditorState, PanelFocus, RepoSnapshot,
-    ResetChoice, ResetMenuState, ResetMode, StashEntry, StashPanelState, StashScope,
-    StatusPanelState, WorkStatusState,
+    ResetChoice, ResetMenuState, ResetMode, SearchScope, SearchState, StashEntry, StashPanelState,
+    StashScope, StatusPanelState, WorkStatusState,
 };
 
 const DETAILS_DIFF_CACHE_LIMIT: usize = 16;
@@ -57,13 +55,13 @@ pub enum UiAction {
     ToggleSelectedFileStage,
     ToggleFilesMultiSelect,
     ToggleCurrentFileSelection,
-    StartFileSearch,
-    InputFileSearchChar(char),
-    BackspaceFileSearch,
-    ConfirmFileSearch,
-    CancelFileSearch,
-    NextFileSearchMatch,
-    PrevFileSearchMatch,
+    StartSearch,
+    InputSearchChar(char),
+    BackspaceSearch,
+    ConfirmSearch,
+    CancelSearch,
+    NextSearchMatch,
+    PrevSearchMatch,
     StageSelectedFile,
     UnstageSelectedFile,
     StashSelectedFiles,
@@ -622,11 +620,13 @@ fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
         UiAction::FocusNext => {
             state.focus = state.focus.next_left();
             state.last_left_focus = state.focus;
+            clear_search_if_incompatible(state);
             maybe_refresh_details_on_focus(state)
         }
         UiAction::FocusPrev => {
             state.focus = state.focus.prev_left();
             state.last_left_focus = state.focus;
+            clear_search_if_incompatible(state);
             maybe_refresh_details_on_focus(state)
         }
         UiAction::FocusPanel { panel } => {
@@ -634,6 +634,7 @@ fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
             if panel.is_left_panel() {
                 state.last_left_focus = panel;
             }
+            clear_search_if_incompatible(state);
             maybe_refresh_details_on_focus(state)
         }
         UiAction::MoveUp => {
@@ -702,37 +703,42 @@ fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
             toggle_current_row_selection(&mut state.files);
             Vec::new()
         }
-        UiAction::StartFileSearch => {
-            start_file_search(&mut state.files);
+        UiAction::StartSearch => {
+            start_search(state);
             Vec::new()
         }
-        UiAction::InputFileSearchChar(ch) => {
-            push_search_char(&mut state.files, ch);
+        UiAction::InputSearchChar(ch) => {
+            input_search_char(state, ch);
             Vec::new()
         }
-        UiAction::BackspaceFileSearch => {
-            pop_search_char(&mut state.files);
+        UiAction::BackspaceSearch => {
+            backspace_search(state);
             Vec::new()
         }
-        UiAction::ConfirmFileSearch => {
-            confirm_file_search(&mut state.files);
-            refresh_files_details_command(state)
-        }
-        UiAction::CancelFileSearch => {
-            if state.files.mode == FileInputMode::MultiSelect {
-                leave_multi_select(&mut state.files);
+        UiAction::ConfirmSearch => {
+            if confirm_search(state) {
+                refresh_details_command_for_focus(state)
             } else {
-                cancel_file_search(&mut state.files);
+                Vec::new()
             }
+        }
+        UiAction::CancelSearch => {
+            cancel_search(state);
             Vec::new()
         }
-        UiAction::NextFileSearchMatch => {
-            jump_search_match(&mut state.files, false);
-            refresh_files_details_command(state)
+        UiAction::NextSearchMatch => {
+            if jump_search_match(state, false) {
+                refresh_details_command_for_focus(state)
+            } else {
+                Vec::new()
+            }
         }
-        UiAction::PrevFileSearchMatch => {
-            jump_search_match(&mut state.files, true);
-            refresh_files_details_command(state)
+        UiAction::PrevSearchMatch => {
+            if jump_search_match(state, true) {
+                refresh_details_command_for_focus(state)
+            } else {
+                Vec::new()
+            }
         }
         UiAction::StageSelectedFile => {
             let paths = selected_target_paths(&state.files)
@@ -944,6 +950,11 @@ fn update_git_result(state: &mut AppState, result: GitResult) -> Vec<Command> {
                     state.commits.files.scroll_direction = None;
                     state.commits.files.scroll_direction_origin = 0;
                     initialize_commit_files_tree(&mut state.commits.files);
+                    if state.search.scope == Some(SearchScope::CommitFiles)
+                        && !state.search.query.is_empty()
+                    {
+                        recompute_search_matches(state);
+                    }
                     state.status.last_error = None;
                     refresh_commit_file_diff_command(state)
                 }
@@ -1782,6 +1793,7 @@ fn apply_snapshot(state: &mut AppState, snapshot: RepoSnapshot) {
     state.details.commit_file_diff.clear();
     state.details.commit_file_diff_error = None;
     state.details.commit_file_diff_target = None;
+    state.search.clear();
     reset_details_scroll(state);
     clear_details_caches(state);
 }
@@ -2010,6 +2022,7 @@ fn open_commit_files_panel(state: &mut AppState) -> Vec<Command> {
         loading: true,
         ..CommitFilesPanelState::default()
     };
+    clear_search_if_incompatible(state);
     state.details.commit_file_diff.clear();
     state.details.commit_file_diff_target = None;
     state.details.commit_file_diff_error = None;
@@ -2023,6 +2036,7 @@ fn close_commit_files_panel(state: &mut AppState) -> Vec<Command> {
     }
     state.commits.files.active = false;
     state.commits.files.loading = false;
+    clear_search_if_incompatible(state);
     state.details.commit_file_diff.clear();
     state.details.commit_file_diff_target = None;
     state.details.commit_file_diff_error = None;
@@ -2244,6 +2258,251 @@ fn maybe_refresh_details_on_focus(state: &mut AppState) -> Vec<Command> {
 
 fn maybe_refresh_details_on_navigation(state: &mut AppState) -> Vec<Command> {
     refresh_details_command_for_focus(state)
+}
+
+fn start_search(state: &mut AppState) {
+    let Some(scope) = state.active_search_scope() else {
+        return;
+    };
+    if scope == SearchScope::Files && state.files.mode == FileInputMode::MultiSelect {
+        leave_multi_select(&mut state.files);
+    }
+    if scope == SearchScope::Commits && state.commits.mode == CommitInputMode::MultiSelect {
+        leave_commit_multi_select(&mut state.commits);
+    }
+    state.search.active = true;
+    state.search.scope = Some(scope);
+    state.search.query.clear();
+    state.search.matches.clear();
+    state.search.current_match = None;
+}
+
+fn input_search_char(state: &mut AppState, ch: char) {
+    if !search_input_is_current(state) {
+        return;
+    }
+    state.search.query.push(ch);
+    recompute_search_matches(state);
+}
+
+fn backspace_search(state: &mut AppState) {
+    if !search_input_is_current(state) {
+        return;
+    }
+    state.search.query.pop();
+    recompute_search_matches(state);
+}
+
+fn confirm_search(state: &mut AppState) -> bool {
+    if !search_input_is_current(state) {
+        return false;
+    }
+    state.search.active = false;
+    recompute_search_matches(state);
+    if state.search.matches.is_empty() {
+        return false;
+    }
+    state.search.current_match = Some(0);
+    select_current_search_match(state)
+}
+
+fn cancel_search(state: &mut AppState) {
+    if state.search.scope == state.active_search_scope()
+        && (state.search.active || !state.search.query.is_empty())
+    {
+        state.search.clear();
+    }
+}
+
+fn jump_search_match(state: &mut AppState, previous: bool) -> bool {
+    if state.search.scope != state.active_search_scope() || state.search.query.is_empty() {
+        return false;
+    }
+    recompute_search_matches(state);
+    if state.search.matches.is_empty() {
+        return false;
+    }
+    let len = state.search.matches.len();
+    let next = match (state.search.current_match, previous) {
+        (Some(index), true) => (index + len - 1) % len,
+        (Some(index), false) => (index + 1) % len,
+        (None, _) => 0,
+    };
+    state.search.current_match = Some(next);
+    select_current_search_match(state)
+}
+
+fn search_input_is_current(state: &AppState) -> bool {
+    state.search.active && state.search.scope == state.active_search_scope()
+}
+
+fn clear_search_if_incompatible(state: &mut AppState) {
+    if state.search.scope.is_some() && state.search.scope != state.active_search_scope() {
+        state.search.clear();
+    }
+}
+
+fn recompute_search_matches(state: &mut AppState) {
+    if state.search.query.is_empty() {
+        state.search.matches.clear();
+        state.search.current_match = None;
+        return;
+    }
+    let Some(scope) = state.search.scope else {
+        state.search.matches.clear();
+        state.search.current_match = None;
+        return;
+    };
+    let query = state.search.query.to_lowercase();
+    state.search.matches = match scope {
+        SearchScope::Files => build_file_tree_rows(&state.files)
+            .into_iter()
+            .filter(|row| row.path.to_lowercase().contains(&query))
+            .map(|row| row.path)
+            .collect(),
+        SearchScope::Branches => state
+            .branches
+            .items
+            .iter()
+            .filter(|branch| branch.name.to_lowercase().contains(&query))
+            .map(|branch| branch.name.clone())
+            .collect(),
+        SearchScope::Commits => state
+            .commits
+            .items
+            .iter()
+            .filter(|commit| commit_search_text(commit).to_lowercase().contains(&query))
+            .map(commit_key)
+            .collect(),
+        SearchScope::Stash => state
+            .stash
+            .items
+            .iter()
+            .filter(|stash| {
+                format!("{} {}", stash.id, stash.summary)
+                    .to_lowercase()
+                    .contains(&query)
+            })
+            .map(|stash| stash.id.clone())
+            .collect(),
+        SearchScope::CommitFiles => build_commit_file_tree_rows(&state.commits.files)
+            .into_iter()
+            .filter(|row| row.path.to_lowercase().contains(&query))
+            .map(|row| row.path)
+            .collect(),
+    };
+    if state.search.matches.is_empty() {
+        state.search.current_match = None;
+    } else {
+        state.search.current_match = Some(
+            state
+                .search
+                .current_match
+                .unwrap_or(0)
+                .min(state.search.matches.len() - 1),
+        );
+    }
+}
+
+fn select_current_search_match(state: &mut AppState) -> bool {
+    let Some(scope) = state.search.scope else {
+        return false;
+    };
+    let Some(index) = state.search.current_match else {
+        return false;
+    };
+    let Some(key) = state.search.matches.get(index).cloned() else {
+        return false;
+    };
+    match scope {
+        SearchScope::Files => select_file_tree_path(&mut state.files, &key),
+        SearchScope::Branches => select_index_by_key(
+            &mut state.branches.selected,
+            state
+                .branches
+                .items
+                .iter()
+                .map(|branch| branch.name.as_str()),
+            &key,
+        ),
+        SearchScope::Commits => select_index_by_key(
+            &mut state.commits.selected,
+            state.commits.items.iter().map(commit_key),
+            &key,
+        ),
+        SearchScope::Stash => select_index_by_key(
+            &mut state.stash.selected,
+            state.stash.items.iter().map(|stash| stash.id.as_str()),
+            &key,
+        ),
+        SearchScope::CommitFiles => select_commit_file_tree_path(&mut state.commits.files, &key),
+    }
+}
+
+fn select_index_by_key<'a>(
+    selected: &mut usize,
+    keys: impl Iterator<Item = impl AsRef<str> + 'a>,
+    expected: &str,
+) -> bool {
+    let Some(index) = keys
+        .enumerate()
+        .find_map(|(index, key)| (key.as_ref() == expected).then_some(index))
+    else {
+        return false;
+    };
+    *selected = index;
+    true
+}
+
+fn commit_search_text(commit: &CommitEntry) -> String {
+    format!(
+        "{} {} {}",
+        commit.id,
+        author_initials(&commit.author_name),
+        commit_message_summary(commit)
+    )
+}
+
+fn commit_message_summary(commit: &CommitEntry) -> String {
+    if commit.summary.is_empty() {
+        commit
+            .message
+            .lines()
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_string()
+    } else {
+        commit.summary.clone()
+    }
+}
+
+fn author_initials(author_name: &str) -> String {
+    let words = author_name
+        .split(|ch: char| !ch.is_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .collect::<Vec<_>>();
+    let mut chars = if words.len() >= 2 {
+        words
+            .iter()
+            .filter_map(|word| word.chars().next())
+            .take(2)
+            .collect::<Vec<_>>()
+    } else {
+        author_name
+            .chars()
+            .filter(|ch| ch.is_alphanumeric())
+            .take(2)
+            .collect::<Vec<_>>()
+    };
+    while chars.len() < 2 {
+        chars.push('?');
+    }
+    chars
+        .into_iter()
+        .flat_map(char::to_uppercase)
+        .take(2)
+        .collect()
 }
 
 fn selected_branch_name(state: &AppState) -> Option<String> {

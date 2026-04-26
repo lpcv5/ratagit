@@ -44,6 +44,9 @@ Navigation rules:
 - all panel titles show numbered focus hints: `[1]..[6]`
 - top branch/focus/status summary is hidden to prioritize panels
 - bottom keys row is unframed and shows only Git operation shortcuts for the current focused panel
+- baseline navigation/search keys are intentionally omitted from normal bottom
+  shortcuts; while search input is active, the bottom row becomes
+  `search: <query>`
 - focused panels are indicated by a colored border/title accent, not by `*`
 - cursor rows are indicated by color only and only in the focused selectable panel
 - files selected for batch operations use a separate batch color
@@ -87,6 +90,10 @@ Files panel rules:
   - `Enter` discards tracked changes and removes selected untracked targets, `Esc` cancels
 - `v` enters visual multi-select at the current row; `j` / `k` extends or shrinks the selected range
 - `/` opens search input in the bottom bar; Enter confirms, Esc cancels or clears, `n` / `N` navigate matches
+- the same search model applies to Branches, Commits, Stash, and Commit Files,
+  scoped to the currently focused list or subpanel
+- search highlights the matching visible characters instead of styling the
+  whole row
 - `Enter` still toggles directory expand/collapse; hunk editing and partial-stage flow are explicitly deferred
 - details-diff side effects for high-frequency files navigation are debounced to keep `j` / `k` scrolling smooth
 - queued refresh/details work is coalesced so stale duplicate details commands do
@@ -122,6 +129,8 @@ Branches panel rules:
   - interactive rebase runs Git interactive rebase onto the selected branch
   - origin/main rebase rebases the current branch onto `origin/main`
   - dirty rebase uses the same explicit auto-stash confirmation as checkout
+- `/` searches branch names; confirming or navigating matches updates the
+  selected branch and refreshes Branches Details
 
 Commits panel rules:
 
@@ -150,6 +159,16 @@ Commits panel rules:
   - selecting a folder shows a combined diff for descendant files in that commit
   - `Esc` returns to the parent Commits panel and restores the selected commit diff
   - additional commit-files local shortcuts are deferred
+- `/` searches loaded commit rows by visible row identity: short hash, author
+  initials, and summary/message first line; confirming or navigating matches
+  refreshes Commits Details
+- inside Commit Files, `/` searches changed-file paths; confirming or
+  navigating matches refreshes the selected file/folder diff
+
+Stash panel rules:
+
+- `/` searches stash id plus summary and updates only the selected Stash row;
+  Stash Details remain a placeholder in this slice
 
 All features are keyboard-driven and deterministic.
 

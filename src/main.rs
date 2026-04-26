@@ -7,7 +7,7 @@ use crossterm::execute;
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
-use ratagit_core::{AppState, BranchDeleteMode, FileInputMode, PanelFocus, UiAction};
+use ratagit_core::{AppState, BranchDeleteMode, PanelFocus, UiAction};
 use ratagit_git::{GitBackend, HybridGitBackend, MockGitBackend, is_git_repo};
 use ratagit_harness::AsyncRuntime;
 use ratagit_observe::{ObserveConfig, init_observability};
@@ -240,14 +240,27 @@ fn ui_action_for_key(
         };
     }
 
-    if state.focus == PanelFocus::Files && state.files.mode == FileInputMode::SearchInput {
+    if search_input_is_current(state) {
         return match code {
-            KeyCode::Enter => Some(UiAction::ConfirmFileSearch),
-            KeyCode::Esc => Some(UiAction::CancelFileSearch),
-            KeyCode::Backspace => Some(UiAction::BackspaceFileSearch),
-            KeyCode::Char(ch) => Some(UiAction::InputFileSearchChar(ch)),
+            KeyCode::Enter => Some(UiAction::ConfirmSearch),
+            KeyCode::Esc => Some(UiAction::CancelSearch),
+            KeyCode::Backspace => Some(UiAction::BackspaceSearch),
+            KeyCode::Char(ch) => Some(UiAction::InputSearchChar(ch)),
             _ => None,
         };
+    }
+
+    if search_query_is_current(state) {
+        match code {
+            KeyCode::Char('n') => return Some(UiAction::NextSearchMatch),
+            KeyCode::Char('N') => return Some(UiAction::PrevSearchMatch),
+            KeyCode::Esc => return Some(UiAction::CancelSearch),
+            _ => {}
+        }
+    }
+
+    if state.active_search_scope().is_some() && code == KeyCode::Char('/') {
+        return Some(UiAction::StartSearch);
     }
 
     if state.focus == PanelFocus::Files {
@@ -256,10 +269,6 @@ fn ui_action_for_key(
             KeyCode::Enter => return Some(UiAction::ToggleSelectedDirectory),
             KeyCode::Char(' ') => return Some(UiAction::ToggleSelectedFileStage),
             KeyCode::Char('v') => return Some(UiAction::ToggleFilesMultiSelect),
-            KeyCode::Char('/') => return Some(UiAction::StartFileSearch),
-            KeyCode::Char('n') => return Some(UiAction::NextFileSearchMatch),
-            KeyCode::Char('N') => return Some(UiAction::PrevFileSearchMatch),
-            KeyCode::Esc => return Some(UiAction::CancelFileSearch),
             KeyCode::Char('c') => return Some(UiAction::OpenCommitEditor),
             KeyCode::Char('s') => return Some(UiAction::OpenStashEditor),
             KeyCode::Char('d') => return Some(UiAction::OpenDiscardConfirm),
@@ -336,6 +345,18 @@ fn ui_action_for_key(
     }
 }
 
+fn search_input_is_current(state: &AppState) -> bool {
+    state
+        .active_search_scope()
+        .is_some_and(|scope| state.search.is_input_active_for(scope))
+}
+
+fn search_query_is_current(state: &AppState) -> bool {
+    state
+        .active_search_scope()
+        .is_some_and(|scope| state.search.has_query_for(scope))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -401,25 +422,23 @@ mod tests {
     }
 
     #[test]
-    fn files_search_input_maps_text_until_confirm_or_escape() {
+    fn search_input_maps_text_until_confirm_or_escape() {
         let mut state = AppState::default();
-        state.files.mode = FileInputMode::SearchInput;
+        state.search.active = true;
+        state.search.scope = state.active_search_scope();
         assert_eq!(
             map_key(&state, KeyCode::Char('r')),
-            Some(UiAction::InputFileSearchChar('r'))
+            Some(UiAction::InputSearchChar('r'))
         );
         assert_eq!(
             map_key(&state, KeyCode::Char('D')),
-            Some(UiAction::InputFileSearchChar('D'))
+            Some(UiAction::InputSearchChar('D'))
         );
         assert_eq!(
             map_key(&state, KeyCode::Enter),
-            Some(UiAction::ConfirmFileSearch)
+            Some(UiAction::ConfirmSearch)
         );
-        assert_eq!(
-            map_key(&state, KeyCode::Esc),
-            Some(UiAction::CancelFileSearch)
-        );
+        assert_eq!(map_key(&state, KeyCode::Esc), Some(UiAction::CancelSearch));
     }
 
     #[test]
@@ -447,7 +466,7 @@ mod tests {
         );
         assert_eq!(
             map_key(&state, KeyCode::Char('/')),
-            Some(UiAction::StartFileSearch)
+            Some(UiAction::StartSearch)
         );
         assert_eq!(
             map_key(&state, KeyCode::Char('v')),
@@ -517,6 +536,11 @@ mod tests {
             map_key(&state, KeyCode::Esc),
             Some(UiAction::CloseCommitFilesPanel)
         );
+        state.search.active = true;
+        state.search.scope = state.active_search_scope();
+        state.search.query = "lib".to_string();
+        assert_eq!(map_key(&state, KeyCode::Esc), Some(UiAction::CancelSearch));
+        state.search.clear();
         assert_eq!(
             map_key(&state, KeyCode::Enter),
             Some(UiAction::ToggleCommitFilesDirectory)
@@ -539,7 +563,8 @@ mod tests {
     #[test]
     fn editor_mode_maps_keys_before_any_other_mode() {
         let mut state = active_commit_editor_state();
-        state.files.mode = FileInputMode::SearchInput;
+        state.search.active = true;
+        state.search.scope = state.active_search_scope();
 
         assert_eq!(
             map_key(&state, KeyCode::Enter),
