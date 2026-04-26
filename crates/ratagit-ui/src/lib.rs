@@ -1,4 +1,7 @@
-use ratagit_core::{AppState, BranchEntry, CommitEntry, FileEntry, PanelFocus, StashEntry};
+use ratagit_core::{
+    AppState, BranchEntry, CommitEntry, FileInputMode, FileRowKind, FileTreeRow, PanelFocus,
+    ScrollDirection, StashEntry, build_file_tree_rows, selected_row, selected_target_paths,
+};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -31,10 +34,7 @@ pub fn render(state: &AppState, size: TerminalSize) -> RenderedFrame {
     if body_height > 0 {
         lines.extend(render_workspace_rows(state, width, body_height));
     }
-    lines.push(pad_and_truncate(
-        shortcuts_for_focus(state.focus).to_string(),
-        width,
-    ));
+    lines.push(pad_and_truncate(shortcuts_for_state(state), width));
 
     normalize_lines(lines, TerminalSize { width, height })
 }
@@ -144,7 +144,7 @@ fn render_block_panel(
 }
 
 fn render_shortcuts(frame: &mut Frame<'_>, state: &AppState, area: Rect) {
-    let widget = Paragraph::new(shortcuts_for_focus(state.focus)).block(
+    let widget = Paragraph::new(shortcuts_for_state(state)).block(
         Block::default()
             .title(" Keys ")
             .borders(Borders::ALL)
@@ -307,11 +307,13 @@ fn panel_title(panel: PanelFocus) -> &'static str {
 }
 
 fn render_files_lines(state: &AppState, max_lines: usize) -> Vec<String> {
-    render_indexed_entries(
-        &state.files.items,
+    let rows = build_file_tree_rows(&state.files);
+    render_indexed_entries_with_direction(
+        &rows,
         state.files.selected,
+        state.files.last_scroll_direction,
         max_lines,
-        format_file_entry,
+        format_file_tree_row,
     )
 }
 
@@ -351,11 +353,21 @@ fn render_details_lines(state: &AppState, max_lines: usize) -> Vec<String> {
     lines.push(format!("  current={:?}", state.last_left_focus));
     match state.last_left_focus {
         PanelFocus::Files => {
-            if let Some(entry) = state.files.items.get(state.files.selected) {
-                lines.push(format!("  file={}", entry.path));
+            if let Some(row) = selected_row(&state.files) {
+                let target_count = selected_target_paths(&state.files).len();
+                lines.push(format!(
+                    "  {}={}",
+                    if row.kind == FileRowKind::Directory {
+                        "dir"
+                    } else {
+                        "file"
+                    },
+                    row.path
+                ));
+                lines.push(format!("  targets={target_count}"));
                 lines.push(format!(
                     "  staged={}",
-                    if entry.staged { "yes" } else { "no" }
+                    if row.staged { "yes" } else { "no" }
                 ));
             } else {
                 lines.push("  file=<empty>".to_string());
@@ -416,15 +428,42 @@ fn render_indexed_entries<T>(
     max_lines: usize,
     format_item: impl Fn(&T) -> String,
 ) -> Vec<String> {
+    render_indexed_entries_with_direction(
+        items,
+        selected,
+        ScrollDirection::Down,
+        max_lines,
+        format_item,
+    )
+}
+
+fn render_indexed_entries_with_direction<T>(
+    items: &[T],
+    selected: usize,
+    direction: ScrollDirection,
+    max_lines: usize,
+    format_item: impl Fn(&T) -> String,
+) -> Vec<String> {
+    const SCROLL_RESERVE: usize = 3;
+
     if max_lines == 0 {
         return Vec::new();
     }
     if items.is_empty() {
         return vec!["  <empty>".to_string()];
     }
+    let max_start = items.len().saturating_sub(max_lines);
+    let start = match direction {
+        ScrollDirection::Up => selected.saturating_sub(SCROLL_RESERVE),
+        ScrollDirection::Down => selected
+            .saturating_add(1 + SCROLL_RESERVE)
+            .saturating_sub(max_lines),
+    }
+    .min(max_start);
     items
         .iter()
         .enumerate()
+        .skip(start)
         .take(max_lines)
         .map(|(index, item)| {
             if index == selected {
@@ -436,13 +475,19 @@ fn render_indexed_entries<T>(
         .collect()
 }
 
-fn shortcuts_for_focus(focus: PanelFocus) -> &'static str {
-    match focus {
-        PanelFocus::Files => "keys(files): s stage | u unstage",
-        PanelFocus::Branches => "keys(branches): b create branch | o checkout",
-        PanelFocus::Commits => "keys(commits): c commit",
-        PanelFocus::Stash => "keys(stash): p stash push | O stash pop",
-        PanelFocus::Details | PanelFocus::Log => "",
+fn shortcuts_for_state(state: &AppState) -> String {
+    if state.focus == PanelFocus::Files && state.files.mode == FileInputMode::SearchInput {
+        return format!("search: {}", state.files.search_query);
+    }
+    match state.focus {
+        PanelFocus::Files => {
+            "keys(files): space stage/unstage | s stash | v multi | enter expand | / search"
+                .to_string()
+        }
+        PanelFocus::Branches => "keys(branches): b create branch | o checkout".to_string(),
+        PanelFocus::Commits => "keys(commits): c commit".to_string(),
+        PanelFocus::Stash => "keys(stash): p stash push | O stash pop".to_string(),
+        PanelFocus::Details | PanelFocus::Log => String::new(),
     }
 }
 
@@ -471,12 +516,27 @@ fn normalize_lines(mut lines: Vec<String>, size: TerminalSize) -> RenderedFrame 
     RenderedFrame { lines }
 }
 
-pub fn format_file_entry(entry: &FileEntry) -> String {
-    format!(
-        "{} {}",
-        if entry.staged { "[S]" } else { "[ ]" },
-        entry.path
-    )
+pub fn format_file_tree_row(row: &FileTreeRow) -> String {
+    let indent = "  ".repeat(row.depth);
+    let batch = if row.selected_for_batch { "*" } else { " " };
+    let matched = if row.matched { "!" } else { " " };
+    let body = match row.kind {
+        FileRowKind::Directory => {
+            let marker = if row.expanded { "[-]" } else { "[+]" };
+            format!("{marker} {}/", row.name)
+        }
+        FileRowKind::File => {
+            let marker = if row.untracked {
+                "[?]"
+            } else if row.staged {
+                "[S]"
+            } else {
+                "[ ]"
+            };
+            format!("{marker} {}", row.name)
+        }
+    };
+    format!("{batch}{matched}{indent}{body}")
 }
 
 pub fn format_commit_entry(entry: &CommitEntry) -> String {

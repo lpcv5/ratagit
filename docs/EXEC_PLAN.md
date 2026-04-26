@@ -2,32 +2,42 @@
 
 ## Goal
 
-Refine left-nav workspace layout:
+Complete the Files panel vertical slice:
 
-- left: Files, Branches, Commits, Stash
-- right: Details, Log
-- no top branch/focus/status summary
-- bottom: Git operation shortcuts for current focused panel only
+- render Git status entries as a deterministic file tree
+- support visible tree folder expand/collapse
+- support `space` stage/unstage toggling for current or selected targets
+- support `s` path-limited stash for current or selected targets
+- support `v` multi-select mode for batch operations
+- support `/` search input with `n` / `N` match navigation
+- implement backend-only discard plumbing for later confirmation UI
 
 ## Vertical Slice
 
 1. Core state/action update
-- keep existing `FocusNext` / `FocusPrev` state transitions
+- store files tree UI state in `AppState.files`
+- derive file tree rows only from `RepoSnapshot.files`
+- resolve folder operations to descendant files from the visible snapshot model
+- add search input state, match navigation, and multi-select selection state
 
-2. UI render projection
-- remove top branch/focus/status summary from text and ratatui renderers
-- render bottom shortcut bar from current focus with Git operations only
+2. Git command/backend layer
+- add batch stage, unstage, stash, and discard commands
+- stash selected files with `git stash push -u -- <paths>`
+- implement discard backend behavior without mapping `d` in the TUI yet
 
-3. App input mapping
-- map panel cycle to `h` / `l`
-- remove `Tab` / `Shift+Tab` panel navigation
-- keep existing Git action keys
+3. UI render and app input
+- render files as an indented tree with directory expansion markers
+- show untracked files distinctly
+- show multi-select and search-match markers deterministically
+- replace the shortcut bar with `search: <query>` while `/` input is active
 
 4. Tests
-- unit test for input mapping
-- snapshot tests for hidden top status and Git-operation-only shortcuts
-- harness scenario for current focused-panel Git shortcut visibility
+- unit tests for tree building, target resolution, search, and batch decisions
+- snapshot tests for tree, multi-select, and search input rendering
+- harness scenarios for expand/collapse, space toggle, multi-select stash, and search navigation
 
 5. Docs and quality gates
 - update `PRODUCT.md` and `DESIGN.md`
-- run `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, `cargo test`
+- run `cargo fmt`
+- run `cargo clippy --all-targets -- -D warnings`
+- run `cargo test`

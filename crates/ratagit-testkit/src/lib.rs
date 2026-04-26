@@ -24,14 +24,17 @@ pub fn fixture_dirty_repo() -> RepoSnapshot {
             FileEntry {
                 path: "src/main.rs".to_string(),
                 staged: true,
+                untracked: false,
             },
             FileEntry {
                 path: "src/lib.rs".to_string(),
                 staged: false,
+                untracked: false,
             },
             FileEntry {
                 path: "README.md".to_string(),
                 staged: false,
+                untracked: true,
             },
         ],
         commits: vec![
@@ -67,6 +70,7 @@ pub fn fixture_many_files() -> RepoSnapshot {
         .map(|index| FileEntry {
             path: format!("file-{index:02}.txt"),
             staged: index % 2 == 0,
+            untracked: false,
         })
         .collect();
     snapshot.status_summary = "staged: 15, unstaged: 15".to_string();
@@ -80,10 +84,12 @@ pub fn fixture_conflict() -> RepoSnapshot {
         FileEntry {
             path: "src/conflict.rs (both modified)".to_string(),
             staged: false,
+            untracked: false,
         },
         FileEntry {
             path: "Cargo.toml (both modified)".to_string(),
             staged: false,
+            untracked: false,
         },
     ];
     snapshot
@@ -95,10 +101,12 @@ pub fn fixture_unicode_paths() -> RepoSnapshot {
         FileEntry {
             path: "docs/你好.md".to_string(),
             staged: false,
+            untracked: false,
         },
         FileEntry {
             path: "assets/emoji-🙂.txt".to_string(),
             staged: true,
+            untracked: false,
         },
     ];
     snapshot.status_summary = "staged: 1, unstaged: 1".to_string();

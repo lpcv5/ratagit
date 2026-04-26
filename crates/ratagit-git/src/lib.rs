@@ -1,9 +1,13 @@
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 
+mod mock;
+
 use ratagit_core::{
     BranchEntry, Command, CommitEntry, FileEntry, GitResult, RepoSnapshot, StashEntry,
 };
+
+pub use mock::MockGitBackend;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GitError {
@@ -22,156 +26,57 @@ pub trait GitBackend {
     fn refresh_snapshot(&mut self) -> Result<RepoSnapshot, GitError>;
     fn stage_file(&mut self, path: &str) -> Result<(), GitError>;
     fn unstage_file(&mut self, path: &str) -> Result<(), GitError>;
+    fn stage_files(&mut self, paths: &[String]) -> Result<(), GitError> {
+        for path in paths {
+            self.stage_file(path)?;
+        }
+        Ok(())
+    }
+    fn unstage_files(&mut self, paths: &[String]) -> Result<(), GitError> {
+        for path in paths {
+            self.unstage_file(path)?;
+        }
+        Ok(())
+    }
     fn create_commit(&mut self, message: &str) -> Result<(), GitError>;
     fn create_branch(&mut self, name: &str) -> Result<(), GitError>;
     fn checkout_branch(&mut self, name: &str) -> Result<(), GitError>;
     fn stash_push(&mut self, message: &str) -> Result<(), GitError>;
+    fn stash_files(&mut self, message: &str, paths: &[String]) -> Result<(), GitError>;
     fn stash_pop(&mut self, stash_id: &str) -> Result<(), GitError>;
+    fn discard_files(&mut self, paths: &[String]) -> Result<(), GitError>;
 }
 
-#[derive(Debug, Clone)]
-pub struct MockGitBackend {
-    snapshot: RepoSnapshot,
-    operations: Vec<String>,
-    commit_sequence: u64,
-}
-
-impl MockGitBackend {
-    pub fn new(snapshot: RepoSnapshot) -> Self {
-        Self {
-            snapshot,
-            operations: Vec::new(),
-            commit_sequence: 1,
-        }
-    }
-
-    pub fn operations(&self) -> &[String] {
-        &self.operations
-    }
-
-    pub fn snapshot(&self) -> &RepoSnapshot {
-        &self.snapshot
-    }
-}
-
-impl GitBackend for MockGitBackend {
-    fn refresh_snapshot(&mut self) -> Result<RepoSnapshot, GitError> {
-        self.operations.push("refresh".to_string());
-        Ok(self.snapshot.clone())
-    }
-
-    fn stage_file(&mut self, path: &str) -> Result<(), GitError> {
-        self.operations.push(format!("stage:{path}"));
-        let entry = self
-            .snapshot
-            .files
-            .iter_mut()
-            .find(|entry| entry.path == path)
-            .ok_or_else(|| GitError::new(format!("file not found: {path}")))?;
-        entry.staged = true;
-        Ok(())
-    }
-
-    fn unstage_file(&mut self, path: &str) -> Result<(), GitError> {
-        self.operations.push(format!("unstage:{path}"));
-        let entry = self
-            .snapshot
-            .files
-            .iter_mut()
-            .find(|entry| entry.path == path)
-            .ok_or_else(|| GitError::new(format!("file not found: {path}")))?;
-        entry.staged = false;
-        Ok(())
-    }
-
-    fn create_commit(&mut self, message: &str) -> Result<(), GitError> {
-        self.operations.push(format!("commit:{message}"));
-        if message.trim().is_empty() {
-            return Err(GitError::new("commit message cannot be empty"));
-        }
-        self.snapshot.commits.insert(
-            0,
-            CommitEntry {
-                id: format!("mock-{:04}", self.commit_sequence),
-                summary: message.to_string(),
-            },
-        );
-        self.commit_sequence = self.commit_sequence.saturating_add(1);
-        self.snapshot.files.retain(|entry| !entry.staged);
-        Ok(())
-    }
-
-    fn create_branch(&mut self, name: &str) -> Result<(), GitError> {
-        self.operations.push(format!("create-branch:{name}"));
-        if self
-            .snapshot
-            .branches
-            .iter()
-            .any(|branch| branch.name == name)
-        {
-            return Err(GitError::new(format!("branch already exists: {name}")));
-        }
-        self.snapshot.branches.push(BranchEntry {
-            name: name.to_string(),
-            is_current: false,
-        });
-        Ok(())
-    }
-
-    fn checkout_branch(&mut self, name: &str) -> Result<(), GitError> {
-        self.operations.push(format!("checkout-branch:{name}"));
-        if !self
-            .snapshot
-            .branches
-            .iter()
-            .any(|branch| branch.name == name)
-        {
-            return Err(GitError::new(format!("branch not found: {name}")));
-        }
-        for branch in &mut self.snapshot.branches {
-            branch.is_current = branch.name == name;
-        }
-        self.snapshot.current_branch = name.to_string();
-        self.snapshot.detached_head = false;
-        Ok(())
-    }
-
-    fn stash_push(&mut self, message: &str) -> Result<(), GitError> {
-        self.operations.push(format!("stash-push:{message}"));
-        let clean_message = if message.trim().is_empty() {
-            "WIP".to_string()
-        } else {
-            message.to_string()
-        };
-        self.snapshot.stashes.insert(
-            0,
-            StashEntry {
-                id: "stash@{0}".to_string(),
-                summary: clean_message,
-            },
-        );
-        resequence_stashes(&mut self.snapshot.stashes);
-        Ok(())
-    }
-
-    fn stash_pop(&mut self, stash_id: &str) -> Result<(), GitError> {
-        self.operations.push(format!("stash-pop:{stash_id}"));
-        let index = self
-            .snapshot
-            .stashes
-            .iter()
-            .position(|entry| entry.id == stash_id)
-            .ok_or_else(|| GitError::new(format!("stash not found: {stash_id}")))?;
-        self.snapshot.stashes.remove(index);
-        resequence_stashes(&mut self.snapshot.stashes);
-        Ok(())
-    }
-}
-
-fn resequence_stashes(stashes: &mut [StashEntry]) {
+pub(crate) fn resequence_stashes(stashes: &mut [StashEntry]) {
     for (index, stash) in stashes.iter_mut().enumerate() {
         stash.id = format!("stash@{{{index}}}");
     }
+}
+
+fn remove_untracked_path(repo_path: &Path, relative_path: &str) -> Result<(), GitError> {
+    let target = repo_path.join(relative_path);
+    let repo = repo_path
+        .canonicalize()
+        .map_err(|err| GitError::new(format!("failed to resolve repo path: {err}")))?;
+    let parent = target
+        .parent()
+        .ok_or_else(|| GitError::new(format!("invalid path: {relative_path}")))?;
+    let resolved_parent = parent
+        .canonicalize()
+        .map_err(|err| GitError::new(format!("failed to resolve parent path: {err}")))?;
+    if !resolved_parent.starts_with(&repo) {
+        return Err(GitError::new(format!(
+            "refusing to remove path outside repo: {relative_path}"
+        )));
+    }
+    if target.is_dir() {
+        std::fs::remove_dir_all(&target)
+            .map_err(|err| GitError::new(format!("failed to remove {relative_path}: {err}")))?;
+    } else {
+        std::fs::remove_file(&target)
+            .map_err(|err| GitError::new(format!("failed to remove {relative_path}: {err}")))?;
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone)]
@@ -189,6 +94,21 @@ impl CliGitBackend {
     fn run_git(&self, args: &[&str]) -> Result<String, GitError> {
         let output = ProcessCommand::new("git")
             .args(args)
+            .current_dir(&self.repo_path)
+            .output()
+            .map_err(|err| GitError::new(format!("failed to start git {:?}: {err}", args)))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            return Err(GitError::new(format!("git {:?} failed: {}", args, stderr)));
+        }
+
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    }
+
+    fn run_git_owned(&self, args: Vec<String>) -> Result<String, GitError> {
+        let output = ProcessCommand::new("git")
+            .args(&args)
             .current_dir(&self.repo_path)
             .output()
             .map_err(|err| GitError::new(format!("failed to start git {:?}: {err}", args)))?;
@@ -235,6 +155,28 @@ impl GitBackend for CliGitBackend {
             .map(|_| ())
     }
 
+    fn stage_files(&mut self, paths: &[String]) -> Result<(), GitError> {
+        if paths.is_empty() {
+            return Ok(());
+        }
+        let mut args = vec!["add".to_string(), "--".to_string()];
+        args.extend(paths.iter().cloned());
+        self.run_git_owned(args).map(|_| ())
+    }
+
+    fn unstage_files(&mut self, paths: &[String]) -> Result<(), GitError> {
+        if paths.is_empty() {
+            return Ok(());
+        }
+        let mut args = vec![
+            "restore".to_string(),
+            "--staged".to_string(),
+            "--".to_string(),
+        ];
+        args.extend(paths.iter().cloned());
+        self.run_git_owned(args).map(|_| ())
+    }
+
     fn create_commit(&mut self, message: &str) -> Result<(), GitError> {
         self.run_git(&["commit", "-m", message]).map(|_| ())
     }
@@ -255,8 +197,36 @@ impl GitBackend for CliGitBackend {
         }
     }
 
+    fn stash_files(&mut self, message: &str, paths: &[String]) -> Result<(), GitError> {
+        if paths.is_empty() {
+            return Ok(());
+        }
+        let mut args = vec!["stash".to_string(), "push".to_string(), "-u".to_string()];
+        if !message.trim().is_empty() {
+            args.push("-m".to_string());
+            args.push(message.to_string());
+        }
+        args.push("--".to_string());
+        args.extend(paths.iter().cloned());
+        self.run_git_owned(args).map(|_| ())
+    }
+
     fn stash_pop(&mut self, stash_id: &str) -> Result<(), GitError> {
         self.run_git(&["stash", "pop", stash_id]).map(|_| ())
+    }
+
+    fn discard_files(&mut self, paths: &[String]) -> Result<(), GitError> {
+        for path in paths {
+            if self
+                .run_git(&["ls-files", "--error-unmatch", "--", path])
+                .is_ok()
+            {
+                self.run_git(&["restore", "--staged", "--worktree", "--", path])?;
+            } else {
+                remove_untracked_path(&self.repo_path, path)?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -268,13 +238,24 @@ pub fn execute_command(backend: &mut dyn GitBackend, command: Command) -> GitRes
                 error: error.message,
             },
         },
-        Command::StageFile { path } => GitResult::StageFile {
-            path: path.clone(),
-            result: backend.stage_file(&path).map_err(|error| error.message),
+        Command::StageFiles { paths } => GitResult::StageFiles {
+            paths: paths.clone(),
+            result: backend.stage_files(&paths).map_err(|error| error.message),
         },
-        Command::UnstageFile { path } => GitResult::UnstageFile {
-            path: path.clone(),
-            result: backend.unstage_file(&path).map_err(|error| error.message),
+        Command::UnstageFiles { paths } => GitResult::UnstageFiles {
+            paths: paths.clone(),
+            result: backend.unstage_files(&paths).map_err(|error| error.message),
+        },
+        Command::StashFiles { message, paths } => GitResult::StashFiles {
+            message: message.clone(),
+            paths: paths.clone(),
+            result: backend
+                .stash_files(&message, &paths)
+                .map_err(|error| error.message),
+        },
+        Command::DiscardFiles { paths } => GitResult::DiscardFiles {
+            paths: paths.clone(),
+            result: backend.discard_files(&paths).map_err(|error| error.message),
         },
         Command::CreateCommit { message } => GitResult::CreateCommit {
             message: message.clone(),
@@ -325,7 +306,8 @@ fn parse_status_output(output: &str) -> (String, bool, String, Vec<FileEntry>) {
 
         let status_code = line.get(0..2).unwrap_or("  ");
         let path = line.get(3..).unwrap_or("").trim().to_string();
-        let is_staged = status_code.chars().next().unwrap_or(' ') != ' ';
+        let is_untracked = status_code == "??";
+        let is_staged = !is_untracked && status_code.chars().next().unwrap_or(' ') != ' ';
         if is_staged {
             staged = staged.saturating_add(1);
         } else {
@@ -334,6 +316,7 @@ fn parse_status_output(output: &str) -> (String, bool, String, Vec<FileEntry>) {
         files.push(FileEntry {
             path,
             staged: is_staged,
+            untracked: is_untracked,
         });
     }
 
@@ -412,6 +395,7 @@ mod tests {
             files: vec![FileEntry {
                 path: "a.txt".to_string(),
                 staged: false,
+                untracked: false,
             }],
             commits: Vec::new(),
             branches: vec![BranchEntry {
@@ -444,14 +428,16 @@ mod tests {
 
     #[test]
     fn parse_status_output_extracts_branch_and_files() {
-        let output = "## main...origin/main\n M src/lib.rs\nA  src/app.rs\n";
+        let output = "## main...origin/main\n M src/lib.rs\nA  src/app.rs\n?? notes.txt\n";
         let (branch, detached, summary, files) = parse_status_output(output);
         assert_eq!(branch, "main");
         assert!(!detached);
-        assert_eq!(summary, "staged: 1, unstaged: 1");
-        assert_eq!(files.len(), 2);
+        assert_eq!(summary, "staged: 1, unstaged: 2");
+        assert_eq!(files.len(), 3);
         assert!(!files[0].staged);
         assert!(files[1].staged);
+        assert!(!files[0].untracked);
+        assert!(files[2].untracked);
     }
 
     #[test]

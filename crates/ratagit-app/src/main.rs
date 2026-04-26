@@ -7,7 +7,7 @@ use crossterm::execute;
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
-use ratagit_core::{AppState, PanelFocus, UiAction};
+use ratagit_core::{AppState, FileInputMode, PanelFocus, UiAction};
 use ratagit_git::{CliGitBackend, GitBackend, MockGitBackend, is_git_repo};
 use ratagit_harness::Runtime;
 use ratagit_observe::{ObserveConfig, init_observability};
@@ -54,7 +54,7 @@ fn run_tui() -> Result<(), Box<dyn Error>> {
             KeyCode::Char('q') => break,
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => break,
             _ => {
-                if let Some(action) = ui_action_for_key(key.code) {
+                if let Some(action) = ui_action_for_key(runtime.state(), key.code) {
                     runtime.dispatch_ui(action);
                 }
             }
@@ -65,7 +65,37 @@ fn run_tui() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn ui_action_for_key(code: KeyCode) -> Option<UiAction> {
+fn ui_action_for_key(state: &AppState, code: KeyCode) -> Option<UiAction> {
+    if state.focus == PanelFocus::Files && state.files.mode == FileInputMode::SearchInput {
+        return match code {
+            KeyCode::Enter => Some(UiAction::ConfirmFileSearch),
+            KeyCode::Esc => Some(UiAction::CancelFileSearch),
+            KeyCode::Backspace => Some(UiAction::BackspaceFileSearch),
+            KeyCode::Char(ch) => Some(UiAction::InputFileSearchChar(ch)),
+            _ => None,
+        };
+    }
+
+    if state.focus == PanelFocus::Files {
+        match code {
+            KeyCode::Enter => return Some(UiAction::ToggleSelectedDirectory),
+            KeyCode::Char(' ') => return Some(UiAction::ToggleSelectedFileStage),
+            KeyCode::Char('v') => {
+                return if state.files.mode == FileInputMode::MultiSelect {
+                    Some(UiAction::ToggleCurrentFileSelection)
+                } else {
+                    Some(UiAction::ToggleFilesMultiSelect)
+                };
+            }
+            KeyCode::Char('/') => return Some(UiAction::StartFileSearch),
+            KeyCode::Char('n') => return Some(UiAction::NextFileSearchMatch),
+            KeyCode::Char('N') => return Some(UiAction::PrevFileSearchMatch),
+            KeyCode::Esc => return Some(UiAction::CancelFileSearch),
+            KeyCode::Char('s') => return Some(UiAction::StashSelectedFiles),
+            _ => {}
+        }
+    }
+
     match code {
         KeyCode::Char('r') => Some(UiAction::RefreshAll),
         KeyCode::Char('l') => Some(UiAction::FocusNext),
@@ -90,8 +120,6 @@ fn ui_action_for_key(code: KeyCode) -> Option<UiAction> {
         KeyCode::Char('6') => Some(UiAction::FocusPanel {
             panel: PanelFocus::Log,
         }),
-        KeyCode::Char('s') => Some(UiAction::StageSelectedFile),
-        KeyCode::Char('u') => Some(UiAction::UnstageSelectedFile),
         KeyCode::Char('c') => Some(UiAction::CreateCommit {
             message: "mvp commit".to_string(),
         }),
@@ -114,16 +142,35 @@ mod tests {
 
     #[test]
     fn panel_navigation_uses_h_and_l_not_tab() {
+        let state = AppState::default();
         assert_eq!(
-            ui_action_for_key(KeyCode::Char('l')),
+            ui_action_for_key(&state, KeyCode::Char('l')),
             Some(UiAction::FocusNext)
         );
         assert_eq!(
-            ui_action_for_key(KeyCode::Char('h')),
+            ui_action_for_key(&state, KeyCode::Char('h')),
             Some(UiAction::FocusPrev)
         );
-        assert_eq!(ui_action_for_key(KeyCode::Tab), None);
-        assert_eq!(ui_action_for_key(KeyCode::BackTab), None);
+        assert_eq!(ui_action_for_key(&state, KeyCode::Tab), None);
+        assert_eq!(ui_action_for_key(&state, KeyCode::BackTab), None);
+    }
+
+    #[test]
+    fn files_search_input_maps_text_until_confirm_or_escape() {
+        let mut state = AppState::default();
+        state.files.mode = FileInputMode::SearchInput;
+        assert_eq!(
+            ui_action_for_key(&state, KeyCode::Char('r')),
+            Some(UiAction::InputFileSearchChar('r'))
+        );
+        assert_eq!(
+            ui_action_for_key(&state, KeyCode::Enter),
+            Some(UiAction::ConfirmFileSearch)
+        );
+        assert_eq!(
+            ui_action_for_key(&state, KeyCode::Esc),
+            Some(UiAction::CancelFileSearch)
+        );
     }
 }
 
@@ -169,6 +216,20 @@ impl GitBackend for AppBackend {
         }
     }
 
+    fn stage_files(&mut self, paths: &[String]) -> Result<(), ratagit_git::GitError> {
+        match self {
+            Self::Cli(inner) => inner.stage_files(paths),
+            Self::Mock(inner) => inner.stage_files(paths),
+        }
+    }
+
+    fn unstage_files(&mut self, paths: &[String]) -> Result<(), ratagit_git::GitError> {
+        match self {
+            Self::Cli(inner) => inner.unstage_files(paths),
+            Self::Mock(inner) => inner.unstage_files(paths),
+        }
+    }
+
     fn create_commit(&mut self, message: &str) -> Result<(), ratagit_git::GitError> {
         match self {
             Self::Cli(inner) => inner.create_commit(message),
@@ -197,10 +258,28 @@ impl GitBackend for AppBackend {
         }
     }
 
+    fn stash_files(
+        &mut self,
+        message: &str,
+        paths: &[String],
+    ) -> Result<(), ratagit_git::GitError> {
+        match self {
+            Self::Cli(inner) => inner.stash_files(message, paths),
+            Self::Mock(inner) => inner.stash_files(message, paths),
+        }
+    }
+
     fn stash_pop(&mut self, stash_id: &str) -> Result<(), ratagit_git::GitError> {
         match self {
             Self::Cli(inner) => inner.stash_pop(stash_id),
             Self::Mock(inner) => inner.stash_pop(stash_id),
+        }
+    }
+
+    fn discard_files(&mut self, paths: &[String]) -> Result<(), ratagit_git::GitError> {
+        match self {
+            Self::Cli(inner) => inner.discard_files(paths),
+            Self::Mock(inner) => inner.discard_files(paths),
         }
     }
 }

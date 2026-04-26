@@ -1,6 +1,7 @@
 use ratagit_core::{Action, AppState, GitResult, PanelFocus, UiAction, update};
 use ratagit_testkit::{
-    fixture_conflict, fixture_dirty_repo, fixture_empty_repo, fixture_unicode_paths,
+    fixture_conflict, fixture_dirty_repo, fixture_empty_repo, fixture_many_files,
+    fixture_unicode_paths,
 };
 use ratagit_ui::{TerminalSize, render, render_terminal};
 use ratatui::Terminal;
@@ -51,6 +52,10 @@ fn snapshots_dirty_repo_100x30() {
     assert!(text.contains("[Stash]"));
     assert!(text.contains("[Details]"));
     assert!(text.contains("[Log]"));
+    assert!(text.contains("[-] src/"));
+    assert!(text.contains("[S] main.rs"));
+    assert!(text.contains("[ ] lib.rs"));
+    assert!(text.contains("[?] README.md"));
 }
 
 #[test]
@@ -109,6 +114,108 @@ fn snapshots_shortcuts_follow_current_focus() {
 }
 
 #[test]
+fn snapshots_files_search_input_replaces_shortcut_bar() {
+    let mut state = AppState::default();
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::Refreshed(fixture_dirty_repo())),
+    );
+    assert!(commands.is_empty());
+    update(&mut state, Action::Ui(UiAction::StartFileSearch));
+    update(&mut state, Action::Ui(UiAction::InputFileSearchChar('l')));
+    update(&mut state, Action::Ui(UiAction::InputFileSearchChar('i')));
+
+    let text = render(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    )
+    .as_text();
+    assert!(text.contains("search: li"));
+    assert!(!text.contains("keys(files):"));
+}
+
+#[test]
+fn snapshots_files_multi_select_marks_selected_rows() {
+    let mut state = AppState::default();
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::Refreshed(fixture_dirty_repo())),
+    );
+    assert!(commands.is_empty());
+    update(&mut state, Action::Ui(UiAction::ToggleFilesMultiSelect));
+
+    let text = render(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    )
+    .as_text();
+    assert!(text.contains("> * [?] README.md"));
+}
+
+#[test]
+fn snapshots_files_list_scrolls_to_keep_selection_visible() {
+    let mut state = AppState::default();
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::Refreshed(fixture_many_files())),
+    );
+    assert!(commands.is_empty());
+    for _ in 0..20 {
+        update(&mut state, Action::Ui(UiAction::MoveDown));
+    }
+
+    let text = render(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    )
+    .as_text();
+    assert!(text.contains("    [S] file-16.txt"));
+    assert!(text.contains("    [ ] file-17.txt"));
+    assert!(text.contains(">   [S] file-20.txt"));
+    assert!(text.contains("[ ] file-23.txt"));
+    assert!(!text.contains("file-24.txt"));
+    assert!(!text.contains("file-00.txt"));
+}
+
+#[test]
+fn snapshots_files_list_scrolls_up_with_top_reserve() {
+    let mut state = AppState::default();
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::Refreshed(fixture_many_files())),
+    );
+    assert!(commands.is_empty());
+    for _ in 0..25 {
+        update(&mut state, Action::Ui(UiAction::MoveDown));
+    }
+    for _ in 0..5 {
+        update(&mut state, Action::Ui(UiAction::MoveUp));
+    }
+
+    let text = render(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    )
+    .as_text();
+    assert!(!text.contains("file-16.txt"));
+    assert!(text.contains("    [ ] file-17.txt"));
+    assert!(text.contains(">   [S] file-20.txt"));
+    assert!(text.contains("[S] file-24.txt"));
+}
+
+#[test]
 fn terminal_render_uses_real_panel_blocks() {
     let mut state = AppState::default();
     let commands = update(
@@ -128,5 +235,5 @@ fn terminal_render_uses_real_panel_blocks() {
     assert!(buffer.contains("Branches"));
     assert!(buffer.contains("Details"));
     assert!(buffer.contains("Keys"));
-    assert!(buffer.contains("src/main.rs"));
+    assert!(buffer.contains("main.rs"));
 }

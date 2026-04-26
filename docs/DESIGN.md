@@ -27,6 +27,17 @@ Focus model:
 - Backend output re-enters `update()` as `GitResult`.
 - UI rendering reads only `AppState`.
 
+Files panel interaction:
+
+- `AppState.files` stores tree expansion, visible-row selection, multi-select rows, and search state.
+- File tree rows are derived from `RepoSnapshot.files`; no UI code reads external state.
+- Directories are display targets only and resolve to descendant files from the current snapshot.
+- `space` toggles stage state for the current target or selected batch.
+- `s` stashes the current target or selected batch through path-limited Git commands.
+- `v` enters multi-select mode and toggles row membership.
+- `/` switches the bottom keys area into search input until Enter or Esc.
+- `d` discard is intentionally not mapped to input until the reusable confirmation dialog exists.
+
 ---
 
 ## Error Presentation

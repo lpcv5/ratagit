@@ -1,158 +1,19 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PanelFocus {
-    Files,
-    Branches,
-    Commits,
-    Stash,
-    Details,
-    Log,
-}
+mod files;
+mod state;
 
-impl PanelFocus {
-    pub fn next_left(self) -> Self {
-        match self {
-            Self::Files => Self::Branches,
-            Self::Branches => Self::Commits,
-            Self::Commits => Self::Stash,
-            Self::Stash => Self::Files,
-            Self::Details | Self::Log => Self::Files,
-        }
-    }
-
-    pub fn prev_left(self) -> Self {
-        match self {
-            Self::Files => Self::Stash,
-            Self::Branches => Self::Files,
-            Self::Commits => Self::Branches,
-            Self::Stash => Self::Commits,
-            Self::Details | Self::Log => Self::Stash,
-        }
-    }
-
-    pub fn is_left_panel(self) -> bool {
-        matches!(
-            self,
-            Self::Files | Self::Branches | Self::Commits | Self::Stash
-        )
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FileEntry {
-    pub path: String,
-    pub staged: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CommitEntry {
-    pub id: String,
-    pub summary: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BranchEntry {
-    pub name: String,
-    pub is_current: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StashEntry {
-    pub id: String,
-    pub summary: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RepoSnapshot {
-    pub status_summary: String,
-    pub current_branch: String,
-    pub detached_head: bool,
-    pub files: Vec<FileEntry>,
-    pub commits: Vec<CommitEntry>,
-    pub branches: Vec<BranchEntry>,
-    pub stashes: Vec<StashEntry>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StatusPanelState {
-    pub summary: String,
-    pub current_branch: String,
-    pub detached_head: bool,
-    pub refresh_count: u64,
-    pub last_error: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FilesPanelState {
-    pub items: Vec<FileEntry>,
-    pub selected: usize,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CommitsPanelState {
-    pub items: Vec<CommitEntry>,
-    pub selected: usize,
-    pub draft_message: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BranchesPanelState {
-    pub items: Vec<BranchEntry>,
-    pub selected: usize,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StashPanelState {
-    pub items: Vec<StashEntry>,
-    pub selected: usize,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AppState {
-    pub focus: PanelFocus,
-    pub last_left_focus: PanelFocus,
-    pub status: StatusPanelState,
-    pub files: FilesPanelState,
-    pub commits: CommitsPanelState,
-    pub branches: BranchesPanelState,
-    pub stash: StashPanelState,
-    pub notices: Vec<String>,
-    pub last_operation: Option<String>,
-}
-
-impl Default for AppState {
-    fn default() -> Self {
-        Self {
-            focus: PanelFocus::Files,
-            last_left_focus: PanelFocus::Files,
-            status: StatusPanelState {
-                summary: "No data yet".to_string(),
-                current_branch: "unknown".to_string(),
-                detached_head: false,
-                refresh_count: 0,
-                last_error: None,
-            },
-            files: FilesPanelState {
-                items: Vec::new(),
-                selected: 0,
-            },
-            commits: CommitsPanelState {
-                items: Vec::new(),
-                selected: 0,
-                draft_message: String::new(),
-            },
-            branches: BranchesPanelState {
-                items: Vec::new(),
-                selected: 0,
-            },
-            stash: StashPanelState {
-                items: Vec::new(),
-                selected: 0,
-            },
-            notices: vec!["Ready".to_string()],
-            last_operation: None,
-        }
-    }
-}
+pub use files::{
+    FileEntry, FileInputMode, FileRowKind, FileTreeRow, FilesPanelState, ScrollDirection,
+    build_file_tree_rows, cancel_search as cancel_file_search,
+    clamp_selected as clamp_file_selection, collect_directories,
+    confirm_search as confirm_file_search, enter_multi_select, initialize_tree_if_needed,
+    jump_search_match, leave_multi_select, move_selected, pop_search_char, push_search_char,
+    reconcile_after_items_changed, selected_row, selected_target_paths,
+    start_search as start_file_search, toggle_current_row_selection, toggle_selected_directory,
+};
+pub use state::{
+    AppState, BranchEntry, BranchesPanelState, CommitEntry, CommitsPanelState, PanelFocus,
+    RepoSnapshot, StashEntry, StashPanelState, StatusPanelState,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UiAction {
@@ -162,8 +23,20 @@ pub enum UiAction {
     FocusPanel { panel: PanelFocus },
     MoveUp,
     MoveDown,
+    ToggleSelectedDirectory,
+    ToggleSelectedFileStage,
+    ToggleFilesMultiSelect,
+    ToggleCurrentFileSelection,
+    StartFileSearch,
+    InputFileSearchChar(char),
+    BackspaceFileSearch,
+    ConfirmFileSearch,
+    CancelFileSearch,
+    NextFileSearchMatch,
+    PrevFileSearchMatch,
     StageSelectedFile,
     UnstageSelectedFile,
+    StashSelectedFiles,
     CreateCommit { message: String },
     CreateBranch { name: String },
     CheckoutSelectedBranch,
@@ -177,12 +50,21 @@ pub enum GitResult {
     RefreshFailed {
         error: String,
     },
-    StageFile {
-        path: String,
+    StageFiles {
+        paths: Vec<String>,
         result: Result<(), String>,
     },
-    UnstageFile {
-        path: String,
+    UnstageFiles {
+        paths: Vec<String>,
+        result: Result<(), String>,
+    },
+    StashFiles {
+        message: String,
+        paths: Vec<String>,
+        result: Result<(), String>,
+    },
+    DiscardFiles {
+        paths: Vec<String>,
         result: Result<(), String>,
     },
     CreateCommit {
@@ -216,8 +98,10 @@ pub enum Action {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     RefreshAll,
-    StageFile { path: String },
-    UnstageFile { path: String },
+    StageFiles { paths: Vec<String> },
+    UnstageFiles { paths: Vec<String> },
+    StashFiles { message: String, paths: Vec<String> },
+    DiscardFiles { paths: Vec<String> },
     CreateCommit { message: String },
     CreateBranch { name: String },
     CheckoutBranch { name: String },
@@ -260,20 +144,108 @@ fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
             move_selection(state, false);
             Vec::new()
         }
+        UiAction::ToggleSelectedDirectory => {
+            if !toggle_selected_directory(&mut state.files) {
+                push_notice(state, "Selected file is not a directory");
+            }
+            Vec::new()
+        }
+        UiAction::ToggleSelectedFileStage => {
+            let paths = selected_target_paths(&state.files);
+            if paths.is_empty() {
+                push_notice(state, "No file selected");
+                return Vec::new();
+            }
+            if selected_targets_are_all_staged(state, &paths) {
+                vec![Command::UnstageFiles { paths }]
+            } else {
+                let unstaged_paths = paths
+                    .into_iter()
+                    .filter(|path| file_staged(state, path) == Some(false))
+                    .collect::<Vec<_>>();
+                vec![Command::StageFiles {
+                    paths: unstaged_paths,
+                }]
+            }
+        }
+        UiAction::ToggleFilesMultiSelect => {
+            if state.files.mode == FileInputMode::MultiSelect {
+                leave_multi_select(&mut state.files);
+            } else {
+                enter_multi_select(&mut state.files);
+            }
+            Vec::new()
+        }
+        UiAction::ToggleCurrentFileSelection => {
+            toggle_current_row_selection(&mut state.files);
+            Vec::new()
+        }
+        UiAction::StartFileSearch => {
+            start_file_search(&mut state.files);
+            Vec::new()
+        }
+        UiAction::InputFileSearchChar(ch) => {
+            push_search_char(&mut state.files, ch);
+            Vec::new()
+        }
+        UiAction::BackspaceFileSearch => {
+            pop_search_char(&mut state.files);
+            Vec::new()
+        }
+        UiAction::ConfirmFileSearch => {
+            confirm_file_search(&mut state.files);
+            Vec::new()
+        }
+        UiAction::CancelFileSearch => {
+            if state.files.mode == FileInputMode::MultiSelect {
+                leave_multi_select(&mut state.files);
+            } else {
+                cancel_file_search(&mut state.files);
+            }
+            Vec::new()
+        }
+        UiAction::NextFileSearchMatch => {
+            jump_search_match(&mut state.files, false);
+            Vec::new()
+        }
+        UiAction::PrevFileSearchMatch => {
+            jump_search_match(&mut state.files, true);
+            Vec::new()
+        }
         UiAction::StageSelectedFile => {
-            if let Some(path) = selected_file_path(state, false) {
-                vec![Command::StageFile { path }]
+            let paths = selected_target_paths(&state.files)
+                .into_iter()
+                .filter(|path| file_staged(state, path) == Some(false))
+                .collect::<Vec<_>>();
+            if !paths.is_empty() {
+                vec![Command::StageFiles { paths }]
             } else {
                 push_notice(state, "No unstaged file selected");
                 Vec::new()
             }
         }
         UiAction::UnstageSelectedFile => {
-            if let Some(path) = selected_file_path(state, true) {
-                vec![Command::UnstageFile { path }]
+            let paths = selected_target_paths(&state.files)
+                .into_iter()
+                .filter(|path| file_staged(state, path) == Some(true))
+                .collect::<Vec<_>>();
+            if !paths.is_empty() {
+                vec![Command::UnstageFiles { paths }]
             } else {
                 push_notice(state, "No staged file selected");
                 Vec::new()
+            }
+        }
+        UiAction::StashSelectedFiles => {
+            let paths = selected_target_paths(&state.files);
+            if paths.is_empty() {
+                push_notice(state, "No file selected");
+                Vec::new()
+            } else {
+                vec![Command::StashFiles {
+                    message: "savepoint".to_string(),
+                    paths,
+                }]
             }
         }
         UiAction::CreateCommit { message } => {
@@ -314,19 +286,37 @@ fn update_git_result(state: &mut AppState, result: GitResult) -> Vec<Command> {
             push_notice(state, &format!("Failed to refresh: {error}"));
             Vec::new()
         }
-        GitResult::StageFile { path, result } => handle_operation_result(
+        GitResult::StageFiles { paths, result } => handle_operation_result(
             state,
             result,
             "stage",
-            format!("Staged {path}"),
-            format!("Failed to stage {path}"),
+            format!("Staged {}", format_paths(&paths)),
+            format!("Failed to stage {}", format_paths(&paths)),
         ),
-        GitResult::UnstageFile { path, result } => handle_operation_result(
+        GitResult::UnstageFiles { paths, result } => handle_operation_result(
             state,
             result,
             "unstage",
-            format!("Unstaged {path}"),
-            format!("Failed to unstage {path}"),
+            format!("Unstaged {}", format_paths(&paths)),
+            format!("Failed to unstage {}", format_paths(&paths)),
+        ),
+        GitResult::StashFiles {
+            message,
+            paths,
+            result,
+        } => handle_operation_result(
+            state,
+            result,
+            "stash_files",
+            format!("Stashed {}: {message}", format_paths(&paths)),
+            format!("Failed to stash {}", format_paths(&paths)),
+        ),
+        GitResult::DiscardFiles { paths, result } => handle_operation_result(
+            state,
+            result,
+            "discard_files",
+            format!("Discarded {}", format_paths(&paths)),
+            format!("Failed to discard {}", format_paths(&paths)),
         ),
         GitResult::CreateCommit { message, result } => handle_operation_result(
             state,
@@ -395,6 +385,8 @@ fn apply_snapshot(state: &mut AppState, snapshot: RepoSnapshot) {
     state.status.current_branch = snapshot.current_branch;
     state.status.detached_head = snapshot.detached_head;
     state.files.items = snapshot.files;
+    initialize_tree_if_needed(&mut state.files);
+    reconcile_after_items_changed(&mut state.files);
     state.commits.items = snapshot.commits;
     state.branches.items = snapshot.branches;
     state.stash.items = snapshot.stashes;
@@ -402,7 +394,7 @@ fn apply_snapshot(state: &mut AppState, snapshot: RepoSnapshot) {
 }
 
 fn clamp_selection_indexes(state: &mut AppState) {
-    state.files.selected = clamp_index(state.files.selected, state.files.items.len());
+    clamp_file_selection(&mut state.files);
     state.commits.selected = clamp_index(state.commits.selected, state.commits.items.len());
     state.branches.selected = clamp_index(state.branches.selected, state.branches.items.len());
     state.stash.selected = clamp_index(state.stash.selected, state.stash.items.len());
@@ -415,7 +407,7 @@ fn clamp_index(index: usize, len: usize) -> usize {
 fn move_selection(state: &mut AppState, move_up: bool) {
     match state.focus {
         PanelFocus::Files => {
-            move_index(&mut state.files.selected, state.files.items.len(), move_up)
+            move_selected(&mut state.files, move_up);
         }
         PanelFocus::Branches => move_index(
             &mut state.branches.selected,
@@ -446,18 +438,28 @@ fn move_index(selected: &mut usize, len: usize, move_up: bool) {
     }
 }
 
-fn selected_file_path(state: &AppState, staged: bool) -> Option<String> {
+fn selected_targets_are_all_staged(state: &AppState, paths: &[String]) -> bool {
+    !paths.is_empty()
+        && paths
+            .iter()
+            .all(|path| file_staged(state, path).unwrap_or(false))
+}
+
+fn file_staged(state: &AppState, path: &str) -> Option<bool> {
     state
         .files
         .items
-        .get(state.files.selected)
-        .and_then(|entry| {
-            if entry.staged == staged {
-                Some(entry.path.clone())
-            } else {
-                None
-            }
-        })
+        .iter()
+        .find(|entry| entry.path == path)
+        .map(|entry| entry.staged)
+}
+
+fn format_paths(paths: &[String]) -> String {
+    match paths {
+        [] => "<none>".to_string(),
+        [only] => only.clone(),
+        _ => format!("{} files", paths.len()),
+    }
 }
 
 fn selected_branch_name(state: &AppState) -> Option<String> {
@@ -481,155 +483,5 @@ fn push_notice(state: &mut AppState, message: &str) {
     if state.notices.len() > 10 {
         let keep_from = state.notices.len() - 10;
         state.notices.drain(0..keep_from);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn refresh_action_emits_refresh_command() {
-        let mut state = AppState::default();
-        let commands = update(&mut state, Action::Ui(UiAction::RefreshAll));
-        assert_eq!(commands, vec![Command::RefreshAll]);
-    }
-
-    #[test]
-    fn stage_selected_file_emits_stage_command() {
-        let mut state = AppState {
-            focus: PanelFocus::Files,
-            ..AppState::default()
-        };
-        state.files.items = vec![
-            FileEntry {
-                path: "a.txt".to_string(),
-                staged: false,
-            },
-            FileEntry {
-                path: "b.txt".to_string(),
-                staged: false,
-            },
-        ];
-        state.files.selected = 1;
-        let commands = update(&mut state, Action::Ui(UiAction::StageSelectedFile));
-        assert_eq!(
-            commands,
-            vec![Command::StageFile {
-                path: "b.txt".to_string()
-            }]
-        );
-    }
-
-    #[test]
-    fn refreshed_snapshot_updates_state_and_clamps_indexes() {
-        let mut state = AppState::default();
-        state.files.selected = 99;
-        let snapshot = RepoSnapshot {
-            status_summary: "dirty".to_string(),
-            current_branch: "main".to_string(),
-            detached_head: false,
-            files: vec![FileEntry {
-                path: "only.txt".to_string(),
-                staged: true,
-            }],
-            commits: vec![],
-            branches: vec![],
-            stashes: vec![],
-        };
-        let commands = update(
-            &mut state,
-            Action::GitResult(GitResult::Refreshed(snapshot)),
-        );
-        assert!(commands.is_empty());
-        assert_eq!(state.status.summary, "dirty");
-        assert_eq!(state.files.selected, 0);
-        assert_eq!(state.status.refresh_count, 1);
-    }
-
-    #[test]
-    fn failed_git_result_is_visible_in_state() {
-        let mut state = AppState::default();
-        let commands = update(
-            &mut state,
-            Action::GitResult(GitResult::CreateCommit {
-                message: "wip".to_string(),
-                result: Err("nothing staged".to_string()),
-            }),
-        );
-        assert!(commands.is_empty());
-        assert!(
-            state
-                .status
-                .last_error
-                .as_ref()
-                .expect("error should be stored")
-                .contains("nothing staged")
-        );
-    }
-
-    #[test]
-    fn focus_next_and_prev_cycle_only_left_panels() {
-        let mut state = AppState::default();
-        assert_eq!(state.focus, PanelFocus::Files);
-        assert_eq!(state.last_left_focus, PanelFocus::Files);
-
-        update(&mut state, Action::Ui(UiAction::FocusNext));
-        assert_eq!(state.focus, PanelFocus::Branches);
-        assert_eq!(state.last_left_focus, PanelFocus::Branches);
-
-        update(&mut state, Action::Ui(UiAction::FocusNext));
-        assert_eq!(state.focus, PanelFocus::Commits);
-        assert_eq!(state.last_left_focus, PanelFocus::Commits);
-
-        update(&mut state, Action::Ui(UiAction::FocusPrev));
-        assert_eq!(state.focus, PanelFocus::Branches);
-        assert_eq!(state.last_left_focus, PanelFocus::Branches);
-    }
-
-    #[test]
-    fn focus_panel_allows_right_focus_and_preserves_last_left() {
-        let mut state = AppState::default();
-        update(
-            &mut state,
-            Action::Ui(UiAction::FocusPanel {
-                panel: PanelFocus::Stash,
-            }),
-        );
-        assert_eq!(state.focus, PanelFocus::Stash);
-        assert_eq!(state.last_left_focus, PanelFocus::Stash);
-
-        update(
-            &mut state,
-            Action::Ui(UiAction::FocusPanel {
-                panel: PanelFocus::Details,
-            }),
-        );
-        assert_eq!(state.focus, PanelFocus::Details);
-        assert_eq!(state.last_left_focus, PanelFocus::Stash);
-    }
-
-    #[test]
-    fn move_selection_does_not_change_left_indexes_when_focus_is_right_panel() {
-        let mut state = AppState::default();
-        state.files.items = vec![
-            FileEntry {
-                path: "a".to_string(),
-                staged: false,
-            },
-            FileEntry {
-                path: "b".to_string(),
-                staged: false,
-            },
-        ];
-        state.files.selected = 1;
-        update(
-            &mut state,
-            Action::Ui(UiAction::FocusPanel {
-                panel: PanelFocus::Details,
-            }),
-        );
-        update(&mut state, Action::Ui(UiAction::MoveUp));
-        assert_eq!(state.files.selected, 1);
     }
 }

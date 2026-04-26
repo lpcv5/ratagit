@@ -19,7 +19,7 @@ ratagit aims to replicate lazygit UX with a Rust + ratatui implementation.
 
 MVP v0 includes a left-nav workspace layout with six panels:
 
-- Files: stage and unstage selected file
+- Files: tree view, folder expand/collapse, stage/unstage toggle, path-limited stash, multi-select, and search
 - Branches: create branch and checkout selected branch
 - Commits: create commit and refresh list
 - Stash: stash push and stash pop selected entry
@@ -32,6 +32,16 @@ Navigation rules:
 - `1..6` focuses Files/Branches/Commits/Stash/Details/Log directly
 - top branch/focus/status summary is hidden to prioritize panels
 - bottom shortcut bar shows only Git operation shortcuts for the current focused panel
+
+Files panel rules:
+
+- file rows come from Git status data only; the app does not scan the working tree separately
+- folder operations apply to descendant files present in the tree model
+- `space` stages unstaged targets or unstages targets when all selected targets are staged
+- `s` stashes current or multi-selected targets
+- `v` enters multi-select mode for batch operations
+- `/` opens search input in the bottom bar; Enter confirms, Esc cancels or clears, `n` / `N` navigate matches
+- discard backend support exists, but `d` is not mapped until the confirmation dialog is available
 
 All features are keyboard-driven and deterministic.
 
