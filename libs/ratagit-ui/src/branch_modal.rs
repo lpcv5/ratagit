@@ -2,18 +2,16 @@ use ratagit_core::{AppState, AutoStashOperation, BranchDeleteChoice, BranchRebas
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
 use ratatui::text::Line;
-use ratatui::widgets::{
-    Block, Borders, HighlightSpacing, List, ListItem, ListState, Paragraph, Wrap,
-};
+use ratatui::widgets::{Paragraph, Wrap};
 use unicode_width::UnicodeWidthStr;
 
 use crate::frame::TerminalCursor;
 use crate::modal::{
-    ModalSpec, ModalTone, modal_content_rect, modal_tone_style, render_action_footer,
+    ModalSpec, ModalTone, modal_content_rect, render_action_footer, render_choice_list,
     render_input_block, render_modal_frame, render_muted_text, render_section_label,
     render_warning_text,
 };
-use crate::theme::{modal_muted_style, selected_row_style};
+use crate::theme::modal_muted_style;
 
 pub(crate) fn render_branch_modals(frame: &mut Frame<'_>, state: &AppState, area: Rect) {
     if state.branches.create.active {
@@ -113,14 +111,26 @@ fn render_branch_delete_modal(frame: &mut Frame<'_>, state: &AppState, area: Rec
     render_choice_list(
         frame,
         rows[1],
+        "Choice",
         &[
-            (BranchDeleteChoice::Local, "delete local"),
-            (BranchDeleteChoice::Remote, "delete remote"),
-            (BranchDeleteChoice::Both, "delete local and remote"),
+            (
+                BranchDeleteChoice::Local,
+                "delete local",
+                modal_muted_style(),
+            ),
+            (
+                BranchDeleteChoice::Remote,
+                "delete remote",
+                modal_muted_style(),
+            ),
+            (
+                BranchDeleteChoice::Both,
+                "delete local and remote",
+                modal_muted_style(),
+            ),
         ],
         state.branches.delete_menu.selected,
         ModalTone::Danger,
-        |left, right| left == right,
     );
     render_section_label(frame, rows[2], "Description");
     frame.render_widget(
@@ -167,14 +177,26 @@ fn render_branch_rebase_modal(frame: &mut Frame<'_>, state: &AppState, area: Rec
     render_choice_list(
         frame,
         rows[1],
+        "Choice",
         &[
-            (BranchRebaseChoice::Simple, "simple rebase"),
-            (BranchRebaseChoice::Interactive, "interactive rebase"),
-            (BranchRebaseChoice::OriginMain, "rebase onto origin/main"),
+            (
+                BranchRebaseChoice::Simple,
+                "simple rebase",
+                modal_muted_style(),
+            ),
+            (
+                BranchRebaseChoice::Interactive,
+                "interactive rebase",
+                modal_muted_style(),
+            ),
+            (
+                BranchRebaseChoice::OriginMain,
+                "rebase onto origin/main",
+                modal_muted_style(),
+            ),
         ],
         state.branches.rebase_menu.selected,
         ModalTone::Warning,
-        |left, right| left == right,
     );
     render_section_label(frame, rows[2], "Description");
     frame.render_widget(
@@ -292,36 +314,6 @@ fn render_auto_stash_modal(frame: &mut Frame<'_>, state: &AppState, area: Rect) 
             &[("Enter", "auto stash"), ("Esc", "cancel")],
         );
     }
-}
-
-fn render_choice_list<T: Copy>(
-    frame: &mut Frame<'_>,
-    area: Rect,
-    choices: &[(T, &'static str)],
-    selected: T,
-    tone: ModalTone,
-    matches_choice: impl Fn(T, T) -> bool,
-) {
-    let items = choices
-        .iter()
-        .map(|(_, label)| ListItem::new(Line::styled(format!("  {label}"), modal_muted_style())))
-        .collect::<Vec<_>>();
-    let selected_index = choices
-        .iter()
-        .position(|(choice, _)| matches_choice(*choice, selected))
-        .unwrap_or(0);
-    let mut list_state = ListState::default();
-    list_state.select(Some(selected_index));
-    let list = List::new(items)
-        .highlight_style(selected_row_style())
-        .highlight_spacing(HighlightSpacing::Never)
-        .block(
-            Block::default()
-                .title(Line::styled(" Choice ", modal_tone_style(tone)))
-                .borders(Borders::ALL)
-                .border_style(modal_muted_style()),
-        );
-    frame.render_stateful_widget(list, area, &mut list_state);
 }
 
 fn branch_create_spec() -> ModalSpec {

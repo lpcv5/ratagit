@@ -352,58 +352,121 @@ struct TreeProjection {
     row_index_by_path: BTreeMap<String, usize>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TreeRowContext {
+    path: String,
+    name: String,
+    depth: usize,
+    kind: FileRowKind,
+    expanded: bool,
+    descendants: Vec<String>,
+}
+
 fn compute_tree_projection(state: &FilesPanelState) -> TreeProjection {
-    let dirs = collect_directories(&state.items);
-    let descendants = collect_row_descendants(&state.items);
     let entry_status = state
         .items
         .iter()
         .map(|entry| (entry.path.clone(), (entry.staged, entry.untracked)))
         .collect::<BTreeMap<_, _>>();
+    compute_tree_projection_from_paths(
+        state.items.iter().map(|entry| entry.path.clone()),
+        &state.expanded_dirs,
+        |context| {
+            let staged = !context.descendants.is_empty()
+                && context
+                    .descendants
+                    .iter()
+                    .all(|path| entry_status.get(path).is_some_and(|status| status.0));
+            let untracked = !context.descendants.is_empty()
+                && context
+                    .descendants
+                    .iter()
+                    .all(|path| entry_status.get(path).is_some_and(|status| status.1));
+            FileTreeRow {
+                depth: context.depth,
+                expanded: context.expanded,
+                selected_for_batch: state.selected_rows.contains(&context.path),
+                path: context.path,
+                name: context.name,
+                kind: context.kind,
+                staged,
+                untracked,
+                commit_status: None,
+                matched: false,
+            }
+        },
+    )
+}
+
+fn compute_commit_files_tree_projection(state: &CommitFilesPanelState) -> TreeProjection {
+    let entry_status = state
+        .items
+        .iter()
+        .map(|entry| (entry.path.clone(), entry.status))
+        .collect::<BTreeMap<_, _>>();
+    compute_tree_projection_from_paths(
+        state.items.iter().map(|entry| entry.path.clone()),
+        &state.expanded_dirs,
+        |context| {
+            let commit_status = if context.kind == FileRowKind::File {
+                entry_status.get(&context.path).copied()
+            } else {
+                None
+            };
+            FileTreeRow {
+                depth: context.depth,
+                expanded: context.expanded,
+                selected_for_batch: false,
+                path: context.path,
+                name: context.name,
+                kind: context.kind,
+                staged: false,
+                untracked: false,
+                commit_status,
+                matched: false,
+            }
+        },
+    )
+}
+
+fn compute_tree_projection_from_paths(
+    paths: impl IntoIterator<Item = String>,
+    expanded_dirs: &BTreeSet<String>,
+    mut build_row: impl FnMut(TreeRowContext) -> FileTreeRow,
+) -> TreeProjection {
+    let paths = paths.into_iter().collect::<Vec<_>>();
+    let dirs = collect_directories_from_paths(paths.iter());
+    let descendants = collect_row_descendants_from_paths(paths.iter());
     let mut keys = dirs
         .iter()
         .map(|path| (path.clone(), FileRowKind::Directory))
         .chain(
-            state
-                .items
+            paths
                 .iter()
-                .filter(|entry| !is_directory_marker(&entry.path))
-                .map(|entry| (entry.path.clone(), FileRowKind::File)),
+                .filter(|path| !is_directory_marker(path))
+                .map(|path| (path.clone(), FileRowKind::File)),
         )
         .collect::<Vec<_>>();
     keys.sort_by(compare_tree_keys);
 
     let rows = keys
         .into_iter()
-        .filter(|(path, _)| row_is_visible(path, &state.expanded_dirs))
+        .filter(|(path, _)| row_is_visible(path, expanded_dirs))
         .map(|(path, kind)| {
-            let row_descendants = descendants.get(&path).cloned().unwrap_or_default();
-            let staged = !row_descendants.is_empty()
-                && row_descendants
-                    .iter()
-                    .all(|path| entry_status.get(path).is_some_and(|status| status.0));
-            let untracked = !row_descendants.is_empty()
-                && row_descendants
-                    .iter()
-                    .all(|path| entry_status.get(path).is_some_and(|status| status.1));
-            let name = path
-                .rsplit('/')
-                .next()
-                .filter(|name| !name.is_empty())
-                .unwrap_or(&path)
-                .to_string();
-            FileTreeRow {
+            let context = TreeRowContext {
+                name: tree_row_name(&path),
                 depth: path_depth(&path),
-                expanded: state.expanded_dirs.contains(&path),
-                selected_for_batch: state.selected_rows.contains(&path),
+                expanded: expanded_dirs.contains(&path),
+                descendants: descendants
+                    .get(&path)
+                    .cloned()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .collect(),
                 path,
-                name,
                 kind,
-                staged,
-                untracked,
-                commit_status: None,
-                matched: false,
-            }
+            };
+            build_row(context)
         })
         .collect::<Vec<_>>();
     let row_index_by_path = rows
@@ -421,69 +484,12 @@ fn compute_tree_projection(state: &FilesPanelState) -> TreeProjection {
     }
 }
 
-fn compute_commit_files_tree_projection(state: &CommitFilesPanelState) -> TreeProjection {
-    let dirs = collect_directories_from_paths(state.items.iter().map(|item| &item.path));
-    let descendants = collect_row_descendants_from_paths(state.items.iter().map(|item| &item.path));
-    let entry_status = state
-        .items
-        .iter()
-        .map(|entry| (entry.path.clone(), entry.status))
-        .collect::<BTreeMap<_, _>>();
-    let mut keys = dirs
-        .iter()
-        .map(|path| (path.clone(), FileRowKind::Directory))
-        .chain(
-            state
-                .items
-                .iter()
-                .filter(|entry| !is_directory_marker(&entry.path))
-                .map(|entry| (entry.path.clone(), FileRowKind::File)),
-        )
-        .collect::<Vec<_>>();
-    keys.sort_by(compare_tree_keys);
-
-    let rows = keys
-        .into_iter()
-        .filter(|(path, _)| row_is_visible(path, &state.expanded_dirs))
-        .map(|(path, kind)| {
-            let name = path
-                .rsplit('/')
-                .next()
-                .filter(|name| !name.is_empty())
-                .unwrap_or(&path)
-                .to_string();
-            let commit_status = if kind == FileRowKind::File {
-                entry_status.get(&path).copied()
-            } else {
-                None
-            };
-            FileTreeRow {
-                depth: path_depth(&path),
-                expanded: state.expanded_dirs.contains(&path),
-                selected_for_batch: false,
-                path,
-                name,
-                kind,
-                staged: false,
-                untracked: false,
-                commit_status,
-                matched: false,
-            }
-        })
-        .collect::<Vec<_>>();
-    let row_index_by_path = rows
-        .iter()
-        .enumerate()
-        .map(|(index, row)| (row.path.clone(), index))
-        .collect::<BTreeMap<_, _>>();
-    TreeProjection {
-        rows,
-        row_descendants: descendants
-            .into_iter()
-            .map(|(path, descendants)| (path, descendants.into_iter().collect()))
-            .collect(),
-        row_index_by_path,
-    }
+fn tree_row_name(path: &str) -> String {
+    path.rsplit('/')
+        .next()
+        .filter(|name| !name.is_empty())
+        .unwrap_or(path)
+        .to_string()
 }
 
 pub fn collect_directories(items: &[FileEntry]) -> BTreeSet<String> {
@@ -507,10 +513,6 @@ fn collect_directories_from_paths<'a>(paths: impl Iterator<Item = &'a String>) -
         }
     }
     dirs
-}
-
-fn collect_row_descendants(items: &[FileEntry]) -> BTreeMap<String, BTreeSet<String>> {
-    collect_row_descendants_from_paths(items.iter().map(|item| &item.path))
 }
 
 fn collect_row_descendants_from_paths<'a>(

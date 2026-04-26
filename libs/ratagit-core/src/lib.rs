@@ -2,7 +2,15 @@ mod branches;
 mod commits;
 mod files;
 mod scroll;
+mod search;
 mod state;
+mod text_edit;
+
+use search::{
+    backspace_search, cancel_search, clear_search_if_incompatible, confirm_search,
+    input_search_char, jump_search_match, recompute_search_matches, start_search,
+};
+use text_edit::{CursorMove, backspace_at_cursor, insert_char_at_cursor, move_cursor_in_text};
 
 pub use commits::{
     clamp_selected as clamp_commit_selection, commit_key,
@@ -585,19 +593,19 @@ fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
             Vec::new()
         }
         UiAction::EditorMoveCursorLeft => {
-            move_editor_cursor(state, EditorCursorMove::Left);
+            move_editor_cursor(state, CursorMove::Left);
             Vec::new()
         }
         UiAction::EditorMoveCursorRight => {
-            move_editor_cursor(state, EditorCursorMove::Right);
+            move_editor_cursor(state, CursorMove::Right);
             Vec::new()
         }
         UiAction::EditorMoveCursorHome => {
-            move_editor_cursor(state, EditorCursorMove::Home);
+            move_editor_cursor(state, CursorMove::Home);
             Vec::new()
         }
         UiAction::EditorMoveCursorEnd => {
-            move_editor_cursor(state, EditorCursorMove::End);
+            move_editor_cursor(state, CursorMove::End);
             Vec::new()
         }
         UiAction::EditorNextField => {
@@ -1466,15 +1474,7 @@ fn apply_editor_backspace(state: &mut AppState) {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum EditorCursorMove {
-    Left,
-    Right,
-    Home,
-    End,
-}
-
-fn move_editor_cursor(state: &mut AppState, movement: EditorCursorMove) {
+fn move_editor_cursor(state: &mut AppState, movement: CursorMove) {
     let Some(editor) = state.editor.kind.as_mut() else {
         return;
     };
@@ -1611,58 +1611,6 @@ fn split_commit_message(message: &str) -> (String, String) {
 
 fn first_line(message: &str) -> &str {
     message.lines().next().unwrap_or("").trim()
-}
-
-fn insert_char_at_cursor(text: &mut String, cursor: &mut usize, ch: char) {
-    *cursor = clamp_to_char_boundary(text, *cursor);
-    text.insert(*cursor, ch);
-    *cursor += ch.len_utf8();
-}
-
-fn backspace_at_cursor(text: &mut String, cursor: &mut usize) {
-    *cursor = clamp_to_char_boundary(text, *cursor);
-    let Some(previous) = previous_char_boundary(text, *cursor) else {
-        return;
-    };
-    text.drain(previous..*cursor);
-    *cursor = previous;
-}
-
-fn move_cursor_in_text(text: &str, cursor: &mut usize, movement: EditorCursorMove) {
-    *cursor = clamp_to_char_boundary(text, *cursor);
-    *cursor = match movement {
-        EditorCursorMove::Left => previous_char_boundary(text, *cursor).unwrap_or(0),
-        EditorCursorMove::Right => next_char_boundary(text, *cursor).unwrap_or(text.len()),
-        EditorCursorMove::Home => 0,
-        EditorCursorMove::End => text.len(),
-    };
-}
-
-fn clamp_to_char_boundary(text: &str, cursor: usize) -> usize {
-    if cursor >= text.len() {
-        return text.len();
-    }
-    if text.is_char_boundary(cursor) {
-        return cursor;
-    }
-    text.char_indices()
-        .map(|(index, _)| index)
-        .take_while(|index| *index < cursor)
-        .last()
-        .unwrap_or(0)
-}
-
-fn previous_char_boundary(text: &str, cursor: usize) -> Option<usize> {
-    text.char_indices()
-        .map(|(index, _)| index)
-        .take_while(|index| *index < cursor)
-        .last()
-}
-
-fn next_char_boundary(text: &str, cursor: usize) -> Option<usize> {
-    text.char_indices()
-        .map(|(index, _)| index)
-        .find(|index| *index > cursor)
 }
 
 fn handle_operation_result(
@@ -2111,84 +2059,93 @@ fn commit_file_diff_target_matches_selection(
 }
 
 fn cached_files_details_diff(state: &AppState, paths: &[String]) -> Option<String> {
-    state
-        .details
-        .cached_files_diffs
-        .iter()
-        .find(|entry| entry.paths == paths)
-        .map(|entry| entry.diff.clone())
+    cached_details_entry(
+        &state.details.cached_files_diffs,
+        paths,
+        |entry, paths| entry.paths.as_slice() == paths,
+        |entry| &entry.diff,
+    )
 }
 
 fn cache_files_details_diff(state: &mut AppState, paths: &[String], diff: &str) {
-    state
-        .details
-        .cached_files_diffs
-        .retain(|entry| entry.paths != paths);
-    state.details.cached_files_diffs.insert(
-        0,
-        CachedFilesDiff {
+    cache_details_entry(
+        &mut state.details.cached_files_diffs,
+        paths,
+        diff,
+        |entry, paths| entry.paths.as_slice() == paths,
+        |paths, diff| CachedFilesDiff {
             paths: paths.to_vec(),
             diff: diff.to_string(),
         },
     );
-    state
-        .details
-        .cached_files_diffs
-        .truncate(DETAILS_DIFF_CACHE_LIMIT);
 }
 
 fn cached_branch_details_log(state: &AppState, branch: &str) -> Option<String> {
-    state
-        .details
-        .cached_branch_logs
-        .iter()
-        .find(|entry| entry.branch == branch)
-        .map(|entry| entry.log.clone())
+    cached_details_entry(
+        &state.details.cached_branch_logs,
+        branch,
+        |entry, branch| entry.branch.as_str() == branch,
+        |entry| &entry.log,
+    )
 }
 
 fn cache_branch_details_log(state: &mut AppState, branch: &str, log: &str) {
-    state
-        .details
-        .cached_branch_logs
-        .retain(|entry| entry.branch != branch);
-    state.details.cached_branch_logs.insert(
-        0,
-        CachedBranchLog {
+    cache_details_entry(
+        &mut state.details.cached_branch_logs,
+        branch,
+        log,
+        |entry, branch| entry.branch.as_str() == branch,
+        |branch, log| CachedBranchLog {
             branch: branch.to_string(),
             log: log.to_string(),
         },
     );
-    state
-        .details
-        .cached_branch_logs
-        .truncate(DETAILS_DIFF_CACHE_LIMIT);
 }
 
 fn cached_commit_details_diff(state: &AppState, commit_id: &str) -> Option<String> {
-    state
-        .details
-        .cached_commit_diffs
-        .iter()
-        .find(|entry| entry.commit_id == commit_id)
-        .map(|entry| entry.diff.clone())
+    cached_details_entry(
+        &state.details.cached_commit_diffs,
+        commit_id,
+        |entry, commit_id| entry.commit_id.as_str() == commit_id,
+        |entry| &entry.diff,
+    )
 }
 
 fn cache_commit_details_diff(state: &mut AppState, commit_id: &str, diff: &str) {
-    state
-        .details
-        .cached_commit_diffs
-        .retain(|entry| entry.commit_id != commit_id);
-    state.details.cached_commit_diffs.insert(
-        0,
-        CachedCommitDiff {
+    cache_details_entry(
+        &mut state.details.cached_commit_diffs,
+        commit_id,
+        diff,
+        |entry, commit_id| entry.commit_id.as_str() == commit_id,
+        |commit_id, diff| CachedCommitDiff {
             commit_id: commit_id.to_string(),
             diff: diff.to_string(),
         },
     );
-    state
-        .details
-        .cached_commit_diffs
-        .truncate(DETAILS_DIFF_CACHE_LIMIT);
+}
+
+fn cached_details_entry<K: ?Sized, E>(
+    entries: &[E],
+    key: &K,
+    mut matches_key: impl FnMut(&E, &K) -> bool,
+    value: impl Fn(&E) -> &str,
+) -> Option<String> {
+    entries
+        .iter()
+        .find(|entry| matches_key(entry, key))
+        .map(|entry| value(entry).to_string())
+}
+
+fn cache_details_entry<K: ?Sized, E>(
+    entries: &mut Vec<E>,
+    key: &K,
+    value: &str,
+    mut matches_key: impl FnMut(&E, &K) -> bool,
+    build: impl FnOnce(&K, &str) -> E,
+) {
+    entries.retain(|entry| !matches_key(entry, key));
+    entries.insert(0, build(key, value));
+    entries.truncate(DETAILS_DIFF_CACHE_LIMIT);
 }
 
 fn clear_details_caches(state: &mut AppState) {
@@ -2258,251 +2215,6 @@ fn maybe_refresh_details_on_focus(state: &mut AppState) -> Vec<Command> {
 
 fn maybe_refresh_details_on_navigation(state: &mut AppState) -> Vec<Command> {
     refresh_details_command_for_focus(state)
-}
-
-fn start_search(state: &mut AppState) {
-    let Some(scope) = state.active_search_scope() else {
-        return;
-    };
-    if scope == SearchScope::Files && state.files.mode == FileInputMode::MultiSelect {
-        leave_multi_select(&mut state.files);
-    }
-    if scope == SearchScope::Commits && state.commits.mode == CommitInputMode::MultiSelect {
-        leave_commit_multi_select(&mut state.commits);
-    }
-    state.search.active = true;
-    state.search.scope = Some(scope);
-    state.search.query.clear();
-    state.search.matches.clear();
-    state.search.current_match = None;
-}
-
-fn input_search_char(state: &mut AppState, ch: char) {
-    if !search_input_is_current(state) {
-        return;
-    }
-    state.search.query.push(ch);
-    recompute_search_matches(state);
-}
-
-fn backspace_search(state: &mut AppState) {
-    if !search_input_is_current(state) {
-        return;
-    }
-    state.search.query.pop();
-    recompute_search_matches(state);
-}
-
-fn confirm_search(state: &mut AppState) -> bool {
-    if !search_input_is_current(state) {
-        return false;
-    }
-    state.search.active = false;
-    recompute_search_matches(state);
-    if state.search.matches.is_empty() {
-        return false;
-    }
-    state.search.current_match = Some(0);
-    select_current_search_match(state)
-}
-
-fn cancel_search(state: &mut AppState) {
-    if state.search.scope == state.active_search_scope()
-        && (state.search.active || !state.search.query.is_empty())
-    {
-        state.search.clear();
-    }
-}
-
-fn jump_search_match(state: &mut AppState, previous: bool) -> bool {
-    if state.search.scope != state.active_search_scope() || state.search.query.is_empty() {
-        return false;
-    }
-    recompute_search_matches(state);
-    if state.search.matches.is_empty() {
-        return false;
-    }
-    let len = state.search.matches.len();
-    let next = match (state.search.current_match, previous) {
-        (Some(index), true) => (index + len - 1) % len,
-        (Some(index), false) => (index + 1) % len,
-        (None, _) => 0,
-    };
-    state.search.current_match = Some(next);
-    select_current_search_match(state)
-}
-
-fn search_input_is_current(state: &AppState) -> bool {
-    state.search.active && state.search.scope == state.active_search_scope()
-}
-
-fn clear_search_if_incompatible(state: &mut AppState) {
-    if state.search.scope.is_some() && state.search.scope != state.active_search_scope() {
-        state.search.clear();
-    }
-}
-
-fn recompute_search_matches(state: &mut AppState) {
-    if state.search.query.is_empty() {
-        state.search.matches.clear();
-        state.search.current_match = None;
-        return;
-    }
-    let Some(scope) = state.search.scope else {
-        state.search.matches.clear();
-        state.search.current_match = None;
-        return;
-    };
-    let query = state.search.query.to_lowercase();
-    state.search.matches = match scope {
-        SearchScope::Files => build_file_tree_rows(&state.files)
-            .into_iter()
-            .filter(|row| row.path.to_lowercase().contains(&query))
-            .map(|row| row.path)
-            .collect(),
-        SearchScope::Branches => state
-            .branches
-            .items
-            .iter()
-            .filter(|branch| branch.name.to_lowercase().contains(&query))
-            .map(|branch| branch.name.clone())
-            .collect(),
-        SearchScope::Commits => state
-            .commits
-            .items
-            .iter()
-            .filter(|commit| commit_search_text(commit).to_lowercase().contains(&query))
-            .map(commit_key)
-            .collect(),
-        SearchScope::Stash => state
-            .stash
-            .items
-            .iter()
-            .filter(|stash| {
-                format!("{} {}", stash.id, stash.summary)
-                    .to_lowercase()
-                    .contains(&query)
-            })
-            .map(|stash| stash.id.clone())
-            .collect(),
-        SearchScope::CommitFiles => build_commit_file_tree_rows(&state.commits.files)
-            .into_iter()
-            .filter(|row| row.path.to_lowercase().contains(&query))
-            .map(|row| row.path)
-            .collect(),
-    };
-    if state.search.matches.is_empty() {
-        state.search.current_match = None;
-    } else {
-        state.search.current_match = Some(
-            state
-                .search
-                .current_match
-                .unwrap_or(0)
-                .min(state.search.matches.len() - 1),
-        );
-    }
-}
-
-fn select_current_search_match(state: &mut AppState) -> bool {
-    let Some(scope) = state.search.scope else {
-        return false;
-    };
-    let Some(index) = state.search.current_match else {
-        return false;
-    };
-    let Some(key) = state.search.matches.get(index).cloned() else {
-        return false;
-    };
-    match scope {
-        SearchScope::Files => select_file_tree_path(&mut state.files, &key),
-        SearchScope::Branches => select_index_by_key(
-            &mut state.branches.selected,
-            state
-                .branches
-                .items
-                .iter()
-                .map(|branch| branch.name.as_str()),
-            &key,
-        ),
-        SearchScope::Commits => select_index_by_key(
-            &mut state.commits.selected,
-            state.commits.items.iter().map(commit_key),
-            &key,
-        ),
-        SearchScope::Stash => select_index_by_key(
-            &mut state.stash.selected,
-            state.stash.items.iter().map(|stash| stash.id.as_str()),
-            &key,
-        ),
-        SearchScope::CommitFiles => select_commit_file_tree_path(&mut state.commits.files, &key),
-    }
-}
-
-fn select_index_by_key<'a>(
-    selected: &mut usize,
-    keys: impl Iterator<Item = impl AsRef<str> + 'a>,
-    expected: &str,
-) -> bool {
-    let Some(index) = keys
-        .enumerate()
-        .find_map(|(index, key)| (key.as_ref() == expected).then_some(index))
-    else {
-        return false;
-    };
-    *selected = index;
-    true
-}
-
-fn commit_search_text(commit: &CommitEntry) -> String {
-    format!(
-        "{} {} {}",
-        commit.id,
-        author_initials(&commit.author_name),
-        commit_message_summary(commit)
-    )
-}
-
-fn commit_message_summary(commit: &CommitEntry) -> String {
-    if commit.summary.is_empty() {
-        commit
-            .message
-            .lines()
-            .next()
-            .unwrap_or("")
-            .trim()
-            .to_string()
-    } else {
-        commit.summary.clone()
-    }
-}
-
-fn author_initials(author_name: &str) -> String {
-    let words = author_name
-        .split(|ch: char| !ch.is_alphanumeric())
-        .filter(|word| !word.is_empty())
-        .collect::<Vec<_>>();
-    let mut chars = if words.len() >= 2 {
-        words
-            .iter()
-            .filter_map(|word| word.chars().next())
-            .take(2)
-            .collect::<Vec<_>>()
-    } else {
-        author_name
-            .chars()
-            .filter(|ch| ch.is_alphanumeric())
-            .take(2)
-            .collect::<Vec<_>>()
-    };
-    while chars.len() < 2 {
-        chars.push('?');
-    }
-    chars
-        .into_iter()
-        .flat_map(char::to_uppercase)
-        .take(2)
-        .collect()
 }
 
 fn selected_branch_name(state: &AppState) -> Option<String> {

@@ -2,11 +2,13 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
+use ratatui::widgets::{
+    Block, Borders, Clear, HighlightSpacing, List, ListItem, ListState, Paragraph, Wrap,
+};
 
 use crate::theme::{
     modal_danger_style, modal_footer_style, modal_info_style, modal_muted_style,
-    modal_warning_style,
+    modal_warning_style, selected_row_style,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -133,6 +135,36 @@ pub(crate) fn render_action_footer(
         spans.push(Span::styled(format!(" {label}"), modal_footer_style()));
     }
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
+}
+
+pub(crate) fn render_choice_list<T: Copy + PartialEq>(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    title: &'static str,
+    choices: &[(T, &'static str, Style)],
+    selected: T,
+    tone: ModalTone,
+) {
+    let items = choices
+        .iter()
+        .map(|(_, label, style)| ListItem::new(Line::styled(format!("  {label}"), *style)))
+        .collect::<Vec<_>>();
+    let selected_index = choices
+        .iter()
+        .position(|(choice, _, _)| *choice == selected)
+        .unwrap_or(0);
+    let mut list_state = ListState::default();
+    list_state.select(Some(selected_index));
+    let list = List::new(items)
+        .highlight_style(selected_row_style())
+        .highlight_spacing(HighlightSpacing::Never)
+        .block(
+            Block::default()
+                .title(Line::styled(format!(" {title} "), modal_tone_style(tone)))
+                .borders(Borders::ALL)
+                .border_style(modal_muted_style()),
+        );
+    frame.render_stateful_widget(list, area, &mut list_state);
 }
 
 pub(crate) fn render_input_block(

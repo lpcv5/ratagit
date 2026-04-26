@@ -141,73 +141,37 @@ fn enqueue_coalesced_command(queue: &mut VecDeque<Command>, command: Command) {
         .iter()
         .rposition(command_is_mutation)
         .map_or(0, |index| index + 1);
-    match command {
-        Command::RefreshAll => {
-            if !queue
-                .iter()
-                .skip(search_start)
-                .any(|queued| matches!(queued, Command::RefreshAll))
-            {
-                queue.push_back(Command::RefreshAll);
-            }
+    if matches!(command, Command::RefreshAll) {
+        if !queue
+            .iter()
+            .skip(search_start)
+            .any(|queued| matches!(queued, Command::RefreshAll))
+        {
+            queue.push_back(Command::RefreshAll);
         }
-        Command::RefreshFilesDetailsDiff { .. } => {
-            if let Some(index) =
-                queue
-                    .iter()
-                    .enumerate()
-                    .skip(search_start)
-                    .find_map(|(index, queued)| {
-                        matches!(queued, Command::RefreshFilesDetailsDiff { .. }).then_some(index)
-                    })
-            {
-                queue.remove(index);
-            }
-            queue.push_back(command);
-        }
-        Command::RefreshBranchDetailsLog { .. } => {
-            if let Some(index) =
-                queue
-                    .iter()
-                    .enumerate()
-                    .skip(search_start)
-                    .find_map(|(index, queued)| {
-                        matches!(queued, Command::RefreshBranchDetailsLog { .. }).then_some(index)
-                    })
-            {
-                queue.remove(index);
-            }
-            queue.push_back(command);
-        }
-        Command::RefreshCommitDetailsDiff { .. } => {
-            if let Some(index) =
-                queue
-                    .iter()
-                    .enumerate()
-                    .skip(search_start)
-                    .find_map(|(index, queued)| {
-                        matches!(queued, Command::RefreshCommitDetailsDiff { .. }).then_some(index)
-                    })
-            {
-                queue.remove(index);
-            }
-            queue.push_back(command);
-        }
-        Command::RefreshCommitFileDiff { .. } => {
-            if let Some(index) =
-                queue
-                    .iter()
-                    .enumerate()
-                    .skip(search_start)
-                    .find_map(|(index, queued)| {
-                        matches!(queued, Command::RefreshCommitFileDiff { .. }).then_some(index)
-                    })
-            {
-                queue.remove(index);
-            }
-            queue.push_back(command);
-        }
-        _ => queue.push_back(command),
+        return;
+    }
+
+    if let Some(key) = debounce_key_for_command(&command) {
+        remove_queued_command_with_debounce_key(queue, search_start, key);
+    }
+    queue.push_back(command);
+}
+
+fn remove_queued_command_with_debounce_key(
+    queue: &mut VecDeque<Command>,
+    search_start: usize,
+    key: &'static str,
+) {
+    if let Some(index) = queue
+        .iter()
+        .enumerate()
+        .skip(search_start)
+        .find_map(|(index, queued)| {
+            (debounce_key_for_command(queued) == Some(key)).then_some(index)
+        })
+    {
+        queue.remove(index);
     }
 }
 

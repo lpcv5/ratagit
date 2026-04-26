@@ -22,38 +22,37 @@ impl GitCli {
     }
 
     fn run_git(&self, args: &[&str]) -> Result<String, GitError> {
-        let output = ProcessCommand::new("git")
-            .args(args)
-            .current_dir(&self.repo_path)
-            .output()
-            .map_err(|err| GitError::new(format!("failed to start git {:?}: {err}", args)))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            return Err(GitError::new(format!("git {:?} failed: {}", args, stderr)));
-        }
-
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+        self.run_git_text(args.iter().copied())
     }
 
     fn run_git_owned(&self, args: Vec<String>) -> Result<String, GitError> {
-        let output = ProcessCommand::new("git")
-            .args(&args)
-            .current_dir(&self.repo_path)
-            .output()
-            .map_err(|err| GitError::new(format!("failed to start git {:?}: {err}", args)))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            return Err(GitError::new(format!("git {:?} failed: {}", args, stderr)));
-        }
-
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+        self.run_git_text(args)
     }
 
     fn run_git_bytes(&self, args: &[&str]) -> Result<Vec<u8>, GitError> {
+        self.run_git_output(args.iter().copied())
+    }
+
+    fn run_git_text<I, S>(&self, args: I) -> Result<String, GitError>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        self.run_git_output(args)
+            .map(|stdout| String::from_utf8_lossy(&stdout).to_string())
+    }
+
+    fn run_git_output<I, S>(&self, args: I) -> Result<Vec<u8>, GitError>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let args = args
+            .into_iter()
+            .map(|arg| arg.as_ref().to_string())
+            .collect::<Vec<_>>();
         let output = ProcessCommand::new("git")
-            .args(args)
+            .args(&args)
             .current_dir(&self.repo_path)
             .output()
             .map_err(|err| GitError::new(format!("failed to start git {:?}: {err}", args)))?;

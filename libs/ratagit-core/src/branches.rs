@@ -1,15 +1,10 @@
+use crate::text_edit::{
+    CursorMove, backspace_at_cursor, insert_char_at_cursor, move_cursor_in_text,
+};
 use crate::{
     AppState, AutoStashOperation, BranchDeleteMode, BranchRebaseChoice, Command, push_notice,
     with_pending,
 };
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum CursorMove {
-    Left,
-    Right,
-    Home,
-    End,
-}
 
 pub(crate) fn open_create_input(state: &mut AppState) {
     let Some(start_point) = selected_branch_name(state) else {
@@ -355,56 +350,4 @@ fn repository_has_uncommitted_changes(state: &AppState) -> bool {
 
 pub(crate) fn delete_mode_includes_local(mode: BranchDeleteMode) -> bool {
     matches!(mode, BranchDeleteMode::Local | BranchDeleteMode::Both)
-}
-
-fn insert_char_at_cursor(text: &mut String, cursor: &mut usize, ch: char) {
-    *cursor = clamp_to_char_boundary(text, *cursor);
-    text.insert(*cursor, ch);
-    *cursor += ch.len_utf8();
-}
-
-fn backspace_at_cursor(text: &mut String, cursor: &mut usize) {
-    *cursor = clamp_to_char_boundary(text, *cursor);
-    let Some(previous) = previous_char_boundary(text, *cursor) else {
-        return;
-    };
-    text.drain(previous..*cursor);
-    *cursor = previous;
-}
-
-fn move_cursor_in_text(text: &str, cursor: &mut usize, movement: CursorMove) {
-    *cursor = clamp_to_char_boundary(text, *cursor);
-    *cursor = match movement {
-        CursorMove::Left => previous_char_boundary(text, *cursor).unwrap_or(0),
-        CursorMove::Right => next_char_boundary(text, *cursor).unwrap_or(text.len()),
-        CursorMove::Home => 0,
-        CursorMove::End => text.len(),
-    };
-}
-
-fn clamp_to_char_boundary(text: &str, cursor: usize) -> usize {
-    if cursor >= text.len() {
-        return text.len();
-    }
-    if text.is_char_boundary(cursor) {
-        return cursor;
-    }
-    text.char_indices()
-        .map(|(index, _)| index)
-        .take_while(|index| *index < cursor)
-        .last()
-        .unwrap_or(0)
-}
-
-fn previous_char_boundary(text: &str, cursor: usize) -> Option<usize> {
-    text.char_indices()
-        .map(|(index, _)| index)
-        .take_while(|index| *index < cursor)
-        .last()
-}
-
-fn next_char_boundary(text: &str, cursor: usize) -> Option<usize> {
-    text.char_indices()
-        .map(|(index, _)| index)
-        .find(|index| *index > cursor)
 }
