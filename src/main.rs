@@ -80,13 +80,7 @@ fn ui_action_for_key(state: &AppState, code: KeyCode) -> Option<UiAction> {
         match code {
             KeyCode::Enter => return Some(UiAction::ToggleSelectedDirectory),
             KeyCode::Char(' ') => return Some(UiAction::ToggleSelectedFileStage),
-            KeyCode::Char('v') => {
-                return if state.files.mode == FileInputMode::MultiSelect {
-                    Some(UiAction::ToggleCurrentFileSelection)
-                } else {
-                    Some(UiAction::ToggleFilesMultiSelect)
-                };
-            }
+            KeyCode::Char('v') => return Some(UiAction::ToggleFilesMultiSelect),
             KeyCode::Char('/') => return Some(UiAction::StartFileSearch),
             KeyCode::Char('n') => return Some(UiAction::NextFileSearchMatch),
             KeyCode::Char('N') => return Some(UiAction::PrevFileSearchMatch),
@@ -187,6 +181,10 @@ mod tests {
         assert_eq!(
             ui_action_for_key(&state, KeyCode::Char('/')),
             Some(UiAction::StartFileSearch)
+        );
+        assert_eq!(
+            ui_action_for_key(&state, KeyCode::Char('v')),
+            Some(UiAction::ToggleFilesMultiSelect)
         );
     }
 

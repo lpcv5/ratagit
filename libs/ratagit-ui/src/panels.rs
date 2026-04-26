@@ -37,10 +37,11 @@ pub(crate) fn panel_title(panel: PanelFocus) -> &'static str {
 
 pub(crate) fn render_files_lines(state: &AppState, max_lines: usize) -> Vec<PanelLine> {
     let rows = build_file_tree_rows(&state.files);
-    render_indexed_entries_with_direction(
+    render_indexed_entries(
         &rows,
         state.files.selected,
-        state.files.last_scroll_direction,
+        state.files.scroll_direction,
+        state.files.scroll_direction_origin,
         max_lines,
         format_file_tree_row,
         file_tree_row_role,
@@ -51,6 +52,8 @@ pub(crate) fn render_branches_lines(state: &AppState, max_lines: usize) -> Vec<P
     render_indexed_entries(
         &state.branches.items,
         state.branches.selected,
+        None,
+        state.branches.selected,
         max_lines,
         format_branch_entry,
         branch_entry_role,
@@ -60,6 +63,8 @@ pub(crate) fn render_branches_lines(state: &AppState, max_lines: usize) -> Vec<P
 pub(crate) fn render_commits_lines(state: &AppState, max_lines: usize) -> Vec<PanelLine> {
     let mut lines = render_indexed_entries(
         &state.commits.items,
+        state.commits.selected,
+        None,
         state.commits.selected,
         max_lines.saturating_sub(1),
         format_commit_entry,
@@ -77,6 +82,8 @@ pub(crate) fn render_commits_lines(state: &AppState, max_lines: usize) -> Vec<Pa
 pub(crate) fn render_stash_lines(state: &AppState, max_lines: usize) -> Vec<PanelLine> {
     render_indexed_entries(
         &state.stash.items,
+        state.stash.selected,
+        None,
         state.stash.selected,
         max_lines,
         format_stash_entry,
@@ -212,24 +219,28 @@ pub(crate) fn shortcuts_for_state(state: &AppState) -> String {
 fn render_indexed_entries<T>(
     items: &[T],
     selected: usize,
+    scroll_direction: Option<ScrollDirection>,
+    scroll_direction_origin: usize,
     max_lines: usize,
     format_item: impl Fn(&T) -> String,
     item_role: impl Fn(&T) -> RowRole,
 ) -> Vec<PanelLine> {
-    render_indexed_entries_with_direction(
+    render_indexed_entries_window(
         items,
         selected,
-        ScrollDirection::Down,
+        scroll_direction,
+        scroll_direction_origin,
         max_lines,
         format_item,
         item_role,
     )
 }
 
-fn render_indexed_entries_with_direction<T>(
+fn render_indexed_entries_window<T>(
     items: &[T],
     selected: usize,
-    direction: ScrollDirection,
+    scroll_direction: Option<ScrollDirection>,
+    scroll_direction_origin: usize,
     max_lines: usize,
     format_item: impl Fn(&T) -> String,
     item_role: impl Fn(&T) -> RowRole,
@@ -242,14 +253,14 @@ fn render_indexed_entries_with_direction<T>(
     if items.is_empty() {
         return vec![PanelLine::new("  <empty>", RowRole::Muted)];
     }
-    let max_start = items.len().saturating_sub(max_lines);
-    let start = match direction {
-        ScrollDirection::Up => selected.saturating_sub(SCROLL_RESERVE),
-        ScrollDirection::Down => selected
-            .saturating_add(1 + SCROLL_RESERVE)
-            .saturating_sub(max_lines),
-    }
-    .min(max_start);
+    let start = scroll_window_start(
+        items.len(),
+        selected,
+        scroll_direction,
+        scroll_direction_origin,
+        max_lines,
+        SCROLL_RESERVE,
+    );
     items
         .iter()
         .enumerate()
@@ -259,6 +270,60 @@ fn render_indexed_entries_with_direction<T>(
             PanelLine::new(format_item(item), item_role(item)).selected(index == selected)
         })
         .collect()
+}
+
+fn scroll_window_start(
+    len: usize,
+    selected: usize,
+    scroll_direction: Option<ScrollDirection>,
+    scroll_direction_origin: usize,
+    max_lines: usize,
+    reserve: usize,
+) -> usize {
+    if max_lines == 0 || len <= max_lines {
+        return 0;
+    }
+    let max_start = len.saturating_sub(max_lines);
+    let selected = selected.min(len - 1);
+    match scroll_direction {
+        Some(ScrollDirection::Up) => {
+            let previous_start =
+                bottom_reserve_start(scroll_direction_origin, max_lines, max_start, reserve);
+            if selected >= previous_start.saturating_add(reserve) {
+                previous_start
+            } else {
+                top_reserve_start(selected, max_start, reserve)
+            }
+        }
+        Some(ScrollDirection::Down) => {
+            let previous_start = top_reserve_start(scroll_direction_origin, max_start, reserve);
+            let bottom_threshold = previous_start
+                .saturating_add(max_lines.saturating_sub(1))
+                .saturating_sub(reserve);
+            if selected <= bottom_threshold {
+                previous_start
+            } else {
+                bottom_reserve_start(selected, max_lines, max_start, reserve)
+            }
+        }
+        None => bottom_reserve_start(selected, max_lines, max_start, reserve),
+    }
+}
+
+fn top_reserve_start(selected: usize, max_start: usize, reserve: usize) -> usize {
+    selected.saturating_sub(reserve).min(max_start)
+}
+
+fn bottom_reserve_start(
+    selected: usize,
+    max_lines: usize,
+    max_start: usize,
+    reserve: usize,
+) -> usize {
+    selected
+        .saturating_add(1 + reserve)
+        .saturating_sub(max_lines)
+        .min(max_start)
 }
 
 pub fn format_file_tree_row(row: &FileTreeRow) -> String {
@@ -309,7 +374,9 @@ pub fn format_stash_entry(entry: &StashEntry) -> String {
 }
 
 fn file_tree_row_role(row: &FileTreeRow) -> RowRole {
-    if row.matched {
+    if row.selected_for_batch {
+        RowRole::BatchSelected
+    } else if row.matched {
         RowRole::SearchMatch
     } else if row.untracked {
         RowRole::FileUntracked
@@ -371,6 +438,7 @@ mod tests {
 
         assert_eq!(lines[0].text, "    README.md");
         assert_eq!(lines[1].text, "✓   src/");
+        assert_eq!(lines[1].role, RowRole::BatchSelected);
         assert!(lines[1].selected);
     }
 
@@ -384,6 +452,38 @@ mod tests {
         let lines = render_files_lines(&state, 4);
 
         assert!(lines.iter().any(|line| line.text.contains("    lib.rs")));
+    }
+
+    #[test]
+    fn scroll_window_uses_bottom_reserve_while_moving_down() {
+        assert_eq!(
+            scroll_window_start(30, 20, Some(ScrollDirection::Down), 0, 8, 3),
+            16
+        );
+    }
+
+    #[test]
+    fn scroll_window_reverses_up_without_immediate_top_jump() {
+        assert_eq!(
+            scroll_window_start(30, 24, Some(ScrollDirection::Up), 25, 8, 3),
+            21
+        );
+        assert_eq!(
+            scroll_window_start(30, 23, Some(ScrollDirection::Up), 25, 8, 3),
+            20
+        );
+    }
+
+    #[test]
+    fn scroll_window_reverses_down_without_immediate_bottom_jump() {
+        assert_eq!(
+            scroll_window_start(30, 21, Some(ScrollDirection::Down), 20, 8, 3),
+            17
+        );
+        assert_eq!(
+            scroll_window_start(30, 22, Some(ScrollDirection::Down), 20, 8, 3),
+            18
+        );
     }
 
     #[test]

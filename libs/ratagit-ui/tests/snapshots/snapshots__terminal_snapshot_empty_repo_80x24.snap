@@ -1,5 +1,6 @@
 ---
 source: libs/ratagit-ui/tests/snapshots.rs
+assertion_line: 307
 expression: "render_terminal_text(&state, TerminalSize { width: 80, height: 24, },)"
 ---
 ┌ 󰈙 Files ────────────────┐┌  Details ────────────────────────────────────────┐
@@ -7,22 +8,22 @@ expression: "render_terminal_text(&state, TerminalSize { width: 80, height: 24, 
 │                         ││  file=<empty>                                     │
 │                         ││  summary=staged: 0, unstaged: 0                   │
 │                         ││                                                   │
+│                         ││                                                   │
+│                         ││                                                   │
 └─────────────────────────┘│                                                   │
 ┌  Branches ─────────────┐│                                                   │
 │ main                   ││                                                   │
 │                         ││                                                   │
 │                         ││                                                   │
-│                         ││                                                   │
 └─────────────────────────┘│                                                   │
 ┌  Commits ──────────────┐│                                                   │
 │  <empty>                ││                                                   │
-│  draft=                 ││                                                   │
-│                         │└───────────────────────────────────────────────────┘
+│  draft=                 │└───────────────────────────────────────────────────┘
 │                         │┌ 󰌱 Log ────────────────────────────────────────────┐
-└─────────────────────────┘│  error=<none>                                     │
-┌  Stash ────────────────┐│  notice=Ready                                     │
+│                         ││  error=<none>                                     │
+└─────────────────────────┘│  notice=Ready                                     │
+┌  Stash ────────────────┐│                                                   │
 │  <empty>                ││                                                   │
-│                         ││                                                   │
 │                         ││                                                   │
 └─────────────────────────┘└───────────────────────────────────────────────────┘
 keys(files): space stage/unstage | s stash | v multi | enter expand | / search

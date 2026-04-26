@@ -33,7 +33,8 @@ Navigation rules:
 - top branch/focus/status summary is hidden to prioritize panels
 - bottom keys row is unframed and shows only Git operation shortcuts for the current focused panel
 - focused panels are indicated by a colored border/title accent, not by `*`
-- selected rows are indicated by color only and only in the focused selectable panel
+- cursor rows are indicated by color only and only in the focused selectable panel
+- files selected for batch operations use a separate batch color
 
 Files panel rules:
 
@@ -41,7 +42,7 @@ Files panel rules:
 - folder operations apply to descendant files present in the tree model
 - `space` stages unstaged targets or unstages targets when all selected targets are staged
 - `s` stashes current or multi-selected targets
-- `v` enters multi-select mode for batch operations
+- `v` enters visual multi-select at the current row; `j` / `k` extends or shrinks the selected range
 - `/` opens search input in the bottom bar; Enter confirms, Esc cancels or clears, `n` / `N` navigate matches
 - discard backend support exists, but `d` is not mapped until the confirmation dialog is available
 

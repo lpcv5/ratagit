@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use ratagit_core::{Action, AppState, Command, UiAction, update};
 use ratagit_git::{GitBackend, MockGitBackend, execute_command};
 use ratagit_ui::{
-    RenderedFrame, TerminalBuffer, TerminalSize, buffer_contains_selected_text, render,
-    render_terminal_buffer, render_terminal_text,
+    RenderedFrame, TerminalBuffer, TerminalSize, buffer_contains_batch_selected_text,
+    buffer_contains_selected_text, render, render_terminal_buffer, render_terminal_text,
 };
 
 #[derive(Debug)]
@@ -105,6 +105,7 @@ impl<'a> MockScenario<'a> {
 pub struct ScenarioExpectations<'a> {
     pub screen_contains: &'a [&'a str],
     pub selected_screen_rows: &'a [&'a str],
+    pub batch_selected_screen_rows: &'a [&'a str],
     pub git_ops_contains: &'a [&'a str],
     pub git_state_contains: &'a [&'a str],
 }
@@ -136,6 +137,11 @@ pub fn run_mock_scenario(scenario: MockScenario<'_>) -> Result<(), ScenarioFailu
     for needle in scenario.expectations.selected_screen_rows {
         if !buffer_contains_selected_text(&screen_buffer, needle) {
             errors.push(format!("screen row missing selected style: {needle}"));
+        }
+    }
+    for needle in scenario.expectations.batch_selected_screen_rows {
+        if !buffer_contains_batch_selected_text(&screen_buffer, needle) {
+            errors.push(format!("screen row missing batch selected style: {needle}"));
         }
     }
     for needle in scenario.expectations.git_ops_contains {

@@ -5,6 +5,7 @@ use ratatui::style::{Color, Modifier, Style};
 pub(crate) enum RowRole {
     Normal,
     Muted,
+    BatchSelected,
     FileStaged,
     FileUntracked,
     SearchMatch,
@@ -37,6 +38,13 @@ pub fn selected_row_style() -> Style {
         .add_modifier(Modifier::BOLD)
 }
 
+pub fn batch_selected_row_style() -> Style {
+    Style::default()
+        .fg(Color::White)
+        .bg(Color::Blue)
+        .add_modifier(Modifier::BOLD)
+}
+
 pub(crate) fn inactive_panel_style() -> Style {
     Style::default().fg(Color::DarkGray)
 }
@@ -45,6 +53,7 @@ pub(crate) fn row_style(role: RowRole) -> Style {
     match role {
         RowRole::Normal => Style::default(),
         RowRole::Muted => Style::default().fg(Color::DarkGray),
+        RowRole::BatchSelected => batch_selected_row_style(),
         RowRole::FileStaged => Style::default().fg(Color::Green),
         RowRole::FileUntracked => Style::default().fg(Color::Cyan),
         RowRole::SearchMatch => Style::default()

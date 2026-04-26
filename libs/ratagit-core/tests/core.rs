@@ -1,6 +1,6 @@
 use ratagit_core::{
-    Action, AppState, BranchEntry, Command, FileEntry, GitResult, PanelFocus, RepoSnapshot,
-    UiAction, update,
+    Action, AppState, BranchEntry, Command, FileEntry, FileInputMode, GitResult, PanelFocus,
+    RepoSnapshot, UiAction, update,
 };
 
 #[test]
@@ -74,6 +74,79 @@ fn toggle_selected_file_stage_stages_only_unstaged_directory_targets() {
         commands,
         vec![Command::StageFiles {
             paths: vec!["src/lib.rs".to_string()]
+        }]
+    );
+}
+
+#[test]
+fn v_visual_mode_extends_range_with_jk_movement() {
+    let mut state = AppState::default();
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::Refreshed(RepoSnapshot {
+            status_summary: "dirty".to_string(),
+            current_branch: "main".to_string(),
+            detached_head: false,
+            files: vec![
+                FileEntry {
+                    path: "a.txt".to_string(),
+                    staged: false,
+                    untracked: false,
+                },
+                FileEntry {
+                    path: "b.txt".to_string(),
+                    staged: false,
+                    untracked: false,
+                },
+            ],
+            commits: Vec::new(),
+            branches: Vec::new(),
+            stashes: Vec::new(),
+        })),
+    );
+    assert!(commands.is_empty());
+
+    update(&mut state, Action::Ui(UiAction::ToggleFilesMultiSelect));
+    assert_eq!(state.files.selection_anchor, Some("a.txt".to_string()));
+    assert_eq!(
+        state
+            .files
+            .selected_rows
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec!["a.txt".to_string()]
+    );
+    assert_eq!(state.files.mode, FileInputMode::MultiSelect);
+
+    update(&mut state, Action::Ui(UiAction::MoveDown));
+    assert_eq!(
+        state
+            .files
+            .selected_rows
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec!["a.txt".to_string(), "b.txt".to_string()]
+    );
+
+    update(&mut state, Action::Ui(UiAction::MoveUp));
+    assert_eq!(
+        state
+            .files
+            .selected_rows
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec!["a.txt".to_string()]
+    );
+
+    update(&mut state, Action::Ui(UiAction::MoveDown));
+    let commands = update(&mut state, Action::Ui(UiAction::ToggleSelectedFileStage));
+    assert_eq!(
+        commands,
+        vec![Command::StageFiles {
+            paths: vec!["a.txt".to_string(), "b.txt".to_string()]
         }]
     );
 }

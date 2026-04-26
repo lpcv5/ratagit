@@ -45,12 +45,14 @@ pub struct FilesPanelState {
     pub selected: usize,
     pub expanded_dirs: BTreeSet<String>,
     pub selected_rows: BTreeSet<String>,
+    pub selection_anchor: Option<String>,
     pub mode: FileInputMode,
     pub search_query: String,
     pub search_matches: Vec<String>,
     pub current_match: Option<usize>,
     pub tree_initialized: bool,
-    pub last_scroll_direction: ScrollDirection,
+    pub scroll_direction: Option<ScrollDirection>,
+    pub scroll_direction_origin: usize,
 }
 
 impl Default for FilesPanelState {
@@ -60,12 +62,14 @@ impl Default for FilesPanelState {
             selected: 0,
             expanded_dirs: BTreeSet::new(),
             selected_rows: BTreeSet::new(),
+            selection_anchor: None,
             mode: FileInputMode::Normal,
             search_query: String::new(),
             search_matches: Vec::new(),
             current_match: None,
             tree_initialized: false,
-            last_scroll_direction: ScrollDirection::Down,
+            scroll_direction: None,
+            scroll_direction_origin: 0,
         }
     }
 }
@@ -86,6 +90,10 @@ pub fn reconcile_after_items_changed(state: &mut FilesPanelState) {
     state.selected_rows.retain(|path| valid_rows.contains(path));
     recompute_search_matches(state);
     clamp_selected(state);
+    if state.mode == FileInputMode::MultiSelect {
+        ensure_valid_selection_anchor(state);
+        refresh_multi_select_range(state);
+    }
 }
 
 pub fn clamp_selected(state: &mut FilesPanelState) {
@@ -95,20 +103,34 @@ pub fn clamp_selected(state: &mut FilesPanelState) {
     } else {
         state.selected.min(len - 1)
     };
+    state.scroll_direction_origin = state.selected;
 }
 
 pub fn move_selected(state: &mut FilesPanelState, move_up: bool) {
     let len = build_file_tree_rows(state).len();
     if len == 0 {
         state.selected = 0;
+        state.scroll_direction = None;
+        state.scroll_direction_origin = 0;
         return;
     }
+    let old_selected = state.selected;
+    let next_direction = if move_up {
+        ScrollDirection::Up
+    } else {
+        ScrollDirection::Down
+    };
     if move_up {
         state.selected = state.selected.saturating_sub(1);
-        state.last_scroll_direction = ScrollDirection::Up;
     } else {
         state.selected = (state.selected + 1).min(len - 1);
-        state.last_scroll_direction = ScrollDirection::Down;
+    }
+    if state.selected != old_selected && state.scroll_direction != Some(next_direction) {
+        state.scroll_direction = Some(next_direction);
+        state.scroll_direction_origin = old_selected;
+    }
+    if state.mode == FileInputMode::MultiSelect {
+        refresh_multi_select_range(state);
     }
 }
 
@@ -125,31 +147,37 @@ pub fn toggle_selected_directory(state: &mut FilesPanelState) -> bool {
         state.expanded_dirs.insert(row.path);
     }
     clamp_selected(state);
+    if state.mode == FileInputMode::MultiSelect {
+        ensure_valid_selection_anchor(state);
+        refresh_multi_select_range(state);
+    }
     true
 }
 
 pub fn enter_multi_select(state: &mut FilesPanelState) {
     state.mode = FileInputMode::MultiSelect;
-    toggle_current_row_selection(state);
+    state.selection_anchor = selected_row(state).map(|row| row.path);
+    refresh_multi_select_range(state);
 }
 
 pub fn toggle_current_row_selection(state: &mut FilesPanelState) {
-    let Some(row) = selected_row(state) else {
-        return;
-    };
-    if state.selected_rows.contains(&row.path) {
-        state.selected_rows.remove(&row.path);
+    if state.mode == FileInputMode::MultiSelect {
+        leave_multi_select(state);
     } else {
-        state.selected_rows.insert(row.path);
+        enter_multi_select(state);
     }
 }
 
 pub fn leave_multi_select(state: &mut FilesPanelState) {
     state.mode = FileInputMode::Normal;
+    state.selection_anchor = None;
     state.selected_rows.clear();
 }
 
 pub fn start_search(state: &mut FilesPanelState) {
+    if state.mode == FileInputMode::MultiSelect {
+        leave_multi_select(state);
+    }
     state.mode = FileInputMode::SearchInput;
     state.search_query.clear();
     state.search_matches.clear();
@@ -288,6 +316,37 @@ fn recompute_search_matches(state: &mut FilesPanelState) {
                 .unwrap_or(0)
                 .min(state.search_matches.len() - 1),
         );
+    }
+}
+
+fn ensure_valid_selection_anchor(state: &mut FilesPanelState) {
+    let rows = build_file_tree_rows(state);
+    let anchor_is_valid = state
+        .selection_anchor
+        .as_ref()
+        .is_some_and(|anchor| rows.iter().any(|row| &row.path == anchor));
+    if !anchor_is_valid {
+        state.selection_anchor = rows.get(state.selected).map(|row| row.path.clone());
+    }
+}
+
+fn refresh_multi_select_range(state: &mut FilesPanelState) {
+    let rows = build_file_tree_rows(state);
+    state.selected_rows.clear();
+    let Some(anchor_path) = state.selection_anchor.clone() else {
+        return;
+    };
+    let Some(anchor_index) = rows.iter().position(|row| row.path == anchor_path) else {
+        return;
+    };
+    if rows.is_empty() {
+        return;
+    }
+    let selected_index = state.selected.min(rows.len() - 1);
+    let start = anchor_index.min(selected_index);
+    let end = anchor_index.max(selected_index);
+    for row in &rows[start..=end] {
+        state.selected_rows.insert(row.path.clone());
     }
 }
 

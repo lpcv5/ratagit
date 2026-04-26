@@ -28,7 +28,7 @@ fn render_workspace_rows(state: &AppState, total_width: usize, body_height: usiz
     }
 
     let (left_width, right_width) = split_columns(total_width - separator_width);
-    let left_heights = split_vertical(body_height, &[28, 24, 28, 20]);
+    let left_heights = split_vertical(body_height, &[36, 22, 26, 16]);
     let right_heights = split_vertical(body_height, &[70, 30]);
 
     let left_panels = [

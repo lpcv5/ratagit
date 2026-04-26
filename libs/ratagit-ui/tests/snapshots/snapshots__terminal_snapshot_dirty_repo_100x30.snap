@@ -1,5 +1,6 @@
 ---
 source: libs/ratagit-ui/tests/snapshots.rs
+assertion_line: 325
 expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30, },)"
 ---
 ┌ 󰈙 Files ───────────────────────┐┌  Details ─────────────────────────────────────────────────────┐
@@ -8,6 +9,8 @@ expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30,
 │      lib.rs                   ││  targets=1                                                     │
 │      main.rs                  ││  staged=no                                                     │
 │                                ││  summary=staged: 1, unstaged: 2                                │
+│                                ││                                                                │
+│                                ││                                                                │
 │                                ││                                                                │
 └────────────────────────────────┘│                                                                │
 ┌  Branches ────────────────────┐│                                                                │
@@ -19,15 +22,13 @@ expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30,
 └────────────────────────────────┘│                                                                │
 ┌  Commits ─────────────────────┐│                                                                │
 │ abc1234 init project          ││                                                                │
-│ def5678 wire commands         ││                                                                │
-│  draft=                        ││                                                                │
-│                                │└────────────────────────────────────────────────────────────────┘
-│                                │┌ 󰌱 Log ─────────────────────────────────────────────────────────┐
+│ def5678 wire commands         │└────────────────────────────────────────────────────────────────┘
+│  draft=                        │┌ 󰌱 Log ─────────────────────────────────────────────────────────┐
 │                                ││  error=<none>                                                  │
-└────────────────────────────────┘│  notice=Ready                                                  │
+│                                ││  notice=Ready                                                  │
+└────────────────────────────────┘│                                                                │
 ┌  Stash ───────────────────────┐│                                                                │
 │ stash@{0} WIP on main: local t││                                                                │
-│                                ││                                                                │
 │                                ││                                                                │
 │                                ││                                                                │
 └────────────────────────────────┘└────────────────────────────────────────────────────────────────┘

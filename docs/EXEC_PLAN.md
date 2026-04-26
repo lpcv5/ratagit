@@ -1,5 +1,12 @@
 # EXEC_PLAN.md
 
+## Current Slice
+
+Fix Files panel scrolling so reversing from a bottom-reserve viewport does not
+jump to a top-reserve viewport. Add regression coverage that moves deep into a
+long file list, reverses upward, and keeps the previous visible window stable
+until the cursor reaches the top reserve.
+
 ## Goal
 
 Refresh the TUI with a conservative lazygit-like theme: selection is shown by

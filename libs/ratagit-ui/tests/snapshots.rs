@@ -4,9 +4,9 @@ use ratagit_testkit::{
     fixture_unicode_paths,
 };
 use ratagit_ui::{
-    TerminalSize, buffer_contains_selected_text, buffer_contains_text_with_style,
-    buffer_to_text_with_selected_marker, focused_panel_style, render, render_terminal_buffer,
-    render_terminal_text,
+    TerminalSize, batch_selected_row_style, buffer_contains_selected_text,
+    buffer_contains_text_with_style, buffer_to_text_with_selected_marker, focused_panel_style,
+    render, render_terminal_buffer, render_terminal_text,
 };
 
 fn render_snapshot(snapshot: ratagit_core::RepoSnapshot, size: TerminalSize) -> String {
@@ -214,7 +214,7 @@ fn snapshots_files_list_scrolls_to_keep_selection_visible() {
 }
 
 #[test]
-fn snapshots_files_list_scrolls_up_with_top_reserve() {
+fn snapshots_files_list_reversing_up_does_not_jump_to_top_reserve() {
     let mut state = AppState::default();
     let commands = update(
         &mut state,
@@ -236,10 +236,10 @@ fn snapshots_files_list_scrolls_up_with_top_reserve() {
         },
     )
     .as_text();
-    assert!(!text.contains("file-16.txt"));
     assert!(text.contains("    file-17.txt"));
     assert!(text.contains("    file-20.txt"));
     assert!(text.contains(" file-24.txt"));
+    assert!(!text.contains("file-16.txt"));
     assert_no_cursor_marker(&text);
 
     let screen = render_terminal_snapshot_with_cursor_marker(
@@ -250,6 +250,49 @@ fn snapshots_files_list_scrolls_up_with_top_reserve() {
         },
     );
     assert!(screen.contains(">│    file-20.txt"));
+}
+
+#[test]
+fn snapshots_files_list_reversing_down_does_not_jump_to_bottom_reserve() {
+    let mut state = AppState::default();
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::Refreshed(fixture_many_files())),
+    );
+    assert!(commands.is_empty());
+    for _ in 0..25 {
+        update(&mut state, Action::Ui(UiAction::MoveDown));
+    }
+    for _ in 0..5 {
+        update(&mut state, Action::Ui(UiAction::MoveUp));
+    }
+    update(&mut state, Action::Ui(UiAction::MoveDown));
+
+    let text = render(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    )
+    .as_text();
+    assert!(text.contains("    file-17.txt"));
+    assert!(text.contains("    file-21.txt"));
+    assert!(text.contains(" file-24.txt"));
+    assert!(!text.contains("file-16.txt"));
+
+    update(&mut state, Action::Ui(UiAction::MoveDown));
+    let text = render(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    )
+    .as_text();
+    assert!(text.contains("    file-18.txt"));
+    assert!(text.contains("    file-22.txt"));
+    assert!(text.contains(" file-25.txt"));
 }
 
 #[test]
@@ -408,6 +451,37 @@ fn terminal_buffer_highlights_selected_row_only_in_focused_panel() {
 
     assert!(buffer_contains_selected_text(&buffer, " README.md"));
     assert!(!buffer_contains_selected_text(&buffer, " main"));
+}
+
+#[test]
+fn terminal_buffer_highlights_marked_files_with_batch_style() {
+    let mut state = AppState::default();
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::Refreshed(fixture_dirty_repo())),
+    );
+    assert!(commands.is_empty());
+    update(&mut state, Action::Ui(UiAction::ToggleFilesMultiSelect));
+    update(&mut state, Action::Ui(UiAction::MoveDown));
+
+    let buffer = render_terminal_buffer(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    );
+
+    assert!(buffer_contains_text_with_style(
+        &buffer,
+        "✓   README.md",
+        batch_selected_row_style()
+    ));
+    assert!(buffer_contains_text_with_style(
+        &buffer,
+        "✓   src/",
+        batch_selected_row_style()
+    ));
 }
 
 #[test]

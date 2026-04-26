@@ -2,7 +2,7 @@ use ratatui::buffer::Buffer;
 use ratatui::style::{Color, Style};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-use crate::theme::selected_row_style;
+use crate::theme::{batch_selected_row_style, selected_row_style};
 
 pub type TerminalBuffer = Buffer;
 
@@ -57,6 +57,10 @@ pub(crate) fn buffer_to_text(buffer: &Buffer) -> String {
 
 pub fn buffer_contains_selected_text(buffer: &TerminalBuffer, needle: &str) -> bool {
     buffer_contains_text_with_style(buffer, needle, selected_row_style())
+}
+
+pub fn buffer_contains_batch_selected_text(buffer: &TerminalBuffer, needle: &str) -> bool {
+    buffer_contains_text_with_style(buffer, needle, batch_selected_row_style())
 }
 
 pub fn buffer_to_text_with_selected_marker(buffer: &TerminalBuffer) -> String {

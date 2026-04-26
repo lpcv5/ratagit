@@ -10,7 +10,10 @@ use crate::panels::{
     PanelLine, panel_title, render_branches_lines, render_commits_lines, render_details_lines,
     render_files_lines, render_log_lines, render_stash_lines, shortcuts_for_state,
 };
-use crate::theme::{focused_panel_style, inactive_panel_style, row_style, selected_row_style};
+use crate::theme::{
+    RowRole, batch_selected_row_style, focused_panel_style, inactive_panel_style, row_style,
+    selected_row_style,
+};
 
 pub fn render_terminal(frame: &mut Frame<'_>, state: &AppState) {
     let area = frame.area();
@@ -44,10 +47,10 @@ fn render_panel_grid(frame: &mut Frame<'_>, state: &AppState, area: Rect) {
     let left = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Percentage(28),
-            Constraint::Percentage(24),
-            Constraint::Percentage(28),
-            Constraint::Percentage(20),
+            Constraint::Percentage(36),
+            Constraint::Percentage(22),
+            Constraint::Percentage(26),
+            Constraint::Percentage(16),
         ])
         .split(columns[0]);
     let right = Layout::default()
@@ -118,11 +121,21 @@ fn render_block_panel(
         .map(|line| ListItem::new(Line::from(line.text.clone())).style(row_style(line.role)))
         .collect::<Vec<_>>();
     let mut list_state = ListState::default();
-    if focused && let Some(index) = lines.iter().position(|line| line.selected) {
+    let selected_index = lines.iter().position(|line| line.selected);
+    if focused && let Some(index) = selected_index {
         list_state.select(Some(index));
     }
+    let highlight_style = if focused
+        && selected_index
+            .and_then(|index| lines.get(index))
+            .is_some_and(|line| line.role == RowRole::BatchSelected)
+    {
+        batch_selected_row_style()
+    } else {
+        selected_row_style()
+    };
     let widget = List::new(items)
-        .highlight_style(selected_row_style())
+        .highlight_style(highlight_style)
         .highlight_spacing(HighlightSpacing::Never)
         .block(
             Block::default()
