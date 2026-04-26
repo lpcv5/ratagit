@@ -181,6 +181,8 @@ fn command_is_mutation(command: &Command) -> bool {
             | Command::CreateCommit { .. }
             | Command::CreateBranch { .. }
             | Command::CheckoutBranch { .. }
+            | Command::DeleteBranch { .. }
+            | Command::RebaseBranch { .. }
             | Command::StashPush { .. }
             | Command::StashPop { .. }
     )

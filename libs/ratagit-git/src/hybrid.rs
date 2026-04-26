@@ -6,7 +6,9 @@ use git2::{
     BranchType, Diff, DiffDelta, DiffFormat, DiffOptions, ErrorCode, Object, Oid, Repository,
     Status, StatusEntry, StatusOptions, StatusShow, Tree,
 };
-use ratagit_core::{BranchEntry, CommitEntry, FileEntry, RepoSnapshot, ResetMode, StashEntry};
+use ratagit_core::{
+    BranchDeleteMode, BranchEntry, CommitEntry, FileEntry, RepoSnapshot, ResetMode, StashEntry,
+};
 
 use crate::cli::GitCli;
 use crate::untracked_diff::format_untracked_diffs;
@@ -229,12 +231,30 @@ impl GitBackend for HybridGitBackend {
         self.cli.create_commit(message)
     }
 
-    fn create_branch(&mut self, name: &str) -> Result<(), GitError> {
-        self.cli.create_branch(name)
+    fn create_branch(&mut self, name: &str, start_point: &str) -> Result<(), GitError> {
+        self.cli.create_branch(name, start_point)
     }
 
-    fn checkout_branch(&mut self, name: &str) -> Result<(), GitError> {
-        self.cli.checkout_branch(name)
+    fn checkout_branch(&mut self, name: &str, auto_stash: bool) -> Result<(), GitError> {
+        self.cli.checkout_branch(name, auto_stash)
+    }
+
+    fn delete_branch(
+        &mut self,
+        name: &str,
+        mode: BranchDeleteMode,
+        force: bool,
+    ) -> Result<(), GitError> {
+        self.cli.delete_branch(name, mode, force)
+    }
+
+    fn rebase_branch(
+        &mut self,
+        target: &str,
+        interactive: bool,
+        auto_stash: bool,
+    ) -> Result<(), GitError> {
+        self.cli.rebase_branch(target, interactive, auto_stash)
     }
 
     fn stash_push(&mut self, message: &str) -> Result<(), GitError> {

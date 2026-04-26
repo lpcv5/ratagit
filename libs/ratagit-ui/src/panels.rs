@@ -240,6 +240,26 @@ pub(crate) fn shortcuts_for_state(state: &AppState) -> String {
         };
     }
 
+    if state.branches.create.active {
+        return "branch name: arrows/Home/End cursor | Enter create | Esc cancel".to_string();
+    }
+
+    if state.branches.delete_menu.active {
+        return "delete branch: j/k select | Enter delete | Esc cancel".to_string();
+    }
+
+    if state.branches.force_delete_confirm.active {
+        return "force delete branch: Enter force delete | Esc cancel".to_string();
+    }
+
+    if state.branches.rebase_menu.active {
+        return "rebase: j/k select | Enter rebase | Esc cancel".to_string();
+    }
+
+    if state.branches.auto_stash_confirm.active {
+        return "auto stash: Enter confirm | Esc cancel".to_string();
+    }
+
     if state.reset_menu.active {
         return "reset: j/k select | Enter confirm | Esc cancel".to_string();
     }
@@ -255,7 +275,9 @@ pub(crate) fn shortcuts_for_state(state: &AppState) -> String {
         PanelFocus::Files => {
             "keys(files): space stage/unstage | d discard | c commit | s stash(all|selected) | D reset | v multi | enter expand | / search".to_string()
         }
-        PanelFocus::Branches => "keys(branches): b create branch | o checkout".to_string(),
+        PanelFocus::Branches => {
+            "keys(branches): space checkout | n new | d delete | r rebase".to_string()
+        }
         PanelFocus::Commits => "keys(commits): c commit".to_string(),
         PanelFocus::Stash => "keys(stash): p stash push | O stash pop".to_string(),
         PanelFocus::Details | PanelFocus::Log => String::new(),
@@ -703,7 +725,7 @@ mod tests {
         );
         assert_eq!(
             shortcuts_for_state(&state),
-            "keys(branches): b create branch | o checkout"
+            "keys(branches): space checkout | n new | d delete | r rebase"
         );
 
         let mut empty = AppState::default();

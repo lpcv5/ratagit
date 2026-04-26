@@ -1,3 +1,4 @@
+mod branches;
 mod files;
 mod state;
 
@@ -12,10 +13,12 @@ pub use files::{
     toggle_current_row_selection, toggle_selected_directory,
 };
 pub use state::{
-    AppState, BranchEntry, BranchesPanelState, CachedFilesDiff, CommitEntry, CommitField,
-    CommitsPanelState, DetailsPanelState, DiscardConfirmState, EditorKind, EditorState, PanelFocus,
-    RepoSnapshot, ResetChoice, ResetMenuState, ResetMode, StashEntry, StashPanelState, StashScope,
-    StatusPanelState, WorkStatusState,
+    AppState, AutoStashConfirmState, AutoStashOperation, BranchCreateState, BranchDeleteChoice,
+    BranchDeleteMenuState, BranchDeleteMode, BranchEntry, BranchForceDeleteConfirmState,
+    BranchRebaseChoice, BranchRebaseMenuState, BranchesPanelState, CachedFilesDiff, CommitEntry,
+    CommitField, CommitsPanelState, DetailsPanelState, DiscardConfirmState, EditorKind,
+    EditorState, PanelFocus, RepoSnapshot, ResetChoice, ResetMenuState, ResetMode, StashEntry,
+    StashPanelState, StashScope, StatusPanelState, WorkStatusState,
 };
 
 const DETAILS_DIFF_CACHE_LIMIT: usize = 16;
@@ -64,8 +67,31 @@ pub enum UiAction {
     EditorConfirm,
     EditorCancel,
     CreateCommit { message: String },
-    CreateBranch { name: String },
+    OpenBranchCreateInput,
+    BranchCreateInputChar(char),
+    BranchCreateBackspace,
+    BranchCreateMoveCursorLeft,
+    BranchCreateMoveCursorRight,
+    BranchCreateMoveCursorHome,
+    BranchCreateMoveCursorEnd,
+    ConfirmBranchCreate,
+    CancelBranchCreate,
+    CreateBranch { name: String, start_point: String },
     CheckoutSelectedBranch,
+    OpenBranchDeleteMenu,
+    MoveBranchDeleteMenuUp,
+    MoveBranchDeleteMenuDown,
+    ConfirmBranchDeleteMenu,
+    CancelBranchDeleteMenu,
+    ConfirmBranchForceDelete,
+    CancelBranchForceDelete,
+    OpenBranchRebaseMenu,
+    MoveBranchRebaseMenuUp,
+    MoveBranchRebaseMenuDown,
+    ConfirmBranchRebaseMenu,
+    CancelBranchRebaseMenu,
+    ConfirmAutoStash,
+    CancelAutoStash,
     StashPush { message: String },
     StashPopSelected,
 }
@@ -110,10 +136,24 @@ pub enum GitResult {
     },
     CreateBranch {
         name: String,
+        start_point: String,
         result: Result<(), String>,
     },
     CheckoutBranch {
         name: String,
+        auto_stash: bool,
+        result: Result<(), String>,
+    },
+    DeleteBranch {
+        name: String,
+        mode: BranchDeleteMode,
+        force: bool,
+        result: Result<(), String>,
+    },
+    RebaseBranch {
+        target: String,
+        interactive: bool,
+        auto_stash: bool,
         result: Result<(), String>,
     },
     StashPush {
@@ -135,18 +175,53 @@ pub enum Action {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     RefreshAll,
-    RefreshFilesDetailsDiff { paths: Vec<String> },
-    StageFiles { paths: Vec<String> },
-    UnstageFiles { paths: Vec<String> },
-    StashFiles { message: String, paths: Vec<String> },
-    Reset { mode: ResetMode },
+    RefreshFilesDetailsDiff {
+        paths: Vec<String>,
+    },
+    StageFiles {
+        paths: Vec<String>,
+    },
+    UnstageFiles {
+        paths: Vec<String>,
+    },
+    StashFiles {
+        message: String,
+        paths: Vec<String>,
+    },
+    Reset {
+        mode: ResetMode,
+    },
     Nuke,
-    DiscardFiles { paths: Vec<String> },
-    CreateCommit { message: String },
-    CreateBranch { name: String },
-    CheckoutBranch { name: String },
-    StashPush { message: String },
-    StashPop { stash_id: String },
+    DiscardFiles {
+        paths: Vec<String>,
+    },
+    CreateCommit {
+        message: String,
+    },
+    CreateBranch {
+        name: String,
+        start_point: String,
+    },
+    CheckoutBranch {
+        name: String,
+        auto_stash: bool,
+    },
+    DeleteBranch {
+        name: String,
+        mode: BranchDeleteMode,
+        force: bool,
+    },
+    RebaseBranch {
+        target: String,
+        interactive: bool,
+        auto_stash: bool,
+    },
+    StashPush {
+        message: String,
+    },
+    StashPop {
+        stash_id: String,
+    },
 }
 
 pub fn debounce_key_for_command(command: &Command) -> Option<&'static str> {
@@ -162,12 +237,14 @@ pub fn debounce_key_for_command(command: &Command) -> Option<&'static str> {
         | Command::CreateCommit { .. }
         | Command::CreateBranch { .. }
         | Command::CheckoutBranch { .. }
+        | Command::DeleteBranch { .. }
+        | Command::RebaseBranch { .. }
         | Command::StashPush { .. }
         | Command::StashPop { .. } => None,
     }
 }
 
-fn with_pending(state: &mut AppState, commands: Vec<Command>) -> Vec<Command> {
+pub(crate) fn with_pending(state: &mut AppState, commands: Vec<Command>) -> Vec<Command> {
     for command in &commands {
         mark_command_pending(state, command);
     }
@@ -209,6 +286,18 @@ fn mark_command_pending(state: &mut AppState, command: &Command) {
         Command::CheckoutBranch { .. } => {
             state.work.operation_pending = Some("checkout_branch".to_string());
         }
+        Command::DeleteBranch { mode, .. } => {
+            state.work.operation_pending =
+                Some(format!("delete_branch_{}", delete_mode_name(*mode)));
+        }
+        Command::RebaseBranch { interactive, .. } => {
+            let mode = if *interactive {
+                "interactive"
+            } else {
+                "simple"
+            };
+            state.work.operation_pending = Some(format!("rebase_branch_{mode}"));
+        }
         Command::StashPush { .. } => {
             state.work.operation_pending = Some("stash_push".to_string());
         }
@@ -234,6 +323,83 @@ fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
         }
         UiAction::OpenStashEditor => {
             open_stash_editor(state);
+            Vec::new()
+        }
+        UiAction::OpenBranchCreateInput => {
+            branches::open_create_input(state);
+            Vec::new()
+        }
+        UiAction::BranchCreateInputChar(ch) => {
+            branches::input_create_char(state, ch);
+            Vec::new()
+        }
+        UiAction::BranchCreateBackspace => {
+            branches::backspace_create(state);
+            Vec::new()
+        }
+        UiAction::BranchCreateMoveCursorLeft => {
+            branches::move_create_cursor_left(state);
+            Vec::new()
+        }
+        UiAction::BranchCreateMoveCursorRight => {
+            branches::move_create_cursor_right(state);
+            Vec::new()
+        }
+        UiAction::BranchCreateMoveCursorHome => {
+            branches::move_create_cursor_home(state);
+            Vec::new()
+        }
+        UiAction::BranchCreateMoveCursorEnd => {
+            branches::move_create_cursor_end(state);
+            Vec::new()
+        }
+        UiAction::ConfirmBranchCreate => branches::confirm_create(state),
+        UiAction::CancelBranchCreate => {
+            branches::close_create_input(state);
+            Vec::new()
+        }
+        UiAction::OpenBranchDeleteMenu => {
+            branches::open_delete_menu(state);
+            Vec::new()
+        }
+        UiAction::MoveBranchDeleteMenuUp => {
+            state.branches.delete_menu.selected = state.branches.delete_menu.selected.prev();
+            Vec::new()
+        }
+        UiAction::MoveBranchDeleteMenuDown => {
+            state.branches.delete_menu.selected = state.branches.delete_menu.selected.next();
+            Vec::new()
+        }
+        UiAction::ConfirmBranchDeleteMenu => branches::confirm_delete_menu(state),
+        UiAction::CancelBranchDeleteMenu => {
+            branches::close_delete_menu(state);
+            Vec::new()
+        }
+        UiAction::ConfirmBranchForceDelete => branches::confirm_force_delete(state),
+        UiAction::CancelBranchForceDelete => {
+            branches::close_force_delete_confirm(state);
+            Vec::new()
+        }
+        UiAction::OpenBranchRebaseMenu => {
+            branches::open_rebase_menu(state);
+            Vec::new()
+        }
+        UiAction::MoveBranchRebaseMenuUp => {
+            state.branches.rebase_menu.selected = state.branches.rebase_menu.selected.prev();
+            Vec::new()
+        }
+        UiAction::MoveBranchRebaseMenuDown => {
+            state.branches.rebase_menu.selected = state.branches.rebase_menu.selected.next();
+            Vec::new()
+        }
+        UiAction::ConfirmBranchRebaseMenu => branches::confirm_rebase_menu(state),
+        UiAction::CancelBranchRebaseMenu => {
+            branches::close_rebase_menu(state);
+            Vec::new()
+        }
+        UiAction::ConfirmAutoStash => branches::confirm_auto_stash(state),
+        UiAction::CancelAutoStash => {
+            branches::close_auto_stash_confirm(state);
             Vec::new()
         }
         UiAction::OpenResetMenu => {
@@ -444,17 +610,10 @@ fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
             state.commits.draft_message = message.clone();
             with_pending(state, vec![Command::CreateCommit { message }])
         }
-        UiAction::CreateBranch { name } => {
-            with_pending(state, vec![Command::CreateBranch { name }])
+        UiAction::CreateBranch { name, start_point } => {
+            with_pending(state, vec![Command::CreateBranch { name, start_point }])
         }
-        UiAction::CheckoutSelectedBranch => {
-            if let Some(branch) = selected_branch_name(state) {
-                with_pending(state, vec![Command::CheckoutBranch { name: branch }])
-            } else {
-                push_notice(state, "No branch selected");
-                Vec::new()
-            }
-        }
+        UiAction::CheckoutSelectedBranch => branches::checkout_selected(state),
         UiAction::StashPush { message } => {
             with_pending(state, vec![Command::StashPush { message }])
         }
@@ -562,20 +721,62 @@ fn update_git_result(state: &mut AppState, result: GitResult) -> Vec<Command> {
             format!("Commit created: {message}"),
             "Failed to create commit".to_string(),
         ),
-        GitResult::CreateBranch { name, result } => handle_operation_result(
+        GitResult::CreateBranch {
+            name,
+            start_point,
+            result,
+        } => handle_operation_result(
             state,
             result,
             "create_branch",
-            format!("Branch created: {name}"),
+            format!("Branch created: {name} from {start_point}"),
             format!("Failed to create branch: {name}"),
         ),
-        GitResult::CheckoutBranch { name, result } => handle_operation_result(
+        GitResult::CheckoutBranch {
+            name,
+            auto_stash,
+            result,
+        } => handle_operation_result(
             state,
             result,
             "checkout_branch",
-            format!("Checked out: {name}"),
+            if auto_stash {
+                format!("Checked out with auto-stash: {name}")
+            } else {
+                format!("Checked out: {name}")
+            },
             format!("Failed to checkout branch: {name}"),
         ),
+        GitResult::DeleteBranch {
+            name,
+            mode,
+            force,
+            result,
+        } => handle_delete_branch_result(state, name, mode, force, result),
+        GitResult::RebaseBranch {
+            target,
+            interactive,
+            auto_stash,
+            result,
+        } => {
+            let operation_key = if interactive {
+                "rebase_branch_interactive"
+            } else {
+                "rebase_branch_simple"
+            };
+            let mode = if interactive { "interactive" } else { "simple" };
+            handle_operation_result(
+                state,
+                result,
+                operation_key,
+                if auto_stash {
+                    format!("Rebased with auto-stash ({mode}) onto {target}")
+                } else {
+                    format!("Rebased ({mode}) onto {target}")
+                },
+                format!("Failed to rebase onto {target}"),
+            )
+        }
         GitResult::StashPush { message, result } => handle_operation_result(
             state,
             result,
@@ -596,6 +797,7 @@ fn update_git_result(state: &mut AppState, result: GitResult) -> Vec<Command> {
 fn open_commit_editor(state: &mut AppState) {
     state.reset_menu.active = false;
     close_discard_confirm(state);
+    branches::close_popovers(state);
     state.editor.kind = Some(EditorKind::Commit {
         message: String::new(),
         message_cursor: 0,
@@ -608,6 +810,7 @@ fn open_commit_editor(state: &mut AppState) {
 fn open_stash_editor(state: &mut AppState) {
     state.reset_menu.active = false;
     close_discard_confirm(state);
+    branches::close_popovers(state);
     state.editor.kind = Some(EditorKind::Stash {
         title: String::new(),
         title_cursor: 0,
@@ -628,6 +831,7 @@ fn stash_scope_for_current_files_selection(state: &AppState) -> StashScope {
 fn open_reset_menu(state: &mut AppState) {
     state.editor.kind = None;
     close_discard_confirm(state);
+    branches::close_popovers(state);
     state.reset_menu.active = true;
     state.reset_menu.selected = ResetChoice::Mixed;
 }
@@ -656,6 +860,7 @@ fn open_discard_confirm(state: &mut AppState) {
 
     state.editor.kind = None;
     state.reset_menu.active = false;
+    branches::close_popovers(state);
     state.discard_confirm.active = true;
     state.discard_confirm.paths = paths;
 }
@@ -926,6 +1131,49 @@ fn handle_operation_result(
     }
 }
 
+fn handle_delete_branch_result(
+    state: &mut AppState,
+    name: String,
+    mode: BranchDeleteMode,
+    force: bool,
+    result: Result<(), String>,
+) -> Vec<Command> {
+    if let Err(error) = &result
+        && !force
+        && branches::delete_mode_includes_local(mode)
+        && is_unmerged_branch_delete_error(error)
+    {
+        state.work.operation_pending = None;
+        state.work.last_completed_command =
+            Some(format!("delete_branch_{}", delete_mode_name(mode)));
+        state.last_operation = state.work.last_completed_command.clone();
+        state.status.last_error = Some(format!(
+            "Branch is not fully merged; confirmation required: {error}"
+        ));
+        branches::open_force_delete_confirm(state, name, mode, error.clone());
+        return Vec::new();
+    }
+
+    handle_operation_result(
+        state,
+        result,
+        &format!("delete_branch_{}", delete_mode_name(mode)),
+        if force {
+            format!("Force deleted {} branch: {name}", delete_mode_label(mode))
+        } else {
+            format!("Deleted {} branch: {name}", delete_mode_label(mode))
+        },
+        format!(
+            "Failed to delete {} branch: {name}",
+            delete_mode_label(mode)
+        ),
+    )
+}
+
+fn is_unmerged_branch_delete_error(error: &str) -> bool {
+    error.contains("not fully merged") || error.contains("not merged")
+}
+
 fn apply_snapshot(state: &mut AppState, snapshot: RepoSnapshot) {
     state.status.summary = snapshot.status_summary;
     state.status.current_branch = snapshot.current_branch;
@@ -1083,12 +1331,20 @@ fn reset_mode_name(mode: ResetMode) -> &'static str {
     }
 }
 
-fn selected_branch_name(state: &AppState) -> Option<String> {
-    state
-        .branches
-        .items
-        .get(state.branches.selected)
-        .map(|branch| branch.name.clone())
+fn delete_mode_name(mode: BranchDeleteMode) -> &'static str {
+    match mode {
+        BranchDeleteMode::Local => "local",
+        BranchDeleteMode::Remote => "remote",
+        BranchDeleteMode::Both => "both",
+    }
+}
+
+fn delete_mode_label(mode: BranchDeleteMode) -> &'static str {
+    match mode {
+        BranchDeleteMode::Local => "local",
+        BranchDeleteMode::Remote => "remote",
+        BranchDeleteMode::Both => "local and remote",
+    }
 }
 
 fn selected_stash_id(state: &AppState) -> Option<String> {
@@ -1099,7 +1355,7 @@ fn selected_stash_id(state: &AppState) -> Option<String> {
         .map(|stash| stash.id.clone())
 }
 
-fn push_notice(state: &mut AppState, message: &str) {
+pub(crate) fn push_notice(state: &mut AppState, message: &str) {
     state.notices.push(message.to_string());
     if state.notices.len() > 10 {
         let keep_from = state.notices.len() - 10;

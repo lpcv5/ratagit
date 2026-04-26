@@ -1,0 +1,35 @@
+---
+source: libs/ratagit-ui/tests/snapshots.rs
+assertion_line: 357
+expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30, },)"
+---
+┌ [1] 󰈙 Files ───────────────────┐┌ [5]  Details ─────────────────────────────────────────────────┐
+│    README.md                  ││  details(branches): pending git log --graph implementation     │
+│    src/                       ││                                                                │
+│      lib.rs                   ││                                                                │
+│      main.rs                  ││                                                                │
+│                                ││                                                                │
+│                                ││                                                                │
+│                                ││                                                                │
+│            ┌ Rebase ────────────────────────────────────────────────────────────────┐            │
+│            │ Selected target: feature/mvp                                           │            │
+└────────────│ ┌ Choice ────────────────────────────────────────────────────────────┐ │            │
+┌ [2]  Branc│ │  simple rebase                                                     │ │            │
+│ main      │ │  interactive rebase                                                │ │            │
+│  feature/mv│ └────────────────────────────────────────────────────────────────────┘ │            │
+│            │ Description                                                            │            │
+│            │ Run interactive rebase of the current branch onto `feature/mvp`.       │            │
+│            │                                                                        │            │
+│            │                                                                        │            │
+└────────────│ j/k select  |  Enter rebase  |  Esc cancel                             │            │
+┌ [3]  Commi└────────────────────────────────────────────────────────────────────────┘────────────┘
+│ abc1234 init project          │┌ [6] 󰌱 Log ─────────────────────────────────────────────────────┐
+│ def5678 wire commands         ││  notice=Ready                                                  │
+│  draft=                        ││                                                                │
+│                                ││                                                                │
+│                                ││                                                                │
+└────────────────────────────────┘│                                                                │
+┌ [4]  Stash ───────────────────┐│                                                                │
+│ stash@{0} WIP on main: local t││                                                                │
+└────────────────────────────────┘└────────────────────────────────────────────────────────────────┘
+rebase: j/k select | Enter rebase | Esc cancel

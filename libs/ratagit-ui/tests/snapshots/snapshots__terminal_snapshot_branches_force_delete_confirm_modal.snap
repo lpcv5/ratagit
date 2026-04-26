@@ -1,0 +1,35 @@
+---
+source: libs/ratagit-ui/tests/snapshots.rs
+assertion_line: 357
+expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30, },)"
+---
+┌ [1] 󰈙 Files ───────────────────┐┌ [5]  Details ─────────────────────────────────────────────────┐
+│    README.md                  ││  ### unstaged                                                  │
+│    src/                       ││  diff --git a/README.md b/README.md                            │
+│      lib.rs                   ││  @@ -1 +1 @@                                                   │
+│      main.rs                  ││  -old README.md                                                │
+│                                ││  +new README.md                                                │
+│                                ││                                                                │
+│                                ││                                                                │
+│           ┌ Force Delete Branch ─────────────────────────────────────────────────────┐           │
+│           │ Branch is not fully merged.                                              │           │
+└───────────│ Target: feature/mvp                                                      │           │
+┌ [2]  Bran│ Git refused safe deletion:                                               │           │
+│ main     │ error: The branch 'feature/mvp' is not fully merged.                     │           │
+│  feature/m│                                                                          │           │
+│           │                                                                          │           │
+│           │                                                                          │           │
+│           │                                                                          │           │
+│           │ Force delete removes the branch name even if commits are only reachable  │           │
+└───────────│ Enter force delete  |  Esc cancel                                        │           │
+┌ [3]  Comm└──────────────────────────────────────────────────────────────────────────┘───────────┘
+│ abc1234 init project          │┌ [6] 󰌱 Log ─────────────────────────────────────────────────────┐
+│ def5678 wire commands         ││  error=Branch is not fully merged; confirmation required: error│
+│  draft=                        ││  notice=Ready                                                  │
+│                                ││                                                                │
+│                                ││                                                                │
+└────────────────────────────────┘│                                                                │
+┌ [4]  Stash ───────────────────┐│                                                                │
+│ stash@{0} WIP on main: local t││                                                                │
+└────────────────────────────────┘└────────────────────────────────────────────────────────────────┘
+force delete branch: Enter force delete | Esc cancel

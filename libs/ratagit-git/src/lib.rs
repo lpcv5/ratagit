@@ -7,7 +7,7 @@ mod mock;
 mod status_cli;
 mod untracked_diff;
 
-use ratagit_core::{Command, GitResult, RepoSnapshot, ResetMode, StashEntry};
+use ratagit_core::{BranchDeleteMode, Command, GitResult, RepoSnapshot, ResetMode, StashEntry};
 
 pub use hybrid::HybridGitBackend;
 pub use mock::MockGitBackend;
@@ -57,8 +57,20 @@ pub trait GitBackend {
         Ok(())
     }
     fn create_commit(&mut self, message: &str) -> Result<(), GitError>;
-    fn create_branch(&mut self, name: &str) -> Result<(), GitError>;
-    fn checkout_branch(&mut self, name: &str) -> Result<(), GitError>;
+    fn create_branch(&mut self, name: &str, start_point: &str) -> Result<(), GitError>;
+    fn checkout_branch(&mut self, name: &str, auto_stash: bool) -> Result<(), GitError>;
+    fn delete_branch(
+        &mut self,
+        name: &str,
+        mode: BranchDeleteMode,
+        force: bool,
+    ) -> Result<(), GitError>;
+    fn rebase_branch(
+        &mut self,
+        target: &str,
+        interactive: bool,
+        auto_stash: bool,
+    ) -> Result<(), GitError>;
     fn stash_push(&mut self, message: &str) -> Result<(), GitError>;
     fn stash_files(&mut self, message: &str, paths: &[String]) -> Result<(), GitError>;
     fn stash_pop(&mut self, stash_id: &str) -> Result<(), GitError>;
@@ -113,14 +125,38 @@ pub fn execute_command(backend: &mut dyn GitBackend, command: Command) -> GitRes
                 .create_commit(&message)
                 .map_err(|error| error.message),
         },
-        Command::CreateBranch { name } => GitResult::CreateBranch {
+        Command::CreateBranch { name, start_point } => GitResult::CreateBranch {
             name: name.clone(),
-            result: backend.create_branch(&name).map_err(|error| error.message),
-        },
-        Command::CheckoutBranch { name } => GitResult::CheckoutBranch {
-            name: name.clone(),
+            start_point: start_point.clone(),
             result: backend
-                .checkout_branch(&name)
+                .create_branch(&name, &start_point)
+                .map_err(|error| error.message),
+        },
+        Command::CheckoutBranch { name, auto_stash } => GitResult::CheckoutBranch {
+            name: name.clone(),
+            auto_stash,
+            result: backend
+                .checkout_branch(&name, auto_stash)
+                .map_err(|error| error.message),
+        },
+        Command::DeleteBranch { name, mode, force } => GitResult::DeleteBranch {
+            name: name.clone(),
+            mode,
+            force,
+            result: backend
+                .delete_branch(&name, mode, force)
+                .map_err(|error| error.message),
+        },
+        Command::RebaseBranch {
+            target,
+            interactive,
+            auto_stash,
+        } => GitResult::RebaseBranch {
+            target: target.clone(),
+            interactive,
+            auto_stash,
+            result: backend
+                .rebase_branch(&target, interactive, auto_stash)
                 .map_err(|error| error.message),
         },
         Command::StashPush { message } => GitResult::StashPush {
@@ -165,7 +201,7 @@ pub(crate) fn validate_repo_relative_path(path: &str) -> Result<&Path, GitError>
 
 #[cfg(test)]
 mod tests {
-    use ratagit_core::{BranchEntry, CommitEntry, FileEntry, ResetMode};
+    use ratagit_core::{BranchDeleteMode, BranchEntry, CommitEntry, FileEntry, ResetMode};
 
     use super::*;
 
@@ -193,10 +229,10 @@ mod tests {
             .create_commit("first")
             .expect("create commit should work");
         backend
-            .create_branch("feature/mvp")
+            .create_branch("feature/mvp", "main")
             .expect("create branch should work");
         backend
-            .checkout_branch("feature/mvp")
+            .checkout_branch("feature/mvp", false)
             .expect("checkout should work");
         backend
             .stash_push("checkpoint")
@@ -207,6 +243,86 @@ mod tests {
         assert!(backend.snapshot().files.is_empty());
         assert_eq!(backend.snapshot().current_branch, "feature/mvp");
         assert!(backend.snapshot().stashes.is_empty());
+    }
+
+    #[test]
+    fn mock_branch_operations_cover_start_point_delete_rebase_and_auto_stash() {
+        let mut backend = MockGitBackend::new(RepoSnapshot {
+            status_summary: "dirty".to_string(),
+            current_branch: "main".to_string(),
+            detached_head: false,
+            files: Vec::new(),
+            commits: Vec::new(),
+            branches: vec![
+                BranchEntry {
+                    name: "main".to_string(),
+                    is_current: true,
+                },
+                BranchEntry {
+                    name: "feature/base".to_string(),
+                    is_current: false,
+                },
+            ],
+            stashes: Vec::new(),
+        });
+
+        backend
+            .create_branch("feature/new", "feature/base")
+            .expect("create branch from start point should work");
+        backend
+            .checkout_branch("feature/new", true)
+            .expect("auto-stash checkout should work");
+        backend
+            .rebase_branch("origin/main", false, true)
+            .expect("auto-stash rebase should work");
+        backend
+            .delete_branch("feature/base", BranchDeleteMode::Both, false)
+            .expect("delete both should work");
+
+        assert_eq!(
+            backend.operations(),
+            &[
+                "create-branch:feature/new:feature/base".to_string(),
+                "auto-stash-push".to_string(),
+                "checkout-branch:feature/new".to_string(),
+                "auto-stash-pop".to_string(),
+                "auto-stash-push".to_string(),
+                "rebase:simple:origin/main".to_string(),
+                "auto-stash-pop".to_string(),
+                "delete-local:feature/base".to_string(),
+                "delete-remote:origin/feature/base".to_string(),
+            ]
+        );
+        assert_eq!(backend.snapshot().current_branch, "feature/new");
+        assert!(
+            !backend
+                .snapshot()
+                .branches
+                .iter()
+                .any(|branch| branch.name == "feature/base")
+        );
+    }
+
+    #[test]
+    fn mock_delete_current_branch_reports_error() {
+        let mut backend = MockGitBackend::new(RepoSnapshot {
+            status_summary: "clean".to_string(),
+            current_branch: "main".to_string(),
+            detached_head: false,
+            files: Vec::new(),
+            commits: Vec::new(),
+            branches: vec![BranchEntry {
+                name: "main".to_string(),
+                is_current: true,
+            }],
+            stashes: Vec::new(),
+        });
+
+        let error = backend
+            .delete_branch("main", BranchDeleteMode::Local, false)
+            .expect_err("current branch delete should fail");
+
+        assert!(error.message.contains("cannot delete current branch"));
     }
 
     #[test]

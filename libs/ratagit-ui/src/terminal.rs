@@ -5,6 +5,7 @@ use ratatui::text::Line;
 use ratatui::widgets::{Block, Borders, HighlightSpacing, List, ListItem, ListState, Paragraph};
 use ratatui::{Frame, Terminal};
 
+use crate::branch_modal::render_branch_modals;
 use crate::discard_modal::render_discard_modal;
 use crate::editor_modal::render_editor_modal;
 use crate::frame::{TerminalBuffer, TerminalCursor, TerminalSize, buffer_to_text};
@@ -29,6 +30,7 @@ pub fn render_terminal(frame: &mut Frame<'_>, state: &AppState) {
     render_panel_grid(frame, state, root[0]);
     render_shortcuts(frame, state, root[1]);
     render_editor_modal(frame, state, root[0]);
+    render_branch_modals(frame, state, root[0]);
     render_reset_modal(frame, state, root[0]);
     render_discard_modal(frame, state, root[0]);
 }
@@ -50,7 +52,7 @@ pub fn render_terminal_buffer_with_cursor(
     terminal
         .draw(|frame| render_terminal(frame, state))
         .expect("terminal render should succeed");
-    let cursor = if state.editor.is_active() {
+    let cursor = if state.editor.is_active() || state.branches.create.active {
         let position = terminal
             .backend_mut()
             .get_cursor_position()

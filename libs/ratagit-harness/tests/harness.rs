@@ -2,7 +2,7 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use ratagit_core::{AppState, RepoSnapshot, ResetMode, UiAction};
+use ratagit_core::{AppState, BranchDeleteMode, RepoSnapshot, ResetMode, UiAction};
 use ratagit_git::{GitBackend, GitError, MockGitBackend};
 use ratagit_harness::{
     AsyncRuntime, MockScenario, Runtime, ScenarioExpectations, run_mock_scenario,
@@ -58,12 +58,42 @@ impl GitBackend for BlockingBackend {
         self.inner.lock().expect("mock lock").create_commit(message)
     }
 
-    fn create_branch(&mut self, name: &str) -> Result<(), GitError> {
-        self.inner.lock().expect("mock lock").create_branch(name)
+    fn create_branch(&mut self, name: &str, start_point: &str) -> Result<(), GitError> {
+        self.inner
+            .lock()
+            .expect("mock lock")
+            .create_branch(name, start_point)
     }
 
-    fn checkout_branch(&mut self, name: &str) -> Result<(), GitError> {
-        self.inner.lock().expect("mock lock").checkout_branch(name)
+    fn checkout_branch(&mut self, name: &str, auto_stash: bool) -> Result<(), GitError> {
+        self.inner
+            .lock()
+            .expect("mock lock")
+            .checkout_branch(name, auto_stash)
+    }
+
+    fn delete_branch(
+        &mut self,
+        name: &str,
+        mode: BranchDeleteMode,
+        force: bool,
+    ) -> Result<(), GitError> {
+        self.inner
+            .lock()
+            .expect("mock lock")
+            .delete_branch(name, mode, force)
+    }
+
+    fn rebase_branch(
+        &mut self,
+        target: &str,
+        interactive: bool,
+        auto_stash: bool,
+    ) -> Result<(), GitError> {
+        self.inner
+            .lock()
+            .expect("mock lock")
+            .rebase_branch(target, interactive, auto_stash)
     }
 
     fn stash_push(&mut self, message: &str) -> Result<(), GitError> {
@@ -808,10 +838,12 @@ fn harness_branches_create_and_checkout() {
         UiAction::FocusNext,
         UiAction::CreateBranch {
             name: "feature/new".to_string(),
+            start_point: "main".to_string(),
         },
         UiAction::MoveDown,
         UiAction::MoveDown,
         UiAction::CheckoutSelectedBranch,
+        UiAction::ConfirmAutoStash,
     ];
     assert_scenario(MockScenario::new(
         "mvp_branches_create_checkout",
@@ -825,8 +857,179 @@ fn harness_branches_create_and_checkout() {
             screen_not_contains: &[],
             selected_screen_rows: &[],
             batch_selected_screen_rows: &[],
-            git_ops_contains: &["create-branch:feature/new", "checkout-branch:feature/new"],
+            git_ops_contains: &[
+                "create-branch:feature/new:main",
+                "auto-stash-push",
+                "checkout-branch:feature/new",
+                "auto-stash-pop",
+            ],
             git_state_contains: &["current_branch: \"feature/new\""],
+        },
+    ));
+}
+
+#[test]
+fn harness_branches_create_from_selected_branch() {
+    let inputs = [
+        UiAction::RefreshAll,
+        UiAction::FocusNext,
+        UiAction::MoveDown,
+        UiAction::OpenBranchCreateInput,
+        UiAction::BranchCreateInputChar('f'),
+        UiAction::BranchCreateInputChar('e'),
+        UiAction::BranchCreateInputChar('a'),
+        UiAction::BranchCreateInputChar('t'),
+        UiAction::BranchCreateInputChar('u'),
+        UiAction::BranchCreateInputChar('r'),
+        UiAction::BranchCreateInputChar('e'),
+        UiAction::BranchCreateInputChar('/'),
+        UiAction::BranchCreateInputChar('f'),
+        UiAction::BranchCreateInputChar('r'),
+        UiAction::BranchCreateInputChar('o'),
+        UiAction::BranchCreateInputChar('m'),
+        UiAction::BranchCreateInputChar('-'),
+        UiAction::BranchCreateInputChar('m'),
+        UiAction::BranchCreateInputChar('v'),
+        UiAction::BranchCreateInputChar('p'),
+        UiAction::ConfirmBranchCreate,
+    ];
+    assert_scenario(MockScenario::new(
+        "branches_create_from_selected_branch",
+        fixture_dirty_repo(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &["feature/from-mvp", "Branch created"],
+            screen_not_contains: &[],
+            selected_screen_rows: &[],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["create-branch:feature/from-mvp:feature/mvp"],
+            git_state_contains: &["name: \"feature/from-mvp\""],
+        },
+    ));
+}
+
+#[test]
+fn harness_branches_dirty_checkout_with_auto_stash_confirm() {
+    let inputs = [
+        UiAction::RefreshAll,
+        UiAction::FocusNext,
+        UiAction::MoveDown,
+        UiAction::CheckoutSelectedBranch,
+        UiAction::ConfirmAutoStash,
+    ];
+    assert_scenario(MockScenario::new(
+        "branches_dirty_checkout_auto_stash",
+        fixture_dirty_repo(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &["Checked out with auto-stash: feature/mvp"],
+            screen_not_contains: &[],
+            selected_screen_rows: &[],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &[
+                "auto-stash-push",
+                "checkout-branch:feature/mvp",
+                "auto-stash-pop",
+            ],
+            git_state_contains: &["current_branch: \"feature/mvp\""],
+        },
+    ));
+}
+
+#[test]
+fn harness_branches_delete_local_branch() {
+    let inputs = [
+        UiAction::RefreshAll,
+        UiAction::FocusNext,
+        UiAction::MoveDown,
+        UiAction::OpenBranchDeleteMenu,
+        UiAction::ConfirmBranchDeleteMenu,
+    ];
+    assert_scenario(MockScenario::new(
+        "branches_delete_local",
+        fixture_dirty_repo(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &["Deleted local branch: feature/mvp"],
+            screen_not_contains: &[],
+            selected_screen_rows: &[],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["delete-local:feature/mvp"],
+            git_state_contains: &["current_branch: \"main\""],
+        },
+    ));
+}
+
+#[test]
+fn harness_branches_delete_current_branch_is_protected() {
+    let inputs = [
+        UiAction::RefreshAll,
+        UiAction::FocusNext,
+        UiAction::OpenBranchDeleteMenu,
+        UiAction::ConfirmBranchDeleteMenu,
+    ];
+    assert_scenario(MockScenario::new(
+        "branches_delete_current_protected",
+        fixture_dirty_repo(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &["Cannot delete current branch"],
+            screen_not_contains: &["Deleted local branch: main"],
+            selected_screen_rows: &[],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["refresh"],
+            git_state_contains: &["current_branch: \"main\"", "name: \"main\""],
+        },
+    ));
+}
+
+#[test]
+fn harness_branches_rebase_simple_and_origin_main() {
+    let mut fixture = fixture_dirty_repo();
+    fixture.files.clear();
+    fixture.status_summary = "staged: 0, unstaged: 0".to_string();
+
+    let simple_inputs = [
+        UiAction::RefreshAll,
+        UiAction::FocusNext,
+        UiAction::MoveDown,
+        UiAction::OpenBranchRebaseMenu,
+        UiAction::ConfirmBranchRebaseMenu,
+    ];
+    assert_scenario(MockScenario::new(
+        "branches_rebase_simple",
+        fixture.clone(),
+        &simple_inputs,
+        ScenarioExpectations {
+            screen_contains: &["Rebased (simple) onto feature/mvp"],
+            screen_not_contains: &[],
+            selected_screen_rows: &[],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["rebase:simple:feature/mvp"],
+            git_state_contains: &["current_branch: \"main\""],
+        },
+    ));
+
+    let origin_main_inputs = [
+        UiAction::RefreshAll,
+        UiAction::FocusNext,
+        UiAction::MoveDown,
+        UiAction::OpenBranchRebaseMenu,
+        UiAction::MoveBranchRebaseMenuDown,
+        UiAction::MoveBranchRebaseMenuDown,
+        UiAction::ConfirmBranchRebaseMenu,
+    ];
+    assert_scenario(MockScenario::new(
+        "branches_rebase_origin_main",
+        fixture,
+        &origin_main_inputs,
+        ScenarioExpectations {
+            screen_contains: &["Rebased (simple) onto origin/main"],
+            screen_not_contains: &[],
+            selected_screen_rows: &[],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["rebase:simple:origin/main"],
+            git_state_contains: &["current_branch: \"main\""],
         },
     ));
 }
@@ -900,7 +1103,7 @@ fn harness_focus_panel_shortcuts_follow_focus() {
         fixture_dirty_repo(),
         &inputs,
         ScenarioExpectations {
-            screen_contains: &["Details", "Log", "keys(branches):", "o checkout"],
+            screen_contains: &["Details", "Log", "keys(branches):", "space checkout"],
             screen_not_contains: &[],
             selected_screen_rows: &[],
             batch_selected_screen_rows: &[],

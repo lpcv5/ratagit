@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use ratagit_core::ResetMode;
+use ratagit_core::{BranchDeleteMode, ResetMode};
 use ratagit_git::{GitBackend, HybridGitBackend};
 
 struct TmpGitRepo {
@@ -229,4 +229,95 @@ fn cli_nuke_clears_tracked_and_untracked_changes() {
 
     let status = repo.run_git_capture(&["status", "--short", "--untracked-files=all"]);
     assert_eq!(status.trim(), "");
+}
+
+#[test]
+fn cli_delete_branch_reports_worktree_occupancy() {
+    if !git_available() {
+        eprintln!("git is unavailable, skipping cli_delete_branch_reports_worktree_occupancy");
+        return;
+    }
+
+    let repo = seeded_repo_with_two_files("cli-delete-worktree-branch");
+    repo.run_git(&["branch", "feature/worktree"]);
+    let worktree_path = repo.path().with_file_name(format!(
+        "{}-linked",
+        repo.path()
+            .file_name()
+            .expect("repo path should have a file name")
+            .to_string_lossy()
+    ));
+    let worktree_arg = worktree_path.to_string_lossy().to_string();
+    repo.run_git(&["worktree", "add", &worktree_arg, "feature/worktree"]);
+
+    let mut backend = HybridGitBackend::open(repo.path()).expect("hybrid backend should open");
+    let error = backend
+        .delete_branch("feature/worktree", BranchDeleteMode::Local, false)
+        .expect_err("worktree-occupied branch delete should fail");
+
+    assert!(error.message.contains("branch is checked out in worktree"));
+    assert!(error.message.contains("-linked"));
+    let _ = remove_dir_all(worktree_path);
+}
+
+#[test]
+fn cli_delete_branch_allows_tip_contained_by_another_local_branch() {
+    if !git_available() {
+        eprintln!(
+            "git is unavailable, skipping cli_delete_branch_allows_tip_contained_by_another_local_branch"
+        );
+        return;
+    }
+
+    let repo = seeded_repo_with_two_files("cli-delete-contained-branch");
+    let default_branch = repo.run_git_capture(&["branch", "--show-current"]);
+    let default_branch = default_branch.trim();
+    repo.run_git(&["checkout", "-b", "feature/base"]);
+    write(repo.path().join("a.txt"), "feature\n").expect("a.txt should be writable");
+    repo.run_git(&["add", "--", "a.txt"]);
+    repo.run_git(&["commit", "-m", "feature base"]);
+    repo.run_git(&["checkout", default_branch]);
+
+    let mut backend = HybridGitBackend::open(repo.path()).expect("hybrid backend should open");
+    backend
+        .create_branch("feature/temp", "feature/base")
+        .expect("branch from non-current base should be created");
+    backend
+        .delete_branch("feature/temp", BranchDeleteMode::Local, false)
+        .expect_err("safe delete should ask for confirmation when not merged into current branch");
+    backend
+        .delete_branch("feature/temp", BranchDeleteMode::Local, true)
+        .expect("force delete should delete after confirmation");
+
+    let branches = repo.run_git_capture(&["branch", "--format=%(refname:short)"]);
+    assert!(branches.lines().any(|line| line == "feature/base"));
+    assert!(!branches.lines().any(|line| line == "feature/temp"));
+}
+
+#[test]
+fn cli_delete_branch_still_rejects_unique_unmerged_tip() {
+    if !git_available() {
+        eprintln!(
+            "git is unavailable, skipping cli_delete_branch_still_rejects_unique_unmerged_tip"
+        );
+        return;
+    }
+
+    let repo = seeded_repo_with_two_files("cli-delete-unique-branch");
+    let default_branch = repo.run_git_capture(&["branch", "--show-current"]);
+    let default_branch = default_branch.trim();
+    repo.run_git(&["checkout", "-b", "feature/unique"]);
+    write(repo.path().join("a.txt"), "unique\n").expect("a.txt should be writable");
+    repo.run_git(&["add", "--", "a.txt"]);
+    repo.run_git(&["commit", "-m", "unique branch"]);
+    repo.run_git(&["checkout", default_branch]);
+
+    let mut backend = HybridGitBackend::open(repo.path()).expect("hybrid backend should open");
+    let error = backend
+        .delete_branch("feature/unique", BranchDeleteMode::Local, false)
+        .expect_err("unique unmerged branch should not be deleted");
+
+    assert!(error.message.contains("not fully merged"));
+    let branches = repo.run_git_capture(&["branch", "--format=%(refname:short)"]);
+    assert!(branches.lines().any(|line| line == "feature/unique"));
 }

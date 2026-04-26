@@ -51,6 +51,81 @@ pub struct BranchEntry {
     pub is_current: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BranchDeleteMode {
+    Local,
+    Remote,
+    Both,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BranchDeleteChoice {
+    Local,
+    Remote,
+    Both,
+}
+
+impl BranchDeleteChoice {
+    pub const ALL: [Self; 3] = [Self::Local, Self::Remote, Self::Both];
+
+    pub fn next(self) -> Self {
+        let index = Self::ALL
+            .iter()
+            .position(|choice| *choice == self)
+            .unwrap_or(0);
+        Self::ALL[(index + 1).min(Self::ALL.len() - 1)]
+    }
+
+    pub fn prev(self) -> Self {
+        let index = Self::ALL
+            .iter()
+            .position(|choice| *choice == self)
+            .unwrap_or(0);
+        Self::ALL[index.saturating_sub(1)]
+    }
+
+    pub fn delete_mode(self) -> BranchDeleteMode {
+        match self {
+            Self::Local => BranchDeleteMode::Local,
+            Self::Remote => BranchDeleteMode::Remote,
+            Self::Both => BranchDeleteMode::Both,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BranchRebaseChoice {
+    Simple,
+    Interactive,
+    OriginMain,
+}
+
+impl BranchRebaseChoice {
+    pub const ALL: [Self; 3] = [Self::Simple, Self::Interactive, Self::OriginMain];
+
+    pub fn next(self) -> Self {
+        let index = Self::ALL
+            .iter()
+            .position(|choice| *choice == self)
+            .unwrap_or(0);
+        Self::ALL[(index + 1).min(Self::ALL.len() - 1)]
+    }
+
+    pub fn prev(self) -> Self {
+        let index = Self::ALL
+            .iter()
+            .position(|choice| *choice == self)
+            .unwrap_or(0);
+        Self::ALL[index.saturating_sub(1)]
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AutoStashOperation {
+    Checkout { branch: String },
+    Rebase { target: String, interactive: bool },
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StashEntry {
     pub id: String,
@@ -213,6 +288,67 @@ impl EditorState {
 pub struct BranchesPanelState {
     pub items: Vec<BranchEntry>,
     pub selected: usize,
+    pub create: BranchCreateState,
+    pub delete_menu: BranchDeleteMenuState,
+    pub force_delete_confirm: BranchForceDeleteConfirmState,
+    pub rebase_menu: BranchRebaseMenuState,
+    pub auto_stash_confirm: AutoStashConfirmState,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct BranchCreateState {
+    pub active: bool,
+    pub name: String,
+    pub cursor: usize,
+    pub start_point: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BranchDeleteMenuState {
+    pub active: bool,
+    pub selected: BranchDeleteChoice,
+    pub target_branch: String,
+}
+
+impl Default for BranchDeleteMenuState {
+    fn default() -> Self {
+        Self {
+            active: false,
+            selected: BranchDeleteChoice::Local,
+            target_branch: String::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct BranchForceDeleteConfirmState {
+    pub active: bool,
+    pub target_branch: String,
+    pub mode: Option<BranchDeleteMode>,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BranchRebaseMenuState {
+    pub active: bool,
+    pub selected: BranchRebaseChoice,
+    pub target_branch: String,
+}
+
+impl Default for BranchRebaseMenuState {
+    fn default() -> Self {
+        Self {
+            active: false,
+            selected: BranchRebaseChoice::Simple,
+            target_branch: String::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct AutoStashConfirmState {
+    pub active: bool,
+    pub operation: Option<AutoStashOperation>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -274,6 +410,11 @@ impl Default for AppState {
             branches: BranchesPanelState {
                 items: Vec::new(),
                 selected: 0,
+                create: BranchCreateState::default(),
+                delete_menu: BranchDeleteMenuState::default(),
+                force_delete_confirm: BranchForceDeleteConfirmState::default(),
+                rebase_menu: BranchRebaseMenuState::default(),
+                auto_stash_confirm: AutoStashConfirmState::default(),
             },
             stash: StashPanelState {
                 items: Vec::new(),

@@ -20,7 +20,9 @@ ratagit aims to replicate lazygit UX with a Rust + ratatui implementation.
 MVP v0 includes a left-nav workspace layout with six panels:
 
 - Files: tree view, folder expand/collapse, stage/unstage toggle, path-limited stash, repository reset menu, multi-select, and search
-- Branches: create branch and checkout selected branch
+- Branches: create branches from the selected local branch, checkout with
+  optional auto-stash, delete local/`origin` branches, and rebase the current
+  branch
 - Commits: create commit and refresh list
 - Stash: stash push and stash pop selected entry
 - Details:
@@ -88,6 +90,31 @@ Files panel rules:
   long operations do not block drawing or keyboard input
 - real backend file status refresh uses Git porcelain status inside `GitBackend`
   for large repositories while preserving full untracked-file expansion
+
+Branches panel rules:
+
+- the Branches panel lists local branches only in this slice
+- `space` checks out the selected branch
+  - if the working tree has uncommitted changes, an auto-stash confirmation
+    modal opens first
+  - confirming stashes changes, checks out the branch, then restores the stash
+  - cancelling leaves the repository unchanged
+- `n` opens a branch-name input modal
+  - the new branch is created from the selected branch as the start point
+  - `Enter` creates the branch, `Esc` cancels
+- `d` opens a branch delete menu
+  - choices are local, remote, and local plus remote
+  - local deletion uses safe `git branch -d`
+  - if Git reports the branch is not fully merged, a force-delete confirmation
+    modal opens so the user can decide whether to delete with `git branch -D`
+  - remote deletion targets `origin/<selected-local-branch>`
+  - deleting the current local branch is blocked with a notice
+  - deleting a branch checked out by a worktree is blocked by `GitBackend`
+- `r` opens a rebase menu
+  - simple rebase rebases the current branch onto the selected branch
+  - interactive rebase runs Git interactive rebase onto the selected branch
+  - origin/main rebase rebases the current branch onto `origin/main`
+  - dirty rebase uses the same explicit auto-stash confirmation as checkout
 
 All features are keyboard-driven and deterministic.
 

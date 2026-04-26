@@ -1,4 +1,6 @@
-use ratagit_core::{BranchEntry, CommitEntry, RepoSnapshot, ResetMode, StashEntry};
+use ratagit_core::{
+    BranchDeleteMode, BranchEntry, CommitEntry, RepoSnapshot, ResetMode, StashEntry,
+};
 
 use crate::{GitBackend, GitError, resequence_stashes};
 
@@ -152,8 +154,9 @@ impl GitBackend for MockGitBackend {
         Ok(())
     }
 
-    fn create_branch(&mut self, name: &str) -> Result<(), GitError> {
-        self.operations.push(format!("create-branch:{name}"));
+    fn create_branch(&mut self, name: &str, start_point: &str) -> Result<(), GitError> {
+        self.operations
+            .push(format!("create-branch:{name}:{start_point}"));
         if self
             .snapshot
             .branches
@@ -169,7 +172,10 @@ impl GitBackend for MockGitBackend {
         Ok(())
     }
 
-    fn checkout_branch(&mut self, name: &str) -> Result<(), GitError> {
+    fn checkout_branch(&mut self, name: &str, auto_stash: bool) -> Result<(), GitError> {
+        if auto_stash {
+            self.operations.push("auto-stash-push".to_string());
+        }
         self.operations.push(format!("checkout-branch:{name}"));
         if !self
             .snapshot
@@ -184,6 +190,46 @@ impl GitBackend for MockGitBackend {
         }
         self.snapshot.current_branch = name.to_string();
         self.snapshot.detached_head = false;
+        if auto_stash {
+            self.operations.push("auto-stash-pop".to_string());
+        }
+        Ok(())
+    }
+
+    fn delete_branch(
+        &mut self,
+        name: &str,
+        mode: BranchDeleteMode,
+        force: bool,
+    ) -> Result<(), GitError> {
+        match mode {
+            BranchDeleteMode::Local => self.delete_local_branch(name, force),
+            BranchDeleteMode::Remote => {
+                self.operations.push(format!("delete-remote:origin/{name}"));
+                Ok(())
+            }
+            BranchDeleteMode::Both => {
+                self.delete_local_branch(name, force)?;
+                self.operations.push(format!("delete-remote:origin/{name}"));
+                Ok(())
+            }
+        }
+    }
+
+    fn rebase_branch(
+        &mut self,
+        target: &str,
+        interactive: bool,
+        auto_stash: bool,
+    ) -> Result<(), GitError> {
+        if auto_stash {
+            self.operations.push("auto-stash-push".to_string());
+        }
+        let mode = if interactive { "interactive" } else { "simple" };
+        self.operations.push(format!("rebase:{mode}:{target}"));
+        if auto_stash {
+            self.operations.push("auto-stash-pop".to_string());
+        }
         Ok(())
     }
 
@@ -264,6 +310,30 @@ impl GitBackend for MockGitBackend {
         self.snapshot
             .files
             .retain(|entry| !paths.contains(&entry.path));
+        Ok(())
+    }
+}
+
+impl MockGitBackend {
+    fn delete_local_branch(&mut self, name: &str, force: bool) -> Result<(), GitError> {
+        let operation = if force {
+            format!("force-delete-local:{name}")
+        } else {
+            format!("delete-local:{name}")
+        };
+        self.operations.push(operation);
+        if self.snapshot.current_branch == name {
+            return Err(GitError::new(format!(
+                "cannot delete current branch: {name}"
+            )));
+        }
+        let index = self
+            .snapshot
+            .branches
+            .iter()
+            .position(|branch| branch.name == name)
+            .ok_or_else(|| GitError::new(format!("branch not found: {name}")))?;
+        self.snapshot.branches.remove(index);
         Ok(())
     }
 }

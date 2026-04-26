@@ -28,6 +28,8 @@ Focus model:
 - `AppState.editor` stores active commit/stash editor modal state (type + fields + cursor indexes + scope)
 - `AppState.reset_menu` stores whether the Files reset menu is active and which reset choice is selected
 - `AppState.discard_confirm` stores whether the discard confirmation modal is active and the resolved target paths
+- `AppState.branches` stores local branch rows plus active branch creation,
+  delete menu, rebase menu, and auto-stash confirmation state
 - `AppState.work` stores visible pending refresh/details/operation state and
   the last completed command label
 - left-panel height baseline follows the Files/Branches/Commits/Stash ratio
@@ -102,6 +104,22 @@ Files panel interaction:
   the current Files selection.
 - while editor, reset, or discard modal is active, modal key handling has highest input priority
   over panel navigation mappings.
+- Branches focus maps `space` to checkout, `n` to new branch, `d` to delete,
+  and `r` to rebase.
+- Branch creation opens an AppState-owned input modal and emits
+  `Command::CreateBranch` with the selected branch as `start_point`.
+- Branch checkout and rebase inspect current AppState file status; when dirty,
+  they open an auto-stash confirmation modal before emitting commands with
+  `auto_stash=true`.
+- Branch deletion opens an AppState-owned select list for local, remote, or both:
+  local deletion is blocked in the reducer when the selected branch is current,
+  and `GitBackend` also blocks branches checked out in any worktree. The real
+  backend first tries `git branch -d`; if Git reports the branch is not fully
+  merged, the reducer stores a force-delete confirmation modal in `AppState`.
+  Confirming emits the same deletion command with `force=true`, which maps local
+  deletion to `git branch -D`.
+- Branch rebase options are simple, interactive, and `origin/main`; simple and
+  interactive rebase the current branch onto the selected branch.
 - Files Details projection renders merged `unstaged` and `staged` diff sections
   for current file/folder targets from `GitBackend`.
 - Repeated Files Details selections reuse the AppState-owned diff cache without
@@ -138,6 +156,9 @@ Files panel interaction:
 - Modal tones are semantic and text-backed: editor modals use an info accent,
   repository reset uses a warning accent, and discard confirmation uses a danger
   accent while still rendering explicit warning text.
+- Branch creation uses the info modal tone, branch delete uses danger, and
+  branch force-delete confirmation uses danger; branch rebase plus auto-stash
+  confirmation use warning.
 - Files diff rows in Details are color-coded by semantics:
   - section headers (`### ...`)
   - diff metadata (`diff --git`, `---`, `+++`, `index`)

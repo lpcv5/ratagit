@@ -294,6 +294,121 @@ fn terminal_snapshot_files_discard_confirm_multiselect_modal() {
 }
 
 #[test]
+fn terminal_snapshot_branches_create_modal() {
+    let mut state = AppState::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+    update(
+        &mut state,
+        Action::Ui(UiAction::FocusPanel {
+            panel: PanelFocus::Branches,
+        }),
+    );
+    update(&mut state, Action::Ui(UiAction::MoveDown));
+    update(&mut state, Action::Ui(UiAction::OpenBranchCreateInput));
+    for ch in "feature/new".chars() {
+        update(&mut state, Action::Ui(UiAction::BranchCreateInputChar(ch)));
+    }
+
+    insta::assert_snapshot!(render_terminal_text(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    ));
+}
+
+#[test]
+fn terminal_snapshot_branches_delete_modal() {
+    let mut state = AppState::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+    update(
+        &mut state,
+        Action::Ui(UiAction::FocusPanel {
+            panel: PanelFocus::Branches,
+        }),
+    );
+    update(&mut state, Action::Ui(UiAction::MoveDown));
+    update(&mut state, Action::Ui(UiAction::OpenBranchDeleteMenu));
+
+    insta::assert_snapshot!(render_terminal_text(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    ));
+}
+
+#[test]
+fn terminal_snapshot_branches_force_delete_confirm_modal() {
+    let mut state = AppState::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+    update(
+        &mut state,
+        Action::GitResult(GitResult::DeleteBranch {
+            name: "feature/mvp".to_string(),
+            mode: ratagit_core::BranchDeleteMode::Local,
+            force: false,
+            result: Err("error: The branch 'feature/mvp' is not fully merged.".to_string()),
+        }),
+    );
+
+    insta::assert_snapshot!(render_terminal_text(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    ));
+}
+
+#[test]
+fn terminal_snapshot_branches_rebase_modal() {
+    let mut state = AppState::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+    update(
+        &mut state,
+        Action::Ui(UiAction::FocusPanel {
+            panel: PanelFocus::Branches,
+        }),
+    );
+    update(&mut state, Action::Ui(UiAction::MoveDown));
+    update(&mut state, Action::Ui(UiAction::OpenBranchRebaseMenu));
+    update(&mut state, Action::Ui(UiAction::MoveBranchRebaseMenuDown));
+
+    insta::assert_snapshot!(render_terminal_text(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    ));
+}
+
+#[test]
+fn terminal_snapshot_branches_auto_stash_confirm_modal() {
+    let mut state = AppState::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+    update(
+        &mut state,
+        Action::Ui(UiAction::FocusPanel {
+            panel: PanelFocus::Branches,
+        }),
+    );
+    update(&mut state, Action::Ui(UiAction::MoveDown));
+    update(&mut state, Action::Ui(UiAction::CheckoutSelectedBranch));
+
+    insta::assert_snapshot!(render_terminal_text(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    ));
+}
+
+#[test]
 fn snapshots_files_multi_select_marks_selected_rows() {
     let mut state = AppState::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());

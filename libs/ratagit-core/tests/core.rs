@@ -1,6 +1,7 @@
 use ratagit_core::{
-    Action, AppState, BranchEntry, Command, CommitField, EditorKind, FileEntry, FileInputMode,
-    GitResult, PanelFocus, RepoSnapshot, ResetChoice, ResetMode, StashScope, UiAction,
+    Action, AppState, AutoStashOperation, BranchDeleteChoice, BranchDeleteMode, BranchEntry,
+    BranchRebaseChoice, Command, CommitField, EditorKind, FileEntry, FileInputMode, GitResult,
+    PanelFocus, RepoSnapshot, ResetChoice, ResetMode, StashScope, UiAction,
     refresh_tree_projection, update,
 };
 
@@ -12,6 +13,243 @@ fn refresh_action_emits_refresh_command() {
     assert!(state.work.refresh_pending);
 }
 
+#[test]
+fn branch_create_input_confirms_from_selected_start_point() {
+    let mut state = state_with_branches_and_files(Vec::new());
+    state.branches.selected = 1;
+
+    assert!(update(&mut state, Action::Ui(UiAction::OpenBranchCreateInput)).is_empty());
+    for ch in "feature/new".chars() {
+        update(&mut state, Action::Ui(UiAction::BranchCreateInputChar(ch)));
+    }
+    let commands = update(&mut state, Action::Ui(UiAction::ConfirmBranchCreate));
+
+    assert_eq!(
+        commands,
+        vec![Command::CreateBranch {
+            name: "feature/new".to_string(),
+            start_point: "feature/mvp".to_string(),
+        }]
+    );
+    assert!(!state.branches.create.active);
+}
+
+#[test]
+fn branch_create_input_rejects_empty_name_and_can_cancel() {
+    let mut state = state_with_branches_and_files(Vec::new());
+
+    update(&mut state, Action::Ui(UiAction::OpenBranchCreateInput));
+    let commands = update(&mut state, Action::Ui(UiAction::ConfirmBranchCreate));
+    assert!(commands.is_empty());
+    assert!(state.branches.create.active);
+    assert!(
+        state
+            .notices
+            .iter()
+            .any(|notice| notice.contains("Branch name cannot be empty"))
+    );
+
+    update(&mut state, Action::Ui(UiAction::CancelBranchCreate));
+    assert!(!state.branches.create.active);
+}
+
+#[test]
+fn dirty_checkout_opens_auto_stash_confirm_then_confirms_command() {
+    let mut state = state_with_branches_and_files(vec![FileEntry {
+        path: "dirty.txt".to_string(),
+        staged: false,
+        untracked: false,
+    }]);
+    state.branches.selected = 1;
+
+    let commands = update(&mut state, Action::Ui(UiAction::CheckoutSelectedBranch));
+    assert!(commands.is_empty());
+    assert_eq!(
+        state.branches.auto_stash_confirm.operation,
+        Some(AutoStashOperation::Checkout {
+            branch: "feature/mvp".to_string()
+        })
+    );
+
+    let commands = update(&mut state, Action::Ui(UiAction::ConfirmAutoStash));
+    assert_eq!(
+        commands,
+        vec![Command::CheckoutBranch {
+            name: "feature/mvp".to_string(),
+            auto_stash: true,
+        }]
+    );
+}
+
+#[test]
+fn dirty_checkout_auto_stash_can_cancel() {
+    let mut state = state_with_branches_and_files(vec![FileEntry {
+        path: "dirty.txt".to_string(),
+        staged: false,
+        untracked: false,
+    }]);
+    state.branches.selected = 1;
+
+    update(&mut state, Action::Ui(UiAction::CheckoutSelectedBranch));
+    let commands = update(&mut state, Action::Ui(UiAction::CancelAutoStash));
+
+    assert!(commands.is_empty());
+    assert!(!state.branches.auto_stash_confirm.active);
+}
+
+#[test]
+fn branch_delete_menu_blocks_current_local_delete() {
+    let mut state = state_with_branches_and_files(Vec::new());
+
+    update(&mut state, Action::Ui(UiAction::OpenBranchDeleteMenu));
+    let commands = update(&mut state, Action::Ui(UiAction::ConfirmBranchDeleteMenu));
+
+    assert!(commands.is_empty());
+    assert!(
+        state
+            .notices
+            .iter()
+            .any(|notice| notice.contains("Cannot delete current branch"))
+    );
+}
+
+#[test]
+fn branch_delete_menu_selects_mode_and_emits_command() {
+    let mut state = state_with_branches_and_files(Vec::new());
+    state.branches.selected = 1;
+
+    update(&mut state, Action::Ui(UiAction::OpenBranchDeleteMenu));
+    update(&mut state, Action::Ui(UiAction::MoveBranchDeleteMenuDown));
+    assert_eq!(
+        state.branches.delete_menu.selected,
+        BranchDeleteChoice::Remote
+    );
+    update(&mut state, Action::Ui(UiAction::MoveBranchDeleteMenuDown));
+    assert_eq!(
+        state.branches.delete_menu.selected,
+        BranchDeleteChoice::Both
+    );
+    let commands = update(&mut state, Action::Ui(UiAction::ConfirmBranchDeleteMenu));
+
+    assert_eq!(
+        commands,
+        vec![Command::DeleteBranch {
+            name: "feature/mvp".to_string(),
+            mode: BranchDeleteMode::Both,
+            force: false,
+        }]
+    );
+}
+
+#[test]
+fn unmerged_branch_delete_opens_force_confirm_and_can_force_delete() {
+    let mut state = state_with_branches_and_files(Vec::new());
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::DeleteBranch {
+            name: "feature/mvp".to_string(),
+            mode: BranchDeleteMode::Local,
+            force: false,
+            result: Err("error: The branch 'feature/mvp' is not fully merged.".to_string()),
+        }),
+    );
+
+    assert!(commands.is_empty());
+    assert!(state.branches.force_delete_confirm.active);
+    assert_eq!(state.work.operation_pending, None);
+    assert_eq!(
+        state.branches.force_delete_confirm.target_branch,
+        "feature/mvp"
+    );
+
+    let commands = update(&mut state, Action::Ui(UiAction::ConfirmBranchForceDelete));
+    assert_eq!(
+        commands,
+        vec![Command::DeleteBranch {
+            name: "feature/mvp".to_string(),
+            mode: BranchDeleteMode::Local,
+            force: true,
+        }]
+    );
+}
+
+#[test]
+fn force_delete_confirm_can_cancel() {
+    let mut state = state_with_branches_and_files(Vec::new());
+
+    update(
+        &mut state,
+        Action::GitResult(GitResult::DeleteBranch {
+            name: "feature/mvp".to_string(),
+            mode: BranchDeleteMode::Local,
+            force: false,
+            result: Err("not fully merged".to_string()),
+        }),
+    );
+    let commands = update(&mut state, Action::Ui(UiAction::CancelBranchForceDelete));
+
+    assert!(commands.is_empty());
+    assert!(!state.branches.force_delete_confirm.active);
+}
+
+#[test]
+fn branch_rebase_menu_selects_mode_and_dirty_rebase_confirms_auto_stash() {
+    let mut state = state_with_branches_and_files(vec![FileEntry {
+        path: "dirty.txt".to_string(),
+        staged: false,
+        untracked: false,
+    }]);
+    state.branches.selected = 1;
+
+    update(&mut state, Action::Ui(UiAction::OpenBranchRebaseMenu));
+    update(&mut state, Action::Ui(UiAction::MoveBranchRebaseMenuDown));
+    assert_eq!(
+        state.branches.rebase_menu.selected,
+        BranchRebaseChoice::Interactive
+    );
+    let commands = update(&mut state, Action::Ui(UiAction::ConfirmBranchRebaseMenu));
+
+    assert!(commands.is_empty());
+    assert_eq!(
+        state.branches.auto_stash_confirm.operation,
+        Some(AutoStashOperation::Rebase {
+            target: "feature/mvp".to_string(),
+            interactive: true,
+        })
+    );
+
+    let commands = update(&mut state, Action::Ui(UiAction::ConfirmAutoStash));
+    assert_eq!(
+        commands,
+        vec![Command::RebaseBranch {
+            target: "feature/mvp".to_string(),
+            interactive: true,
+            auto_stash: true,
+        }]
+    );
+}
+
+#[test]
+fn branch_rebase_origin_main_emits_fixed_target() {
+    let mut state = state_with_branches_and_files(Vec::new());
+    state.branches.selected = 1;
+
+    update(&mut state, Action::Ui(UiAction::OpenBranchRebaseMenu));
+    update(&mut state, Action::Ui(UiAction::MoveBranchRebaseMenuDown));
+    update(&mut state, Action::Ui(UiAction::MoveBranchRebaseMenuDown));
+    let commands = update(&mut state, Action::Ui(UiAction::ConfirmBranchRebaseMenu));
+
+    assert_eq!(
+        commands,
+        vec![Command::RebaseBranch {
+            target: "origin/main".to_string(),
+            interactive: false,
+            auto_stash: false,
+        }]
+    );
+}
+
 fn assert_details_refresh_for_paths(commands: Vec<Command>, expected_paths: Vec<String>) {
     assert_eq!(
         commands,
@@ -19,6 +257,26 @@ fn assert_details_refresh_for_paths(commands: Vec<Command>, expected_paths: Vec<
             paths: expected_paths
         }]
     );
+}
+
+fn state_with_branches_and_files(files: Vec<FileEntry>) -> AppState {
+    let mut state = AppState {
+        focus: PanelFocus::Branches,
+        last_left_focus: PanelFocus::Branches,
+        ..AppState::default()
+    };
+    state.branches.items = vec![
+        BranchEntry {
+            name: "main".to_string(),
+            is_current: true,
+        },
+        BranchEntry {
+            name: "feature/mvp".to_string(),
+            is_current: false,
+        },
+    ];
+    state.files.items = files;
+    state
 }
 
 #[test]

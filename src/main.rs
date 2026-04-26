@@ -7,7 +7,7 @@ use crossterm::execute;
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
-use ratagit_core::{AppState, FileInputMode, PanelFocus, UiAction};
+use ratagit_core::{AppState, BranchDeleteMode, FileInputMode, PanelFocus, UiAction};
 use ratagit_git::{GitBackend, HybridGitBackend, MockGitBackend, is_git_repo};
 use ratagit_harness::AsyncRuntime;
 use ratagit_observe::{ObserveConfig, init_observability};
@@ -114,6 +114,60 @@ fn ui_action_for_key(state: &AppState, code: KeyCode, modifiers: KeyModifiers) -
         };
     }
 
+    if state.branches.create.active {
+        return match code {
+            KeyCode::Enter => Some(UiAction::ConfirmBranchCreate),
+            KeyCode::Esc => Some(UiAction::CancelBranchCreate),
+            KeyCode::Backspace => Some(UiAction::BranchCreateBackspace),
+            KeyCode::Left => Some(UiAction::BranchCreateMoveCursorLeft),
+            KeyCode::Right => Some(UiAction::BranchCreateMoveCursorRight),
+            KeyCode::Home => Some(UiAction::BranchCreateMoveCursorHome),
+            KeyCode::End => Some(UiAction::BranchCreateMoveCursorEnd),
+            KeyCode::Char(ch)
+                if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+            {
+                Some(UiAction::BranchCreateInputChar(ch))
+            }
+            _ => None,
+        };
+    }
+
+    if state.branches.delete_menu.active {
+        return match code {
+            KeyCode::Enter => Some(UiAction::ConfirmBranchDeleteMenu),
+            KeyCode::Esc => Some(UiAction::CancelBranchDeleteMenu),
+            KeyCode::Up | KeyCode::Char('k') => Some(UiAction::MoveBranchDeleteMenuUp),
+            KeyCode::Down | KeyCode::Char('j') => Some(UiAction::MoveBranchDeleteMenuDown),
+            _ => None,
+        };
+    }
+
+    if state.branches.force_delete_confirm.active {
+        return match code {
+            KeyCode::Enter => Some(UiAction::ConfirmBranchForceDelete),
+            KeyCode::Esc => Some(UiAction::CancelBranchForceDelete),
+            _ => None,
+        };
+    }
+
+    if state.branches.rebase_menu.active {
+        return match code {
+            KeyCode::Enter => Some(UiAction::ConfirmBranchRebaseMenu),
+            KeyCode::Esc => Some(UiAction::CancelBranchRebaseMenu),
+            KeyCode::Up | KeyCode::Char('k') => Some(UiAction::MoveBranchRebaseMenuUp),
+            KeyCode::Down | KeyCode::Char('j') => Some(UiAction::MoveBranchRebaseMenuDown),
+            _ => None,
+        };
+    }
+
+    if state.branches.auto_stash_confirm.active {
+        return match code {
+            KeyCode::Enter => Some(UiAction::ConfirmAutoStash),
+            KeyCode::Esc => Some(UiAction::CancelAutoStash),
+            _ => None,
+        };
+    }
+
     if state.reset_menu.active {
         return match code {
             KeyCode::Enter => Some(UiAction::ConfirmResetMenu),
@@ -160,6 +214,16 @@ fn ui_action_for_key(state: &AppState, code: KeyCode, modifiers: KeyModifiers) -
         }
     }
 
+    if state.focus == PanelFocus::Branches {
+        match code {
+            KeyCode::Char(' ') => return Some(UiAction::CheckoutSelectedBranch),
+            KeyCode::Char('n') => return Some(UiAction::OpenBranchCreateInput),
+            KeyCode::Char('d') => return Some(UiAction::OpenBranchDeleteMenu),
+            KeyCode::Char('r') => return Some(UiAction::OpenBranchRebaseMenu),
+            _ => {}
+        }
+    }
+
     match code {
         KeyCode::Char('r') => Some(UiAction::RefreshAll),
         KeyCode::Char('l') => Some(UiAction::FocusNext),
@@ -187,10 +251,6 @@ fn ui_action_for_key(state: &AppState, code: KeyCode, modifiers: KeyModifiers) -
         KeyCode::Char('c') => Some(UiAction::CreateCommit {
             message: "mvp commit".to_string(),
         }),
-        KeyCode::Char('b') => Some(UiAction::CreateBranch {
-            name: "feature/new".to_string(),
-        }),
-        KeyCode::Char('o') => Some(UiAction::CheckoutSelectedBranch),
         KeyCode::Char('p') => Some(UiAction::StashPush {
             message: "savepoint".to_string(),
         }),
@@ -230,6 +290,12 @@ mod tests {
         let mut state = AppState::default();
         state.discard_confirm.active = true;
         state.discard_confirm.paths = vec!["a.txt".to_string()];
+        state
+    }
+
+    fn active_branch_create_state() -> AppState {
+        let mut state = AppState::default();
+        state.branches.create.active = true;
         state
     }
 
@@ -311,14 +377,20 @@ mod tests {
             ..AppState::default()
         };
         assert_eq!(
-            map_key(&state, KeyCode::Char('b')),
-            Some(UiAction::CreateBranch {
-                name: "feature/new".to_string()
-            })
+            map_key(&state, KeyCode::Char('n')),
+            Some(UiAction::OpenBranchCreateInput)
         );
         assert_eq!(
-            map_key(&state, KeyCode::Char('o')),
+            map_key(&state, KeyCode::Char(' ')),
             Some(UiAction::CheckoutSelectedBranch)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Char('d')),
+            Some(UiAction::OpenBranchDeleteMenu)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Char('r')),
+            Some(UiAction::OpenBranchRebaseMenu)
         );
 
         state.focus = PanelFocus::Commits;
@@ -422,6 +494,28 @@ mod tests {
     }
 
     #[test]
+    fn branch_create_input_maps_text_until_confirm_or_cancel() {
+        let state = active_branch_create_state();
+
+        assert_eq!(
+            map_key(&state, KeyCode::Enter),
+            Some(UiAction::ConfirmBranchCreate)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Backspace),
+            Some(UiAction::BranchCreateBackspace)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Char('x')),
+            Some(UiAction::BranchCreateInputChar('x'))
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Esc),
+            Some(UiAction::CancelBranchCreate)
+        );
+    }
+
+    #[test]
     fn discard_confirm_maps_confirm_and_cancel_before_panels() {
         let state = active_discard_confirm_state();
 
@@ -514,17 +608,49 @@ impl GitBackend for AppBackend {
         }
     }
 
-    fn create_branch(&mut self, name: &str) -> Result<(), ratagit_git::GitError> {
+    fn create_branch(
+        &mut self,
+        name: &str,
+        start_point: &str,
+    ) -> Result<(), ratagit_git::GitError> {
         match self {
-            Self::Hybrid(inner) => inner.create_branch(name),
-            Self::Mock(inner) => inner.create_branch(name),
+            Self::Hybrid(inner) => inner.create_branch(name, start_point),
+            Self::Mock(inner) => inner.create_branch(name, start_point),
         }
     }
 
-    fn checkout_branch(&mut self, name: &str) -> Result<(), ratagit_git::GitError> {
+    fn checkout_branch(
+        &mut self,
+        name: &str,
+        auto_stash: bool,
+    ) -> Result<(), ratagit_git::GitError> {
         match self {
-            Self::Hybrid(inner) => inner.checkout_branch(name),
-            Self::Mock(inner) => inner.checkout_branch(name),
+            Self::Hybrid(inner) => inner.checkout_branch(name, auto_stash),
+            Self::Mock(inner) => inner.checkout_branch(name, auto_stash),
+        }
+    }
+
+    fn delete_branch(
+        &mut self,
+        name: &str,
+        mode: BranchDeleteMode,
+        force: bool,
+    ) -> Result<(), ratagit_git::GitError> {
+        match self {
+            Self::Hybrid(inner) => inner.delete_branch(name, mode, force),
+            Self::Mock(inner) => inner.delete_branch(name, mode, force),
+        }
+    }
+
+    fn rebase_branch(
+        &mut self,
+        target: &str,
+        interactive: bool,
+        auto_stash: bool,
+    ) -> Result<(), ratagit_git::GitError> {
+        match self {
+            Self::Hybrid(inner) => inner.rebase_branch(target, interactive, auto_stash),
+            Self::Mock(inner) => inner.rebase_branch(target, interactive, auto_stash),
         }
     }
 
