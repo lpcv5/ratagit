@@ -1,6 +1,6 @@
 ---
 source: libs/ratagit-ui/tests/snapshots.rs
-assertion_line: 512
+assertion_line: 636
 expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30, },)"
 ---
 ┌ [1] 󰈙 Files ───────────────────┐┌ [5]  Details ─────────────────────────────────────────────────┐
@@ -13,14 +13,14 @@ expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30,
 │                                ││                                                                │
 │                                ││                                                                │
 │           ┌ Stash Message ───────────────────────────────────────────────────────────┐           │
-└───────────│ Name the stash before saving.                                            │           │
+└───────────│ Name the stash before saving                                             │           │
 ┌ [2]  Bran│ ┌ Title ───────────────────────────────────────────────────────────────┐ │           │
 │ main     │ │pick files                                                            │ │           │
 │  feature/m│ └──────────────────────────────────────────────────────────────────────┘ │           │
 │           │ Scope: selected files (3)                                                │           │
+│           │                                                                          │           │
 │           │ Left/Right/Home/End cursor                                               │           │
 │           │ Enter confirm  |  Esc cancel                                             │           │
-│           │                                                                          │           │
 └───────────└──────────────────────────────────────────────────────────────────────────┘           │
 ┌ [3]  Commits ─────────────────┐└────────────────────────────────────────────────────────────────┘
 │ abc1234 init project          │┌ [6] 󰌱 Log ─────────────────────────────────────────────────────┐

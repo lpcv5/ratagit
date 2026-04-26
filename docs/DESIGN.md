@@ -112,6 +112,11 @@ Files panel interaction:
 - Visual-selected file rows use a color distinct from cursor selection.
 - Visible cursor markers such as `>` are not rendered; selection is tested
   through buffer styles.
+- Modal overlays use the internal `ratagit-ui` modal system for deterministic
+  centering, sizing, borders, inner padding, input blocks, and action footers.
+- Modal tones are semantic and text-backed: editor modals use an info accent,
+  repository reset uses a warning accent, and discard confirmation uses a danger
+  accent while still rendering explicit warning text.
 - Files diff rows in Details are color-coded by semantics:
   - section headers (`### ...`)
   - diff metadata (`diff --git`, `---`, `+++`, `index`)

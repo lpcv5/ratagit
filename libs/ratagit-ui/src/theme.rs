@@ -50,6 +50,30 @@ pub fn batch_selected_row_style() -> Style {
         .add_modifier(Modifier::BOLD)
 }
 
+pub(crate) fn modal_info_style() -> Style {
+    Style::default()
+        .fg(Color::Cyan)
+        .add_modifier(Modifier::BOLD)
+}
+
+pub(crate) fn modal_warning_style() -> Style {
+    Style::default()
+        .fg(Color::Yellow)
+        .add_modifier(Modifier::BOLD)
+}
+
+pub(crate) fn modal_danger_style() -> Style {
+    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
+}
+
+pub(crate) fn modal_muted_style() -> Style {
+    Style::default().fg(Color::DarkGray)
+}
+
+pub(crate) fn modal_footer_style() -> Style {
+    Style::default().fg(Color::Blue)
+}
+
 pub(crate) fn inactive_panel_style() -> Style {
     Style::default().fg(Color::DarkGray)
 }

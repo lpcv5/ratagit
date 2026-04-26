@@ -3,27 +3,27 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::text::Line;
 use ratatui::widgets::{
-    Block, Borders, Clear, HighlightSpacing, List, ListItem, ListState, Paragraph, Wrap,
+    Block, Borders, HighlightSpacing, List, ListItem, ListState, Paragraph, Wrap,
 };
 
-use crate::theme::{focused_panel_style, selected_row_style};
+use crate::modal::{
+    ModalSpec, ModalTone, modal_tone_style, render_action_footer, render_modal_frame,
+    render_section_label,
+};
+use crate::theme::{modal_danger_style, modal_muted_style, selected_row_style};
 
 pub(crate) fn render_reset_modal(frame: &mut Frame<'_>, state: &AppState, area: Rect) {
     if !state.reset_menu.active {
         return;
     }
 
-    let modal = centered_rect(area, 72, 13);
-    if modal.width < 20 || modal.height < 8 {
+    let Some(modal) = render_modal_frame(
+        frame,
+        area,
+        ModalSpec::new("Reset", ModalTone::Warning, 72, 13, 20, 8, 1),
+    ) else {
         return;
-    }
-
-    let block = Block::default()
-        .title(" Reset ")
-        .borders(Borders::ALL)
-        .border_style(focused_panel_style());
-    let inner = block.inner(modal);
-    let content = inset_rect(inner, 1, 0);
+    };
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -32,10 +32,8 @@ pub(crate) fn render_reset_modal(frame: &mut Frame<'_>, state: &AppState, area: 
             Constraint::Length(1),
             Constraint::Min(2),
         ])
-        .split(content);
+        .split(modal.content);
 
-    frame.render_widget(Clear, modal);
-    frame.render_widget(block, modal);
     frame.render_widget(
         Paragraph::new("Choose reset scope for the whole repo."),
         rows[0],
@@ -43,7 +41,17 @@ pub(crate) fn render_reset_modal(frame: &mut Frame<'_>, state: &AppState, area: 
 
     let items = ResetChoice::ALL
         .iter()
-        .map(|choice| ListItem::new(Line::from(format!("  {}", reset_choice_label(*choice)))))
+        .map(|choice| {
+            let style = if *choice == ResetChoice::Nuke {
+                modal_danger_style()
+            } else {
+                modal_muted_style()
+            };
+            ListItem::new(Line::styled(
+                format!("  {}", reset_choice_label(*choice)),
+                style,
+            ))
+        })
         .collect::<Vec<_>>();
     let selected = ResetChoice::ALL
         .iter()
@@ -54,15 +62,28 @@ pub(crate) fn render_reset_modal(frame: &mut Frame<'_>, state: &AppState, area: 
     let list = List::new(items)
         .highlight_style(selected_row_style())
         .highlight_spacing(HighlightSpacing::Never)
-        .block(Block::default().title(" Mode ").borders(Borders::ALL));
+        .block(
+            Block::default()
+                .title(Line::styled(" Mode ", modal_tone_style(ModalTone::Warning)))
+                .borders(Borders::ALL)
+                .border_style(modal_muted_style()),
+        );
     frame.render_stateful_widget(list, rows[1], &mut list_state);
 
-    frame.render_widget(Paragraph::new("Description"), rows[2]);
+    render_section_label(frame, rows[2], "Description");
     frame.render_widget(
         Paragraph::new(reset_choice_description(state.reset_menu.selected))
             .wrap(Wrap { trim: false }),
         rows[3],
     );
+    if let Some(footer) = modal.footer {
+        render_action_footer(
+            frame,
+            footer,
+            ModalTone::Warning,
+            &[("j/k", "select"), ("Enter", "confirm"), ("Esc", "cancel")],
+        );
+    }
 }
 
 fn reset_choice_label(choice: ResetChoice) -> &'static str {
@@ -83,25 +104,4 @@ fn reset_choice_description(choice: ResetChoice) -> &'static str {
             "Nuke: hard reset, then remove untracked files/directories with `git clean -fd`."
         }
     }
-}
-
-fn inset_rect(area: Rect, horizontal: u16, vertical: u16) -> Rect {
-    let shrink_x = horizontal.saturating_mul(2).min(area.width);
-    let shrink_y = vertical.saturating_mul(2).min(area.height);
-    Rect::new(
-        area.x.saturating_add(horizontal.min(area.width)),
-        area.y.saturating_add(vertical.min(area.height)),
-        area.width.saturating_sub(shrink_x),
-        area.height.saturating_sub(shrink_y),
-    )
-}
-
-fn centered_rect(area: Rect, target_width: u16, target_height: u16) -> Rect {
-    let max_width = area.width.saturating_sub(2).max(1);
-    let max_height = area.height.saturating_sub(2).max(1);
-    let width = target_width.min(max_width).max(20.min(area.width));
-    let height = target_height.min(max_height).max(8.min(area.height));
-    let x = area.x + area.width.saturating_sub(width) / 2;
-    let y = area.y + area.height.saturating_sub(height) / 2;
-    Rect::new(x, y, width, height)
 }

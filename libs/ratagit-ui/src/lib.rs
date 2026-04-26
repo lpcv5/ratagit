@@ -2,6 +2,7 @@ mod discard_modal;
 mod editor_modal;
 mod frame;
 mod layout;
+mod modal;
 mod panels;
 mod reset_modal;
 mod terminal;

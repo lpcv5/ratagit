@@ -10,7 +10,7 @@ use ratagit_ui::{
     buffer_contains_text_with_style, buffer_to_text_with_selected_marker, focused_panel_style,
     render, render_terminal_buffer, render_terminal_buffer_with_cursor, render_terminal_text,
 };
-use ratatui::style::{Color, Style};
+use ratatui::style::{Color, Modifier, Style};
 
 fn render_snapshot(snapshot: ratagit_core::RepoSnapshot, size: TerminalSize) -> String {
     let mut state = AppState::default();
@@ -828,5 +828,69 @@ fn terminal_buffer_styles_files_details_diff_rows_by_semantics() {
         &buffer,
         "+new README.md",
         Style::default().fg(Color::Green),
+    ));
+}
+
+#[test]
+fn terminal_buffer_styles_modal_titles_by_tone() {
+    let info_style = Style::default()
+        .fg(Color::Cyan)
+        .add_modifier(Modifier::BOLD);
+    let warning_style = Style::default()
+        .fg(Color::Yellow)
+        .add_modifier(Modifier::BOLD);
+    let danger_style = Style::default().fg(Color::Red).add_modifier(Modifier::BOLD);
+
+    let mut commit_state = AppState::default();
+    apply_refreshed_with_mock_details(&mut commit_state, fixture_dirty_repo());
+    update(&mut commit_state, Action::Ui(UiAction::OpenCommitEditor));
+    let commit_buffer = render_terminal_buffer(
+        &commit_state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    );
+    assert!(buffer_contains_text_with_style(
+        &commit_buffer,
+        "Commit Message",
+        info_style
+    ));
+
+    let mut reset_state = AppState::default();
+    apply_refreshed_with_mock_details(&mut reset_state, fixture_dirty_repo());
+    update(&mut reset_state, Action::Ui(UiAction::OpenResetMenu));
+    let reset_buffer = render_terminal_buffer(
+        &reset_state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    );
+    assert!(buffer_contains_text_with_style(
+        &reset_buffer,
+        "Reset",
+        warning_style
+    ));
+
+    let mut discard_state = AppState::default();
+    apply_refreshed_with_mock_details(&mut discard_state, fixture_dirty_repo());
+    update(&mut discard_state, Action::Ui(UiAction::OpenDiscardConfirm));
+    let discard_buffer = render_terminal_buffer(
+        &discard_state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    );
+    assert!(buffer_contains_text_with_style(
+        &discard_buffer,
+        "Discard Changes",
+        danger_style
+    ));
+    assert!(buffer_contains_text_with_style(
+        &discard_buffer,
+        "Discard selected file changes?",
+        danger_style
     ));
 }
