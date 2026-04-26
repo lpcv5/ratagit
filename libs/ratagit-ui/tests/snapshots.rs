@@ -1,4 +1,4 @@
-use ratagit_core::{Action, AppState, Command, GitResult, PanelFocus, UiAction, update};
+use ratagit_core::{Action, AppState, Command, FileEntry, GitResult, PanelFocus, UiAction, update};
 use ratagit_testkit::{
     fixture_conflict, fixture_dirty_repo, fixture_empty_repo, fixture_many_files,
     fixture_unicode_paths,
@@ -422,6 +422,73 @@ fn terminal_snapshot_error_is_visible_in_log_panel() {
     );
 
     assert!(screen.contains("error=Failed to create commit"));
+}
+
+#[test]
+fn terminal_snapshot_files_commit_editor_modal() {
+    let mut state = AppState::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+    update(&mut state, Action::Ui(UiAction::OpenCommitEditor));
+    for ch in "feat: add modal".chars() {
+        update(&mut state, Action::Ui(UiAction::EditorInputChar(ch)));
+    }
+    update(&mut state, Action::Ui(UiAction::EditorNextField));
+    for ch in "body line 1".chars() {
+        update(&mut state, Action::Ui(UiAction::EditorInputChar(ch)));
+    }
+    update(&mut state, Action::Ui(UiAction::EditorInsertNewline));
+    for ch in "body line 2".chars() {
+        update(&mut state, Action::Ui(UiAction::EditorInputChar(ch)));
+    }
+
+    insta::assert_snapshot!(render_terminal_text(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    ));
+}
+
+#[test]
+fn terminal_snapshot_files_stash_editor_modal() {
+    let mut state = AppState::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+    update(&mut state, Action::Ui(UiAction::ToggleFilesMultiSelect));
+    update(&mut state, Action::Ui(UiAction::MoveDown));
+    update(&mut state, Action::Ui(UiAction::OpenStashEditor));
+    for ch in "pick files".chars() {
+        update(&mut state, Action::Ui(UiAction::EditorInputChar(ch)));
+    }
+
+    insta::assert_snapshot!(render_terminal_text(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    ));
+}
+
+#[test]
+fn terminal_snapshot_untracked_directory_marker_renders_as_directory_node() {
+    let mut state = AppState::default();
+    let mut snapshot = fixture_empty_repo();
+    snapshot.files = vec![FileEntry {
+        path: "libs/ratagit-git/tests/".to_string(),
+        staged: false,
+        untracked: true,
+    }];
+    snapshot.status_summary = "staged: 0, unstaged: 1".to_string();
+    apply_refreshed_with_mock_details(&mut state, snapshot);
+
+    insta::assert_snapshot!(render_terminal_text(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    ));
 }
 
 #[test]

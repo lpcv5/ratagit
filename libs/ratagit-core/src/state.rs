@@ -84,6 +84,55 @@ pub struct CommitsPanelState {
     pub draft_message: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommitField {
+    Message,
+    Body,
+}
+
+impl CommitField {
+    pub fn next(self) -> Self {
+        match self {
+            Self::Message => Self::Body,
+            Self::Body => Self::Message,
+        }
+    }
+
+    pub fn prev(self) -> Self {
+        self.next()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StashScope {
+    All,
+    SelectedPaths(Vec<String>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EditorKind {
+    Commit {
+        message: String,
+        body: String,
+        active_field: CommitField,
+    },
+    Stash {
+        title: String,
+        scope: StashScope,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct EditorState {
+    pub kind: Option<EditorKind>,
+}
+
+impl EditorState {
+    pub fn is_active(&self) -> bool {
+        self.kind.is_some()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BranchesPanelState {
     pub items: Vec<BranchEntry>,
@@ -113,6 +162,7 @@ pub struct AppState {
     pub branches: BranchesPanelState,
     pub stash: StashPanelState,
     pub details: DetailsPanelState,
+    pub editor: EditorState,
     pub notices: Vec<String>,
     pub last_operation: Option<String>,
 }
@@ -148,6 +198,7 @@ impl Default for AppState {
                 files_targets: Vec::new(),
                 files_error: None,
             },
+            editor: EditorState::default(),
             notices: vec!["Ready".to_string()],
             last_operation: None,
         }

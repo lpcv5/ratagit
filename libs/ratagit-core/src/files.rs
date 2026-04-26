@@ -248,6 +248,7 @@ pub fn build_file_tree_rows(state: &FilesPanelState) -> Vec<FileTreeRow> {
             state
                 .items
                 .iter()
+                .filter(|entry| !is_directory_marker(&entry.path))
                 .map(|entry| (entry.path.clone(), FileRowKind::File)),
         )
         .collect::<Vec<_>>();
@@ -286,7 +287,14 @@ pub fn build_file_tree_rows(state: &FilesPanelState) -> Vec<FileTreeRow> {
 pub fn collect_directories(items: &[FileEntry]) -> BTreeSet<String> {
     let mut dirs = BTreeSet::new();
     for item in items {
-        let mut parts = item.path.split('/').collect::<Vec<_>>();
+        let normalized = normalize_tree_path(&item.path);
+        if normalized.is_empty() {
+            continue;
+        }
+        if is_directory_marker(&item.path) {
+            dirs.insert(normalized.clone());
+        }
+        let mut parts = normalized.split('/').collect::<Vec<_>>();
         while parts.len() > 1 {
             parts.pop();
             dirs.insert(parts.join("/"));
@@ -403,6 +411,14 @@ fn descendants_for_key<'a>(
                 .collect()
         }
     }
+}
+
+fn is_directory_marker(path: &str) -> bool {
+    path.ends_with('/')
+}
+
+fn normalize_tree_path(path: &str) -> String {
+    path.trim_end_matches('/').to_string()
 }
 
 fn row_is_visible(path: &str, expanded_dirs: &BTreeSet<String>) -> bool {
@@ -529,6 +545,33 @@ mod tests {
         assert_eq!(
             selected_target_paths(&state),
             vec!["src/main.rs".to_string(), "src/ui/list.rs".to_string()]
+        );
+    }
+
+    #[test]
+    fn untracked_directory_marker_renders_as_directory_node() {
+        let mut state = FilesPanelState {
+            items: vec![FileEntry {
+                path: "libs/ratagit-git/tests/".to_string(),
+                staged: false,
+                untracked: true,
+            }],
+            ..FilesPanelState::default()
+        };
+        initialize_tree_if_needed(&mut state);
+
+        let rows = build_file_tree_rows(&state);
+        let tests_row = rows
+            .iter()
+            .find(|row| row.path == "libs/ratagit-git/tests")
+            .expect("tests directory row should exist");
+        assert_eq!(tests_row.kind, FileRowKind::Directory);
+        assert_eq!(tests_row.name, "tests");
+        assert!(tests_row.untracked);
+        assert!(
+            !rows
+                .iter()
+                .any(|row| row.path == "libs/ratagit-git/tests/" && row.kind == FileRowKind::File)
         );
     }
 }

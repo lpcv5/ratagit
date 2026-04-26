@@ -1,8 +1,11 @@
-use ratagit_core::{AppState, PanelFocus};
+use ratagit_core::{AppState, CommitField, EditorKind, PanelFocus, StashScope};
 use ratatui::backend::TestBackend;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::style::Style;
 use ratatui::text::Line;
-use ratatui::widgets::{Block, Borders, HighlightSpacing, List, ListItem, ListState, Paragraph};
+use ratatui::widgets::{
+    Block, Borders, Clear, HighlightSpacing, List, ListItem, ListState, Paragraph, Wrap,
+};
 use ratatui::{Frame, Terminal};
 
 use crate::frame::{TerminalBuffer, TerminalSize, buffer_to_text};
@@ -25,6 +28,7 @@ pub fn render_terminal(frame: &mut Frame<'_>, state: &AppState) {
 
     render_panel_grid(frame, state, root[0]);
     render_shortcuts(frame, state, root[1]);
+    render_editor_modal(frame, state, root[0]);
 }
 
 pub fn render_terminal_text(state: &AppState, size: TerminalSize) -> String {
@@ -151,4 +155,111 @@ fn render_block_panel(
 fn render_shortcuts(frame: &mut Frame<'_>, state: &AppState, area: Rect) {
     let widget = Paragraph::new(shortcuts_for_state(state));
     frame.render_widget(widget, area);
+}
+
+fn render_editor_modal(frame: &mut Frame<'_>, state: &AppState, area: Rect) {
+    let Some(editor) = &state.editor.kind else {
+        return;
+    };
+
+    let target_height = match editor {
+        EditorKind::Commit { .. } => 12,
+        EditorKind::Stash { .. } => 8,
+    };
+    let modal = centered_rect(area, 76, target_height);
+    if modal.width < 6 || modal.height < 4 {
+        return;
+    }
+
+    let (title, lines) = match editor {
+        EditorKind::Commit {
+            message,
+            body,
+            active_field,
+        } => build_commit_editor_lines(message, body, *active_field),
+        EditorKind::Stash { title, scope } => build_stash_editor_lines(title, scope),
+    };
+
+    frame.render_widget(Clear, modal);
+    frame.render_widget(
+        Paragraph::new(lines).wrap(Wrap { trim: false }).block(
+            Block::default()
+                .title(format!(" {title} "))
+                .borders(Borders::ALL)
+                .border_style(focused_panel_style()),
+        ),
+        modal,
+    );
+}
+
+fn build_commit_editor_lines(
+    message: &str,
+    body: &str,
+    active_field: CommitField,
+) -> (&'static str, Vec<Line<'static>>) {
+    let mut lines = Vec::new();
+    let message_style = if active_field == CommitField::Message {
+        focused_panel_style()
+    } else {
+        Style::default()
+    };
+    let body_style = if active_field == CommitField::Body {
+        focused_panel_style()
+    } else {
+        Style::default()
+    };
+    let message_prefix = if active_field == CommitField::Message {
+        ">>"
+    } else {
+        "  "
+    };
+    let body_prefix = if active_field == CommitField::Body {
+        ">>"
+    } else {
+        "  "
+    };
+    lines.push(Line::styled(
+        format!("{message_prefix} message: {message}"),
+        message_style,
+    ));
+    lines.push(Line::styled(format!("{body_prefix} body:"), body_style));
+    if body.is_empty() {
+        lines.push(Line::from("    "));
+    } else {
+        for line in body.split('\n').take(4) {
+            lines.push(Line::from(format!("    {line}")));
+        }
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from(
+        "    Tab/Shift+Tab switch | Ctrl+J newline(body)",
+    ));
+    lines.push(Line::from("    Enter confirm | Esc cancel"));
+    ("Commit Editor", lines)
+}
+
+fn build_stash_editor_lines(title: &str, scope: &StashScope) -> (&'static str, Vec<Line<'static>>) {
+    let mut lines = Vec::new();
+    lines.push(Line::styled(
+        format!(">> title: {title}"),
+        focused_panel_style(),
+    ));
+    let scope_text = match scope {
+        StashScope::All => "all changes".to_string(),
+        StashScope::SelectedPaths(paths) => format!("selected files ({})", paths.len()),
+    };
+    lines.push(Line::from(format!("   scope: {scope_text}")));
+    lines.push(Line::from(""));
+    lines.push(Line::from("   Enter confirm | Esc cancel"));
+    ("Stash Editor", lines)
+}
+
+fn centered_rect(area: Rect, target_width: u16, target_height: u16) -> Rect {
+    let max_width = area.width.saturating_sub(2).max(1);
+    let max_height = area.height.saturating_sub(2).max(1);
+    let width = target_width.min(max_width).max(20.min(area.width));
+    let height = target_height.min(max_height).max(6.min(area.height));
+    let x = area.x + area.width.saturating_sub(width) / 2;
+    let y = area.y + area.height.saturating_sub(height) / 2;
+    Rect::new(x, y, width, height)
 }

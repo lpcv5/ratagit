@@ -45,9 +45,19 @@ Navigation rules:
 Files panel rules:
 
 - file rows come from Git status data only; the app does not scan the working tree separately
+- untracked entries are requested with full file granularity (equivalent to
+  `git status --untracked-files=all`) so nested untracked files appear as file rows
 - folder operations apply to descendant files present in the tree model
 - `space` stages unstaged targets or unstages targets when all selected targets are staged
-- `s` stashes current or multi-selected targets
+- `c` opens a commit editor modal from Files focus
+  - `message` and `body` fields are editable
+  - `Tab` / `Shift+Tab` switches active field
+  - `Ctrl+J` inserts a newline in body
+  - `Enter` confirms, `Esc` cancels
+- `s` opens a stash editor modal from Files focus
+  - normal mode stashes all current changes
+  - `v` multi-select mode stashes only selected target paths
+  - `Enter` confirms, `Esc` cancels
 - `v` enters visual multi-select at the current row; `j` / `k` extends or shrinks the selected range
 - `/` opens search input in the bottom bar; Enter confirms, Esc cancels or clears, `n` / `N` navigate matches
 - discard backend support exists, but `d` is not mapped until the confirmation dialog is available

@@ -142,6 +142,121 @@ fn harness_files_multi_select_stashes_selected_targets() {
 }
 
 #[test]
+fn harness_files_commit_editor_multiline_confirm() {
+    let inputs = [
+        UiAction::RefreshAll,
+        UiAction::OpenCommitEditor,
+        UiAction::EditorInputChar('f'),
+        UiAction::EditorInputChar('e'),
+        UiAction::EditorInputChar('a'),
+        UiAction::EditorInputChar('t'),
+        UiAction::EditorInputChar(':'),
+        UiAction::EditorInputChar(' '),
+        UiAction::EditorInputChar('f'),
+        UiAction::EditorInputChar('i'),
+        UiAction::EditorInputChar('l'),
+        UiAction::EditorInputChar('e'),
+        UiAction::EditorInputChar('s'),
+        UiAction::EditorNextField,
+        UiAction::EditorInputChar('l'),
+        UiAction::EditorInputChar('i'),
+        UiAction::EditorInputChar('n'),
+        UiAction::EditorInputChar('e'),
+        UiAction::EditorInputChar(' '),
+        UiAction::EditorInputChar('1'),
+        UiAction::EditorInsertNewline,
+        UiAction::EditorInputChar('l'),
+        UiAction::EditorInputChar('i'),
+        UiAction::EditorInputChar('n'),
+        UiAction::EditorInputChar('e'),
+        UiAction::EditorInputChar(' '),
+        UiAction::EditorInputChar('2'),
+        UiAction::EditorConfirm,
+    ];
+    assert_scenario(MockScenario::new(
+        "files_commit_editor_multiline_confirm",
+        fixture_dirty_repo(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &["Commit created:", "feat: files", " Commits"],
+            screen_not_contains: &[],
+            selected_screen_rows: &[],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["commit:feat: files", "refresh"],
+            git_state_contains: &["summary: \"feat: files\""],
+        },
+    ));
+}
+
+#[test]
+fn harness_files_stash_editor_all_mode() {
+    let inputs = [
+        UiAction::RefreshAll,
+        UiAction::OpenStashEditor,
+        UiAction::EditorInputChar('a'),
+        UiAction::EditorInputChar('l'),
+        UiAction::EditorInputChar('l'),
+        UiAction::EditorInputChar(' '),
+        UiAction::EditorInputChar('s'),
+        UiAction::EditorInputChar('a'),
+        UiAction::EditorInputChar('v'),
+        UiAction::EditorInputChar('e'),
+        UiAction::EditorConfirm,
+    ];
+    assert_scenario(MockScenario::new(
+        "files_stash_editor_all_mode",
+        fixture_dirty_repo(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &["Stash pushed: all save"],
+            screen_not_contains: &[],
+            selected_screen_rows: &[],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["stash-push:all save", "refresh"],
+            git_state_contains: &["summary: \"all save\""],
+        },
+    ));
+}
+
+#[test]
+fn harness_files_stash_editor_multiselect_mode() {
+    let inputs = [
+        UiAction::RefreshAll,
+        UiAction::ToggleFilesMultiSelect,
+        UiAction::MoveDown,
+        UiAction::OpenStashEditor,
+        UiAction::EditorInputChar('p'),
+        UiAction::EditorInputChar('i'),
+        UiAction::EditorInputChar('c'),
+        UiAction::EditorInputChar('k'),
+        UiAction::EditorInputChar(' '),
+        UiAction::EditorInputChar('s'),
+        UiAction::EditorInputChar('e'),
+        UiAction::EditorInputChar('l'),
+        UiAction::EditorInputChar('e'),
+        UiAction::EditorInputChar('c'),
+        UiAction::EditorInputChar('t'),
+        UiAction::EditorInputChar('i'),
+        UiAction::EditorInputChar('o'),
+        UiAction::EditorInputChar('n'),
+        UiAction::EditorConfirm,
+    ];
+    assert_scenario(MockScenario::new(
+        "files_stash_editor_multiselect_mode",
+        fixture_dirty_repo(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &["Stashed 3 files: pick selection"],
+            screen_not_contains: &[],
+            selected_screen_rows: &[],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["stash-files:pick selection:README.md,src/lib.rs,src/main.rs"],
+            git_state_contains: &["summary: \"pick selection\""],
+        },
+    ));
+}
+
+#[test]
 fn harness_files_v_marks_individual_rows() {
     let inputs = [
         UiAction::RefreshAll,
@@ -254,6 +369,32 @@ fn harness_files_reversing_down_does_not_jump_to_bottom_reserve() {
             batch_selected_screen_rows: &[],
             git_ops_contains: &["refresh"],
             git_state_contains: &["path: \"file-24.txt\""],
+        },
+    ));
+}
+
+#[test]
+fn harness_untracked_directory_marker_displays_as_tree_directory() {
+    let mut fixture = fixture_empty_repo();
+    fixture.files = vec![ratagit_core::FileEntry {
+        path: "libs/ratagit-git/tests/".to_string(),
+        staged: false,
+        untracked: true,
+    }];
+    fixture.status_summary = "staged: 0, unstaged: 1".to_string();
+
+    let inputs = [UiAction::RefreshAll];
+    assert_scenario(MockScenario::new(
+        "files_untracked_directory_marker_tree_node",
+        fixture,
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &[" tests/"],
+            screen_not_contains: &[" libs/ratagit-git/tests/"],
+            selected_screen_rows: &[],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["refresh"],
+            git_state_contains: &["path: \"libs/ratagit-git/tests/\""],
         },
     ));
 }

@@ -1,6 +1,6 @@
 use ratagit_core::{
-    Action, AppState, BranchEntry, Command, FileEntry, FileInputMode, GitResult, PanelFocus,
-    RepoSnapshot, UiAction, update,
+    Action, AppState, BranchEntry, Command, CommitField, EditorKind, FileEntry, FileInputMode,
+    GitResult, PanelFocus, RepoSnapshot, StashScope, UiAction, update,
 };
 
 #[test]
@@ -329,4 +329,129 @@ fn move_selection_does_not_change_left_indexes_when_focus_is_right_panel() {
     );
     update(&mut state, Action::Ui(UiAction::MoveUp));
     assert_eq!(state.files.selected, 1);
+}
+
+#[test]
+fn commit_editor_confirms_subject_and_multiline_body() {
+    let mut state = AppState::default();
+    assert!(update(&mut state, Action::Ui(UiAction::OpenCommitEditor)).is_empty());
+    assert_eq!(
+        state.editor.kind,
+        Some(EditorKind::Commit {
+            message: String::new(),
+            body: String::new(),
+            active_field: CommitField::Message,
+        })
+    );
+
+    for ch in "feat: ship".chars() {
+        update(&mut state, Action::Ui(UiAction::EditorInputChar(ch)));
+    }
+    update(&mut state, Action::Ui(UiAction::EditorNextField));
+    for ch in "line one".chars() {
+        update(&mut state, Action::Ui(UiAction::EditorInputChar(ch)));
+    }
+    update(&mut state, Action::Ui(UiAction::EditorInsertNewline));
+    for ch in "line two".chars() {
+        update(&mut state, Action::Ui(UiAction::EditorInputChar(ch)));
+    }
+
+    let commands = update(&mut state, Action::Ui(UiAction::EditorConfirm));
+    assert_eq!(
+        commands,
+        vec![Command::CreateCommit {
+            message: "feat: ship\n\nline one\nline two".to_string()
+        }]
+    );
+    assert_eq!(state.commits.draft_message, "feat: ship");
+    assert!(state.editor.kind.is_none());
+}
+
+#[test]
+fn commit_editor_blocks_empty_subject_and_keeps_editor_open() {
+    let mut state = AppState::default();
+    update(&mut state, Action::Ui(UiAction::OpenCommitEditor));
+    update(&mut state, Action::Ui(UiAction::EditorNextField));
+    update(&mut state, Action::Ui(UiAction::EditorInputChar('x')));
+
+    let commands = update(&mut state, Action::Ui(UiAction::EditorConfirm));
+    assert!(commands.is_empty());
+    assert!(matches!(
+        state.editor.kind,
+        Some(EditorKind::Commit {
+            active_field: CommitField::Body,
+            ..
+        })
+    ));
+    assert!(
+        state
+            .notices
+            .iter()
+            .any(|notice| notice.contains("Commit message cannot be empty"))
+    );
+}
+
+#[test]
+fn stash_editor_confirms_all_scope_outside_multiselect() {
+    let mut state = AppState::default();
+    update(&mut state, Action::Ui(UiAction::OpenStashEditor));
+    assert_eq!(
+        state.editor.kind,
+        Some(EditorKind::Stash {
+            title: String::new(),
+            scope: StashScope::All,
+        })
+    );
+    for ch in "checkpoint".chars() {
+        update(&mut state, Action::Ui(UiAction::EditorInputChar(ch)));
+    }
+
+    let commands = update(&mut state, Action::Ui(UiAction::EditorConfirm));
+    assert_eq!(
+        commands,
+        vec![Command::StashPush {
+            message: "checkpoint".to_string()
+        }]
+    );
+    assert!(state.editor.kind.is_none());
+}
+
+#[test]
+fn stash_editor_confirms_selected_paths_scope_in_multiselect_mode() {
+    let mut state = AppState::default();
+    state.files.items = vec![
+        FileEntry {
+            path: "a.txt".to_string(),
+            staged: false,
+            untracked: false,
+        },
+        FileEntry {
+            path: "b.txt".to_string(),
+            staged: false,
+            untracked: false,
+        },
+    ];
+    state.files.mode = FileInputMode::MultiSelect;
+    state.files.selected_rows.insert("a.txt".to_string());
+    update(&mut state, Action::Ui(UiAction::OpenStashEditor));
+    assert_eq!(
+        state.editor.kind,
+        Some(EditorKind::Stash {
+            title: String::new(),
+            scope: StashScope::SelectedPaths(vec!["a.txt".to_string()]),
+        })
+    );
+    for ch in "pick".chars() {
+        update(&mut state, Action::Ui(UiAction::EditorInputChar(ch)));
+    }
+
+    let commands = update(&mut state, Action::Ui(UiAction::EditorConfirm));
+    assert_eq!(
+        commands,
+        vec![Command::StashFiles {
+            message: "pick".to_string(),
+            paths: vec!["a.txt".to_string()],
+        }]
+    );
+    assert!(state.editor.kind.is_none());
 }

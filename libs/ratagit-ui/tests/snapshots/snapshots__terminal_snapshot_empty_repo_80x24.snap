@@ -25,4 +25,4 @@ expression: "render_terminal_text(&state, TerminalSize { width: 80, height: 24, 
 ┌ [4]  Stash ────────────┐│                                                   │
 │                         ││                                                   │
 └─────────────────────────┘└───────────────────────────────────────────────────┘
-keys(files): space stage/unstage | s stash | v multi | enter expand | / search
+keys(files): space stage/unstage | c commit | s stash(all|selected) | v multi |

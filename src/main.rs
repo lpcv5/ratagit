@@ -56,7 +56,7 @@ fn run_tui() -> Result<(), Box<dyn Error>> {
             KeyCode::Char('q') => break,
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => break,
             _ => {
-                if let Some(action) = ui_action_for_key(runtime.state(), key.code) {
+                if let Some(action) = ui_action_for_key(runtime.state(), key.code, key.modifiers) {
                     runtime.dispatch_ui(action);
                 }
             }
@@ -67,7 +67,26 @@ fn run_tui() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn ui_action_for_key(state: &AppState, code: KeyCode) -> Option<UiAction> {
+fn ui_action_for_key(state: &AppState, code: KeyCode, modifiers: KeyModifiers) -> Option<UiAction> {
+    if state.editor.is_active() {
+        return match code {
+            KeyCode::Enter => Some(UiAction::EditorConfirm),
+            KeyCode::Esc => Some(UiAction::EditorCancel),
+            KeyCode::Backspace => Some(UiAction::EditorBackspace),
+            KeyCode::Tab => Some(UiAction::EditorNextField),
+            KeyCode::BackTab => Some(UiAction::EditorPrevField),
+            KeyCode::Char('j') if modifiers.contains(KeyModifiers::CONTROL) => {
+                Some(UiAction::EditorInsertNewline)
+            }
+            KeyCode::Char(ch)
+                if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+            {
+                Some(UiAction::EditorInputChar(ch))
+            }
+            _ => None,
+        };
+    }
+
     if state.focus == PanelFocus::Files && state.files.mode == FileInputMode::SearchInput {
         return match code {
             KeyCode::Enter => Some(UiAction::ConfirmFileSearch),
@@ -88,7 +107,8 @@ fn ui_action_for_key(state: &AppState, code: KeyCode) -> Option<UiAction> {
             KeyCode::Char('n') => return Some(UiAction::NextFileSearchMatch),
             KeyCode::Char('N') => return Some(UiAction::PrevFileSearchMatch),
             KeyCode::Esc => return Some(UiAction::CancelFileSearch),
-            KeyCode::Char('s') => return Some(UiAction::StashSelectedFiles),
+            KeyCode::Char('c') => return Some(UiAction::OpenCommitEditor),
+            KeyCode::Char('s') => return Some(UiAction::OpenStashEditor),
             _ => {}
         }
     }
@@ -137,19 +157,23 @@ fn ui_action_for_key(state: &AppState, code: KeyCode) -> Option<UiAction> {
 mod tests {
     use super::*;
 
+    fn map_key(state: &AppState, code: KeyCode) -> Option<UiAction> {
+        ui_action_for_key(state, code, KeyModifiers::NONE)
+    }
+
     #[test]
     fn panel_navigation_uses_h_and_l_not_tab() {
         let state = AppState::default();
         assert_eq!(
-            ui_action_for_key(&state, KeyCode::Char('l')),
+            map_key(&state, KeyCode::Char('l')),
             Some(UiAction::FocusNext)
         );
         assert_eq!(
-            ui_action_for_key(&state, KeyCode::Char('h')),
+            map_key(&state, KeyCode::Char('h')),
             Some(UiAction::FocusPrev)
         );
-        assert_eq!(ui_action_for_key(&state, KeyCode::Tab), None);
-        assert_eq!(ui_action_for_key(&state, KeyCode::BackTab), None);
+        assert_eq!(map_key(&state, KeyCode::Tab), None);
+        assert_eq!(map_key(&state, KeyCode::BackTab), None);
     }
 
     #[test]
@@ -157,15 +181,15 @@ mod tests {
         let mut state = AppState::default();
         state.files.mode = FileInputMode::SearchInput;
         assert_eq!(
-            ui_action_for_key(&state, KeyCode::Char('r')),
+            map_key(&state, KeyCode::Char('r')),
             Some(UiAction::InputFileSearchChar('r'))
         );
         assert_eq!(
-            ui_action_for_key(&state, KeyCode::Enter),
+            map_key(&state, KeyCode::Enter),
             Some(UiAction::ConfirmFileSearch)
         );
         assert_eq!(
-            ui_action_for_key(&state, KeyCode::Esc),
+            map_key(&state, KeyCode::Esc),
             Some(UiAction::CancelFileSearch)
         );
     }
@@ -174,19 +198,23 @@ mod tests {
     fn files_panel_git_keys_map_to_file_actions() {
         let state = AppState::default();
         assert_eq!(
-            ui_action_for_key(&state, KeyCode::Char(' ')),
+            map_key(&state, KeyCode::Char(' ')),
             Some(UiAction::ToggleSelectedFileStage)
         );
         assert_eq!(
-            ui_action_for_key(&state, KeyCode::Char('s')),
-            Some(UiAction::StashSelectedFiles)
+            map_key(&state, KeyCode::Char('c')),
+            Some(UiAction::OpenCommitEditor)
         );
         assert_eq!(
-            ui_action_for_key(&state, KeyCode::Char('/')),
+            map_key(&state, KeyCode::Char('s')),
+            Some(UiAction::OpenStashEditor)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Char('/')),
             Some(UiAction::StartFileSearch)
         );
         assert_eq!(
-            ui_action_for_key(&state, KeyCode::Char('v')),
+            map_key(&state, KeyCode::Char('v')),
             Some(UiAction::ToggleFilesMultiSelect)
         );
     }
@@ -199,19 +227,19 @@ mod tests {
             ..AppState::default()
         };
         assert_eq!(
-            ui_action_for_key(&state, KeyCode::Char('b')),
+            map_key(&state, KeyCode::Char('b')),
             Some(UiAction::CreateBranch {
                 name: "feature/new".to_string()
             })
         );
         assert_eq!(
-            ui_action_for_key(&state, KeyCode::Char('o')),
+            map_key(&state, KeyCode::Char('o')),
             Some(UiAction::CheckoutSelectedBranch)
         );
 
         state.focus = PanelFocus::Commits;
         assert_eq!(
-            ui_action_for_key(&state, KeyCode::Char('c')),
+            map_key(&state, KeyCode::Char('c')),
             Some(UiAction::CreateCommit {
                 message: "mvp commit".to_string()
             })
@@ -219,14 +247,42 @@ mod tests {
 
         state.focus = PanelFocus::Stash;
         assert_eq!(
-            ui_action_for_key(&state, KeyCode::Char('p')),
+            map_key(&state, KeyCode::Char('p')),
             Some(UiAction::StashPush {
                 message: "savepoint".to_string()
             })
         );
         assert_eq!(
-            ui_action_for_key(&state, KeyCode::Char('O')),
+            map_key(&state, KeyCode::Char('O')),
             Some(UiAction::StashPopSelected)
+        );
+    }
+
+    #[test]
+    fn editor_mode_maps_keys_before_any_other_mode() {
+        let mut state = AppState::default();
+        state.editor.kind = Some(ratagit_core::EditorKind::Commit {
+            message: String::new(),
+            body: String::new(),
+            active_field: ratagit_core::CommitField::Body,
+        });
+        state.files.mode = FileInputMode::SearchInput;
+
+        assert_eq!(
+            map_key(&state, KeyCode::Enter),
+            Some(UiAction::EditorConfirm)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Tab),
+            Some(UiAction::EditorNextField)
+        );
+        assert_eq!(
+            ui_action_for_key(&state, KeyCode::Char('j'), KeyModifiers::CONTROL),
+            Some(UiAction::EditorInsertNewline)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Char('m')),
+            Some(UiAction::EditorInputChar('m'))
         );
     }
 }

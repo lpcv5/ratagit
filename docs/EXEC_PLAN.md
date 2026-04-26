@@ -2,54 +2,60 @@
 
 ## Current Slice
 
-Implement first-pass Details behavior with Files diff projection while preserving
-the existing left/right workspace layout and pure rendering contract.
+Implement Files-panel commit/stash editor modals and unify real Git CLI tests
+under workspace `tmp/`.
+
+## Follow-up Hotfix
+
+- fix Files tree rendering for untracked directory marker entries returned by
+  `git status` (for example `libs/ratagit-git/tests/`)
+- render them as directory nodes (`tests/`) instead of malformed file nodes
+  showing full path text
+- cover with core tree unit test + harness scenario
 
 ## Goal
 
-- make `Files -> Details` show merged `unstaged` + `staged` diff for the
-  current cursor target (file or folder descendants)
-- color diff rows by semantic role (`section/meta/hunk/add/remove`)
-- keep `Branches/Commits/Stash -> Details` as explicit placeholders with TODOs
-- leave hunk editing / partial stage as deferred TODO without changing current
-  `Enter` behavior
+- add a commit editor flow from Files (`c`) with:
+  - subject + multiline body
+  - `Tab` / `Shift+Tab` field switch
+  - `Ctrl+J` newline in body
+  - `Enter` confirm, `Esc` cancel
+- add a stash editor flow from Files (`s`) with:
+  - normal mode -> stash all changes
+  - visual mode -> stash selected target paths
+  - `Enter` confirm, `Esc` cancel
+- keep commit/stash backend command interfaces stable
+- ensure real Git integration tests run in `tmp/git-tests/*` repos only
 
 ## Vertical Slice
 
-1. Core + command pipeline
-- add `AppState.details` as details source of truth
-- add `Command::RefreshFilesDetailsDiff` and
-  `GitResult::FilesDetailsDiff { paths, result }`
-- trigger details refresh on:
-  - `RefreshAll` completion
-  - files cursor/visibility changes (`j/k`, directory toggle, search
-    confirm/jump)
-  - focus returning to Files
+1. Core state and reducer
+- add `AppState.editor` as editor source of truth
+- add editor-focused `UiAction` variants (open/input/switch/newline/confirm/cancel)
+- keep existing `Command`/`GitResult` types for commit/stash execution
+- compose commit message in core (`subject + optional body`)
+- freeze stash scope at modal open (`All` vs `SelectedPaths`)
 
-2. Git backend
-- add `GitBackend::files_details_diff(&[String]) -> Result<String, GitError>`
-- CLI backend returns merged sections in fixed order:
-  - `### unstaged`
-  - `### staged`
-- mock backend returns deterministic pseudo diff and operation trace entries for
-  harness assertions
+2. Input mapping + UI modal overlay
+- add editor-mode key mapping precedence in `src/main.rs`
+- map Files `c/s` to open editor actions
+- render centered commit/stash modal overlay in terminal renderer
+- show editor-specific shortcuts while modal is active
 
-3. UI projection + TODO anchors
-- render Details from `AppState.details` instead of ad-hoc summary projection
-- classify files diff lines into semantic roles for color rendering
-- keep non-files Details as placeholders with TODO comments for future
-  branch-log/commit/stash details
-- add TODO comments for future hunk-selection model and `Enter` hunk-edit flow
+3. Git behavior + tests
+- mock backend commit summary uses first line for commit list projection
+- add real CLI integration tests under `libs/ratagit-git/tests`:
+  - multiline commit message
+  - stash push all
+  - stash files selected paths
+- build temporary repos under `<workspace>/tmp/git-tests/<unique-case>`
+- ignore `/tmp/` in git
 
-4. Tests and harness
-- core tests for new details command emission and details-result state updates
-- git tests for command-to-backend diff flow
-- UI tests for files diff projection and semantic color style assertions
-- harness scenario verifying details follows files cursor and shows merged
-  diff sections
-- update terminal snapshots for new Details content
-
-5. Quality gates
-- run `cargo fmt`
-- run `cargo clippy --all-targets -- -D warnings`
-- run `cargo test`
+4. Validation
+- add/adjust unit tests (core/main) for editor state machine and key mapping
+- add UI snapshot coverage for commit/stash modal states
+- add harness scenarios for:
+  - `files_commit_editor_multiline_confirm`
+  - `files_stash_editor_all_mode`
+  - `files_stash_editor_multiselect_mode`
+- run `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, `cargo test`

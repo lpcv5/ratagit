@@ -199,13 +199,24 @@ fn classify_diff_row_role(line: &str) -> RowRole {
 }
 
 pub(crate) fn shortcuts_for_state(state: &AppState) -> String {
+    if let Some(editor) = &state.editor.kind {
+        return match editor {
+            ratagit_core::EditorKind::Commit { .. } => {
+                "commit editor: Tab switch | Ctrl+J newline(body) | Enter confirm | Esc cancel"
+                    .to_string()
+            }
+            ratagit_core::EditorKind::Stash { .. } => {
+                "stash editor: Enter confirm | Esc cancel".to_string()
+            }
+        };
+    }
+
     if state.focus == PanelFocus::Files && state.files.mode == FileInputMode::SearchInput {
         return format!("search: {}", state.files.search_query);
     }
     match state.focus {
         PanelFocus::Files => {
-            "keys(files): space stage/unstage | s stash | v multi | enter expand | / search"
-                .to_string()
+            "keys(files): space stage/unstage | c commit | s stash(all|selected) | v multi | enter expand | / search".to_string()
         }
         PanelFocus::Branches => "keys(branches): b create branch | o checkout".to_string(),
         PanelFocus::Commits => "keys(commits): c commit".to_string(),
@@ -640,7 +651,10 @@ mod tests {
     #[test]
     fn keys_panel_follows_focus_and_search_mode() {
         let mut state = state_with_dirty_repo();
-        assert!(shortcuts_for_state(&state).contains("keys(files):"));
+        let files_shortcuts = shortcuts_for_state(&state);
+        assert!(files_shortcuts.contains("keys(files):"));
+        assert!(files_shortcuts.contains("c commit"));
+        assert!(files_shortcuts.contains("s stash(all|selected)"));
 
         update(
             &mut state,
@@ -661,5 +675,19 @@ mod tests {
         update(&mut empty, Action::Ui(UiAction::StartFileSearch));
         update(&mut empty, Action::Ui(UiAction::InputFileSearchChar('m')));
         assert_eq!(shortcuts_for_state(&empty), "search: m");
+    }
+
+    #[test]
+    fn keys_panel_switches_to_editor_help_when_editor_is_open() {
+        let mut state = state_with_dirty_repo();
+        update(&mut state, Action::Ui(UiAction::OpenCommitEditor));
+        assert!(shortcuts_for_state(&state).contains("commit editor:"));
+        assert!(shortcuts_for_state(&state).contains("Ctrl+J"));
+
+        update(&mut state, Action::Ui(UiAction::OpenStashEditor));
+        assert_eq!(
+            shortcuts_for_state(&state),
+            "stash editor: Enter confirm | Esc cancel"
+        );
     }
 }

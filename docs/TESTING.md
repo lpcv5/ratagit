@@ -37,6 +37,16 @@ All UI tests must use fixtures:
 
 ---
 
+## Real Git CLI Tests
+
+- Any test that executes the real `git` binary must create and use an isolated
+  repository under workspace `tmp/`.
+- Standard root: `<workspace>/tmp/git-tests/<unique-case>`.
+- Tests must clean up their temporary repositories on completion.
+- Never run real-git mutation tests directly in the workspace repository.
+
+---
+
 ## Snapshot Rules
 
 - Snapshots must be deterministic

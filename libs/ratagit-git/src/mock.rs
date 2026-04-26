@@ -139,11 +139,12 @@ impl GitBackend for MockGitBackend {
         if message.trim().is_empty() {
             return Err(GitError::new("commit message cannot be empty"));
         }
+        let summary = message.lines().next().unwrap_or("").trim().to_string();
         self.snapshot.commits.insert(
             0,
             CommitEntry {
                 id: format!("mock-{:04}", self.commit_sequence),
-                summary: message.to_string(),
+                summary,
             },
         );
         self.commit_sequence = self.commit_sequence.saturating_add(1);

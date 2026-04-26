@@ -11,8 +11,9 @@ pub use files::{
     start_search as start_file_search, toggle_current_row_selection, toggle_selected_directory,
 };
 pub use state::{
-    AppState, BranchEntry, BranchesPanelState, CommitEntry, CommitsPanelState, DetailsPanelState,
-    PanelFocus, RepoSnapshot, StashEntry, StashPanelState, StatusPanelState,
+    AppState, BranchEntry, BranchesPanelState, CommitEntry, CommitField, CommitsPanelState,
+    DetailsPanelState, EditorKind, EditorState, PanelFocus, RepoSnapshot, StashEntry,
+    StashPanelState, StashScope, StatusPanelState,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,6 +38,15 @@ pub enum UiAction {
     StageSelectedFile,
     UnstageSelectedFile,
     StashSelectedFiles,
+    OpenCommitEditor,
+    OpenStashEditor,
+    EditorInputChar(char),
+    EditorBackspace,
+    EditorNextField,
+    EditorPrevField,
+    EditorInsertNewline,
+    EditorConfirm,
+    EditorCancel,
     CreateCommit { message: String },
     CreateBranch { name: String },
     CheckoutSelectedBranch,
@@ -140,6 +150,39 @@ pub fn update(state: &mut AppState, action: Action) -> Vec<Command> {
 fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
     match action {
         UiAction::RefreshAll => vec![Command::RefreshAll],
+        UiAction::OpenCommitEditor => {
+            open_commit_editor(state);
+            Vec::new()
+        }
+        UiAction::OpenStashEditor => {
+            open_stash_editor(state);
+            Vec::new()
+        }
+        UiAction::EditorInputChar(ch) => {
+            apply_editor_input_char(state, ch);
+            Vec::new()
+        }
+        UiAction::EditorBackspace => {
+            apply_editor_backspace(state);
+            Vec::new()
+        }
+        UiAction::EditorNextField => {
+            switch_editor_field(state, false);
+            Vec::new()
+        }
+        UiAction::EditorPrevField => {
+            switch_editor_field(state, true);
+            Vec::new()
+        }
+        UiAction::EditorInsertNewline => {
+            apply_editor_newline(state);
+            Vec::new()
+        }
+        UiAction::EditorConfirm => confirm_editor(state),
+        UiAction::EditorCancel => {
+            state.editor.kind = None;
+            Vec::new()
+        }
         UiAction::FocusNext => {
             state.focus = state.focus.next_left();
             state.last_left_focus = state.focus;
@@ -393,6 +436,152 @@ fn update_git_result(state: &mut AppState, result: GitResult) -> Vec<Command> {
             format!("Stash popped: {stash_id}"),
             format!("Failed to stash pop: {stash_id}"),
         ),
+    }
+}
+
+fn open_commit_editor(state: &mut AppState) {
+    state.editor.kind = Some(EditorKind::Commit {
+        message: String::new(),
+        body: String::new(),
+        active_field: CommitField::Message,
+    });
+}
+
+fn open_stash_editor(state: &mut AppState) {
+    state.editor.kind = Some(EditorKind::Stash {
+        title: String::new(),
+        scope: stash_scope_for_current_files_selection(state),
+    });
+}
+
+fn stash_scope_for_current_files_selection(state: &AppState) -> StashScope {
+    if state.files.mode == FileInputMode::MultiSelect {
+        let paths = selected_target_paths(&state.files);
+        if !paths.is_empty() {
+            return StashScope::SelectedPaths(paths);
+        }
+    }
+    StashScope::All
+}
+
+fn apply_editor_input_char(state: &mut AppState, ch: char) {
+    let Some(editor) = state.editor.kind.as_mut() else {
+        return;
+    };
+
+    match editor {
+        EditorKind::Commit {
+            message,
+            body,
+            active_field,
+        } => match active_field {
+            CommitField::Message => message.push(ch),
+            CommitField::Body => body.push(ch),
+        },
+        EditorKind::Stash { title, .. } => title.push(ch),
+    }
+}
+
+fn apply_editor_backspace(state: &mut AppState) {
+    let Some(editor) = state.editor.kind.as_mut() else {
+        return;
+    };
+
+    match editor {
+        EditorKind::Commit {
+            message,
+            body,
+            active_field,
+        } => match active_field {
+            CommitField::Message => {
+                message.pop();
+            }
+            CommitField::Body => {
+                body.pop();
+            }
+        },
+        EditorKind::Stash { title, .. } => {
+            title.pop();
+        }
+    }
+}
+
+fn switch_editor_field(state: &mut AppState, previous: bool) {
+    let Some(editor) = state.editor.kind.as_mut() else {
+        return;
+    };
+
+    if let EditorKind::Commit { active_field, .. } = editor {
+        *active_field = if previous {
+            active_field.prev()
+        } else {
+            active_field.next()
+        };
+    }
+}
+
+fn apply_editor_newline(state: &mut AppState) {
+    let Some(editor) = state.editor.kind.as_mut() else {
+        return;
+    };
+
+    if let EditorKind::Commit {
+        body,
+        active_field: CommitField::Body,
+        ..
+    } = editor
+    {
+        body.push('\n');
+    }
+}
+
+fn confirm_editor(state: &mut AppState) -> Vec<Command> {
+    let Some(editor) = state.editor.kind.clone() else {
+        return Vec::new();
+    };
+
+    match editor {
+        EditorKind::Commit { message, body, .. } => {
+            if message.trim().is_empty() {
+                push_notice(state, "Commit message cannot be empty");
+                return Vec::new();
+            }
+
+            let commit_message = build_commit_message(&message, &body);
+            state.commits.draft_message = message.trim().to_string();
+            state.editor.kind = None;
+            vec![Command::CreateCommit {
+                message: commit_message,
+            }]
+        }
+        EditorKind::Stash { title, scope } => match scope {
+            StashScope::All => {
+                state.editor.kind = None;
+                vec![Command::StashPush { message: title }]
+            }
+            StashScope::SelectedPaths(paths) => {
+                if paths.is_empty() {
+                    push_notice(state, "No file selected");
+                    return Vec::new();
+                }
+
+                state.editor.kind = None;
+                vec![Command::StashFiles {
+                    message: title,
+                    paths,
+                }]
+            }
+        },
+    }
+}
+
+fn build_commit_message(subject: &str, body: &str) -> String {
+    let clean_subject = subject.trim();
+    let clean_body = body.trim_end();
+    if clean_body.is_empty() {
+        clean_subject.to_string()
+    } else {
+        format!("{clean_subject}\n\n{clean_body}")
     }
 }
 

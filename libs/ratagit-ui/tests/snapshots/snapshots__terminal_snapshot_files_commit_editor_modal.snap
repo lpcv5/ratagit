@@ -1,5 +1,6 @@
 ---
 source: libs/ratagit-ui/tests/snapshots.rs
+assertion_line: 444
 expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30, },)"
 ---
 ┌ [1] 󰈙 Files ───────────────────┐┌ [5]  Details ─────────────────────────────────────────────────┐
@@ -10,18 +11,18 @@ expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30,
 │                                ││  +new README.md                                                │
 │                                ││                                                                │
 │                                ││                                                                │
-│                                ││                                                                │
-│                                ││                                                                │
-└────────────────────────────────┘│                                                                │
-┌ [2]  Branches ────────────────┐│                                                                │
-│ main                          ││                                                                │
-│  feature/mvp                   ││                                                                │
-│                                ││                                                                │
-│                                ││                                                                │
-│                                ││                                                                │
-│                                ││                                                                │
-└────────────────────────────────┘│                                                                │
-┌ [3]  Commits ─────────────────┐└────────────────────────────────────────────────────────────────┘
+│           ┌ Commit Editor ───────────────────────────────────────────────────────────┐           │
+│           │   message: feat: add modal                                               │           │
+└───────────│>> body:                                                                  │           │
+┌ [2]  Bran│    body line 1                                                           │           │
+│ main     │    body line 2                                                           │           │
+│  feature/m│                                                                          │           │
+│           │    Tab/Shift+Tab switch | Ctrl+J newline(body)                           │           │
+│           │    Enter confirm | Esc cancel                                            │           │
+│           │                                                                          │           │
+│           │                                                                          │           │
+└───────────│                                                                          │           │
+┌ [3]  Comm└──────────────────────────────────────────────────────────────────────────┘───────────┘
 │ abc1234 init project          │┌ [6] 󰌱 Log ─────────────────────────────────────────────────────┐
 │ def5678 wire commands         ││  notice=Ready                                                  │
 │  draft=                        ││                                                                │
@@ -31,4 +32,4 @@ expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30,
 ┌ [4]  Stash ───────────────────┐│                                                                │
 │ stash@{0} WIP on main: local t││                                                                │
 └────────────────────────────────┘└────────────────────────────────────────────────────────────────┘
-keys(files): space stage/unstage | c commit | s stash(all|selected) | v multi | enter expand | / sea
+commit editor: Tab switch | Ctrl+J newline(body) | Enter confirm | Esc cancel
