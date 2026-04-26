@@ -1,8 +1,9 @@
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 
-use ratagit_core::ResetMode;
+use ratagit_core::{FileEntry, ResetMode};
 
+use crate::status_cli::parse_porcelain_v1_z;
 use crate::{GitError, validate_repo_relative_path};
 
 #[derive(Debug, Clone)]
@@ -45,6 +46,33 @@ impl GitCli {
         }
 
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    }
+
+    fn run_git_bytes(&self, args: &[&str]) -> Result<Vec<u8>, GitError> {
+        let output = ProcessCommand::new("git")
+            .args(args)
+            .current_dir(&self.repo_path)
+            .output()
+            .map_err(|err| GitError::new(format!("failed to start git {:?}: {err}", args)))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            return Err(GitError::new(format!("git {:?} failed: {}", args, stderr)));
+        }
+
+        Ok(output.stdout)
+    }
+
+    pub(crate) fn status_files(&self) -> Result<Vec<FileEntry>, GitError> {
+        let output = self.run_git_bytes(&[
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--untracked-files=all",
+            "--ignored=no",
+            "--ignore-submodules=all",
+        ])?;
+        parse_porcelain_v1_z(&output)
     }
 
     pub(crate) fn create_commit(&mut self, message: &str) -> Result<(), GitError> {

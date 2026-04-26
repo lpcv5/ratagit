@@ -226,6 +226,13 @@ pub struct DetailsPanelState {
     pub files_diff: String,
     pub files_targets: Vec<String>,
     pub files_error: Option<String>,
+    pub cached_files_diffs: Vec<CachedFilesDiff>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CachedFilesDiff {
+    pub paths: Vec<String>,
+    pub diff: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -276,6 +283,7 @@ impl Default for AppState {
                 files_diff: String::new(),
                 files_targets: Vec::new(),
                 files_error: None,
+                cached_files_diffs: Vec::new(),
             },
             editor: EditorState::default(),
             reset_menu: ResetMenuState::default(),

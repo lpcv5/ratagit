@@ -23,6 +23,8 @@ Focus model:
 - `FocusPanel` supports direct focus selection (`1..6` in app input map)
 - `AppState.last_left_focus` tracks the last active left panel for `Details` projection
 - `AppState.details` stores files-detail diff text, target paths, and detail-refresh errors
+- `AppState.details` also stores a bounded files-detail diff cache keyed by the
+  exact target path list
 - `AppState.editor` stores active commit/stash editor modal state (type + fields + cursor indexes + scope)
 - `AppState.reset_menu` stores whether the Files reset menu is active and which reset choice is selected
 - `AppState.discard_confirm` stores whether the discard confirmation modal is active and the resolved target paths
@@ -45,6 +47,8 @@ Focus model:
 - The real TUI sends commands to a single background Git worker and receives
   `GitResult` values through a channel; the mock harness can still use the
   synchronous runtime for deterministic scenario tests.
+- Runtimes coalesce redundant queued repository refresh and files-detail diff
+  commands after the most recent mutation command.
 - Backend output re-enters `update()` as `GitResult`.
 - UI rendering reads only `AppState`.
 - High-frequency side effects use runtime command debouncing keyed by
@@ -59,6 +63,9 @@ Files panel interaction:
   cache deterministic tree projection data after reducer-managed changes.
 - Backend status collection uses full untracked-file expansion so untracked
   nested files appear as explicit file rows in the tree.
+- Real backend status collection prefers Git CLI porcelain v1 `-z` output inside
+  `GitBackend` for large-repository speed and falls back to git2 status if the
+  CLI command fails.
 - Directories are display targets only and resolve to descendant files from the current snapshot.
 - `space` toggles stage state for the current target or visual-selected batch.
 - `c` opens commit editor modal:
@@ -97,6 +104,9 @@ Files panel interaction:
   over panel navigation mappings.
 - Files Details projection renders merged `unstaged` and `staged` diff sections
   for current file/folder targets from `GitBackend`.
+- Repeated Files Details selections reuse the AppState-owned diff cache without
+  emitting a new Git command; the cache is cleared after snapshot refreshes and
+  successful mutating Git operations.
 - Branches/Commits/Stash Details projections are placeholders in this slice and
   intentionally marked for follow-up implementation.
 

@@ -34,17 +34,19 @@ fn mock_files_details_diff(paths: &[String]) -> String {
 
 fn apply_refreshed_with_mock_details(state: &mut AppState, snapshot: ratagit_core::RepoSnapshot) {
     let commands = update(state, Action::GitResult(GitResult::Refreshed(snapshot)));
-    if let [Command::RefreshFilesDetailsDiff { paths }] = commands.as_slice() {
-        let follow_up = update(
-            state,
-            Action::GitResult(GitResult::FilesDetailsDiff {
-                paths: paths.clone(),
-                result: Ok(mock_files_details_diff(paths)),
-            }),
-        );
-        assert!(follow_up.is_empty());
-    } else {
-        panic!("unexpected commands after refreshed snapshot: {commands:?}");
+    match commands.as_slice() {
+        [] => {}
+        [Command::RefreshFilesDetailsDiff { paths }] => {
+            let follow_up = update(
+                state,
+                Action::GitResult(GitResult::FilesDetailsDiff {
+                    paths: paths.clone(),
+                    result: Ok(mock_files_details_diff(paths)),
+                }),
+            );
+            assert!(follow_up.is_empty());
+        }
+        _ => panic!("unexpected commands after refreshed snapshot: {commands:?}"),
     }
 }
 

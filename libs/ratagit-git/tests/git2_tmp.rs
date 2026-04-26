@@ -230,6 +230,32 @@ fn git2_files_details_diff_emits_untracked_file_patch() {
 }
 
 #[test]
+fn git2_files_details_diff_treats_selected_paths_as_literals() {
+    if !git_available() {
+        eprintln!(
+            "git is unavailable, skipping git2_files_details_diff_treats_selected_paths_as_literals"
+        );
+        return;
+    }
+
+    let repo = seeded_repo_with_two_files("literal-pathspec-details");
+    write(repo.path().join("literal[abc].txt"), "v1\n")
+        .expect("literal path file should be writable");
+    repo.run_git(&["add", "--", "literal[abc].txt"]);
+    repo.run_git(&["commit", "-m", "add literal path"]);
+    write(repo.path().join("literal[abc].txt"), "v2\n")
+        .expect("literal path file should be modified");
+
+    let mut backend = HybridGitBackend::open(repo.path()).expect("hybrid backend should open");
+    let diff = backend
+        .files_details_diff(&["literal[abc].txt".to_string()])
+        .expect("literal path diff should render");
+
+    assert!(diff.contains("diff --git a/literal[abc].txt b/literal[abc].txt"));
+    assert!(diff.contains("v2"), "{diff}");
+}
+
+#[test]
 fn git2_stage_and_unstage_files_preserves_worktree_changes() {
     if !git_available() {
         eprintln!(

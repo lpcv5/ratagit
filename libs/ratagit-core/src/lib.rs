@@ -12,11 +12,13 @@ pub use files::{
     toggle_current_row_selection, toggle_selected_directory,
 };
 pub use state::{
-    AppState, BranchEntry, BranchesPanelState, CommitEntry, CommitField, CommitsPanelState,
-    DetailsPanelState, DiscardConfirmState, EditorKind, EditorState, PanelFocus, RepoSnapshot,
-    ResetChoice, ResetMenuState, ResetMode, StashEntry, StashPanelState, StashScope,
+    AppState, BranchEntry, BranchesPanelState, CachedFilesDiff, CommitEntry, CommitField,
+    CommitsPanelState, DetailsPanelState, DiscardConfirmState, EditorKind, EditorState, PanelFocus,
+    RepoSnapshot, ResetChoice, ResetMenuState, ResetMode, StashEntry, StashPanelState, StashScope,
     StatusPanelState, WorkStatusState,
 };
+
+const DETAILS_DIFF_CACHE_LIMIT: usize = 16;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UiAction {
@@ -483,9 +485,10 @@ fn update_git_result(state: &mut AppState, result: GitResult) -> Vec<Command> {
             }
             state.work.details_pending = false;
             state.work.last_completed_command = Some("details".to_string());
-            state.details.files_targets = paths;
+            state.details.files_targets = paths.clone();
             match result {
                 Ok(diff) => {
+                    cache_files_details_diff(state, &paths, &diff);
                     state.details.files_diff = diff;
                     state.details.files_error = None;
                 }
@@ -903,6 +906,7 @@ fn handle_operation_result(
 ) -> Vec<Command> {
     match result {
         Ok(()) => {
+            clear_files_details_cache(state);
             state.work.operation_pending = None;
             state.work.last_completed_command = Some(operation_key.to_string());
             state.last_operation = Some(operation_key.to_string());
@@ -936,6 +940,7 @@ fn apply_snapshot(state: &mut AppState, snapshot: RepoSnapshot) {
     state.details.files_diff.clear();
     state.details.files_error = None;
     state.details.files_targets = selected_target_paths(&state.files);
+    clear_files_details_cache(state);
 }
 
 fn clamp_selection_indexes(state: &mut AppState) {
@@ -986,7 +991,50 @@ fn move_index(selected: &mut usize, len: usize, move_up: bool) {
 fn refresh_files_details_command(state: &mut AppState) -> Vec<Command> {
     let paths = selected_target_paths(&state.files);
     state.details.files_targets = paths.clone();
+    if paths.is_empty() {
+        state.details.files_diff.clear();
+        state.details.files_error = None;
+        state.work.details_pending = false;
+        return Vec::new();
+    }
+    if let Some(diff) = cached_files_details_diff(state, &paths) {
+        state.details.files_diff = diff;
+        state.details.files_error = None;
+        state.work.details_pending = false;
+        return Vec::new();
+    }
     with_pending(state, vec![Command::RefreshFilesDetailsDiff { paths }])
+}
+
+fn cached_files_details_diff(state: &AppState, paths: &[String]) -> Option<String> {
+    state
+        .details
+        .cached_files_diffs
+        .iter()
+        .find(|entry| entry.paths == paths)
+        .map(|entry| entry.diff.clone())
+}
+
+fn cache_files_details_diff(state: &mut AppState, paths: &[String], diff: &str) {
+    state
+        .details
+        .cached_files_diffs
+        .retain(|entry| entry.paths != paths);
+    state.details.cached_files_diffs.insert(
+        0,
+        CachedFilesDiff {
+            paths: paths.to_vec(),
+            diff: diff.to_string(),
+        },
+    );
+    state
+        .details
+        .cached_files_diffs
+        .truncate(DETAILS_DIFF_CACHE_LIMIT);
+}
+
+fn clear_files_details_cache(state: &mut AppState) {
+    state.details.cached_files_diffs.clear();
 }
 
 fn maybe_refresh_files_details_on_files_focus(state: &mut AppState) -> Vec<Command> {

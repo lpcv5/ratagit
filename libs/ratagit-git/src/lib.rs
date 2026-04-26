@@ -4,6 +4,7 @@ use std::path::{Component, Path};
 mod cli;
 mod hybrid;
 mod mock;
+mod status_cli;
 mod untracked_diff;
 
 use ratagit_core::{Command, GitResult, RepoSnapshot, ResetMode, StashEntry};

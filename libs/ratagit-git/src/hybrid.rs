@@ -92,7 +92,7 @@ impl GitBackend for HybridGitBackend {
         let (current_branch, detached_head) = current_head(&self.repo)?;
         trace_step("head", started);
         let started = Instant::now();
-        let files = collect_files(&self.repo)?;
+        let files = collect_files(&self.cli, &self.repo)?;
         trace_step("status", started);
         let status_summary = summarize_files(&files);
         let started = Instant::now();
@@ -132,7 +132,7 @@ impl GitBackend for HybridGitBackend {
         )?;
         trace_step("unstaged_diff", started);
         let files = if self.last_files.is_empty() {
-            collect_files(&self.repo)?
+            collect_files(&self.cli, &self.repo)?
         } else {
             self.last_files.clone()
         };
@@ -288,11 +288,29 @@ fn is_missing_head_error(error: &git2::Error) -> bool {
         || (error.message().contains("refs/heads") && error.message().contains("not found"))
 }
 
-fn collect_files(repo: &Repository) -> Result<Vec<FileEntry>, GitError> {
+fn collect_files(cli: &GitCli, repo: &Repository) -> Result<Vec<FileEntry>, GitError> {
+    match cli.status_files() {
+        Ok(mut files) => {
+            sort_files(&mut files);
+            Ok(files)
+        }
+        Err(error) => {
+            tracing::debug!(
+                target: "ratagit.git",
+                error = %error,
+                "git cli status failed; falling back to git2 status"
+            );
+            collect_files_with_git2(repo)
+        }
+    }
+}
+
+fn collect_files_with_git2(repo: &Repository) -> Result<Vec<FileEntry>, GitError> {
     let mut options = StatusOptions::new();
     options
         .include_untracked(true)
         .recurse_untracked_dirs(true)
+        .exclude_submodules(true)
         .show(StatusShow::IndexAndWorkdir);
     let statuses = match repo.statuses(Some(&mut options)) {
         Ok(statuses) => statuses,
@@ -451,6 +469,7 @@ fn selected_pathspecs(paths: &[String]) -> Result<Vec<String>, GitError> {
 
 fn diff_options(paths: &[String]) -> DiffOptions {
     let mut options = DiffOptions::new();
+    options.disable_pathspec_match(true);
     for path in paths {
         options.pathspec(path.as_str());
     }

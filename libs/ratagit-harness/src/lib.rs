@@ -108,7 +108,7 @@ impl<B: GitBackend> Runtime<B> {
             );
             return;
         }
-        queue.push_back(command);
+        enqueue_coalesced_command(queue, command);
     }
 
     fn flush_due_debounced(&mut self) {
@@ -129,11 +129,61 @@ impl<B: GitBackend> Runtime<B> {
         let mut queue = VecDeque::new();
         for key in due_keys {
             if let Some(pending) = self.debounced.remove(key) {
-                queue.push_back(pending.command);
+                enqueue_coalesced_command(&mut queue, pending.command);
             }
         }
         self.process_immediate_queue(queue);
     }
+}
+
+fn enqueue_coalesced_command(queue: &mut VecDeque<Command>, command: Command) {
+    let search_start = queue
+        .iter()
+        .rposition(command_is_mutation)
+        .map_or(0, |index| index + 1);
+    match command {
+        Command::RefreshAll => {
+            if !queue
+                .iter()
+                .skip(search_start)
+                .any(|queued| matches!(queued, Command::RefreshAll))
+            {
+                queue.push_back(Command::RefreshAll);
+            }
+        }
+        Command::RefreshFilesDetailsDiff { .. } => {
+            if let Some(index) =
+                queue
+                    .iter()
+                    .enumerate()
+                    .skip(search_start)
+                    .find_map(|(index, queued)| {
+                        matches!(queued, Command::RefreshFilesDetailsDiff { .. }).then_some(index)
+                    })
+            {
+                queue.remove(index);
+            }
+            queue.push_back(command);
+        }
+        _ => queue.push_back(command),
+    }
+}
+
+fn command_is_mutation(command: &Command) -> bool {
+    matches!(
+        command,
+        Command::StageFiles { .. }
+            | Command::UnstageFiles { .. }
+            | Command::StashFiles { .. }
+            | Command::Reset { .. }
+            | Command::Nuke
+            | Command::DiscardFiles { .. }
+            | Command::CreateCommit { .. }
+            | Command::CreateBranch { .. }
+            | Command::CheckoutBranch { .. }
+            | Command::StashPush { .. }
+            | Command::StashPop { .. }
+    )
 }
 
 #[derive(Debug)]
@@ -352,5 +402,75 @@ mod tests {
             .cloned()
             .collect::<Vec<_>>();
         assert_eq!(diff_operations, vec!["details-diff:src/lib.rs".to_string()]);
+    }
+
+    #[test]
+    fn command_coalescing_preserves_mutation_boundaries() {
+        let mut queue = std::collections::VecDeque::new();
+        enqueue_coalesced_command(&mut queue, Command::RefreshAll);
+        enqueue_coalesced_command(&mut queue, Command::RefreshAll);
+        enqueue_coalesced_command(
+            &mut queue,
+            Command::StageFiles {
+                paths: vec!["a.txt".to_string()],
+            },
+        );
+        enqueue_coalesced_command(&mut queue, Command::RefreshAll);
+        enqueue_coalesced_command(&mut queue, Command::RefreshAll);
+
+        assert_eq!(
+            queue.into_iter().collect::<Vec<_>>(),
+            vec![
+                Command::RefreshAll,
+                Command::StageFiles {
+                    paths: vec!["a.txt".to_string()]
+                },
+                Command::RefreshAll,
+            ]
+        );
+    }
+
+    #[test]
+    fn command_coalescing_keeps_latest_details_after_last_mutation() {
+        let mut queue = std::collections::VecDeque::new();
+        enqueue_coalesced_command(
+            &mut queue,
+            Command::RefreshFilesDetailsDiff {
+                paths: vec!["old.txt".to_string()],
+            },
+        );
+        enqueue_coalesced_command(
+            &mut queue,
+            Command::StageFiles {
+                paths: vec!["a.txt".to_string()],
+            },
+        );
+        enqueue_coalesced_command(
+            &mut queue,
+            Command::RefreshFilesDetailsDiff {
+                paths: vec!["stale.txt".to_string()],
+            },
+        );
+        enqueue_coalesced_command(
+            &mut queue,
+            Command::RefreshFilesDetailsDiff {
+                paths: vec!["latest.txt".to_string()],
+            },
+        );
+
+        assert_eq!(
+            queue.into_iter().collect::<Vec<_>>(),
+            vec![
+                Command::RefreshFilesDetailsDiff {
+                    paths: vec!["old.txt".to_string()]
+                },
+                Command::StageFiles {
+                    paths: vec!["a.txt".to_string()]
+                },
+                Command::RefreshFilesDetailsDiff {
+                    paths: vec!["latest.txt".to_string()]
+                },
+            ]
+        );
     }
 }

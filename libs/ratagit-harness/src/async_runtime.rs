@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::marker::PhantomData;
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::thread::{self, JoinHandle};
@@ -12,6 +12,8 @@ use ratagit_ui::{
     RenderedFrame, TerminalBuffer, TerminalSize, render, render_terminal_buffer,
     render_terminal_text,
 };
+
+use crate::enqueue_coalesced_command;
 
 #[derive(Debug)]
 pub struct AsyncRuntime<B: GitBackend + Send + 'static> {
@@ -46,11 +48,25 @@ impl<B: GitBackend + Send + 'static> AsyncRuntime<B> {
             while let Ok(message) = command_rx.recv() {
                 match message {
                     WorkerMessage::Run(command) => {
-                        if result_tx
-                            .send(execute_command(&mut backend, command))
-                            .is_err()
-                        {
-                            break;
+                        let mut queue = VecDeque::new();
+                        enqueue_coalesced_command(&mut queue, command);
+                        loop {
+                            match command_rx.try_recv() {
+                                Ok(WorkerMessage::Run(command)) => {
+                                    enqueue_coalesced_command(&mut queue, command);
+                                }
+                                Ok(WorkerMessage::Stop) => return,
+                                Err(mpsc::TryRecvError::Empty) => break,
+                                Err(mpsc::TryRecvError::Disconnected) => return,
+                            }
+                        }
+                        while let Some(command) = queue.pop_front() {
+                            if result_tx
+                                .send(execute_command(&mut backend, command))
+                                .is_err()
+                            {
+                                return;
+                            }
                         }
                     }
                     WorkerMessage::Stop => break,

@@ -250,6 +250,107 @@ fn files_details_diff_result_updates_state() {
     assert_eq!(state.details.files_targets, vec!["src/lib.rs".to_string()]);
     assert!(state.details.files_error.is_none());
     assert!(state.details.files_diff.contains("diff --git"));
+    assert_eq!(state.details.cached_files_diffs.len(), 1);
+}
+
+#[test]
+fn files_details_diff_cache_serves_repeated_selection_without_git_command() {
+    let mut state = AppState::default();
+    state.files.items = vec![
+        FileEntry {
+            path: "a.txt".to_string(),
+            staged: false,
+            untracked: false,
+        },
+        FileEntry {
+            path: "b.txt".to_string(),
+            staged: false,
+            untracked: false,
+        },
+    ];
+    refresh_tree_projection(&mut state.files);
+
+    update(
+        &mut state,
+        Action::GitResult(GitResult::FilesDetailsDiff {
+            paths: vec!["a.txt".to_string()],
+            result: Ok("cached a diff".to_string()),
+        }),
+    );
+    assert_eq!(state.details.cached_files_diffs.len(), 1);
+
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+    assert_details_refresh_for_paths(commands, vec!["b.txt".to_string()]);
+    assert!(state.work.details_pending);
+
+    let commands = update(&mut state, Action::Ui(UiAction::MoveUp));
+    assert!(commands.is_empty());
+    assert_eq!(state.details.files_diff, "cached a diff");
+    assert!(!state.work.details_pending);
+}
+
+#[test]
+fn files_details_diff_cache_is_bounded_and_cleared_by_repo_changes() {
+    let mut state = AppState::default();
+    state.files.items = (0..18)
+        .map(|index| FileEntry {
+            path: format!("file-{index:02}.txt"),
+            staged: false,
+            untracked: false,
+        })
+        .collect();
+    refresh_tree_projection(&mut state.files);
+
+    for index in 0..18 {
+        state.files.selected = index;
+        let path = format!("file-{index:02}.txt");
+        update(
+            &mut state,
+            Action::GitResult(GitResult::FilesDetailsDiff {
+                paths: vec![path.clone()],
+                result: Ok(format!("diff {path}")),
+            }),
+        );
+    }
+
+    assert_eq!(state.details.cached_files_diffs.len(), 16);
+    assert!(
+        !state
+            .details
+            .cached_files_diffs
+            .iter()
+            .any(|entry| entry.paths == vec!["file-00.txt".to_string()])
+    );
+
+    update(
+        &mut state,
+        Action::GitResult(GitResult::StageFiles {
+            paths: vec!["file-17.txt".to_string()],
+            result: Ok(()),
+        }),
+    );
+    assert!(state.details.cached_files_diffs.is_empty());
+
+    state
+        .details
+        .cached_files_diffs
+        .push(ratagit_core::CachedFilesDiff {
+            paths: vec!["file-17.txt".to_string()],
+            diff: "diff".to_string(),
+        });
+    update(
+        &mut state,
+        Action::GitResult(GitResult::Refreshed(RepoSnapshot {
+            status_summary: "clean".to_string(),
+            current_branch: "main".to_string(),
+            detached_head: false,
+            files: Vec::new(),
+            commits: Vec::new(),
+            branches: Vec::new(),
+            stashes: Vec::new(),
+        })),
+    );
+    assert!(state.details.cached_files_diffs.is_empty());
 }
 
 #[test]

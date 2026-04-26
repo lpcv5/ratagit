@@ -52,6 +52,8 @@ Files panel rules:
 - folder operations apply to descendant files present in the tree model
 - file-tree rows and descendant targets are cached in `AppState` after status
   refresh or tree/search changes, so rendering does not rebuild them every frame
+- repeated file-detail diffs are cached in `AppState` and reused when the same
+  target path list is selected again
 - `space` stages unstaged targets or unstages targets when all selected targets are staged
 - `c` opens a commit editor modal from Files focus
   - `message` and `body` fields are editable
@@ -80,8 +82,12 @@ Files panel rules:
 - `/` opens search input in the bottom bar; Enter confirms, Esc cancels or clears, `n` / `N` navigate matches
 - `Enter` still toggles directory expand/collapse; hunk editing and partial-stage flow are explicitly deferred
 - details-diff side effects for high-frequency files navigation are debounced to keep `j` / `k` scrolling smooth
+- queued refresh/details work is coalesced so stale duplicate details commands do
+  not delay the latest selection
 - real TUI Git work runs on a single background worker so initial refresh and
   long operations do not block drawing or keyboard input
+- real backend file status refresh uses Git porcelain status inside `GitBackend`
+  for large repositories while preserving full untracked-file expansion
 
 All features are keyboard-driven and deterministic.
 

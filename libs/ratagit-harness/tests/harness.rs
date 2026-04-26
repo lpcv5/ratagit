@@ -207,6 +207,47 @@ fn harness_files_details_follow_cursor_with_combined_diff_sections() {
 }
 
 #[test]
+fn harness_files_details_reuses_cached_diff_when_selection_repeats() {
+    let mut runtime = Runtime::new(
+        AppState::default(),
+        MockGitBackend::new(fixture_dirty_repo()),
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    );
+
+    runtime.dispatch_ui(UiAction::RefreshAll);
+    runtime.dispatch_ui(UiAction::MoveDown);
+    runtime.dispatch_ui(UiAction::MoveUp);
+
+    let details_ops = runtime
+        .backend()
+        .operations()
+        .iter()
+        .filter(|operation| operation.starts_with("details-diff:"))
+        .cloned()
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        details_ops,
+        vec![
+            "details-diff:README.md".to_string(),
+            "details-diff:src/lib.rs,src/main.rs".to_string(),
+        ]
+    );
+    assert!(
+        runtime
+            .render_terminal_text()
+            .contains("diff --git a/README.md")
+    );
+    assert_eq!(
+        runtime.state().details.files_targets,
+        vec!["README.md".to_string()]
+    );
+}
+
+#[test]
 fn harness_files_details_show_untracked_file_diff() {
     let inputs = [UiAction::RefreshAll];
     assert_scenario(MockScenario::new(

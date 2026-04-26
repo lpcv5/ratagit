@@ -114,8 +114,10 @@ internal library packages under `libs/`.
 
 - GitBackend trait
 - Mock backend for deterministic harness scenarios
-- Hybrid real backend: `git2` handles repo discovery, snapshot refresh, file
+- Hybrid real backend: `git2` handles repo discovery, snapshot metadata, file
   diffs, stage, and unstage
+- File status refresh uses `git status --porcelain=v1 -z` inside `GitBackend`
+  for large-repository performance, with git2 status as a fallback
 - Internal Git CLI executor handles operations not yet represented through
   git2, such as commit, branch mutation, checkout, stash, reset, nuke, and
   discard
@@ -155,6 +157,9 @@ internal library packages under `libs/`.
   - single source of truth in `AppState`
   - side effects only through `Command` + `GitBackend`
   - pure rendering in `ratagit-ui::render`
+- Reusable projections and expensive read results, such as file-tree rows and
+  files-detail diffs, are cached only in `AppState` and invalidated by reducer
+  state transitions.
 
 ---
 
