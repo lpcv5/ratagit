@@ -10,6 +10,15 @@ fn refresh_action_emits_refresh_command() {
     assert_eq!(commands, vec![Command::RefreshAll]);
 }
 
+fn assert_details_refresh_for_paths(commands: Vec<Command>, expected_paths: Vec<String>) {
+    assert_eq!(
+        commands,
+        vec![Command::RefreshFilesDetailsDiff {
+            paths: expected_paths
+        }]
+    );
+}
+
 #[test]
 fn stage_selected_file_emits_stage_command() {
     let mut state = AppState {
@@ -67,7 +76,10 @@ fn toggle_selected_file_stage_stages_only_unstaged_directory_targets() {
             stashes: Vec::new(),
         })),
     );
-    assert!(commands.is_empty());
+    assert_details_refresh_for_paths(
+        commands,
+        vec!["src/lib.rs".to_string(), "src/main.rs".to_string()],
+    );
     state.files.selected = 0;
     let commands = update(&mut state, Action::Ui(UiAction::ToggleSelectedFileStage));
     assert_eq!(
@@ -104,7 +116,7 @@ fn v_visual_mode_extends_range_with_jk_movement() {
             stashes: Vec::new(),
         })),
     );
-    assert!(commands.is_empty());
+    assert_details_refresh_for_paths(commands, vec!["a.txt".to_string()]);
 
     update(&mut state, Action::Ui(UiAction::ToggleFilesMultiSelect));
     assert_eq!(state.files.selection_anchor, Some("a.txt".to_string()));
@@ -172,10 +184,63 @@ fn refreshed_snapshot_updates_state_and_clamps_indexes() {
         &mut state,
         Action::GitResult(GitResult::Refreshed(snapshot)),
     );
-    assert!(commands.is_empty());
+    assert_eq!(
+        commands,
+        vec![Command::RefreshFilesDetailsDiff {
+            paths: vec!["only.txt".to_string()]
+        }]
+    );
     assert_eq!(state.status.summary, "dirty");
     assert_eq!(state.files.selected, 0);
     assert_eq!(state.status.refresh_count, 1);
+}
+
+#[test]
+fn files_selection_navigation_requests_details_refresh() {
+    let mut state = AppState::default();
+    state.files.items = vec![
+        FileEntry {
+            path: "a.txt".to_string(),
+            staged: false,
+            untracked: false,
+        },
+        FileEntry {
+            path: "b.txt".to_string(),
+            staged: false,
+            untracked: false,
+        },
+    ];
+
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+    assert_details_refresh_for_paths(commands, vec!["b.txt".to_string()]);
+}
+
+#[test]
+fn non_files_navigation_does_not_request_files_details_refresh() {
+    let mut state = AppState {
+        focus: PanelFocus::Branches,
+        last_left_focus: PanelFocus::Branches,
+        ..AppState::default()
+    };
+
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+    assert!(commands.is_empty());
+}
+
+#[test]
+fn files_details_diff_result_updates_state() {
+    let mut state = AppState::default();
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::FilesDetailsDiff {
+            paths: vec!["src/lib.rs".to_string()],
+            result: Ok("### unstaged\ndiff --git a/src/lib.rs b/src/lib.rs".to_string()),
+        }),
+    );
+    assert!(commands.is_empty());
+    assert_eq!(state.details.files_targets, vec!["src/lib.rs".to_string()]);
+    assert!(state.details.files_error.is_none());
+    assert!(state.details.files_diff.contains("diff --git"));
 }
 
 #[test]

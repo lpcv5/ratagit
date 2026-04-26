@@ -97,6 +97,13 @@ pub struct StashPanelState {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DetailsPanelState {
+    pub files_diff: String,
+    pub files_targets: Vec<String>,
+    pub files_error: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppState {
     pub focus: PanelFocus,
     pub last_left_focus: PanelFocus,
@@ -105,6 +112,7 @@ pub struct AppState {
     pub commits: CommitsPanelState,
     pub branches: BranchesPanelState,
     pub stash: StashPanelState,
+    pub details: DetailsPanelState,
     pub notices: Vec<String>,
     pub last_operation: Option<String>,
 }
@@ -134,6 +142,11 @@ impl Default for AppState {
             stash: StashPanelState {
                 items: Vec::new(),
                 selected: 0,
+            },
+            details: DetailsPanelState {
+                files_diff: String::new(),
+                files_targets: Vec::new(),
+                files_error: None,
             },
             notices: vec!["Ready".to_string()],
             last_operation: None,

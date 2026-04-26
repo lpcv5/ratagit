@@ -33,6 +33,53 @@ impl GitBackend for MockGitBackend {
         Ok(self.snapshot.clone())
     }
 
+    fn files_details_diff(&mut self, paths: &[String]) -> Result<String, GitError> {
+        self.operations
+            .push(format!("details-diff:{}", paths.join(",")));
+        if paths.is_empty() {
+            return Ok(String::new());
+        }
+
+        let mut unstaged = Vec::new();
+        let mut staged = Vec::new();
+        for path in paths {
+            let Some(entry) = self.snapshot.files.iter().find(|entry| entry.path == *path) else {
+                continue;
+            };
+
+            let hunk_body = if entry.untracked {
+                format!("@@ -0,0 +1 @@\n+new file {}", entry.path)
+            } else if entry.staged {
+                format!(
+                    "@@ -1 +1 @@\n-old staged {}\n+new staged {}",
+                    entry.path, entry.path
+                )
+            } else {
+                format!("@@ -1 +1 @@\n-old {}\n+new {}", entry.path, entry.path)
+            };
+            let block = format!("diff --git a/{0} b/{0}\n{1}", entry.path, hunk_body);
+            if entry.staged {
+                staged.push(block);
+            } else {
+                unstaged.push(block);
+            }
+        }
+
+        let mut sections = Vec::new();
+        if !unstaged.is_empty() {
+            sections.push("### unstaged".to_string());
+            sections.push(unstaged.join("\n"));
+        }
+        if !staged.is_empty() {
+            if !sections.is_empty() {
+                sections.push(String::new());
+            }
+            sections.push("### staged".to_string());
+            sections.push(staged.join("\n"));
+        }
+        Ok(sections.join("\n"))
+    }
+
     fn stage_file(&mut self, path: &str) -> Result<(), GitError> {
         self.operations.push(format!("stage:{path}"));
         let entry = self

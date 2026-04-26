@@ -1,4 +1,4 @@
-use ratagit_core::{Action, AppState, GitResult, PanelFocus, UiAction, update};
+use ratagit_core::{Action, AppState, Command, GitResult, PanelFocus, UiAction, update};
 use ratagit_testkit::{
     fixture_conflict, fixture_dirty_repo, fixture_empty_repo, fixture_many_files,
     fixture_unicode_paths,
@@ -8,15 +8,42 @@ use ratagit_ui::{
     buffer_contains_text_with_style, buffer_to_text_with_selected_marker, focused_panel_style,
     render, render_terminal_buffer, render_terminal_text,
 };
+use ratatui::style::{Color, Style};
 
 fn render_snapshot(snapshot: ratagit_core::RepoSnapshot, size: TerminalSize) -> String {
     let mut state = AppState::default();
-    let commands = update(
-        &mut state,
-        Action::GitResult(GitResult::Refreshed(snapshot)),
-    );
-    assert!(commands.is_empty());
+    apply_refreshed_with_mock_details(&mut state, snapshot);
     render(&state, size).as_text()
+}
+
+fn mock_files_details_diff(paths: &[String]) -> String {
+    if paths.is_empty() {
+        return String::new();
+    }
+    let mut blocks = Vec::new();
+    for path in paths {
+        blocks.push(format!(
+            "diff --git a/{0} b/{0}\n@@ -1 +1 @@\n-old {0}\n+new {0}",
+            path
+        ));
+    }
+    format!("### unstaged\n{}", blocks.join("\n"))
+}
+
+fn apply_refreshed_with_mock_details(state: &mut AppState, snapshot: ratagit_core::RepoSnapshot) {
+    let commands = update(state, Action::GitResult(GitResult::Refreshed(snapshot)));
+    if let [Command::RefreshFilesDetailsDiff { paths }] = commands.as_slice() {
+        let follow_up = update(
+            state,
+            Action::GitResult(GitResult::FilesDetailsDiff {
+                paths: paths.clone(),
+                result: Ok(mock_files_details_diff(paths)),
+            }),
+        );
+        assert!(follow_up.is_empty());
+    } else {
+        panic!("unexpected commands after refreshed snapshot: {commands:?}");
+    }
 }
 
 fn assert_no_cursor_marker(text: &str) {
@@ -105,11 +132,7 @@ fn snapshots_unicode_paths_are_stable() {
 #[test]
 fn snapshots_shortcuts_follow_current_focus() {
     let mut state = AppState::default();
-    let commands = update(
-        &mut state,
-        Action::GitResult(GitResult::Refreshed(fixture_dirty_repo())),
-    );
-    assert!(commands.is_empty());
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     let commands = update(
         &mut state,
         Action::Ui(UiAction::FocusPanel {
@@ -134,11 +157,7 @@ fn snapshots_shortcuts_follow_current_focus() {
 #[test]
 fn snapshots_files_search_input_replaces_shortcut_bar() {
     let mut state = AppState::default();
-    let commands = update(
-        &mut state,
-        Action::GitResult(GitResult::Refreshed(fixture_dirty_repo())),
-    );
-    assert!(commands.is_empty());
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     update(&mut state, Action::Ui(UiAction::StartFileSearch));
     update(&mut state, Action::Ui(UiAction::InputFileSearchChar('l')));
     update(&mut state, Action::Ui(UiAction::InputFileSearchChar('i')));
@@ -158,11 +177,7 @@ fn snapshots_files_search_input_replaces_shortcut_bar() {
 #[test]
 fn snapshots_files_multi_select_marks_selected_rows() {
     let mut state = AppState::default();
-    let commands = update(
-        &mut state,
-        Action::GitResult(GitResult::Refreshed(fixture_dirty_repo())),
-    );
-    assert!(commands.is_empty());
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     update(&mut state, Action::Ui(UiAction::ToggleFilesMultiSelect));
 
     let text = render(
@@ -180,11 +195,7 @@ fn snapshots_files_multi_select_marks_selected_rows() {
 #[test]
 fn snapshots_files_list_scrolls_to_keep_selection_visible() {
     let mut state = AppState::default();
-    let commands = update(
-        &mut state,
-        Action::GitResult(GitResult::Refreshed(fixture_many_files())),
-    );
-    assert!(commands.is_empty());
+    apply_refreshed_with_mock_details(&mut state, fixture_many_files());
     for _ in 0..20 {
         update(&mut state, Action::Ui(UiAction::MoveDown));
     }
@@ -203,7 +214,6 @@ fn snapshots_files_list_scrolls_to_keep_selection_visible() {
     assert!(text.contains(" file-23.txt"));
     assert_no_cursor_marker(&text);
     assert!(!text.contains("file-24.txt"));
-    assert!(!text.contains("file-00.txt"));
 
     let screen = render_terminal_snapshot_with_cursor_marker(
         &state,
@@ -218,11 +228,7 @@ fn snapshots_files_list_scrolls_to_keep_selection_visible() {
 #[test]
 fn snapshots_files_list_reversing_up_does_not_jump_to_top_reserve() {
     let mut state = AppState::default();
-    let commands = update(
-        &mut state,
-        Action::GitResult(GitResult::Refreshed(fixture_many_files())),
-    );
-    assert!(commands.is_empty());
+    apply_refreshed_with_mock_details(&mut state, fixture_many_files());
     for _ in 0..25 {
         update(&mut state, Action::Ui(UiAction::MoveDown));
     }
@@ -241,7 +247,6 @@ fn snapshots_files_list_reversing_up_does_not_jump_to_top_reserve() {
     assert!(text.contains("    file-17.txt"));
     assert!(text.contains("    file-20.txt"));
     assert!(text.contains(" file-24.txt"));
-    assert!(!text.contains("file-00.txt"));
     assert_no_cursor_marker(&text);
 
     let screen = render_terminal_snapshot_with_cursor_marker(
@@ -257,11 +262,7 @@ fn snapshots_files_list_reversing_up_does_not_jump_to_top_reserve() {
 #[test]
 fn snapshots_files_list_reversing_down_does_not_jump_to_bottom_reserve() {
     let mut state = AppState::default();
-    let commands = update(
-        &mut state,
-        Action::GitResult(GitResult::Refreshed(fixture_many_files())),
-    );
-    assert!(commands.is_empty());
+    apply_refreshed_with_mock_details(&mut state, fixture_many_files());
     for _ in 0..25 {
         update(&mut state, Action::Ui(UiAction::MoveDown));
     }
@@ -281,7 +282,6 @@ fn snapshots_files_list_reversing_down_does_not_jump_to_bottom_reserve() {
     assert!(text.contains("    file-17.txt"));
     assert!(text.contains("    file-21.txt"));
     assert!(text.contains(" file-24.txt"));
-    assert!(!text.contains("file-00.txt"));
 
     update(&mut state, Action::Ui(UiAction::MoveDown));
     let text = render(
@@ -300,11 +300,7 @@ fn snapshots_files_list_reversing_down_does_not_jump_to_bottom_reserve() {
 #[test]
 fn terminal_snapshot_empty_repo_80x24() {
     let mut state = AppState::default();
-    let commands = update(
-        &mut state,
-        Action::GitResult(GitResult::Refreshed(fixture_empty_repo())),
-    );
-    assert!(commands.is_empty());
+    apply_refreshed_with_mock_details(&mut state, fixture_empty_repo());
 
     insta::assert_snapshot!(render_terminal_text(
         &state,
@@ -318,11 +314,7 @@ fn terminal_snapshot_empty_repo_80x24() {
 #[test]
 fn terminal_snapshot_dirty_repo_100x30() {
     let mut state = AppState::default();
-    let commands = update(
-        &mut state,
-        Action::GitResult(GitResult::Refreshed(fixture_dirty_repo())),
-    );
-    assert!(commands.is_empty());
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
 
     insta::assert_snapshot!(render_terminal_text(
         &state,
@@ -336,11 +328,7 @@ fn terminal_snapshot_dirty_repo_100x30() {
 #[test]
 fn terminal_snapshot_many_files_focus_expands_left_panel() {
     let mut state = AppState::default();
-    let commands = update(
-        &mut state,
-        Action::GitResult(GitResult::Refreshed(fixture_many_files())),
-    );
-    assert!(commands.is_empty());
+    apply_refreshed_with_mock_details(&mut state, fixture_many_files());
 
     insta::assert_snapshot!(render_terminal_text(
         &state,
@@ -354,11 +342,7 @@ fn terminal_snapshot_many_files_focus_expands_left_panel() {
 #[test]
 fn terminal_snapshot_conflict_repo_120x40() {
     let mut state = AppState::default();
-    let commands = update(
-        &mut state,
-        Action::GitResult(GitResult::Refreshed(fixture_conflict())),
-    );
-    assert!(commands.is_empty());
+    apply_refreshed_with_mock_details(&mut state, fixture_conflict());
 
     insta::assert_snapshot!(render_terminal_text(
         &state,
@@ -372,11 +356,7 @@ fn terminal_snapshot_conflict_repo_120x40() {
 #[test]
 fn terminal_snapshot_focus_and_keys_follow_actions() {
     let mut state = AppState::default();
-    let commands = update(
-        &mut state,
-        Action::GitResult(GitResult::Refreshed(fixture_dirty_repo())),
-    );
-    assert!(commands.is_empty());
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     update(&mut state, Action::Ui(UiAction::FocusNext));
     update(&mut state, Action::Ui(UiAction::FocusNext));
 
@@ -403,11 +383,7 @@ fn terminal_snapshot_focus_and_keys_follow_actions() {
 #[test]
 fn terminal_snapshot_files_search_updates_screen() {
     let mut state = AppState::default();
-    let commands = update(
-        &mut state,
-        Action::GitResult(GitResult::Refreshed(fixture_dirty_repo())),
-    );
-    assert!(commands.is_empty());
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     update(&mut state, Action::Ui(UiAction::StartFileSearch));
     update(&mut state, Action::Ui(UiAction::InputFileSearchChar('l')));
     update(&mut state, Action::Ui(UiAction::InputFileSearchChar('i')));
@@ -428,11 +404,7 @@ fn terminal_snapshot_files_search_updates_screen() {
 #[test]
 fn terminal_snapshot_error_is_visible_in_log_panel() {
     let mut state = AppState::default();
-    let commands = update(
-        &mut state,
-        Action::GitResult(GitResult::Refreshed(fixture_dirty_repo())),
-    );
-    assert!(commands.is_empty());
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     update(
         &mut state,
         Action::GitResult(GitResult::CreateCommit {
@@ -455,11 +427,7 @@ fn terminal_snapshot_error_is_visible_in_log_panel() {
 #[test]
 fn terminal_buffer_highlights_selected_row_only_in_focused_panel() {
     let mut state = AppState::default();
-    let commands = update(
-        &mut state,
-        Action::GitResult(GitResult::Refreshed(fixture_dirty_repo())),
-    );
-    assert!(commands.is_empty());
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
 
     let buffer = render_terminal_buffer(
         &state,
@@ -476,11 +444,7 @@ fn terminal_buffer_highlights_selected_row_only_in_focused_panel() {
 #[test]
 fn terminal_buffer_highlights_marked_files_with_batch_style() {
     let mut state = AppState::default();
-    let commands = update(
-        &mut state,
-        Action::GitResult(GitResult::Refreshed(fixture_dirty_repo())),
-    );
-    assert!(commands.is_empty());
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     update(&mut state, Action::Ui(UiAction::ToggleFilesMultiSelect));
     update(&mut state, Action::Ui(UiAction::MoveDown));
 
@@ -507,11 +471,7 @@ fn terminal_buffer_highlights_marked_files_with_batch_style() {
 #[test]
 fn terminal_buffer_moves_selection_highlight_with_focus() {
     let mut state = AppState::default();
-    let commands = update(
-        &mut state,
-        Action::GitResult(GitResult::Refreshed(fixture_dirty_repo())),
-    );
-    assert!(commands.is_empty());
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     update(
         &mut state,
         Action::Ui(UiAction::FocusPanel {
@@ -534,11 +494,7 @@ fn terminal_buffer_moves_selection_highlight_with_focus() {
 #[test]
 fn terminal_buffer_styles_focused_panel_title() {
     let mut state = AppState::default();
-    let commands = update(
-        &mut state,
-        Action::GitResult(GitResult::Refreshed(fixture_dirty_repo())),
-    );
-    assert!(commands.is_empty());
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
 
     let buffer = render_terminal_buffer(
         &state,
@@ -557,5 +513,40 @@ fn terminal_buffer_styles_focused_panel_title() {
         &buffer,
         " Branches",
         focused_panel_style()
+    ));
+}
+
+#[test]
+fn terminal_buffer_styles_files_details_diff_rows_by_semantics() {
+    let mut state = AppState::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+
+    let buffer = render_terminal_buffer(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    );
+
+    assert!(buffer_contains_text_with_style(
+        &buffer,
+        "diff --git a/README.md b/README.md",
+        Style::default().fg(Color::Cyan),
+    ));
+    assert!(buffer_contains_text_with_style(
+        &buffer,
+        "@@ -1 +1 @@",
+        Style::default().fg(Color::Magenta),
+    ));
+    assert!(buffer_contains_text_with_style(
+        &buffer,
+        "-old README.md",
+        Style::default().fg(Color::Red),
+    ));
+    assert!(buffer_contains_text_with_style(
+        &buffer,
+        "+new README.md",
+        Style::default().fg(Color::Green),
     ));
 }

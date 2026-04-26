@@ -223,11 +223,10 @@ mod tests {
 
     fn state_with_many_files() -> AppState {
         let mut state = AppState::default();
-        let commands = update(
+        let _commands = update(
             &mut state,
             Action::GitResult(GitResult::Refreshed(fixture_many_files())),
         );
-        assert!(commands.is_empty());
         state
     }
 

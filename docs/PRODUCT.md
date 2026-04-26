@@ -23,7 +23,9 @@ MVP v0 includes a left-nav workspace layout with six panels:
 - Branches: create branch and checkout selected branch
 - Commits: create commit and refresh list
 - Stash: stash push and stash pop selected entry
-- Details: show summary for the currently selected left panel item
+- Details:
+  - Files focus projection: show merged `unstaged` then `staged` diff for the currently selected file/folder target
+  - Branches/Commits/Stash projection: placeholder text for now (to be implemented in later slices)
 - Log: show latest error and recent notices
 
 Navigation rules:
@@ -49,6 +51,8 @@ Files panel rules:
 - `v` enters visual multi-select at the current row; `j` / `k` extends or shrinks the selected range
 - `/` opens search input in the bottom bar; Enter confirms, Esc cancels or clears, `n` / `N` navigate matches
 - discard backend support exists, but `d` is not mapped until the confirmation dialog is available
+- `Enter` still toggles directory expand/collapse; hunk editing and partial-stage flow are explicitly deferred
+- details-diff side effects for high-frequency files navigation are debounced to keep `j` / `k` scrolling smooth
 
 All features are keyboard-driven and deterministic.
 

@@ -22,6 +22,7 @@ Focus model:
 - `h` / `l` map to `FocusPrev` / `FocusNext` and cycle only left panels
 - `FocusPanel` supports direct focus selection (`1..6` in app input map)
 - `AppState.last_left_focus` tracks the last active left panel for `Details` projection
+- `AppState.details` stores files-detail diff text, target paths, and detail-refresh errors
 - left-panel height baseline follows the Files/Branches/Commits/Stash ratio
 - when `Stash` is unfocused it collapses to one content row and freed height is
   redistributed by ratio to Files/Branches/Commits
@@ -38,6 +39,9 @@ Focus model:
 - Command execution is delegated to `GitBackend`.
 - Backend output re-enters `update()` as `GitResult`.
 - UI rendering reads only `AppState`.
+- High-frequency side effects use runtime command debouncing keyed by
+  `ratagit_core::debounce_key_for_command`, so rapid navigation can collapse to
+  the latest command while keeping state transitions deterministic.
 
 Files panel interaction:
 
@@ -51,6 +55,12 @@ Files panel interaction:
 - `d` discard is intentionally not mapped to input until the reusable confirmation dialog exists.
 - Long file lists keep a stable bottom-reserve viewport while reversing from
   downward movement; moving up does not jump to a top-reserve viewport.
+- `RefreshAll` and files selection navigation emit `RefreshFilesDetailsDiff` so
+  the Details panel follows the current files cursor.
+- Files Details projection renders merged `unstaged` and `staged` diff sections
+  for current file/folder targets from `GitBackend`.
+- Branches/Commits/Stash Details projections are placeholders in this slice and
+  intentionally marked for follow-up implementation.
 
 ---
 
@@ -73,6 +83,12 @@ Files panel interaction:
 - Visual-selected file rows use a color distinct from cursor selection.
 - Visible cursor markers such as `>` are not rendered; selection is tested
   through buffer styles.
+- Files diff rows in Details are color-coded by semantics:
+  - section headers (`### ...`)
+  - diff metadata (`diff --git`, `---`, `+++`, `index`)
+  - hunk headers (`@@`)
+  - additions (`+`)
+  - removals (`-`)
 
 ---
 

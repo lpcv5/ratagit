@@ -24,6 +24,7 @@ impl GitError {
 
 pub trait GitBackend {
     fn refresh_snapshot(&mut self) -> Result<RepoSnapshot, GitError>;
+    fn files_details_diff(&mut self, paths: &[String]) -> Result<String, GitError>;
     fn stage_file(&mut self, path: &str) -> Result<(), GitError>;
     fn unstage_file(&mut self, path: &str) -> Result<(), GitError>;
     fn stage_files(&mut self, paths: &[String]) -> Result<(), GitError> {
@@ -146,6 +147,44 @@ impl GitBackend for CliGitBackend {
         })
     }
 
+    fn files_details_diff(&mut self, paths: &[String]) -> Result<String, GitError> {
+        if paths.is_empty() {
+            return Ok(String::new());
+        }
+
+        let mut unstaged_args = vec![
+            "diff".to_string(),
+            "--no-ext-diff".to_string(),
+            "--".to_string(),
+        ];
+        unstaged_args.extend(paths.iter().cloned());
+        let unstaged = self.run_git_owned(unstaged_args)?;
+
+        let mut staged_args = vec![
+            "diff".to_string(),
+            "--cached".to_string(),
+            "--no-ext-diff".to_string(),
+            "--".to_string(),
+        ];
+        staged_args.extend(paths.iter().cloned());
+        let staged = self.run_git_owned(staged_args)?;
+
+        let mut sections = Vec::new();
+        if !unstaged.trim().is_empty() {
+            sections.push("### unstaged".to_string());
+            sections.push(unstaged.trim_end().to_string());
+        }
+        if !staged.trim().is_empty() {
+            if !sections.is_empty() {
+                sections.push(String::new());
+            }
+            sections.push("### staged".to_string());
+            sections.push(staged.trim_end().to_string());
+        }
+
+        Ok(sections.join("\n"))
+    }
+
     fn stage_file(&mut self, path: &str) -> Result<(), GitError> {
         self.run_git(&["add", "--", path]).map(|_| ())
     }
@@ -237,6 +276,12 @@ pub fn execute_command(backend: &mut dyn GitBackend, command: Command) -> GitRes
             Err(error) => GitResult::RefreshFailed {
                 error: error.message,
             },
+        },
+        Command::RefreshFilesDetailsDiff { paths } => GitResult::FilesDetailsDiff {
+            paths: paths.clone(),
+            result: backend
+                .files_details_diff(&paths)
+                .map_err(|error| error.message),
         },
         Command::StageFiles { paths } => GitResult::StageFiles {
             paths: paths.clone(),
@@ -447,5 +492,54 @@ mod tests {
         assert_eq!(commits.len(), 2);
         assert_eq!(commits[0].id, "abc1234");
         assert_eq!(commits[1].summary, "second commit");
+    }
+
+    #[test]
+    fn execute_command_refresh_files_details_diff_uses_backend_output() {
+        let mut backend = MockGitBackend::new(RepoSnapshot {
+            status_summary: "dirty".to_string(),
+            current_branch: "main".to_string(),
+            detached_head: false,
+            files: vec![
+                FileEntry {
+                    path: "src/lib.rs".to_string(),
+                    staged: false,
+                    untracked: false,
+                },
+                FileEntry {
+                    path: "src/main.rs".to_string(),
+                    staged: true,
+                    untracked: false,
+                },
+            ],
+            commits: Vec::new(),
+            branches: vec![BranchEntry {
+                name: "main".to_string(),
+                is_current: true,
+            }],
+            stashes: Vec::new(),
+        });
+
+        let result = execute_command(
+            &mut backend,
+            Command::RefreshFilesDetailsDiff {
+                paths: vec!["src/lib.rs".to_string(), "src/main.rs".to_string()],
+            },
+        );
+
+        match result {
+            GitResult::FilesDetailsDiff { paths, result } => {
+                assert_eq!(
+                    paths,
+                    vec!["src/lib.rs".to_string(), "src/main.rs".to_string()]
+                );
+                let diff = result.expect("mock diff should succeed");
+                assert!(diff.contains("### unstaged"));
+                assert!(diff.contains("### staged"));
+                assert!(diff.contains("diff --git a/src/lib.rs b/src/lib.rs"));
+                assert!(diff.contains("diff --git a/src/main.rs b/src/main.rs"));
+            }
+            other => panic!("unexpected git result: {other:?}"),
+        }
     }
 }

@@ -31,7 +31,8 @@ fn run_tui() -> Result<(), Box<dyn Error>> {
             width: 100,
             height: 30,
         },
-    );
+    )
+    .with_debounce_window(Duration::from_millis(80));
     runtime.dispatch_ui(UiAction::RefreshAll);
 
     loop {
@@ -40,6 +41,7 @@ fn run_tui() -> Result<(), Box<dyn Error>> {
         })?;
 
         if !event::poll(Duration::from_millis(100))? {
+            runtime.tick();
             continue;
         }
 
@@ -78,6 +80,7 @@ fn ui_action_for_key(state: &AppState, code: KeyCode) -> Option<UiAction> {
 
     if state.focus == PanelFocus::Files {
         match code {
+            // TODO(files-hunks): map Enter to hunk-level editing/partial stage workflow.
             KeyCode::Enter => return Some(UiAction::ToggleSelectedDirectory),
             KeyCode::Char(' ') => return Some(UiAction::ToggleSelectedFileStage),
             KeyCode::Char('v') => return Some(UiAction::ToggleFilesMultiSelect),
@@ -253,6 +256,13 @@ impl GitBackend for AppBackend {
         match self {
             Self::Cli(inner) => inner.refresh_snapshot(),
             Self::Mock(inner) => inner.refresh_snapshot(),
+        }
+    }
+
+    fn files_details_diff(&mut self, paths: &[String]) -> Result<String, ratagit_git::GitError> {
+        match self {
+            Self::Cli(inner) => inner.files_details_diff(paths),
+            Self::Mock(inner) => inner.files_details_diff(paths),
         }
     }
 

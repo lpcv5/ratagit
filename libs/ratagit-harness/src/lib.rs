@@ -1,8 +1,9 @@
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::fs::{create_dir_all, write};
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
-use ratagit_core::{Action, AppState, Command, UiAction, update};
+use ratagit_core::{Action, AppState, Command, UiAction, debounce_key_for_command, update};
 use ratagit_git::{GitBackend, MockGitBackend, execute_command};
 use ratagit_ui::{
     RenderedFrame, TerminalBuffer, TerminalSize, buffer_contains_batch_selected_text,
@@ -14,6 +15,14 @@ pub struct Runtime<B: GitBackend> {
     state: AppState,
     backend: B,
     terminal_size: TerminalSize,
+    debounce_window: Duration,
+    debounced: HashMap<&'static str, DebouncedCommand>,
+}
+
+#[derive(Debug, Clone)]
+struct DebouncedCommand {
+    due_at: Instant,
+    command: Command,
 }
 
 impl<B: GitBackend> Runtime<B> {
@@ -22,7 +31,14 @@ impl<B: GitBackend> Runtime<B> {
             state,
             backend,
             terminal_size,
+            debounce_window: Duration::default(),
+            debounced: HashMap::new(),
         }
+    }
+
+    pub fn with_debounce_window(mut self, debounce_window: Duration) -> Self {
+        self.debounce_window = debounce_window;
+        self
     }
 
     pub fn state(&self) -> &AppState {
@@ -42,6 +58,10 @@ impl<B: GitBackend> Runtime<B> {
         self.process_commands(initial_commands);
     }
 
+    pub fn tick(&mut self) {
+        self.flush_due_debounced();
+    }
+
     pub fn render(&self) -> RenderedFrame {
         render(&self.state, self.terminal_size)
     }
@@ -55,14 +75,61 @@ impl<B: GitBackend> Runtime<B> {
     }
 
     fn process_commands(&mut self, initial: Vec<Command>) {
-        let mut queue = VecDeque::from(initial);
+        let mut queue = VecDeque::new();
+        for command in initial {
+            self.enqueue_command(command, &mut queue);
+        }
+        self.process_immediate_queue(queue);
+    }
+
+    fn process_immediate_queue(&mut self, mut queue: VecDeque<Command>) {
         while let Some(command) = queue.pop_front() {
             let git_result = execute_command(&mut self.backend, command);
             let follow_up = update(&mut self.state, Action::GitResult(git_result));
             for command in follow_up {
-                queue.push_back(command);
+                self.enqueue_command(command, &mut queue);
             }
         }
+    }
+
+    fn enqueue_command(&mut self, command: Command, queue: &mut VecDeque<Command>) {
+        if self.debounce_window > Duration::ZERO
+            && let Some(key) = debounce_key_for_command(&command)
+        {
+            self.debounced.insert(
+                key,
+                DebouncedCommand {
+                    due_at: Instant::now() + self.debounce_window,
+                    command,
+                },
+            );
+            return;
+        }
+        queue.push_back(command);
+    }
+
+    fn flush_due_debounced(&mut self) {
+        if self.debounced.is_empty() {
+            return;
+        }
+
+        let now = Instant::now();
+        let due_keys = self
+            .debounced
+            .iter()
+            .filter_map(|(key, pending)| (pending.due_at <= now).then_some(*key))
+            .collect::<Vec<_>>();
+        if due_keys.is_empty() {
+            return;
+        }
+
+        let mut queue = VecDeque::new();
+        for key in due_keys {
+            if let Some(pending) = self.debounced.remove(key) {
+                queue.push_back(pending.command);
+            }
+        }
+        self.process_immediate_queue(queue);
     }
 }
 
@@ -219,4 +286,68 @@ fn sanitize_name(name: &str) -> String {
     name.chars()
         .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '_' })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use ratagit_testkit::fixture_dirty_repo;
+
+    use super::*;
+
+    #[test]
+    fn refresh_details_diff_runs_immediately_when_debounce_is_disabled() {
+        let mut runtime = Runtime::new(
+            AppState::default(),
+            MockGitBackend::new(fixture_dirty_repo()),
+            TerminalSize {
+                width: 100,
+                height: 30,
+            },
+        );
+
+        runtime.dispatch_ui(UiAction::RefreshAll);
+
+        let operations = runtime.backend().operations();
+        assert!(operations.iter().any(|op| op == "refresh"));
+        assert!(operations.iter().any(|op| op == "details-diff:README.md"));
+    }
+
+    #[test]
+    fn files_details_diff_is_debounced_to_latest_command() {
+        let mut runtime = Runtime::new(
+            AppState::default(),
+            MockGitBackend::new(fixture_dirty_repo()),
+            TerminalSize {
+                width: 100,
+                height: 30,
+            },
+        )
+        .with_debounce_window(Duration::from_millis(50));
+
+        runtime.dispatch_ui(UiAction::RefreshAll);
+        runtime.dispatch_ui(UiAction::MoveDown);
+        runtime.dispatch_ui(UiAction::MoveDown);
+
+        let operations_before_tick = runtime.backend().operations();
+        assert!(operations_before_tick.iter().any(|op| op == "refresh"));
+        assert!(
+            !operations_before_tick
+                .iter()
+                .any(|op| op.starts_with("details-diff:"))
+        );
+
+        std::thread::sleep(Duration::from_millis(80));
+        runtime.tick();
+
+        let diff_operations = runtime
+            .backend()
+            .operations()
+            .iter()
+            .filter(|op| op.starts_with("details-diff:"))
+            .cloned()
+            .collect::<Vec<_>>();
+        assert_eq!(diff_operations, vec!["details-diff:src/lib.rs".to_string()]);
+    }
 }

@@ -1,6 +1,6 @@
 use ratagit_core::{
     AppState, BranchEntry, CommitEntry, FileInputMode, FileRowKind, FileTreeRow, PanelFocus,
-    ScrollDirection, StashEntry, build_file_tree_rows, selected_row, selected_target_paths,
+    ScrollDirection, StashEntry, build_file_tree_rows,
 };
 
 use crate::theme::{
@@ -102,83 +102,25 @@ pub(crate) fn render_stash_lines(state: &AppState, max_lines: usize) -> Vec<Pane
 }
 
 pub(crate) fn render_details_lines(state: &AppState, max_lines: usize) -> Vec<PanelLine> {
-    let mut lines = Vec::new();
-    lines.push(PanelLine::new(
-        format!("  current={:?}", state.last_left_focus),
-        RowRole::Muted,
-    ));
     match state.last_left_focus {
-        PanelFocus::Files => {
-            if let Some(row) = selected_row(&state.files) {
-                let target_count = selected_target_paths(&state.files).len();
-                lines.push(PanelLine::new(
-                    format!(
-                        "  {}={}",
-                        if row.kind == FileRowKind::Directory {
-                            "dir"
-                        } else {
-                            "file"
-                        },
-                        row.path
-                    ),
-                    RowRole::Normal,
-                ));
-                lines.push(PanelLine::new(
-                    format!("  targets={target_count}"),
-                    RowRole::Muted,
-                ));
-                lines.push(PanelLine::new(
-                    format!("  staged={}", if row.staged { "yes" } else { "no" }),
-                    if row.staged {
-                        RowRole::FileStaged
-                    } else {
-                        RowRole::Muted
-                    },
-                ));
-            }
-        }
-        PanelFocus::Branches => {
-            if let Some(entry) = state.branches.items.get(state.branches.selected) {
-                lines.push(PanelLine::new(
-                    format!("  branch={}", entry.name),
-                    branch_entry_role(entry),
-                ));
-                lines.push(PanelLine::new(
-                    format!(
-                        "  is_current={}",
-                        if entry.is_current { "yes" } else { "no" }
-                    ),
-                    if entry.is_current {
-                        RowRole::CurrentBranch
-                    } else {
-                        RowRole::Muted
-                    },
-                ));
-            }
-        }
-        PanelFocus::Commits => {
-            if let Some(entry) = state.commits.items.get(state.commits.selected) {
-                lines.push(PanelLine::new(
-                    format!("  commit={} {}", entry.id, entry.summary),
-                    RowRole::Normal,
-                ));
-            }
-        }
-        PanelFocus::Stash => {
-            if let Some(entry) = state.stash.items.get(state.stash.selected) {
-                lines.push(PanelLine::new(
-                    format!("  stash={} {}", entry.id, entry.summary),
-                    RowRole::Normal,
-                ));
-            }
-        }
-        PanelFocus::Details | PanelFocus::Log => {}
+        PanelFocus::Files => render_files_details_lines(state, max_lines),
+        // TODO(details-branches): replace placeholder with selected-branch git log graph.
+        PanelFocus::Branches => render_placeholder_details_lines(
+            "  details(branches): pending git log --graph implementation",
+            max_lines,
+        ),
+        // TODO(details-commits): replace placeholder with commit-focused details projection.
+        PanelFocus::Commits => render_placeholder_details_lines(
+            "  details(commits): pending details implementation",
+            max_lines,
+        ),
+        // TODO(details-stash): replace placeholder with stash entry details projection.
+        PanelFocus::Stash => render_placeholder_details_lines(
+            "  details(stash): pending details implementation",
+            max_lines,
+        ),
+        PanelFocus::Details | PanelFocus::Log => Vec::new(),
     }
-    lines.push(PanelLine::new(
-        format!("  summary={}", state.status.summary),
-        RowRole::Muted,
-    ));
-    lines.into_iter().take(max_lines).collect()
 }
 
 pub(crate) fn render_log_lines(state: &AppState, max_lines: usize) -> Vec<PanelLine> {
@@ -198,6 +140,62 @@ pub(crate) fn render_log_lines(state: &AppState, max_lines: usize) -> Vec<PanelL
         }
     }
     lines.into_iter().take(max_lines).collect()
+}
+
+fn render_files_details_lines(state: &AppState, max_lines: usize) -> Vec<PanelLine> {
+    if max_lines == 0 {
+        return Vec::new();
+    }
+
+    if let Some(error) = &state.details.files_error {
+        return vec![PanelLine::new(format!("  error={error}"), RowRole::Error)];
+    }
+
+    if state.details.files_diff.trim().is_empty() {
+        return vec![PanelLine::new(
+            "  details(files): no diff for current selection",
+            RowRole::Muted,
+        )];
+    }
+
+    // TODO(files-hunks): upgrade details rows into selectable hunk models for partial staging.
+    state
+        .details
+        .files_diff
+        .lines()
+        .map(|line| PanelLine::new(format!("  {line}"), classify_diff_row_role(line)))
+        .take(max_lines)
+        .collect()
+}
+
+fn render_placeholder_details_lines(message: &str, max_lines: usize) -> Vec<PanelLine> {
+    if max_lines == 0 {
+        return Vec::new();
+    }
+    vec![PanelLine::new(message, RowRole::Muted)]
+}
+
+fn classify_diff_row_role(line: &str) -> RowRole {
+    if line.starts_with("### ") {
+        return RowRole::DiffSection;
+    }
+    if line.starts_with("diff --git")
+        || line.starts_with("index ")
+        || line.starts_with("--- ")
+        || line.starts_with("+++ ")
+    {
+        return RowRole::DiffMeta;
+    }
+    if line.starts_with("@@") {
+        return RowRole::DiffHunk;
+    }
+    if line.starts_with('+') && !line.starts_with("+++") {
+        return RowRole::DiffAdd;
+    }
+    if line.starts_with('-') && !line.starts_with("---") {
+        return RowRole::DiffRemove;
+    }
+    RowRole::Normal
 }
 
 pub(crate) fn shortcuts_for_state(state: &AppState) -> String {
@@ -397,10 +395,24 @@ fn branch_entry_role(entry: &BranchEntry) -> RowRole {
 
 #[cfg(test)]
 mod tests {
-    use ratagit_core::{Action, GitResult, PanelFocus, UiAction, update};
+    use ratagit_core::{Action, Command, GitResult, PanelFocus, UiAction, update};
     use ratagit_testkit::{fixture_dirty_repo, fixture_empty_repo};
 
     use super::*;
+
+    fn mock_diff_for_paths(paths: &[String]) -> String {
+        if paths.is_empty() {
+            return String::new();
+        }
+        let mut blocks = Vec::new();
+        for path in paths {
+            blocks.push(format!(
+                "diff --git a/{0} b/{0}\n@@ -1 +1 @@\n-old {0}\n+new {0}",
+                path
+            ));
+        }
+        format!("### unstaged\n{}", blocks.join("\n"))
+    }
 
     fn state_with_dirty_repo() -> AppState {
         let mut state = AppState::default();
@@ -408,7 +420,18 @@ mod tests {
             &mut state,
             Action::GitResult(GitResult::Refreshed(fixture_dirty_repo())),
         );
-        assert!(commands.is_empty());
+        if let [Command::RefreshFilesDetailsDiff { paths }] = commands.as_slice() {
+            let follow_up = update(
+                &mut state,
+                Action::GitResult(GitResult::FilesDetailsDiff {
+                    paths: paths.clone(),
+                    result: Ok(mock_diff_for_paths(paths)),
+                }),
+            );
+            assert!(follow_up.is_empty());
+        } else {
+            panic!("unexpected commands after refresh: {commands:?}");
+        }
         state
     }
 
@@ -540,9 +563,24 @@ mod tests {
 
         let lines = render_details_lines(&state, 4);
 
-        assert_eq!(lines[0].text, "  current=Branches");
-        assert_eq!(lines[1].text, "  branch=main");
-        assert_eq!(lines[2].text, "  is_current=yes");
+        assert_eq!(
+            lines[0].text,
+            "  details(branches): pending git log --graph implementation"
+        );
+    }
+
+    #[test]
+    fn details_panel_projects_files_diff_with_colored_roles() {
+        let state = state_with_dirty_repo();
+
+        let lines = render_details_lines(&state, 5);
+
+        assert_eq!(lines[0].text, "  ### unstaged");
+        assert_eq!(lines[0].role, RowRole::DiffSection);
+        assert_eq!(lines[1].role, RowRole::DiffMeta);
+        assert_eq!(lines[2].role, RowRole::DiffHunk);
+        assert_eq!(lines[3].role, RowRole::DiffRemove);
+        assert_eq!(lines[4].role, RowRole::DiffAdd);
     }
 
     #[test]
@@ -575,11 +613,10 @@ mod tests {
     #[test]
     fn empty_lists_and_panels_render_without_empty_placeholders() {
         let mut state = AppState::default();
-        let commands = update(
+        let _commands = update(
             &mut state,
             Action::GitResult(GitResult::Refreshed(fixture_empty_repo())),
         );
-        assert!(commands.is_empty());
 
         assert!(render_files_lines(&state, 5).is_empty());
         assert!(render_stash_lines(&state, 5).is_empty());

@@ -12,6 +12,11 @@ pub(crate) enum RowRole {
     CurrentBranch,
     Error,
     Notice,
+    DiffSection,
+    DiffMeta,
+    DiffHunk,
+    DiffAdd,
+    DiffRemove,
 }
 
 pub(crate) const ICON_BATCH_SELECTED: &str = "✓";
@@ -64,6 +69,13 @@ pub(crate) fn row_style(role: RowRole) -> Style {
             .add_modifier(Modifier::BOLD),
         RowRole::Error => Style::default().fg(Color::Red),
         RowRole::Notice => Style::default().fg(Color::Blue),
+        RowRole::DiffSection => Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD),
+        RowRole::DiffMeta => Style::default().fg(Color::Cyan),
+        RowRole::DiffHunk => Style::default().fg(Color::Magenta),
+        RowRole::DiffAdd => Style::default().fg(Color::Green),
+        RowRole::DiffRemove => Style::default().fg(Color::Red),
     }
 }
 

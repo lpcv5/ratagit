@@ -11,8 +11,8 @@ pub use files::{
     start_search as start_file_search, toggle_current_row_selection, toggle_selected_directory,
 };
 pub use state::{
-    AppState, BranchEntry, BranchesPanelState, CommitEntry, CommitsPanelState, PanelFocus,
-    RepoSnapshot, StashEntry, StashPanelState, StatusPanelState,
+    AppState, BranchEntry, BranchesPanelState, CommitEntry, CommitsPanelState, DetailsPanelState,
+    PanelFocus, RepoSnapshot, StashEntry, StashPanelState, StatusPanelState,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,6 +47,10 @@ pub enum UiAction {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GitResult {
     Refreshed(RepoSnapshot),
+    FilesDetailsDiff {
+        paths: Vec<String>,
+        result: Result<String, String>,
+    },
     RefreshFailed {
         error: String,
     },
@@ -98,6 +102,7 @@ pub enum Action {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     RefreshAll,
+    RefreshFilesDetailsDiff { paths: Vec<String> },
     StageFiles { paths: Vec<String> },
     UnstageFiles { paths: Vec<String> },
     StashFiles { message: String, paths: Vec<String> },
@@ -107,6 +112,22 @@ pub enum Command {
     CheckoutBranch { name: String },
     StashPush { message: String },
     StashPop { stash_id: String },
+}
+
+pub fn debounce_key_for_command(command: &Command) -> Option<&'static str> {
+    match command {
+        Command::RefreshFilesDetailsDiff { .. } => Some("files_details_diff"),
+        Command::RefreshAll
+        | Command::StageFiles { .. }
+        | Command::UnstageFiles { .. }
+        | Command::StashFiles { .. }
+        | Command::DiscardFiles { .. }
+        | Command::CreateCommit { .. }
+        | Command::CreateBranch { .. }
+        | Command::CheckoutBranch { .. }
+        | Command::StashPush { .. }
+        | Command::StashPop { .. } => None,
+    }
 }
 
 pub fn update(state: &mut AppState, action: Action) -> Vec<Command> {
@@ -122,33 +143,35 @@ fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
         UiAction::FocusNext => {
             state.focus = state.focus.next_left();
             state.last_left_focus = state.focus;
-            Vec::new()
+            maybe_refresh_files_details_on_files_focus(state)
         }
         UiAction::FocusPrev => {
             state.focus = state.focus.prev_left();
             state.last_left_focus = state.focus;
-            Vec::new()
+            maybe_refresh_files_details_on_files_focus(state)
         }
         UiAction::FocusPanel { panel } => {
             state.focus = panel;
             if panel.is_left_panel() {
                 state.last_left_focus = panel;
             }
-            Vec::new()
+            maybe_refresh_files_details_on_files_focus(state)
         }
         UiAction::MoveUp => {
             move_selection(state, true);
-            Vec::new()
+            maybe_refresh_files_details_on_files_navigation(state)
         }
         UiAction::MoveDown => {
             move_selection(state, false);
-            Vec::new()
+            maybe_refresh_files_details_on_files_navigation(state)
         }
         UiAction::ToggleSelectedDirectory => {
-            if !toggle_selected_directory(&mut state.files) {
+            if toggle_selected_directory(&mut state.files) {
+                refresh_files_details_command(state)
+            } else {
                 push_notice(state, "Selected file is not a directory");
+                Vec::new()
             }
-            Vec::new()
         }
         UiAction::ToggleSelectedFileStage => {
             let paths = selected_target_paths(&state.files);
@@ -194,7 +217,7 @@ fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
         }
         UiAction::ConfirmFileSearch => {
             confirm_file_search(&mut state.files);
-            Vec::new()
+            refresh_files_details_command(state)
         }
         UiAction::CancelFileSearch => {
             if state.files.mode == FileInputMode::MultiSelect {
@@ -206,11 +229,11 @@ fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
         }
         UiAction::NextFileSearchMatch => {
             jump_search_match(&mut state.files, false);
-            Vec::new()
+            refresh_files_details_command(state)
         }
         UiAction::PrevFileSearchMatch => {
             jump_search_match(&mut state.files, true);
-            Vec::new()
+            refresh_files_details_command(state)
         }
         UiAction::StageSelectedFile => {
             let paths = selected_target_paths(&state.files)
@@ -279,6 +302,23 @@ fn update_git_result(state: &mut AppState, result: GitResult) -> Vec<Command> {
             apply_snapshot(state, snapshot);
             state.status.refresh_count = state.status.refresh_count.saturating_add(1);
             state.status.last_error = None;
+            refresh_files_details_command(state)
+        }
+        GitResult::FilesDetailsDiff { paths, result } => {
+            state.details.files_targets = paths;
+            match result {
+                Ok(diff) => {
+                    state.details.files_diff = diff;
+                    state.details.files_error = None;
+                }
+                Err(error) => {
+                    let message = format!("Failed to refresh files details diff: {error}");
+                    state.details.files_diff.clear();
+                    state.details.files_error = Some(message.clone());
+                    state.status.last_error = Some(message.clone());
+                    push_notice(state, &message);
+                }
+            }
             Vec::new()
         }
         GitResult::RefreshFailed { error } => {
@@ -391,6 +431,9 @@ fn apply_snapshot(state: &mut AppState, snapshot: RepoSnapshot) {
     state.branches.items = snapshot.branches;
     state.stash.items = snapshot.stashes;
     clamp_selection_indexes(state);
+    state.details.files_diff.clear();
+    state.details.files_error = None;
+    state.details.files_targets = selected_target_paths(&state.files);
 }
 
 fn clamp_selection_indexes(state: &mut AppState) {
@@ -436,6 +479,26 @@ fn move_index(selected: &mut usize, len: usize, move_up: bool) {
     } else {
         *selected = (*selected + 1).min(len - 1);
     }
+}
+
+fn refresh_files_details_command(state: &AppState) -> Vec<Command> {
+    vec![Command::RefreshFilesDetailsDiff {
+        paths: selected_target_paths(&state.files),
+    }]
+}
+
+fn maybe_refresh_files_details_on_files_focus(state: &AppState) -> Vec<Command> {
+    if state.focus == PanelFocus::Files {
+        return refresh_files_details_command(state);
+    }
+    Vec::new()
+}
+
+fn maybe_refresh_files_details_on_files_navigation(state: &AppState) -> Vec<Command> {
+    if state.focus == PanelFocus::Files {
+        return refresh_files_details_command(state);
+    }
+    Vec::new()
 }
 
 fn selected_targets_are_all_staged(state: &AppState, paths: &[String]) -> bool {

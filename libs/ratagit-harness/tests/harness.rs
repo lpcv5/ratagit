@@ -38,12 +38,38 @@ fn harness_files_stage_and_unstage() {
         fixture_dirty_repo(),
         &inputs,
         ScenarioExpectations {
-            screen_contains: &["Files", "src/lib.rs", "staged=no"],
+            screen_contains: &["Files", "src/lib.rs", "### unstaged"],
             screen_not_contains: &[],
             selected_screen_rows: &[],
             batch_selected_screen_rows: &[],
             git_ops_contains: &["stage-files:src/lib.rs", "unstage-files:src/lib.rs"],
             git_state_contains: &["path: \"src/lib.rs\"", "staged: false"],
+        },
+    ));
+}
+
+#[test]
+fn harness_files_details_follow_cursor_with_combined_diff_sections() {
+    let inputs = [UiAction::RefreshAll, UiAction::MoveDown];
+    assert_scenario(MockScenario::new(
+        "files_details_follow_cursor_combined_diff",
+        fixture_dirty_repo(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &[
+                "### unstaged",
+                "diff --git a/src/lib.rs b/src/lib.rs",
+                "### staged",
+                "diff --git a/src/main.rs b/src/main.rs",
+            ],
+            screen_not_contains: &[],
+            selected_screen_rows: &[],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &[
+                "details-diff:README.md",
+                "details-diff:src/lib.rs,src/main.rs",
+            ],
+            git_state_contains: &["current_branch: \"main\""],
         },
     ));
 }
@@ -82,7 +108,7 @@ fn harness_files_space_toggles_directory_stage() {
         fixture_dirty_repo(),
         &inputs,
         ScenarioExpectations {
-            screen_contains: &["Staged src/lib.rs", "staged=yes"],
+            screen_contains: &["Staged src/lib.rs", "### staged"],
             screen_not_contains: &[],
             selected_screen_rows: &[],
             batch_selected_screen_rows: &[],
@@ -274,7 +300,10 @@ fn harness_branches_create_and_checkout() {
         fixture_dirty_repo(),
         &inputs,
         ScenarioExpectations {
-            screen_contains: &["feature/new", "is_current=yes"],
+            screen_contains: &[
+                "feature/new",
+                "details(branches): pending git log --graph implementation",
+            ],
             screen_not_contains: &[],
             selected_screen_rows: &[],
             batch_selected_screen_rows: &[],
@@ -299,7 +328,7 @@ fn harness_stash_push_and_pop() {
         fixture_dirty_repo(),
         &inputs,
         ScenarioExpectations {
-            screen_contains: &["Stash", "WIP on main: local test"],
+            screen_contains: &["Stash", "stash@{0} WIP on main"],
             screen_not_contains: &[],
             selected_screen_rows: &[],
             batch_selected_screen_rows: &[],
