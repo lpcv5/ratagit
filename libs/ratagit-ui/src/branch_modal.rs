@@ -1,6 +1,7 @@
 use ratagit_core::{AppState, AutoStashOperation, BranchDeleteChoice, BranchRebaseChoice};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
+use ratatui::style::Style;
 use ratatui::text::Line;
 use ratatui::widgets::{Paragraph, Wrap};
 use unicode_width::UnicodeWidthStr;
@@ -108,27 +109,12 @@ fn render_branch_delete_modal(frame: &mut Frame<'_>, state: &AppState, area: Rec
         )),
         rows[0],
     );
+    let choices = branch_delete_choices();
     render_choice_list(
         frame,
         rows[1],
         "Choice",
-        &[
-            (
-                BranchDeleteChoice::Local,
-                "delete local",
-                modal_muted_style(),
-            ),
-            (
-                BranchDeleteChoice::Remote,
-                "delete remote",
-                modal_muted_style(),
-            ),
-            (
-                BranchDeleteChoice::Both,
-                "delete local and remote",
-                modal_muted_style(),
-            ),
-        ],
+        &choices,
         state.branches.delete_menu.selected,
         ModalTone::Danger,
     );
@@ -174,27 +160,12 @@ fn render_branch_rebase_modal(frame: &mut Frame<'_>, state: &AppState, area: Rec
         )),
         rows[0],
     );
+    let choices = branch_rebase_choices();
     render_choice_list(
         frame,
         rows[1],
         "Choice",
-        &[
-            (
-                BranchRebaseChoice::Simple,
-                "simple rebase",
-                modal_muted_style(),
-            ),
-            (
-                BranchRebaseChoice::Interactive,
-                "interactive rebase",
-                modal_muted_style(),
-            ),
-            (
-                BranchRebaseChoice::OriginMain,
-                "rebase onto origin/main",
-                modal_muted_style(),
-            ),
-        ],
+        &choices,
         state.branches.rebase_menu.selected,
         ModalTone::Warning,
     );
@@ -332,11 +303,41 @@ fn branch_create_rows(area: Rect) -> std::rc::Rc<[Rect]> {
         .split(area)
 }
 
+fn branch_delete_choices() -> Vec<(BranchDeleteChoice, &'static str, Style)> {
+    BranchDeleteChoice::ALL
+        .iter()
+        .map(|choice| (*choice, branch_delete_label(*choice), modal_muted_style()))
+        .collect()
+}
+
+fn branch_delete_label(choice: BranchDeleteChoice) -> &'static str {
+    match choice {
+        BranchDeleteChoice::Local => "delete local",
+        BranchDeleteChoice::Remote => "delete remote",
+        BranchDeleteChoice::Both => "delete local and remote",
+    }
+}
+
 fn branch_delete_description(choice: BranchDeleteChoice) -> &'static str {
     match choice {
         BranchDeleteChoice::Local => "Delete the selected local branch with `git branch -d`.",
         BranchDeleteChoice::Remote => "Delete `origin/<branch>` with `git push origin --delete`.",
         BranchDeleteChoice::Both => "Delete the local branch first, then delete `origin/<branch>`.",
+    }
+}
+
+fn branch_rebase_choices() -> Vec<(BranchRebaseChoice, &'static str, Style)> {
+    BranchRebaseChoice::ALL
+        .iter()
+        .map(|choice| (*choice, branch_rebase_label(*choice), modal_muted_style()))
+        .collect()
+}
+
+fn branch_rebase_label(choice: BranchRebaseChoice) -> &'static str {
+    match choice {
+        BranchRebaseChoice::Simple => "simple rebase",
+        BranchRebaseChoice::Interactive => "interactive rebase",
+        BranchRebaseChoice::OriginMain => "rebase onto origin/main",
     }
 }
 

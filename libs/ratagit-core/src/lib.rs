@@ -1,6 +1,8 @@
 mod branches;
 mod commits;
+mod details;
 mod files;
+mod operations;
 mod scroll;
 mod search;
 mod state;
@@ -340,34 +342,106 @@ pub enum Command {
     },
 }
 
-pub fn debounce_key_for_command(command: &Command) -> Option<&'static str> {
-    match command {
-        Command::RefreshFilesDetailsDiff { .. } => Some("files_details_diff"),
-        Command::RefreshBranchDetailsLog { .. } => Some("branch_details_log"),
-        Command::RefreshCommitDetailsDiff { .. } => Some("commit_details_diff"),
-        Command::RefreshCommitFileDiff { .. } => Some("commit_file_diff"),
-        Command::RefreshAll
-        | Command::LoadMoreCommits { .. }
-        | Command::RefreshCommitFiles { .. }
-        | Command::StageFiles { .. }
-        | Command::UnstageFiles { .. }
-        | Command::StashFiles { .. }
-        | Command::Reset { .. }
-        | Command::Nuke
-        | Command::DiscardFiles { .. }
-        | Command::CreateCommit { .. }
-        | Command::CreateBranch { .. }
-        | Command::CheckoutBranch { .. }
-        | Command::DeleteBranch { .. }
-        | Command::RebaseBranch { .. }
-        | Command::SquashCommits { .. }
-        | Command::FixupCommits { .. }
-        | Command::RewordCommit { .. }
-        | Command::DeleteCommits { .. }
-        | Command::CheckoutCommitDetached { .. }
-        | Command::StashPush { .. }
-        | Command::StashPop { .. } => None,
+impl Command {
+    pub fn debounce_key(&self) -> Option<&'static str> {
+        match self {
+            Command::RefreshFilesDetailsDiff { .. } => Some("files_details_diff"),
+            Command::RefreshBranchDetailsLog { .. } => Some("branch_details_log"),
+            Command::RefreshCommitDetailsDiff { .. } => Some("commit_details_diff"),
+            Command::RefreshCommitFileDiff { .. } => Some("commit_file_diff"),
+            Command::RefreshAll
+            | Command::LoadMoreCommits { .. }
+            | Command::RefreshCommitFiles { .. }
+            | Command::StageFiles { .. }
+            | Command::UnstageFiles { .. }
+            | Command::StashFiles { .. }
+            | Command::Reset { .. }
+            | Command::Nuke
+            | Command::DiscardFiles { .. }
+            | Command::CreateCommit { .. }
+            | Command::CreateBranch { .. }
+            | Command::CheckoutBranch { .. }
+            | Command::DeleteBranch { .. }
+            | Command::RebaseBranch { .. }
+            | Command::SquashCommits { .. }
+            | Command::FixupCommits { .. }
+            | Command::RewordCommit { .. }
+            | Command::DeleteCommits { .. }
+            | Command::CheckoutCommitDetached { .. }
+            | Command::StashPush { .. }
+            | Command::StashPop { .. } => None,
+        }
     }
+
+    pub fn is_mutating(&self) -> bool {
+        matches!(
+            self,
+            Command::StageFiles { .. }
+                | Command::UnstageFiles { .. }
+                | Command::StashFiles { .. }
+                | Command::Reset { .. }
+                | Command::Nuke
+                | Command::DiscardFiles { .. }
+                | Command::CreateCommit { .. }
+                | Command::CreateBranch { .. }
+                | Command::CheckoutBranch { .. }
+                | Command::DeleteBranch { .. }
+                | Command::RebaseBranch { .. }
+                | Command::SquashCommits { .. }
+                | Command::FixupCommits { .. }
+                | Command::RewordCommit { .. }
+                | Command::DeleteCommits { .. }
+                | Command::CheckoutCommitDetached { .. }
+                | Command::StashPush { .. }
+                | Command::StashPop { .. }
+        )
+    }
+
+    pub fn pending_operation_label(&self) -> Option<String> {
+        match self {
+            Command::StageFiles { .. } => Some("stage".to_string()),
+            Command::UnstageFiles { .. } => Some("unstage".to_string()),
+            Command::StashFiles { .. } => Some("stash_files".to_string()),
+            Command::Reset { mode } => {
+                Some(format!("reset_{}", operations::reset_mode_name(*mode)))
+            }
+            Command::Nuke => Some("nuke".to_string()),
+            Command::DiscardFiles { .. } => Some("discard_files".to_string()),
+            Command::CreateCommit { .. } => Some("commit".to_string()),
+            Command::CreateBranch { .. } => Some("create_branch".to_string()),
+            Command::CheckoutBranch { .. } => Some("checkout_branch".to_string()),
+            Command::DeleteBranch { mode, .. } => Some(format!(
+                "delete_branch_{}",
+                operations::delete_mode_name(*mode)
+            )),
+            Command::RebaseBranch { interactive, .. } => {
+                let mode = if *interactive {
+                    "interactive"
+                } else {
+                    "simple"
+                };
+                Some(format!("rebase_branch_{mode}"))
+            }
+            Command::SquashCommits { .. } => Some("squash_commits".to_string()),
+            Command::FixupCommits { .. } => Some("fixup_commits".to_string()),
+            Command::RewordCommit { .. } => Some("reword_commit".to_string()),
+            Command::DeleteCommits { .. } => Some("delete_commits".to_string()),
+            Command::CheckoutCommitDetached { .. } => Some("checkout_detached".to_string()),
+            Command::StashPush { .. } => Some("stash_push".to_string()),
+            Command::StashPop { .. } => Some("stash_pop".to_string()),
+            Command::RefreshAll
+            | Command::LoadMoreCommits { .. }
+            | Command::RefreshFilesDetailsDiff { .. }
+            | Command::RefreshBranchDetailsLog { .. }
+            | Command::RefreshCommitDetailsDiff { .. }
+            | Command::RefreshCommitFiles { .. }
+            | Command::RefreshCommitFileDiff { .. } => None,
+        }
+    }
+}
+
+pub fn debounce_key_for_command(command: &Command) -> Option<&'static str> {
+    command.debounce_key()
 }
 
 pub(crate) fn with_pending(state: &mut AppState, commands: Vec<Command>) -> Vec<Command> {
@@ -400,65 +474,10 @@ fn mark_command_pending(state: &mut AppState, command: &Command) {
         Command::RefreshCommitFileDiff { .. } => {
             state.work.details_pending = true;
         }
-        Command::StageFiles { .. } => {
-            state.work.operation_pending = Some("stage".to_string());
-        }
-        Command::UnstageFiles { .. } => {
-            state.work.operation_pending = Some("unstage".to_string());
-        }
-        Command::StashFiles { .. } => {
-            state.work.operation_pending = Some("stash_files".to_string());
-        }
-        Command::Reset { mode } => {
-            state.work.operation_pending = Some(format!("reset_{}", reset_mode_name(*mode)));
-        }
-        Command::Nuke => {
-            state.work.operation_pending = Some("nuke".to_string());
-        }
-        Command::DiscardFiles { .. } => {
-            state.work.operation_pending = Some("discard_files".to_string());
-        }
-        Command::CreateCommit { .. } => {
-            state.work.operation_pending = Some("commit".to_string());
-        }
-        Command::CreateBranch { .. } => {
-            state.work.operation_pending = Some("create_branch".to_string());
-        }
-        Command::CheckoutBranch { .. } => {
-            state.work.operation_pending = Some("checkout_branch".to_string());
-        }
-        Command::DeleteBranch { mode, .. } => {
-            state.work.operation_pending =
-                Some(format!("delete_branch_{}", delete_mode_name(*mode)));
-        }
-        Command::RebaseBranch { interactive, .. } => {
-            let mode = if *interactive {
-                "interactive"
-            } else {
-                "simple"
-            };
-            state.work.operation_pending = Some(format!("rebase_branch_{mode}"));
-        }
-        Command::SquashCommits { .. } => {
-            state.work.operation_pending = Some("squash_commits".to_string());
-        }
-        Command::FixupCommits { .. } => {
-            state.work.operation_pending = Some("fixup_commits".to_string());
-        }
-        Command::RewordCommit { .. } => {
-            state.work.operation_pending = Some("reword_commit".to_string());
-        }
-        Command::DeleteCommits { .. } => {
-            state.work.operation_pending = Some("delete_commits".to_string());
-        }
-        Command::CheckoutCommitDetached { .. } => {
-            state.work.operation_pending = Some("checkout_detached".to_string());
-        }
-        Command::StashPush { .. } => {
-            state.work.operation_pending = Some("stash_push".to_string());
-        }
-        Command::StashPop { .. } => {
-            state.work.operation_pending = Some("stash_pop".to_string());
+        _ => {
+            if let Some(label) = command.pending_operation_label() {
+                state.work.operation_pending = Some(label);
+            }
         }
     }
 }
@@ -629,13 +648,13 @@ fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
             state.focus = state.focus.next_left();
             state.last_left_focus = state.focus;
             clear_search_if_incompatible(state);
-            maybe_refresh_details_on_focus(state)
+            details::refresh_on_focus(state)
         }
         UiAction::FocusPrev => {
             state.focus = state.focus.prev_left();
             state.last_left_focus = state.focus;
             clear_search_if_incompatible(state);
-            maybe_refresh_details_on_focus(state)
+            details::refresh_on_focus(state)
         }
         UiAction::FocusPanel { panel } => {
             state.focus = panel;
@@ -643,36 +662,32 @@ fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
                 state.last_left_focus = panel;
             }
             clear_search_if_incompatible(state);
-            maybe_refresh_details_on_focus(state)
+            details::refresh_on_focus(state)
         }
         UiAction::MoveUp => {
             let mut commands = move_selection(state, true);
-            commands.extend(maybe_refresh_details_on_navigation(state));
+            commands.extend(details::refresh_on_navigation(state));
             commands
         }
         UiAction::MoveDown => {
             let mut commands = move_selection(state, false);
-            commands.extend(maybe_refresh_details_on_navigation(state));
+            commands.extend(details::refresh_on_navigation(state));
             commands
         }
         UiAction::DetailsScrollUp { lines } => {
-            state.details.scroll_offset = state.details.scroll_offset.saturating_sub(lines);
+            details::scroll_up(state, lines);
             Vec::new()
         }
         UiAction::DetailsScrollDown {
             lines,
             visible_lines,
         } => {
-            state.details.scroll_offset = state
-                .details
-                .scroll_offset
-                .saturating_add(lines)
-                .min(details_scroll_max_offset(state, visible_lines));
+            details::scroll_down(state, lines, visible_lines);
             Vec::new()
         }
         UiAction::ToggleSelectedDirectory => {
             if toggle_selected_directory(&mut state.files) {
-                refresh_files_details_command(state)
+                details::refresh_files_details(state)
             } else {
                 push_notice(state, "Selected file is not a directory");
                 Vec::new()
@@ -725,7 +740,7 @@ fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
         }
         UiAction::ConfirmSearch => {
             if confirm_search(state) {
-                refresh_details_command_for_focus(state)
+                details::refresh_for_focus(state)
             } else {
                 Vec::new()
             }
@@ -736,14 +751,14 @@ fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
         }
         UiAction::NextSearchMatch => {
             if jump_search_match(state, false) {
-                refresh_details_command_for_focus(state)
+                details::refresh_for_focus(state)
             } else {
                 Vec::new()
             }
         }
         UiAction::PrevSearchMatch => {
             if jump_search_match(state, true) {
-                refresh_details_command_for_focus(state)
+                details::refresh_for_focus(state)
             } else {
                 Vec::new()
             }
@@ -795,7 +810,7 @@ fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
         UiAction::CloseCommitFilesPanel => close_commit_files_panel(state),
         UiAction::ToggleCommitFilesDirectory => {
             if toggle_commit_files_directory(&mut state.commits.files) {
-                refresh_commit_file_diff_command(state)
+                details::refresh_commit_file_diff(state)
             } else {
                 push_notice(state, "Selected commit file is not a directory");
                 Vec::new()
@@ -851,7 +866,7 @@ fn update_git_result(state: &mut AppState, result: GitResult) -> Vec<Command> {
             apply_snapshot(state, snapshot);
             state.status.refresh_count = state.status.refresh_count.saturating_add(1);
             state.status.last_error = None;
-            refresh_details_command_for_focus(state)
+            details::refresh_for_focus(state)
         }
         GitResult::CommitsPage {
             offset,
@@ -860,88 +875,13 @@ fn update_git_result(state: &mut AppState, result: GitResult) -> Vec<Command> {
             result,
         } => handle_commits_page_result(state, offset, limit, epoch, result),
         GitResult::FilesDetailsDiff { paths, result } => {
-            if state.last_left_focus != PanelFocus::Files {
-                return Vec::new();
-            }
-            if paths != selected_target_paths(&state.files) {
-                return Vec::new();
-            }
-            state.work.details_pending = false;
-            state.work.last_completed_command = Some("details".to_string());
-            state.details.files_targets = paths.clone();
-            reset_details_scroll(state);
-            match result {
-                Ok(diff) => {
-                    cache_files_details_diff(state, &paths, &diff);
-                    state.details.files_diff = diff;
-                    state.details.files_error = None;
-                }
-                Err(error) => {
-                    let message = format!("Failed to refresh files details diff: {error}");
-                    state.details.files_diff.clear();
-                    state.details.files_error = Some(message.clone());
-                    state.status.last_error = Some(message.clone());
-                    push_notice(state, &message);
-                }
-            }
-            Vec::new()
+            details::apply_files_diff_result(state, paths, result)
         }
         GitResult::BranchDetailsLog { branch, result } => {
-            if state.last_left_focus != PanelFocus::Branches {
-                return Vec::new();
-            }
-            if Some(branch.as_str()) != selected_branch_name(state).as_deref() {
-                return Vec::new();
-            }
-            state.work.details_pending = false;
-            state.work.last_completed_command = Some("branch_details".to_string());
-            state.details.branch_log_target = Some(branch.clone());
-            reset_details_scroll(state);
-            match result {
-                Ok(log) => {
-                    cache_branch_details_log(state, &branch, &log);
-                    state.details.branch_log = log;
-                    state.details.branch_log_error = None;
-                }
-                Err(error) => {
-                    let message = format!("Failed to refresh branch log graph: {error}");
-                    state.details.branch_log.clear();
-                    state.details.branch_log_error = Some(message.clone());
-                    state.status.last_error = Some(message.clone());
-                    push_notice(state, &message);
-                }
-            }
-            Vec::new()
+            details::apply_branch_log_result(state, branch, result)
         }
         GitResult::CommitDetailsDiff { commit_id, result } => {
-            if state.last_left_focus != PanelFocus::Commits {
-                return Vec::new();
-            }
-            if state.commits.files.active {
-                return Vec::new();
-            }
-            if Some(commit_id.as_str()) != selected_commit_id(state).as_deref() {
-                return Vec::new();
-            }
-            state.work.details_pending = false;
-            state.work.last_completed_command = Some("commit_details".to_string());
-            state.details.commit_diff_target = Some(commit_id.clone());
-            reset_details_scroll(state);
-            match result {
-                Ok(diff) => {
-                    cache_commit_details_diff(state, &commit_id, &diff);
-                    state.details.commit_diff = diff;
-                    state.details.commit_diff_error = None;
-                }
-                Err(error) => {
-                    let message = format!("Failed to refresh commit details diff: {error}");
-                    state.details.commit_diff.clear();
-                    state.details.commit_diff_error = Some(message.clone());
-                    state.status.last_error = Some(message.clone());
-                    push_notice(state, &message);
-                }
-            }
-            Vec::new()
+            details::apply_commit_diff_result(state, commit_id, result)
         }
         GitResult::CommitFiles { commit_id, result } => {
             if !state.commits.files.active
@@ -964,7 +904,7 @@ fn update_git_result(state: &mut AppState, result: GitResult) -> Vec<Command> {
                         recompute_search_matches(state);
                     }
                     state.status.last_error = None;
-                    refresh_commit_file_diff_command(state)
+                    details::refresh_commit_file_diff(state)
                 }
                 Err(error) => {
                     let message = format!("Failed to refresh commit files: {error}");
@@ -977,27 +917,7 @@ fn update_git_result(state: &mut AppState, result: GitResult) -> Vec<Command> {
             }
         }
         GitResult::CommitFileDiff { target, result } => {
-            if !commit_file_diff_target_matches_selection(state, &target) {
-                return Vec::new();
-            }
-            state.work.details_pending = false;
-            state.work.last_completed_command = Some("commit_file_details".to_string());
-            state.details.commit_file_diff_target = Some(target.clone());
-            reset_details_scroll(state);
-            match result {
-                Ok(diff) => {
-                    state.details.commit_file_diff = diff;
-                    state.details.commit_file_diff_error = None;
-                }
-                Err(error) => {
-                    let message = format!("Failed to refresh commit file diff: {error}");
-                    state.details.commit_file_diff.clear();
-                    state.details.commit_file_diff_error = Some(message.clone());
-                    state.status.last_error = Some(message.clone());
-                    push_notice(state, &message);
-                }
-            }
-            Vec::new()
+            details::apply_commit_file_diff_result(state, target, result)
         }
         GitResult::RefreshFailed { error } => {
             state.work.refresh_pending = false;
@@ -1006,216 +926,76 @@ fn update_git_result(state: &mut AppState, result: GitResult) -> Vec<Command> {
             push_notice(state, &format!("Failed to refresh: {error}"));
             Vec::new()
         }
-        GitResult::StageFiles { paths, result } => handle_operation_result(
-            state,
-            result,
-            "stage",
-            format!("Staged {}", format_paths(&paths)),
-            format!("Failed to stage {}", format_paths(&paths)),
-        ),
-        GitResult::UnstageFiles { paths, result } => handle_operation_result(
-            state,
-            result,
-            "unstage",
-            format!("Unstaged {}", format_paths(&paths)),
-            format!("Failed to unstage {}", format_paths(&paths)),
-        ),
+        GitResult::StageFiles { paths, result } => {
+            operations::handle_stage_files_result(state, paths, result)
+        }
+        GitResult::UnstageFiles { paths, result } => {
+            operations::handle_unstage_files_result(state, paths, result)
+        }
         GitResult::StashFiles {
             message,
             paths,
             result,
-        } => handle_operation_result(
-            state,
-            result,
-            "stash_files",
-            format!("Stashed {}: {message}", format_paths(&paths)),
-            format!("Failed to stash {}", format_paths(&paths)),
-        ),
-        GitResult::Reset { mode, result } => handle_operation_result(
-            state,
-            result,
-            &format!("reset_{}", reset_mode_name(mode)),
-            format!("Reset {} to HEAD", reset_mode_name(mode)),
-            format!("Failed to reset {}", reset_mode_name(mode)),
-        ),
-        GitResult::Nuke { result } => handle_operation_result(
-            state,
-            result,
-            "nuke",
-            "Nuked working tree".to_string(),
-            "Failed to nuke working tree".to_string(),
-        ),
-        GitResult::DiscardFiles { paths, result } => handle_operation_result(
-            state,
-            result,
-            "discard_files",
-            format!("Discarded {}", format_paths(&paths)),
-            format!("Failed to discard {}", format_paths(&paths)),
-        ),
-        GitResult::CreateCommit { message, result } => handle_operation_result(
-            state,
-            result,
-            "commit",
-            format!("Commit created: {message}"),
-            "Failed to create commit".to_string(),
-        ),
+        } => operations::handle_stash_files_result(state, message, paths, result),
+        GitResult::Reset { mode, result } => operations::handle_reset_result(state, mode, result),
+        GitResult::Nuke { result } => operations::handle_nuke_result(state, result),
+        GitResult::DiscardFiles { paths, result } => {
+            operations::handle_discard_files_result(state, paths, result)
+        }
+        GitResult::CreateCommit { message, result } => {
+            operations::handle_create_commit_result(state, message, result)
+        }
         GitResult::CreateBranch {
             name,
             start_point,
             result,
-        } => handle_operation_result(
-            state,
-            result,
-            "create_branch",
-            format!("Branch created: {name} from {start_point}"),
-            format!("Failed to create branch: {name}"),
-        ),
+        } => operations::handle_create_branch_result(state, name, start_point, result),
         GitResult::CheckoutBranch {
             name,
             auto_stash,
             result,
-        } => {
-            let success_message = if auto_stash {
-                format!("Checked out with auto-stash: {name}")
-            } else {
-                format!("Checked out: {name}")
-            };
-            let failure_prefix = format!("Failed to checkout branch: {name}");
-            if auto_stash {
-                handle_operation_result_refreshing_after_failure(
-                    state,
-                    result,
-                    "checkout_branch",
-                    success_message,
-                    failure_prefix,
-                )
-            } else {
-                handle_operation_result(
-                    state,
-                    result,
-                    "checkout_branch",
-                    success_message,
-                    failure_prefix,
-                )
-            }
-        }
+        } => operations::handle_checkout_branch_result(state, name, auto_stash, result),
         GitResult::DeleteBranch {
             name,
             mode,
             force,
             result,
-        } => handle_delete_branch_result(state, name, mode, force, result),
+        } => operations::handle_delete_branch_result(state, name, mode, force, result),
         GitResult::RebaseBranch {
             target,
             interactive,
             auto_stash,
             result,
         } => {
-            let operation_key = if interactive {
-                "rebase_branch_interactive"
-            } else {
-                "rebase_branch_simple"
-            };
-            let mode = if interactive { "interactive" } else { "simple" };
-            let success_message = if auto_stash {
-                format!("Rebased with auto-stash ({mode}) onto {target}")
-            } else {
-                format!("Rebased ({mode}) onto {target}")
-            };
-            let failure_prefix = format!("Failed to rebase onto {target}");
-            if auto_stash {
-                handle_operation_result_refreshing_after_failure(
-                    state,
-                    result,
-                    operation_key,
-                    success_message,
-                    failure_prefix,
-                )
-            } else {
-                handle_operation_result(
-                    state,
-                    result,
-                    operation_key,
-                    success_message,
-                    failure_prefix,
-                )
-            }
+            operations::handle_rebase_branch_result(state, target, interactive, auto_stash, result)
         }
-        GitResult::SquashCommits { commit_ids, result } => handle_operation_result(
-            state,
-            result,
-            "squash_commits",
-            format!("Squashed {}", format_commit_count(commit_ids.len())),
-            "Failed to squash commits".to_string(),
-        ),
-        GitResult::FixupCommits { commit_ids, result } => handle_operation_result(
-            state,
-            result,
-            "fixup_commits",
-            format!("Fixed up {}", format_commit_count(commit_ids.len())),
-            "Failed to fixup commits".to_string(),
-        ),
+        GitResult::SquashCommits { commit_ids, result } => {
+            operations::handle_squash_commits_result(state, commit_ids, result)
+        }
+        GitResult::FixupCommits { commit_ids, result } => {
+            operations::handle_fixup_commits_result(state, commit_ids, result)
+        }
         GitResult::RewordCommit {
             commit_id,
             message,
             result,
-        } => handle_operation_result(
-            state,
-            result,
-            "reword_commit",
-            format!("Reworded {commit_id}: {}", first_line(&message)),
-            format!("Failed to reword commit: {commit_id}"),
-        ),
-        GitResult::DeleteCommits { commit_ids, result } => handle_operation_result(
-            state,
-            result,
-            "delete_commits",
-            format!("Deleted {}", format_commit_count(commit_ids.len())),
-            "Failed to delete commits".to_string(),
-        ),
+        } => operations::handle_reword_commit_result(state, commit_id, message, result),
+        GitResult::DeleteCommits { commit_ids, result } => {
+            operations::handle_delete_commits_result(state, commit_ids, result)
+        }
         GitResult::CheckoutCommitDetached {
             commit_id,
             auto_stash,
             result,
         } => {
-            let success_message = if auto_stash {
-                format!("Checked out detached with auto-stash: {commit_id}")
-            } else {
-                format!("Checked out detached: {commit_id}")
-            };
-            let failure_prefix = format!("Failed to checkout detached: {commit_id}");
-            if auto_stash {
-                handle_operation_result_refreshing_after_failure(
-                    state,
-                    result,
-                    "checkout_detached",
-                    success_message,
-                    failure_prefix,
-                )
-            } else {
-                handle_operation_result(
-                    state,
-                    result,
-                    "checkout_detached",
-                    success_message,
-                    failure_prefix,
-                )
-            }
+            operations::handle_checkout_commit_detached_result(state, commit_id, auto_stash, result)
         }
-        GitResult::StashPush { message, result } => handle_operation_result(
-            state,
-            result,
-            "stash_push",
-            format!("Stash pushed: {message}"),
-            "Failed to stash push".to_string(),
-        ),
-        GitResult::StashPop { stash_id, result } => handle_operation_result(
-            state,
-            result,
-            "stash_pop",
-            format!("Stash popped: {stash_id}"),
-            format!("Failed to stash pop: {stash_id}"),
-        ),
+        GitResult::StashPush { message, result } => {
+            operations::handle_stash_push_result(state, message, result)
+        }
+        GitResult::StashPop { stash_id, result } => {
+            operations::handle_stash_pop_result(state, stash_id, result)
+        }
     }
 }
 
@@ -1264,7 +1044,7 @@ fn rewrite_selected_commits(
         state,
         &format!(
             "Queued {action_label} for {}",
-            format_commit_count(commit_ids.len())
+            operations::format_commit_count(commit_ids.len())
         ),
     );
     with_pending(state, vec![command(commit_ids)])
@@ -1609,109 +1389,6 @@ fn split_commit_message(message: &str) -> (String, String) {
     (subject, body)
 }
 
-fn first_line(message: &str) -> &str {
-    message.lines().next().unwrap_or("").trim()
-}
-
-fn handle_operation_result(
-    state: &mut AppState,
-    result: Result<(), String>,
-    operation_key: &str,
-    success_message: String,
-    failure_prefix: String,
-) -> Vec<Command> {
-    match result {
-        Ok(()) => {
-            clear_details_caches(state);
-            state.work.operation_pending = None;
-            state.work.last_completed_command = Some(operation_key.to_string());
-            state.last_operation = Some(operation_key.to_string());
-            push_notice(state, &success_message);
-            state.status.last_error = None;
-            with_pending(state, vec![Command::RefreshAll])
-        }
-        Err(error_message) => {
-            state.work.operation_pending = None;
-            state.work.last_completed_command = Some(operation_key.to_string());
-            state.last_operation = Some(operation_key.to_string());
-            let full_error = format!("{failure_prefix}: {error_message}");
-            state.status.last_error = Some(full_error.clone());
-            push_notice(state, &full_error);
-            Vec::new()
-        }
-    }
-}
-
-fn handle_operation_result_refreshing_after_failure(
-    state: &mut AppState,
-    result: Result<(), String>,
-    operation_key: &str,
-    success_message: String,
-    failure_prefix: String,
-) -> Vec<Command> {
-    match result {
-        Ok(()) => handle_operation_result(
-            state,
-            Ok(()),
-            operation_key,
-            success_message,
-            failure_prefix,
-        ),
-        Err(error_message) => {
-            state.work.operation_pending = None;
-            state.work.last_completed_command = Some(operation_key.to_string());
-            state.last_operation = Some(operation_key.to_string());
-            let full_error = format!("{failure_prefix}: {error_message}");
-            state.status.last_error = Some(full_error.clone());
-            push_notice(state, &full_error);
-            with_pending(state, vec![Command::RefreshAll])
-        }
-    }
-}
-
-fn handle_delete_branch_result(
-    state: &mut AppState,
-    name: String,
-    mode: BranchDeleteMode,
-    force: bool,
-    result: Result<(), String>,
-) -> Vec<Command> {
-    if let Err(error) = &result
-        && !force
-        && branches::delete_mode_includes_local(mode)
-        && is_unmerged_branch_delete_error(error)
-    {
-        state.work.operation_pending = None;
-        state.work.last_completed_command =
-            Some(format!("delete_branch_{}", delete_mode_name(mode)));
-        state.last_operation = state.work.last_completed_command.clone();
-        state.status.last_error = Some(format!(
-            "Branch is not fully merged; confirmation required: {error}"
-        ));
-        branches::open_force_delete_confirm(state, name, mode, error.clone());
-        return Vec::new();
-    }
-
-    handle_operation_result(
-        state,
-        result,
-        &format!("delete_branch_{}", delete_mode_name(mode)),
-        if force {
-            format!("Force deleted {} branch: {name}", delete_mode_label(mode))
-        } else {
-            format!("Deleted {} branch: {name}", delete_mode_label(mode))
-        },
-        format!(
-            "Failed to delete {} branch: {name}",
-            delete_mode_label(mode)
-        ),
-    )
-}
-
-fn is_unmerged_branch_delete_error(error: &str) -> bool {
-    error.contains("not fully merged") || error.contains("not merged")
-}
-
 fn apply_snapshot(state: &mut AppState, snapshot: RepoSnapshot) {
     state.status.summary = snapshot.status_summary;
     state.status.current_branch = snapshot.current_branch;
@@ -1729,21 +1406,8 @@ fn apply_snapshot(state: &mut AppState, snapshot: RepoSnapshot) {
     state.branches.items = snapshot.branches;
     state.stash.items = snapshot.stashes;
     clamp_selection_indexes(state);
-    state.details.files_diff.clear();
-    state.details.files_error = None;
-    state.details.files_targets = selected_target_paths(&state.files);
-    state.details.branch_log.clear();
-    state.details.branch_log_error = None;
-    state.details.branch_log_target = selected_branch_name(state);
-    state.details.commit_diff.clear();
-    state.details.commit_diff_error = None;
-    state.details.commit_diff_target = selected_commit_id(state);
-    state.details.commit_file_diff.clear();
-    state.details.commit_file_diff_error = None;
-    state.details.commit_file_diff_target = None;
+    details::reset_after_snapshot(state);
     state.search.clear();
-    reset_details_scroll(state);
-    clear_details_caches(state);
 }
 
 fn load_more_commits_command(state: &mut AppState, select_first_new: bool) -> Vec<Command> {
@@ -1879,86 +1543,6 @@ fn move_index(selected: &mut usize, len: usize, move_up: bool) {
     }
 }
 
-fn refresh_files_details_command(state: &mut AppState) -> Vec<Command> {
-    let paths = selected_target_paths(&state.files);
-    let target_changed = state.details.files_targets != paths;
-    state.details.files_targets = paths.clone();
-    if target_changed {
-        reset_details_scroll(state);
-    }
-    if paths.is_empty() {
-        state.details.files_diff.clear();
-        state.details.files_error = None;
-        state.work.details_pending = false;
-        return Vec::new();
-    }
-    if let Some(diff) = cached_files_details_diff(state, &paths) {
-        state.details.files_diff = diff;
-        state.details.files_error = None;
-        state.work.details_pending = false;
-        return Vec::new();
-    }
-    with_pending(state, vec![Command::RefreshFilesDetailsDiff { paths }])
-}
-
-fn refresh_branch_details_log_command(state: &mut AppState) -> Vec<Command> {
-    let Some(branch) = selected_branch_name(state) else {
-        let target_changed = state.details.branch_log_target.is_some();
-        state.details.branch_log.clear();
-        state.details.branch_log_target = None;
-        state.details.branch_log_error = None;
-        if target_changed {
-            reset_details_scroll(state);
-        }
-        state.work.details_pending = false;
-        return Vec::new();
-    };
-    let target_changed = state.details.branch_log_target.as_ref() != Some(&branch);
-    state.details.branch_log_target = Some(branch.clone());
-    if target_changed {
-        reset_details_scroll(state);
-    }
-    if let Some(log) = cached_branch_details_log(state, &branch) {
-        state.details.branch_log = log;
-        state.details.branch_log_error = None;
-        state.work.details_pending = false;
-        return Vec::new();
-    }
-    with_pending(
-        state,
-        vec![Command::RefreshBranchDetailsLog {
-            branch,
-            max_count: BRANCH_DETAILS_LOG_MAX_COUNT,
-        }],
-    )
-}
-
-fn refresh_commit_details_diff_command(state: &mut AppState) -> Vec<Command> {
-    let Some(commit_id) = selected_commit_id(state) else {
-        let target_changed = state.details.commit_diff_target.is_some();
-        state.details.commit_diff.clear();
-        state.details.commit_diff_target = None;
-        state.details.commit_diff_error = None;
-        if target_changed {
-            reset_details_scroll(state);
-        }
-        state.work.details_pending = false;
-        return Vec::new();
-    };
-    let target_changed = state.details.commit_diff_target.as_ref() != Some(&commit_id);
-    state.details.commit_diff_target = Some(commit_id.clone());
-    if target_changed {
-        reset_details_scroll(state);
-    }
-    if let Some(diff) = cached_commit_details_diff(state, &commit_id) {
-        state.details.commit_diff = diff;
-        state.details.commit_diff_error = None;
-        state.work.details_pending = false;
-        return Vec::new();
-    }
-    with_pending(state, vec![Command::RefreshCommitDetailsDiff { commit_id }])
-}
-
 fn open_commit_files_panel(state: &mut AppState) -> Vec<Command> {
     let Some(commit_id) = selected_commit_id(state) else {
         push_notice(state, "No commit selected");
@@ -1974,7 +1558,7 @@ fn open_commit_files_panel(state: &mut AppState) -> Vec<Command> {
     state.details.commit_file_diff.clear();
     state.details.commit_file_diff_target = None;
     state.details.commit_file_diff_error = None;
-    reset_details_scroll(state);
+    details::reset_scroll(state);
     with_pending(state, vec![Command::RefreshCommitFiles { commit_id }])
 }
 
@@ -1989,232 +1573,7 @@ fn close_commit_files_panel(state: &mut AppState) -> Vec<Command> {
     state.details.commit_file_diff_target = None;
     state.details.commit_file_diff_error = None;
     state.work.details_pending = false;
-    refresh_commit_details_diff_command(state)
-}
-
-fn refresh_commit_file_diff_command(state: &mut AppState) -> Vec<Command> {
-    if !state.commits.files.active {
-        return Vec::new();
-    }
-    let Some(commit_id) = state.commits.files.commit_id.clone() else {
-        clear_commit_file_details(state);
-        return Vec::new();
-    };
-    let files = selected_commit_file_targets(&state.commits.files);
-    if files.is_empty() {
-        clear_commit_file_details(state);
-        return Vec::new();
-    }
-    let target = CommitFileDiffTarget {
-        commit_id,
-        paths: files
-            .into_iter()
-            .map(|file| CommitFileDiffPath {
-                path: file.path,
-                old_path: file.old_path,
-            })
-            .collect(),
-    };
-    let target_changed = state.details.commit_file_diff_target.as_ref() != Some(&target);
-    state.details.commit_file_diff_target = Some(target.clone());
-    if target_changed {
-        reset_details_scroll(state);
-        state.details.commit_file_diff.clear();
-    }
-    with_pending(state, vec![Command::RefreshCommitFileDiff { target }])
-}
-
-fn clear_commit_file_details(state: &mut AppState) {
-    let target_changed = state.details.commit_file_diff_target.is_some();
-    state.details.commit_file_diff.clear();
-    state.details.commit_file_diff_target = None;
-    state.details.commit_file_diff_error = None;
-    if target_changed {
-        reset_details_scroll(state);
-    }
-    state.work.details_pending = false;
-}
-
-fn commit_file_diff_target_matches_selection(
-    state: &AppState,
-    target: &CommitFileDiffTarget,
-) -> bool {
-    if state.last_left_focus != PanelFocus::Commits || !state.commits.files.active {
-        return false;
-    }
-    let Some(commit_id) = state.commits.files.commit_id.as_deref() else {
-        return false;
-    };
-    if commit_id != target.commit_id {
-        return false;
-    }
-    let selected = selected_commit_file_targets(&state.commits.files)
-        .into_iter()
-        .map(|file| CommitFileDiffPath {
-            path: file.path,
-            old_path: file.old_path,
-        })
-        .collect::<Vec<_>>();
-    selected == target.paths
-}
-
-fn cached_files_details_diff(state: &AppState, paths: &[String]) -> Option<String> {
-    cached_details_entry(
-        &state.details.cached_files_diffs,
-        paths,
-        |entry, paths| entry.paths.as_slice() == paths,
-        |entry| &entry.diff,
-    )
-}
-
-fn cache_files_details_diff(state: &mut AppState, paths: &[String], diff: &str) {
-    cache_details_entry(
-        &mut state.details.cached_files_diffs,
-        paths,
-        diff,
-        |entry, paths| entry.paths.as_slice() == paths,
-        |paths, diff| CachedFilesDiff {
-            paths: paths.to_vec(),
-            diff: diff.to_string(),
-        },
-    );
-}
-
-fn cached_branch_details_log(state: &AppState, branch: &str) -> Option<String> {
-    cached_details_entry(
-        &state.details.cached_branch_logs,
-        branch,
-        |entry, branch| entry.branch.as_str() == branch,
-        |entry| &entry.log,
-    )
-}
-
-fn cache_branch_details_log(state: &mut AppState, branch: &str, log: &str) {
-    cache_details_entry(
-        &mut state.details.cached_branch_logs,
-        branch,
-        log,
-        |entry, branch| entry.branch.as_str() == branch,
-        |branch, log| CachedBranchLog {
-            branch: branch.to_string(),
-            log: log.to_string(),
-        },
-    );
-}
-
-fn cached_commit_details_diff(state: &AppState, commit_id: &str) -> Option<String> {
-    cached_details_entry(
-        &state.details.cached_commit_diffs,
-        commit_id,
-        |entry, commit_id| entry.commit_id.as_str() == commit_id,
-        |entry| &entry.diff,
-    )
-}
-
-fn cache_commit_details_diff(state: &mut AppState, commit_id: &str, diff: &str) {
-    cache_details_entry(
-        &mut state.details.cached_commit_diffs,
-        commit_id,
-        diff,
-        |entry, commit_id| entry.commit_id.as_str() == commit_id,
-        |commit_id, diff| CachedCommitDiff {
-            commit_id: commit_id.to_string(),
-            diff: diff.to_string(),
-        },
-    );
-}
-
-fn cached_details_entry<K: ?Sized, E>(
-    entries: &[E],
-    key: &K,
-    mut matches_key: impl FnMut(&E, &K) -> bool,
-    value: impl Fn(&E) -> &str,
-) -> Option<String> {
-    entries
-        .iter()
-        .find(|entry| matches_key(entry, key))
-        .map(|entry| value(entry).to_string())
-}
-
-fn cache_details_entry<K: ?Sized, E>(
-    entries: &mut Vec<E>,
-    key: &K,
-    value: &str,
-    mut matches_key: impl FnMut(&E, &K) -> bool,
-    build: impl FnOnce(&K, &str) -> E,
-) {
-    entries.retain(|entry| !matches_key(entry, key));
-    entries.insert(0, build(key, value));
-    entries.truncate(DETAILS_DIFF_CACHE_LIMIT);
-}
-
-fn clear_details_caches(state: &mut AppState) {
-    state.details.cached_files_diffs.clear();
-    state.details.cached_branch_logs.clear();
-    state.details.cached_commit_diffs.clear();
-}
-
-fn reset_details_scroll(state: &mut AppState) {
-    state.details.scroll_offset = 0;
-}
-
-fn details_scroll_max_offset(state: &AppState, visible_lines: usize) -> usize {
-    match state.last_left_focus {
-        PanelFocus::Files => state
-            .details
-            .files_diff
-            .lines()
-            .count()
-            .saturating_sub(visible_lines),
-        PanelFocus::Branches => state
-            .details
-            .branch_log
-            .lines()
-            .count()
-            .saturating_sub(visible_lines),
-        PanelFocus::Commits => {
-            if state.commits.files.active {
-                state
-                    .details
-                    .commit_file_diff
-                    .lines()
-                    .count()
-                    .saturating_sub(visible_lines)
-            } else {
-                state
-                    .details
-                    .commit_diff
-                    .lines()
-                    .count()
-                    .saturating_sub(visible_lines)
-            }
-        }
-        PanelFocus::Stash | PanelFocus::Details | PanelFocus::Log => 0,
-    }
-}
-
-fn refresh_details_command_for_focus(state: &mut AppState) -> Vec<Command> {
-    if state.focus == PanelFocus::Files {
-        return refresh_files_details_command(state);
-    }
-    if state.focus == PanelFocus::Branches {
-        return refresh_branch_details_log_command(state);
-    }
-    if state.focus == PanelFocus::Commits {
-        if state.commits.files.active {
-            return refresh_commit_file_diff_command(state);
-        }
-        return refresh_commit_details_diff_command(state);
-    }
-    Vec::new()
-}
-
-fn maybe_refresh_details_on_focus(state: &mut AppState) -> Vec<Command> {
-    refresh_details_command_for_focus(state)
-}
-
-fn maybe_refresh_details_on_navigation(state: &mut AppState) -> Vec<Command> {
-    refresh_details_command_for_focus(state)
+    details::refresh_commit_diff(state)
 }
 
 fn selected_branch_name(state: &AppState) -> Option<String> {
@@ -2247,46 +1606,6 @@ fn file_staged(state: &AppState, path: &str) -> Option<bool> {
 
 fn repository_has_uncommitted_changes(state: &AppState) -> bool {
     !state.files.items.is_empty()
-}
-
-fn format_paths(paths: &[String]) -> String {
-    match paths {
-        [] => "<none>".to_string(),
-        [only] => only.clone(),
-        _ => format!("{} files", paths.len()),
-    }
-}
-
-fn format_commit_count(count: usize) -> String {
-    if count == 1 {
-        "1 commit".to_string()
-    } else {
-        format!("{count} commits")
-    }
-}
-
-fn reset_mode_name(mode: ResetMode) -> &'static str {
-    match mode {
-        ResetMode::Mixed => "mixed",
-        ResetMode::Soft => "soft",
-        ResetMode::Hard => "hard",
-    }
-}
-
-fn delete_mode_name(mode: BranchDeleteMode) -> &'static str {
-    match mode {
-        BranchDeleteMode::Local => "local",
-        BranchDeleteMode::Remote => "remote",
-        BranchDeleteMode::Both => "both",
-    }
-}
-
-fn delete_mode_label(mode: BranchDeleteMode) -> &'static str {
-    match mode {
-        BranchDeleteMode::Local => "local",
-        BranchDeleteMode::Remote => "remote",
-        BranchDeleteMode::Both => "local and remote",
-    }
 }
 
 fn selected_stash_id(state: &AppState) -> Option<String> {

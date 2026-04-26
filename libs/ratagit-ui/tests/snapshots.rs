@@ -1,10 +1,10 @@
 use ratagit_core::{
-    Action, AppState, Command, CommitFileEntry, CommitFileStatus, CommitHashStatus, FileEntry,
-    GitResult, PanelFocus, ResetChoice, UiAction, update,
+    Action, AppState, Command, CommitFileEntry, CommitFileStatus, CommitHashStatus, GitResult,
+    PanelFocus, ResetChoice, UiAction, update,
 };
 use ratagit_testkit::{
-    fixture_commit, fixture_conflict, fixture_dirty_repo, fixture_empty_repo, fixture_many_files,
-    fixture_unicode_paths,
+    fixture_commit, fixture_conflict, fixture_dirty_repo, fixture_empty_repo, fixture_file,
+    fixture_many_files, fixture_unicode_paths,
 };
 use ratagit_ui::{
     TerminalSize, batch_selected_row_style, buffer_contains_selected_text,
@@ -1165,11 +1165,7 @@ fn terminal_stash_editor_cursor_wraps_long_title() {
 fn terminal_snapshot_untracked_directory_marker_renders_as_directory_node() {
     let mut state = AppState::default();
     let mut snapshot = fixture_empty_repo();
-    snapshot.files = vec![FileEntry {
-        path: "libs/ratagit-git/tests/".to_string(),
-        staged: false,
-        untracked: true,
-    }];
+    snapshot.files = vec![fixture_file("libs/ratagit-git/tests/", false, true)];
     snapshot.status_summary = "staged: 0, unstaged: 1".to_string();
     apply_refreshed_with_mock_details(&mut state, snapshot);
 

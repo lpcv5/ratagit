@@ -3,7 +3,7 @@ use std::fs::{create_dir_all, write};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use ratagit_core::{Action, AppState, Command, UiAction, debounce_key_for_command, update};
+use ratagit_core::{Action, AppState, Command, UiAction, update};
 use ratagit_git::{GitBackend, MockGitBackend, execute_command};
 use ratagit_ui::{
     RenderedFrame, TerminalBuffer, TerminalSize, buffer_contains_batch_selected_text,
@@ -97,7 +97,7 @@ impl<B: GitBackend> Runtime<B> {
 
     fn enqueue_command(&mut self, command: Command, queue: &mut VecDeque<Command>) {
         if self.debounce_window > Duration::ZERO
-            && let Some(key) = debounce_key_for_command(&command)
+            && let Some(key) = command.debounce_key()
         {
             self.debounced.insert(
                 key,
@@ -139,7 +139,7 @@ impl<B: GitBackend> Runtime<B> {
 fn enqueue_coalesced_command(queue: &mut VecDeque<Command>, command: Command) {
     let search_start = queue
         .iter()
-        .rposition(command_is_mutation)
+        .rposition(|command| command.is_mutating())
         .map_or(0, |index| index + 1);
     if matches!(command, Command::RefreshAll) {
         if !queue
@@ -152,7 +152,7 @@ fn enqueue_coalesced_command(queue: &mut VecDeque<Command>, command: Command) {
         return;
     }
 
-    if let Some(key) = debounce_key_for_command(&command) {
+    if let Some(key) = command.debounce_key() {
         remove_queued_command_with_debounce_key(queue, search_start, key);
     }
     queue.push_back(command);
@@ -167,36 +167,10 @@ fn remove_queued_command_with_debounce_key(
         .iter()
         .enumerate()
         .skip(search_start)
-        .find_map(|(index, queued)| {
-            (debounce_key_for_command(queued) == Some(key)).then_some(index)
-        })
+        .find_map(|(index, queued)| (queued.debounce_key() == Some(key)).then_some(index))
     {
         queue.remove(index);
     }
-}
-
-fn command_is_mutation(command: &Command) -> bool {
-    matches!(
-        command,
-        Command::StageFiles { .. }
-            | Command::UnstageFiles { .. }
-            | Command::StashFiles { .. }
-            | Command::Reset { .. }
-            | Command::Nuke
-            | Command::DiscardFiles { .. }
-            | Command::CreateCommit { .. }
-            | Command::CreateBranch { .. }
-            | Command::CheckoutBranch { .. }
-            | Command::DeleteBranch { .. }
-            | Command::RebaseBranch { .. }
-            | Command::SquashCommits { .. }
-            | Command::FixupCommits { .. }
-            | Command::RewordCommit { .. }
-            | Command::DeleteCommits { .. }
-            | Command::CheckoutCommitDetached { .. }
-            | Command::StashPush { .. }
-            | Command::StashPop { .. }
-    )
 }
 
 #[derive(Debug)]

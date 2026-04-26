@@ -7,7 +7,9 @@ use ratagit_git::{GitBackend, GitError, MockGitBackend};
 use ratagit_harness::{
     AsyncRuntime, MockScenario, Runtime, ScenarioExpectations, run_mock_scenario,
 };
-use ratagit_testkit::{fixture_commit, fixture_dirty_repo, fixture_empty_repo, fixture_many_files};
+use ratagit_testkit::{
+    fixture_commit, fixture_dirty_repo, fixture_empty_repo, fixture_file, fixture_many_files,
+};
 use ratagit_ui::{
     TerminalSize, details_content_lines_for_terminal_size, details_scroll_lines_for_terminal_size,
     render_terminal_buffer_with_cursor,
@@ -991,11 +993,7 @@ fn harness_files_reversing_down_does_not_jump_to_bottom_reserve() {
 #[test]
 fn harness_untracked_directory_marker_displays_as_tree_directory() {
     let mut fixture = fixture_empty_repo();
-    fixture.files = vec![ratagit_core::FileEntry {
-        path: "libs/ratagit-git/tests/".to_string(),
-        staged: false,
-        untracked: true,
-    }];
+    fixture.files = vec![fixture_file("libs/ratagit-git/tests/", false, true)];
     fixture.status_summary = "staged: 0, unstaged: 1".to_string();
 
     let inputs = [UiAction::RefreshAll];

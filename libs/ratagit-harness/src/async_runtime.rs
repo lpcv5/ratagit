@@ -4,9 +4,7 @@ use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use ratagit_core::{
-    Action, AppState, Command, GitResult, UiAction, debounce_key_for_command, update,
-};
+use ratagit_core::{Action, AppState, Command, GitResult, UiAction, update};
 use ratagit_git::{GitBackend, execute_command};
 use ratagit_ui::{
     RenderedFrame, TerminalBuffer, TerminalSize, render, render_terminal_buffer,
@@ -125,7 +123,7 @@ impl<B: GitBackend + Send + 'static> AsyncRuntime<B> {
 
     fn enqueue_command(&mut self, command: Command) {
         if self.debounce_window > Duration::ZERO
-            && let Some(key) = debounce_key_for_command(&command)
+            && let Some(key) = command.debounce_key()
         {
             self.debounced.insert(
                 key,

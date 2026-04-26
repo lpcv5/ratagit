@@ -4,7 +4,7 @@ use ratagit_core::{
     CommitEntry, CommitField, CommitFileDiffPath, CommitFileDiffTarget, CommitFileEntry,
     CommitFileStatus, CommitHashStatus, CommitInputMode, EditorKind, FileEntry, FileInputMode,
     GitResult, PanelFocus, RepoSnapshot, ResetChoice, ResetMode, SearchScope, StashEntry,
-    StashScope, UiAction, refresh_tree_projection, selected_row, update,
+    StashScope, UiAction, debounce_key_for_command, refresh_tree_projection, selected_row, update,
 };
 
 fn commit_entry(id: &str, summary: &str) -> CommitEntry {
@@ -26,12 +26,215 @@ fn commit_entries(count: usize) -> Vec<CommitEntry> {
         .collect()
 }
 
+fn file_entry(path: &str, staged: bool, untracked: bool) -> FileEntry {
+    FileEntry {
+        path: path.to_string(),
+        staged,
+        untracked,
+    }
+}
+
+fn branch_entry(name: &str, is_current: bool) -> BranchEntry {
+    BranchEntry {
+        name: name.to_string(),
+        is_current,
+    }
+}
+
 #[test]
 fn refresh_action_emits_refresh_command() {
     let mut state = AppState::default();
     let commands = update(&mut state, Action::Ui(UiAction::RefreshAll));
     assert_eq!(commands, vec![Command::RefreshAll]);
     assert!(state.work.refresh_pending);
+}
+
+#[test]
+fn command_metadata_tracks_debounce_mutation_and_pending_labels() {
+    let commit_file_target = CommitFileDiffTarget {
+        commit_id: "abc1234".to_string(),
+        paths: vec![CommitFileDiffPath {
+            path: "src/lib.rs".to_string(),
+            old_path: None,
+        }],
+    };
+    let non_mutating = vec![
+        (Command::RefreshAll, None),
+        (
+            Command::LoadMoreCommits {
+                offset: 0,
+                limit: COMMITS_PAGE_SIZE,
+                epoch: 1,
+            },
+            None,
+        ),
+        (
+            Command::RefreshFilesDetailsDiff {
+                paths: vec!["src/lib.rs".to_string()],
+            },
+            Some("files_details_diff"),
+        ),
+        (
+            Command::RefreshBranchDetailsLog {
+                branch: "main".to_string(),
+                max_count: 50,
+            },
+            Some("branch_details_log"),
+        ),
+        (
+            Command::RefreshCommitDetailsDiff {
+                commit_id: "abc1234".to_string(),
+            },
+            Some("commit_details_diff"),
+        ),
+        (
+            Command::RefreshCommitFiles {
+                commit_id: "abc1234".to_string(),
+            },
+            None,
+        ),
+        (
+            Command::RefreshCommitFileDiff {
+                target: commit_file_target,
+            },
+            Some("commit_file_diff"),
+        ),
+    ];
+    for (command, debounce_key) in non_mutating {
+        assert_eq!(command.debounce_key(), debounce_key);
+        assert_eq!(debounce_key_for_command(&command), debounce_key);
+        assert!(!command.is_mutating());
+        assert!(command.pending_operation_label().is_none());
+    }
+
+    let mutating = vec![
+        (
+            Command::StageFiles {
+                paths: vec!["a.txt".to_string()],
+            },
+            "stage",
+        ),
+        (
+            Command::UnstageFiles {
+                paths: vec!["a.txt".to_string()],
+            },
+            "unstage",
+        ),
+        (
+            Command::StashFiles {
+                message: "savepoint".to_string(),
+                paths: vec!["a.txt".to_string()],
+            },
+            "stash_files",
+        ),
+        (
+            Command::Reset {
+                mode: ResetMode::Hard,
+            },
+            "reset_hard",
+        ),
+        (Command::Nuke, "nuke"),
+        (
+            Command::DiscardFiles {
+                paths: vec!["a.txt".to_string()],
+            },
+            "discard_files",
+        ),
+        (
+            Command::CreateCommit {
+                message: "feat: ship".to_string(),
+            },
+            "commit",
+        ),
+        (
+            Command::CreateBranch {
+                name: "feature/demo".to_string(),
+                start_point: "main".to_string(),
+            },
+            "create_branch",
+        ),
+        (
+            Command::CheckoutBranch {
+                name: "feature/demo".to_string(),
+                auto_stash: false,
+            },
+            "checkout_branch",
+        ),
+        (
+            Command::DeleteBranch {
+                name: "feature/demo".to_string(),
+                mode: BranchDeleteMode::Both,
+                force: false,
+            },
+            "delete_branch_both",
+        ),
+        (
+            Command::RebaseBranch {
+                target: "main".to_string(),
+                interactive: false,
+                auto_stash: false,
+            },
+            "rebase_branch_simple",
+        ),
+        (
+            Command::RebaseBranch {
+                target: "main".to_string(),
+                interactive: true,
+                auto_stash: false,
+            },
+            "rebase_branch_interactive",
+        ),
+        (
+            Command::SquashCommits {
+                commit_ids: vec!["abc1234".to_string()],
+            },
+            "squash_commits",
+        ),
+        (
+            Command::FixupCommits {
+                commit_ids: vec!["abc1234".to_string()],
+            },
+            "fixup_commits",
+        ),
+        (
+            Command::RewordCommit {
+                commit_id: "abc1234".to_string(),
+                message: "new subject".to_string(),
+            },
+            "reword_commit",
+        ),
+        (
+            Command::DeleteCommits {
+                commit_ids: vec!["abc1234".to_string()],
+            },
+            "delete_commits",
+        ),
+        (
+            Command::CheckoutCommitDetached {
+                commit_id: "abc1234".to_string(),
+                auto_stash: false,
+            },
+            "checkout_detached",
+        ),
+        (
+            Command::StashPush {
+                message: "savepoint".to_string(),
+            },
+            "stash_push",
+        ),
+        (
+            Command::StashPop {
+                stash_id: "stash@{0}".to_string(),
+            },
+            "stash_pop",
+        ),
+    ];
+    for (command, expected_label) in mutating {
+        assert!(command.debounce_key().is_none());
+        assert!(command.is_mutating());
+        let label = command.pending_operation_label();
+        assert_eq!(label.as_deref(), Some(expected_label));
+    }
 }
 
 #[test]
@@ -313,11 +516,7 @@ fn branch_create_input_rejects_empty_name_and_can_cancel() {
 
 #[test]
 fn dirty_checkout_opens_auto_stash_confirm_then_confirms_command() {
-    let mut state = state_with_branches_and_files(vec![FileEntry {
-        path: "dirty.txt".to_string(),
-        staged: false,
-        untracked: false,
-    }]);
+    let mut state = state_with_branches_and_files(vec![file_entry("dirty.txt", false, false)]);
     state.branches.selected = 1;
 
     let commands = update(&mut state, Action::Ui(UiAction::CheckoutSelectedBranch));
@@ -341,11 +540,7 @@ fn dirty_checkout_opens_auto_stash_confirm_then_confirms_command() {
 
 #[test]
 fn dirty_checkout_auto_stash_can_cancel() {
-    let mut state = state_with_branches_and_files(vec![FileEntry {
-        path: "dirty.txt".to_string(),
-        staged: false,
-        untracked: false,
-    }]);
+    let mut state = state_with_branches_and_files(vec![file_entry("dirty.txt", false, false)]);
     state.branches.selected = 1;
 
     update(&mut state, Action::Ui(UiAction::CheckoutSelectedBranch));
@@ -453,11 +648,7 @@ fn force_delete_confirm_can_cancel() {
 
 #[test]
 fn branch_rebase_menu_selects_mode_and_dirty_rebase_confirms_auto_stash() {
-    let mut state = state_with_branches_and_files(vec![FileEntry {
-        path: "dirty.txt".to_string(),
-        staged: false,
-        untracked: false,
-    }]);
+    let mut state = state_with_branches_and_files(vec![file_entry("dirty.txt", false, false)]);
     state.branches.selected = 1;
 
     update(&mut state, Action::Ui(UiAction::OpenBranchRebaseMenu));
@@ -612,14 +803,8 @@ fn state_with_branches_and_files(files: Vec<FileEntry>) -> AppState {
         ..AppState::default()
     };
     state.branches.items = vec![
-        BranchEntry {
-            name: "main".to_string(),
-            is_current: true,
-        },
-        BranchEntry {
-            name: "feature/mvp".to_string(),
-            is_current: false,
-        },
+        branch_entry("main", true),
+        branch_entry("feature/mvp", false),
     ];
     state.files.items = files;
     state
@@ -856,14 +1041,8 @@ fn search_selects_matches_across_left_panels() {
         ..AppState::default()
     };
     state.branches.items = vec![
-        BranchEntry {
-            name: "main".to_string(),
-            is_current: true,
-        },
-        BranchEntry {
-            name: "feature/search".to_string(),
-            is_current: false,
-        },
+        branch_entry("main", true),
+        branch_entry("feature/search", false),
     ];
     update(&mut state, Action::Ui(UiAction::StartSearch));
     for ch in "feature".chars() {
@@ -921,21 +1100,9 @@ fn search_selects_matches_across_left_panels() {
 fn search_selects_files_and_commit_files_and_navigates() {
     let mut state = AppState::default();
     state.files.items = vec![
-        FileEntry {
-            path: "README.md".to_string(),
-            staged: false,
-            untracked: false,
-        },
-        FileEntry {
-            path: "src/lib.rs".to_string(),
-            staged: false,
-            untracked: false,
-        },
-        FileEntry {
-            path: "src/main.rs".to_string(),
-            staged: false,
-            untracked: false,
-        },
+        file_entry("README.md", false, false),
+        file_entry("src/lib.rs", false, false),
+        file_entry("src/main.rs", false, false),
     ];
     state.files.expanded_dirs.insert("src".to_string());
     refresh_tree_projection(&mut state.files);
@@ -979,11 +1146,7 @@ fn search_selects_files_and_commit_files_and_navigates() {
 #[test]
 fn starting_search_exits_visual_multi_select_modes() {
     let mut state = AppState::default();
-    state.files.items = vec![FileEntry {
-        path: "a.txt".to_string(),
-        staged: false,
-        untracked: false,
-    }];
+    state.files.items = vec![file_entry("a.txt", false, false)];
     refresh_tree_projection(&mut state.files);
     update(&mut state, Action::Ui(UiAction::ToggleFilesMultiSelect));
     assert_eq!(state.files.mode, FileInputMode::MultiSelect);
@@ -1195,16 +1358,8 @@ fn stage_selected_file_emits_stage_command() {
         ..AppState::default()
     };
     state.files.items = vec![
-        FileEntry {
-            path: "a.txt".to_string(),
-            staged: false,
-            untracked: false,
-        },
-        FileEntry {
-            path: "b.txt".to_string(),
-            staged: false,
-            untracked: false,
-        },
+        file_entry("a.txt", false, false),
+        file_entry("b.txt", false, false),
     ];
     state.files.selected = 1;
     let commands = update(&mut state, Action::Ui(UiAction::StageSelectedFile));
@@ -1226,22 +1381,11 @@ fn toggle_selected_file_stage_stages_only_unstaged_directory_targets() {
             current_branch: "main".to_string(),
             detached_head: false,
             files: vec![
-                FileEntry {
-                    path: "src/main.rs".to_string(),
-                    staged: true,
-                    untracked: false,
-                },
-                FileEntry {
-                    path: "src/lib.rs".to_string(),
-                    staged: false,
-                    untracked: false,
-                },
+                file_entry("src/main.rs", true, false),
+                file_entry("src/lib.rs", false, false),
             ],
             commits: Vec::new(),
-            branches: vec![BranchEntry {
-                name: "main".to_string(),
-                is_current: true,
-            }],
+            branches: vec![branch_entry("main", true)],
             stashes: Vec::new(),
         })),
     );
@@ -1269,16 +1413,8 @@ fn v_visual_mode_extends_range_with_jk_movement() {
             current_branch: "main".to_string(),
             detached_head: false,
             files: vec![
-                FileEntry {
-                    path: "a.txt".to_string(),
-                    staged: false,
-                    untracked: false,
-                },
-                FileEntry {
-                    path: "b.txt".to_string(),
-                    staged: false,
-                    untracked: false,
-                },
+                file_entry("a.txt", false, false),
+                file_entry("b.txt", false, false),
             ],
             commits: Vec::new(),
             branches: Vec::new(),
@@ -1375,11 +1511,7 @@ fn commit_rewrite_requires_clean_worktree() {
         ..AppState::default()
     };
     state.commits.items = vec![commit_entry("aaa1111", "head")];
-    state.files.items = vec![FileEntry {
-        path: "dirty.txt".to_string(),
-        staged: false,
-        untracked: false,
-    }];
+    state.files.items = vec![file_entry("dirty.txt", false, false)];
 
     let commands = update(&mut state, Action::Ui(UiAction::DeleteSelectedCommits));
 
@@ -1471,17 +1603,38 @@ fn auto_stash_operation_failure_refreshes_after_possible_partial_mutation() {
 }
 
 #[test]
+fn ordinary_operation_failure_does_not_refresh_after_failure() {
+    let mut state = AppState::default();
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::CreateCommit {
+            message: "wip".to_string(),
+            result: Err("nothing staged".to_string()),
+        }),
+    );
+
+    assert!(commands.is_empty());
+    assert!(!state.work.refresh_pending);
+    assert_eq!(state.last_operation, Some("commit".to_string()));
+    assert!(
+        state
+            .status
+            .last_error
+            .as_ref()
+            .expect("error should be stored")
+            .contains("nothing staged")
+    );
+}
+
+#[test]
 fn detached_checkout_with_dirty_worktree_uses_auto_stash_confirmation() {
     let mut state = AppState {
         focus: PanelFocus::Commits,
         ..AppState::default()
     };
     state.commits.items = vec![commit_entry("aaa1111", "head")];
-    state.files.items = vec![FileEntry {
-        path: "dirty.txt".to_string(),
-        staged: false,
-        untracked: false,
-    }];
+    state.files.items = vec![file_entry("dirty.txt", false, false)];
 
     let commands = update(
         &mut state,
@@ -1512,11 +1665,7 @@ fn refreshed_snapshot_updates_state_and_clamps_indexes() {
         status_summary: "dirty".to_string(),
         current_branch: "main".to_string(),
         detached_head: false,
-        files: vec![FileEntry {
-            path: "only.txt".to_string(),
-            staged: true,
-            untracked: false,
-        }],
+        files: vec![file_entry("only.txt", true, false)],
         commits: vec![],
         branches: vec![],
         stashes: vec![],
@@ -1540,16 +1689,8 @@ fn refreshed_snapshot_updates_state_and_clamps_indexes() {
 fn files_selection_navigation_requests_details_refresh() {
     let mut state = AppState::default();
     state.files.items = vec![
-        FileEntry {
-            path: "a.txt".to_string(),
-            staged: false,
-            untracked: false,
-        },
-        FileEntry {
-            path: "b.txt".to_string(),
-            staged: false,
-            untracked: false,
-        },
+        file_entry("a.txt", false, false),
+        file_entry("b.txt", false, false),
     ];
 
     let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
@@ -1571,11 +1712,7 @@ fn non_files_navigation_does_not_request_files_details_refresh() {
 #[test]
 fn files_details_diff_result_updates_state() {
     let mut state = AppState::default();
-    state.files.items = vec![FileEntry {
-        path: "src/lib.rs".to_string(),
-        staged: false,
-        untracked: false,
-    }];
+    state.files.items = vec![file_entry("src/lib.rs", false, false)];
     state.files.expanded_dirs.insert("src".to_string());
     refresh_tree_projection(&mut state.files);
     let commands = update(
@@ -1683,16 +1820,8 @@ fn details_scroll_down_clamps_to_commit_diff_content() {
 fn details_scroll_resets_when_files_details_target_changes() {
     let mut state = AppState::default();
     state.files.items = vec![
-        FileEntry {
-            path: "a.txt".to_string(),
-            staged: false,
-            untracked: false,
-        },
-        FileEntry {
-            path: "b.txt".to_string(),
-            staged: false,
-            untracked: false,
-        },
+        file_entry("a.txt", false, false),
+        file_entry("b.txt", false, false),
     ];
     refresh_tree_projection(&mut state.files);
     state.details.files_targets = vec!["a.txt".to_string()];
@@ -1709,16 +1838,8 @@ fn details_scroll_resets_when_files_details_target_changes() {
 fn files_details_diff_cache_serves_repeated_selection_without_git_command() {
     let mut state = AppState::default();
     state.files.items = vec![
-        FileEntry {
-            path: "a.txt".to_string(),
-            staged: false,
-            untracked: false,
-        },
-        FileEntry {
-            path: "b.txt".to_string(),
-            staged: false,
-            untracked: false,
-        },
+        file_entry("a.txt", false, false),
+        file_entry("b.txt", false, false),
     ];
     refresh_tree_projection(&mut state.files);
 
@@ -1745,11 +1866,7 @@ fn files_details_diff_cache_serves_repeated_selection_without_git_command() {
 fn files_details_diff_cache_is_bounded_and_cleared_by_repo_changes() {
     let mut state = AppState::default();
     state.files.items = (0..18)
-        .map(|index| FileEntry {
-            path: format!("file-{index:02}.txt"),
-            staged: false,
-            untracked: false,
-        })
+        .map(|index| file_entry(&format!("file-{index:02}.txt"), false, false))
         .collect();
     refresh_tree_projection(&mut state.files);
 
@@ -1809,16 +1926,8 @@ fn files_details_diff_cache_is_bounded_and_cleared_by_repo_changes() {
 fn stale_files_details_diff_result_is_ignored() {
     let mut state = AppState::default();
     state.files.items = vec![
-        FileEntry {
-            path: "a.txt".to_string(),
-            staged: false,
-            untracked: false,
-        },
-        FileEntry {
-            path: "b.txt".to_string(),
-            staged: false,
-            untracked: false,
-        },
+        file_entry("a.txt", false, false),
+        file_entry("b.txt", false, false),
     ];
     refresh_tree_projection(&mut state.files);
     state.files.selected = 1;
@@ -1842,16 +1951,8 @@ fn stale_files_details_diff_result_is_ignored() {
 fn tree_projection_cache_tracks_rows_and_directory_descendants() {
     let mut state = AppState::default();
     state.files.items = vec![
-        FileEntry {
-            path: "src/lib.rs".to_string(),
-            staged: false,
-            untracked: false,
-        },
-        FileEntry {
-            path: "src/main.rs".to_string(),
-            staged: true,
-            untracked: false,
-        },
+        file_entry("src/lib.rs", false, false),
+        file_entry("src/main.rs", true, false),
     ];
     state.files.expanded_dirs.insert("src".to_string());
     refresh_tree_projection(&mut state.files);
@@ -1936,18 +2037,7 @@ fn focus_panel_allows_right_focus_and_preserves_last_left() {
 #[test]
 fn move_selection_does_not_change_left_indexes_when_focus_is_right_panel() {
     let mut state = AppState::default();
-    state.files.items = vec![
-        FileEntry {
-            path: "a".to_string(),
-            staged: false,
-            untracked: false,
-        },
-        FileEntry {
-            path: "b".to_string(),
-            staged: false,
-            untracked: false,
-        },
-    ];
+    state.files.items = vec![file_entry("a", false, false), file_entry("b", false, false)];
     state.files.selected = 1;
     update(
         &mut state,
@@ -2052,16 +2142,8 @@ fn stash_editor_confirms_all_scope_outside_multiselect() {
 fn stash_editor_confirms_selected_paths_scope_in_multiselect_mode() {
     let mut state = AppState::default();
     state.files.items = vec![
-        FileEntry {
-            path: "a.txt".to_string(),
-            staged: false,
-            untracked: false,
-        },
-        FileEntry {
-            path: "b.txt".to_string(),
-            staged: false,
-            untracked: false,
-        },
+        file_entry("a.txt", false, false),
+        file_entry("b.txt", false, false),
     ];
     state.files.mode = FileInputMode::MultiSelect;
     state.files.selected_rows.insert("a.txt".to_string());
@@ -2186,11 +2268,7 @@ fn reset_git_result_reports_success_and_failure() {
 #[test]
 fn discard_confirm_opens_for_current_file_and_confirms_command() {
     let mut state = AppState::default();
-    state.files.items = vec![FileEntry {
-        path: "a.txt".to_string(),
-        staged: false,
-        untracked: false,
-    }];
+    state.files.items = vec![file_entry("a.txt", false, false)];
 
     assert!(update(&mut state, Action::Ui(UiAction::OpenDiscardConfirm)).is_empty());
     assert!(state.discard_confirm.active);
@@ -2212,16 +2290,8 @@ fn discard_confirm_opens_for_current_file_and_confirms_command() {
 fn discard_confirm_uses_visual_selected_targets_and_can_cancel() {
     let mut state = AppState::default();
     state.files.items = vec![
-        FileEntry {
-            path: "a.txt".to_string(),
-            staged: false,
-            untracked: false,
-        },
-        FileEntry {
-            path: "b.txt".to_string(),
-            staged: true,
-            untracked: false,
-        },
+        file_entry("a.txt", false, false),
+        file_entry("b.txt", true, false),
     ];
     state.files.mode = FileInputMode::MultiSelect;
     state.files.selected_rows.insert("a.txt".to_string());

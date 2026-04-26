@@ -37,16 +37,7 @@ pub(crate) fn render_reset_modal(frame: &mut Frame<'_>, state: &AppState, area: 
         rows[0],
     );
 
-    let choices = ResetChoice::ALL
-        .iter()
-        .map(|choice| {
-            (
-                *choice,
-                reset_choice_label(*choice),
-                reset_choice_style(*choice),
-            )
-        })
-        .collect::<Vec<_>>();
+    let choices = reset_choices();
     render_choice_list(
         frame,
         rows[1],
@@ -70,6 +61,19 @@ pub(crate) fn render_reset_modal(frame: &mut Frame<'_>, state: &AppState, area: 
             &[("j/k", "select"), ("Enter", "confirm"), ("Esc", "cancel")],
         );
     }
+}
+
+fn reset_choices() -> Vec<(ResetChoice, &'static str, Style)> {
+    ResetChoice::ALL
+        .iter()
+        .map(|choice| {
+            (
+                *choice,
+                reset_choice_label(*choice),
+                reset_choice_style(*choice),
+            )
+        })
+        .collect()
 }
 
 fn reset_choice_label(choice: ResetChoice) -> &'static str {
