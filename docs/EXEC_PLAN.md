@@ -2,38 +2,53 @@
 
 ## Current Slice
 
-Million-index repository pressure reduction.
+Synthetic repository and Git CLI baseline performance suite.
 
 ## Goal
 
-- avoid automatic whole-working-tree status scans when the index is at or above
-  1,000,000 entries
-- keep commits, branches, stash, and existing bounded Details previews usable
-  while the Files panel declines to load a massive status result
-- keep rendering pure and `AppState` as the only source of truth
-- avoid logging Git stdout, diff text, or commit message payloads
+- make large-repository performance tests reproducible without cloning public
+  monster repositories
+- generate deterministic repositories with configurable file count, commit
+  count, binary file count, and binary file size
+- compare raw Git CLI speed, parsed Git CLI speed, and `HybridGitBackend`
+  structured-result speed for the same operations
+- keep performance validation out of the default development and CI flow
 
 ## Vertical Slice
 
-1. Backend behavior
-- add a metadata-only status mode for million-index repositories
-- skip `git status` file collection in that mode after counting the index
-- surface deterministic status metadata through `FilesSnapshot`
+1. Tooling behavior
+- add a local generator CLI for synthetic Git repositories
+- support configurable scale, file count, directory fanout, text file size,
+  commit count, binary file count, and binary file size
+- initialize and commit through the real Git executable
+- write a deterministic manifest beside the marker file
 
-2. UI and state
-- store skipped status-scan metadata in `AppState.status`
-- render a Log notice explaining that file scanning was skipped
-- leave Files Details empty instead of emitting file-diff commands
+2. Safety and determinism
+- write only to an explicitly provided target path
+- guard destructive regeneration with a marker file and `--force`
+- create deterministic text paths, binary paths, file contents, and commit
+  groups
 
-3. Tests and harness
-- add unit coverage for the huge-repo threshold and snapshot metadata
-- add UI snapshot coverage for the Log notice
-- add a harness scenario that asserts UI, Git operations, and Git state
+3. Performance suite
+- add `perf-suite` as a manual CLI
+- default to smoke, small, medium, and large scales, with large capped at
+  200,000 files
+- require explicit `--scales huge` for 1,000,000-file validation
+- measure status, commit list, commit pagination, commit file list, commit diff,
+  commit file diff, and worktree file diff
+- write Markdown and JSON reports under `tmp/perf/results`
 
-4. Documentation
-- update product/design/architecture docs for metadata-only huge-repo status
+4. Tests
+- add unit coverage for argument parsing, scale defaults, binary validation,
+  baseline command construction, parsed baseline helpers, and report summaries
+- add a smoke performance-suite test using a tiny synthetic repository
+- avoid creating large or huge repositories during normal `cargo test`
 
-5. Validation
+5. Documentation
+- document generator usage, perf-suite usage, output reports, and manual large
+  validation commands
+
+6. Validation
 - run `cargo fmt`
 - run `cargo clippy --workspace --lib --bins -- -D warnings`
 - run `cargo test`

@@ -59,6 +59,14 @@ All UI tests must use fixtures:
 - Standard root: `<workspace>/tmp/git-tests/<unique-case>`.
 - Tests must clean up their temporary repositories on completion.
 - Never run real-git mutation tests directly in the workspace repository.
+- For manual performance validation, generate synthetic repositories under
+  `tmp/perf/` with `cargo run --bin make-large-repo -- --scale large --path
+  tmp/perf/large-repo --force`.
+- The manual performance suite is run separately with
+  `cargo run --bin perf-suite -- --regenerate`; it records Git CLI raw, Git CLI
+  parsed, and backend timings and writes reports under `tmp/perf/results/`.
+- Normal `cargo test` only runs smoke-sized coverage for the performance tools
+  and must not create large or huge repositories.
 
 ---
 
