@@ -640,71 +640,20 @@ struct TreeProjection {
     row_index_by_path: BTreeMap<String, usize>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct TreeRowContext {
-    path: String,
-    name: String,
-    depth: usize,
-    kind: FileRowKind,
-    expanded: bool,
-    descendants: Vec<String>,
-}
-
 fn compute_tree_projection(items: &[FileEntry], state: &FilesUiState) -> TreeProjection {
     if state.lightweight_tree_projection {
         return compute_lightweight_tree_projection(items, state);
     }
-    let entry_status = items
-        .iter()
-        .map(|entry| {
-            (
-                entry.path.clone(),
-                (
-                    entry.staged,
-                    entry.untracked,
-                    entry.status,
-                    entry.conflicted,
-                ),
-            )
-        })
+    let index = FileTreeIndex::from_sources(file_tree_sources(items));
+    let row_descendants = collect_row_descendants_from_paths(items.iter().map(|item| &item.path))
+        .into_iter()
+        .map(|(path, descendants)| (path, descendants.into_iter().collect()))
         .collect::<BTreeMap<_, _>>();
-    compute_tree_projection_from_paths(
-        items.iter().map(|entry| entry.path.clone()),
+    compute_tree_projection_from_index(
+        &index,
         &state.expanded_dirs,
-        |context| {
-            let staged = !context.descendants.is_empty()
-                && context
-                    .descendants
-                    .iter()
-                    .all(|path| entry_status.get(path).is_some_and(|status| status.0));
-            let untracked = !context.descendants.is_empty()
-                && context
-                    .descendants
-                    .iter()
-                    .all(|path| entry_status.get(path).is_some_and(|status| status.1));
-            let commit_status = if context.kind == FileRowKind::File {
-                entry_status.get(&context.path).map(|status| status.2)
-            } else {
-                None
-            };
-            let conflicted = context.kind == FileRowKind::File
-                && entry_status
-                    .get(&context.path)
-                    .is_some_and(|status| status.3);
-            FileTreeRow {
-                depth: context.depth,
-                expanded: context.expanded,
-                selected_for_batch: state.selected_rows.contains(&context.path),
-                path: context.path,
-                name: context.name,
-                kind: context.kind,
-                staged,
-                untracked,
-                commit_status,
-                conflicted,
-                matched: false,
-            }
-        },
+        &state.selected_rows,
+        row_descendants,
     )
 }
 
@@ -720,20 +669,18 @@ fn compute_lightweight_tree_projection(
         &state.tree_index
     };
     let mut rows = Vec::new();
+    let mut row_index_by_path = BTreeMap::new();
     for path in &index.root_paths {
-        append_lightweight_tree_rows(
+        append_compact_tree_rows(
             index,
             path,
             &state.expanded_dirs,
             &state.selected_rows,
             &mut rows,
+            &mut row_index_by_path,
+            0,
         );
     }
-    let row_index_by_path = rows
-        .iter()
-        .enumerate()
-        .map(|(index, row)| (row.path.clone(), index))
-        .collect::<BTreeMap<_, _>>();
     TreeProjection {
         rows,
         row_descendants: BTreeMap::new(),
@@ -741,22 +688,57 @@ fn compute_lightweight_tree_projection(
     }
 }
 
-fn append_lightweight_tree_rows(
+fn compute_tree_projection_from_index(
+    index: &FileTreeIndex,
+    expanded_dirs: &BTreeSet<String>,
+    selected_rows: &BTreeSet<String>,
+    row_descendants: BTreeMap<String, Vec<String>>,
+) -> TreeProjection {
+    let mut rows = Vec::new();
+    let mut row_index_by_path = BTreeMap::new();
+    for path in &index.root_paths {
+        append_compact_tree_rows(
+            index,
+            path,
+            expanded_dirs,
+            selected_rows,
+            &mut rows,
+            &mut row_index_by_path,
+            0,
+        );
+    }
+    TreeProjection {
+        rows,
+        row_descendants,
+        row_index_by_path,
+    }
+}
+
+fn append_compact_tree_rows(
     index: &FileTreeIndex,
     path: &str,
     expanded_dirs: &BTreeSet<String>,
     selected_rows: &BTreeSet<String>,
     rows: &mut Vec<FileTreeRow>,
+    row_index_by_path: &mut BTreeMap<String, usize>,
+    display_depth: usize,
 ) {
-    let Some(node) = index.nodes.get(path) else {
+    let Some(display_path) = compact_directory_display_path(index, path) else {
         return;
     };
+    let display_path = display_path.to_string();
+    let Some(node) = index.nodes.get(&display_path) else {
+        return;
+    };
+    let row_paths = compact_directory_row_paths(path, &display_path, node.kind);
+    let selected_for_batch = row_paths.iter().any(|path| selected_rows.contains(path));
+    let row_index = rows.len();
     rows.push(FileTreeRow {
-        depth: path_depth(path),
-        expanded: expanded_dirs.contains(path),
-        selected_for_batch: selected_rows.contains(path),
-        name: tree_row_name(path),
-        path: path.to_string(),
+        depth: display_depth,
+        expanded: expanded_dirs.contains(&display_path),
+        selected_for_batch,
+        name: compact_tree_row_name(path, &display_path),
+        path: display_path.clone(),
         kind: node.kind,
         staged: node.staged,
         untracked: node.untracked,
@@ -764,12 +746,66 @@ fn append_lightweight_tree_rows(
         conflicted: node.conflicted,
         matched: false,
     });
-    if node.kind != FileRowKind::Directory || !expanded_dirs.contains(path) {
+    for path in row_paths {
+        row_index_by_path.insert(path, row_index);
+    }
+    if node.kind != FileRowKind::Directory || !expanded_dirs.contains(&display_path) {
         return;
     }
     for child_path in &node.children {
-        append_lightweight_tree_rows(index, child_path, expanded_dirs, selected_rows, rows);
+        append_compact_tree_rows(
+            index,
+            child_path,
+            expanded_dirs,
+            selected_rows,
+            rows,
+            row_index_by_path,
+            display_depth + 1,
+        );
     }
+}
+
+fn compact_directory_display_path<'a>(index: &'a FileTreeIndex, path: &'a str) -> Option<&'a str> {
+    let mut display_path = path;
+    loop {
+        let node = index.nodes.get(display_path)?;
+        if node.kind != FileRowKind::Directory || node.children.len() != 1 {
+            return Some(display_path);
+        }
+        let child_path = node.children.iter().next()?;
+        let child = index.nodes.get(child_path)?;
+        if child.kind != FileRowKind::Directory {
+            return Some(display_path);
+        }
+        display_path = child_path;
+    }
+}
+
+fn compact_directory_row_paths(
+    start_path: &str,
+    display_path: &str,
+    kind: FileRowKind,
+) -> Vec<String> {
+    if kind != FileRowKind::Directory || start_path == display_path {
+        return vec![display_path.to_string()];
+    }
+    source_path_chain(display_path)
+        .into_iter()
+        .skip(path_depth(start_path))
+        .collect()
+}
+
+fn compact_tree_row_name(start_path: &str, display_path: &str) -> String {
+    if start_path == display_path {
+        return tree_row_name(display_path);
+    }
+    let Some((parent, _)) = start_path.rsplit_once('/') else {
+        return display_path.to_string();
+    };
+    display_path
+        .strip_prefix(&format!("{parent}/"))
+        .unwrap_or(display_path)
+        .to_string()
 }
 
 fn compute_commit_files_tree_projection(
@@ -784,78 +820,21 @@ fn compute_commit_files_tree_projection(
         &state.tree_index
     };
     let mut rows = Vec::new();
+    let mut row_index_by_path = BTreeMap::new();
     for path in &index.root_paths {
-        append_lightweight_tree_rows(
+        append_compact_tree_rows(
             index,
             path,
             &state.expanded_dirs,
             &state.selected_rows,
             &mut rows,
+            &mut row_index_by_path,
+            0,
         );
     }
-    let row_index_by_path = rows
-        .iter()
-        .enumerate()
-        .map(|(index, row)| (row.path.clone(), index))
-        .collect::<BTreeMap<_, _>>();
     TreeProjection {
         rows,
         row_descendants: BTreeMap::new(),
-        row_index_by_path,
-    }
-}
-
-fn compute_tree_projection_from_paths(
-    paths: impl IntoIterator<Item = String>,
-    expanded_dirs: &BTreeSet<String>,
-    mut build_row: impl FnMut(TreeRowContext) -> FileTreeRow,
-) -> TreeProjection {
-    let paths = paths.into_iter().collect::<Vec<_>>();
-    let dirs = collect_directories_from_paths(paths.iter());
-    let descendants = collect_row_descendants_from_paths(paths.iter());
-    let mut keys = dirs
-        .iter()
-        .map(|path| (path.clone(), FileRowKind::Directory))
-        .chain(
-            paths
-                .iter()
-                .filter(|path| !is_directory_marker(path))
-                .map(|path| (path.clone(), FileRowKind::File)),
-        )
-        .collect::<Vec<_>>();
-    keys.sort_by(compare_tree_keys);
-
-    let rows = keys
-        .into_iter()
-        .filter(|(path, _)| row_is_visible(path, expanded_dirs))
-        .map(|(path, kind)| {
-            let context = TreeRowContext {
-                name: tree_row_name(&path),
-                depth: path_depth(&path),
-                expanded: expanded_dirs.contains(&path),
-                descendants: descendants
-                    .get(&path)
-                    .cloned()
-                    .unwrap_or_default()
-                    .into_iter()
-                    .collect(),
-                path,
-                kind,
-            };
-            build_row(context)
-        })
-        .collect::<Vec<_>>();
-    let row_index_by_path = rows
-        .iter()
-        .enumerate()
-        .map(|(index, row)| (row.path.clone(), index))
-        .collect::<BTreeMap<_, _>>();
-    TreeProjection {
-        rows,
-        row_descendants: descendants
-            .into_iter()
-            .map(|(path, descendants)| (path, descendants.into_iter().collect()))
-            .collect(),
         row_index_by_path,
     }
 }
@@ -1277,39 +1256,6 @@ fn source_path_chain(path: &str) -> Vec<String> {
         .collect()
 }
 
-fn row_is_visible(path: &str, expanded_dirs: &BTreeSet<String>) -> bool {
-    let mut parts = path.split('/').collect::<Vec<_>>();
-    while parts.len() > 1 {
-        parts.pop();
-        if !expanded_dirs.contains(&parts.join("/")) {
-            return false;
-        }
-    }
-    true
-}
-
-fn compare_tree_keys(
-    left: &(String, FileRowKind),
-    right: &(String, FileRowKind),
-) -> std::cmp::Ordering {
-    let left_parts = left.0.split('/').collect::<Vec<_>>();
-    let right_parts = right.0.split('/').collect::<Vec<_>>();
-    for (left_part, right_part) in left_parts.iter().zip(right_parts.iter()) {
-        let ordering = left_part.cmp(right_part);
-        if ordering != std::cmp::Ordering::Equal {
-            return ordering;
-        }
-    }
-    left_parts
-        .len()
-        .cmp(&right_parts.len())
-        .then_with(|| match (left.1, right.1) {
-            (FileRowKind::Directory, FileRowKind::File) => std::cmp::Ordering::Less,
-            (FileRowKind::File, FileRowKind::Directory) => std::cmp::Ordering::Greater,
-            _ => std::cmp::Ordering::Equal,
-        })
-}
-
 fn path_depth(path: &str) -> usize {
     path.split('/').count().saturating_sub(1)
 }
@@ -1421,12 +1367,91 @@ mod tests {
             .find(|row| row.path == "libs/ratagit-git/tests")
             .expect("tests directory row should exist");
         assert_eq!(tests_row.kind, FileRowKind::Directory);
-        assert_eq!(tests_row.name, "tests");
+        assert_eq!(tests_row.name, "libs/ratagit-git/tests");
         assert!(tests_row.untracked);
         assert!(
             !rows
                 .iter()
                 .any(|row| row.path == "libs/ratagit-git/tests/" && row.kind == FileRowKind::File)
+        );
+    }
+
+    #[test]
+    fn single_child_directory_chain_renders_as_compact_directory_row() {
+        let items = vec![FileEntry {
+            path: "src/a/b/c/file.rs".to_string(),
+            staged: false,
+            untracked: false,
+            status: CommitFileStatus::Modified,
+            conflicted: false,
+        }];
+        let mut state = FilesUiState::default();
+        initialize_tree_if_needed(&items, &mut state);
+
+        let rows = build_file_tree_rows(&items, &state);
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].path, "src/a/b/c");
+        assert_eq!(rows[0].name, "src/a/b/c");
+        assert_eq!(rows[0].depth, 0);
+        assert_eq!(rows[0].kind, FileRowKind::Directory);
+        assert_eq!(rows[1].path, "src/a/b/c/file.rs");
+        assert_eq!(rows[1].name, "file.rs");
+        assert_eq!(rows[1].depth, 1);
+        assert_eq!(
+            selected_target_paths(&items, &state),
+            vec!["src/a/b/c/file.rs"]
+        );
+    }
+
+    #[test]
+    fn branching_directories_keep_visible_branch_point() {
+        let items = vec![
+            FileEntry {
+                path: "src/a/b/c/file.rs".to_string(),
+                staged: false,
+                untracked: false,
+                status: CommitFileStatus::Modified,
+                conflicted: false,
+            },
+            FileEntry {
+                path: "src/other.rs".to_string(),
+                staged: false,
+                untracked: false,
+                status: CommitFileStatus::Modified,
+                conflicted: false,
+            },
+        ];
+        let mut state = FilesUiState::default();
+        initialize_tree_if_needed(&items, &mut state);
+
+        let rows = build_file_tree_rows(&items, &state);
+        let names = rows.into_iter().map(|row| row.name).collect::<Vec<_>>();
+
+        assert_eq!(names, vec!["src", "a/b/c", "file.rs", "other.rs"]);
+    }
+
+    #[test]
+    fn select_hidden_compact_directory_alias_selects_visible_row() {
+        let items = vec![FileEntry {
+            path: "src/a/b/c/file.rs".to_string(),
+            staged: false,
+            untracked: false,
+            status: CommitFileStatus::Modified,
+            conflicted: false,
+        }];
+        let mut state = FilesUiState::default();
+        initialize_tree_if_needed(&items, &mut state);
+
+        assert!(select_file_tree_path(&items, &mut state, "src"));
+
+        assert_eq!(
+            selected_row(&items, &state).map(|row| row.path),
+            Some("src/a/b/c".to_string())
+        );
+        assert_eq!(
+            selected_target_paths(&items, &state),
+            vec!["src/a/b/c/file.rs"]
         );
     }
 
@@ -1536,6 +1561,29 @@ mod tests {
             vec!["src"]
         );
         assert!(state.row_descendants.is_empty());
+    }
+
+    #[test]
+    fn commit_files_single_child_directory_chain_renders_as_compact_row() {
+        let items = vec![CommitFileEntry {
+            path: "src/a/b/c/file.rs".to_string(),
+            old_path: None,
+            status: CommitFileStatus::Added,
+        }];
+        let mut state = CommitFilesUiState::default();
+        initialize_commit_files_tree(&items, &mut state);
+
+        assert_eq!(
+            state
+                .tree_rows
+                .iter()
+                .map(|row| (row.path.as_str(), row.name.as_str(), row.depth))
+                .collect::<Vec<_>>(),
+            vec![
+                ("src/a/b/c", "src/a/b/c", 0),
+                ("src/a/b/c/file.rs", "file.rs", 1)
+            ]
+        );
     }
 
     #[test]

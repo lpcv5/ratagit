@@ -1431,15 +1431,13 @@ fn commit_files_large_directory_selection_uses_single_pathspec() {
             status: CommitFileStatus::Modified,
         })
         .collect::<Vec<_>>();
-    update(
+    let commands = update(
         &mut state,
         Action::GitResult(GitResult::CommitFiles {
             commit_id: "abc1234-full".to_string(),
             result: Ok(files),
         }),
     );
-
-    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
 
     assert_commit_file_diff_refresh_for_paths(commands, "abc1234-full", vec!["src/generated"]);
 }

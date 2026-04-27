@@ -872,6 +872,29 @@ fn harness_files_tree_expand_collapse() {
 }
 
 #[test]
+fn harness_files_tree_compacts_single_child_directory_chain() {
+    let mut fixture = fixture_dirty_repo();
+    fixture.files = vec![fixture_file("src/a/b/c/file.rs", false, false)];
+    let inputs = [UiAction::RefreshAll];
+    assert_scenario(MockScenario::new(
+        "files_tree_compact_single_child_directory_chain",
+        fixture,
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &[
+                "src/a/b/c/",
+                "diff --git a/src/a/b/c/file.rs b/src/a/b/c/file.rs",
+            ],
+            screen_not_contains: &["   a/", "   b/", "   c/"],
+            selected_screen_rows: &[" src/a/b/c/"],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["refresh", "details-diff:src/a/b/c/file.rs"],
+            git_state_contains: &["path: \"src/a/b/c/file.rs\""],
+        },
+    ));
+}
+
+#[test]
 fn harness_files_space_toggles_directory_stage() {
     let inputs = [
         UiAction::RefreshAll,
@@ -1543,7 +1566,7 @@ fn harness_untracked_directory_marker_displays_as_tree_directory() {
         fixture,
         &inputs,
         ScenarioExpectations {
-            screen_contains: &[" tests/"],
+            screen_contains: &[" libs/ratagit-git/tests/"],
             screen_not_contains: &["? libs/ratagit-git/tests/"],
             selected_screen_rows: &[],
             batch_selected_screen_rows: &[],

@@ -94,6 +94,9 @@ Files panel rules:
 - Files and Commit Files share cached file-tree rows and parent/child indexes
   in `AppContext`, so rendering and folder toggles do not rebuild tree topology
   every frame
+- Files and Commit Files compact directory chains that only lead to one child at
+  each level into one row, such as `src/a/b/c/`, while folder operations still
+  target the real descendant files
 - Files and Commit Files render file rows with explicit Git status characters
   instead of file-state icons. Workspace rows use `A/M/D/R/C/T/?`, append `U`
   for conflicted files, and render staged file names in green.

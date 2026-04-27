@@ -3,9 +3,9 @@ source: libs/ratagit-ui/tests/snapshots.rs
 expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30, },)"
 ---
 ╭ 1  󰈙 Files ────────────────────╮ 5   Details ───────────────────────────────────────────────────╮
-│    libs/                      │  ### unstaged                                                   │
-│      ratagit-git/             │  diff --git a/libs/ratagit-git/tests/ b/libs/ratagit-git/tests/ │
-│        tests/                 │  @@ -1 +1 @@                                                    │
+│    libs/ratagit-git/tests/    │  ### unstaged                                                   │
+│                                │  diff --git a/libs/ratagit-git/tests/ b/libs/ratagit-git/tests/ │
+│                                │  @@ -1 +1 @@                                                    │
 │                                │  -old libs/ratagit-git/tests/                                   │
 │                                │  +new libs/ratagit-git/tests/                                   │
 │                                │                                                                 │

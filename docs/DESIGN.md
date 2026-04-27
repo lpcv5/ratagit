@@ -136,6 +136,9 @@ Files panel interaction:
 - Tree indexes sync item changes by removing, adding, or metadata-updating
   changed source paths. When the path topology is stable, status-only refreshes
   update node metadata without rebuilding child relationships.
+- Files and Commit Files compact single-child directory chains into one display
+  row, such as `src/a/b/c/`, while keeping the row's real path and descendant
+  mapping in `AppContext` for selection, search, Details, and Git commands.
 - Files and Commit Files share one tree row renderer. Directory rows keep their
   expand/collapse icons; file rows render Git status markers (`A/M/D/R/C/T/?`),
   workspace conflict rows append `U`, and staged workspace file names use the
