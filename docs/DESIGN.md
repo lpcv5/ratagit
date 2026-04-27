@@ -114,12 +114,16 @@ Files panel interaction:
 - File tree rows are derived from `RepoSnapshot.files`; no UI code reads external state.
 - `AppState.files.tree_rows`, `row_descendants`, and `row_index_by_path`
   cache deterministic tree projection data after reducer-managed changes.
+- `AppState.files.lightweight_tree_index` caches deterministic parent/child
+  relationships for large-repo fast mode, so expanding or collapsing one
+  directory rebuilds visible rows from cached children instead of rescanning
+  every file path.
 - Backend status collection uses full untracked-file expansion in small
   repositories so untracked nested files appear as explicit file rows in the
   tree.
 - When the backend reports large repo fast mode, the Files tree initializes
   collapsed and uses lightweight projection data to avoid constructing
-  `row_descendants` for every path during initial load.
+  `row_descendants` for every path during initial load or folder toggles.
 - Large repo fast mode skips full untracked expansion. The Log panel renders a
   notice for the skipped untracked scan and a manual Git config tip rather than
   changing repository configuration automatically.

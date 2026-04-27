@@ -19,8 +19,8 @@ use perf_repo::{
 use ratagit_core::{
     Action, AppState, COMMITS_PAGE_SIZE, CommitFileDiffPath, CommitFileDiffTarget, CommitFileEntry,
     CommitFileStatus, CommitFilesPanelState, FileDiffTarget, FileEntry, PanelFocus, UiAction,
-    initialize_commit_files_tree, select_commit_file_tree_path, selected_commit_file_targets,
-    update,
+    initialize_commit_files_tree, initialize_tree_with_initial_expansion,
+    select_commit_file_tree_path, select_file_tree_path, selected_commit_file_targets, update,
 };
 use ratagit_git::{GitBackend, HybridGitBackend};
 use ratagit_ui::{TerminalSize, render_terminal_buffer};
@@ -28,6 +28,7 @@ use ratagit_ui::{TerminalSize, render_terminal_buffer};
 const DEFAULT_ITERATIONS: usize = 3;
 const DEFAULT_WARMUP: usize = 1;
 const COMMIT_FILES_NAVIGATION_STEPS: usize = 200;
+const FILES_TREE_TOGGLE_STEPS: usize = 100;
 
 fn main() {
     if let Err(error) = run(env::args().skip(1).collect()) {
@@ -187,10 +188,11 @@ enum Operation {
     CommitDetailsDiff,
     CommitFileDiff,
     FilesDetailsDiff,
+    FilesTreeToggle,
 }
 
 impl Operation {
-    const ALL: [Self; 9] = [
+    const ALL: [Self; 10] = [
         Self::Status,
         Self::Commits,
         Self::LoadMoreCommits,
@@ -200,6 +202,7 @@ impl Operation {
         Self::CommitDetailsDiff,
         Self::CommitFileDiff,
         Self::FilesDetailsDiff,
+        Self::FilesTreeToggle,
     ];
 
     fn parse(value: &str) -> Result<Self, PerfConfigError> {
@@ -213,6 +216,7 @@ impl Operation {
             "commit-details-diff" => Ok(Self::CommitDetailsDiff),
             "commit-file-diff" => Ok(Self::CommitFileDiff),
             "files-details-diff" => Ok(Self::FilesDetailsDiff),
+            "files-tree-toggle" => Ok(Self::FilesTreeToggle),
             _ => Err(PerfConfigError::InvalidValue("unknown operation")),
         }
     }
@@ -228,6 +232,7 @@ impl Operation {
             Self::CommitDetailsDiff => "commit-details-diff",
             Self::CommitFileDiff => "commit-file-diff",
             Self::FilesDetailsDiff => "files-details-diff",
+            Self::FilesTreeToggle => "files-tree-toggle",
         }
     }
 }
@@ -548,6 +553,27 @@ fn select_commit_files_directory_path(
         .ok_or_else(|| "HEAD commit has no changed files".into())
 }
 
+fn select_files_directory_path(entries: &[FileEntry]) -> Result<String, Box<dyn Error>> {
+    let mut counts = BTreeMap::<String, usize>::new();
+    for entry in entries {
+        let parts = entry.path.split('/').collect::<Vec<_>>();
+        for end in 1..parts.len() {
+            *counts.entry(parts[..end].join("/")).or_default() += 1;
+        }
+    }
+    counts
+        .into_iter()
+        .max_by(|left, right| {
+            left.1
+                .cmp(&right.1)
+                .then_with(|| right.0.len().cmp(&left.0.len()))
+                .then_with(|| right.0.cmp(&left.0))
+        })
+        .map(|(path, _count)| path)
+        .or_else(|| entries.first().map(|entry| entry.path.clone()))
+        .ok_or_else(|| "status has no files".into())
+}
+
 fn measure_record(
     scale: Scale,
     operation: Operation,
@@ -651,6 +677,11 @@ fn measure_git_cli_raw(
             commit_file_diff_args(&targets.commit_file_target),
         )?,
         Operation::FilesDetailsDiff => files_details_diff_cli_output(git, &config.path, targets)?,
+        Operation::FilesTreeToggle => run_git_output(
+            git,
+            &config.path,
+            status_args(status_mode_for_index_count(config.index_entry_count())),
+        )?,
     };
     Ok(MeasurementPayload {
         output_items: 0,
@@ -756,6 +787,15 @@ fn measure_git_cli_parsed(
                 output_bytes: output.len(),
             })
         }
+        Operation::FilesTreeToggle => {
+            let output = run_git_output(
+                git,
+                &config.path,
+                status_args(status_mode_for_index_count(config.index_entry_count())),
+            )?;
+            let entries = parse_status_porcelain(&output)?;
+            files_tree_toggle_payload(entries)
+        }
     }
 }
 
@@ -843,6 +883,10 @@ fn measure_backend(
                 output_items: diff.lines().count(),
                 output_bytes: diff.len(),
             })
+        }
+        Operation::FilesTreeToggle => {
+            let snapshot = backend.refresh_files().map_err(|error| error.message)?;
+            files_tree_toggle_payload(snapshot.files)
         }
     }
 }
@@ -949,6 +993,33 @@ fn commit_files_navigation_payload(
     let mut emitted_commands = 0usize;
     for _ in 0..COMMIT_FILES_NAVIGATION_STEPS {
         let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+        emitted_commands += commands.len();
+        let _buffer = render_terminal_buffer(&state, size);
+    }
+
+    Ok(MeasurementPayload {
+        output_items: emitted_commands,
+        output_bytes,
+    })
+}
+
+fn files_tree_toggle_payload(files: Vec<FileEntry>) -> Result<MeasurementPayload, String> {
+    let output_bytes = files.iter().map(|entry| entry.path.len()).sum();
+    let target = select_files_directory_path(&files).map_err(|error| error.to_string())?;
+    let mut state = AppState::default();
+    state.files.items = files;
+    initialize_tree_with_initial_expansion(&mut state.files, false);
+    if !select_file_tree_path(&mut state.files, &target) {
+        return Err(format!("files directory path not found: {target}"));
+    }
+
+    let size = TerminalSize {
+        width: 120,
+        height: 34,
+    };
+    let mut emitted_commands = 0usize;
+    for _ in 0..FILES_TREE_TOGGLE_STEPS {
+        let commands = update(&mut state, Action::Ui(UiAction::ToggleSelectedDirectory));
         emitted_commands += commands.len();
         let _buffer = render_terminal_buffer(&state, size);
     }
@@ -1558,7 +1629,7 @@ mod tests {
             "--scales".into(),
             "smoke,huge".into(),
             "--operations".into(),
-            "status,commit-files-directory-diff,commit-files-navigation".into(),
+            "status,commit-files-directory-diff,commit-files-navigation,files-tree-toggle".into(),
             "--iterations".into(),
             "2".into(),
             "--warmup".into(),
@@ -1577,7 +1648,8 @@ mod tests {
             vec![
                 Operation::Status,
                 Operation::CommitFilesDirectoryDiff,
-                Operation::CommitFilesNavigation
+                Operation::CommitFilesNavigation,
+                Operation::FilesTreeToggle
             ]
         );
         assert_eq!(config.iterations, 2);
@@ -1655,6 +1727,19 @@ mod tests {
     }
 
     #[test]
+    fn selects_largest_files_directory_for_toggle_perf_target() {
+        let entries = vec![
+            status_file("data/text/a.txt"),
+            status_file("data/text/b.txt"),
+            status_file("docs/readme.md"),
+        ];
+
+        let directory = select_files_directory_path(&entries).expect("directory target");
+
+        assert_eq!(directory, "data");
+    }
+
+    #[test]
     fn markdown_stats_compute_backend_ratios() {
         let report = SuiteReport {
             run_id: "test".to_string(),
@@ -1721,6 +1806,7 @@ mod tests {
                 Operation::CommitFiles,
                 Operation::CommitFilesDirectoryDiff,
                 Operation::CommitFilesNavigation,
+                Operation::FilesTreeToggle,
             ],
             iterations: 1,
             warmup: 0,
@@ -1765,6 +1851,14 @@ mod tests {
             path: path.to_string(),
             old_path: None,
             status: CommitFileStatus::Modified,
+        }
+    }
+
+    fn status_file(path: &str) -> FileEntry {
+        FileEntry {
+            path: path.to_string(),
+            staged: false,
+            untracked: false,
         }
     }
 

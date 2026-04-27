@@ -76,6 +76,7 @@ pub struct FilesPanelState {
     pub row_descendants: BTreeMap<String, Vec<String>>,
     pub row_index_by_path: BTreeMap<String, usize>,
     pub lightweight_tree_projection: bool,
+    pub lightweight_tree_index: LightweightTreeIndex,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -94,6 +95,26 @@ pub struct CommitFilesPanelState {
     pub item_index_by_path: BTreeMap<String, usize>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct LightweightTreeIndex {
+    root_paths: Vec<String>,
+    nodes: BTreeMap<String, LightweightTreeNode>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LightweightTreeNode {
+    kind: FileRowKind,
+    staged: bool,
+    untracked: bool,
+    children: Vec<String>,
+}
+
+impl LightweightTreeIndex {
+    fn is_empty(&self) -> bool {
+        self.nodes.is_empty()
+    }
+}
+
 impl Default for FilesPanelState {
     fn default() -> Self {
         Self {
@@ -110,6 +131,7 @@ impl Default for FilesPanelState {
             row_descendants: BTreeMap::new(),
             row_index_by_path: BTreeMap::new(),
             lightweight_tree_projection: false,
+            lightweight_tree_index: LightweightTreeIndex::default(),
         }
     }
 }
@@ -123,6 +145,11 @@ pub fn initialize_tree_with_initial_expansion(state: &mut FilesPanelState, expan
         return;
     }
     state.lightweight_tree_projection = !expand_all_dirs;
+    state.lightweight_tree_index = if expand_all_dirs {
+        LightweightTreeIndex::default()
+    } else {
+        build_lightweight_tree_index(&state.items)
+    };
     state.expanded_dirs = if expand_all_dirs {
         collect_directories(&state.items)
     } else {
@@ -144,6 +171,7 @@ pub fn initialize_commit_files_tree(state: &mut CommitFilesPanelState) {
 }
 
 pub fn reconcile_after_items_changed(state: &mut FilesPanelState) {
+    rebuild_lightweight_tree_index_if_needed(state);
     refresh_tree_projection(state);
     let valid_rows = state
         .tree_rows
@@ -390,6 +418,7 @@ pub fn commit_file_tree_rows(state: &CommitFilesPanelState) -> &[FileTreeRow] {
 }
 
 pub fn refresh_tree_projection(state: &mut FilesPanelState) {
+    rebuild_lightweight_tree_index_if_needed(state);
     let projection = compute_tree_projection(state);
     state.tree_rows = projection.rows;
     state.row_descendants = projection.row_descendants;
@@ -461,55 +490,23 @@ fn compute_tree_projection(state: &FilesPanelState) -> TreeProjection {
 }
 
 fn compute_lightweight_tree_projection(state: &FilesPanelState) -> TreeProjection {
-    let entry_status = state
-        .items
-        .iter()
-        .map(|entry| (entry.path.clone(), (entry.staged, entry.untracked)))
-        .collect::<BTreeMap<_, _>>();
-    let mut keys = Vec::new();
-    for entry in &state.items {
-        let normalized = normalize_tree_path(&entry.path);
-        if normalized.is_empty() {
-            continue;
-        }
-        let parts = normalized.split('/').collect::<Vec<_>>();
-        for index in 0..parts.len() {
-            let path = parts[..=index].join("/");
-            let kind = if index + 1 < parts.len() || is_directory_marker(&entry.path) {
-                FileRowKind::Directory
-            } else {
-                FileRowKind::File
-            };
-            if row_is_visible(&path, &state.expanded_dirs) {
-                keys.push((path, kind));
-            }
-        }
+    let fallback_index;
+    let index = if state.lightweight_tree_index.is_empty() && !state.items.is_empty() {
+        fallback_index = build_lightweight_tree_index(&state.items);
+        &fallback_index
+    } else {
+        &state.lightweight_tree_index
+    };
+    let mut rows = Vec::new();
+    for path in &index.root_paths {
+        append_lightweight_tree_rows(
+            index,
+            path,
+            &state.expanded_dirs,
+            &state.selected_rows,
+            &mut rows,
+        );
     }
-    keys.sort_by(compare_tree_keys);
-    keys.dedup();
-
-    let rows = keys
-        .into_iter()
-        .map(|(path, kind)| {
-            let status = entry_status
-                .get(&path)
-                .copied()
-                .or_else(|| entry_status.get(&format!("{path}/")).copied())
-                .unwrap_or_default();
-            FileTreeRow {
-                depth: path_depth(&path),
-                expanded: state.expanded_dirs.contains(&path),
-                selected_for_batch: state.selected_rows.contains(&path),
-                name: tree_row_name(&path),
-                path,
-                kind,
-                staged: status.0,
-                untracked: status.1,
-                commit_status: None,
-                matched: false,
-            }
-        })
-        .collect::<Vec<_>>();
     let row_index_by_path = rows
         .iter()
         .enumerate()
@@ -519,6 +516,36 @@ fn compute_lightweight_tree_projection(state: &FilesPanelState) -> TreeProjectio
         rows,
         row_descendants: BTreeMap::new(),
         row_index_by_path,
+    }
+}
+
+fn append_lightweight_tree_rows(
+    index: &LightweightTreeIndex,
+    path: &str,
+    expanded_dirs: &BTreeSet<String>,
+    selected_rows: &BTreeSet<String>,
+    rows: &mut Vec<FileTreeRow>,
+) {
+    let Some(node) = index.nodes.get(path) else {
+        return;
+    };
+    rows.push(FileTreeRow {
+        depth: path_depth(path),
+        expanded: expanded_dirs.contains(path),
+        selected_for_batch: selected_rows.contains(path),
+        name: tree_row_name(path),
+        path: path.to_string(),
+        kind: node.kind,
+        staged: node.staged,
+        untracked: node.untracked,
+        commit_status: None,
+        matched: false,
+    });
+    if node.kind != FileRowKind::Directory || !expanded_dirs.contains(path) {
+        return;
+    }
+    for child_path in &node.children {
+        append_lightweight_tree_rows(index, child_path, expanded_dirs, selected_rows, rows);
     }
 }
 
@@ -618,6 +645,98 @@ fn tree_row_name(path: &str) -> String {
 
 pub fn collect_directories(items: &[FileEntry]) -> BTreeSet<String> {
     collect_directories_from_paths(items.iter().map(|item| &item.path))
+}
+
+fn rebuild_lightweight_tree_index_if_needed(state: &mut FilesPanelState) {
+    if state.lightweight_tree_projection && state.lightweight_tree_index.is_empty() {
+        state.lightweight_tree_index = build_lightweight_tree_index(&state.items);
+    }
+    if !state.lightweight_tree_projection && !state.lightweight_tree_index.is_empty() {
+        state.lightweight_tree_index = LightweightTreeIndex::default();
+    }
+}
+
+pub fn mark_file_items_changed(state: &mut FilesPanelState) {
+    state.lightweight_tree_index = LightweightTreeIndex::default();
+}
+
+fn build_lightweight_tree_index(items: &[FileEntry]) -> LightweightTreeIndex {
+    let mut nodes = BTreeMap::<String, LightweightTreeNode>::new();
+    let mut children = BTreeMap::<String, BTreeSet<String>>::new();
+    let mut roots = BTreeSet::<String>::new();
+
+    for entry in items {
+        let normalized = normalize_tree_path(&entry.path);
+        if normalized.is_empty() {
+            continue;
+        }
+        let parts = normalized.split('/').collect::<Vec<_>>();
+        for index in 0..parts.len() {
+            let path = parts[..=index].join("/");
+            let is_leaf = index + 1 == parts.len();
+            let kind = if !is_leaf || is_directory_marker(&entry.path) {
+                FileRowKind::Directory
+            } else {
+                FileRowKind::File
+            };
+            let node = nodes
+                .entry(path.clone())
+                .or_insert_with(|| LightweightTreeNode {
+                    kind,
+                    staged: false,
+                    untracked: false,
+                    children: Vec::new(),
+                });
+            if kind == FileRowKind::Directory {
+                node.kind = FileRowKind::Directory;
+            }
+            if is_leaf {
+                node.staged = entry.staged;
+                node.untracked = entry.untracked;
+            }
+            if index == 0 {
+                roots.insert(path);
+            } else {
+                children
+                    .entry(parts[..index].join("/"))
+                    .or_default()
+                    .insert(path);
+            }
+        }
+    }
+
+    for (path, child_paths) in children {
+        let mut child_paths = child_paths.into_iter().collect::<Vec<_>>();
+        child_paths.sort_by(|left, right| {
+            let left_kind = nodes
+                .get(left)
+                .map(|node| node.kind)
+                .unwrap_or(FileRowKind::File);
+            let right_kind = nodes
+                .get(right)
+                .map(|node| node.kind)
+                .unwrap_or(FileRowKind::File);
+            compare_tree_keys(&(left.clone(), left_kind), &(right.clone(), right_kind))
+        });
+        if let Some(node) = nodes.get_mut(&path) {
+            node.children = child_paths;
+        }
+    }
+
+    let mut root_paths = roots.into_iter().collect::<Vec<_>>();
+    root_paths.sort_by(|left, right| {
+        let left_kind = nodes
+            .get(left)
+            .map(|node| node.kind)
+            .unwrap_or(FileRowKind::File);
+        let right_kind = nodes
+            .get(right)
+            .map(|node| node.kind)
+            .unwrap_or(FileRowKind::File);
+        compare_tree_keys(&(left.clone(), left_kind), &(right.clone(), right_kind))
+    });
+
+    LightweightTreeIndex { root_paths, nodes }
 }
 
 fn collect_directories_from_paths<'a>(paths: impl Iterator<Item = &'a String>) -> BTreeSet<String> {
@@ -951,6 +1070,67 @@ mod tests {
             !rows
                 .iter()
                 .any(|row| row.path == "libs/ratagit-git/tests/" && row.kind == FileRowKind::File)
+        );
+    }
+
+    #[test]
+    fn lightweight_tree_projection_uses_cached_child_index_for_toggles() {
+        let mut state = FilesPanelState {
+            items: vec![
+                FileEntry {
+                    path: "src/lib.rs".to_string(),
+                    staged: false,
+                    untracked: false,
+                },
+                FileEntry {
+                    path: "src/ui/list.rs".to_string(),
+                    staged: false,
+                    untracked: false,
+                },
+                FileEntry {
+                    path: "README.md".to_string(),
+                    staged: false,
+                    untracked: true,
+                },
+            ],
+            lightweight_tree_projection: true,
+            ..FilesPanelState::default()
+        };
+        refresh_tree_projection(&mut state);
+
+        assert!(!state.lightweight_tree_index.is_empty());
+        assert!(state.row_descendants.is_empty());
+        assert_eq!(
+            state
+                .tree_rows
+                .iter()
+                .map(|row| row.path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["README.md", "src"]
+        );
+
+        state.expanded_dirs.insert("src".to_string());
+        refresh_tree_projection(&mut state);
+
+        assert_eq!(
+            state
+                .tree_rows
+                .iter()
+                .map(|row| row.path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["README.md", "src", "src/lib.rs", "src/ui"]
+        );
+
+        state.expanded_dirs.insert("src/ui".to_string());
+        refresh_tree_projection(&mut state);
+
+        assert_eq!(
+            state
+                .tree_rows
+                .iter()
+                .map(|row| row.path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["README.md", "src", "src/lib.rs", "src/ui", "src/ui/list.rs"]
         );
     }
 }

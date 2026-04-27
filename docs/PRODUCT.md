@@ -76,7 +76,8 @@ Files panel rules:
 - file-tree rows and descendant targets are cached in `AppState` after status
   refresh or tree/search changes, so rendering does not rebuild them every frame
 - in large repo fast mode, the Files tree starts collapsed and uses a lightweight
-  projection instead of precomputing every directory descendant set
+  projection and cached child index instead of precomputing every directory
+  descendant set or rescanning every file path on folder expand/collapse
 - repeated file-detail diffs are cached in `AppState` and reused when the same
   target path list is selected again
 - `space` stages unstaged targets or unstages targets when all selected targets are staged

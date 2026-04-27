@@ -1,7 +1,7 @@
 use crate::{
     AppState, BranchEntry, CommitEntry, CommitFilesPanelState, FilesSnapshot, RepoSnapshot,
     StashEntry, clamp_commit_selection, clamp_file_selection, details,
-    initialize_tree_with_initial_expansion, reconcile_after_items_changed,
+    initialize_tree_with_initial_expansion, mark_file_items_changed, reconcile_after_items_changed,
     reconcile_commits_after_items_changed,
 };
 
@@ -38,6 +38,7 @@ pub(crate) fn apply_files_snapshot(state: &mut AppState, snapshot: FilesSnapshot
     state.status.status_scan_skipped = snapshot.status_scan_skipped;
     state.status.untracked_scan_skipped = snapshot.untracked_scan_skipped;
     state.files.items = snapshot.files;
+    mark_file_items_changed(&mut state.files);
     initialize_tree_with_initial_expansion(&mut state.files, !snapshot.large_repo_mode);
     if snapshot.status_scan_skipped {
         state.files.expanded_dirs.clear();
