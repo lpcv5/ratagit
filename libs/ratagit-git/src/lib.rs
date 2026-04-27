@@ -4,6 +4,7 @@ use std::path::{Component, Path};
 mod cli;
 mod hybrid;
 mod mock;
+mod shared_mock;
 mod status_cli;
 mod untracked_diff;
 
@@ -14,6 +15,7 @@ use ratagit_core::{
 
 pub use hybrid::HybridGitBackend;
 pub use mock::MockGitBackend;
+pub use shared_mock::SharedMockGitBackend;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GitError {

@@ -60,9 +60,12 @@ Focus model:
   `max(1, details_content_height * 2 / 5)` from the current terminal layout.
 - `update()` applies state transitions and emits `Command`.
 - Command execution is delegated to `GitBackend`.
-- The real TUI sends commands to a single background Git worker and receives
+- The real TUI sends read-only commands to a fixed background Git worker pool
+  and mutating commands to one exclusive write worker, then receives
   `GitResult` values through a channel; the mock harness can still use the
   synchronous runtime for deterministic scenario tests.
+- The async runtime defers new read commands while a mutation is in flight and
+  drops stale read results that were started before a queued mutation.
 - Runtimes coalesce redundant queued repository refresh and files-detail diff
   commands after the most recent mutation command.
 - Backend output re-enters `update()` as `GitResult`.

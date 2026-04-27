@@ -67,10 +67,12 @@ Commands:
 - async tasks
 - IO
 
-The real TUI executes commands through a single background Git worker. The UI
-thread remains responsible only for input, reducer updates, result draining, and
-pure rendering. Harness scenarios may use the synchronous runtime to keep mock
-state assertions deterministic.
+The real TUI executes read-only Git commands through a fixed background worker
+pool and executes mutating Git commands through one exclusive background worker.
+The async runtime uses mutation barriers so stale read results cannot apply
+after queued repository mutations. The UI thread remains responsible only for
+input, reducer updates, result draining, and pure rendering. Harness scenarios
+may use the synchronous runtime to keep mock state assertions deterministic.
 
 ---
 
@@ -172,7 +174,7 @@ drain GitResult channel
 → map to Action
 → update(AppState)
 → enqueue Commands
-→ worker runs GitBackend
+→ worker pool runs GitBackend
 → receive results
 → render
 ```

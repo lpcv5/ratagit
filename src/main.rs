@@ -11,7 +11,7 @@ use crossterm::terminal::{
 };
 use input::{KeyEffect, key_effect_for_key};
 use ratagit_core::{AppState, UiAction};
-use ratagit_git::{GitBackend, HybridGitBackend, MockGitBackend, is_git_repo};
+use ratagit_git::{GitBackend, HybridGitBackend, SharedMockGitBackend, is_git_repo};
 use ratagit_harness::AsyncRuntime;
 use ratagit_observe::{ObserveConfig, init_observability};
 use ratagit_testkit::fixture_dirty_repo;
@@ -28,11 +28,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 
 fn run_tui() -> Result<(), Box<dyn Error>> {
-    let backend = select_backend()?;
+    let backend_factory = select_backend_factory()?;
     let mut terminal = setup_terminal()?;
     let mut runtime = AsyncRuntime::new(
         AppState::default(),
-        backend,
+        backend_factory,
         TerminalSize {
             width: 100,
             height: 30,
@@ -103,11 +103,20 @@ fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result
     terminal.show_cursor()
 }
 
-fn select_backend() -> Result<Box<dyn GitBackend + Send>, Box<dyn Error>> {
+type BackendFactory = Box<dyn Fn() -> Box<dyn GitBackend + Send> + Send + Sync>;
+
+fn select_backend_factory() -> Result<BackendFactory, Box<dyn Error>> {
     let cwd = std::env::current_dir()?;
     if is_git_repo(&cwd) {
-        Ok(Box::new(HybridGitBackend::open(cwd)?))
+        HybridGitBackend::open(&cwd)?;
+        Ok(Box::new(move || {
+            Box::new(
+                HybridGitBackend::open(&cwd)
+                    .expect("validated git repository should remain openable"),
+            )
+        }))
     } else {
-        Ok(Box::new(MockGitBackend::new(fixture_dirty_repo())))
+        let shared_backend = SharedMockGitBackend::new(fixture_dirty_repo());
+        Ok(Box::new(move || Box::new(shared_backend.clone())))
     }
 }

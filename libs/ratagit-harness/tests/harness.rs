@@ -2,7 +2,9 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use ratagit_core::{AppState, BranchDeleteMode, RepoSnapshot, ResetMode, UiAction};
+use ratagit_core::{
+    Action, AppState, BranchDeleteMode, GitResult, RepoSnapshot, ResetMode, UiAction, update,
+};
 use ratagit_git::{GitBackend, GitError, MockGitBackend};
 use ratagit_harness::{
     AsyncRuntime, MockScenario, Runtime, ScenarioExpectations, run_mock_scenario,
@@ -44,17 +46,19 @@ fn clean_many_commit_fixture(count: usize) -> RepoSnapshot {
     fixture
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct BlockingBackend {
     inner: Arc<Mutex<MockGitBackend>>,
     refresh_started: Sender<()>,
-    refresh_release: Receiver<()>,
+    refresh_release: Arc<Mutex<Receiver<()>>>,
 }
 
 impl GitBackend for BlockingBackend {
     fn refresh_snapshot(&mut self) -> Result<RepoSnapshot, GitError> {
         let _ = self.refresh_started.send(());
         self.refresh_release
+            .lock()
+            .expect("release lock")
             .recv_timeout(Duration::from_secs(2))
             .expect("test should release refresh");
         self.inner.lock().expect("mock lock").refresh_snapshot()
@@ -267,9 +271,9 @@ fn async_runtime_renders_loading_before_refresh_finishes() {
     let backend = BlockingBackend {
         inner: Arc::clone(&inner),
         refresh_started: started_tx,
-        refresh_release: release_rx,
+        refresh_release: Arc::new(Mutex::new(release_rx)),
     };
-    let mut runtime = AsyncRuntime::new(AppState::default(), backend, size);
+    let mut runtime = AsyncRuntime::new(AppState::default(), move || backend.clone(), size);
 
     runtime.dispatch_ui(UiAction::RefreshAll);
     started_rx
@@ -297,6 +301,76 @@ fn async_runtime_renders_loading_before_refresh_finishes() {
             .expect("mock lock")
             .operations()
             .contains(&"refresh".to_string())
+    );
+}
+
+#[test]
+fn async_runtime_drops_blocked_read_result_after_queued_mutation() {
+    let size = TerminalSize {
+        width: 100,
+        height: 30,
+    };
+    let inner = Arc::new(Mutex::new(MockGitBackend::new(fixture_dirty_repo())));
+    let (started_tx, started_rx) = std::sync::mpsc::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel();
+    let backend = BlockingBackend {
+        inner,
+        refresh_started: started_tx,
+        refresh_release: Arc::new(Mutex::new(release_rx)),
+    };
+    let mut state = AppState::default();
+    update(
+        &mut state,
+        Action::GitResult(GitResult::Refreshed(fixture_dirty_repo())),
+    );
+    state.work.details_pending = false;
+    let baseline_refresh_count = state.status.refresh_count;
+    let mut runtime = AsyncRuntime::new(state, move || backend.clone(), size);
+
+    runtime.dispatch_ui(UiAction::RefreshAll);
+    started_rx
+        .recv_timeout(Duration::from_secs(2))
+        .expect("refresh should start on read worker");
+
+    runtime.dispatch_ui(UiAction::CreateCommit {
+        message: String::new(),
+    });
+    for _ in 0..100 {
+        runtime.tick();
+        if runtime
+            .state()
+            .status
+            .last_error
+            .as_deref()
+            .is_some_and(|error| error.contains("Failed to create commit"))
+        {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(
+        runtime
+            .state()
+            .status
+            .last_error
+            .as_deref()
+            .is_some_and(|error| error.contains("Failed to create commit"))
+    );
+
+    release_tx.send(()).expect("refresh should be releasable");
+    for _ in 0..10 {
+        runtime.tick();
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    assert_eq!(runtime.state().status.refresh_count, baseline_refresh_count);
+    assert!(
+        runtime
+            .state()
+            .status
+            .last_error
+            .as_deref()
+            .is_some_and(|error| error.contains("Failed to create commit"))
     );
 }
 

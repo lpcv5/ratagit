@@ -100,8 +100,9 @@ Files panel rules:
   not delay the latest selection
 - branch-details log graph output is cached in `AppState` and reused when the
   same branch is selected again during the current snapshot
-- real TUI Git work runs on a single background worker so initial refresh and
-  long operations do not block drawing or keyboard input
+- real TUI read-only Git work runs on a fixed background worker pool so initial
+  refresh, details, log, and pagination work do not block drawing or keyboard
+  input; mutating Git work remains serialized through one exclusive worker
 - real backend file status refresh uses Git porcelain status inside `GitBackend`
   for large repositories while preserving full untracked-file expansion
 
