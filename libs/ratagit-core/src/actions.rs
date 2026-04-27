@@ -6,6 +6,10 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UiAction {
     RefreshAll,
+    Pull,
+    Push,
+    ConfirmForcePush,
+    CancelForcePush,
     FocusNext,
     FocusPrev,
     FocusPanel { panel: crate::PanelFocus },
@@ -213,6 +217,13 @@ pub enum GitResult {
         stash_id: String,
         result: Result<(), String>,
     },
+    Pull {
+        result: Result<(), String>,
+    },
+    Push {
+        force: bool,
+        result: Result<(), String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -311,12 +322,24 @@ pub enum Command {
     StashPop {
         stash_id: String,
     },
+    Pull,
+    Push {
+        force: bool,
+    },
 }
 
 impl Command {
     pub fn log_label(&self) -> &'static str {
         match self {
             Command::RefreshAll => "refresh_all",
+            Command::Pull => "pull",
+            Command::Push { force } => {
+                if *force {
+                    "force_push"
+                } else {
+                    "push"
+                }
+            }
             Command::RefreshFiles => "refresh_files",
             Command::RefreshBranches => "refresh_branches",
             Command::RefreshCommits => "refresh_commits",
@@ -364,6 +387,8 @@ impl Command {
             Command::RefreshCommitDetailsDiff { .. } => Some("commit_details_diff"),
             Command::RefreshCommitFileDiff { .. } => Some("commit_file_diff"),
             Command::RefreshAll
+            | Command::Pull
+            | Command::Push { .. }
             | Command::RefreshFiles
             | Command::RefreshBranches
             | Command::RefreshCommits
@@ -401,6 +426,8 @@ impl Command {
                 | Command::Nuke
                 | Command::DiscardFiles { .. }
                 | Command::CreateCommit { .. }
+                | Command::Pull
+                | Command::Push { .. }
                 | Command::CreateBranch { .. }
                 | Command::CheckoutBranch { .. }
                 | Command::DeleteBranch { .. }
@@ -426,6 +453,12 @@ impl Command {
             Command::Nuke => Some("nuke".to_string()),
             Command::DiscardFiles { .. } => Some("discard_files".to_string()),
             Command::CreateCommit { .. } => Some("commit".to_string()),
+            Command::Pull => Some("pull".to_string()),
+            Command::Push { force } => Some(if *force {
+                "force_push".to_string()
+            } else {
+                "push".to_string()
+            }),
             Command::CreateBranch { .. } => Some("create_branch".to_string()),
             Command::CheckoutBranch { .. } => Some("checkout_branch".to_string()),
             Command::DeleteBranch { mode, .. } => Some(format!(
@@ -466,6 +499,14 @@ impl GitResult {
     pub fn log_label(&self) -> &'static str {
         match self {
             GitResult::Refreshed(_) => "refreshed",
+            GitResult::Pull { .. } => "pull",
+            GitResult::Push { force, .. } => {
+                if *force {
+                    "force_push"
+                } else {
+                    "push"
+                }
+            }
             GitResult::FilesRefreshed(_) => "files_refreshed",
             GitResult::BranchesRefreshed(_) => "branches_refreshed",
             GitResult::CommitsRefreshed(_) => "commits_refreshed",
@@ -529,7 +570,9 @@ impl GitResult {
             | GitResult::DeleteCommits { result, .. }
             | GitResult::CheckoutCommitDetached { result, .. }
             | GitResult::StashPush { result, .. }
-            | GitResult::StashPop { result, .. } => result.is_ok(),
+            | GitResult::StashPop { result, .. }
+            | GitResult::Pull { result }
+            | GitResult::Push { result, .. } => result.is_ok(),
         }
     }
 }

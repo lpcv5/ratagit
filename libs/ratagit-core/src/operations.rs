@@ -100,6 +100,54 @@ pub(crate) fn handle_create_commit_result(
     )
 }
 
+pub(crate) fn handle_pull_result(
+    state: &mut AppContext,
+    result: Result<(), String>,
+) -> Vec<Command> {
+    handle_operation_result(
+        state,
+        result,
+        "pull",
+        "Pulled from remote".to_string(),
+        "Failed to pull".to_string(),
+    )
+}
+
+pub(crate) fn handle_push_result(
+    state: &mut AppContext,
+    force: bool,
+    result: Result<(), String>,
+) -> Vec<Command> {
+    if let Err(error) = &result
+        && !force
+        && is_divergent_push_error(error)
+    {
+        record_operation(state, "push");
+        let full_error = format!("Push requires confirmation: {error}");
+        state.repo.status.last_error = Some(full_error.clone());
+        push_notice(state, &full_error);
+        state.ui.push_force_confirm.active = true;
+        state.ui.push_force_confirm.reason = error.clone();
+        return Vec::new();
+    }
+
+    handle_operation_result(
+        state,
+        result,
+        if force { "force_push" } else { "push" },
+        if force {
+            "Force pushed to remote".to_string()
+        } else {
+            "Pushed to remote".to_string()
+        },
+        if force {
+            "Failed to force push".to_string()
+        } else {
+            "Failed to push".to_string()
+        },
+    )
+}
+
 pub(crate) fn handle_create_branch_result(
     state: &mut AppContext,
     name: String,
@@ -395,6 +443,15 @@ fn record_operation(state: &mut AppContext, operation_key: &str) {
 
 fn is_unmerged_branch_delete_error(error: &str) -> bool {
     error.contains("not fully merged") || error.contains("not merged")
+}
+
+pub(crate) fn is_divergent_push_error(error: &str) -> bool {
+    let lower = error.to_ascii_lowercase();
+    lower.contains("non-fast-forward")
+        || lower.contains("fetch first")
+        || lower.contains("rejected") && lower.contains("fetch")
+        || lower.contains("remote contains work")
+        || lower.contains("failed to push some refs")
 }
 
 fn first_line(message: &str) -> &str {

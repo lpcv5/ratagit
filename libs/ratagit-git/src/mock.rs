@@ -658,6 +658,20 @@ impl GitBackend for MockGitBackend {
         Ok(())
     }
 
+    fn pull(&mut self) -> Result<(), GitError> {
+        self.operations.push("pull".to_string());
+        Ok(())
+    }
+
+    fn push(&mut self, force: bool) -> Result<(), GitError> {
+        self.operations.push(if force {
+            "force-push".to_string()
+        } else {
+            "push".to_string()
+        });
+        Ok(())
+    }
+
     fn stash_files(&mut self, message: &str, paths: &[String]) -> Result<(), GitError> {
         self.operations
             .push(format!("stash-files:{message}:{}", paths.join(",")));

@@ -44,6 +44,13 @@ mod tests {
         state
     }
 
+    fn active_push_force_confirm_state() -> AppContext {
+        let mut state = AppContext::default();
+        state.ui.push_force_confirm.active = true;
+        state.ui.push_force_confirm.reason = "non-fast-forward".to_string();
+        state
+    }
+
     fn active_branch_create_state() -> AppContext {
         let mut state = AppContext::default();
         state.ui.branches.create.active = true;
@@ -273,12 +280,8 @@ mod tests {
         assert_eq!(map_key(&state, KeyCode::Char('v')), None);
 
         state.ui.focus = PanelFocus::Stash;
-        assert_eq!(
-            map_key(&state, KeyCode::Char('p')),
-            Some(UiAction::StashPush {
-                message: "savepoint".to_string()
-            })
-        );
+        assert_eq!(map_key(&state, KeyCode::Char('p')), Some(UiAction::Pull));
+        assert_eq!(map_key(&state, KeyCode::Char('P')), Some(UiAction::Push));
         assert_eq!(
             map_key(&state, KeyCode::Char('O')),
             Some(UiAction::StashPopSelected)
@@ -407,6 +410,17 @@ mod tests {
     }
 
     #[test]
+    fn p_and_shift_p_map_to_global_pull_and_push() {
+        let mut state = AppContext::default();
+        assert_eq!(map_key(&state, KeyCode::Char('p')), Some(UiAction::Pull));
+        assert_eq!(map_key(&state, KeyCode::Char('P')), Some(UiAction::Push));
+
+        state.ui.focus = PanelFocus::Details;
+        assert_eq!(map_key(&state, KeyCode::Char('p')), Some(UiAction::Pull));
+        assert_eq!(map_key(&state, KeyCode::Char('P')), Some(UiAction::Push));
+    }
+
+    #[test]
     fn global_details_scroll_keys_work_while_editor_is_active() {
         let state = active_commit_editor_state();
 
@@ -454,6 +468,21 @@ mod tests {
             map_key(&state, KeyCode::Esc),
             Some(UiAction::CancelResetMenu)
         );
+    }
+
+    #[test]
+    fn force_push_confirm_maps_confirm_and_cancel_before_global_keys() {
+        let state = active_push_force_confirm_state();
+
+        assert_eq!(
+            map_key(&state, KeyCode::Enter),
+            Some(UiAction::ConfirmForcePush)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Esc),
+            Some(UiAction::CancelForcePush)
+        );
+        assert_eq!(map_key(&state, KeyCode::Char('p')), None);
     }
 
     #[test]

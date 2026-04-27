@@ -179,6 +179,9 @@ fn command_metadata_tracks_debounce_mutation_and_pending_labels() {
             },
             "commit",
         ),
+        (Command::Pull, "pull"),
+        (Command::Push { force: false }, "push"),
+        (Command::Push { force: true }, "force_push"),
         (
             Command::CreateBranch {
                 name: "feature/demo".to_string(),
@@ -661,6 +664,60 @@ fn force_delete_confirm_can_cancel() {
 
     assert!(commands.is_empty());
     assert!(!state.ui.branches.force_delete_confirm.active);
+}
+
+#[test]
+fn pull_and_push_actions_emit_sync_commands() {
+    let mut state = AppContext::default();
+
+    let pull_commands = update(&mut state, Action::Ui(UiAction::Pull));
+    assert_eq!(pull_commands, vec![Command::Pull]);
+    assert_eq!(state.work.operation_pending.as_deref(), Some("pull"));
+
+    let push_commands = update(&mut state, Action::Ui(UiAction::Push));
+    assert_eq!(push_commands, vec![Command::Push { force: false }]);
+    assert_eq!(state.work.operation_pending.as_deref(), Some("push"));
+}
+
+#[test]
+fn divergent_push_opens_force_confirm_then_confirms_force_push() {
+    let mut state = AppContext::default();
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::Push {
+            force: false,
+            result: Err("! [rejected] main -> main (fetch first)".to_string()),
+        }),
+    );
+
+    assert!(commands.is_empty());
+    assert!(state.ui.push_force_confirm.active);
+    assert!(state.ui.push_force_confirm.reason.contains("fetch first"));
+    assert_eq!(state.work.operation_pending, None);
+
+    let commands = update(&mut state, Action::Ui(UiAction::ConfirmForcePush));
+    assert_eq!(commands, vec![Command::Push { force: true }]);
+    assert!(!state.ui.push_force_confirm.active);
+    assert_eq!(state.work.operation_pending.as_deref(), Some("force_push"));
+}
+
+#[test]
+fn force_push_confirm_can_cancel() {
+    let mut state = AppContext::default();
+    update(
+        &mut state,
+        Action::GitResult(GitResult::Push {
+            force: false,
+            result: Err("non-fast-forward".to_string()),
+        }),
+    );
+
+    let commands = update(&mut state, Action::Ui(UiAction::CancelForcePush));
+
+    assert!(commands.is_empty());
+    assert!(!state.ui.push_force_confirm.active);
+    assert!(state.ui.push_force_confirm.reason.is_empty());
 }
 
 #[test]

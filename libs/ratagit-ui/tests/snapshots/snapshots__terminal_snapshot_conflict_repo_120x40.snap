@@ -41,4 +41,4 @@ expression: "render_terminal_text(&state, TerminalSize { width: 120, height: 40,
 │ 4   Stash                            │                                                                              │
 │ stash@{0} WIP on main: local test    │                                                                              │
 ╰───────────────────────────────────────╯──────────────────────────────────────────────────────────────────────────────╯
- space  stage/unstage   d  discard   c  commit   s  stash   D  reset   enter  expand
+ space  stage/unstage   d  discard   c  commit   s  stash   D  reset   enter  expand   p  pull   P  push

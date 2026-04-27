@@ -24,7 +24,7 @@ MVP v0 includes a left-nav workspace layout with six panels:
   optional auto-stash, delete local/`origin` branches, and rebase the current
   branch
 - Commits: create commit, refresh list, squash/fixup/reword/delete commits, visual multi-select, detached checkout, and a commit Files subpanel
-- Stash: stash push and stash pop selected entry
+- Stash: stash entries and stash pop selected entry
 - Details:
   - Files focus projection: show merged `unstaged` then `staged` diff for the currently selected file/folder target
   - Untracked text files render as new-file patches in the `unstaged` diff section
@@ -37,12 +37,17 @@ MVP v0 includes a left-nav workspace layout with six panels:
   - Stash projection: placeholder text for now (to be implemented in a later slice)
   - `Ctrl+U` / `Ctrl+D` scroll Details content up/down globally by 2/5 of the Details content height without changing the focused panel
 - Log: show latest error, recent notices, and pending refresh/operation state
+- Global sync: `p` runs `git pull`, `P` runs `git push`; if normal push is
+  rejected because the remote branch has diverged, a confirmation modal asks
+  whether to retry with force push using `--force-with-lease`
 
 Navigation rules:
 
 - `h` / `l` cycles only in left panels: Files -> Branches -> Commits -> Stash
 - `1..6` focuses Files/Branches/Commits/Stash/Details/Log directly
 - `Ctrl+U` / `Ctrl+D` scrolls the Details panel content by 2/5 of its content height regardless of the current focus
+- `p` pulls and `P` pushes from normal mode regardless of focused panel; active
+  text inputs and confirmation modals keep their own key handling
 - all panel titles show numbered focus hints: `[1]..[6]`; in the terminal UI
   these hints render as badge-style reverse-video numbers
 - top branch/focus/status summary is hidden to prioritize panels

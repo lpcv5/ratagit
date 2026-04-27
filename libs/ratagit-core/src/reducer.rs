@@ -19,6 +19,18 @@ pub fn update(state: &mut AppContext, action: Action) -> Vec<Command> {
 fn update_ui(state: &mut AppContext, action: UiAction) -> Vec<Command> {
     match action {
         UiAction::RefreshAll => with_pending(state, Command::refresh_all_commands()),
+        UiAction::Pull => with_pending(state, vec![Command::Pull]),
+        UiAction::Push => with_pending(state, vec![Command::Push { force: false }]),
+        UiAction::ConfirmForcePush => {
+            state.ui.push_force_confirm.active = false;
+            state.ui.push_force_confirm.reason.clear();
+            with_pending(state, vec![Command::Push { force: true }])
+        }
+        UiAction::CancelForcePush => {
+            state.ui.push_force_confirm.active = false;
+            state.ui.push_force_confirm.reason.clear();
+            Vec::new()
+        }
         UiAction::OpenCommitEditor => {
             editor::open_commit_editor(state);
             Vec::new()

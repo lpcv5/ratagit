@@ -95,6 +95,8 @@ pub trait GitBackend {
         Ok(())
     }
     fn create_commit(&mut self, message: &str) -> Result<(), GitError>;
+    fn pull(&mut self) -> Result<(), GitError>;
+    fn push(&mut self, force: bool) -> Result<(), GitError>;
     fn create_branch(&mut self, name: &str, start_point: &str) -> Result<(), GitError>;
     fn checkout_branch(&mut self, name: &str, auto_stash: bool) -> Result<(), GitError>;
     fn delete_branch(
@@ -152,6 +154,8 @@ impl<T: GitBackend + ?Sized> GitBackend for Box<T> {
         stage_file(path: &str) -> Result<(), GitError>;
         unstage_file(path: &str) -> Result<(), GitError>;
         create_commit(message: &str) -> Result<(), GitError>;
+        pull() -> Result<(), GitError>;
+        push(force: bool) -> Result<(), GitError>;
         create_branch(name: &str, start_point: &str) -> Result<(), GitError>;
         checkout_branch(name: &str, auto_stash: bool) -> Result<(), GitError>;
         delete_branch(name: &str, mode: BranchDeleteMode, force: bool) -> Result<(), GitError>;
@@ -318,6 +322,13 @@ fn execute_command_inner(backend: &mut dyn GitBackend, command: Command) -> GitR
             result: backend
                 .create_commit(&message)
                 .map_err(|error| error.message),
+        },
+        Command::Pull => GitResult::Pull {
+            result: backend.pull().map_err(|error| error.message),
+        },
+        Command::Push { force } => GitResult::Push {
+            force,
+            result: backend.push(force).map_err(|error| error.message),
         },
         Command::CreateBranch { name, start_point } => GitResult::CreateBranch {
             name: name.clone(),

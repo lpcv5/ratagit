@@ -18,6 +18,7 @@ use crate::panels::{
     shortcut_line_for_state,
 };
 use crate::reset_modal::render_reset_modal;
+use crate::sync_modal::render_sync_modal;
 use crate::theme::{
     RowRole, batch_selected_row_style, focused_panel_style, inactive_panel_style, row_style,
     selected_row_style, title_badge_style,
@@ -36,6 +37,7 @@ pub fn render_terminal(frame: &mut Frame<'_>, state: &AppContext) {
     render_branch_modals(frame, state, root[0]);
     render_reset_modal(frame, state, root[0]);
     render_discard_modal(frame, state, root[0]);
+    render_sync_modal(frame, state, root[0]);
 }
 
 pub fn render_terminal_text(state: &AppContext, size: TerminalSize) -> String {

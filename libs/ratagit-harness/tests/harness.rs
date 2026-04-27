@@ -188,6 +188,14 @@ impl GitBackend for BlockingBackend {
         self.inner.lock().expect("mock lock").create_commit(message)
     }
 
+    fn pull(&mut self) -> Result<(), GitError> {
+        self.inner.lock().expect("mock lock").pull()
+    }
+
+    fn push(&mut self, force: bool) -> Result<(), GitError> {
+        self.inner.lock().expect("mock lock").push(force)
+    }
+
     fn create_branch(&mut self, name: &str, start_point: &str) -> Result<(), GitError> {
         self.inner
             .lock()
@@ -306,6 +314,24 @@ fn harness_status_refresh() {
             selected_screen_rows: &[],
             batch_selected_screen_rows: &[],
             git_ops_contains: &["refresh"],
+            git_state_contains: &["current_branch: \"main\""],
+        },
+    ));
+}
+
+#[test]
+fn harness_global_pull_and_push_sync_repo() {
+    let inputs = [UiAction::Pull, UiAction::Push];
+    assert_scenario(MockScenario::new(
+        "global_pull_push_sync",
+        fixture_empty_repo(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &["p  pull"],
+            screen_not_contains: &[],
+            selected_screen_rows: &[],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["pull", "push"],
             git_state_contains: &["current_branch: \"main\""],
         },
     ));
@@ -1164,7 +1190,7 @@ fn harness_stash_search_selects_match_without_git_operation() {
         fixture_dirty_repo(),
         &inputs,
         ScenarioExpectations {
-            screen_contains: &["stash@{0} WIP on main", "p  stash push"],
+            screen_contains: &["stash@{0} WIP on main", "p  pull"],
             screen_not_contains: &["/ search"],
             selected_screen_rows: &["stash@{0}"],
             batch_selected_screen_rows: &[],

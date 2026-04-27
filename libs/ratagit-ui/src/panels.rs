@@ -666,6 +666,8 @@ mod tests {
         assert!(files_shortcuts.contains("c commit"));
         assert!(files_shortcuts.contains("s stash"));
         assert!(files_shortcuts.contains("D reset"));
+        assert!(files_shortcuts.contains("p pull"));
+        assert!(files_shortcuts.contains("P push"));
         assert!(!files_shortcuts.contains("v multi"));
 
         update(
@@ -676,7 +678,7 @@ mod tests {
         );
         assert_eq!(
             shortcuts_for_state(&state),
-            "space checkout  n new  d delete  r rebase"
+            "space checkout  n new  d delete  r rebase  p pull  P push"
         );
 
         update(
@@ -720,5 +722,9 @@ mod tests {
         update(&mut state, Action::Ui(UiAction::CancelResetMenu));
         update(&mut state, Action::Ui(UiAction::OpenDiscardConfirm));
         assert_eq!(shortcuts_for_state(&state), "Enter confirm  Esc cancel");
+
+        state.ui.discard_confirm.active = false;
+        state.ui.push_force_confirm.active = true;
+        assert_eq!(shortcuts_for_state(&state), "Enter force push  Esc cancel");
     }
 }

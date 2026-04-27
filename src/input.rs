@@ -160,6 +160,14 @@ fn ui_action_for_key(
         };
     }
 
+    if state.ui.push_force_confirm.active {
+        return match code {
+            KeyCode::Enter => Some(UiAction::ConfirmForcePush),
+            KeyCode::Esc => Some(UiAction::CancelForcePush),
+            _ => None,
+        };
+    }
+
     if search_input_is_current(state) {
         return match code {
             KeyCode::Enter => Some(UiAction::ConfirmSearch),
@@ -181,6 +189,12 @@ fn ui_action_for_key(
 
     if state.active_search_scope().is_some() && code == KeyCode::Char('/') {
         return Some(UiAction::StartSearch);
+    }
+
+    match code {
+        KeyCode::Char('p') => return Some(UiAction::Pull),
+        KeyCode::Char('P') => return Some(UiAction::Push),
+        _ => {}
     }
 
     if state.ui.focus == PanelFocus::Files {
@@ -281,9 +295,6 @@ fn ui_action_for_key(
         }),
         KeyCode::Char('c') => Some(UiAction::CreateCommit {
             message: "mvp commit".to_string(),
-        }),
-        KeyCode::Char('p') => Some(UiAction::StashPush {
-            message: "savepoint".to_string(),
         }),
         KeyCode::Char('O') => Some(UiAction::StashPopSelected),
         KeyCode::Tab | KeyCode::BackTab => None,

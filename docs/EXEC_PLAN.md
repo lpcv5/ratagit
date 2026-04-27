@@ -2,50 +2,36 @@
 
 ## Current Slice
 
-Rename the pure root state to `AppContext` and classify state
-into `repo`, `ui`, and `work` without changing behavior, rendering text,
-keybindings, Git command semantics, or harness expectations.
+Add global repository sync shortcuts: `p` pulls, `P` pushes, and a rejected
+non-fast-forward push opens an explicit force-push confirmation.
 
 ## Goal
 
-- make `AppContext` the only public root state object
-- keep `AppContext` pure: no `GitBackend`, runtime handles, environment, clock,
-  or other external dependency handles
-- move Git/backend-derived data into `AppContext.repo`
-- move focus, selections, scroll offsets, search, projection caches, and modal
-  state into `AppContext.ui`
-- move pending refresh/details/operation and loading intent into
-  `AppContext.work`
-- keep render functions pure and keep side effects behind `Command` +
-  `GitBackend`
+- expose pull and push through `Command` + `GitBackend`
+- keep shortcut dispatch pure and state-driven
+- require user confirmation before force pushing after a divergent remote error
+- refresh repo state after successful sync operations
 
 ## Vertical Slice
 
-1. Public API rename
-- replace the legacy root state name with `AppContext`
-- update `update(context: &mut AppContext, action: Action) -> Vec<Command>`
-- update render, runtime, test, snapshot, and harness APIs to accept
-  `&AppContext`
-- remove legacy root state paths without compatibility aliases
+1. Sync commands
+- add pull and push commands/results
+- implement CLI, hybrid, mock, and boxed backend behavior
+- record operation labels and pending state
 
-2. Categorized state model
-- add `RepoState`, `UiState`, and `WorkStatusState` under `AppContext`
-- split Files, Branches, Commits, Stash, Commit Files, and Details data/UI
-  ownership across `repo` and `ui`
-- make helper signatures accept explicit repo data and UI state when both are
-  required
+2. Force-push confirmation
+- add pure UI state for force-push confirmation
+- open confirmation only for non-fast-forward/divergent push failures
+- confirm with Enter, cancel with Esc
 
 3. Tests and harness
-- add unit coverage for `AppContext::default()` category defaults
-- update regression coverage for focus/search, panel navigation, multi-select,
-  modals, Details scrolling, commit pagination, and stale Details rejection
-- add a harness scenario that asserts categorized UI state and Git state
-- keep UI snapshots visually unchanged
+- add unit coverage for key mapping, command metadata, reducer behavior, and
+  push divergence detection
+- add UI snapshot coverage for the confirmation modal
+- add harness scenarios for pull/push and force-push confirmation
 
 4. Documentation
-- update `ARCHITECTURE.md` with pure categorized `AppContext`
-- update `docs/DESIGN.md` with `repo` / `ui` / `work` ownership
-- do not update `docs/PRODUCT.md` because behavior is unchanged
+- update `docs/PRODUCT.md` because behavior changes
 
 5. Validation
 - run `cargo fmt`

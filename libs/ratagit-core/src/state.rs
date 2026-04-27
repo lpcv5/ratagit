@@ -400,6 +400,12 @@ pub struct DiscardConfirmState {
     pub paths: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct PushForceConfirmState {
+    pub active: bool,
+    pub reason: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EditorKind {
     Commit {
@@ -600,6 +606,7 @@ pub struct UiState {
     pub editor: EditorState,
     pub reset_menu: ResetMenuState,
     pub discard_confirm: DiscardConfirmState,
+    pub push_force_confirm: PushForceConfirmState,
 }
 
 impl Default for UiState {
@@ -616,6 +623,7 @@ impl Default for UiState {
             editor: EditorState::default(),
             reset_menu: ResetMenuState::default(),
             discard_confirm: DiscardConfirmState::default(),
+            push_force_confirm: PushForceConfirmState::default(),
         }
     }
 }

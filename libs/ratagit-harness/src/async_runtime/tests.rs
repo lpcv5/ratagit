@@ -185,6 +185,8 @@ impl GitBackend for RecordingBackend {
         stage_file(path: &str) -> Result<(), GitError>;
         unstage_file(path: &str) -> Result<(), GitError>;
         create_commit(message: &str) -> Result<(), GitError>;
+        pull() -> Result<(), GitError>;
+        push(force: bool) -> Result<(), GitError>;
         create_branch(name: &str, start_point: &str) -> Result<(), GitError>;
         checkout_branch(name: &str, auto_stash: bool) -> Result<(), GitError>;
         delete_branch(name: &str, mode: BranchDeleteMode, force: bool) -> Result<(), GitError>;

@@ -692,6 +692,27 @@ fn terminal_snapshot_branches_force_delete_confirm_modal() {
 }
 
 #[test]
+fn terminal_snapshot_force_push_confirm_modal() {
+    let mut state = AppContext::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+    update(
+        &mut state,
+        Action::GitResult(GitResult::Push {
+            force: false,
+            result: Err("! [rejected] main -> main (fetch first)".to_string()),
+        }),
+    );
+
+    insta::assert_snapshot!(render_terminal_text(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    ));
+}
+
+#[test]
 fn terminal_snapshot_branches_rebase_modal() {
     let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());

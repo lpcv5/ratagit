@@ -353,6 +353,14 @@ impl GitBackend for HybridGitBackend {
         self.cli.stash_push(message)
     }
 
+    fn pull(&mut self) -> Result<(), GitError> {
+        self.cli.pull()
+    }
+
+    fn push(&mut self, force: bool) -> Result<(), GitError> {
+        self.cli.push(force)
+    }
+
     fn stash_files(&mut self, message: &str, paths: &[String]) -> Result<(), GitError> {
         self.cli.stash_files(message, paths)
     }

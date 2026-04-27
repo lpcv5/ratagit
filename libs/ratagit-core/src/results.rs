@@ -92,6 +92,8 @@ pub(crate) fn update_git_result(state: &mut AppContext, result: GitResult) -> Ve
         GitResult::CreateCommit { message, result } => {
             operations::handle_create_commit_result(state, message, result)
         }
+        GitResult::Pull { result } => operations::handle_pull_result(state, result),
+        GitResult::Push { force, result } => operations::handle_push_result(state, force, result),
         GitResult::CreateBranch {
             name,
             start_point,

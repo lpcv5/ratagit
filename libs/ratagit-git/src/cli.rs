@@ -475,6 +475,18 @@ impl GitCli {
         }
     }
 
+    pub(crate) fn pull(&mut self) -> Result<(), GitError> {
+        self.run_git(&["pull"]).map(|_| ())
+    }
+
+    pub(crate) fn push(&mut self, force: bool) -> Result<(), GitError> {
+        if force {
+            self.run_git(&["push", "--force-with-lease"]).map(|_| ())
+        } else {
+            self.run_git(&["push"]).map(|_| ())
+        }
+    }
+
     pub(crate) fn stash_files(&mut self, message: &str, paths: &[String]) -> Result<(), GitError> {
         if paths.is_empty() {
             return Ok(());

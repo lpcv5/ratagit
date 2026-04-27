@@ -6,6 +6,7 @@ mod layout;
 mod modal;
 mod panels;
 mod reset_modal;
+mod sync_modal;
 mod terminal;
 mod text;
 mod theme;

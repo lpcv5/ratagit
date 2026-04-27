@@ -73,6 +73,10 @@ pub(crate) fn shortcut_line_for_state(state: &AppContext) -> ShortcutLine {
         return segments(&[("Enter", "confirm"), ("Esc", "cancel")]);
     }
 
+    if state.ui.push_force_confirm.active {
+        return segments(&[("Enter", "force push"), ("Esc", "cancel")]);
+    }
+
     if state
         .active_search_scope()
         .is_some_and(|scope| state.ui.search.is_input_active_for(scope))
@@ -81,7 +85,7 @@ pub(crate) fn shortcut_line_for_state(state: &AppContext) -> ShortcutLine {
     }
 
     match state.ui.focus {
-        PanelFocus::Files => segments(&[
+        PanelFocus::Files => sync_segments(&[
             ("space", "stage/unstage"),
             ("d", "discard"),
             ("c", "commit"),
@@ -89,7 +93,7 @@ pub(crate) fn shortcut_line_for_state(state: &AppContext) -> ShortcutLine {
             ("D", "reset"),
             ("enter", "expand"),
         ]),
-        PanelFocus::Branches => segments(&[
+        PanelFocus::Branches => sync_segments(&[
             ("space", "checkout"),
             ("n", "new"),
             ("d", "delete"),
@@ -97,9 +101,9 @@ pub(crate) fn shortcut_line_for_state(state: &AppContext) -> ShortcutLine {
         ]),
         PanelFocus::Commits => {
             if state.ui.commits.files.active {
-                segments(&[("Esc", "back")])
+                sync_segments(&[("Esc", "back")])
             } else {
-                segments(&[
+                sync_segments(&[
                     ("enter", "files"),
                     ("s", "squash"),
                     ("f", "fixup"),
@@ -109,9 +113,16 @@ pub(crate) fn shortcut_line_for_state(state: &AppContext) -> ShortcutLine {
                 ])
             }
         }
-        PanelFocus::Stash => segments(&[("p", "stash push"), ("O", "stash pop")]),
-        PanelFocus::Details | PanelFocus::Log => ShortcutLine::Text(String::new()),
+        PanelFocus::Stash => sync_segments(&[("O", "stash pop")]),
+        PanelFocus::Details | PanelFocus::Log => sync_segments(&[]),
     }
+}
+
+fn sync_segments(values: &[(&'static str, &'static str)]) -> ShortcutLine {
+    let mut combined = values.to_vec();
+    combined.push(("p", "pull"));
+    combined.push(("P", "push"));
+    segments(&combined)
 }
 
 fn segments(values: &[(&'static str, &'static str)]) -> ShortcutLine {

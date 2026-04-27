@@ -31,4 +31,4 @@ expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30,
 │ 4   Stash                     │                                                                 │
 │ stash@{0} WIP on main: local t│                                                                 │
 ╰────────────────────────────────╯─────────────────────────────────────────────────────────────────╯
- enter  files   s  squash   f  fixup   r  reword   d  delete   space  detach
+ enter  files   s  squash   f  fixup   r  reword   d  delete   space  detach   p  pull   P  push
