@@ -1,5 +1,8 @@
 use ratagit_core::{AppContext, PanelFocus};
 
+use crate::frame::RenderContext;
+use crate::loading_indicator::loading_indicator_for_state;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ShortcutSegment {
     pub(crate) key: &'static str,
@@ -12,7 +15,28 @@ pub(crate) enum ShortcutLine {
     Text(String),
 }
 
+#[cfg(test)]
 pub(crate) fn shortcuts_for_state(state: &AppContext) -> String {
+    shortcuts_for_state_with_context(state, RenderContext::default())
+}
+
+pub(crate) fn shortcuts_for_state_with_context(
+    state: &AppContext,
+    context: RenderContext,
+) -> String {
+    let shortcuts = shortcut_text_for_state(state);
+    if let Some(indicator) = loading_indicator_for_state(state, context) {
+        if shortcuts.is_empty() {
+            indicator.text()
+        } else {
+            format!("{}  {}", indicator.text(), shortcuts)
+        }
+    } else {
+        shortcuts
+    }
+}
+
+fn shortcut_text_for_state(state: &AppContext) -> String {
     match shortcut_line_for_state(state) {
         ShortcutLine::Segments(segments) => segments
             .iter()

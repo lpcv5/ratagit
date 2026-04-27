@@ -23,7 +23,11 @@ pub(crate) use panel_left::{
 };
 #[cfg(test)]
 use panel_scroll::scroll_window_start;
-pub(crate) use panel_shortcuts::{ShortcutLine, shortcut_line_for_state, shortcuts_for_state};
+#[cfg(test)]
+pub(crate) use panel_shortcuts::shortcuts_for_state;
+pub(crate) use panel_shortcuts::{
+    ShortcutLine, shortcut_line_for_state, shortcuts_for_state_with_context,
+};
 pub(crate) use panel_types::PanelLine;
 #[cfg(test)]
 use ratagit_core::AppContext;
@@ -676,6 +680,7 @@ mod tests {
                 panel: PanelFocus::Branches,
             }),
         );
+        state.work.details_pending = false;
         assert_eq!(
             shortcuts_for_state(&state),
             "space checkout  n new  d delete  r rebase  p pull  P push"
@@ -687,6 +692,7 @@ mod tests {
                 panel: PanelFocus::Commits,
             }),
         );
+        state.work.details_pending = false;
         assert!(!shortcuts_for_state(&state).contains("v multi"));
 
         let mut empty = AppContext::default();
@@ -697,6 +703,23 @@ mod tests {
         update(&mut empty, Action::Ui(UiAction::StartSearch));
         update(&mut empty, Action::Ui(UiAction::InputSearchChar('m')));
         assert_eq!(shortcuts_for_state(&empty), "search: m");
+    }
+
+    #[test]
+    fn keys_panel_prefixes_loading_indicator_when_work_is_pending() {
+        let mut state = state_with_dirty_repo();
+        state.work.refresh_pending = true;
+
+        assert_eq!(
+            shortcuts_for_state_with_context(
+                &state,
+                crate::frame::RenderContext { spinner_frame: 2 },
+            ),
+            "\\ loading: refresh  space stage/unstage  d discard  c commit  s stash  D reset  enter expand  p pull  P push"
+        );
+
+        state.work.operation_pending = Some("push".to_string());
+        assert!(shortcuts_for_state(&state).starts_with("/ loading: push"));
     }
 
     #[test]

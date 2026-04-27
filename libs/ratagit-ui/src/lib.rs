@@ -3,6 +3,7 @@ mod discard_modal;
 mod editor_modal;
 mod frame;
 mod layout;
+mod loading_indicator;
 mod modal;
 mod panels;
 mod reset_modal;
@@ -12,7 +13,7 @@ mod text;
 mod theme;
 
 pub use frame::{
-    RenderedFrame, TerminalBuffer, TerminalCursor, TerminalSize,
+    RenderContext, RenderedFrame, TerminalBuffer, TerminalCursor, TerminalSize,
     buffer_contains_batch_selected_text, buffer_contains_selected_text,
     buffer_contains_text_with_style, buffer_to_text_with_selected_marker,
 };
@@ -25,7 +26,8 @@ pub use panels::{
 };
 pub use terminal::{
     render_terminal, render_terminal_buffer, render_terminal_buffer_with_cursor,
-    render_terminal_text,
+    render_terminal_buffer_with_cursor_and_context, render_terminal_buffer_with_render_context,
+    render_terminal_text, render_terminal_text_with_context, render_terminal_with_context,
 };
-pub use text::render;
+pub use text::{render, render_with_context};
 pub use theme::{batch_selected_row_style, focused_panel_style, selected_row_style};

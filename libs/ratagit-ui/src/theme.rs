@@ -144,6 +144,29 @@ pub(crate) fn inactive_panel_style() -> Style {
     Style::default().fg(Color::DarkGray)
 }
 
+pub(crate) fn loading_spinner_style() -> Style {
+    Style::default()
+        .fg(current_theme().modal.warning)
+        .add_modifier(Modifier::BOLD)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LoadingSpotlightTone {
+    Dim,
+    Mid,
+    Bright,
+}
+
+pub(crate) fn loading_text_style(tone: LoadingSpotlightTone) -> Style {
+    match tone {
+        LoadingSpotlightTone::Dim => Style::default().fg(current_theme().modal.dim),
+        LoadingSpotlightTone::Mid => Style::default().fg(current_theme().modal.active),
+        LoadingSpotlightTone::Bright => Style::default()
+            .fg(current_theme().modal.warning)
+            .add_modifier(Modifier::BOLD),
+    }
+}
+
 pub(crate) fn title_badge_style(focused: bool) -> Style {
     let background = if focused {
         Color::Yellow

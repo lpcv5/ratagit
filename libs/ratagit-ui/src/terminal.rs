@@ -10,8 +10,9 @@ use ratatui::{Frame, Terminal};
 use crate::branch_modal::render_branch_modals;
 use crate::discard_modal::render_discard_modal;
 use crate::editor_modal::render_editor_modal;
-use crate::frame::{TerminalBuffer, TerminalCursor, TerminalSize, buffer_to_text};
+use crate::frame::{RenderContext, TerminalBuffer, TerminalCursor, TerminalSize, buffer_to_text};
 use crate::layout::compute_left_panel_heights;
+use crate::loading_indicator::loading_indicator_for_state;
 use crate::panels::{
     PanelLine, ShortcutLine, panel_title_label, render_branches_lines, render_commits_lines,
     render_details_lines, render_files_lines, render_log_lines, render_stash_lines,
@@ -20,11 +21,20 @@ use crate::panels::{
 use crate::reset_modal::render_reset_modal;
 use crate::sync_modal::render_sync_modal;
 use crate::theme::{
-    RowRole, batch_selected_row_style, focused_panel_style, inactive_panel_style, row_style,
-    selected_row_style, title_badge_style,
+    LoadingSpotlightTone, RowRole, batch_selected_row_style, focused_panel_style,
+    inactive_panel_style, loading_spinner_style, loading_text_style, row_style, selected_row_style,
+    title_badge_style,
 };
 
 pub fn render_terminal(frame: &mut Frame<'_>, state: &AppContext) {
+    render_terminal_with_context(frame, state, RenderContext::default());
+}
+
+pub fn render_terminal_with_context(
+    frame: &mut Frame<'_>,
+    state: &AppContext,
+    context: RenderContext,
+) {
     let area = frame.area();
     let root = Layout::default()
         .direction(Direction::Vertical)
@@ -32,7 +42,7 @@ pub fn render_terminal(frame: &mut Frame<'_>, state: &AppContext) {
         .split(area);
 
     render_panel_grid(frame, state, root[0]);
-    render_shortcuts(frame, state, root[1]);
+    render_shortcuts(frame, state, context, root[1]);
     render_editor_modal(frame, state, root[0]);
     render_branch_modals(frame, state, root[0]);
     render_reset_modal(frame, state, root[0]);
@@ -44,18 +54,44 @@ pub fn render_terminal_text(state: &AppContext, size: TerminalSize) -> String {
     buffer_to_text(&render_terminal_buffer(state, size))
 }
 
+pub fn render_terminal_text_with_context(
+    state: &AppContext,
+    size: TerminalSize,
+    context: RenderContext,
+) -> String {
+    buffer_to_text(&render_terminal_buffer_with_render_context(
+        state, size, context,
+    ))
+}
+
 pub fn render_terminal_buffer(state: &AppContext, size: TerminalSize) -> TerminalBuffer {
     render_terminal_buffer_with_cursor(state, size).0
+}
+
+pub fn render_terminal_buffer_with_render_context(
+    state: &AppContext,
+    size: TerminalSize,
+    context: RenderContext,
+) -> TerminalBuffer {
+    render_terminal_buffer_with_cursor_and_context(state, size, context).0
 }
 
 pub fn render_terminal_buffer_with_cursor(
     state: &AppContext,
     size: TerminalSize,
 ) -> (TerminalBuffer, Option<TerminalCursor>) {
+    render_terminal_buffer_with_cursor_and_context(state, size, RenderContext::default())
+}
+
+pub fn render_terminal_buffer_with_cursor_and_context(
+    state: &AppContext,
+    size: TerminalSize,
+    context: RenderContext,
+) -> (TerminalBuffer, Option<TerminalCursor>) {
     let backend = TestBackend::new(size.width.max(1) as u16, size.height.max(1) as u16);
     let mut terminal = Terminal::new(backend).expect("test terminal should initialize");
     terminal
-        .draw(|frame| render_terminal(frame, state))
+        .draw(|frame| render_terminal_with_context(frame, state, context))
         .expect("terminal render should succeed");
     let cursor = if state.ui.editor.is_active() || state.ui.branches.create.active {
         let position = terminal
@@ -221,18 +257,40 @@ fn line_to_ratatui_line(line: &PanelLine) -> Line<'static> {
     Line::from(line.text.clone())
 }
 
-fn render_shortcuts(frame: &mut Frame<'_>, state: &AppContext, area: Rect) {
-    let widget = Paragraph::new(shortcut_line_to_ratatui_line(shortcut_line_for_state(
+fn render_shortcuts(frame: &mut Frame<'_>, state: &AppContext, context: RenderContext, area: Rect) {
+    let widget = Paragraph::new(shortcut_line_to_ratatui_line(
         state,
-    )));
+        context,
+        shortcut_line_for_state(state),
+    ));
     frame.render_widget(widget, area);
 }
 
-fn shortcut_line_to_ratatui_line(line: ShortcutLine) -> Line<'static> {
+fn shortcut_line_to_ratatui_line(
+    state: &AppContext,
+    context: RenderContext,
+    line: ShortcutLine,
+) -> Line<'static> {
+    let mut prefix =
+        loading_indicator_for_state(state, context).map_or_else(Vec::new, |indicator| {
+            let mut spans = vec![
+                Span::styled(indicator.spinner, loading_spinner_style()),
+                Span::raw(" "),
+            ];
+            spans.extend(loading_text_spans(
+                &format!("loading: {}", indicator.kind),
+                indicator.spotlight_index,
+            ));
+            spans.push(Span::raw("  "));
+            spans
+        });
     match line {
-        ShortcutLine::Text(text) => Line::from(text),
+        ShortcutLine::Text(text) => {
+            prefix.push(Span::raw(text));
+            Line::from(prefix)
+        }
         ShortcutLine::Segments(segments) => {
-            let mut spans = Vec::new();
+            let mut spans = prefix;
             for (index, segment) in segments.iter().enumerate() {
                 if index > 0 {
                     spans.push(Span::raw("  "));
@@ -245,5 +303,26 @@ fn shortcut_line_to_ratatui_line(line: ShortcutLine) -> Line<'static> {
             }
             Line::from(spans)
         }
+    }
+}
+
+fn loading_text_spans(text: &str, spotlight_index: usize) -> Vec<Span<'static>> {
+    text.chars()
+        .enumerate()
+        .map(|(index, ch)| {
+            Span::styled(
+                ch.to_string(),
+                loading_text_style(spotlight_tone(index, spotlight_index)),
+            )
+        })
+        .collect()
+}
+
+fn spotlight_tone(index: usize, spotlight_index: usize) -> LoadingSpotlightTone {
+    let distance = index.abs_diff(spotlight_index);
+    match distance {
+        0 => LoadingSpotlightTone::Bright,
+        1 => LoadingSpotlightTone::Mid,
+        _ => LoadingSpotlightTone::Dim,
     }
 }

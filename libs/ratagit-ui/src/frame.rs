@@ -18,6 +18,11 @@ pub struct TerminalCursor {
     pub y: u16,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct RenderContext {
+    pub spinner_frame: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RenderedFrame {
     pub lines: Vec<String>,

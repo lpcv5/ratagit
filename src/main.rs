@@ -3,7 +3,7 @@ mod input;
 use std::error::Error;
 use std::io::{self, Stdout};
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crossterm::event::{self, Event, KeyEventKind};
 use crossterm::execute;
@@ -17,8 +17,9 @@ use ratagit_harness::AsyncRuntime;
 use ratagit_observe::{ObserveConfig, init_observability};
 use ratagit_testkit::fixture_dirty_repo;
 use ratagit_ui::{
-    TerminalSize, details_content_lines_for_terminal_size, details_scroll_lines_for_terminal_size,
-    focused_left_panel_content_lines_for_terminal_size, render_terminal,
+    RenderContext, TerminalSize, details_content_lines_for_terminal_size,
+    details_scroll_lines_for_terminal_size, focused_left_panel_content_lines_for_terminal_size,
+    render_terminal_with_context,
 };
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
@@ -33,12 +34,19 @@ fn run_tui() -> Result<(), Box<dyn Error>> {
     let backend_factory = select_backend_factory()?;
     let mut terminal = setup_terminal()?;
     let mut runtime = build_initial_runtime(backend_factory);
+    let mut spinner_frame = 0usize;
+    let mut next_spinner_frame_at = Instant::now() + spinner_frame_interval();
     runtime.dispatch_ui(UiAction::RefreshAll);
 
     loop {
         runtime.tick();
+        let now = Instant::now();
+        if now >= next_spinner_frame_at {
+            spinner_frame = spinner_frame.wrapping_add(1);
+            next_spinner_frame_at = now + spinner_frame_interval();
+        }
         terminal.draw(|frame| {
-            render_terminal(frame, runtime.state());
+            render_terminal_with_context(frame, runtime.state(), RenderContext { spinner_frame });
         })?;
 
         if !event::poll(input_poll_interval())? {
@@ -126,6 +134,10 @@ fn runtime_debounce_window() -> Duration {
     Duration::from_millis(80)
 }
 
+fn spinner_frame_interval() -> Duration {
+    Duration::from_millis(80)
+}
+
 fn select_backend_factory() -> Result<BackendFactory, Box<dyn Error>> {
     let cwd = std::env::current_dir()?;
     select_backend_factory_for(cwd)
@@ -167,6 +179,7 @@ mod tests {
         );
         assert_eq!(input_poll_interval(), Duration::from_millis(16));
         assert_eq!(runtime_debounce_window(), Duration::from_millis(80));
+        assert_eq!(spinner_frame_interval(), Duration::from_millis(80));
     }
 
     #[test]

@@ -52,6 +52,9 @@ Navigation rules:
   these hints render as badge-style reverse-video numbers
 - top branch/focus/status summary is hidden to prioritize panels
 - bottom keys row is unframed and shows only Git operation shortcuts for the current focused panel
+- when background work is pending, the bottom keys row prefixes shortcuts with
+  an animated `/|\\-` spinner and loading type such as `loading: refresh`;
+  without pending work, the row remains unchanged
 - bottom shortcut keys render as badge-style reverse-video labels, without a
   `keys(panel):` prefix and without pipe separators
 - baseline navigation/search keys are intentionally omitted from normal bottom

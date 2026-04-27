@@ -7,12 +7,13 @@ use ratagit_testkit::{
     fixture_many_files, fixture_unicode_paths,
 };
 use ratagit_ui::{
-    TerminalSize, batch_selected_row_style, buffer_contains_batch_selected_text,
+    RenderContext, TerminalSize, batch_selected_row_style, buffer_contains_batch_selected_text,
     buffer_contains_selected_text, buffer_contains_text_with_style,
     buffer_to_text_with_selected_marker, details_content_lines_for_terminal_size,
     details_scroll_lines_for_terminal_size, focused_left_panel_content_lines_for_terminal_size,
     focused_panel_style, render, render_terminal_buffer, render_terminal_buffer_with_cursor,
-    render_terminal_text,
+    render_terminal_buffer_with_render_context, render_terminal_text,
+    render_terminal_text_with_context,
 };
 use ratatui::style::{Color, Modifier, Style};
 
@@ -159,6 +160,31 @@ fn buffer_contains_text_with_exact_style(
     })
 }
 
+fn loading_text_cells<'a>(
+    buffer: &'a ratagit_ui::TerminalBuffer,
+    needle: &str,
+) -> Vec<&'a ratatui::buffer::Cell> {
+    let width = buffer.area.width as usize;
+    assert!(width > 0);
+    let Some(cells) = buffer.content().chunks(width).find(|cells| {
+        cells
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>()
+            .contains(needle)
+    }) else {
+        panic!("loading text not found: {needle}");
+    };
+    let line = cells.iter().map(|cell| cell.symbol()).collect::<String>();
+    let byte_start = line.find(needle).expect("needle should be present");
+    let start = line[..byte_start].chars().count();
+    cells
+        .iter()
+        .skip(start)
+        .take(needle.chars().count())
+        .collect()
+}
+
 fn apply_mock_details_commands(state: &mut AppContext, commands: Vec<Command>) {
     match commands.as_slice() {
         [] => {}
@@ -257,6 +283,60 @@ fn snapshots_empty_repo_80x24() {
     assert_no_cursor_marker(&text);
     assert!(!text.contains("tab/shift+tab"));
     assert!(!text.contains("1-6 focus panel"));
+}
+
+#[test]
+fn bottom_keys_show_loading_indicator_before_shortcuts() {
+    let mut state = AppContext::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+    state.work.refresh_pending = true;
+
+    let screen = render_terminal_text_with_context(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+        RenderContext { spinner_frame: 3 },
+    );
+
+    assert!(screen.contains("- loading: refresh"));
+    assert!(screen.contains("- loading: refresh   space  stage/unstage"));
+}
+
+#[test]
+fn bottom_loading_indicator_sweeps_spotlight_across_text_without_background() {
+    let mut state = AppContext::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+    state.work.refresh_pending = true;
+    let size = TerminalSize {
+        width: 100,
+        height: 30,
+    };
+
+    let first_frame = render_terminal_buffer_with_render_context(
+        &state,
+        size,
+        RenderContext { spinner_frame: 0 },
+    );
+    let next_frame = render_terminal_buffer_with_render_context(
+        &state,
+        size,
+        RenderContext { spinner_frame: 1 },
+    );
+
+    let first_cells = loading_text_cells(&first_frame, "loading: refresh");
+    assert_eq!(first_cells[0].fg, MODAL_WARNING);
+    assert_eq!(first_cells[1].fg, MODAL_ACTIVE);
+    assert_eq!(first_cells[2].fg, MODAL_DIM);
+    assert!(first_cells.iter().all(|cell| cell.bg == Color::Reset));
+
+    let next_cells = loading_text_cells(&next_frame, "loading: refresh");
+    assert_eq!(next_cells[0].fg, MODAL_ACTIVE);
+    assert_eq!(next_cells[1].fg, MODAL_WARNING);
+    assert_eq!(next_cells[2].fg, MODAL_ACTIVE);
+    assert_eq!(next_cells[3].fg, MODAL_DIM);
+    assert!(next_cells.iter().all(|cell| cell.bg == Color::Reset));
 }
 
 #[test]
@@ -1056,7 +1136,7 @@ fn terminal_snapshot_focus_and_keys_follow_actions() {
         screen
             .lines()
             .last()
-            .is_some_and(|line| line.starts_with(" enter  files"))
+            .is_some_and(|line| line.starts_with("/ loading: details   enter  files"))
     );
 }
 

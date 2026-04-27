@@ -565,6 +565,7 @@ fn async_runtime_renders_loading_before_refresh_finishes() {
 
     let loading_screen = runtime.render_terminal_text();
     assert!(loading_screen.contains("work=refreshing repository"));
+    assert!(loading_screen.contains("/ loading: refresh"));
     assert!(loading_screen.contains("feature/mvp"));
     assert!(loading_screen.contains("init project"));
     assert!(loading_screen.contains("stash@{0}"));

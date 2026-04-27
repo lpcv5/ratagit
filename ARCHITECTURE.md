@@ -42,8 +42,13 @@ Files helper that needs both repository rows and tree selection state receives
 UI rendering must be pure:
 
 ```text
-(AppContext, TerminalSize) -> Frame
+(AppContext, TerminalSize, RenderContext) -> Frame
 ```
+
+`RenderContext` carries explicit render-only inputs such as the current loading
+spinner frame. The real TUI may advance those inputs from its event loop, but
+rendering still receives them as data and must not read time itself. Convenience
+test APIs use a default `RenderContext` to keep snapshots deterministic.
 
 Forbidden:
 

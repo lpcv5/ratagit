@@ -1,13 +1,21 @@
 use ratagit_core::{AppContext, PanelFocus};
 
-use crate::frame::{RenderedFrame, TerminalSize, normalize_lines, pad_and_truncate};
+use crate::frame::{RenderContext, RenderedFrame, TerminalSize, normalize_lines, pad_and_truncate};
 use crate::layout::compute_left_panel_heights;
 use crate::panels::{
     PanelLine, panel_title, render_branches_lines, render_commits_lines, render_details_lines,
-    render_files_lines, render_log_lines, render_stash_lines, shortcuts_for_state,
+    render_files_lines, render_log_lines, render_stash_lines, shortcuts_for_state_with_context,
 };
 
 pub fn render(state: &AppContext, size: TerminalSize) -> RenderedFrame {
+    render_with_context(state, size, RenderContext::default())
+}
+
+pub fn render_with_context(
+    state: &AppContext,
+    size: TerminalSize,
+    context: RenderContext,
+) -> RenderedFrame {
     let width = size.width.max(1);
     let height = size.height.max(1);
     let mut lines = Vec::with_capacity(height);
@@ -16,7 +24,10 @@ pub fn render(state: &AppContext, size: TerminalSize) -> RenderedFrame {
     if body_height > 0 {
         lines.extend(render_workspace_rows(state, width, body_height));
     }
-    lines.push(pad_and_truncate(shortcuts_for_state(state), width));
+    lines.push(pad_and_truncate(
+        shortcuts_for_state_with_context(state, context),
+        width,
+    ));
 
     normalize_lines(lines, TerminalSize { width, height })
 }
