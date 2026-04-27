@@ -123,6 +123,11 @@ impl GitBackend for RecordingBackend {
         self.inner.load_more_commits(offset, limit)
     }
 
+    fn files_details_diff(&mut self, paths: &[String]) -> Result<String, GitError> {
+        self.record(format!("details-diff:{}:{}", self.id, paths.join(",")));
+        self.inner.files_details_diff(paths)
+    }
+
     fn stage_files(&mut self, paths: &[String]) -> Result<(), GitError> {
         self.start_mutation("stage");
         let result = self.inner.stage_files(paths);
@@ -138,7 +143,6 @@ impl GitBackend for RecordingBackend {
     }
 
     delegate_recording_backend! {
-        files_details_diff(paths: &[String]) -> Result<String, GitError>;
         branch_details_log(branch: &str, max_count: usize) -> Result<String, GitError>;
         commit_details_diff(commit_id: &str) -> Result<String, GitError>;
         commit_files(commit_id: &str) -> Result<Vec<CommitFileEntry>, GitError>;
@@ -300,6 +304,77 @@ fn stale_read_results_are_dropped_after_a_queued_mutation() {
             .last_error
             .as_deref()
             .is_some_and(|error| error.contains("Failed to stage missing.txt"))
+    );
+}
+
+#[test]
+fn debounce_window_defers_and_coalesces_async_read_commands() {
+    let factory = RecordingFactory::new();
+    let log = Arc::clone(&factory.log);
+    let runtime_factory = factory.clone();
+    let mut runtime = AsyncRuntime::new(
+        AppState::default(),
+        move || runtime_factory.build(),
+        terminal_size(),
+    )
+    .with_debounce_window(Duration::from_millis(40));
+
+    runtime.process_commands(vec![
+        Command::RefreshFilesDetailsDiff {
+            paths: vec!["old.txt".to_string()],
+        },
+        Command::RefreshFilesDetailsDiff {
+            paths: vec!["latest.txt".to_string()],
+        },
+    ]);
+
+    assert!(log.lock().expect("recording log lock").is_empty());
+    std::thread::sleep(Duration::from_millis(70));
+    runtime.tick();
+
+    let entries = wait_for_log_count(&log, 1);
+    assert_eq!(entries, vec!["details-diff:0:latest.txt".to_string()]);
+}
+
+#[test]
+fn render_smoke_paths_use_current_state_without_dispatching_git() {
+    let factory = RecordingFactory::new();
+    let log = Arc::clone(&factory.log);
+    let runtime_factory = factory.clone();
+    let runtime = AsyncRuntime::new(
+        AppState::default(),
+        move || runtime_factory.build(),
+        terminal_size(),
+    );
+
+    let frame = runtime.render();
+    let buffer = runtime.render_terminal_buffer();
+
+    assert!(frame.as_text().contains("[1]"));
+    assert!(buffer.area.width > 0);
+    assert!(log.lock().expect("recording log lock").is_empty());
+}
+
+#[test]
+fn empty_read_worker_pool_reports_refresh_failure() {
+    let factory = RecordingFactory::new();
+    let runtime_factory = factory.clone();
+    let mut runtime = AsyncRuntime::new(
+        AppState::default(),
+        move || runtime_factory.build(),
+        terminal_size(),
+    );
+    runtime.read_command_txs.clear();
+
+    runtime.process_commands(vec![Command::LoadMoreCommits {
+        offset: 0,
+        limit: 1,
+        epoch: 0,
+    }]);
+
+    assert_eq!(
+        runtime.state.status.last_error.as_deref(),
+        Some("Failed to refresh: async git read worker pool is empty")
     );
 }
 

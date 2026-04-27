@@ -2,6 +2,7 @@ mod input;
 
 use std::error::Error;
 use std::io::{self, Stdout};
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crossterm::event::{self, Event, KeyEventKind};
@@ -30,15 +31,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 fn run_tui() -> Result<(), Box<dyn Error>> {
     let backend_factory = select_backend_factory()?;
     let mut terminal = setup_terminal()?;
-    let mut runtime = AsyncRuntime::new(
-        AppState::default(),
-        backend_factory,
-        TerminalSize {
-            width: 100,
-            height: 30,
-        },
-    )
-    .with_debounce_window(Duration::from_millis(80));
+    let mut runtime = build_initial_runtime(backend_factory);
     runtime.dispatch_ui(UiAction::RefreshAll);
 
     loop {
@@ -47,7 +40,7 @@ fn run_tui() -> Result<(), Box<dyn Error>> {
             render_terminal(frame, runtime.state());
         })?;
 
-        if !event::poll(Duration::from_millis(16))? {
+        if !event::poll(input_poll_interval())? {
             runtime.tick();
             continue;
         }
@@ -105,18 +98,156 @@ fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result
 
 type BackendFactory = Box<dyn Fn() -> Box<dyn GitBackend + Send> + Send + Sync>;
 
+fn build_initial_runtime(
+    backend_factory: BackendFactory,
+) -> AsyncRuntime<Box<dyn GitBackend + Send>> {
+    AsyncRuntime::new(
+        AppState::default(),
+        backend_factory,
+        initial_terminal_size(),
+    )
+    .with_debounce_window(runtime_debounce_window())
+}
+
+fn initial_terminal_size() -> TerminalSize {
+    TerminalSize {
+        width: 100,
+        height: 30,
+    }
+}
+
+fn input_poll_interval() -> Duration {
+    Duration::from_millis(16)
+}
+
+fn runtime_debounce_window() -> Duration {
+    Duration::from_millis(80)
+}
+
 fn select_backend_factory() -> Result<BackendFactory, Box<dyn Error>> {
     let cwd = std::env::current_dir()?;
-    if is_git_repo(&cwd) {
-        HybridGitBackend::open(&cwd)?;
+    select_backend_factory_for(cwd)
+}
+
+fn select_backend_factory_for(cwd: PathBuf) -> Result<BackendFactory, Box<dyn Error>> {
+    if is_git_repo(Path::new(&cwd)) {
+        HybridGitBackend::open(Path::new(&cwd))?;
         Ok(Box::new(move || {
             Box::new(
-                HybridGitBackend::open(&cwd)
+                HybridGitBackend::open(Path::new(&cwd))
                     .expect("validated git repository should remain openable"),
             )
         }))
     } else {
         let shared_backend = SharedMockGitBackend::new(fixture_dirty_repo());
         Ok(Box::new(move || Box::new(shared_backend.clone())))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs::{create_dir_all, remove_dir_all};
+    use std::process::Command;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use ratagit_git::execute_command;
+
+    use super::*;
+
+    #[test]
+    fn startup_constants_are_intentional_regression_points() {
+        assert_eq!(
+            initial_terminal_size(),
+            TerminalSize {
+                width: 100,
+                height: 30
+            }
+        );
+        assert_eq!(input_poll_interval(), Duration::from_millis(16));
+        assert_eq!(runtime_debounce_window(), Duration::from_millis(80));
+    }
+
+    #[test]
+    fn non_git_backend_factory_builds_shared_mock_runtime_that_can_render() {
+        let root = unique_temp_dir("main-non-git");
+        create_dir_all(&root).expect("temp dir should be creatable");
+
+        let factory =
+            select_backend_factory_for(root.clone()).expect("non-git backend should be selected");
+        let mut runtime = build_initial_runtime(factory);
+        runtime.dispatch_ui(UiAction::RefreshAll);
+        wait_for_refresh(&mut runtime);
+
+        let screen = runtime.render_terminal_text();
+        assert!(screen.contains("README.md"));
+        assert!(screen.contains("[1]"));
+        let _ = remove_dir_all(root);
+    }
+
+    #[test]
+    fn git_backend_factory_opens_isolated_repository() {
+        if !git_available() {
+            eprintln!("git is unavailable, skipping git_backend_factory_opens_isolated_repository");
+            return;
+        }
+
+        let root = unique_temp_dir("main-git");
+        create_dir_all(&root).expect("temp dir should be creatable");
+        run_git(&root, &["init"]);
+        run_git(&root, &["config", "user.name", "ratagit-tests"]);
+        run_git(
+            &root,
+            &["config", "user.email", "ratagit-tests@example.com"],
+        );
+
+        let factory =
+            select_backend_factory_for(root.clone()).expect("git backend should be selected");
+        let mut backend = factory();
+        let result = execute_command(&mut backend, ratagit_core::Command::RefreshAll);
+        assert!(matches!(result, ratagit_core::GitResult::Refreshed(_)));
+        let _ = remove_dir_all(root);
+    }
+
+    fn wait_for_refresh(runtime: &mut AsyncRuntime<Box<dyn GitBackend + Send>>) {
+        for _ in 0..100 {
+            runtime.tick();
+            if runtime.state().status.refresh_count > 0 {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        panic!("timed out waiting for startup refresh");
+    }
+
+    fn unique_temp_dir(case_name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "ratagit-{case_name}-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system time should be after epoch")
+                .as_nanos()
+        ))
+    }
+
+    fn git_available() -> bool {
+        Command::new("git")
+            .arg("--version")
+            .output()
+            .is_ok_and(|output| output.status.success())
+    }
+
+    fn run_git(repo_path: &Path, args: &[&str]) {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(repo_path)
+            .output()
+            .expect("git command should run");
+        assert!(
+            output.status.success(),
+            "git {:?} failed: {}",
+            args,
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 }

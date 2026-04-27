@@ -349,3 +349,154 @@ fn ansi_color(index: u8, bright: bool) -> Color {
         _ => Color::Reset,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use ratagit_core::{CommitFileDiffPath, CommitFileDiffTarget};
+
+    use super::*;
+
+    #[test]
+    fn diff_row_roles_cover_sections_metadata_hunks_and_changes() {
+        assert_eq!(classify_diff_row_role("### unstaged"), RowRole::DiffSection);
+        assert_eq!(
+            classify_diff_row_role("diff --git a/a.txt b/a.txt"),
+            RowRole::DiffMeta
+        );
+        assert_eq!(classify_diff_row_role("index 123..456"), RowRole::DiffMeta);
+        assert_eq!(classify_diff_row_role("--- a/a.txt"), RowRole::DiffMeta);
+        assert_eq!(classify_diff_row_role("+++ b/a.txt"), RowRole::DiffMeta);
+        assert_eq!(classify_diff_row_role("@@ -1 +1 @@"), RowRole::DiffHunk);
+        assert_eq!(classify_diff_row_role("+new"), RowRole::DiffAdd);
+        assert_eq!(classify_diff_row_role("-old"), RowRole::DiffRemove);
+        assert_eq!(classify_diff_row_role(" context"), RowRole::Normal);
+    }
+
+    #[test]
+    fn ansi_sgr_parser_handles_reset_bright_indexed_and_rgb_colors() {
+        let line = ansi_branch_log_line(
+            "\u{1b}[1;33m*\u{1b}[0m plain \u{1b}[91mred\u{1b}[38;5;42midx\u{1b}[38;2;1;2;3mrgb",
+            "  ",
+        );
+        let spans = line.spans.expect("ansi line should keep styled spans");
+
+        assert_eq!(spans[1].text, "*");
+        assert_eq!(
+            spans[1].style,
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
+        );
+        assert_eq!(spans[2].text, " plain ");
+        assert_eq!(spans[2].style, Style::default());
+        assert_eq!(spans[3].text, "red");
+        assert_eq!(spans[3].style, Style::default().fg(Color::LightRed));
+        assert_eq!(spans[4].text, "idx");
+        assert_eq!(spans[4].style, Style::default().fg(Color::Indexed(42)));
+        assert_eq!(spans[5].text, "rgb");
+        assert_eq!(spans[5].style, Style::default().fg(Color::Rgb(1, 2, 3)));
+    }
+
+    #[test]
+    fn details_lines_report_empty_loading_error_and_clamped_scroll_states() {
+        let mut state = AppState {
+            last_left_focus: PanelFocus::Files,
+            ..AppState::default()
+        };
+        assert_eq!(
+            render_details_lines(&state, 3),
+            vec![PanelLine::new(
+                "  details(files): no diff for current selection",
+                RowRole::Muted
+            )]
+        );
+
+        state.work.details_pending = true;
+        assert_eq!(
+            render_details_lines(&state, 3),
+            vec![PanelLine::new(
+                "  details(files): loading diff",
+                RowRole::Muted
+            )]
+        );
+
+        state.work.details_pending = false;
+        state.details.files_error = Some("boom".to_string());
+        assert_eq!(
+            render_details_lines(&state, 3),
+            vec![PanelLine::new("  error=boom", RowRole::Error)]
+        );
+
+        state.details.files_error = None;
+        state.details.files_diff = "line 1\nline 2\nline 3\nline 4".to_string();
+        state.details.scroll_offset = 99;
+        assert_eq!(
+            render_details_lines(&state, 2)
+                .into_iter()
+                .map(|line| line.text)
+                .collect::<Vec<_>>(),
+            vec!["  line 3".to_string(), "  line 4".to_string()]
+        );
+    }
+
+    #[test]
+    fn branch_commit_and_commit_file_placeholders_use_current_state() {
+        let mut state = AppState {
+            last_left_focus: PanelFocus::Branches,
+            ..AppState::default()
+        };
+        assert_eq!(
+            render_details_lines(&state, 1),
+            vec![PanelLine::new(
+                "  details(branches): no branch selected",
+                RowRole::Muted
+            )]
+        );
+
+        state.details.branch_log_target = Some("main".to_string());
+        state.work.details_pending = true;
+        assert_eq!(
+            render_details_lines(&state, 1),
+            vec![PanelLine::new(
+                "  details(branches): loading log graph",
+                RowRole::Muted
+            )]
+        );
+
+        state.work.details_pending = false;
+        state.last_left_focus = PanelFocus::Commits;
+        assert_eq!(
+            render_details_lines(&state, 1),
+            vec![PanelLine::new(
+                "  details(commits): no commit selected",
+                RowRole::Muted
+            )]
+        );
+
+        state.commits.files.active = true;
+        state.commits.files.loading = true;
+        assert_eq!(
+            render_details_lines(&state, 1),
+            vec![PanelLine::new(
+                "  details(commit files): loading files",
+                RowRole::Muted
+            )]
+        );
+
+        state.commits.files.loading = false;
+        state.details.commit_file_diff_target = Some(CommitFileDiffTarget {
+            commit_id: "abc".to_string(),
+            paths: vec![CommitFileDiffPath {
+                path: "a.txt".to_string(),
+                old_path: None,
+            }],
+        });
+        assert_eq!(
+            render_details_lines(&state, 1),
+            vec![PanelLine::new(
+                "  details(commit files): no diff for current file",
+                RowRole::Muted
+            )]
+        );
+    }
+}

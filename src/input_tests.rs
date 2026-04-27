@@ -48,6 +48,35 @@ mod tests {
         state
     }
 
+    fn active_branch_delete_menu_state() -> AppState {
+        let mut state = AppState::default();
+        state.branches.delete_menu.active = true;
+        state
+    }
+
+    fn active_branch_force_delete_state() -> AppState {
+        let mut state = AppState::default();
+        state.branches.force_delete_confirm.active = true;
+        state
+    }
+
+    fn active_branch_rebase_menu_state() -> AppState {
+        let mut state = AppState::default();
+        state.branches.rebase_menu.active = true;
+        state
+    }
+
+    fn active_auto_stash_confirm_state() -> AppState {
+        let mut state = AppState::default();
+        state.branches.auto_stash_confirm.active = true;
+        state.branches.auto_stash_confirm.operation =
+            Some(ratagit_core::AutoStashOperation::Rebase {
+                target: "main".to_string(),
+                interactive: false,
+            });
+        state
+    }
+
     #[test]
     fn panel_navigation_uses_h_and_l_not_tab() {
         let state = AppState::default();
@@ -81,6 +110,26 @@ mod tests {
             Some(UiAction::ConfirmSearch)
         );
         assert_eq!(map_key(&state, KeyCode::Esc), Some(UiAction::CancelSearch));
+    }
+
+    #[test]
+    fn confirmed_search_query_maps_repeat_navigation_keys() {
+        let mut state = AppState::default();
+        state.search.active = false;
+        state.search.scope = state.active_search_scope();
+        state.search.query = "lib".to_string();
+        state.search.current_match = Some(0);
+
+        assert_eq!(
+            map_key(&state, KeyCode::Char('n')),
+            Some(UiAction::NextSearchMatch)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Char('N')),
+            Some(UiAction::PrevSearchMatch)
+        );
+        assert_eq!(map_key(&state, KeyCode::Esc), Some(UiAction::CancelSearch));
+        assert_eq!(map_key(&state, KeyCode::Char('x')), None);
     }
 
     #[test]
@@ -246,6 +295,16 @@ mod tests {
             map_key(&state, KeyCode::Char('m')),
             Some(UiAction::EditorInputChar('m'))
         );
+        assert_eq!(map_key(&state, KeyCode::Esc), Some(UiAction::EditorCancel));
+        assert_eq!(
+            map_key(&state, KeyCode::Backspace),
+            Some(UiAction::EditorBackspace)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::BackTab),
+            Some(UiAction::EditorPrevField)
+        );
+        assert_eq!(map_key(&state, KeyCode::F(1)), None);
     }
 
     #[test]
@@ -357,6 +416,22 @@ mod tests {
             Some(UiAction::BranchCreateBackspace)
         );
         assert_eq!(
+            map_key(&state, KeyCode::Left),
+            Some(UiAction::BranchCreateMoveCursorLeft)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Right),
+            Some(UiAction::BranchCreateMoveCursorRight)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Home),
+            Some(UiAction::BranchCreateMoveCursorHome)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::End),
+            Some(UiAction::BranchCreateMoveCursorEnd)
+        );
+        assert_eq!(
             map_key(&state, KeyCode::Char('x')),
             Some(UiAction::BranchCreateInputChar('x'))
         );
@@ -364,6 +439,86 @@ mod tests {
             map_key(&state, KeyCode::Esc),
             Some(UiAction::CancelBranchCreate)
         );
+        assert_eq!(map_key(&state, KeyCode::F(1)), None);
+    }
+
+    #[test]
+    fn branch_modals_map_navigation_confirm_and_cancel_before_panels() {
+        let state = active_branch_delete_menu_state();
+        assert_eq!(
+            map_key(&state, KeyCode::Enter),
+            Some(UiAction::ConfirmBranchDeleteMenu)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Esc),
+            Some(UiAction::CancelBranchDeleteMenu)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Up),
+            Some(UiAction::MoveBranchDeleteMenuUp)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Char('k')),
+            Some(UiAction::MoveBranchDeleteMenuUp)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Down),
+            Some(UiAction::MoveBranchDeleteMenuDown)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Char('j')),
+            Some(UiAction::MoveBranchDeleteMenuDown)
+        );
+        assert_eq!(map_key(&state, KeyCode::Char('d')), None);
+
+        let state = active_branch_force_delete_state();
+        assert_eq!(
+            map_key(&state, KeyCode::Enter),
+            Some(UiAction::ConfirmBranchForceDelete)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Esc),
+            Some(UiAction::CancelBranchForceDelete)
+        );
+        assert_eq!(map_key(&state, KeyCode::Char('d')), None);
+
+        let state = active_branch_rebase_menu_state();
+        assert_eq!(
+            map_key(&state, KeyCode::Enter),
+            Some(UiAction::ConfirmBranchRebaseMenu)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Esc),
+            Some(UiAction::CancelBranchRebaseMenu)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Up),
+            Some(UiAction::MoveBranchRebaseMenuUp)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Char('k')),
+            Some(UiAction::MoveBranchRebaseMenuUp)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Down),
+            Some(UiAction::MoveBranchRebaseMenuDown)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Char('j')),
+            Some(UiAction::MoveBranchRebaseMenuDown)
+        );
+        assert_eq!(map_key(&state, KeyCode::Char('r')), None);
+
+        let state = active_auto_stash_confirm_state();
+        assert_eq!(
+            map_key(&state, KeyCode::Enter),
+            Some(UiAction::ConfirmAutoStash)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Esc),
+            Some(UiAction::CancelAutoStash)
+        );
+        assert_eq!(map_key(&state, KeyCode::Char('r')), None);
     }
 
     #[test]
@@ -391,6 +546,79 @@ mod tests {
                 TEST_DETAILS_VISIBLE_LINES
             ),
             KeyEffect::Quit
+        );
+    }
+
+    #[test]
+    fn key_effect_handles_plain_quit_ignored_and_global_navigation() {
+        let state = AppState::default();
+
+        assert_eq!(
+            key_effect_for_key(
+                &state,
+                KeyCode::Char('q'),
+                KeyModifiers::NONE,
+                TEST_DETAILS_SCROLL_LINES,
+                TEST_DETAILS_VISIBLE_LINES
+            ),
+            KeyEffect::Quit
+        );
+        assert_eq!(
+            key_effect_for_key(
+                &state,
+                KeyCode::F(1),
+                KeyModifiers::NONE,
+                TEST_DETAILS_SCROLL_LINES,
+                TEST_DETAILS_VISIBLE_LINES
+            ),
+            KeyEffect::Ignore
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Char('r')),
+            Some(UiAction::RefreshAll)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Char('j')),
+            Some(UiAction::MoveDown)
+        );
+        assert_eq!(map_key(&state, KeyCode::Down), Some(UiAction::MoveDown));
+        assert_eq!(map_key(&state, KeyCode::Char('k')), Some(UiAction::MoveUp));
+        assert_eq!(map_key(&state, KeyCode::Up), Some(UiAction::MoveUp));
+        assert_eq!(
+            map_key(&state, KeyCode::Char('1')),
+            Some(UiAction::FocusPanel {
+                panel: PanelFocus::Files
+            })
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Char('2')),
+            Some(UiAction::FocusPanel {
+                panel: PanelFocus::Branches
+            })
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Char('3')),
+            Some(UiAction::FocusPanel {
+                panel: PanelFocus::Commits
+            })
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Char('4')),
+            Some(UiAction::FocusPanel {
+                panel: PanelFocus::Stash
+            })
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Char('5')),
+            Some(UiAction::FocusPanel {
+                panel: PanelFocus::Details
+            })
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Char('6')),
+            Some(UiAction::FocusPanel {
+                panel: PanelFocus::Log
+            })
         );
     }
 }

@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use ratagit_core::{BranchDeleteMode, ResetMode};
+use ratagit_core::{BranchDeleteMode, CommitFileDiffPath, CommitFileDiffTarget, ResetMode};
 use ratagit_git::{GitBackend, HybridGitBackend};
 
 struct TmpGitRepo {
@@ -192,6 +192,29 @@ fn cli_stash_push_includes_untracked_files() {
 }
 
 #[test]
+fn cli_stash_push_with_blank_message_uses_git_default_message() {
+    if !git_available() {
+        eprintln!(
+            "git is unavailable, skipping cli_stash_push_with_blank_message_uses_git_default_message"
+        );
+        return;
+    }
+
+    let repo = seeded_repo_with_two_files("cli-stash-push-blank");
+    write(repo.path().join("a.txt"), "a2\n").expect("a.txt should be writable");
+
+    let mut backend = HybridGitBackend::open(repo.path()).expect("hybrid backend should open");
+    backend
+        .stash_push("   ")
+        .expect("blank stash_push should succeed");
+
+    let status = repo.run_git_capture(&["status", "--short"]);
+    assert_eq!(status.trim(), "");
+    let stash_list = repo.run_git_capture(&["stash", "list"]);
+    assert!(stash_list.contains("WIP on"));
+}
+
+#[test]
 fn cli_stash_files_limits_stash_to_selected_paths() {
     if !git_available() {
         eprintln!("git is unavailable, skipping cli_stash_files_limits_stash_to_selected_paths");
@@ -239,6 +262,38 @@ fn cli_reset_hard_clears_tracked_changes_but_keeps_untracked() {
 }
 
 #[test]
+fn cli_reset_soft_preserves_index_and_mixed_unstages_changes() {
+    if !git_available() {
+        eprintln!(
+            "git is unavailable, skipping cli_reset_soft_preserves_index_and_mixed_unstages_changes"
+        );
+        return;
+    }
+
+    let soft_repo = seeded_repo_with_two_files("cli-reset-soft");
+    write(soft_repo.path().join("a.txt"), "a2\n").expect("a.txt should be writable");
+    soft_repo.run_git(&["add", "--", "a.txt"]);
+    let mut soft_backend =
+        HybridGitBackend::open(soft_repo.path()).expect("hybrid backend should open");
+    soft_backend
+        .reset(ResetMode::Soft)
+        .expect("soft reset should succeed");
+    let soft_status = soft_repo.run_git_capture(&["status", "--short"]);
+    assert!(soft_status.lines().any(|line| line == "M  a.txt"));
+
+    let mixed_repo = seeded_repo_with_two_files("cli-reset-mixed");
+    write(mixed_repo.path().join("a.txt"), "a2\n").expect("a.txt should be writable");
+    mixed_repo.run_git(&["add", "--", "a.txt"]);
+    let mut mixed_backend =
+        HybridGitBackend::open(mixed_repo.path()).expect("hybrid backend should open");
+    mixed_backend
+        .reset(ResetMode::Mixed)
+        .expect("mixed reset should succeed");
+    let mixed_status = mixed_repo.run_git_capture(&["status", "--short"]);
+    assert!(mixed_status.lines().any(|line| line == " M a.txt"));
+}
+
+#[test]
 fn cli_nuke_clears_tracked_and_untracked_changes() {
     if !git_available() {
         eprintln!("git is unavailable, skipping cli_nuke_clears_tracked_and_untracked_changes");
@@ -254,6 +309,133 @@ fn cli_nuke_clears_tracked_and_untracked_changes() {
 
     let status = repo.run_git_capture(&["status", "--short", "--untracked-files=all"]);
     assert_eq!(status.trim(), "");
+}
+
+#[test]
+fn cli_discard_files_restores_tracked_and_removes_untracked_targets() {
+    if !git_available() {
+        eprintln!(
+            "git is unavailable, skipping cli_discard_files_restores_tracked_and_removes_untracked_targets"
+        );
+        return;
+    }
+
+    let repo = seeded_repo_with_two_files("cli-discard-files");
+    write(repo.path().join("a.txt"), "a2\n").expect("a.txt should be writable");
+    write(repo.path().join("new.txt"), "new\n").expect("new.txt should be writable");
+    write(repo.path().join("keep.txt"), "keep\n").expect("keep.txt should be writable");
+
+    let mut backend = HybridGitBackend::open(repo.path()).expect("hybrid backend should open");
+    backend
+        .discard_files(&["a.txt".to_string(), "new.txt".to_string()])
+        .expect("discard_files should succeed");
+
+    let status = repo.run_git_capture(&["status", "--short", "--untracked-files=all"]);
+    assert!(!status.contains("a.txt"));
+    assert!(!status.contains("new.txt"));
+    assert!(status.contains("?? keep.txt"));
+}
+
+#[test]
+fn cli_checkout_branch_auto_stash_restores_dirty_worktree_on_target_branch() {
+    if !git_available() {
+        eprintln!(
+            "git is unavailable, skipping cli_checkout_branch_auto_stash_restores_dirty_worktree_on_target_branch"
+        );
+        return;
+    }
+
+    let repo = seeded_repo_with_two_files("cli-checkout-auto-stash");
+    repo.run_git(&["branch", "feature/target"]);
+    write(repo.path().join("a.txt"), "dirty\n").expect("a.txt should be writable");
+
+    let mut backend = HybridGitBackend::open(repo.path()).expect("hybrid backend should open");
+    backend
+        .checkout_branch("feature/target", true)
+        .expect("auto-stash checkout should succeed");
+
+    let current_branch = repo.run_git_capture(&["branch", "--show-current"]);
+    assert_eq!(current_branch.trim(), "feature/target");
+    let status = repo.run_git_capture(&["status", "--short"]);
+    assert!(status.lines().any(|line| line == " M a.txt"));
+    assert!(repo.run_git_capture(&["stash", "list"]).trim().is_empty());
+}
+
+#[test]
+fn cli_rebase_branch_auto_stash_restores_dirty_worktree_after_rebase() {
+    if !git_available() {
+        eprintln!(
+            "git is unavailable, skipping cli_rebase_branch_auto_stash_restores_dirty_worktree_after_rebase"
+        );
+        return;
+    }
+
+    let repo = seeded_repo_with_two_files("cli-rebase-auto-stash");
+    let default_branch = repo.run_git_capture(&["branch", "--show-current"]);
+    let default_branch = default_branch.trim();
+    repo.run_git(&["checkout", "-b", "feature/rebase"]);
+    write(repo.path().join("a.txt"), "feature\n").expect("a.txt should be writable");
+    repo.run_git(&["add", "--", "a.txt"]);
+    repo.run_git(&["commit", "-m", "feature change"]);
+    repo.run_git(&["checkout", default_branch]);
+    write(repo.path().join("b.txt"), "main\n").expect("b.txt should be writable");
+    repo.run_git(&["add", "--", "b.txt"]);
+    repo.run_git(&["commit", "-m", "main change"]);
+    repo.run_git(&["checkout", "feature/rebase"]);
+    write(repo.path().join("dirty.txt"), "dirty\n").expect("dirty.txt should be writable");
+
+    let mut backend = HybridGitBackend::open(repo.path()).expect("hybrid backend should open");
+    backend
+        .rebase_branch(default_branch, false, true)
+        .expect("auto-stash rebase should succeed");
+
+    let log = repo.run_git_capture(&["log", "--oneline", "-2"]);
+    assert!(log.contains("feature change"));
+    assert!(log.contains("main change"));
+    let status = repo.run_git_capture(&["status", "--short"]);
+    assert!(status.lines().any(|line| line == "?? dirty.txt"));
+    assert!(repo.run_git_capture(&["stash", "list"]).trim().is_empty());
+}
+
+#[test]
+fn cli_commit_file_diff_for_rename_includes_old_and_new_paths() {
+    if !git_available() {
+        eprintln!(
+            "git is unavailable, skipping cli_commit_file_diff_for_rename_includes_old_and_new_paths"
+        );
+        return;
+    }
+
+    let repo = seeded_repo_with_two_files("cli-commit-file-diff-rename");
+    repo.run_git(&["mv", "a.txt", "renamed.txt"]);
+    write(repo.path().join("renamed.txt"), "a1\na2\n").expect("renamed.txt should be writable");
+    repo.run_git(&["add", "--", "renamed.txt"]);
+    repo.run_git(&["commit", "-m", "rename a"]);
+
+    let mut backend = HybridGitBackend::open(repo.path()).expect("hybrid backend should open");
+    let files = backend
+        .commit_files("HEAD")
+        .expect("commit files should include rename");
+    let renamed = files
+        .iter()
+        .find(|entry| entry.path == "renamed.txt")
+        .expect("renamed file should be listed")
+        .clone();
+    assert_eq!(renamed.old_path.as_deref(), Some("a.txt"));
+
+    let diff = backend
+        .commit_file_diff(&CommitFileDiffTarget {
+            commit_id: "HEAD".to_string(),
+            paths: vec![CommitFileDiffPath {
+                path: renamed.path,
+                old_path: renamed.old_path,
+            }],
+        })
+        .expect("commit file diff should succeed");
+
+    assert!(diff.contains("diff --git a/a.txt b/renamed.txt"));
+    assert!(diff.contains("--- a/a.txt"));
+    assert!(diff.contains("+++ b/renamed.txt"));
 }
 
 #[test]

@@ -79,3 +79,62 @@ impl GitBackend for SharedMockGitBackend {
         discard_files(paths: &[String]) -> Result<(), GitError>;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use ratagit_core::{BranchEntry, FileEntry, StashEntry};
+
+    use super::*;
+
+    fn shared_snapshot() -> RepoSnapshot {
+        RepoSnapshot {
+            status_summary: "staged: 0, unstaged: 1".to_string(),
+            current_branch: "main".to_string(),
+            detached_head: false,
+            files: vec![FileEntry {
+                path: "a.txt".to_string(),
+                staged: false,
+                untracked: false,
+            }],
+            commits: Vec::new(),
+            branches: vec![BranchEntry {
+                name: "main".to_string(),
+                is_current: true,
+            }],
+            stashes: vec![StashEntry {
+                id: "stash@{0}".to_string(),
+                summary: "savepoint".to_string(),
+            }],
+        }
+    }
+
+    #[test]
+    fn clones_share_operations_and_mutated_snapshot() {
+        let mut first = SharedMockGitBackend::new(shared_snapshot());
+        let mut second = first.clone();
+
+        first
+            .stage_files(&["a.txt".to_string()])
+            .expect("stage should update shared mock");
+        second
+            .stash_pop("stash@{0}")
+            .expect("stash pop should update shared mock");
+
+        assert_eq!(
+            first.operations(),
+            vec![
+                "stage-files:a.txt".to_string(),
+                "stash-pop:stash@{0}".to_string()
+            ]
+        );
+        assert_eq!(second.operations(), first.operations());
+        let snapshot = first.snapshot();
+        assert!(
+            snapshot
+                .files
+                .iter()
+                .any(|entry| entry.path == "a.txt" && entry.staged)
+        );
+        assert!(snapshot.stashes.is_empty());
+    }
+}
