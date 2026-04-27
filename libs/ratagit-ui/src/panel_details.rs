@@ -1,4 +1,4 @@
-use ratagit_core::{AppContext, PanelFocus};
+use ratagit_core::{AppContext, BranchesSubview, PanelFocus};
 use ratatui::style::{Color, Modifier, Style};
 
 use super::panel_types::{PanelLine, PanelSpan};
@@ -113,6 +113,12 @@ fn render_files_details_lines(state: &AppContext, max_lines: usize) -> Vec<Panel
 }
 
 fn render_branch_details_lines(state: &AppContext, max_lines: usize) -> Vec<PanelLine> {
+    if state.ui.branches.subview == BranchesSubview::CommitFiles {
+        return render_commit_file_details_lines(state, max_lines);
+    }
+    if state.ui.branches.subview == BranchesSubview::Commits {
+        return render_commit_details_lines(state, max_lines);
+    }
     if max_lines == 0 {
         return Vec::new();
     }

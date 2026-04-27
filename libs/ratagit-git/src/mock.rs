@@ -218,6 +218,17 @@ impl GitBackend for MockGitBackend {
             .collect())
     }
 
+    fn branch_commits(&mut self, branch: &str) -> Result<Vec<CommitEntry>, GitError> {
+        self.operations.push(format!("branch-commits:{branch}"));
+        Ok(self
+            .snapshot
+            .commits
+            .iter()
+            .take(COMMITS_PAGE_SIZE)
+            .cloned()
+            .collect())
+    }
+
     fn refresh_stashes(&mut self) -> Result<Vec<StashEntry>, GitError> {
         self.operations.push("refresh-stash".to_string());
         Ok(self.snapshot.stashes.clone())

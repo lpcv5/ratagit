@@ -13,6 +13,11 @@ pub(crate) fn selected_commit_id(state: &AppContext) -> Option<String> {
     selected_commit(&state.repo.commits.items, &state.ui.commits).map(|commit| commit_key(&commit))
 }
 
+pub(crate) fn selected_branch_commit_id(state: &AppContext) -> Option<String> {
+    selected_commit(&state.repo.branches.commits, &state.ui.branches.commits)
+        .map(|commit| commit_key(&commit))
+}
+
 pub(crate) fn selected_targets_are_all_staged(state: &AppContext, paths: &[String]) -> bool {
     !paths.is_empty()
         && paths

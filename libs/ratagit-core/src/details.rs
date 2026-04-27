@@ -1,8 +1,9 @@
 use crate::{
-    AppContext, BRANCH_DETAILS_LOG_MAX_COUNT, CachedBranchLog, CachedCommitDiff, CachedFilesDiff,
-    Command, CommitFileDiffPath, CommitFileDiffTarget, DETAILS_DIFF_CACHE_LIMIT,
+    AppContext, BRANCH_DETAILS_LOG_MAX_COUNT, BranchesSubview, CachedBranchLog, CachedCommitDiff,
+    CachedFilesDiff, Command, CommitFileDiffPath, CommitFileDiffTarget, DETAILS_DIFF_CACHE_LIMIT,
     FILES_DETAILS_DIFF_TARGET_LIMIT, FileDiffTarget, PanelFocus, push_notice,
-    selected_commit_file_targets, selected_diff_targets, selected_target_paths, with_pending,
+    selected_branch_commit_id, selected_commit_file_targets, selected_diff_targets,
+    selected_target_paths, with_pending,
 };
 
 pub(crate) fn scroll_up(state: &mut AppContext, lines: usize) {
@@ -110,13 +111,15 @@ pub(crate) fn apply_commit_diff_result(
     commit_id: String,
     result: Result<String, String>,
 ) -> Vec<Command> {
-    if state.ui.last_left_focus != PanelFocus::Commits {
+    if state.ui.last_left_focus != PanelFocus::Commits
+        && state.ui.last_left_focus != PanelFocus::Branches
+    {
         return Vec::new();
     }
-    if state.ui.commits.files.active {
+    if detail_commit_files_active(state) {
         return Vec::new();
     }
-    if Some(commit_id.as_str()) != crate::selected_commit_id(state).as_deref() {
+    if Some(commit_id.as_str()) != selected_detail_commit_id(state).as_deref() {
         return Vec::new();
     }
     state.work.details_pending = false;
@@ -173,6 +176,12 @@ pub(crate) fn refresh_for_focus(state: &mut AppContext) -> Vec<Command> {
         return refresh_files_details(state);
     }
     if state.ui.focus == PanelFocus::Branches {
+        if state.ui.branches.subview == BranchesSubview::CommitFiles {
+            return refresh_commit_file_diff(state);
+        }
+        if state.ui.branches.subview == BranchesSubview::Commits {
+            return refresh_commit_diff(state);
+        }
         return refresh_branch_log(state);
     }
     if state.ui.focus == PanelFocus::Commits {
@@ -243,7 +252,7 @@ pub(crate) fn refresh_files_details(state: &mut AppContext) -> Vec<Command> {
 }
 
 pub(crate) fn refresh_commit_diff(state: &mut AppContext) -> Vec<Command> {
-    let Some(commit_id) = crate::selected_commit_id(state) else {
+    let Some(commit_id) = selected_detail_commit_id(state) else {
         let target_changed = state.repo.details.commit_diff_target.is_some();
         state.repo.details.commit_diff.clear();
         state.repo.details.commit_diff_target = None;
@@ -269,15 +278,14 @@ pub(crate) fn refresh_commit_diff(state: &mut AppContext) -> Vec<Command> {
 }
 
 pub(crate) fn refresh_commit_file_diff(state: &mut AppContext) -> Vec<Command> {
-    if !state.ui.commits.files.active {
+    if !detail_commit_files_active(state) {
         return Vec::new();
     }
-    let Some(commit_id) = state.ui.commits.files.commit_id.clone() else {
+    let Some(commit_id) = detail_commit_files_commit_id(state) else {
         clear_commit_file_details(state);
         return Vec::new();
     };
-    let files =
-        selected_commit_file_targets(&state.repo.commits.files.items, &state.ui.commits.files);
+    let files = selected_detail_commit_file_targets(state);
     if files.is_empty() {
         clear_commit_file_details(state);
         return Vec::new();
@@ -357,24 +365,60 @@ fn commit_file_diff_target_matches_selection(
     state: &AppContext,
     target: &CommitFileDiffTarget,
 ) -> bool {
-    if state.ui.last_left_focus != PanelFocus::Commits || !state.ui.commits.files.active {
+    if !detail_commit_files_active(state) {
         return false;
     }
-    let Some(commit_id) = state.ui.commits.files.commit_id.as_deref() else {
+    let Some(commit_id) = detail_commit_files_commit_id(state) else {
         return false;
     };
-    if commit_id != target.commit_id {
+    if commit_id.as_str() != target.commit_id {
         return false;
     }
-    let selected =
-        selected_commit_file_targets(&state.repo.commits.files.items, &state.ui.commits.files)
-            .into_iter()
-            .map(|file| CommitFileDiffPath {
-                path: file.path,
-                old_path: file.old_path,
-            })
-            .collect::<Vec<_>>();
+    let selected = selected_detail_commit_file_targets(state)
+        .into_iter()
+        .map(|file| CommitFileDiffPath {
+            path: file.path,
+            old_path: file.old_path,
+        })
+        .collect::<Vec<_>>();
     selected == target.paths
+}
+
+fn selected_detail_commit_id(state: &AppContext) -> Option<String> {
+    if state.ui.last_left_focus == PanelFocus::Branches
+        && state.ui.branches.subview == BranchesSubview::Commits
+    {
+        return selected_branch_commit_id(state);
+    }
+    crate::selected_commit_id(state)
+}
+
+fn detail_commit_files_active(state: &AppContext) -> bool {
+    (state.ui.last_left_focus == PanelFocus::Commits && state.ui.commits.files.active)
+        || (state.ui.last_left_focus == PanelFocus::Branches
+            && state.ui.branches.subview == BranchesSubview::CommitFiles
+            && state.ui.branches.commit_files.active)
+}
+
+fn detail_commit_files_commit_id(state: &AppContext) -> Option<String> {
+    if state.ui.last_left_focus == PanelFocus::Branches
+        && state.ui.branches.subview == BranchesSubview::CommitFiles
+    {
+        return state.ui.branches.commit_files.commit_id.clone();
+    }
+    state.ui.commits.files.commit_id.clone()
+}
+
+fn selected_detail_commit_file_targets(state: &AppContext) -> Vec<crate::CommitFileEntry> {
+    if state.ui.last_left_focus == PanelFocus::Branches
+        && state.ui.branches.subview == BranchesSubview::CommitFiles
+    {
+        return selected_commit_file_targets(
+            &state.repo.branches.commit_files.items,
+            &state.ui.branches.commit_files,
+        );
+    }
+    selected_commit_file_targets(&state.repo.commits.files.items, &state.ui.commits.files)
 }
 
 fn cached_files_diff(state: &AppContext, paths: &[String]) -> Option<String> {
@@ -476,13 +520,29 @@ fn scroll_max_offset(state: &AppContext, visible_lines: usize) -> usize {
             .lines()
             .count()
             .saturating_sub(visible_lines),
-        PanelFocus::Branches => state
-            .repo
-            .details
-            .branch_log
-            .lines()
-            .count()
-            .saturating_sub(visible_lines),
+        PanelFocus::Branches => match state.ui.branches.subview {
+            BranchesSubview::List => state
+                .repo
+                .details
+                .branch_log
+                .lines()
+                .count()
+                .saturating_sub(visible_lines),
+            BranchesSubview::Commits => state
+                .repo
+                .details
+                .commit_diff
+                .lines()
+                .count()
+                .saturating_sub(visible_lines),
+            BranchesSubview::CommitFiles => state
+                .repo
+                .details
+                .commit_file_diff
+                .lines()
+                .count()
+                .saturating_sub(visible_lines),
+        },
         PanelFocus::Commits => {
             if state.ui.commits.files.active {
                 state

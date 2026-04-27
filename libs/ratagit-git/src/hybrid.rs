@@ -149,6 +149,38 @@ impl GitBackend for HybridGitBackend {
         Ok(commits)
     }
 
+    fn branch_commits(&mut self, branch: &str) -> Result<Vec<CommitEntry>, GitError> {
+        let started = Instant::now();
+        let (current_branch, detached_head) = current_head(&self.repo)?;
+        trace_step("head", started);
+        let started = Instant::now();
+        let output = self
+            .cli
+            .branch_commit_log_page(branch, 0, COMMITS_PAGE_SIZE)?;
+        let parsed = parse_commit_log_page(&output)?;
+        let oids = parsed.iter().map(|entry| entry.oid).collect::<Vec<_>>();
+        let statuses =
+            classify_commit_hash_statuses(&self.repo, &current_branch, detached_head, &oids)?;
+        let commits = parsed
+            .into_iter()
+            .map(|entry| CommitEntry {
+                id: entry.id,
+                full_id: entry.full_id,
+                summary: entry.summary,
+                message: entry.message,
+                author_name: entry.author_name,
+                graph: "●".to_string(),
+                hash_status: statuses
+                    .get(&entry.oid)
+                    .copied()
+                    .unwrap_or(CommitHashStatus::Unpushed),
+                is_merge: entry.is_merge,
+            })
+            .collect();
+        trace_step("branch_commits", started);
+        Ok(commits)
+    }
+
     fn refresh_branches(&mut self) -> Result<Vec<BranchEntry>, GitError> {
         let started = Instant::now();
         let (current_branch, detached_head) = current_head(&self.repo)?;

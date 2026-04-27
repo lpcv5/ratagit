@@ -139,6 +139,11 @@ impl GitBackend for RecordingBackend {
         self.inner.refresh_commits()
     }
 
+    fn branch_commits(&mut self, branch: &str) -> Result<Vec<CommitEntry>, GitError> {
+        self.record(format!("branch-commits:{}:{branch}", self.id));
+        self.inner.branch_commits(branch)
+    }
+
     fn refresh_stashes(&mut self) -> Result<Vec<StashEntry>, GitError> {
         self.record(format!("refresh-stash:{}", self.id));
         self.inner.refresh_stashes()

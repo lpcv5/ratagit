@@ -826,7 +826,7 @@ mod tests {
         state.work.details_pending = false;
         assert_eq!(
             shortcuts_for_state(&state),
-            "space checkout  n new  d delete  r rebase  p pull  P push"
+            "enter commits  space checkout  n new  d delete  r rebase  p pull  P push"
         );
 
         update(

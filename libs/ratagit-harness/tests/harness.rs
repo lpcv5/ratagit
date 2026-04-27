@@ -123,6 +123,10 @@ impl GitBackend for BlockingBackend {
         self.inner.lock().expect("mock lock").refresh_commits()
     }
 
+    fn branch_commits(&mut self, branch: &str) -> Result<Vec<CommitEntry>, GitError> {
+        self.inner.lock().expect("mock lock").branch_commits(branch)
+    }
+
     fn refresh_stashes(&mut self) -> Result<Vec<StashEntry>, GitError> {
         self.inner.lock().expect("mock lock").refresh_stashes()
     }
@@ -2203,6 +2207,40 @@ fn harness_branches_create_from_selected_branch() {
             batch_selected_screen_rows: &[],
             git_ops_contains: &["create-branch:feature/from-mvp:feature/mvp"],
             git_state_contains: &["name: \"feature/from-mvp\""],
+        },
+    ));
+}
+
+#[test]
+fn harness_branches_enter_commits_and_commit_files_subviews() {
+    let inputs = [
+        UiAction::RefreshAll,
+        UiAction::FocusNext,
+        UiAction::OpenBranchCommitsPanel,
+        UiAction::OpenBranchCommitFilesPanel,
+        UiAction::MoveDown,
+        UiAction::MoveDown,
+    ];
+    assert_scenario(MockScenario::new(
+        "branches_commits_commit_files_subviews",
+        clean_three_commit_fixture(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &[
+                "Branch Commit Files",
+                "A lib.rs",
+                "diff --git a/src/lib.rs b/src/lib.rs",
+            ],
+            screen_not_contains: &[],
+            selected_screen_rows: &["A lib.rs"],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &[
+                "branch-commits:main",
+                "commit-files:abc1234",
+                "commit-file-diff:abc1234:README.md",
+                "commit-file-diff:abc1234:src/lib.rs",
+            ],
+            git_state_contains: &["current_branch: \"main\"", "summary: \"init project\""],
         },
     ));
 }

@@ -67,6 +67,7 @@ pub trait GitBackend {
     fn refresh_commits(&mut self) -> Result<Vec<CommitEntry>, GitError> {
         self.refresh_snapshot().map(|snapshot| snapshot.commits)
     }
+    fn branch_commits(&mut self, branch: &str) -> Result<Vec<CommitEntry>, GitError>;
     fn refresh_stashes(&mut self) -> Result<Vec<StashEntry>, GitError> {
         self.refresh_snapshot().map(|snapshot| snapshot.stashes)
     }
@@ -144,6 +145,7 @@ impl<T: GitBackend + ?Sized> GitBackend for Box<T> {
         refresh_files() -> Result<FilesSnapshot, GitError>;
         refresh_branches() -> Result<Vec<ratagit_core::BranchEntry>, GitError>;
         refresh_commits() -> Result<Vec<CommitEntry>, GitError>;
+        branch_commits(branch: &str) -> Result<Vec<CommitEntry>, GitError>;
         refresh_stashes() -> Result<Vec<StashEntry>, GitError>;
         load_more_commits(offset: usize, limit: usize) -> Result<Vec<CommitEntry>, GitError>;
         files_details_diff(targets: &[FileDiffTarget]) -> Result<String, GitError>;
@@ -277,6 +279,19 @@ fn execute_command_inner(backend: &mut dyn GitBackend, command: Command) -> GitR
             commit_id: commit_id.clone(),
             result: backend
                 .commit_details_diff(&commit_id)
+                .map_err(|error| error.message),
+        },
+        Command::RefreshBranchCommits { branch } => GitResult::BranchCommits {
+            branch: branch.clone(),
+            result: backend
+                .branch_commits(&branch)
+                .map_err(|error| error.message),
+        },
+        Command::RefreshBranchCommitFiles { branch, commit_id } => GitResult::BranchCommitFiles {
+            branch: branch.clone(),
+            commit_id: commit_id.clone(),
+            result: backend
+                .commit_files(&commit_id)
                 .map_err(|error| error.message),
         },
         Command::RefreshCommitFiles { commit_id } => GitResult::CommitFiles {

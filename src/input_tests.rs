@@ -225,6 +225,29 @@ mod tests {
             map_key(&state, KeyCode::Char('v')),
             Some(UiAction::EnterBranchesMultiSelect)
         );
+        assert_eq!(
+            map_key(&state, KeyCode::Enter),
+            Some(UiAction::OpenBranchCommitsPanel)
+        );
+        state.ui.branches.subview = ratagit_core::BranchesSubview::Commits;
+        assert_eq!(
+            map_key(&state, KeyCode::Enter),
+            Some(UiAction::OpenBranchCommitFilesPanel)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Esc),
+            Some(UiAction::CloseBranchCommitsPanel)
+        );
+        state.ui.branches.subview = ratagit_core::BranchesSubview::CommitFiles;
+        assert_eq!(
+            map_key(&state, KeyCode::Enter),
+            Some(UiAction::ToggleBranchCommitFilesDirectory)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Esc),
+            Some(UiAction::CloseBranchCommitFilesPanel)
+        );
+        state.ui.branches.subview = ratagit_core::BranchesSubview::List;
 
         state.ui.focus = PanelFocus::Commits;
         assert_eq!(

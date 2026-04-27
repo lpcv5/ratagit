@@ -22,7 +22,8 @@ MVP v0 includes a left-nav workspace layout with six panels:
 - Files: tree view, folder expand/collapse, stage/unstage toggle, path-limited stash, repository reset menu, multi-select, and search
 - Branches: create branches from the selected local branch, checkout with
   optional auto-stash, delete local/`origin` branches, and rebase the current
-  branch
+  branch; Enter drills into the selected branch's commits and then that commit's
+  file tree
 - Commits: create commit, refresh list, squash/fixup/reword/delete commits, visual multi-select, detached checkout, and a commit Files subpanel
 - Stash: stash entries and stash pop selected entry
 - Details:
@@ -200,6 +201,15 @@ Branches panel rules:
   - dirty rebase uses the same explicit auto-stash confirmation as checkout
 - `/` searches branch names; confirming or navigating matches updates the
   selected branch and refreshes Branches Details
+- `Enter` opens a commits subview for the selected branch using `git log <branch>`
+  semantics
+  - commit rows use the same rendering as the main Commits panel
+  - Details follows the selected branch commit with the same bounded commit diff preview
+  - `Enter` on a branch commit opens a Commit Files subview for that commit
+  - Branch Commit Files rows use the same tree display and Details patch preview
+    as the main Commit Files subpanel
+  - `Esc` returns from Branch Commit Files to Branch Commits, then from Branch
+    Commits to the branch list
 
 Commits panel rules:
 

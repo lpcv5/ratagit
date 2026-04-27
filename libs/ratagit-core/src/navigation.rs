@@ -11,11 +11,7 @@ pub(crate) fn move_selection(state: &mut AppContext, move_up: bool) -> Vec<Comma
             Vec::new()
         }
         PanelFocus::Branches => {
-            branches::move_selected_branch(
-                &state.repo.branches.items,
-                &mut state.ui.branches,
-                move_up,
-            );
+            branches::move_selection(state, move_up);
             Vec::new()
         }
         PanelFocus::Commits => commit_workflow::move_commit_selection(state, move_up),
@@ -42,12 +38,7 @@ pub(crate) fn move_selection_in_viewport(
             Vec::new()
         }
         PanelFocus::Branches => {
-            branches::move_selected_branch_in_viewport(
-                &state.repo.branches.items,
-                &mut state.ui.branches,
-                move_up,
-                visible_lines,
-            );
+            branches::move_selection_in_viewport(state, move_up, visible_lines);
             Vec::new()
         }
         PanelFocus::Commits => {

@@ -1,4 +1,4 @@
-use ratagit_core::{AppContext, PanelFocus};
+use ratagit_core::{AppContext, BranchesSubview, PanelFocus};
 
 use crate::frame::RenderContext;
 use crate::loading_indicator::loading_indicator_for_state;
@@ -125,12 +125,17 @@ pub(crate) fn shortcut_line_for_state(state: &AppContext) -> ShortcutLine {
             ("D", "reset"),
             ("enter", "expand"),
         ]),
-        PanelFocus::Branches => sync_segments(&[
-            ("space", "checkout"),
-            ("n", "new"),
-            ("d", "delete"),
-            ("r", "rebase"),
-        ]),
+        PanelFocus::Branches => match state.ui.branches.subview {
+            BranchesSubview::List => sync_segments(&[
+                ("enter", "commits"),
+                ("space", "checkout"),
+                ("n", "new"),
+                ("d", "delete"),
+                ("r", "rebase"),
+            ]),
+            BranchesSubview::Commits => sync_segments(&[("enter", "files"), ("Esc", "back")]),
+            BranchesSubview::CommitFiles => sync_segments(&[("enter", "expand"), ("Esc", "back")]),
+        },
         PanelFocus::Commits => {
             if state.ui.commits.files.active {
                 sync_segments(&[("Esc", "back")])

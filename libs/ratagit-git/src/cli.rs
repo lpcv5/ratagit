@@ -265,16 +265,35 @@ impl GitCli {
     }
 
     pub(crate) fn commit_log_page(&self, offset: usize, limit: usize) -> Result<Vec<u8>, GitError> {
-        self.run_git_output_with_options(
-            vec![
-                "log".to_string(),
-                format!("--skip={offset}"),
-                "-n".to_string(),
-                limit.to_string(),
-                "--format=%x1e%H%x00%h%x00%P%x00%an%x00%B%x00".to_string(),
-            ],
-            true,
-        )
+        self.commit_log_page_for_revision(None, offset, limit)
+    }
+
+    pub(crate) fn branch_commit_log_page(
+        &self,
+        branch: &str,
+        offset: usize,
+        limit: usize,
+    ) -> Result<Vec<u8>, GitError> {
+        self.commit_log_page_for_revision(Some(branch), offset, limit)
+    }
+
+    fn commit_log_page_for_revision(
+        &self,
+        revision: Option<&str>,
+        offset: usize,
+        limit: usize,
+    ) -> Result<Vec<u8>, GitError> {
+        let mut args = vec![
+            "log".to_string(),
+            format!("--skip={offset}"),
+            "-n".to_string(),
+            limit.to_string(),
+            "--format=%x1e%H%x00%h%x00%P%x00%an%x00%B%x00".to_string(),
+        ];
+        if let Some(revision) = revision {
+            args.push(revision.to_string());
+        }
+        self.run_git_output_with_options(args, true)
     }
 
     pub(crate) fn branch_details_log(

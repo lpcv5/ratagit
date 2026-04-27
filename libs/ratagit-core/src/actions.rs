@@ -58,6 +58,11 @@ pub enum UiAction {
     EditorConfirm,
     EditorCancel,
     CreateCommit { message: String },
+    OpenBranchCommitsPanel,
+    CloseBranchCommitsPanel,
+    OpenBranchCommitFilesPanel,
+    CloseBranchCommitFilesPanel,
+    ToggleBranchCommitFilesDirectory,
     OpenCommitFilesPanel,
     CloseCommitFilesPanel,
     ToggleCommitFilesDirectory,
@@ -122,6 +127,15 @@ pub enum GitResult {
     CommitDetailsDiff {
         commit_id: String,
         result: Result<String, String>,
+    },
+    BranchCommits {
+        branch: String,
+        result: Result<Vec<CommitEntry>, String>,
+    },
+    BranchCommitFiles {
+        branch: String,
+        commit_id: String,
+        result: Result<Vec<CommitFileEntry>, String>,
     },
     CommitFiles {
         commit_id: String,
@@ -259,6 +273,13 @@ pub enum Command {
     RefreshCommitDetailsDiff {
         commit_id: String,
     },
+    RefreshBranchCommits {
+        branch: String,
+    },
+    RefreshBranchCommitFiles {
+        branch: String,
+        commit_id: String,
+    },
     RefreshCommitFiles {
         commit_id: String,
     },
@@ -352,6 +373,8 @@ impl Command {
             Command::RefreshFilesDetailsDiff { .. } => "refresh_files_details_diff",
             Command::RefreshBranchDetailsLog { .. } => "refresh_branch_details_log",
             Command::RefreshCommitDetailsDiff { .. } => "refresh_commit_details_diff",
+            Command::RefreshBranchCommits { .. } => "refresh_branch_commits",
+            Command::RefreshBranchCommitFiles { .. } => "refresh_branch_commit_files",
             Command::RefreshCommitFiles { .. } => "refresh_commit_files",
             Command::RefreshCommitFileDiff { .. } => "refresh_commit_file_diff",
             Command::StageFiles { .. } => "stage_files",
@@ -398,6 +421,8 @@ impl Command {
             | Command::RefreshCommits
             | Command::RefreshStash
             | Command::LoadMoreCommits { .. }
+            | Command::RefreshBranchCommits { .. }
+            | Command::RefreshBranchCommitFiles { .. }
             | Command::RefreshCommitFiles { .. }
             | Command::StageFiles { .. }
             | Command::UnstageFiles { .. }
@@ -493,6 +518,8 @@ impl Command {
             | Command::RefreshFilesDetailsDiff { .. }
             | Command::RefreshBranchDetailsLog { .. }
             | Command::RefreshCommitDetailsDiff { .. }
+            | Command::RefreshBranchCommits { .. }
+            | Command::RefreshBranchCommitFiles { .. }
             | Command::RefreshCommitFiles { .. }
             | Command::RefreshCommitFileDiff { .. } => None,
         }
@@ -518,6 +545,8 @@ impl GitResult {
             GitResult::FilesDetailsDiff { .. } => "files_details_diff",
             GitResult::BranchDetailsLog { .. } => "branch_details_log",
             GitResult::CommitDetailsDiff { .. } => "commit_details_diff",
+            GitResult::BranchCommits { .. } => "branch_commits",
+            GitResult::BranchCommitFiles { .. } => "branch_commit_files",
             GitResult::CommitFiles { .. } => "commit_files",
             GitResult::CommitFileDiff { .. } => "commit_file_diff",
             GitResult::RefreshFailed { .. } => "refresh_failed",
@@ -555,6 +584,8 @@ impl GitResult {
             | GitResult::BranchDetailsLog { result, .. }
             | GitResult::CommitDetailsDiff { result, .. }
             | GitResult::CommitFileDiff { result, .. } => result.is_ok(),
+            GitResult::BranchCommits { result, .. } => result.is_ok(),
+            GitResult::BranchCommitFiles { result, .. } => result.is_ok(),
             GitResult::CommitFiles { result, .. } => result.is_ok(),
             GitResult::CommitsPage { result, .. } => result.is_ok(),
             GitResult::StageFiles { result, .. }
@@ -663,8 +694,11 @@ fn mark_command_pending(state: &mut AppContext, command: &Command) {
         | Command::RefreshCommitFileDiff { .. } => {
             state.work.details_pending = true;
         }
-        Command::RefreshCommitFiles { .. } => {
+        Command::RefreshCommitFiles { .. } | Command::RefreshBranchCommitFiles { .. } => {
             state.work.commit_files_loading = true;
+        }
+        Command::RefreshBranchCommits { .. } => {
+            mark_refresh_target_pending(state, RefreshTarget::Branches);
         }
         _ => {
             if let Some(label) = command.pending_operation_label() {

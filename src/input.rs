@@ -1,6 +1,7 @@
 use crossterm::event::{KeyCode, KeyModifiers};
 use ratagit_core::{
-    AppContext, BranchInputMode, CommitInputMode, FileInputMode, PanelFocus, UiAction,
+    AppContext, BranchInputMode, BranchesSubview, CommitInputMode, FileInputMode, PanelFocus,
+    UiAction,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -233,18 +234,60 @@ fn ui_action_for_key(
     }
 
     if state.ui.focus == PanelFocus::Branches {
-        if state.ui.branches.mode == BranchInputMode::MultiSelect && code == KeyCode::Esc {
-            return Some(UiAction::ExitBranchesMultiSelect);
-        }
-        match code {
-            KeyCode::Char(' ') => return Some(UiAction::CheckoutSelectedBranch),
-            KeyCode::Char('v') if state.ui.branches.mode != BranchInputMode::MultiSelect => {
-                return Some(UiAction::EnterBranchesMultiSelect);
+        match state.ui.branches.subview {
+            BranchesSubview::CommitFiles => {
+                if state.ui.branches.commit_files.mode == FileInputMode::MultiSelect
+                    && code == KeyCode::Esc
+                {
+                    return Some(UiAction::ExitCommitFilesMultiSelect);
+                }
+                if code == KeyCode::Esc {
+                    return Some(UiAction::CloseBranchCommitFilesPanel);
+                }
+                if state.ui.branches.commit_files.mode != FileInputMode::MultiSelect
+                    && code == KeyCode::Char('v')
+                {
+                    return Some(UiAction::EnterCommitFilesMultiSelect);
+                }
+                if code == KeyCode::Enter {
+                    return Some(UiAction::ToggleBranchCommitFilesDirectory);
+                }
             }
-            KeyCode::Char('n') => return Some(UiAction::OpenBranchCreateInput),
-            KeyCode::Char('d') => return Some(UiAction::OpenBranchDeleteMenu),
-            KeyCode::Char('r') => return Some(UiAction::OpenBranchRebaseMenu),
-            _ => {}
+            BranchesSubview::Commits => {
+                if state.ui.branches.commits.mode == CommitInputMode::MultiSelect
+                    && code == KeyCode::Esc
+                {
+                    return Some(UiAction::ExitCommitsMultiSelect);
+                }
+                if code == KeyCode::Esc {
+                    return Some(UiAction::CloseBranchCommitsPanel);
+                }
+                if state.ui.branches.commits.mode != CommitInputMode::MultiSelect
+                    && code == KeyCode::Char('v')
+                {
+                    return Some(UiAction::EnterCommitsMultiSelect);
+                }
+                if code == KeyCode::Enter {
+                    return Some(UiAction::OpenBranchCommitFilesPanel);
+                }
+            }
+            BranchesSubview::List => {}
+        }
+        if state.ui.branches.subview == BranchesSubview::List {
+            if state.ui.branches.mode == BranchInputMode::MultiSelect && code == KeyCode::Esc {
+                return Some(UiAction::ExitBranchesMultiSelect);
+            }
+            match code {
+                KeyCode::Enter => return Some(UiAction::OpenBranchCommitsPanel),
+                KeyCode::Char(' ') => return Some(UiAction::CheckoutSelectedBranch),
+                KeyCode::Char('v') if state.ui.branches.mode != BranchInputMode::MultiSelect => {
+                    return Some(UiAction::EnterBranchesMultiSelect);
+                }
+                KeyCode::Char('n') => return Some(UiAction::OpenBranchCreateInput),
+                KeyCode::Char('d') => return Some(UiAction::OpenBranchDeleteMenu),
+                KeyCode::Char('r') => return Some(UiAction::OpenBranchRebaseMenu),
+                _ => {}
+            }
         }
     }
 

@@ -288,6 +288,8 @@ pub struct CommitsRepoState {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct BranchesRepoState {
     pub items: Vec<BranchEntry>,
+    pub commits: Vec<CommitEntry>,
+    pub commit_files: CommitFilesRepoState,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -446,6 +448,10 @@ impl EditorState {
 pub struct BranchesUiState {
     pub selected: usize,
     pub scroll_offset: usize,
+    pub subview: BranchesSubview,
+    pub subview_branch: Option<String>,
+    pub commits: CommitsUiState,
+    pub commit_files: CommitFilesUiState,
     pub selected_rows: BTreeSet<String>,
     pub selection_anchor: Option<String>,
     pub mode: BranchInputMode,
@@ -455,6 +461,14 @@ pub struct BranchesUiState {
     pub force_delete_confirm: BranchForceDeleteConfirmState,
     pub rebase_menu: BranchRebaseMenuState,
     pub auto_stash_confirm: AutoStashConfirmState,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BranchesSubview {
+    #[default]
+    List,
+    Commits,
+    CommitFiles,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -663,7 +677,11 @@ impl AppContext {
     pub fn active_search_scope(&self) -> Option<SearchScope> {
         match self.ui.focus {
             PanelFocus::Files => Some(SearchScope::Files),
-            PanelFocus::Branches => Some(SearchScope::Branches),
+            PanelFocus::Branches => match self.ui.branches.subview {
+                BranchesSubview::List => Some(SearchScope::Branches),
+                BranchesSubview::Commits => Some(SearchScope::Commits),
+                BranchesSubview::CommitFiles => Some(SearchScope::CommitFiles),
+            },
             PanelFocus::Commits if self.ui.commits.files.active => Some(SearchScope::CommitFiles),
             PanelFocus::Commits => Some(SearchScope::Commits),
             PanelFocus::Stash => Some(SearchScope::Stash),

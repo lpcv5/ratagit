@@ -51,6 +51,11 @@ Focus model:
 - `AppContext.repo.branches.items` stores local branch rows while
   `AppContext.ui.branches` stores active branch creation, delete menu, rebase
   menu, and auto-stash confirmation state
+- `AppContext.repo.branches.commits` and
+  `AppContext.repo.branches.commit_files` store Branches subview data separately
+  from the main Commits panel; `AppContext.ui.branches` stores the active
+  subview and reuses commit-list and commit-file tree UI state for isolated
+  Branches interactions
 - `AppContext.work` stores visible pending refresh/details/operation state and
   the last completed command label
 - `AppContext.repo.status` stores Git status performance metadata:
@@ -211,7 +216,14 @@ Files panel interaction:
 - while editor, reset, or discard modal is active, modal key handling has highest input priority
   over panel navigation mappings.
 - Branches focus maps `space` to checkout, `v` to enter visual multi-select,
-  `n` to new branch, `d` to delete, and `r` to rebase.
+  `n` to new branch, `d` to delete, `r` to rebase, and `Enter` to a commits
+  subview for the selected branch.
+- Branch Commits reuses the main commit-row formatter and commit selection
+  helpers against Branches-owned state; `Enter` opens Branch Commit Files and
+  `Esc` returns to the branch list.
+- Branch Commit Files reuses the existing Commit Files tree projection,
+  renderer, and Details patch logic against Branches-owned commit-file state;
+  `Enter` expands/collapses directories and `Esc` returns to Branch Commits.
 - Branch visual multi-select is AppContext-owned and follows the same continuous
   anchor-to-cursor model as Files and Commits; `Esc` exits the mode.
 - Branch creation opens an AppContext-owned input modal and emits

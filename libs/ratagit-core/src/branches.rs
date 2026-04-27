@@ -3,7 +3,9 @@ use crate::text_edit::{
 };
 use crate::{
     AppContext, AutoStashOperation, BranchDeleteMode, BranchEntry, BranchInputMode,
-    BranchRebaseChoice, BranchesUiState, Command, push_notice, with_pending,
+    BranchRebaseChoice, BranchesSubview, BranchesUiState, Command, CommitFilesUiState, SearchScope,
+    details, initialize_commit_files_tree, mark_commit_file_items_changed, push_notice,
+    selected_branch_commit_id, with_pending,
 };
 
 pub(crate) fn move_selected_branch(
@@ -14,6 +16,217 @@ pub(crate) fn move_selected_branch(
     crate::scroll::move_selected_index(&mut state.selected, items.len(), move_up);
     if state.mode == BranchInputMode::MultiSelect {
         refresh_branch_multi_select_range(items, state);
+    }
+}
+
+pub(crate) fn move_selection(state: &mut AppContext, move_up: bool) {
+    match state.ui.branches.subview {
+        BranchesSubview::List => {
+            move_selected_branch(&state.repo.branches.items, &mut state.ui.branches, move_up);
+        }
+        BranchesSubview::Commits => {
+            crate::move_commit_selected(
+                &state.repo.branches.commits,
+                &mut state.ui.branches.commits,
+                move_up,
+            );
+        }
+        BranchesSubview::CommitFiles => {
+            crate::move_commit_file_selected(&mut state.ui.branches.commit_files, move_up);
+        }
+    }
+}
+
+pub(crate) fn move_selection_in_viewport(
+    state: &mut AppContext,
+    move_up: bool,
+    visible_lines: usize,
+) {
+    match state.ui.branches.subview {
+        BranchesSubview::List => move_selected_branch_in_viewport(
+            &state.repo.branches.items,
+            &mut state.ui.branches,
+            move_up,
+            visible_lines,
+        ),
+        BranchesSubview::Commits => crate::move_commit_selected_in_viewport(
+            &state.repo.branches.commits,
+            &mut state.ui.branches.commits,
+            move_up,
+            visible_lines,
+        ),
+        BranchesSubview::CommitFiles => crate::move_commit_file_selected_in_viewport(
+            &mut state.ui.branches.commit_files,
+            move_up,
+            visible_lines,
+        ),
+    }
+}
+
+pub(crate) fn open_commits_panel(state: &mut AppContext) -> Vec<Command> {
+    let Some(branch) = selected_branch_name(state) else {
+        push_notice(state, "No branch selected");
+        return Vec::new();
+    };
+    leave_multi_select(&mut state.ui.branches);
+    state.ui.branches.subview = BranchesSubview::Commits;
+    state.ui.branches.subview_branch = Some(branch.clone());
+    state.ui.branches.commits = crate::CommitsUiState::default();
+    state.ui.branches.commit_files = CommitFilesUiState::default();
+    state.repo.branches.commits.clear();
+    state.repo.branches.commit_files.items.clear();
+    state.repo.details.branch_log.clear();
+    state.repo.details.branch_log_error = None;
+    state.repo.details.commit_diff.clear();
+    state.repo.details.commit_diff_target = None;
+    state.repo.details.commit_diff_error = None;
+    details::reset_scroll(state);
+    crate::search::clear_search_if_incompatible(state);
+    with_pending(state, vec![Command::RefreshBranchCommits { branch }])
+}
+
+pub(crate) fn close_commits_panel(state: &mut AppContext) -> Vec<Command> {
+    if state.ui.branches.subview == BranchesSubview::List {
+        return Vec::new();
+    }
+    state.ui.branches.subview = BranchesSubview::List;
+    state.ui.branches.subview_branch = None;
+    state.ui.branches.commits = crate::CommitsUiState::default();
+    state.ui.branches.commit_files = CommitFilesUiState::default();
+    state.repo.branches.commits.clear();
+    state.repo.branches.commit_files.items.clear();
+    state.work.commit_files_loading = false;
+    crate::search::clear_search_if_incompatible(state);
+    details::refresh_for_focus(state)
+}
+
+pub(crate) fn open_commit_files_panel(state: &mut AppContext) -> Vec<Command> {
+    if state.ui.branches.subview != BranchesSubview::Commits {
+        return Vec::new();
+    }
+    let Some(branch) = state.ui.branches.subview_branch.clone() else {
+        push_notice(state, "No branch selected");
+        return Vec::new();
+    };
+    let Some(commit_id) = selected_branch_commit_id(state) else {
+        push_notice(state, "No commit selected");
+        return Vec::new();
+    };
+    state.ui.branches.subview = BranchesSubview::CommitFiles;
+    state.ui.branches.commit_files = CommitFilesUiState {
+        active: true,
+        commit_id: Some(commit_id.clone()),
+        ..CommitFilesUiState::default()
+    };
+    state.repo.branches.commit_files.items.clear();
+    state.repo.details.commit_file_diff.clear();
+    state.repo.details.commit_file_diff_target = None;
+    state.repo.details.commit_file_diff_error = None;
+    details::reset_scroll(state);
+    crate::search::clear_search_if_incompatible(state);
+    with_pending(
+        state,
+        vec![Command::RefreshBranchCommitFiles { branch, commit_id }],
+    )
+}
+
+pub(crate) fn close_commit_files_panel(state: &mut AppContext) -> Vec<Command> {
+    if state.ui.branches.subview != BranchesSubview::CommitFiles {
+        return Vec::new();
+    }
+    state.ui.branches.subview = BranchesSubview::Commits;
+    state.ui.branches.commit_files = CommitFilesUiState::default();
+    state.repo.branches.commit_files.items.clear();
+    state.work.commit_files_loading = false;
+    state.repo.details.commit_file_diff.clear();
+    state.repo.details.commit_file_diff_target = None;
+    state.repo.details.commit_file_diff_error = None;
+    crate::search::clear_search_if_incompatible(state);
+    details::refresh_for_focus(state)
+}
+
+pub(crate) fn handle_branch_commits_result(
+    state: &mut AppContext,
+    branch: String,
+    result: Result<Vec<crate::CommitEntry>, String>,
+) -> Vec<Command> {
+    if state.ui.branches.subview == BranchesSubview::List
+        || state.ui.branches.subview_branch.as_deref() != Some(branch.as_str())
+    {
+        return Vec::new();
+    }
+    state
+        .work
+        .pending_refreshes
+        .remove(&crate::RefreshTarget::Branches);
+    state.work.refresh_pending = !state.work.pending_refreshes.is_empty();
+    state.work.last_completed_command = Some("branch_commits".to_string());
+    match result {
+        Ok(commits) => {
+            state.repo.branches.commits = commits;
+            crate::reconcile_commits_after_items_changed(
+                &state.repo.branches.commits,
+                &mut state.ui.branches.commits,
+            );
+            crate::clamp_commit_selection(
+                &state.repo.branches.commits,
+                &mut state.ui.branches.commits,
+            );
+            state.repo.status.last_error = None;
+            details::refresh_for_focus(state)
+        }
+        Err(error) => {
+            let message = format!("Failed to refresh branch commits: {error}");
+            state.repo.status.last_error = Some(message.clone());
+            push_notice(state, &message);
+            Vec::new()
+        }
+    }
+}
+
+pub(crate) fn handle_branch_commit_files_result(
+    state: &mut AppContext,
+    branch: String,
+    commit_id: String,
+    result: Result<Vec<crate::CommitFileEntry>, String>,
+) -> Vec<Command> {
+    if state.ui.branches.subview != BranchesSubview::CommitFiles
+        || state.ui.branches.subview_branch.as_deref() != Some(branch.as_str())
+        || state.ui.branches.commit_files.commit_id.as_deref() != Some(commit_id.as_str())
+    {
+        return Vec::new();
+    }
+    state.work.commit_files_loading = false;
+    state.work.last_completed_command = Some("branch_commit_files".to_string());
+    match result {
+        Ok(files) => {
+            state.repo.branches.commit_files.items = files;
+            mark_commit_file_items_changed(
+                &state.repo.branches.commit_files.items,
+                &mut state.ui.branches.commit_files,
+            );
+            state.ui.branches.commit_files.selected = 0;
+            state.ui.branches.commit_files.scroll_offset = 0;
+            initialize_commit_files_tree(
+                &state.repo.branches.commit_files.items,
+                &mut state.ui.branches.commit_files,
+            );
+            if state.ui.search.scope == Some(SearchScope::CommitFiles)
+                && !state.ui.search.query.is_empty()
+            {
+                crate::search::recompute_search_matches(state);
+            }
+            state.repo.status.last_error = None;
+            details::refresh_for_focus(state)
+        }
+        Err(error) => {
+            let message = format!("Failed to refresh branch commit files: {error}");
+            state.repo.status.last_error = Some(message.clone());
+            state.repo.details.commit_file_diff.clear();
+            state.repo.details.commit_file_diff_error = Some(message.clone());
+            push_notice(state, &message);
+            Vec::new()
+        }
     }
 }
 

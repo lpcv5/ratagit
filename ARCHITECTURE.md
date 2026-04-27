@@ -214,6 +214,10 @@ internal library packages under `libs/`.
   automatic file diffs to the first 100 targets.
 - Automatic full-commit Details previews are bounded in `GitBackend` so large
   commit patches cannot feed unbounded text into `AppContext` or pure rendering.
+- Branches subviews load selected-branch commits through `GitBackend` read-only
+  commands and store the results under Branches-owned `AppContext` state while
+  reusing the same commit-row and commit-file tree projections as the main
+  Commits panel.
 
 ---
 

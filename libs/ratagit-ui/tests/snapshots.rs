@@ -225,6 +225,27 @@ fn apply_mock_details_commands(state: &mut AppContext, commands: Vec<Command>) {
             );
             assert!(follow_up.is_empty());
         }
+        [Command::RefreshBranchCommits { branch }] => {
+            let follow_up = update(
+                state,
+                Action::GitResult(GitResult::BranchCommits {
+                    branch: branch.clone(),
+                    result: Ok(fixture_dirty_repo().commits),
+                }),
+            );
+            apply_mock_details_commands(state, follow_up);
+        }
+        [Command::RefreshBranchCommitFiles { branch, commit_id }] => {
+            let follow_up = update(
+                state,
+                Action::GitResult(GitResult::BranchCommitFiles {
+                    branch: branch.clone(),
+                    commit_id: commit_id.clone(),
+                    result: Ok(mock_commit_files()),
+                }),
+            );
+            apply_mock_details_commands(state, follow_up);
+        }
         [Command::RefreshCommitFiles { commit_id }] => {
             let follow_up = update(
                 state,
@@ -624,6 +645,54 @@ fn terminal_snapshot_commit_files_empty() {
         }),
     );
     assert!(follow_up.is_empty());
+
+    insta::assert_snapshot!(render_terminal_text(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    ));
+}
+
+#[test]
+fn terminal_snapshot_branch_commits_subview() {
+    let mut state = AppContext::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+    let commands = update(
+        &mut state,
+        Action::Ui(UiAction::FocusPanel {
+            panel: PanelFocus::Branches,
+        }),
+    );
+    apply_mock_details_commands(&mut state, commands);
+    let commands = update(&mut state, Action::Ui(UiAction::OpenBranchCommitsPanel));
+    apply_mock_details_commands(&mut state, commands);
+
+    insta::assert_snapshot!(render_terminal_text(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    ));
+}
+
+#[test]
+fn terminal_snapshot_branch_commit_files_subview() {
+    let mut state = AppContext::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+    let commands = update(
+        &mut state,
+        Action::Ui(UiAction::FocusPanel {
+            panel: PanelFocus::Branches,
+        }),
+    );
+    apply_mock_details_commands(&mut state, commands);
+    let commands = update(&mut state, Action::Ui(UiAction::OpenBranchCommitsPanel));
+    apply_mock_details_commands(&mut state, commands);
+    let commands = update(&mut state, Action::Ui(UiAction::OpenBranchCommitFilesPanel));
+    apply_mock_details_commands(&mut state, commands);
 
     insta::assert_snapshot!(render_terminal_text(
         &state,

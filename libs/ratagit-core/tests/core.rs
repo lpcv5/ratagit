@@ -1,12 +1,12 @@
 use ratagit_core::{
     Action, AppContext, AutoStashOperation, BranchDeleteChoice, BranchDeleteMode, BranchEntry,
-    BranchInputMode, BranchRebaseChoice, COMMITS_PAGE_SIZE, COMMITS_PREFETCH_THRESHOLD, Command,
-    CommitEditorIntent, CommitEntry, CommitField, CommitFileDiffPath, CommitFileDiffTarget,
-    CommitFileEntry, CommitFileStatus, CommitHashStatus, CommitInputMode, EditorKind,
-    FileDiffTarget, FileEntry, FileInputMode, FilesSnapshot, GitResult, PanelFocus, RefreshTarget,
-    RepoSnapshot, ResetChoice, ResetMode, SearchScope, StashEntry, StashScope, UiAction,
-    debounce_key_for_command, refresh_tree_projection, selected_commit_file_targets, selected_row,
-    update,
+    BranchInputMode, BranchRebaseChoice, BranchesSubview, COMMITS_PAGE_SIZE,
+    COMMITS_PREFETCH_THRESHOLD, Command, CommitEditorIntent, CommitEntry, CommitField,
+    CommitFileDiffPath, CommitFileDiffTarget, CommitFileEntry, CommitFileStatus, CommitHashStatus,
+    CommitInputMode, EditorKind, FileDiffTarget, FileEntry, FileInputMode, FilesSnapshot,
+    GitResult, PanelFocus, RefreshTarget, RepoSnapshot, ResetChoice, ResetMode, SearchScope,
+    StashEntry, StashScope, UiAction, debounce_key_for_command, refresh_tree_projection,
+    selected_commit_file_targets, selected_row, update,
 };
 
 fn commit_entry(id: &str, summary: &str) -> CommitEntry {
@@ -1141,6 +1141,152 @@ fn commit_files_navigation_refreshes_selected_file_diff() {
     let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
 
     assert_commit_file_diff_refresh(commands, "abc1234-full", "src/lib.rs");
+}
+
+#[test]
+fn enter_on_branch_opens_branch_commits_subview() {
+    let mut state = context_with_focus(PanelFocus::Branches);
+    state.repo.branches.items = vec![
+        branch_entry("main", true),
+        branch_entry("feature/mvp", false),
+    ];
+    state.ui.branches.selected = 1;
+
+    let commands = update(&mut state, Action::Ui(UiAction::OpenBranchCommitsPanel));
+
+    assert_eq!(state.ui.branches.subview, BranchesSubview::Commits);
+    assert_eq!(
+        state.ui.branches.subview_branch.as_deref(),
+        Some("feature/mvp")
+    );
+    assert_eq!(
+        commands,
+        vec![Command::RefreshBranchCommits {
+            branch: "feature/mvp".to_string(),
+        }]
+    );
+}
+
+#[test]
+fn branch_commits_result_populates_isolated_commits_and_requests_diff() {
+    let mut state = context_with_focus(PanelFocus::Branches);
+    state.repo.branches.items = vec![branch_entry("feature/mvp", false)];
+    update(&mut state, Action::Ui(UiAction::OpenBranchCommitsPanel));
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::BranchCommits {
+            branch: "feature/mvp".to_string(),
+            result: Ok(vec![commit_entry("abc1234", "init project")]),
+        }),
+    );
+
+    assert_eq!(state.repo.branches.commits.len(), 1);
+    assert!(state.repo.commits.items.is_empty());
+    assert_commit_diff_refresh(commands, "abc1234-full");
+}
+
+#[test]
+fn enter_on_branch_commit_opens_branch_commit_files_subview() {
+    let mut state = context_with_focus(PanelFocus::Branches);
+    state.repo.branches.items = vec![branch_entry("feature/mvp", false)];
+    update(&mut state, Action::Ui(UiAction::OpenBranchCommitsPanel));
+    update(
+        &mut state,
+        Action::GitResult(GitResult::BranchCommits {
+            branch: "feature/mvp".to_string(),
+            result: Ok(vec![commit_entry("abc1234", "init project")]),
+        }),
+    );
+
+    let commands = update(&mut state, Action::Ui(UiAction::OpenBranchCommitFilesPanel));
+
+    assert_eq!(state.ui.branches.subview, BranchesSubview::CommitFiles);
+    assert_eq!(
+        commands,
+        vec![Command::RefreshBranchCommitFiles {
+            branch: "feature/mvp".to_string(),
+            commit_id: "abc1234-full".to_string(),
+        }]
+    );
+}
+
+#[test]
+fn branch_commit_files_result_populates_tree_and_requests_file_diff() {
+    let mut state = context_with_focus(PanelFocus::Branches);
+    state.repo.branches.items = vec![branch_entry("feature/mvp", false)];
+    update(&mut state, Action::Ui(UiAction::OpenBranchCommitsPanel));
+    update(
+        &mut state,
+        Action::GitResult(GitResult::BranchCommits {
+            branch: "feature/mvp".to_string(),
+            result: Ok(vec![commit_entry("abc1234", "init project")]),
+        }),
+    );
+    update(&mut state, Action::Ui(UiAction::OpenBranchCommitFilesPanel));
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::BranchCommitFiles {
+            branch: "feature/mvp".to_string(),
+            commit_id: "abc1234-full".to_string(),
+            result: Ok(commit_files_fixture()),
+        }),
+    );
+
+    assert_eq!(state.repo.branches.commit_files.items.len(), 2);
+    assert!(state.repo.commits.files.items.is_empty());
+    assert_commit_file_diff_refresh(commands, "abc1234-full", "README.md");
+}
+
+#[test]
+fn stale_branch_subview_results_are_ignored() {
+    let mut state = context_with_focus(PanelFocus::Branches);
+    state.repo.branches.items = vec![
+        branch_entry("main", true),
+        branch_entry("feature/mvp", false),
+    ];
+    update(&mut state, Action::Ui(UiAction::OpenBranchCommitsPanel));
+    state.ui.branches.selected = 1;
+    update(&mut state, Action::Ui(UiAction::OpenBranchCommitsPanel));
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::BranchCommits {
+            branch: "main".to_string(),
+            result: Ok(vec![commit_entry("abc1234", "init project")]),
+        }),
+    );
+
+    assert!(commands.is_empty());
+    assert!(state.repo.branches.commits.is_empty());
+    assert_eq!(
+        state.ui.branches.subview_branch.as_deref(),
+        Some("feature/mvp")
+    );
+}
+
+#[test]
+fn escape_returns_from_branch_subviews_one_level_at_a_time() {
+    let mut state = context_with_focus(PanelFocus::Branches);
+    state.repo.branches.items = vec![branch_entry("feature/mvp", false)];
+    update(&mut state, Action::Ui(UiAction::OpenBranchCommitsPanel));
+    update(
+        &mut state,
+        Action::GitResult(GitResult::BranchCommits {
+            branch: "feature/mvp".to_string(),
+            result: Ok(vec![commit_entry("abc1234", "init project")]),
+        }),
+    );
+    update(&mut state, Action::Ui(UiAction::OpenBranchCommitFilesPanel));
+
+    update(
+        &mut state,
+        Action::Ui(UiAction::CloseBranchCommitFilesPanel),
+    );
+    assert_eq!(state.ui.branches.subview, BranchesSubview::Commits);
+    update(&mut state, Action::Ui(UiAction::CloseBranchCommitsPanel));
+    assert_eq!(state.ui.branches.subview, BranchesSubview::List);
 }
 
 #[test]

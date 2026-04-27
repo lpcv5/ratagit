@@ -1,6 +1,6 @@
 use crate::{
-    AppContext, BranchEntry, CommitEntry, CommitFilesUiState, FilesSnapshot, RepoSnapshot,
-    StashEntry, clamp_commit_selection, clamp_file_selection, details,
+    AppContext, BranchEntry, BranchesSubview, CommitEntry, CommitFilesUiState, FilesSnapshot,
+    RepoSnapshot, StashEntry, clamp_commit_selection, clamp_file_selection, details,
     initialize_tree_with_initial_expansion, mark_file_items_changed, reconcile_after_items_changed,
     reconcile_commits_after_items_changed,
 };
@@ -95,6 +95,12 @@ pub(crate) fn apply_branches_snapshot(state: &mut AppContext, branches: Vec<Bran
     state.ui.branches.selected =
         clamp_index(state.ui.branches.selected, state.repo.branches.items.len());
     state.ui.branches.scroll_offset = 0;
+    state.ui.branches.subview = BranchesSubview::List;
+    state.ui.branches.subview_branch = None;
+    state.ui.branches.commits = crate::CommitsUiState::default();
+    state.ui.branches.commit_files = CommitFilesUiState::default();
+    state.repo.branches.commits.clear();
+    state.repo.branches.commit_files.items.clear();
     crate::branches::leave_multi_select(&mut state.ui.branches);
     state.repo.details.branch_log.clear();
     state.repo.details.branch_log_error = None;

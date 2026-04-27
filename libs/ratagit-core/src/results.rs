@@ -55,6 +55,14 @@ pub(crate) fn update_git_result(state: &mut AppContext, result: GitResult) -> Ve
         GitResult::CommitDetailsDiff { commit_id, result } => {
             details::apply_commit_diff_result(state, commit_id, result)
         }
+        GitResult::BranchCommits { branch, result } => {
+            crate::branches::handle_branch_commits_result(state, branch, result)
+        }
+        GitResult::BranchCommitFiles {
+            branch,
+            commit_id,
+            result,
+        } => crate::branches::handle_branch_commit_files_result(state, branch, commit_id, result),
         GitResult::CommitFiles { commit_id, result } => {
             commit_workflow::handle_commit_files_result(state, commit_id, result)
         }

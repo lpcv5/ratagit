@@ -50,17 +50,19 @@ pub use state::{
     AppContext, AutoStashConfirmState, AutoStashOperation, BranchCreateState, BranchDeleteChoice,
     BranchDeleteConfirmState, BranchDeleteMenuState, BranchDeleteMode, BranchEntry,
     BranchForceDeleteConfirmState, BranchInputMode, BranchRebaseChoice, BranchRebaseMenuState,
-    BranchesUiState, CachedBranchLog, CachedCommitDiff, CachedFilesDiff, CommitEditorIntent,
-    CommitEntry, CommitField, CommitFileDiffPath, CommitFileDiffTarget, CommitHashStatus,
-    CommitInputMode, CommitsUiState, DetailsRepoState, DiscardConfirmState, EditorKind,
-    EditorState, FilesSnapshot, PanelFocus, RefreshTarget, RepoSnapshot, ResetChoice,
+    BranchesSubview, BranchesUiState, CachedBranchLog, CachedCommitDiff, CachedFilesDiff,
+    CommitEditorIntent, CommitEntry, CommitField, CommitFileDiffPath, CommitFileDiffTarget,
+    CommitHashStatus, CommitInputMode, CommitsUiState, DetailsRepoState, DiscardConfirmState,
+    EditorKind, EditorState, FilesSnapshot, PanelFocus, RefreshTarget, RepoSnapshot, ResetChoice,
     ResetMenuState, ResetMode, SearchScope, SearchState, StashEntry, StashScope, StashUiState,
     StatusMode, StatusPanelState, WorkStatusState,
 };
 
 pub(crate) use actions::with_pending;
 pub(crate) use reducer::push_notice;
-pub(crate) use selectors::{selected_branch_name, selected_commit_id, selected_stash_id};
+pub(crate) use selectors::{
+    selected_branch_commit_id, selected_branch_name, selected_commit_id, selected_stash_id,
+};
 
 const DETAILS_DIFF_CACHE_LIMIT: usize = 16;
 pub const BRANCH_DETAILS_LOG_MAX_COUNT: usize = 50;

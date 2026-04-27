@@ -1,7 +1,7 @@
 use ratagit_core::{
-    AppContext, FileTreeRow, PanelFocus, SearchScope, branch_is_selected_for_batch,
-    commit_file_tree_rows_for_read, commit_is_selected_for_batch, commit_key, file_tree_rows,
-    file_tree_rows_for_read,
+    AppContext, BranchesSubview, CommitEntry, CommitsUiState, FileTreeRow, PanelFocus, SearchScope,
+    branch_is_selected_for_batch, commit_file_tree_rows_for_read, commit_is_selected_for_batch,
+    commit_key, file_tree_rows, file_tree_rows_for_read,
 };
 use ratatui::style::Style;
 
@@ -14,7 +14,13 @@ use super::panel_types::{PanelLine, PanelSpan};
 use crate::theme::{PanelLabel, RowRole, panel_label, row_style};
 
 pub(crate) fn panel_title(state: &AppContext, panel: PanelFocus) -> &'static str {
-    if panel == PanelFocus::Commits && state.ui.commits.files.active {
+    if panel == PanelFocus::Branches && state.ui.branches.subview == BranchesSubview::Commits {
+        "[2]  Branch Commits"
+    } else if panel == PanelFocus::Branches
+        && state.ui.branches.subview == BranchesSubview::CommitFiles
+    {
+        "[2]  Branch Commit Files"
+    } else if panel == PanelFocus::Commits && state.ui.commits.files.active {
         "[3]  Commit Files"
     } else {
         match panel {
@@ -29,7 +35,19 @@ pub(crate) fn panel_title(state: &AppContext, panel: PanelFocus) -> &'static str
 }
 
 pub(crate) fn panel_title_label(state: &AppContext, panel: PanelFocus) -> PanelLabel {
-    if panel == PanelFocus::Commits && state.ui.commits.files.active {
+    if panel == PanelFocus::Branches && state.ui.branches.subview == BranchesSubview::Commits {
+        PanelLabel {
+            badge: "2",
+            body: " Branch Commits",
+        }
+    } else if panel == PanelFocus::Branches
+        && state.ui.branches.subview == BranchesSubview::CommitFiles
+    {
+        PanelLabel {
+            badge: "2",
+            body: " Branch Commit Files",
+        }
+    } else if panel == PanelFocus::Commits && state.ui.commits.files.active {
         PanelLabel {
             badge: "3",
             body: " Commit Files",
@@ -49,7 +67,12 @@ pub(crate) fn left_panel_content_len(state: &AppContext, panel: PanelFocus) -> u
             }
         }
         PanelFocus::Commits if state.ui.commits.files.active => state.repo.commits.items.len(),
-        PanelFocus::Branches => state.repo.branches.items.len(),
+        PanelFocus::Branches => match state.ui.branches.subview {
+            BranchesSubview::List => state.repo.branches.items.len(),
+            BranchesSubview::Commits | BranchesSubview::CommitFiles => {
+                state.repo.branches.items.len()
+            }
+        },
         PanelFocus::Commits => state.repo.commits.items.len(),
         PanelFocus::Stash => state.repo.stash.items.len(),
         PanelFocus::Details | PanelFocus::Log => 0,
@@ -69,6 +92,17 @@ pub(crate) fn render_files_lines(state: &AppContext, max_lines: usize) -> Vec<Pa
 }
 
 pub(crate) fn render_branches_lines(state: &AppContext, max_lines: usize) -> Vec<PanelLine> {
+    if state.ui.branches.subview == BranchesSubview::CommitFiles {
+        return render_branch_commit_file_lines(state, max_lines);
+    }
+    if state.ui.branches.subview == BranchesSubview::Commits {
+        return render_commit_list_lines(
+            state,
+            &state.repo.branches.commits,
+            &state.ui.branches.commits,
+            max_lines,
+        );
+    }
     let matches = search_matches_for(state, SearchScope::Branches);
     render_indexed_entries_window_with(
         &state.repo.branches.items,
@@ -96,20 +130,34 @@ pub(crate) fn render_commits_lines(state: &AppContext, max_lines: usize) -> Vec<
     if state.ui.commits.files.active {
         return render_commit_file_lines(state, max_lines);
     }
+    render_commit_list_lines(
+        state,
+        &state.repo.commits.items,
+        &state.ui.commits,
+        max_lines,
+    )
+}
+
+fn render_commit_list_lines(
+    state: &AppContext,
+    items: &[CommitEntry],
+    ui: &CommitsUiState,
+    max_lines: usize,
+) -> Vec<PanelLine> {
     let matches = search_matches_for(state, SearchScope::Commits);
     render_indexed_entries_window_with(
-        &state.repo.commits.items,
-        state.ui.commits.selected,
-        state.ui.commits.scroll_offset,
+        items,
+        ui.selected,
+        ui.scroll_offset,
         max_lines,
         |index, entry| {
-            let role = if commit_is_selected_for_batch(&state.ui.commits, entry) {
+            let role = if commit_is_selected_for_batch(ui, entry) {
                 RowRole::BatchSelected
             } else {
                 RowRole::Normal
             };
             let line = PanelLine::new(format_commit_entry(entry), role)
-                .selected(index == state.ui.commits.selected)
+                .selected(index == ui.selected)
                 .styled_spans(commit_entry_spans(entry));
             if search_matches_contains(matches, &commit_key(entry)) {
                 highlight_search_query(line, state, SearchScope::Commits)
@@ -147,6 +195,21 @@ fn render_commit_file_lines(state: &AppContext, max_lines: usize) -> Vec<PanelLi
         rows.to_mut(),
         state.ui.commits.files.selected,
         state.ui.commits.files.scroll_offset,
+        max_lines,
+        SearchScope::CommitFiles,
+    )
+}
+
+fn render_branch_commit_file_lines(state: &AppContext, max_lines: usize) -> Vec<PanelLine> {
+    let mut rows = commit_file_tree_rows_for_read(
+        &state.repo.branches.commit_files.items,
+        &state.ui.branches.commit_files,
+    );
+    render_file_tree_lines(
+        state,
+        rows.to_mut(),
+        state.ui.branches.commit_files.selected,
+        state.ui.branches.commit_files.scroll_offset,
         max_lines,
         SearchScope::CommitFiles,
     )

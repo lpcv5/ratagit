@@ -55,6 +55,7 @@ impl GitBackend for SharedMockGitBackend {
         refresh_files() -> Result<FilesSnapshot, GitError>;
         refresh_branches() -> Result<Vec<BranchEntry>, GitError>;
         refresh_commits() -> Result<Vec<CommitEntry>, GitError>;
+        branch_commits(branch: &str) -> Result<Vec<CommitEntry>, GitError>;
         refresh_stashes() -> Result<Vec<StashEntry>, GitError>;
         load_more_commits(offset: usize, limit: usize) -> Result<Vec<CommitEntry>, GitError>;
         files_details_diff(targets: &[FileDiffTarget]) -> Result<String, GitError>;

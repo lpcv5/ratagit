@@ -5,8 +5,8 @@ use crate::search::{
 };
 use crate::text_edit::CursorMove;
 use crate::{
-    Action, AppContext, Command, GitResult, UiAction, branches, commit_workflow, details, editor,
-    navigation, results, toggle_commit_files_directory, worktree,
+    Action, AppContext, BranchesSubview, Command, GitResult, PanelFocus, UiAction, branches,
+    commit_workflow, details, editor, navigation, results, toggle_commit_files_directory, worktree,
 };
 
 pub fn update(state: &mut AppContext, action: Action) -> Vec<Command> {
@@ -296,6 +296,21 @@ fn update_ui(state: &mut AppContext, action: UiAction) -> Vec<Command> {
             state.ui.commits.draft_message = message.clone();
             with_pending(state, vec![Command::CreateCommit { message }])
         }
+        UiAction::OpenBranchCommitsPanel => branches::open_commits_panel(state),
+        UiAction::CloseBranchCommitsPanel => branches::close_commits_panel(state),
+        UiAction::OpenBranchCommitFilesPanel => branches::open_commit_files_panel(state),
+        UiAction::CloseBranchCommitFilesPanel => branches::close_commit_files_panel(state),
+        UiAction::ToggleBranchCommitFilesDirectory => {
+            if toggle_commit_files_directory(
+                &state.repo.branches.commit_files.items,
+                &mut state.ui.branches.commit_files,
+            ) {
+                details::refresh_for_focus(state)
+            } else {
+                push_notice(state, "Selected branch commit file is not a directory");
+                Vec::new()
+            }
+        }
         UiAction::OpenCommitFilesPanel => commit_workflow::open_commit_files_panel(state),
         UiAction::CloseCommitFilesPanel => commit_workflow::close_commit_files_panel(state),
         UiAction::ToggleCommitFilesDirectory => {
@@ -310,25 +325,58 @@ fn update_ui(state: &mut AppContext, action: UiAction) -> Vec<Command> {
             }
         }
         UiAction::EnterCommitFilesMultiSelect => {
-            crate::enter_commit_files_multi_select(
-                &state.repo.commits.files.items,
-                &mut state.ui.commits.files,
-            );
+            if state.ui.focus == PanelFocus::Branches
+                && state.ui.branches.subview == BranchesSubview::CommitFiles
+            {
+                crate::enter_commit_files_multi_select(
+                    &state.repo.branches.commit_files.items,
+                    &mut state.ui.branches.commit_files,
+                );
+            } else {
+                crate::enter_commit_files_multi_select(
+                    &state.repo.commits.files.items,
+                    &mut state.ui.commits.files,
+                );
+            }
             Vec::new()
         }
         UiAction::ExitCommitFilesMultiSelect => {
-            crate::leave_commit_files_multi_select(
-                &state.repo.commits.files.items,
-                &mut state.ui.commits.files,
-            );
+            if state.ui.focus == PanelFocus::Branches
+                && state.ui.branches.subview == BranchesSubview::CommitFiles
+            {
+                crate::leave_commit_files_multi_select(
+                    &state.repo.branches.commit_files.items,
+                    &mut state.ui.branches.commit_files,
+                );
+            } else {
+                crate::leave_commit_files_multi_select(
+                    &state.repo.commits.files.items,
+                    &mut state.ui.commits.files,
+                );
+            }
             Vec::new()
         }
         UiAction::EnterCommitsMultiSelect => {
-            crate::enter_commit_multi_select(&state.repo.commits.items, &mut state.ui.commits);
+            if state.ui.focus == PanelFocus::Branches
+                && state.ui.branches.subview == BranchesSubview::Commits
+            {
+                crate::enter_commit_multi_select(
+                    &state.repo.branches.commits,
+                    &mut state.ui.branches.commits,
+                );
+            } else {
+                crate::enter_commit_multi_select(&state.repo.commits.items, &mut state.ui.commits);
+            }
             Vec::new()
         }
         UiAction::ExitCommitsMultiSelect => {
-            crate::leave_commit_multi_select(&mut state.ui.commits);
+            if state.ui.focus == PanelFocus::Branches
+                && state.ui.branches.subview == BranchesSubview::Commits
+            {
+                crate::leave_commit_multi_select(&mut state.ui.branches.commits);
+            } else {
+                crate::leave_commit_multi_select(&mut state.ui.commits);
+            }
             Vec::new()
         }
         UiAction::SquashSelectedCommits => commit_workflow::squash_selected_commits(state),
