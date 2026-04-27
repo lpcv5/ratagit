@@ -34,7 +34,8 @@ use ratagit_core::AppContext;
 #[cfg(test)]
 mod tests {
     use ratagit_core::{
-        Action, COMMITS_PAGE_SIZE, Command, FileDiffTarget, GitResult, PanelFocus, UiAction, update,
+        Action, COMMITS_PAGE_SIZE, Command, CommitFileStatus, FileDiffTarget, FileEntry, GitResult,
+        PanelFocus, UiAction, initialize_tree_with_initial_expansion, update,
     };
     use ratagit_testkit::{fixture_branch, fixture_commit, fixture_dirty_repo, fixture_empty_repo};
 
@@ -66,6 +67,7 @@ mod tests {
         );
         if let [
             Command::RefreshFilesDetailsDiff {
+                request_id,
                 targets,
                 truncated_from,
             },
@@ -75,6 +77,7 @@ mod tests {
             let follow_up = update(
                 &mut state,
                 Action::GitResult(GitResult::FilesDetailsDiff {
+                    request_id: *request_id,
                     targets: targets.clone(),
                     truncated_from: *truncated_from,
                     result: Ok(mock_diff_for_paths(&paths)),
@@ -112,11 +115,9 @@ mod tests {
     }
 
     fn has_search_span(line: &PanelLine, text: &str) -> bool {
-        line.spans.as_ref().is_some_and(|spans| {
-            spans
-                .iter()
-                .any(|span| span.text == text && span.style == row_style(RowRole::SearchMatch))
-        })
+        line.spans
+            .iter()
+            .any(|span| span.text == text && span.style == row_style(RowRole::SearchMatch))
     }
 
     #[test]
@@ -126,12 +127,12 @@ mod tests {
 
         let lines = render_files_lines(&state, 4);
 
-        assert_eq!(lines[0].text, "   ? README.md");
-        assert_eq!(lines[1].text, "    src/");
-        assert_eq!(lines[2].text, "     M lib.rs");
-        assert_eq!(lines[3].text, "     M main.rs");
+        assert_eq!(lines[0].text(), "   ? README.md");
+        assert_eq!(lines[1].text(), "    src/");
+        assert_eq!(lines[2].text(), "     M lib.rs");
+        assert_eq!(lines[3].text(), "     M main.rs");
         assert!(lines[1].selected);
-        assert!(!lines.iter().any(|line| line.text.contains('>')));
+        assert!(!lines.iter().any(|line| line.text().contains('>')));
     }
 
     #[test]
@@ -143,8 +144,8 @@ mod tests {
 
         let lines = render_files_lines(&state, 2);
 
-        assert_eq!(lines[0].text, "   ? README.md");
-        assert_eq!(lines[1].text, "✓   src/");
+        assert_eq!(lines[0].text(), "   ? README.md");
+        assert_eq!(lines[1].text(), "✓   src/");
         assert_eq!(lines[1].role, RowRole::BatchSelected);
         assert!(lines[1].selected);
     }
@@ -160,10 +161,43 @@ mod tests {
 
         let line = lines
             .iter()
-            .find(|line| line.text.contains("   M lib.rs"))
+            .find(|line| line.text().contains("   M lib.rs"))
             .expect("lib.rs row should be marked as a search match");
         assert_eq!(line.role, RowRole::Normal);
         assert!(has_search_span(line, "li"));
+    }
+
+    #[test]
+    fn files_panel_marks_large_search_match_sets_without_mutating_tree_rows() {
+        let mut state = AppContext::default();
+        state.ui.focus = PanelFocus::Files;
+        state.ui.last_left_focus = PanelFocus::Files;
+        state.repo.files.items = (0..40)
+            .map(|index| FileEntry {
+                path: format!("src/match-{index:02}.txt"),
+                staged: false,
+                untracked: false,
+                status: CommitFileStatus::Modified,
+                conflicted: false,
+            })
+            .collect();
+        initialize_tree_with_initial_expansion(&state.repo.files.items, &mut state.ui.files, true);
+        update(&mut state, Action::Ui(UiAction::StartSearch));
+        for ch in "txt".chars() {
+            update(&mut state, Action::Ui(UiAction::InputSearchChar(ch)));
+        }
+
+        let lines = render_files_lines(&state, 5);
+
+        assert_eq!(state.ui.search.matches.len(), 40);
+        assert_eq!(lines[0].text(), "    src/");
+        assert!(
+            lines
+                .iter()
+                .skip(1)
+                .all(|line| has_search_span(line, "txt"))
+        );
+        assert!(state.ui.files.tree_rows.iter().all(|row| !row.matched));
     }
 
     #[test]
@@ -252,14 +286,14 @@ mod tests {
 
         let line = lines
             .iter()
-            .find(|line| line.text.contains("   A lib.rs"))
+            .find(|line| line.text().contains("   A lib.rs"))
             .expect("lib.rs row should be marked as a search match");
         assert_eq!(line.role, RowRole::Normal);
-        assert!(line.spans.as_ref().is_some_and(|spans| {
-            spans
+        assert!(
+            line.spans
                 .iter()
                 .any(|span| span.text == "A" && span.style == row_style(RowRole::DiffAdd))
-        }));
+        );
         assert!(has_search_span(line, "lib"));
     }
 
@@ -291,9 +325,9 @@ mod tests {
         let lines = render_commits_lines(&state, 4);
         let line = lines
             .iter()
-            .find(|line| line.text.contains("A lib.rs"))
+            .find(|line| line.text().contains("A lib.rs"))
             .expect("added file row should render");
-        let spans = line.spans.as_ref().expect("tree row should have spans");
+        let spans = &line.spans;
 
         assert_eq!(line.role, RowRole::Normal);
         assert!(
@@ -315,9 +349,9 @@ mod tests {
         let lines = render_files_lines(&state, 4);
         let line = lines
             .iter()
-            .find(|line| line.text.contains("M main.rs"))
+            .find(|line| line.text().contains("M main.rs"))
             .expect("staged file row should render");
-        let spans = line.spans.as_ref().expect("tree row should have spans");
+        let spans = &line.spans;
 
         assert!(
             spans
@@ -347,9 +381,9 @@ mod tests {
 
         let lines = render_files_lines(&state, 1);
         let line = lines.first().expect("conflict file should render");
-        let spans = line.spans.as_ref().expect("tree row should have spans");
+        let spans = &line.spans;
 
-        assert_eq!(line.text, "   MU conflict.rs");
+        assert_eq!(line.text(), "   MU conflict.rs");
         assert!(
             spans
                 .iter()
@@ -441,13 +475,13 @@ mod tests {
             };
             let line = lines
                 .iter()
-                .find(|line| line.text.contains(path))
+                .find(|line| line.text().contains(path))
                 .expect("status file row should render");
-            assert!(line.spans.as_ref().is_some_and(|spans| {
-                spans
+            assert!(
+                line.spans
                     .iter()
                     .any(|span| span.text == marker && span.style == row_style(role))
-            }));
+            );
         }
     }
 
@@ -489,8 +523,8 @@ mod tests {
         );
         let after = render_branches_lines(&state, 8);
 
-        assert_eq!(before[0].text, after[0].text);
-        assert!(after[4].text.contains("branch-10"));
+        assert_eq!(before[0].text(), after[0].text());
+        assert!(after[4].text().contains("branch-10"));
         assert!(after[4].selected);
     }
 
@@ -521,8 +555,8 @@ mod tests {
         );
         let after = render_commits_lines(&state, 8);
 
-        assert_eq!(before[0].text, after[0].text);
-        assert!(after[3].text.contains("commit 18"));
+        assert_eq!(before[0].text(), after[0].text());
+        assert!(after[3].text().contains("commit 18"));
         assert!(after[3].selected);
     }
 
@@ -533,8 +567,8 @@ mod tests {
 
         let lines = render_branches_lines(&state, 2);
 
-        assert_eq!(lines[0].text, " main");
-        assert_eq!(lines[1].text, "  feature/mvp");
+        assert_eq!(lines[0].text(), " main");
+        assert_eq!(lines[1].text(), "  feature/mvp");
         assert!(lines[1].selected);
     }
 
@@ -545,9 +579,9 @@ mod tests {
 
         let lines = render_commits_lines(&state, 3);
 
-        assert_eq!(lines[0].text, "●  abc1234  RT  init project");
-        assert_eq!(lines[1].text, "●  def5678  RT  wire commands");
-        assert_eq!(lines[0].spans.as_ref().map(Vec::len), Some(7));
+        assert_eq!(lines[0].text(), "●  abc1234  RT  init project");
+        assert_eq!(lines[1].text(), "●  def5678  RT  wire commands");
+        assert_eq!(lines[0].spans.len(), 7);
         assert!(lines[1].selected);
     }
 
@@ -559,13 +593,13 @@ mod tests {
             update(&mut state, Action::Ui(UiAction::MoveDown));
         }
         let lines = render_commits_lines(&state, 8);
-        assert!(lines[0].text.contains("commit 0"));
+        assert!(lines[0].text().contains("commit 0"));
         assert!(lines[4].selected);
 
         update(&mut state, Action::Ui(UiAction::MoveDown));
         let lines = render_commits_lines(&state, 8);
-        assert!(lines[0].text.contains("commit 1"));
-        assert!(lines[4].text.contains("commit 5"));
+        assert!(lines[0].text().contains("commit 1"));
+        assert!(lines[4].text().contains("commit 5"));
         assert!(lines[4].selected);
     }
 
@@ -584,8 +618,8 @@ mod tests {
             Action::Ui(UiAction::MoveUpInViewport { visible_lines: 8 }),
         );
         let lines = render_commits_lines(&state, 8);
-        assert!(lines[0].text.contains("commit 6"));
-        assert!(lines[3].text.contains("commit 9"));
+        assert!(lines[0].text().contains("commit 6"));
+        assert!(lines[3].text().contains("commit 9"));
         assert!(lines[3].selected);
 
         update(
@@ -593,8 +627,8 @@ mod tests {
             Action::Ui(UiAction::MoveUpInViewport { visible_lines: 8 }),
         );
         let lines = render_commits_lines(&state, 8);
-        assert!(lines[0].text.contains("commit 5"));
-        assert!(lines[3].text.contains("commit 8"));
+        assert!(lines[0].text().contains("commit 5"));
+        assert!(lines[3].text().contains("commit 8"));
         assert!(lines[3].selected);
     }
 
@@ -607,8 +641,8 @@ mod tests {
             update(&mut state, Action::Ui(UiAction::MoveDown));
         }
         let lines = render_commits_lines(&state, 8);
-        assert!(lines[0].text.contains("commit 92"));
-        assert!(lines[7].text.contains("commit 99"));
+        assert!(lines[0].text().contains("commit 92"));
+        assert!(lines[7].text().contains("commit 99"));
         assert!(lines[7].selected);
 
         update(&mut state, Action::Ui(UiAction::MoveDown));
@@ -625,8 +659,8 @@ mod tests {
         );
 
         let lines = render_commits_lines(&state, 8);
-        assert!(lines[0].text.contains("commit 96"));
-        assert!(lines[4].text.contains("commit 100"));
+        assert!(lines[0].text().contains("commit 96"));
+        assert!(lines[4].text().contains("commit 100"));
         assert!(lines[4].selected);
     }
 
@@ -636,22 +670,26 @@ mod tests {
 
         let lines = render_stash_lines(&state, 1);
 
-        assert_eq!(lines[0].text, " stash@{0} WIP on main: local test");
+        assert_eq!(lines[0].text(), " stash@{0} WIP on main: local test");
         assert!(lines[0].selected);
     }
 
     #[test]
     fn details_panel_uses_last_left_focus_projection() {
         let mut state = state_with_dirty_repo();
-        update(
+        let commands = update(
             &mut state,
             Action::Ui(UiAction::FocusPanel {
                 panel: PanelFocus::Branches,
             }),
         );
+        let [Command::RefreshBranchDetailsLog { request_id, .. }] = commands.as_slice() else {
+            panic!("expected branch details refresh: {commands:?}");
+        };
         update(
             &mut state,
             Action::GitResult(GitResult::BranchDetailsLog {
+                request_id: *request_id,
                 branch: "main".to_string(),
                 result: Ok("\u{1b}[33m*\u{1b}[m \u{1b}[33mcommit abc1234\u{1b}[m".to_string()),
             }),
@@ -665,8 +703,8 @@ mod tests {
 
         let lines = render_details_lines(&state, 4);
 
-        assert_eq!(lines[0].text, "  * commit abc1234");
-        assert!(lines[0].spans.is_some());
+        assert_eq!(lines[0].text(), "  * commit abc1234");
+        assert!(!lines[0].spans.is_empty());
     }
 
     #[test]
@@ -675,13 +713,9 @@ mod tests {
 
         let lines = render_details_lines(&state, 5);
 
-        assert_eq!(lines[0].text, "  ### unstaged");
+        assert_eq!(lines[0].text(), "  ### unstaged");
         assert!(lines.iter().all(|line| line.role == RowRole::Normal));
-        assert!(
-            lines
-                .iter()
-                .all(|line| line.spans.as_ref().is_some_and(|spans| !spans.is_empty()))
-        );
+        assert!(lines.iter().all(|line| !line.spans.is_empty()));
     }
 
     #[test]
@@ -702,13 +736,10 @@ mod tests {
 
         let lines = render_details_lines(&state, 7);
 
-        assert_eq!(lines[0].text, "  commit abc1234");
+        assert_eq!(lines[0].text(), "  commit abc1234");
         assert_eq!(lines[0].role, RowRole::Normal);
         assert!(lines.iter().all(|line| line.role == RowRole::Normal));
-        let add_spans = lines[6]
-            .spans
-            .as_ref()
-            .expect("commit diff should preserve ansi spans");
+        let add_spans = lines[6].spans.as_slice();
         assert_eq!(add_spans[1].text, "+new");
         assert_eq!(
             add_spans[1].style,
@@ -723,9 +754,9 @@ mod tests {
 
         let lines = render_details_lines(&state, 3);
 
-        assert_eq!(lines[0].text, "  @@ -1 +1 @@");
-        assert_eq!(lines[1].text, "  -old README.md");
-        assert_eq!(lines[2].text, "  +new README.md");
+        assert_eq!(lines[0].text(), "  @@ -1 +1 @@");
+        assert_eq!(lines[1].text(), "  -old README.md");
+        assert_eq!(lines[2].text(), "  +new README.md");
     }
 
     #[test]
@@ -747,11 +778,11 @@ mod tests {
 
         let lines = render_log_lines(&state, 3);
 
-        assert!(lines[0].text.contains("error=Failed to create commit"));
+        assert!(lines[0].text().contains("error=Failed to create commit"));
         assert!(
             lines
                 .iter()
-                .any(|line| line.text.contains("notice=Failed to create commit"))
+                .any(|line| line.text().contains("notice=Failed to create commit"))
         );
     }
 
@@ -765,10 +796,7 @@ mod tests {
         let lines = render_log_lines(&state, 3);
 
         assert_eq!(
-            lines
-                .iter()
-                .map(|line| line.text.as_str())
-                .collect::<Vec<_>>(),
+            lines.iter().map(|line| line.text()).collect::<Vec<_>>(),
             vec![
                 "  status=huge repo metadata-only; file scan skipped",
                 "  tip=focus Commits/Branches or narrow Git outside ratagit",
@@ -788,19 +816,19 @@ mod tests {
         assert!(render_files_lines(&state, 5).is_empty());
         assert!(render_stash_lines(&state, 5).is_empty());
         assert!(
-            render_branches_lines(&state, 5)
-                .iter()
-                .all(|line| { !line.text.contains("<empty>") && !line.text.contains("<none>") })
+            render_branches_lines(&state, 5).iter().all(|line| {
+                !line.text().contains("<empty>") && !line.text().contains("<none>")
+            })
         );
         assert!(
-            render_details_lines(&state, 5)
-                .iter()
-                .all(|line| { !line.text.contains("<empty>") && !line.text.contains("<none>") })
+            render_details_lines(&state, 5).iter().all(|line| {
+                !line.text().contains("<empty>") && !line.text().contains("<none>")
+            })
         );
         assert!(
-            render_log_lines(&state, 5)
-                .iter()
-                .all(|line| { !line.text.contains("<empty>") && !line.text.contains("<none>") })
+            render_log_lines(&state, 5).iter().all(|line| {
+                !line.text().contains("<empty>") && !line.text().contains("<none>")
+            })
         );
     }
 
@@ -823,7 +851,7 @@ mod tests {
                 panel: PanelFocus::Branches,
             }),
         );
-        state.work.details_pending = false;
+        state.work.details.details_pending = false;
         assert_eq!(
             shortcuts_for_state(&state),
             "enter commits  space checkout  n new  d delete  r rebase  p pull  P push"
@@ -835,7 +863,7 @@ mod tests {
                 panel: PanelFocus::Commits,
             }),
         );
-        state.work.details_pending = false;
+        state.work.details.details_pending = false;
         assert!(!shortcuts_for_state(&state).contains("v multi"));
 
         let mut empty = AppContext::default();
@@ -851,7 +879,7 @@ mod tests {
     #[test]
     fn keys_panel_prefixes_loading_indicator_when_work_is_pending() {
         let mut state = state_with_dirty_repo();
-        state.work.refresh_pending = true;
+        state.work.refresh.refresh_pending = true;
 
         assert_eq!(
             shortcuts_for_state_with_context(
@@ -861,7 +889,7 @@ mod tests {
             "\\ loading: refresh  space stage/unstage  d discard  c commit  s stash  D reset  enter expand  p pull  P push"
         );
 
-        state.work.operation_pending = Some("push".to_string());
+        state.work.mutation.operation_pending = Some("push".to_string());
         assert!(shortcuts_for_state(&state).starts_with("/ loading: push"));
     }
 

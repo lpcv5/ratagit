@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::fs::{create_dir_all, write};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -11,21 +11,17 @@ use ratagit_ui::{
 };
 
 mod async_runtime;
+mod scheduler;
 pub use async_runtime::AsyncRuntime;
+
+use scheduler::CommandScheduler;
 
 #[derive(Debug)]
 pub struct Runtime<B: GitBackend> {
     state: AppContext,
     backend: B,
     terminal_size: TerminalSize,
-    debounce_window: Duration,
-    debounced: HashMap<&'static str, DebouncedCommand>,
-}
-
-#[derive(Debug, Clone)]
-struct DebouncedCommand {
-    due_at: Instant,
-    command: Command,
+    scheduler: CommandScheduler,
 }
 
 impl<B: GitBackend> Runtime<B> {
@@ -34,13 +30,12 @@ impl<B: GitBackend> Runtime<B> {
             state,
             backend,
             terminal_size,
-            debounce_window: Duration::default(),
-            debounced: HashMap::new(),
+            scheduler: CommandScheduler::default(),
         }
     }
 
     pub fn with_debounce_window(mut self, debounce_window: Duration) -> Self {
-        self.debounce_window = debounce_window;
+        self.scheduler.set_debounce_window(debounce_window);
         self
     }
 
@@ -79,8 +74,9 @@ impl<B: GitBackend> Runtime<B> {
 
     fn process_commands(&mut self, initial: Vec<Command>) {
         let mut queue = VecDeque::new();
+        let now = Instant::now();
         for command in initial {
-            self.enqueue_command(command, &mut queue);
+            self.scheduler.enqueue_at(command, &mut queue, now);
         }
         self.process_immediate_queue(queue);
     }
@@ -89,98 +85,16 @@ impl<B: GitBackend> Runtime<B> {
         while let Some(command) = queue.pop_front() {
             let git_result = execute_command(&mut self.backend, command);
             let follow_up = update(&mut self.state, Action::GitResult(git_result));
+            let now = Instant::now();
             for command in follow_up {
-                self.enqueue_command(command, &mut queue);
+                self.scheduler.enqueue_at(command, &mut queue, now);
             }
         }
-    }
-
-    fn enqueue_command(&mut self, command: Command, queue: &mut VecDeque<Command>) {
-        if self.debounce_window > Duration::ZERO
-            && let Some(key) = command.debounce_key()
-        {
-            self.debounced.insert(
-                key,
-                DebouncedCommand {
-                    due_at: Instant::now() + self.debounce_window,
-                    command,
-                },
-            );
-            return;
-        }
-        enqueue_coalesced_command(queue, command);
     }
 
     fn flush_due_debounced(&mut self) {
-        if self.debounced.is_empty() {
-            return;
-        }
-
-        let now = Instant::now();
-        let due_keys = self
-            .debounced
-            .iter()
-            .filter_map(|(key, pending)| (pending.due_at <= now).then_some(*key))
-            .collect::<Vec<_>>();
-        if due_keys.is_empty() {
-            return;
-        }
-
-        let mut queue = VecDeque::new();
-        for key in due_keys {
-            if let Some(pending) = self.debounced.remove(key) {
-                enqueue_coalesced_command(&mut queue, pending.command);
-            }
-        }
+        let queue = self.scheduler.flush_due_at(Instant::now());
         self.process_immediate_queue(queue);
-    }
-}
-
-fn enqueue_coalesced_command(queue: &mut VecDeque<Command>, command: Command) {
-    let search_start = queue
-        .iter()
-        .rposition(|command| command.is_mutating())
-        .map_or(0, |index| index + 1);
-    if let Some(target) = refresh_command_key(&command) {
-        if !queue
-            .iter()
-            .skip(search_start)
-            .any(|queued| refresh_command_key(queued) == Some(target))
-        {
-            queue.push_back(command);
-        }
-        return;
-    }
-
-    if let Some(key) = command.debounce_key() {
-        remove_queued_command_with_debounce_key(queue, search_start, key);
-    }
-    queue.push_back(command);
-}
-
-fn refresh_command_key(command: &Command) -> Option<&'static str> {
-    match command {
-        Command::RefreshAll => Some("all"),
-        Command::RefreshFiles => Some("files"),
-        Command::RefreshBranches => Some("branches"),
-        Command::RefreshCommits => Some("commits"),
-        Command::RefreshStash => Some("stash"),
-        _ => None,
-    }
-}
-
-fn remove_queued_command_with_debounce_key(
-    queue: &mut VecDeque<Command>,
-    search_start: usize,
-    key: &'static str,
-) {
-    if let Some(index) = queue
-        .iter()
-        .enumerate()
-        .skip(search_start)
-        .find_map(|(index, queued)| (queued.debounce_key() == Some(key)).then_some(index))
-    {
-        queue.remove(index);
     }
 }
 
@@ -343,18 +257,9 @@ fn sanitize_name(name: &str) -> String {
 mod tests {
     use std::time::Duration;
 
-    use ratagit_core::FileDiffTarget;
     use ratagit_testkit::fixture_dirty_repo;
 
     use super::*;
-
-    fn file_diff_target(path: &str) -> FileDiffTarget {
-        FileDiffTarget {
-            path: path.to_string(),
-            untracked: false,
-            is_directory_marker: path.ends_with('/'),
-        }
-    }
 
     #[test]
     fn refresh_details_diff_runs_immediately_when_debounce_is_disabled() {
@@ -413,80 +318,5 @@ mod tests {
             .cloned()
             .collect::<Vec<_>>();
         assert_eq!(diff_operations, vec!["details-diff:src/lib.rs".to_string()]);
-    }
-
-    #[test]
-    fn command_coalescing_preserves_mutation_boundaries() {
-        let mut queue = std::collections::VecDeque::new();
-        enqueue_coalesced_command(&mut queue, Command::RefreshAll);
-        enqueue_coalesced_command(&mut queue, Command::RefreshAll);
-        enqueue_coalesced_command(
-            &mut queue,
-            Command::StageFiles {
-                paths: vec!["a.txt".to_string()],
-            },
-        );
-        enqueue_coalesced_command(&mut queue, Command::RefreshAll);
-        enqueue_coalesced_command(&mut queue, Command::RefreshAll);
-
-        assert_eq!(
-            queue.into_iter().collect::<Vec<_>>(),
-            vec![
-                Command::RefreshAll,
-                Command::StageFiles {
-                    paths: vec!["a.txt".to_string()]
-                },
-                Command::RefreshAll,
-            ]
-        );
-    }
-
-    #[test]
-    fn command_coalescing_keeps_latest_details_after_last_mutation() {
-        let mut queue = std::collections::VecDeque::new();
-        enqueue_coalesced_command(
-            &mut queue,
-            Command::RefreshFilesDetailsDiff {
-                targets: vec![file_diff_target("old.txt")],
-                truncated_from: None,
-            },
-        );
-        enqueue_coalesced_command(
-            &mut queue,
-            Command::StageFiles {
-                paths: vec!["a.txt".to_string()],
-            },
-        );
-        enqueue_coalesced_command(
-            &mut queue,
-            Command::RefreshFilesDetailsDiff {
-                targets: vec![file_diff_target("stale.txt")],
-                truncated_from: None,
-            },
-        );
-        enqueue_coalesced_command(
-            &mut queue,
-            Command::RefreshFilesDetailsDiff {
-                targets: vec![file_diff_target("latest.txt")],
-                truncated_from: None,
-            },
-        );
-
-        assert_eq!(
-            queue.into_iter().collect::<Vec<_>>(),
-            vec![
-                Command::RefreshFilesDetailsDiff {
-                    targets: vec![file_diff_target("old.txt")],
-                    truncated_from: None,
-                },
-                Command::StageFiles {
-                    paths: vec!["a.txt".to_string()]
-                },
-                Command::RefreshFilesDetailsDiff {
-                    targets: vec![file_diff_target("latest.txt")],
-                    truncated_from: None,
-                },
-            ]
-        );
     }
 }

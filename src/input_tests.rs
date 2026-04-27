@@ -101,6 +101,60 @@ mod tests {
     }
 
     #[test]
+    fn derives_input_mode_from_app_context_priority() {
+        assert_eq!(
+            input_mode_for_state(&AppContext::default()),
+            InputMode::Panel
+        );
+
+        let mut state = AppContext::default();
+        state.ui.search.active = true;
+        state.ui.search.scope = state.active_search_scope();
+        assert_eq!(input_mode_for_state(&state), InputMode::SearchInput);
+
+        state.ui.reset_menu.active = true;
+        assert_eq!(input_mode_for_state(&state), InputMode::ResetMenu);
+
+        state.ui.branches.create.active = true;
+        assert_eq!(input_mode_for_state(&state), InputMode::BranchCreate);
+
+        state.ui.editor = active_commit_editor_state().ui.editor;
+        assert_eq!(input_mode_for_state(&state), InputMode::Editor);
+    }
+
+    #[test]
+    fn confirmed_search_query_mode_falls_back_to_panel_shortcuts() {
+        let mut state = AppContext::default();
+        state.ui.search.scope = state.active_search_scope();
+        state.ui.search.query = "lib".to_string();
+        state.ui.search.current_match = Some(0);
+
+        assert_eq!(input_mode_for_state(&state), InputMode::SearchQuery);
+        assert_eq!(
+            map_key(&state, KeyCode::Char('n')),
+            Some(UiAction::NextSearchMatch)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Char('c')),
+            Some(UiAction::OpenCommitEditor)
+        );
+    }
+
+    #[test]
+    fn modal_mode_takes_priority_over_search_and_panel_shortcuts() {
+        let mut state = active_reset_menu_state();
+        state.ui.search.active = true;
+        state.ui.search.scope = state.active_search_scope();
+
+        assert_eq!(input_mode_for_state(&state), InputMode::ResetMenu);
+        assert_eq!(
+            map_key(&state, KeyCode::Char('j')),
+            Some(UiAction::MoveResetMenuDown)
+        );
+        assert_eq!(map_key(&state, KeyCode::Char('r')), None);
+    }
+
+    #[test]
     fn panel_navigation_uses_h_and_l_not_tab() {
         let state = AppContext::default();
         assert_eq!(

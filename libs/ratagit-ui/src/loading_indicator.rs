@@ -45,19 +45,19 @@ fn spotlight_index_for_frame(frame: usize, text_width: usize) -> usize {
 }
 
 fn loading_kind_for_state(state: &AppContext) -> Option<String> {
-    if let Some(operation) = &state.work.operation_pending {
+    if let Some(operation) = &state.work.mutation.operation_pending {
         return Some(operation.clone());
     }
-    if state.work.refresh_pending {
+    if state.work.refresh.refresh_pending {
         return Some("refresh".to_string());
     }
-    if state.work.details_pending {
+    if state.work.details.details_pending {
         return Some("details".to_string());
     }
-    if state.work.commit_files_loading {
+    if state.work.commit_files.commit_files_loading {
         return Some("commit files".to_string());
     }
-    if state.work.commits_loading_more {
+    if state.work.pagination.commits_loading_more {
         return Some("commits".to_string());
     }
     None
@@ -72,7 +72,7 @@ mod tests {
     #[test]
     fn loading_indicator_uses_spinner_frame() {
         let mut state = AppContext::default();
-        state.work.refresh_pending = true;
+        state.work.refresh.refresh_pending = true;
 
         let first = loading_indicator_for_state(&state, RenderContext { spinner_frame: 0 })
             .expect("refresh should show loading");
@@ -88,10 +88,14 @@ mod tests {
     #[test]
     fn loading_kind_prioritizes_mutations_over_reads() {
         let mut state = AppContext::default();
-        state.work.operation_pending = Some("push".to_string());
-        state.work.refresh_pending = true;
-        state.work.pending_refreshes.insert(RefreshTarget::Files);
-        state.work.details_pending = true;
+        state.work.mutation.operation_pending = Some("push".to_string());
+        state.work.refresh.refresh_pending = true;
+        state
+            .work
+            .refresh
+            .pending_refreshes
+            .insert(RefreshTarget::Files);
+        state.work.details.details_pending = true;
 
         let indicator = loading_indicator_for_state(&state, RenderContext::default())
             .expect("operation should show loading");

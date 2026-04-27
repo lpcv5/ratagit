@@ -13,11 +13,8 @@ use crate::editor_modal::render_editor_modal;
 use crate::frame::{RenderContext, TerminalBuffer, TerminalCursor, TerminalSize, buffer_to_text};
 use crate::layout::compute_left_panel_heights;
 use crate::loading_indicator::loading_indicator_for_state;
-use crate::panels::{
-    PanelLine, ShortcutLine, panel_title_label, render_branches_lines, render_commits_lines,
-    render_details_lines, render_files_lines, render_log_lines, render_stash_lines,
-    shortcut_line_for_state,
-};
+use crate::panel_projection::{PanelProjection, project_panel};
+use crate::panels::{PanelLine, ShortcutLine, shortcut_line_for_state};
 use crate::reset_modal::render_reset_modal;
 use crate::sync_modal::render_sync_modal;
 use crate::theme::{
@@ -130,74 +127,82 @@ fn render_panel_grid(frame: &mut Frame<'_>, state: &AppContext, area: Rect) {
 
     render_block_panel(
         frame,
-        state,
-        PanelFocus::Files,
         left[0],
-        render_files_lines(state, left[0].height.saturating_sub(2) as usize),
+        project_panel(
+            state,
+            PanelFocus::Files,
+            left[0].height.saturating_sub(2) as usize,
+        ),
     );
     render_block_panel(
         frame,
-        state,
-        PanelFocus::Branches,
         left[1],
-        render_branches_lines(state, left[1].height.saturating_sub(2) as usize),
+        project_panel(
+            state,
+            PanelFocus::Branches,
+            left[1].height.saturating_sub(2) as usize,
+        ),
     );
     render_block_panel(
         frame,
-        state,
-        PanelFocus::Commits,
         left[2],
-        render_commits_lines(state, left[2].height.saturating_sub(2) as usize),
+        project_panel(
+            state,
+            PanelFocus::Commits,
+            left[2].height.saturating_sub(2) as usize,
+        ),
     );
     render_block_panel(
         frame,
-        state,
-        PanelFocus::Stash,
         left[3],
-        render_stash_lines(state, left[3].height.saturating_sub(2) as usize),
+        project_panel(
+            state,
+            PanelFocus::Stash,
+            left[3].height.saturating_sub(2) as usize,
+        ),
     );
     render_block_panel(
         frame,
-        state,
-        PanelFocus::Details,
         right[0],
-        render_details_lines(state, right[0].height.saturating_sub(2) as usize),
+        project_panel(
+            state,
+            PanelFocus::Details,
+            right[0].height.saturating_sub(2) as usize,
+        ),
     );
     render_block_panel(
         frame,
-        state,
-        PanelFocus::Log,
         right[1],
-        render_log_lines(state, right[1].height.saturating_sub(2) as usize),
+        project_panel(
+            state,
+            PanelFocus::Log,
+            right[1].height.saturating_sub(2) as usize,
+        ),
     );
 }
 
-fn render_block_panel(
-    frame: &mut Frame<'_>,
-    state: &AppContext,
-    panel: PanelFocus,
-    area: Rect,
-    lines: Vec<PanelLine>,
-) {
-    let focused = state.ui.focus == panel;
+fn render_block_panel(frame: &mut Frame<'_>, area: Rect, projection: PanelProjection) {
+    let panel = projection.panel;
+    let focused = projection.focused;
     let border_style = if focused {
         focused_panel_style()
     } else {
         inactive_panel_style()
     };
-    let title = panel_title_line(state, panel, focused, border_style);
-    let items = lines
+    let title = panel_title_line(&projection, border_style);
+    let items = projection
+        .lines
         .iter()
         .map(|line| ListItem::new(line_to_ratatui_line(line)).style(row_style(line.role)))
         .collect::<Vec<_>>();
     let mut list_state = ListState::default();
-    let selected_index = lines.iter().position(|line| line.selected);
+    let selected_index = projection.lines.iter().position(|line| line.selected);
     if focused && let Some(index) = selected_index {
         list_state.select(Some(index));
     }
     let highlight_style = if focused
         && selected_index
-            .and_then(|index| lines.get(index))
+            .and_then(|index| projection.lines.get(index))
             .is_some_and(|line| line.role == RowRole::BatchSelected)
     {
         batch_selected_row_style()
@@ -233,28 +238,25 @@ fn panel_borders(panel: PanelFocus, focused: bool) -> Borders {
 }
 
 fn panel_title_line(
-    state: &AppContext,
-    panel: PanelFocus,
-    focused: bool,
+    projection: &PanelProjection,
     title_style: ratatui::style::Style,
 ) -> Line<'static> {
-    let label = panel_title_label(state, panel);
     Line::from(vec![
-        Span::styled(format!(" {} ", label.badge), title_badge_style(focused)),
-        Span::styled(format!(" {} ", label.body), title_style),
+        Span::styled(
+            format!(" {} ", projection.title.badge),
+            title_badge_style(projection.focused),
+        ),
+        Span::styled(format!(" {} ", projection.title.body), title_style),
     ])
 }
 
 fn line_to_ratatui_line(line: &PanelLine) -> Line<'static> {
-    if let Some(spans) = &line.spans {
-        return Line::from(
-            spans
-                .iter()
-                .map(|span| Span::styled(span.text.clone(), span.style))
-                .collect::<Vec<_>>(),
-        );
-    }
-    Line::from(line.text.clone())
+    Line::from(
+        line.spans
+            .iter()
+            .map(|span| Span::styled(span.text.clone(), span.style))
+            .collect::<Vec<_>>(),
+    )
 }
 
 fn render_shortcuts(frame: &mut Frame<'_>, state: &AppContext, context: RenderContext, area: Rect) {

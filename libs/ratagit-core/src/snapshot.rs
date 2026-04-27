@@ -1,11 +1,12 @@
 use crate::{
-    AppContext, BranchEntry, BranchesSubview, CommitEntry, CommitFilesUiState, FilesSnapshot,
-    RepoSnapshot, StashEntry, clamp_commit_selection, clamp_file_selection, details,
-    initialize_tree_with_initial_expansion, mark_file_items_changed, reconcile_after_items_changed,
-    reconcile_commits_after_items_changed,
+    AppContext, BranchEntry, BranchesSubview, CommitEntry, CommitFilesUiState,
+    DetailsRequestTarget, FilesSnapshot, RepoSnapshot, StashEntry, clamp_commit_selection,
+    clamp_file_selection, details, initialize_tree_with_initial_expansion, mark_file_items_changed,
+    reconcile_after_items_changed, reconcile_commits_after_items_changed,
 };
 
 pub(crate) fn apply_snapshot(state: &mut AppContext, snapshot: RepoSnapshot) {
+    let index_entry_count = snapshot.files.len();
     apply_files_snapshot(
         state,
         FilesSnapshot {
@@ -13,7 +14,7 @@ pub(crate) fn apply_snapshot(state: &mut AppContext, snapshot: RepoSnapshot) {
             current_branch: snapshot.current_branch,
             detached_head: snapshot.detached_head,
             files: snapshot.files,
-            index_entry_count: 0,
+            index_entry_count,
             large_repo_mode: false,
             status_truncated: false,
             status_scan_skipped: false,
@@ -23,6 +24,21 @@ pub(crate) fn apply_snapshot(state: &mut AppContext, snapshot: RepoSnapshot) {
     apply_commits_snapshot(state, snapshot.commits);
     apply_branches_snapshot(state, snapshot.branches);
     apply_stashes_snapshot(state, snapshot.stashes);
+    details::reset_after_snapshot(state);
+    state.ui.search.clear();
+}
+
+pub(crate) fn apply_split_snapshot(
+    state: &mut AppContext,
+    files: FilesSnapshot,
+    branches: Vec<BranchEntry>,
+    commits: Vec<CommitEntry>,
+    stashes: Vec<StashEntry>,
+) {
+    apply_files_snapshot(state, files);
+    apply_commits_snapshot(state, commits);
+    apply_branches_snapshot(state, branches);
+    apply_stashes_snapshot(state, stashes);
     details::reset_after_snapshot(state);
     state.ui.search.clear();
 }
@@ -66,6 +82,9 @@ pub(crate) fn apply_files_snapshot(state: &mut AppContext, snapshot: FilesSnapsh
         crate::selected_target_paths(&state.repo.files.items, &state.ui.files);
     state.repo.details.files_diff_truncated_from = None;
     state.repo.details.cached_files_diffs.clear();
+    details::clear_details_pending_if(state, |target| {
+        matches!(target, DetailsRequestTarget::FilesDiff { .. })
+    });
     details::reset_scroll(state);
     state.ui.search.clear();
 }
@@ -74,8 +93,8 @@ pub(crate) fn apply_commits_snapshot(state: &mut AppContext, commits: Vec<Commit
     state.repo.commits.items = commits;
     state.ui.commits.files = CommitFilesUiState::default();
     state.repo.commits.has_more = state.repo.commits.items.len() >= crate::COMMITS_PAGE_SIZE;
-    state.work.commits_loading_more = false;
-    state.work.commits_pending_select_after_load = false;
+    state.work.pagination.commits_loading_more = false;
+    state.work.pagination.commits_pending_select_after_load = false;
     state.repo.commits.pagination_epoch = state.repo.commits.pagination_epoch.wrapping_add(1);
     reconcile_commits_after_items_changed(&state.repo.commits.items, &mut state.ui.commits);
     clamp_commit_selection(&state.repo.commits.items, &mut state.ui.commits);
@@ -86,6 +105,12 @@ pub(crate) fn apply_commits_snapshot(state: &mut AppContext, commits: Vec<Commit
     state.repo.details.commit_file_diff_error = None;
     state.repo.details.commit_file_diff_target = None;
     state.repo.details.cached_commit_diffs.clear();
+    details::clear_details_pending_if(state, |target| {
+        matches!(
+            target,
+            DetailsRequestTarget::CommitDiff { .. } | DetailsRequestTarget::CommitFileDiff { .. }
+        )
+    });
     details::reset_scroll(state);
     state.ui.search.clear();
 }
@@ -106,6 +131,9 @@ pub(crate) fn apply_branches_snapshot(state: &mut AppContext, branches: Vec<Bran
     state.repo.details.branch_log_error = None;
     state.repo.details.branch_log_target = crate::selected_branch_name(state);
     state.repo.details.cached_branch_logs.clear();
+    details::clear_details_pending_if(state, |target| {
+        matches!(target, DetailsRequestTarget::BranchLog { .. })
+    });
     details::reset_scroll(state);
     state.ui.search.clear();
 }

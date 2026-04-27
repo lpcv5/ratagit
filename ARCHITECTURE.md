@@ -29,7 +29,9 @@ All UI must be derived from `AppContext`.
   offsets, tree projection caches, multi-select state, Details scroll offset,
   and modal/editor state
 - `work`: pending refresh/details/operation state, commit pagination loading
-  intent, Commit Files loading state, and the last completed command label
+  intent, Commit Files loading state, and the last completed command label.
+  These are typed substates (`RefreshWork`, `DetailsWork`, `MutationWork`,
+  `PaginationWork`, and `CommitFilesWork`) rather than loose flags.
 
 Cross-layer helpers must make data/UI dependencies explicit. For example, a
 Files helper that needs both repository rows and tree selection state receives
@@ -95,9 +97,12 @@ Whole-repository refresh requests are split into independent read commands for
 Files/status, Branches, Commits, and Stash so a slow file status scan cannot
 delay other left-panel data from reaching `AppContext`. The async runtime uses
 mutation barriers so stale read results cannot apply after queued repository
-mutations. The UI thread remains responsible only for input, reducer updates,
-result draining, and pure rendering. Harness scenarios may use the synchronous
-runtime to keep mock state assertions deterministic.
+mutations. Sync and async runtimes share one command scheduler for debouncing and
+refresh coalescing, driven by command metadata from `ratagit-core`. Details
+commands carry explicit request ids and targets, and reducers accept only the
+result matching the active request. The UI thread remains responsible only for
+input, reducer updates, result draining, and pure rendering. Harness scenarios
+may use the synchronous runtime to keep mock state assertions deterministic.
 
 ---
 
@@ -121,7 +126,8 @@ internal library packages under `libs/`.
 ### ratagit
 
 - TUI binary entrypoint
-- terminal setup and event loop
+- terminal setup and event loop, including the RAII terminal session guard that
+  restores raw mode, alternate screen, and cursor on normal exit or early return
 - backend selection
 
 ### ratagit-core
@@ -130,16 +136,24 @@ internal library packages under `libs/`.
 - Action
 - Reducer (update)
 - Command
+- typed Git failure payloads used by reducers for semantic recovery paths such
+  as divergent push and unmerged branch delete confirmations
+- command metadata for log labels, mutating classification, pending labels,
+  debounce keys, and refresh coalescing keys
 
 ### ratagit-ui
 
 - Pure rendering functions
 - Widgets
 - Layout
+- Panel projections that describe panel identity, focus, title, and span-backed
+  `PanelLine` rows for both terminal rendering and legacy text tests
 
 ### ratagit-git
 
-- GitBackend trait
+- `backend` module containing `GitBackendRead`, `GitBackendWrite`,
+  `GitBackendHistoryRewrite`, the root-compatible `GitBackend` composition
+  trait, and `GitError`
 - Mock backend for deterministic harness scenarios
 - Hybrid real backend: `git2` handles repo discovery, snapshot metadata, file
   diffs, stage, and unstage
@@ -160,6 +174,9 @@ internal library packages under `libs/`.
 - Internal Git CLI executor handles operations not yet represented through
   git2, such as commit, branch mutation, checkout, stash, reset, nuke, and
   discard
+- Git CLI command execution goes through a command runner that centralizes
+  stdout limits, stderr capture, optional-locks mode, timeout-ready options, and
+  structured command tracing
 
 ### ratagit-observe
 
@@ -178,6 +195,8 @@ internal library packages under `libs/`.
 - scenario runner
 - input driver
 - snapshot + assertions
+- shared scheduler used by both sync and async runtimes for debounce and
+  coalescing behavior
 
 ---
 
@@ -200,7 +219,10 @@ internal library packages under `libs/`.
   - pure rendering in `ratagit-ui::render`
 - Refresh command execution applies per-panel `GitResult` values independently:
   Files/status, Branches, Commits, and Stash may appear in any worker completion
-  order, and pending refresh targets are tracked in `AppContext.work`.
+  order, and pending refresh targets are tracked in `AppContext.work`. The
+  canonical full-refresh command executes the same split backend capability
+  methods as the independent refresh commands and preserves `FilesSnapshot`
+  metadata such as large-repo mode, truncation, and skipped scans.
 - Reusable projections and expensive read results, such as file-tree rows and
   files-detail diffs, are cached only in `AppContext` and invalidated by reducer
   state transitions.
@@ -218,6 +240,11 @@ internal library packages under `libs/`.
   commands and store the results under Branches-owned `AppContext` state while
   reusing the same commit-row and commit-file tree projections as the main
   Commits panel.
+- Keyboard input is routed by an explicit `InputMode` derived from `AppContext`;
+  global Details scrolling remains first, then modal/editor/search handlers, then
+  panel handlers.
+- `src/bin/perf-suite.rs` covers backend operations plus pure UI render hot paths
+  for status render, search render, and Details scroll render.
 
 ---
 

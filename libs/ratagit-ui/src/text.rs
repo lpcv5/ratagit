@@ -2,10 +2,8 @@ use ratagit_core::{AppContext, PanelFocus};
 
 use crate::frame::{RenderContext, RenderedFrame, TerminalSize, normalize_lines, pad_and_truncate};
 use crate::layout::compute_left_panel_heights;
-use crate::panels::{
-    PanelLine, panel_title, render_branches_lines, render_commits_lines, render_details_lines,
-    render_files_lines, render_log_lines, render_stash_lines, shortcuts_for_state_with_context,
-};
+use crate::panel_projection::{PanelProjection, project_panel};
+use crate::panels::shortcuts_for_state_with_context;
 
 pub fn render(state: &AppContext, size: TerminalSize) -> RenderedFrame {
     render_with_context(state, size, RenderContext::default())
@@ -49,50 +47,58 @@ fn render_workspace_rows(
 
     let left_panels = [
         render_panel(
-            panel_title(state, PanelFocus::Files),
-            state.ui.focus == PanelFocus::Files,
             left_width,
             left_heights.files,
-            render_files_lines(state, left_heights.files.saturating_sub(1)),
+            project_panel(
+                state,
+                PanelFocus::Files,
+                left_heights.files.saturating_sub(1),
+            ),
         ),
         render_panel(
-            panel_title(state, PanelFocus::Branches),
-            state.ui.focus == PanelFocus::Branches,
             left_width,
             left_heights.branches,
-            render_branches_lines(state, left_heights.branches.saturating_sub(1)),
+            project_panel(
+                state,
+                PanelFocus::Branches,
+                left_heights.branches.saturating_sub(1),
+            ),
         ),
         render_panel(
-            panel_title(state, PanelFocus::Commits),
-            state.ui.focus == PanelFocus::Commits,
             left_width,
             left_heights.commits,
-            render_commits_lines(state, left_heights.commits.saturating_sub(1)),
+            project_panel(
+                state,
+                PanelFocus::Commits,
+                left_heights.commits.saturating_sub(1),
+            ),
         ),
         render_panel(
-            panel_title(state, PanelFocus::Stash),
-            state.ui.focus == PanelFocus::Stash,
             left_width,
             left_heights.stash,
-            render_stash_lines(state, left_heights.stash.saturating_sub(1)),
+            project_panel(
+                state,
+                PanelFocus::Stash,
+                left_heights.stash.saturating_sub(1),
+            ),
         ),
     ]
     .concat();
 
     let right_panels = [
         render_panel(
-            panel_title(state, PanelFocus::Details),
-            state.ui.focus == PanelFocus::Details,
             right_width,
             right_heights[0],
-            render_details_lines(state, right_heights[0].saturating_sub(1)),
+            project_panel(
+                state,
+                PanelFocus::Details,
+                right_heights[0].saturating_sub(1),
+            ),
         ),
         render_panel(
-            panel_title(state, PanelFocus::Log),
-            state.ui.focus == PanelFocus::Log,
             right_width,
             right_heights[1],
-            render_log_lines(state, right_heights[1].saturating_sub(1)),
+            project_panel(state, PanelFocus::Log, right_heights[1].saturating_sub(1)),
         ),
     ]
     .concat();
@@ -150,23 +156,17 @@ fn split_vertical(total_height: usize, ratios: &[usize]) -> Vec<usize> {
     values
 }
 
-fn render_panel(
-    title: &str,
-    _focused: bool,
-    width: usize,
-    height: usize,
-    content_lines: Vec<PanelLine>,
-) -> Vec<String> {
+fn render_panel(width: usize, height: usize, projection: PanelProjection) -> Vec<String> {
     if height == 0 {
         return Vec::new();
     }
 
     let mut lines = Vec::with_capacity(height);
-    let header = format!("  {title}");
+    let header = format!("  {}", projection.legacy_text_title);
     lines.push(pad_and_truncate(header, width));
 
-    for line in content_lines.into_iter().take(height.saturating_sub(1)) {
-        lines.push(pad_and_truncate(line.text, width));
+    for line in projection.lines.into_iter().take(height.saturating_sub(1)) {
+        lines.push(pad_and_truncate(line.text(), width));
     }
     while lines.len() < height {
         lines.push(" ".repeat(width));

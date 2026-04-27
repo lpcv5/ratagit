@@ -80,6 +80,7 @@ pub(crate) fn open_commits_panel(state: &mut AppContext) -> Vec<Command> {
     state.repo.details.commit_diff.clear();
     state.repo.details.commit_diff_target = None;
     state.repo.details.commit_diff_error = None;
+    details::clear_details_pending(state);
     details::reset_scroll(state);
     crate::search::clear_search_if_incompatible(state);
     with_pending(state, vec![Command::RefreshBranchCommits { branch }])
@@ -95,7 +96,7 @@ pub(crate) fn close_commits_panel(state: &mut AppContext) -> Vec<Command> {
     state.ui.branches.commit_files = CommitFilesUiState::default();
     state.repo.branches.commits.clear();
     state.repo.branches.commit_files.items.clear();
-    state.work.commit_files_loading = false;
+    state.work.commit_files.commit_files_loading = false;
     crate::search::clear_search_if_incompatible(state);
     details::refresh_for_focus(state)
 }
@@ -122,6 +123,7 @@ pub(crate) fn open_commit_files_panel(state: &mut AppContext) -> Vec<Command> {
     state.repo.details.commit_file_diff.clear();
     state.repo.details.commit_file_diff_target = None;
     state.repo.details.commit_file_diff_error = None;
+    details::clear_details_pending(state);
     details::reset_scroll(state);
     crate::search::clear_search_if_incompatible(state);
     with_pending(
@@ -137,10 +139,11 @@ pub(crate) fn close_commit_files_panel(state: &mut AppContext) -> Vec<Command> {
     state.ui.branches.subview = BranchesSubview::Commits;
     state.ui.branches.commit_files = CommitFilesUiState::default();
     state.repo.branches.commit_files.items.clear();
-    state.work.commit_files_loading = false;
+    state.work.commit_files.commit_files_loading = false;
     state.repo.details.commit_file_diff.clear();
     state.repo.details.commit_file_diff_target = None;
     state.repo.details.commit_file_diff_error = None;
+    details::clear_details_pending(state);
     crate::search::clear_search_if_incompatible(state);
     details::refresh_for_focus(state)
 }
@@ -157,10 +160,11 @@ pub(crate) fn handle_branch_commits_result(
     }
     state
         .work
+        .refresh
         .pending_refreshes
         .remove(&crate::RefreshTarget::Branches);
-    state.work.refresh_pending = !state.work.pending_refreshes.is_empty();
-    state.work.last_completed_command = Some("branch_commits".to_string());
+    state.work.refresh.refresh_pending = !state.work.refresh.pending_refreshes.is_empty();
+    state.work.mark_command_completed("branch_commits");
     match result {
         Ok(commits) => {
             state.repo.branches.commits = commits;
@@ -196,8 +200,8 @@ pub(crate) fn handle_branch_commit_files_result(
     {
         return Vec::new();
     }
-    state.work.commit_files_loading = false;
-    state.work.last_completed_command = Some("branch_commit_files".to_string());
+    state.work.commit_files.commit_files_loading = false;
+    state.work.mark_command_completed("branch_commit_files");
     match result {
         Ok(files) => {
             state.repo.branches.commit_files.items = files;

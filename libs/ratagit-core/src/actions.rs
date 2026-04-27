@@ -1,6 +1,7 @@
 use crate::{
     AppContext, BranchDeleteMode, BranchEntry, CommitEntry, CommitFileDiffTarget, CommitFileEntry,
-    FileDiffTarget, FilesSnapshot, RefreshTarget, RepoSnapshot, ResetMode, StashEntry, operations,
+    DetailsRequestId, FileDiffTarget, FilesSnapshot, GitFailure, RefreshTarget, RepoSnapshot,
+    ResetMode, StashEntry, operations,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -111,20 +112,29 @@ pub enum UiAction {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GitResult {
     Refreshed(RepoSnapshot),
+    SplitRefreshed {
+        files: FilesSnapshot,
+        branches: Vec<BranchEntry>,
+        commits: Vec<CommitEntry>,
+        stashes: Vec<StashEntry>,
+    },
     FilesRefreshed(FilesSnapshot),
     BranchesRefreshed(Vec<BranchEntry>),
     CommitsRefreshed(Vec<CommitEntry>),
     StashesRefreshed(Vec<StashEntry>),
     FilesDetailsDiff {
+        request_id: DetailsRequestId,
         targets: Vec<FileDiffTarget>,
         truncated_from: Option<usize>,
         result: Result<String, String>,
     },
     BranchDetailsLog {
+        request_id: DetailsRequestId,
         branch: String,
         result: Result<String, String>,
     },
     CommitDetailsDiff {
+        request_id: DetailsRequestId,
         commit_id: String,
         result: Result<String, String>,
     },
@@ -142,6 +152,7 @@ pub enum GitResult {
         result: Result<Vec<CommitFileEntry>, String>,
     },
     CommitFileDiff {
+        request_id: DetailsRequestId,
         target: CommitFileDiffTarget,
         result: Result<String, String>,
     },
@@ -197,7 +208,7 @@ pub enum GitResult {
         name: String,
         mode: BranchDeleteMode,
         force: bool,
-        result: Result<(), String>,
+        result: Result<(), GitFailure>,
     },
     RebaseBranch {
         target: String,
@@ -240,7 +251,7 @@ pub enum GitResult {
     },
     Push {
         force: bool,
-        result: Result<(), String>,
+        result: Result<(), GitFailure>,
     },
 }
 
@@ -263,14 +274,17 @@ pub enum Command {
         epoch: u64,
     },
     RefreshFilesDetailsDiff {
+        request_id: DetailsRequestId,
         targets: Vec<FileDiffTarget>,
         truncated_from: Option<usize>,
     },
     RefreshBranchDetailsLog {
+        request_id: DetailsRequestId,
         branch: String,
         max_count: usize,
     },
     RefreshCommitDetailsDiff {
+        request_id: DetailsRequestId,
         commit_id: String,
     },
     RefreshBranchCommits {
@@ -284,6 +298,7 @@ pub enum Command {
         commit_id: String,
     },
     RefreshCommitFileDiff {
+        request_id: DetailsRequestId,
         target: CommitFileDiffTarget,
     },
     StageFiles {
@@ -353,48 +368,295 @@ pub enum Command {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandRefreshKey {
+    All,
+    Target(RefreshTarget),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CommandLogLabel {
+    Static(&'static str),
+    Push,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PendingOperationLabel {
+    None,
+    Static(&'static str),
+    Reset,
+    Push,
+    DeleteBranch,
+    RebaseBranch,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CommandMetadata {
+    log_label: CommandLogLabel,
+    mutating: bool,
+    debounce_key: Option<&'static str>,
+    refresh_key: Option<CommandRefreshKey>,
+    pending_label: PendingOperationLabel,
+}
+
 impl Command {
     pub fn log_label(&self) -> &'static str {
+        match self.metadata().log_label {
+            CommandLogLabel::Static(label) => label,
+            CommandLogLabel::Push => match self {
+                Command::Push { force } if *force => "force_push",
+                Command::Push { .. } => "push",
+                _ => unreachable!("push log label metadata used for non-push command"),
+            },
+        }
+    }
+
+    fn metadata(&self) -> CommandMetadata {
         match self {
-            Command::RefreshAll => "refresh_all",
-            Command::Pull => "pull",
+            Command::RefreshAll => CommandMetadata {
+                log_label: CommandLogLabel::Static("refresh_all"),
+                mutating: false,
+                debounce_key: None,
+                refresh_key: Some(CommandRefreshKey::All),
+                pending_label: PendingOperationLabel::None,
+            },
+            Command::Pull => CommandMetadata {
+                log_label: CommandLogLabel::Static("pull"),
+                mutating: true,
+                debounce_key: None,
+                refresh_key: None,
+                pending_label: PendingOperationLabel::Static("pull"),
+            },
+            Command::Push { .. } => CommandMetadata {
+                log_label: CommandLogLabel::Push,
+                mutating: true,
+                debounce_key: None,
+                refresh_key: None,
+                pending_label: PendingOperationLabel::Push,
+            },
+            Command::RefreshFiles => CommandMetadata {
+                log_label: CommandLogLabel::Static("refresh_files"),
+                mutating: false,
+                debounce_key: None,
+                refresh_key: Some(CommandRefreshKey::Target(RefreshTarget::Files)),
+                pending_label: PendingOperationLabel::None,
+            },
+            Command::RefreshBranches => CommandMetadata {
+                log_label: CommandLogLabel::Static("refresh_branches"),
+                mutating: false,
+                debounce_key: None,
+                refresh_key: Some(CommandRefreshKey::Target(RefreshTarget::Branches)),
+                pending_label: PendingOperationLabel::None,
+            },
+            Command::RefreshCommits => CommandMetadata {
+                log_label: CommandLogLabel::Static("refresh_commits"),
+                mutating: false,
+                debounce_key: None,
+                refresh_key: Some(CommandRefreshKey::Target(RefreshTarget::Commits)),
+                pending_label: PendingOperationLabel::None,
+            },
+            Command::RefreshStash => CommandMetadata {
+                log_label: CommandLogLabel::Static("refresh_stash"),
+                mutating: false,
+                debounce_key: None,
+                refresh_key: Some(CommandRefreshKey::Target(RefreshTarget::Stash)),
+                pending_label: PendingOperationLabel::None,
+            },
+            Command::LoadMoreCommits { .. } => CommandMetadata {
+                log_label: CommandLogLabel::Static("load_more_commits"),
+                mutating: false,
+                debounce_key: None,
+                refresh_key: None,
+                pending_label: PendingOperationLabel::None,
+            },
+            Command::RefreshFilesDetailsDiff { .. } => CommandMetadata {
+                log_label: CommandLogLabel::Static("refresh_files_details_diff"),
+                mutating: false,
+                debounce_key: Some("files_details_diff"),
+                refresh_key: None,
+                pending_label: PendingOperationLabel::None,
+            },
+            Command::RefreshBranchDetailsLog { .. } => CommandMetadata {
+                log_label: CommandLogLabel::Static("refresh_branch_details_log"),
+                mutating: false,
+                debounce_key: Some("branch_details_log"),
+                refresh_key: None,
+                pending_label: PendingOperationLabel::None,
+            },
+            Command::RefreshCommitDetailsDiff { .. } => CommandMetadata {
+                log_label: CommandLogLabel::Static("refresh_commit_details_diff"),
+                mutating: false,
+                debounce_key: Some("commit_details_diff"),
+                refresh_key: None,
+                pending_label: PendingOperationLabel::None,
+            },
+            Command::RefreshBranchCommits { .. } => CommandMetadata {
+                log_label: CommandLogLabel::Static("refresh_branch_commits"),
+                mutating: false,
+                debounce_key: None,
+                refresh_key: None,
+                pending_label: PendingOperationLabel::None,
+            },
+            Command::RefreshBranchCommitFiles { .. } => CommandMetadata {
+                log_label: CommandLogLabel::Static("refresh_branch_commit_files"),
+                mutating: false,
+                debounce_key: None,
+                refresh_key: None,
+                pending_label: PendingOperationLabel::None,
+            },
+            Command::RefreshCommitFiles { .. } => CommandMetadata {
+                log_label: CommandLogLabel::Static("refresh_commit_files"),
+                mutating: false,
+                debounce_key: None,
+                refresh_key: None,
+                pending_label: PendingOperationLabel::None,
+            },
+            Command::RefreshCommitFileDiff { .. } => CommandMetadata {
+                log_label: CommandLogLabel::Static("refresh_commit_file_diff"),
+                mutating: false,
+                debounce_key: Some("commit_file_diff"),
+                refresh_key: None,
+                pending_label: PendingOperationLabel::None,
+            },
+            Command::StageFiles { .. } => CommandMetadata {
+                log_label: CommandLogLabel::Static("stage_files"),
+                mutating: true,
+                debounce_key: None,
+                refresh_key: None,
+                pending_label: PendingOperationLabel::Static("stage"),
+            },
+            Command::UnstageFiles { .. } => CommandMetadata {
+                log_label: CommandLogLabel::Static("unstage_files"),
+                mutating: true,
+                debounce_key: None,
+                refresh_key: None,
+                pending_label: PendingOperationLabel::Static("unstage"),
+            },
+            Command::StashFiles { .. } => CommandMetadata {
+                log_label: CommandLogLabel::Static("stash_files"),
+                mutating: true,
+                debounce_key: None,
+                refresh_key: None,
+                pending_label: PendingOperationLabel::Static("stash_files"),
+            },
+            Command::Reset { .. } => CommandMetadata {
+                log_label: CommandLogLabel::Static("reset"),
+                mutating: true,
+                debounce_key: None,
+                refresh_key: None,
+                pending_label: PendingOperationLabel::Reset,
+            },
+            Command::Nuke => CommandMetadata {
+                log_label: CommandLogLabel::Static("nuke"),
+                mutating: true,
+                debounce_key: None,
+                refresh_key: None,
+                pending_label: PendingOperationLabel::Static("nuke"),
+            },
+            Command::DiscardFiles { .. } => CommandMetadata {
+                log_label: CommandLogLabel::Static("discard_files"),
+                mutating: true,
+                debounce_key: None,
+                refresh_key: None,
+                pending_label: PendingOperationLabel::Static("discard_files"),
+            },
+            Command::CreateCommit { .. } => CommandMetadata {
+                log_label: CommandLogLabel::Static("create_commit"),
+                mutating: true,
+                debounce_key: None,
+                refresh_key: None,
+                pending_label: PendingOperationLabel::Static("commit"),
+            },
+            Command::CreateBranch { .. } => CommandMetadata {
+                log_label: CommandLogLabel::Static("create_branch"),
+                mutating: true,
+                debounce_key: None,
+                refresh_key: None,
+                pending_label: PendingOperationLabel::Static("create_branch"),
+            },
+            Command::CheckoutBranch { .. } => CommandMetadata {
+                log_label: CommandLogLabel::Static("checkout_branch"),
+                mutating: true,
+                debounce_key: None,
+                refresh_key: None,
+                pending_label: PendingOperationLabel::Static("checkout_branch"),
+            },
+            Command::DeleteBranch { .. } => CommandMetadata {
+                log_label: CommandLogLabel::Static("delete_branch"),
+                mutating: true,
+                debounce_key: None,
+                refresh_key: None,
+                pending_label: PendingOperationLabel::DeleteBranch,
+            },
+            Command::RebaseBranch { .. } => CommandMetadata {
+                log_label: CommandLogLabel::Static("rebase_branch"),
+                mutating: true,
+                debounce_key: None,
+                refresh_key: None,
+                pending_label: PendingOperationLabel::RebaseBranch,
+            },
+            Command::SquashCommits { .. } => CommandMetadata {
+                log_label: CommandLogLabel::Static("squash_commits"),
+                mutating: true,
+                debounce_key: None,
+                refresh_key: None,
+                pending_label: PendingOperationLabel::Static("squash_commits"),
+            },
+            Command::FixupCommits { .. } => CommandMetadata {
+                log_label: CommandLogLabel::Static("fixup_commits"),
+                mutating: true,
+                debounce_key: None,
+                refresh_key: None,
+                pending_label: PendingOperationLabel::Static("fixup_commits"),
+            },
+            Command::RewordCommit { .. } => CommandMetadata {
+                log_label: CommandLogLabel::Static("reword_commit"),
+                mutating: true,
+                debounce_key: None,
+                refresh_key: None,
+                pending_label: PendingOperationLabel::Static("reword_commit"),
+            },
+            Command::DeleteCommits { .. } => CommandMetadata {
+                log_label: CommandLogLabel::Static("delete_commits"),
+                mutating: true,
+                debounce_key: None,
+                refresh_key: None,
+                pending_label: PendingOperationLabel::Static("delete_commits"),
+            },
+            Command::CheckoutCommitDetached { .. } => CommandMetadata {
+                log_label: CommandLogLabel::Static("checkout_commit_detached"),
+                mutating: true,
+                debounce_key: None,
+                refresh_key: None,
+                pending_label: PendingOperationLabel::Static("checkout_detached"),
+            },
+            Command::StashPush { .. } => CommandMetadata {
+                log_label: CommandLogLabel::Static("stash_push"),
+                mutating: true,
+                debounce_key: None,
+                refresh_key: None,
+                pending_label: PendingOperationLabel::Static("stash_push"),
+            },
+            Command::StashPop { .. } => CommandMetadata {
+                log_label: CommandLogLabel::Static("stash_pop"),
+                mutating: true,
+                debounce_key: None,
+                refresh_key: None,
+                pending_label: PendingOperationLabel::Static("stash_pop"),
+            },
+        }
+    }
+
+    fn push_pending_label(&self) -> String {
+        match self {
             Command::Push { force } => {
                 if *force {
-                    "force_push"
+                    "force_push".to_string()
                 } else {
-                    "push"
+                    "push".to_string()
                 }
             }
-            Command::RefreshFiles => "refresh_files",
-            Command::RefreshBranches => "refresh_branches",
-            Command::RefreshCommits => "refresh_commits",
-            Command::RefreshStash => "refresh_stash",
-            Command::LoadMoreCommits { .. } => "load_more_commits",
-            Command::RefreshFilesDetailsDiff { .. } => "refresh_files_details_diff",
-            Command::RefreshBranchDetailsLog { .. } => "refresh_branch_details_log",
-            Command::RefreshCommitDetailsDiff { .. } => "refresh_commit_details_diff",
-            Command::RefreshBranchCommits { .. } => "refresh_branch_commits",
-            Command::RefreshBranchCommitFiles { .. } => "refresh_branch_commit_files",
-            Command::RefreshCommitFiles { .. } => "refresh_commit_files",
-            Command::RefreshCommitFileDiff { .. } => "refresh_commit_file_diff",
-            Command::StageFiles { .. } => "stage_files",
-            Command::UnstageFiles { .. } => "unstage_files",
-            Command::StashFiles { .. } => "stash_files",
-            Command::Reset { .. } => "reset",
-            Command::Nuke => "nuke",
-            Command::DiscardFiles { .. } => "discard_files",
-            Command::CreateCommit { .. } => "create_commit",
-            Command::CreateBranch { .. } => "create_branch",
-            Command::CheckoutBranch { .. } => "checkout_branch",
-            Command::DeleteBranch { .. } => "delete_branch",
-            Command::RebaseBranch { .. } => "rebase_branch",
-            Command::SquashCommits { .. } => "squash_commits",
-            Command::FixupCommits { .. } => "fixup_commits",
-            Command::RewordCommit { .. } => "reword_commit",
-            Command::DeleteCommits { .. } => "delete_commits",
-            Command::CheckoutCommitDetached { .. } => "checkout_commit_detached",
-            Command::StashPush { .. } => "stash_push",
-            Command::StashPop { .. } => "stash_pop",
+            _ => unreachable!("push pending label metadata used for non-push command"),
         }
     }
 
@@ -408,120 +670,48 @@ impl Command {
     }
 
     pub fn debounce_key(&self) -> Option<&'static str> {
-        match self {
-            Command::RefreshFilesDetailsDiff { .. } => Some("files_details_diff"),
-            Command::RefreshBranchDetailsLog { .. } => Some("branch_details_log"),
-            Command::RefreshCommitDetailsDiff { .. } => Some("commit_details_diff"),
-            Command::RefreshCommitFileDiff { .. } => Some("commit_file_diff"),
-            Command::RefreshAll
-            | Command::Pull
-            | Command::Push { .. }
-            | Command::RefreshFiles
-            | Command::RefreshBranches
-            | Command::RefreshCommits
-            | Command::RefreshStash
-            | Command::LoadMoreCommits { .. }
-            | Command::RefreshBranchCommits { .. }
-            | Command::RefreshBranchCommitFiles { .. }
-            | Command::RefreshCommitFiles { .. }
-            | Command::StageFiles { .. }
-            | Command::UnstageFiles { .. }
-            | Command::StashFiles { .. }
-            | Command::Reset { .. }
-            | Command::Nuke
-            | Command::DiscardFiles { .. }
-            | Command::CreateCommit { .. }
-            | Command::CreateBranch { .. }
-            | Command::CheckoutBranch { .. }
-            | Command::DeleteBranch { .. }
-            | Command::RebaseBranch { .. }
-            | Command::SquashCommits { .. }
-            | Command::FixupCommits { .. }
-            | Command::RewordCommit { .. }
-            | Command::DeleteCommits { .. }
-            | Command::CheckoutCommitDetached { .. }
-            | Command::StashPush { .. }
-            | Command::StashPop { .. } => None,
-        }
+        self.metadata().debounce_key
+    }
+
+    pub fn refresh_coalescing_key(&self) -> Option<CommandRefreshKey> {
+        self.metadata().refresh_key
     }
 
     pub fn is_mutating(&self) -> bool {
-        matches!(
-            self,
-            Command::StageFiles { .. }
-                | Command::UnstageFiles { .. }
-                | Command::StashFiles { .. }
-                | Command::Reset { .. }
-                | Command::Nuke
-                | Command::DiscardFiles { .. }
-                | Command::CreateCommit { .. }
-                | Command::Pull
-                | Command::Push { .. }
-                | Command::CreateBranch { .. }
-                | Command::CheckoutBranch { .. }
-                | Command::DeleteBranch { .. }
-                | Command::RebaseBranch { .. }
-                | Command::SquashCommits { .. }
-                | Command::FixupCommits { .. }
-                | Command::RewordCommit { .. }
-                | Command::DeleteCommits { .. }
-                | Command::CheckoutCommitDetached { .. }
-                | Command::StashPush { .. }
-                | Command::StashPop { .. }
-        )
+        self.metadata().mutating
     }
 
     pub fn pending_operation_label(&self) -> Option<String> {
-        match self {
-            Command::StageFiles { .. } => Some("stage".to_string()),
-            Command::UnstageFiles { .. } => Some("unstage".to_string()),
-            Command::StashFiles { .. } => Some("stash_files".to_string()),
-            Command::Reset { mode } => {
-                Some(format!("reset_{}", operations::reset_mode_name(*mode)))
-            }
-            Command::Nuke => Some("nuke".to_string()),
-            Command::DiscardFiles { .. } => Some("discard_files".to_string()),
-            Command::CreateCommit { .. } => Some("commit".to_string()),
-            Command::Pull => Some("pull".to_string()),
-            Command::Push { force } => Some(if *force {
-                "force_push".to_string()
-            } else {
-                "push".to_string()
-            }),
-            Command::CreateBranch { .. } => Some("create_branch".to_string()),
-            Command::CheckoutBranch { .. } => Some("checkout_branch".to_string()),
-            Command::DeleteBranch { mode, .. } => Some(format!(
-                "delete_branch_{}",
-                operations::delete_mode_name(*mode)
-            )),
-            Command::RebaseBranch { interactive, .. } => {
-                let mode = if *interactive {
-                    "interactive"
-                } else {
-                    "simple"
-                };
-                Some(format!("rebase_branch_{mode}"))
-            }
-            Command::SquashCommits { .. } => Some("squash_commits".to_string()),
-            Command::FixupCommits { .. } => Some("fixup_commits".to_string()),
-            Command::RewordCommit { .. } => Some("reword_commit".to_string()),
-            Command::DeleteCommits { .. } => Some("delete_commits".to_string()),
-            Command::CheckoutCommitDetached { .. } => Some("checkout_detached".to_string()),
-            Command::StashPush { .. } => Some("stash_push".to_string()),
-            Command::StashPop { .. } => Some("stash_pop".to_string()),
-            Command::RefreshAll
-            | Command::RefreshFiles
-            | Command::RefreshBranches
-            | Command::RefreshCommits
-            | Command::RefreshStash
-            | Command::LoadMoreCommits { .. }
-            | Command::RefreshFilesDetailsDiff { .. }
-            | Command::RefreshBranchDetailsLog { .. }
-            | Command::RefreshCommitDetailsDiff { .. }
-            | Command::RefreshBranchCommits { .. }
-            | Command::RefreshBranchCommitFiles { .. }
-            | Command::RefreshCommitFiles { .. }
-            | Command::RefreshCommitFileDiff { .. } => None,
+        match self.metadata().pending_label {
+            PendingOperationLabel::None => None,
+            PendingOperationLabel::Static(label) => Some(label.to_string()),
+            PendingOperationLabel::Reset => match self {
+                Command::Reset { mode } => {
+                    Some(format!("reset_{}", operations::reset_mode_name(*mode)))
+                }
+                _ => unreachable!("reset pending label metadata used for non-reset command"),
+            },
+            PendingOperationLabel::Push => Some(self.push_pending_label()),
+            PendingOperationLabel::DeleteBranch => match self {
+                Command::DeleteBranch { mode, .. } => Some(format!(
+                    "delete_branch_{}",
+                    operations::delete_mode_name(*mode)
+                )),
+                _ => {
+                    unreachable!("delete branch pending label metadata used for non-delete command")
+                }
+            },
+            PendingOperationLabel::RebaseBranch => match self {
+                Command::RebaseBranch { interactive, .. } => {
+                    let mode = if *interactive {
+                        "interactive"
+                    } else {
+                        "simple"
+                    };
+                    Some(format!("rebase_branch_{mode}"))
+                }
+                _ => unreachable!("rebase pending label metadata used for non-rebase command"),
+            },
         }
     }
 }
@@ -530,6 +720,7 @@ impl GitResult {
     pub fn log_label(&self) -> &'static str {
         match self {
             GitResult::Refreshed(_) => "refreshed",
+            GitResult::SplitRefreshed { .. } => "split_refreshed",
             GitResult::Pull { .. } => "pull",
             GitResult::Push { force, .. } => {
                 if *force {
@@ -575,6 +766,7 @@ impl GitResult {
     pub fn is_success(&self) -> bool {
         match self {
             GitResult::Refreshed(_)
+            | GitResult::SplitRefreshed { .. }
             | GitResult::FilesRefreshed(_)
             | GitResult::BranchesRefreshed(_)
             | GitResult::CommitsRefreshed(_)
@@ -597,7 +789,6 @@ impl GitResult {
             | GitResult::CreateCommit { result, .. }
             | GitResult::CreateBranch { result, .. }
             | GitResult::CheckoutBranch { result, .. }
-            | GitResult::DeleteBranch { result, .. }
             | GitResult::RebaseBranch { result, .. }
             | GitResult::SquashCommits { result, .. }
             | GitResult::FixupCommits { result, .. }
@@ -606,14 +797,20 @@ impl GitResult {
             | GitResult::CheckoutCommitDetached { result, .. }
             | GitResult::StashPush { result, .. }
             | GitResult::StashPop { result, .. }
-            | GitResult::Pull { result }
-            | GitResult::Push { result, .. } => result.is_ok(),
+            | GitResult::Pull { result } => result.is_ok(),
+            GitResult::DeleteBranch { result, .. } | GitResult::Push { result, .. } => {
+                result.is_ok()
+            }
         }
     }
 }
 
 pub fn debounce_key_for_command(command: &Command) -> Option<&'static str> {
     command.debounce_key()
+}
+
+pub fn refresh_key_for_command(command: &Command) -> Option<CommandRefreshKey> {
+    command.refresh_coalescing_key()
 }
 
 pub(crate) fn with_pending(state: &mut AppContext, commands: Vec<Command>) -> Vec<Command> {
@@ -632,6 +829,7 @@ mod tests {
         assert_eq!(Command::RefreshFiles.log_label(), "refresh_files");
         assert_eq!(
             Command::RefreshFilesDetailsDiff {
+                request_id: DetailsRequestId(0),
                 targets: Vec::new(),
                 truncated_from: None,
             }
@@ -670,8 +868,7 @@ mod tests {
 fn mark_command_pending(state: &mut AppContext, command: &Command) {
     match command {
         Command::RefreshAll => {
-            state.work.refresh_pending = true;
-            state.work.pending_refreshes = RefreshTarget::ALL.into_iter().collect();
+            state.work.mark_refresh_all_pending();
         }
         Command::RefreshFiles => {
             mark_refresh_target_pending(state, RefreshTarget::Files);
@@ -686,29 +883,28 @@ fn mark_command_pending(state: &mut AppContext, command: &Command) {
             mark_refresh_target_pending(state, RefreshTarget::Stash);
         }
         Command::LoadMoreCommits { .. } => {
-            state.work.commits_loading_more = true;
+            state.work.pagination.commits_loading_more = true;
         }
         Command::RefreshFilesDetailsDiff { .. }
         | Command::RefreshBranchDetailsLog { .. }
         | Command::RefreshCommitDetailsDiff { .. }
         | Command::RefreshCommitFileDiff { .. } => {
-            state.work.details_pending = true;
+            state.work.details.details_pending = true;
         }
         Command::RefreshCommitFiles { .. } | Command::RefreshBranchCommitFiles { .. } => {
-            state.work.commit_files_loading = true;
+            state.work.commit_files.commit_files_loading = true;
         }
         Command::RefreshBranchCommits { .. } => {
             mark_refresh_target_pending(state, RefreshTarget::Branches);
         }
         _ => {
             if let Some(label) = command.pending_operation_label() {
-                state.work.operation_pending = Some(label);
+                state.work.mutation.operation_pending = Some(label);
             }
         }
     }
 }
 
 fn mark_refresh_target_pending(state: &mut AppContext, target: RefreshTarget) {
-    state.work.refresh_pending = true;
-    state.work.pending_refreshes.insert(target);
+    state.work.mark_refresh_target_pending(target);
 }

@@ -5,7 +5,7 @@ use ratagit_core::{
     FileDiffTarget, FilesSnapshot, RepoSnapshot, ResetMode, StashEntry,
 };
 
-use crate::{GitBackend, GitError, MockGitBackend};
+use crate::{GitBackendHistoryRewrite, GitBackendRead, GitBackendWrite, GitError, MockGitBackend};
 
 #[derive(Debug, Clone)]
 pub struct SharedMockGitBackend {
@@ -49,7 +49,7 @@ macro_rules! delegate_shared_backend {
     };
 }
 
-impl GitBackend for SharedMockGitBackend {
+impl GitBackendRead for SharedMockGitBackend {
     delegate_shared_backend! {
         refresh_snapshot() -> Result<RepoSnapshot, GitError>;
         refresh_files() -> Result<FilesSnapshot, GitError>;
@@ -63,6 +63,11 @@ impl GitBackend for SharedMockGitBackend {
         commit_details_diff(commit_id: &str) -> Result<String, GitError>;
         commit_files(commit_id: &str) -> Result<Vec<CommitFileEntry>, GitError>;
         commit_file_diff(target: &CommitFileDiffTarget) -> Result<String, GitError>;
+    }
+}
+
+impl GitBackendWrite for SharedMockGitBackend {
+    delegate_shared_backend! {
         stage_file(path: &str) -> Result<(), GitError>;
         unstage_file(path: &str) -> Result<(), GitError>;
         stage_files(paths: &[String]) -> Result<(), GitError>;
@@ -73,11 +78,6 @@ impl GitBackend for SharedMockGitBackend {
         create_branch(name: &str, start_point: &str) -> Result<(), GitError>;
         checkout_branch(name: &str, auto_stash: bool) -> Result<(), GitError>;
         delete_branch(name: &str, mode: BranchDeleteMode, force: bool) -> Result<(), GitError>;
-        rebase_branch(target: &str, interactive: bool, auto_stash: bool) -> Result<(), GitError>;
-        squash_commits(commit_ids: &[String]) -> Result<(), GitError>;
-        fixup_commits(commit_ids: &[String]) -> Result<(), GitError>;
-        reword_commit(commit_id: &str, message: &str) -> Result<(), GitError>;
-        delete_commits(commit_ids: &[String]) -> Result<(), GitError>;
         checkout_commit_detached(commit_id: &str, auto_stash: bool) -> Result<(), GitError>;
         stash_push(message: &str) -> Result<(), GitError>;
         stash_files(message: &str, paths: &[String]) -> Result<(), GitError>;
@@ -88,9 +88,21 @@ impl GitBackend for SharedMockGitBackend {
     }
 }
 
+impl GitBackendHistoryRewrite for SharedMockGitBackend {
+    delegate_shared_backend! {
+        rebase_branch(target: &str, interactive: bool, auto_stash: bool) -> Result<(), GitError>;
+        squash_commits(commit_ids: &[String]) -> Result<(), GitError>;
+        fixup_commits(commit_ids: &[String]) -> Result<(), GitError>;
+        reword_commit(commit_id: &str, message: &str) -> Result<(), GitError>;
+        delete_commits(commit_ids: &[String]) -> Result<(), GitError>;
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use ratagit_core::{BranchEntry, CommitFileStatus, FileEntry, StashEntry};
+    use ratagit_core::{
+        BranchEntry, CommitEntry, CommitFileStatus, CommitHashStatus, FileEntry, StashEntry,
+    };
 
     use super::*;
 
@@ -116,6 +128,33 @@ mod tests {
                 summary: "savepoint".to_string(),
             }],
         }
+    }
+
+    fn shared_snapshot_with_commits() -> RepoSnapshot {
+        let mut snapshot = shared_snapshot();
+        snapshot.commits = vec![
+            CommitEntry {
+                id: "aaa1111".to_string(),
+                full_id: "aaa1111".to_string(),
+                summary: "head".to_string(),
+                message: "head".to_string(),
+                author_name: "ratagit-tests".to_string(),
+                graph: "●".to_string(),
+                hash_status: CommitHashStatus::Unpushed,
+                is_merge: false,
+            },
+            CommitEntry {
+                id: "bbb2222".to_string(),
+                full_id: "bbb2222".to_string(),
+                summary: "base".to_string(),
+                message: "base".to_string(),
+                author_name: "ratagit-tests".to_string(),
+                graph: "●".to_string(),
+                hash_status: CommitHashStatus::Unpushed,
+                is_merge: false,
+            },
+        ];
+        snapshot
     }
 
     #[test]
@@ -146,5 +185,28 @@ mod tests {
                 .any(|entry| entry.path == "a.txt" && entry.staged)
         );
         assert!(snapshot.stashes.is_empty());
+    }
+
+    #[test]
+    fn capabilities_dispatch_through_shared_mock() {
+        let mut backend = SharedMockGitBackend::new(shared_snapshot_with_commits());
+
+        let commits = GitBackendRead::refresh_commits(&mut backend)
+            .expect("read capability should refresh commits");
+        GitBackendWrite::stage_files(&mut backend, &["a.txt".to_string()])
+            .expect("write capability should stage files");
+        GitBackendHistoryRewrite::reword_commit(&mut backend, "aaa1111", "head reworded")
+            .expect("history rewrite capability should reword commits");
+
+        assert_eq!(commits.len(), 2);
+        assert_eq!(backend.snapshot().commits[0].summary, "head reworded");
+        assert_eq!(
+            backend.operations(),
+            vec![
+                "refresh-commits".to_string(),
+                "stage-files:a.txt".to_string(),
+                "reword:aaa1111:head reworded".to_string(),
+            ]
+        );
     }
 }

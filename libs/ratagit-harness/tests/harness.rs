@@ -8,7 +8,9 @@ use ratagit_core::{
     Action, AppContext, BranchDeleteMode, BranchEntry, CommitEntry, FileDiffTarget, FilesSnapshot,
     GitResult, PanelFocus, RepoSnapshot, ResetMode, StashEntry, UiAction, update,
 };
-use ratagit_git::{GitBackend, GitError, MockGitBackend};
+use ratagit_git::{
+    GitBackendHistoryRewrite, GitBackendRead, GitBackendWrite, GitError, MockGitBackend,
+};
 use ratagit_harness::{
     AsyncRuntime, MockScenario, Runtime, ScenarioExpectations, run_mock_scenario,
 };
@@ -83,7 +85,7 @@ struct BlockingBackend {
     refresh_release: Arc<Mutex<Receiver<()>>>,
 }
 
-impl GitBackend for BlockingBackend {
+impl GitBackendRead for BlockingBackend {
     fn refresh_snapshot(&mut self) -> Result<RepoSnapshot, GitError> {
         let _ = self.refresh_started.send(());
         self.refresh_release
@@ -171,7 +173,9 @@ impl GitBackend for BlockingBackend {
             .expect("mock lock")
             .commit_file_diff(target)
     }
+}
 
+impl GitBackendWrite for BlockingBackend {
     fn stage_file(&mut self, path: &str) -> Result<(), GitError> {
         self.inner.lock().expect("mock lock").stage_file(path)
     }
@@ -226,6 +230,46 @@ impl GitBackend for BlockingBackend {
             .delete_branch(name, mode, force)
     }
 
+    fn checkout_commit_detached(
+        &mut self,
+        commit_id: &str,
+        auto_stash: bool,
+    ) -> Result<(), GitError> {
+        self.inner
+            .lock()
+            .expect("mock lock")
+            .checkout_commit_detached(commit_id, auto_stash)
+    }
+
+    fn stash_push(&mut self, message: &str) -> Result<(), GitError> {
+        self.inner.lock().expect("mock lock").stash_push(message)
+    }
+
+    fn stash_files(&mut self, message: &str, paths: &[String]) -> Result<(), GitError> {
+        self.inner
+            .lock()
+            .expect("mock lock")
+            .stash_files(message, paths)
+    }
+
+    fn stash_pop(&mut self, stash_id: &str) -> Result<(), GitError> {
+        self.inner.lock().expect("mock lock").stash_pop(stash_id)
+    }
+
+    fn reset(&mut self, mode: ResetMode) -> Result<(), GitError> {
+        self.inner.lock().expect("mock lock").reset(mode)
+    }
+
+    fn nuke(&mut self) -> Result<(), GitError> {
+        self.inner.lock().expect("mock lock").nuke()
+    }
+
+    fn discard_files(&mut self, paths: &[String]) -> Result<(), GitError> {
+        self.inner.lock().expect("mock lock").discard_files(paths)
+    }
+}
+
+impl GitBackendHistoryRewrite for BlockingBackend {
     fn rebase_branch(
         &mut self,
         target: &str,
@@ -264,44 +308,6 @@ impl GitBackend for BlockingBackend {
             .lock()
             .expect("mock lock")
             .delete_commits(commit_ids)
-    }
-
-    fn checkout_commit_detached(
-        &mut self,
-        commit_id: &str,
-        auto_stash: bool,
-    ) -> Result<(), GitError> {
-        self.inner
-            .lock()
-            .expect("mock lock")
-            .checkout_commit_detached(commit_id, auto_stash)
-    }
-
-    fn stash_push(&mut self, message: &str) -> Result<(), GitError> {
-        self.inner.lock().expect("mock lock").stash_push(message)
-    }
-
-    fn stash_files(&mut self, message: &str, paths: &[String]) -> Result<(), GitError> {
-        self.inner
-            .lock()
-            .expect("mock lock")
-            .stash_files(message, paths)
-    }
-
-    fn stash_pop(&mut self, stash_id: &str) -> Result<(), GitError> {
-        self.inner.lock().expect("mock lock").stash_pop(stash_id)
-    }
-
-    fn reset(&mut self, mode: ResetMode) -> Result<(), GitError> {
-        self.inner.lock().expect("mock lock").reset(mode)
-    }
-
-    fn nuke(&mut self) -> Result<(), GitError> {
-        self.inner.lock().expect("mock lock").nuke()
-    }
-
-    fn discard_files(&mut self, paths: &[String]) -> Result<(), GitError> {
-        self.inner.lock().expect("mock lock").discard_files(paths)
     }
 }
 
@@ -615,7 +621,7 @@ fn async_runtime_drops_blocked_read_result_after_queued_mutation() {
         &mut state,
         Action::GitResult(GitResult::Refreshed(fixture_dirty_repo())),
     );
-    state.work.details_pending = false;
+    state.work.details.details_pending = false;
     let baseline_refresh_count = state.repo.status.refresh_count;
     let mut runtime = AsyncRuntime::new(state, move || backend.clone(), size);
 

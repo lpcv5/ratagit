@@ -1,7 +1,7 @@
-use std::fmt;
 use std::path::{Component, Path};
 use std::time::Instant;
 
+mod backend;
 mod cli;
 mod hybrid;
 mod mock;
@@ -9,172 +9,14 @@ mod shared_mock;
 mod status_cli;
 mod untracked_diff;
 
-use ratagit_core::{
-    BranchDeleteMode, Command, CommitEntry, CommitFileDiffTarget, CommitFileEntry, FileDiffTarget,
-    FilesSnapshot, GitResult, RefreshTarget, RepoSnapshot, ResetMode, StashEntry,
-};
+use ratagit_core::{Command, GitResult, RefreshTarget, StashEntry};
 
+pub use backend::{
+    GitBackend, GitBackendHistoryRewrite, GitBackendRead, GitBackendWrite, GitError,
+};
 pub use hybrid::HybridGitBackend;
 pub use mock::MockGitBackend;
 pub use shared_mock::SharedMockGitBackend;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GitError {
-    pub message: String,
-}
-
-impl GitError {
-    pub(crate) fn new(message: impl Into<String>) -> Self {
-        Self {
-            message: message.into(),
-        }
-    }
-}
-
-impl From<git2::Error> for GitError {
-    fn from(error: git2::Error) -> Self {
-        Self::new(error.message().to_string())
-    }
-}
-
-impl fmt::Display for GitError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.message.fmt(formatter)
-    }
-}
-
-impl std::error::Error for GitError {}
-
-pub trait GitBackend {
-    fn refresh_snapshot(&mut self) -> Result<RepoSnapshot, GitError>;
-    fn refresh_files(&mut self) -> Result<FilesSnapshot, GitError> {
-        let snapshot = self.refresh_snapshot()?;
-        Ok(FilesSnapshot {
-            status_summary: snapshot.status_summary,
-            current_branch: snapshot.current_branch,
-            detached_head: snapshot.detached_head,
-            index_entry_count: snapshot.files.len(),
-            files: snapshot.files,
-            large_repo_mode: false,
-            status_truncated: false,
-            status_scan_skipped: false,
-            untracked_scan_skipped: false,
-        })
-    }
-    fn refresh_branches(&mut self) -> Result<Vec<ratagit_core::BranchEntry>, GitError> {
-        self.refresh_snapshot().map(|snapshot| snapshot.branches)
-    }
-    fn refresh_commits(&mut self) -> Result<Vec<CommitEntry>, GitError> {
-        self.refresh_snapshot().map(|snapshot| snapshot.commits)
-    }
-    fn branch_commits(&mut self, branch: &str) -> Result<Vec<CommitEntry>, GitError>;
-    fn refresh_stashes(&mut self) -> Result<Vec<StashEntry>, GitError> {
-        self.refresh_snapshot().map(|snapshot| snapshot.stashes)
-    }
-    fn load_more_commits(
-        &mut self,
-        offset: usize,
-        limit: usize,
-    ) -> Result<Vec<CommitEntry>, GitError>;
-    fn files_details_diff(&mut self, targets: &[FileDiffTarget]) -> Result<String, GitError>;
-    fn branch_details_log(&mut self, branch: &str, max_count: usize) -> Result<String, GitError>;
-    fn commit_details_diff(&mut self, commit_id: &str) -> Result<String, GitError>;
-    fn commit_files(&mut self, commit_id: &str) -> Result<Vec<CommitFileEntry>, GitError>;
-    fn commit_file_diff(&mut self, target: &CommitFileDiffTarget) -> Result<String, GitError>;
-    fn stage_file(&mut self, path: &str) -> Result<(), GitError>;
-    fn unstage_file(&mut self, path: &str) -> Result<(), GitError>;
-    fn stage_files(&mut self, paths: &[String]) -> Result<(), GitError> {
-        for path in paths {
-            self.stage_file(path)?;
-        }
-        Ok(())
-    }
-    fn unstage_files(&mut self, paths: &[String]) -> Result<(), GitError> {
-        for path in paths {
-            self.unstage_file(path)?;
-        }
-        Ok(())
-    }
-    fn create_commit(&mut self, message: &str) -> Result<(), GitError>;
-    fn pull(&mut self) -> Result<(), GitError>;
-    fn push(&mut self, force: bool) -> Result<(), GitError>;
-    fn create_branch(&mut self, name: &str, start_point: &str) -> Result<(), GitError>;
-    fn checkout_branch(&mut self, name: &str, auto_stash: bool) -> Result<(), GitError>;
-    fn delete_branch(
-        &mut self,
-        name: &str,
-        mode: BranchDeleteMode,
-        force: bool,
-    ) -> Result<(), GitError>;
-    fn rebase_branch(
-        &mut self,
-        target: &str,
-        interactive: bool,
-        auto_stash: bool,
-    ) -> Result<(), GitError>;
-    fn squash_commits(&mut self, commit_ids: &[String]) -> Result<(), GitError>;
-    fn fixup_commits(&mut self, commit_ids: &[String]) -> Result<(), GitError>;
-    fn reword_commit(&mut self, commit_id: &str, message: &str) -> Result<(), GitError>;
-    fn delete_commits(&mut self, commit_ids: &[String]) -> Result<(), GitError>;
-    fn checkout_commit_detached(
-        &mut self,
-        commit_id: &str,
-        auto_stash: bool,
-    ) -> Result<(), GitError>;
-    fn stash_push(&mut self, message: &str) -> Result<(), GitError>;
-    fn stash_files(&mut self, message: &str, paths: &[String]) -> Result<(), GitError>;
-    fn stash_pop(&mut self, stash_id: &str) -> Result<(), GitError>;
-    fn reset(&mut self, mode: ResetMode) -> Result<(), GitError>;
-    fn nuke(&mut self) -> Result<(), GitError>;
-    fn discard_files(&mut self, paths: &[String]) -> Result<(), GitError>;
-}
-
-macro_rules! delegate_boxed_backend {
-    ($($method:ident($($arg:ident: $arg_ty:ty),*) -> $ret:ty;)*) => {
-        $(
-            fn $method(&mut self, $($arg: $arg_ty),*) -> $ret {
-                (**self).$method($($arg),*)
-            }
-        )*
-    };
-}
-
-impl<T: GitBackend + ?Sized> GitBackend for Box<T> {
-    delegate_boxed_backend! {
-        refresh_snapshot() -> Result<RepoSnapshot, GitError>;
-        refresh_files() -> Result<FilesSnapshot, GitError>;
-        refresh_branches() -> Result<Vec<ratagit_core::BranchEntry>, GitError>;
-        refresh_commits() -> Result<Vec<CommitEntry>, GitError>;
-        branch_commits(branch: &str) -> Result<Vec<CommitEntry>, GitError>;
-        refresh_stashes() -> Result<Vec<StashEntry>, GitError>;
-        load_more_commits(offset: usize, limit: usize) -> Result<Vec<CommitEntry>, GitError>;
-        files_details_diff(targets: &[FileDiffTarget]) -> Result<String, GitError>;
-        branch_details_log(branch: &str, max_count: usize) -> Result<String, GitError>;
-        commit_details_diff(commit_id: &str) -> Result<String, GitError>;
-        commit_files(commit_id: &str) -> Result<Vec<CommitFileEntry>, GitError>;
-        commit_file_diff(target: &CommitFileDiffTarget) -> Result<String, GitError>;
-        stage_file(path: &str) -> Result<(), GitError>;
-        unstage_file(path: &str) -> Result<(), GitError>;
-        create_commit(message: &str) -> Result<(), GitError>;
-        pull() -> Result<(), GitError>;
-        push(force: bool) -> Result<(), GitError>;
-        create_branch(name: &str, start_point: &str) -> Result<(), GitError>;
-        checkout_branch(name: &str, auto_stash: bool) -> Result<(), GitError>;
-        delete_branch(name: &str, mode: BranchDeleteMode, force: bool) -> Result<(), GitError>;
-        rebase_branch(target: &str, interactive: bool, auto_stash: bool) -> Result<(), GitError>;
-        squash_commits(commit_ids: &[String]) -> Result<(), GitError>;
-        fixup_commits(commit_ids: &[String]) -> Result<(), GitError>;
-        reword_commit(commit_id: &str, message: &str) -> Result<(), GitError>;
-        delete_commits(commit_ids: &[String]) -> Result<(), GitError>;
-        checkout_commit_detached(commit_id: &str, auto_stash: bool) -> Result<(), GitError>;
-        stash_push(message: &str) -> Result<(), GitError>;
-        stash_files(message: &str, paths: &[String]) -> Result<(), GitError>;
-        stash_pop(stash_id: &str) -> Result<(), GitError>;
-        reset(mode: ResetMode) -> Result<(), GitError>;
-        nuke() -> Result<(), GitError>;
-        discard_files(paths: &[String]) -> Result<(), GitError>;
-    }
-}
 
 pub fn execute_command(backend: &mut dyn GitBackend, command: Command) -> GitResult {
     let command_label = command.log_label();
@@ -212,13 +54,7 @@ pub fn execute_command(backend: &mut dyn GitBackend, command: Command) -> GitRes
 
 fn execute_command_inner(backend: &mut dyn GitBackend, command: Command) -> GitResult {
     match command {
-        Command::RefreshAll => match backend.refresh_snapshot() {
-            Ok(snapshot) => GitResult::Refreshed(snapshot),
-            Err(error) => GitResult::RefreshFailed {
-                target: None,
-                error: error.message,
-            },
-        },
+        Command::RefreshAll => execute_split_refresh(backend),
         Command::RefreshFiles => match backend.refresh_files() {
             Ok(snapshot) => GitResult::FilesRefreshed(snapshot),
             Err(error) => GitResult::RefreshFailed {
@@ -260,22 +96,33 @@ fn execute_command_inner(backend: &mut dyn GitBackend, command: Command) -> GitR
                 .map_err(|error| error.message),
         },
         Command::RefreshFilesDetailsDiff {
+            request_id,
             targets,
             truncated_from,
         } => GitResult::FilesDetailsDiff {
+            request_id,
             targets: targets.clone(),
             truncated_from,
             result: backend
                 .files_details_diff(&targets)
                 .map_err(|error| error.message),
         },
-        Command::RefreshBranchDetailsLog { branch, max_count } => GitResult::BranchDetailsLog {
+        Command::RefreshBranchDetailsLog {
+            request_id,
+            branch,
+            max_count,
+        } => GitResult::BranchDetailsLog {
+            request_id,
             branch: branch.clone(),
             result: backend
                 .branch_details_log(&branch, max_count)
                 .map_err(|error| error.message),
         },
-        Command::RefreshCommitDetailsDiff { commit_id } => GitResult::CommitDetailsDiff {
+        Command::RefreshCommitDetailsDiff {
+            request_id,
+            commit_id,
+        } => GitResult::CommitDetailsDiff {
+            request_id,
             commit_id: commit_id.clone(),
             result: backend
                 .commit_details_diff(&commit_id)
@@ -300,7 +147,8 @@ fn execute_command_inner(backend: &mut dyn GitBackend, command: Command) -> GitR
                 .commit_files(&commit_id)
                 .map_err(|error| error.message),
         },
-        Command::RefreshCommitFileDiff { target } => GitResult::CommitFileDiff {
+        Command::RefreshCommitFileDiff { request_id, target } => GitResult::CommitFileDiff {
+            request_id,
             target: target.clone(),
             result: backend
                 .commit_file_diff(&target)
@@ -343,7 +191,7 @@ fn execute_command_inner(backend: &mut dyn GitBackend, command: Command) -> GitR
         },
         Command::Push { force } => GitResult::Push {
             force,
-            result: backend.push(force).map_err(|error| error.message),
+            result: backend.push(force).map_err(GitError::into_failure),
         },
         Command::CreateBranch { name, start_point } => GitResult::CreateBranch {
             name: name.clone(),
@@ -365,7 +213,7 @@ fn execute_command_inner(backend: &mut dyn GitBackend, command: Command) -> GitR
             force,
             result: backend
                 .delete_branch(&name, mode, force)
-                .map_err(|error| error.message),
+                .map_err(GitError::into_failure),
         },
         Command::RebaseBranch {
             target,
@@ -425,6 +273,52 @@ fn execute_command_inner(backend: &mut dyn GitBackend, command: Command) -> GitR
     }
 }
 
+fn execute_split_refresh(backend: &mut dyn GitBackend) -> GitResult {
+    let files = match backend.refresh_files() {
+        Ok(files) => files,
+        Err(error) => {
+            return GitResult::RefreshFailed {
+                target: None,
+                error: error.message,
+            };
+        }
+    };
+    let branches = match backend.refresh_branches() {
+        Ok(branches) => branches,
+        Err(error) => {
+            return GitResult::RefreshFailed {
+                target: None,
+                error: error.message,
+            };
+        }
+    };
+    let commits = match backend.refresh_commits() {
+        Ok(commits) => commits,
+        Err(error) => {
+            return GitResult::RefreshFailed {
+                target: None,
+                error: error.message,
+            };
+        }
+    };
+    let stashes = match backend.refresh_stashes() {
+        Ok(stashes) => stashes,
+        Err(error) => {
+            return GitResult::RefreshFailed {
+                target: None,
+                error: error.message,
+            };
+        }
+    };
+
+    GitResult::SplitRefreshed {
+        files,
+        branches,
+        commits,
+        stashes,
+    }
+}
+
 pub fn is_git_repo(path: &Path) -> bool {
     git2::Repository::discover(path).is_ok()
 }
@@ -457,8 +351,9 @@ pub(crate) fn validate_repo_relative_path(path: &str) -> Result<&Path, GitError>
 #[cfg(test)]
 mod tests {
     use ratagit_core::{
-        BranchDeleteMode, BranchEntry, COMMITS_PAGE_SIZE, CommitEntry, CommitFileStatus,
-        CommitHashStatus, FileEntry, ResetMode,
+        BranchDeleteMode, BranchEntry, COMMITS_PAGE_SIZE, CommitEntry, CommitFileDiffTarget,
+        CommitFileEntry, CommitFileStatus, CommitHashStatus, DetailsRequestId, FileDiffTarget,
+        FileEntry, FilesSnapshot, RepoSnapshot, ResetMode, StashEntry,
     };
 
     use super::*;
@@ -491,6 +386,46 @@ mod tests {
         }
     }
 
+    fn test_snapshot_with_file_and_commits(commits: Vec<CommitEntry>) -> RepoSnapshot {
+        RepoSnapshot {
+            status_summary: "dirty".to_string(),
+            current_branch: "main".to_string(),
+            detached_head: false,
+            files: vec![FileEntry {
+                path: "a.txt".to_string(),
+                staged: false,
+                untracked: false,
+                status: CommitFileStatus::Modified,
+                conflicted: false,
+            }],
+            commits,
+            branches: vec![BranchEntry {
+                name: "main".to_string(),
+                is_current: true,
+            }],
+            stashes: Vec::new(),
+        }
+    }
+
+    fn read_commit_count(backend: &mut dyn GitBackendRead) -> usize {
+        backend
+            .refresh_commits()
+            .expect("read capability should refresh commits")
+            .len()
+    }
+
+    fn stage_file_via_write(backend: &mut dyn GitBackendWrite) {
+        backend
+            .stage_files(&["a.txt".to_string()])
+            .expect("write capability should stage files");
+    }
+
+    fn reword_via_history_rewrite(backend: &mut dyn GitBackendHistoryRewrite) {
+        backend
+            .reword_commit("aaa1111", "head reworded")
+            .expect("history rewrite capability should reword commits");
+    }
+
     fn file_diff_target(path: &str, untracked: bool) -> FileDiffTarget {
         FileDiffTarget {
             path: path.to_string(),
@@ -503,6 +438,223 @@ mod tests {
         (0..count)
             .map(|index| test_commit(&format!("{index:07x}"), &format!("commit {index}")))
             .collect()
+    }
+
+    struct FailingBranchesBackend {
+        inner: MockGitBackend,
+    }
+
+    impl FailingBranchesBackend {
+        fn new() -> Self {
+            Self {
+                inner: MockGitBackend::new(test_snapshot_with_file_and_commits(test_commits(1))),
+            }
+        }
+    }
+
+    impl GitBackendRead for FailingBranchesBackend {
+        fn refresh_snapshot(&mut self) -> Result<RepoSnapshot, GitError> {
+            self.inner.refresh_snapshot()
+        }
+
+        fn refresh_files(&mut self) -> Result<FilesSnapshot, GitError> {
+            self.inner.refresh_files()
+        }
+
+        fn refresh_branches(&mut self) -> Result<Vec<BranchEntry>, GitError> {
+            Err(GitError::new("branches failed"))
+        }
+
+        fn refresh_commits(&mut self) -> Result<Vec<CommitEntry>, GitError> {
+            self.inner.refresh_commits()
+        }
+
+        fn branch_commits(&mut self, branch: &str) -> Result<Vec<CommitEntry>, GitError> {
+            self.inner.branch_commits(branch)
+        }
+
+        fn refresh_stashes(&mut self) -> Result<Vec<StashEntry>, GitError> {
+            self.inner.refresh_stashes()
+        }
+
+        fn load_more_commits(
+            &mut self,
+            offset: usize,
+            limit: usize,
+        ) -> Result<Vec<CommitEntry>, GitError> {
+            self.inner.load_more_commits(offset, limit)
+        }
+
+        fn files_details_diff(&mut self, targets: &[FileDiffTarget]) -> Result<String, GitError> {
+            self.inner.files_details_diff(targets)
+        }
+
+        fn branch_details_log(
+            &mut self,
+            branch: &str,
+            max_count: usize,
+        ) -> Result<String, GitError> {
+            self.inner.branch_details_log(branch, max_count)
+        }
+
+        fn commit_details_diff(&mut self, commit_id: &str) -> Result<String, GitError> {
+            self.inner.commit_details_diff(commit_id)
+        }
+
+        fn commit_files(&mut self, commit_id: &str) -> Result<Vec<CommitFileEntry>, GitError> {
+            self.inner.commit_files(commit_id)
+        }
+
+        fn commit_file_diff(&mut self, target: &CommitFileDiffTarget) -> Result<String, GitError> {
+            self.inner.commit_file_diff(target)
+        }
+    }
+
+    impl GitBackendWrite for FailingBranchesBackend {
+        fn stage_file(&mut self, path: &str) -> Result<(), GitError> {
+            self.inner.stage_file(path)
+        }
+
+        fn unstage_file(&mut self, path: &str) -> Result<(), GitError> {
+            self.inner.unstage_file(path)
+        }
+
+        fn create_commit(&mut self, message: &str) -> Result<(), GitError> {
+            self.inner.create_commit(message)
+        }
+
+        fn pull(&mut self) -> Result<(), GitError> {
+            self.inner.pull()
+        }
+
+        fn push(&mut self, force: bool) -> Result<(), GitError> {
+            self.inner.push(force)
+        }
+
+        fn create_branch(&mut self, name: &str, start_point: &str) -> Result<(), GitError> {
+            self.inner.create_branch(name, start_point)
+        }
+
+        fn checkout_branch(&mut self, name: &str, auto_stash: bool) -> Result<(), GitError> {
+            self.inner.checkout_branch(name, auto_stash)
+        }
+
+        fn delete_branch(
+            &mut self,
+            name: &str,
+            mode: BranchDeleteMode,
+            force: bool,
+        ) -> Result<(), GitError> {
+            self.inner.delete_branch(name, mode, force)
+        }
+
+        fn checkout_commit_detached(
+            &mut self,
+            commit_id: &str,
+            auto_stash: bool,
+        ) -> Result<(), GitError> {
+            self.inner.checkout_commit_detached(commit_id, auto_stash)
+        }
+
+        fn stash_push(&mut self, message: &str) -> Result<(), GitError> {
+            self.inner.stash_push(message)
+        }
+
+        fn stash_files(&mut self, message: &str, paths: &[String]) -> Result<(), GitError> {
+            self.inner.stash_files(message, paths)
+        }
+
+        fn stash_pop(&mut self, stash_id: &str) -> Result<(), GitError> {
+            self.inner.stash_pop(stash_id)
+        }
+
+        fn reset(&mut self, mode: ResetMode) -> Result<(), GitError> {
+            self.inner.reset(mode)
+        }
+
+        fn nuke(&mut self) -> Result<(), GitError> {
+            self.inner.nuke()
+        }
+
+        fn discard_files(&mut self, paths: &[String]) -> Result<(), GitError> {
+            self.inner.discard_files(paths)
+        }
+    }
+
+    impl GitBackendHistoryRewrite for FailingBranchesBackend {
+        fn rebase_branch(
+            &mut self,
+            target: &str,
+            interactive: bool,
+            auto_stash: bool,
+        ) -> Result<(), GitError> {
+            self.inner.rebase_branch(target, interactive, auto_stash)
+        }
+
+        fn squash_commits(&mut self, commit_ids: &[String]) -> Result<(), GitError> {
+            self.inner.squash_commits(commit_ids)
+        }
+
+        fn fixup_commits(&mut self, commit_ids: &[String]) -> Result<(), GitError> {
+            self.inner.fixup_commits(commit_ids)
+        }
+
+        fn reword_commit(&mut self, commit_id: &str, message: &str) -> Result<(), GitError> {
+            self.inner.reword_commit(commit_id, message)
+        }
+
+        fn delete_commits(&mut self, commit_ids: &[String]) -> Result<(), GitError> {
+            self.inner.delete_commits(commit_ids)
+        }
+    }
+
+    #[test]
+    fn mock_capability_traits_dispatch_independently() {
+        let mut backend = MockGitBackend::new(test_snapshot_with_file_and_commits(vec![
+            test_commit("aaa1111", "head"),
+            test_commit("bbb2222", "base"),
+        ]));
+
+        assert_eq!(read_commit_count(&mut backend), 2);
+        stage_file_via_write(&mut backend);
+        reword_via_history_rewrite(&mut backend);
+
+        assert!(
+            backend
+                .snapshot()
+                .files
+                .iter()
+                .any(|entry| entry.path == "a.txt" && entry.staged)
+        );
+        assert_eq!(backend.snapshot().commits[0].summary, "head reworded");
+        assert_eq!(
+            backend.operations(),
+            &[
+                "refresh-commits".to_string(),
+                "stage-files:a.txt".to_string(),
+                "reword:aaa1111:head reworded".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn boxed_capability_traits_forward_to_inner_backend() {
+        let mut read_backend: Box<dyn GitBackendRead> =
+            Box::new(MockGitBackend::new(test_snapshot_with_commits(vec![
+                test_commit("aaa1111", "head"),
+            ])));
+        let mut write_backend: Box<dyn GitBackendWrite> = Box::new(MockGitBackend::new(
+            test_snapshot_with_file_and_commits(Vec::new()),
+        ));
+        let mut history_backend: Box<dyn GitBackendHistoryRewrite> =
+            Box::new(MockGitBackend::new(test_snapshot_with_commits(vec![
+                test_commit("aaa1111", "head"),
+                test_commit("bbb2222", "base"),
+            ])));
+
+        assert_eq!(read_commit_count(&mut read_backend), 1);
+        stage_file_via_write(&mut write_backend);
+        reword_via_history_rewrite(&mut history_backend);
     }
 
     #[test]
@@ -672,6 +824,67 @@ mod tests {
     }
 
     #[test]
+    fn refresh_all_command_uses_split_refresh_and_preserves_file_metadata() {
+        let mut backend = MockGitBackend::with_status_metadata(
+            test_snapshot_with_file_and_commits(test_commits(COMMITS_PAGE_SIZE + 25)),
+            100_000,
+            true,
+            true,
+            true,
+        );
+
+        let result = execute_command(&mut backend, Command::RefreshAll);
+
+        let GitResult::SplitRefreshed { files, commits, .. } = result else {
+            panic!("expected split refresh result");
+        };
+        assert_eq!(files.index_entry_count, 100_000);
+        assert!(files.large_repo_mode);
+        assert!(files.status_truncated);
+        assert!(files.untracked_scan_skipped);
+        assert_eq!(commits.len(), COMMITS_PAGE_SIZE);
+        assert_eq!(
+            backend.operations(),
+            &[
+                "refresh-files".to_string(),
+                "refresh-branches".to_string(),
+                "refresh-commits".to_string(),
+                "refresh-stash".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn refresh_all_command_reports_component_failure_as_full_refresh_failure() {
+        let mut backend = FailingBranchesBackend::new();
+
+        let result = execute_command(&mut backend, Command::RefreshAll);
+
+        assert_eq!(
+            result,
+            GitResult::RefreshFailed {
+                target: None,
+                error: "branches failed".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn targeted_refresh_command_reports_component_failure_as_target_failure() {
+        let mut backend = FailingBranchesBackend::new();
+
+        let result = execute_command(&mut backend, Command::RefreshBranches);
+
+        assert_eq!(
+            result,
+            GitResult::RefreshFailed {
+                target: Some(RefreshTarget::Branches),
+                error: "branches failed".to_string(),
+            }
+        );
+    }
+
+    #[test]
     fn mock_commit_rewrites_reject_public_merge_and_root_parent_cases() {
         let mut public = test_commit("aaa1111", "public");
         public.hash_status = CommitHashStatus::Pushed;
@@ -765,6 +978,7 @@ mod tests {
         let result = execute_command(
             &mut backend,
             Command::RefreshFilesDetailsDiff {
+                request_id: DetailsRequestId(7),
                 targets: vec![
                     file_diff_target("src/lib.rs", false),
                     file_diff_target("src/main.rs", false),
@@ -775,10 +989,12 @@ mod tests {
 
         match result {
             GitResult::FilesDetailsDiff {
+                request_id,
                 targets,
                 truncated_from,
                 result,
             } => {
+                assert_eq!(request_id, DetailsRequestId(7));
                 assert_eq!(
                     targets,
                     vec![
@@ -843,13 +1059,19 @@ mod tests {
         let result = execute_command(
             &mut backend,
             Command::RefreshBranchDetailsLog {
+                request_id: DetailsRequestId(11),
                 branch: "main".to_string(),
                 max_count: 50,
             },
         );
 
         match result {
-            GitResult::BranchDetailsLog { branch, result } => {
+            GitResult::BranchDetailsLog {
+                request_id,
+                branch,
+                result,
+            } => {
+                assert_eq!(request_id, DetailsRequestId(11));
                 assert_eq!(branch, "main");
                 let graph = result.expect("mock graph should succeed");
                 assert!(graph.contains("\u{1b}[33m*"));
@@ -878,12 +1100,18 @@ mod tests {
         let result = execute_command(
             &mut backend,
             Command::RefreshCommitDetailsDiff {
+                request_id: DetailsRequestId(13),
                 commit_id: "abc1234".to_string(),
             },
         );
 
         match result {
-            GitResult::CommitDetailsDiff { commit_id, result } => {
+            GitResult::CommitDetailsDiff {
+                request_id,
+                commit_id,
+                result,
+            } => {
+                assert_eq!(request_id, DetailsRequestId(13));
                 assert_eq!(commit_id, "abc1234");
                 let diff = result.expect("mock commit diff should succeed");
                 assert!(diff.contains("commit abc1234"));

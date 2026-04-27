@@ -15,7 +15,10 @@ use ratagit_core::{
 
 use crate::cli::GitCli;
 use crate::untracked_diff::format_untracked_diffs;
-use crate::{GitBackend, GitError, validate_repo_relative_path};
+use crate::{
+    GitBackendHistoryRewrite, GitBackendRead, GitBackendWrite, GitError,
+    validate_repo_relative_path,
+};
 
 pub struct HybridGitBackend {
     repo: Repository,
@@ -69,7 +72,7 @@ impl fmt::Debug for HybridGitBackend {
     }
 }
 
-impl GitBackend for HybridGitBackend {
+impl GitBackendRead for HybridGitBackend {
     fn refresh_snapshot(&mut self) -> Result<RepoSnapshot, GitError> {
         let files_snapshot = self.refresh_files()?;
         let commits = self.refresh_commits()?;
@@ -274,7 +277,9 @@ impl GitBackend for HybridGitBackend {
     ) -> Result<String, GitError> {
         self.cli.commit_file_diff(target)
     }
+}
 
+impl GitBackendWrite for HybridGitBackend {
     fn stage_file(&mut self, path: &str) -> Result<(), GitError> {
         self.stage_files(&[path.to_string()])
     }
@@ -349,31 +354,6 @@ impl GitBackend for HybridGitBackend {
         self.cli.delete_branch(name, mode, force)
     }
 
-    fn rebase_branch(
-        &mut self,
-        target: &str,
-        interactive: bool,
-        auto_stash: bool,
-    ) -> Result<(), GitError> {
-        self.cli.rebase_branch(target, interactive, auto_stash)
-    }
-
-    fn squash_commits(&mut self, commit_ids: &[String]) -> Result<(), GitError> {
-        self.cli.squash_commits(commit_ids)
-    }
-
-    fn fixup_commits(&mut self, commit_ids: &[String]) -> Result<(), GitError> {
-        self.cli.fixup_commits(commit_ids)
-    }
-
-    fn reword_commit(&mut self, commit_id: &str, message: &str) -> Result<(), GitError> {
-        self.cli.reword_commit(commit_id, message)
-    }
-
-    fn delete_commits(&mut self, commit_ids: &[String]) -> Result<(), GitError> {
-        self.cli.delete_commits(commit_ids)
-    }
-
     fn checkout_commit_detached(
         &mut self,
         commit_id: &str,
@@ -412,6 +392,33 @@ impl GitBackend for HybridGitBackend {
 
     fn discard_files(&mut self, paths: &[String]) -> Result<(), GitError> {
         self.cli.discard_files(paths)
+    }
+}
+
+impl GitBackendHistoryRewrite for HybridGitBackend {
+    fn rebase_branch(
+        &mut self,
+        target: &str,
+        interactive: bool,
+        auto_stash: bool,
+    ) -> Result<(), GitError> {
+        self.cli.rebase_branch(target, interactive, auto_stash)
+    }
+
+    fn squash_commits(&mut self, commit_ids: &[String]) -> Result<(), GitError> {
+        self.cli.squash_commits(commit_ids)
+    }
+
+    fn fixup_commits(&mut self, commit_ids: &[String]) -> Result<(), GitError> {
+        self.cli.fixup_commits(commit_ids)
+    }
+
+    fn reword_commit(&mut self, commit_id: &str, message: &str) -> Result<(), GitError> {
+        self.cli.reword_commit(commit_id, message)
+    }
+
+    fn delete_commits(&mut self, commit_ids: &[String]) -> Result<(), GitError> {
+        self.cli.delete_commits(commit_ids)
     }
 }
 

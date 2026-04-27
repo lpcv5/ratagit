@@ -4,7 +4,7 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ratagit_core::{BranchDeleteMode, CommitFileDiffPath, CommitFileDiffTarget, ResetMode};
-use ratagit_git::{GitBackend, HybridGitBackend};
+use ratagit_git::{GitBackendHistoryRewrite, GitBackendRead, GitBackendWrite, HybridGitBackend};
 
 struct TmpGitRepo {
     path: PathBuf,

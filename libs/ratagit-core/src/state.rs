@@ -255,16 +255,110 @@ impl RefreshTarget {
     pub const ALL: [Self; 4] = [Self::Files, Self::Branches, Self::Commits, Self::Stash];
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DetailsRequestId(pub u64);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DetailsRequestTarget {
+    FilesDiff {
+        targets: Vec<crate::FileDiffTarget>,
+        truncated_from: Option<usize>,
+    },
+    BranchLog {
+        branch: String,
+    },
+    CommitDiff {
+        commit_id: String,
+    },
+    CommitFileDiff {
+        target: CommitFileDiffTarget,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DetailsRequest {
+    pub id: DetailsRequestId,
+    pub target: DetailsRequestTarget,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct WorkStatusState {
+pub struct RefreshWork {
     pub refresh_pending: bool,
     pub pending_refreshes: BTreeSet<RefreshTarget>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct DetailsWork {
     pub details_pending: bool,
+    pub next_details_request_id: u64,
+    pub details_request: Option<DetailsRequest>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct MutationWork {
     pub operation_pending: Option<String>,
     pub last_completed_command: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct PaginationWork {
     pub commits_loading_more: bool,
     pub commits_pending_select_after_load: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct CommitFilesWork {
     pub commit_files_loading: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct WorkStatusState {
+    pub refresh: RefreshWork,
+    pub details: DetailsWork,
+    pub mutation: MutationWork,
+    pub pagination: PaginationWork,
+    pub commit_files: CommitFilesWork,
+}
+
+impl WorkStatusState {
+    pub fn mark_refresh_all_pending(&mut self) {
+        self.refresh.refresh_pending = true;
+        self.refresh.pending_refreshes = RefreshTarget::ALL.into_iter().collect();
+    }
+
+    pub fn mark_refresh_target_pending(&mut self, target: RefreshTarget) {
+        self.refresh.refresh_pending = true;
+        self.refresh.pending_refreshes.insert(target);
+    }
+
+    pub fn finish_refresh_target(&mut self, target: RefreshTarget, label: impl Into<String>) {
+        self.refresh.pending_refreshes.remove(&target);
+        self.refresh.refresh_pending = !self.refresh.pending_refreshes.is_empty();
+        self.mutation.last_completed_command = Some(label.into());
+        if !self.refresh.refresh_pending {
+            self.mutation.last_completed_command = Some("refresh".to_string());
+        }
+    }
+
+    pub fn clear_refresh(&mut self) {
+        self.refresh.pending_refreshes.clear();
+        self.refresh.refresh_pending = false;
+        self.mutation.last_completed_command = Some("refresh".to_string());
+    }
+
+    pub fn clear_details_pending(&mut self) {
+        self.details.details_pending = false;
+        self.details.details_request = None;
+    }
+
+    pub fn mark_command_completed(&mut self, label: impl Into<String>) {
+        self.mutation.last_completed_command = Some(label.into());
+    }
+
+    pub fn record_operation_completed(&mut self, label: impl Into<String>) {
+        self.mutation.operation_pending = None;
+        self.mutation.last_completed_command = Some(label.into());
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -710,9 +804,9 @@ mod tests {
         assert!(!state.ui.search.active);
         assert_eq!(state.ui.details.scroll_offset, 0);
 
-        assert!(!state.work.refresh_pending);
-        assert!(!state.work.details_pending);
-        assert!(state.work.operation_pending.is_none());
+        assert!(!state.work.refresh.refresh_pending);
+        assert!(!state.work.details.details_pending);
+        assert!(state.work.mutation.operation_pending.is_none());
         assert_eq!(state.notices, vec!["Ready".to_string()]);
     }
 

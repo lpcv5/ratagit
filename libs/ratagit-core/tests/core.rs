@@ -1,12 +1,13 @@
 use ratagit_core::{
     Action, AppContext, AutoStashOperation, BranchDeleteChoice, BranchDeleteMode, BranchEntry,
     BranchInputMode, BranchRebaseChoice, BranchesSubview, COMMITS_PAGE_SIZE,
-    COMMITS_PREFETCH_THRESHOLD, Command, CommitEditorIntent, CommitEntry, CommitField,
-    CommitFileDiffPath, CommitFileDiffTarget, CommitFileEntry, CommitFileStatus, CommitHashStatus,
-    CommitInputMode, EditorKind, FileDiffTarget, FileEntry, FileInputMode, FilesSnapshot,
+    COMMITS_PREFETCH_THRESHOLD, Command, CommandRefreshKey, CommitEditorIntent, CommitEntry,
+    CommitField, CommitFileDiffPath, CommitFileDiffTarget, CommitFileEntry, CommitFileStatus,
+    CommitHashStatus, CommitInputMode, DetailsRequest, DetailsRequestId, DetailsRequestTarget,
+    EditorKind, FileDiffTarget, FileEntry, FileInputMode, FilesSnapshot, GitErrorKind, GitFailure,
     GitResult, PanelFocus, RefreshTarget, RepoSnapshot, ResetChoice, ResetMode, SearchScope,
-    StashEntry, StashScope, UiAction, debounce_key_for_command, refresh_tree_projection,
-    selected_commit_file_targets, selected_row, update,
+    StashEntry, StashScope, UiAction, debounce_key_for_command, refresh_key_for_command,
+    refresh_tree_projection, selected_commit_file_targets, selected_row, update,
 };
 
 fn commit_entry(id: &str, summary: &str) -> CommitEntry {
@@ -76,11 +77,177 @@ fn refresh_action_emits_refresh_command() {
     let mut state = AppContext::default();
     let commands = update(&mut state, Action::Ui(UiAction::RefreshAll));
     assert_eq!(commands, Command::refresh_all_commands());
-    assert!(state.work.refresh_pending);
+    assert!(state.work.refresh.refresh_pending);
     assert_eq!(
-        state.work.pending_refreshes,
+        state.work.refresh.pending_refreshes,
         RefreshTarget::ALL.into_iter().collect()
     );
+}
+
+#[test]
+fn refresh_work_transitions_without_touching_other_work_states() {
+    let mut state = AppContext::default();
+
+    update(&mut state, Action::Ui(UiAction::RefreshAll));
+
+    assert!(state.work.refresh.refresh_pending);
+    assert_eq!(
+        state.work.refresh.pending_refreshes,
+        RefreshTarget::ALL.into_iter().collect()
+    );
+    assert!(!state.work.details.details_pending);
+    assert!(state.work.mutation.operation_pending.is_none());
+    assert!(!state.work.pagination.commits_loading_more);
+    assert!(!state.work.commit_files.commit_files_loading);
+
+    update(
+        &mut state,
+        Action::GitResult(GitResult::RefreshFailed {
+            target: None,
+            error: "boom".to_string(),
+        }),
+    );
+
+    assert!(!state.work.refresh.refresh_pending);
+    assert!(state.work.refresh.pending_refreshes.is_empty());
+}
+
+#[test]
+fn details_work_transitions_without_touching_other_work_states() {
+    let mut state = context_with_focus(PanelFocus::Branches);
+    state.repo.files.items = vec![file_entry("src/lib.rs", false, false)];
+
+    let commands = update(
+        &mut state,
+        Action::Ui(UiAction::FocusPanel {
+            panel: PanelFocus::Files,
+        }),
+    );
+
+    assert_details_refresh_for_paths(commands, vec!["src/lib.rs".to_string()]);
+    assert!(state.work.details.details_pending);
+    assert!(state.work.details.details_request.is_some());
+    assert!(!state.work.refresh.refresh_pending);
+    assert!(state.work.mutation.operation_pending.is_none());
+    assert!(!state.work.pagination.commits_loading_more);
+    assert!(!state.work.commit_files.commit_files_loading);
+
+    let request = state.work.details.details_request.clone().unwrap();
+    let DetailsRequestTarget::FilesDiff {
+        targets,
+        truncated_from,
+    } = request.target
+    else {
+        panic!("expected files details request");
+    };
+    update(
+        &mut state,
+        Action::GitResult(GitResult::FilesDetailsDiff {
+            request_id: request.id,
+            targets,
+            truncated_from,
+            result: Ok("diff".to_string()),
+        }),
+    );
+
+    assert!(!state.work.details.details_pending);
+    assert!(state.work.details.details_request.is_none());
+}
+
+#[test]
+fn mutation_work_transitions_without_touching_read_work_states() {
+    let mut state = AppContext::default();
+
+    let commands = update(&mut state, Action::Ui(UiAction::Pull));
+
+    assert_eq!(commands, vec![Command::Pull]);
+    assert_eq!(
+        state.work.mutation.operation_pending.as_deref(),
+        Some("pull")
+    );
+    assert!(!state.work.refresh.refresh_pending);
+    assert!(!state.work.details.details_pending);
+    assert!(!state.work.pagination.commits_loading_more);
+    assert!(!state.work.commit_files.commit_files_loading);
+
+    update(
+        &mut state,
+        Action::GitResult(GitResult::Pull { result: Ok(()) }),
+    );
+
+    assert!(state.work.mutation.operation_pending.is_none());
+    assert_eq!(
+        state.work.mutation.last_completed_command.as_deref(),
+        Some("pull")
+    );
+}
+
+#[test]
+fn pagination_work_transitions_without_touching_other_work_states() {
+    let mut state = context_with_focus(PanelFocus::Commits);
+    state.repo.commits.items = commit_entries(COMMITS_PAGE_SIZE);
+    state.repo.commits.has_more = true;
+    state.ui.commits.selected = COMMITS_PAGE_SIZE - 1;
+
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+
+    assert!(matches!(
+        commands.first(),
+        Some(Command::LoadMoreCommits { .. })
+    ));
+    assert!(state.work.pagination.commits_loading_more);
+    assert!(state.work.pagination.commits_pending_select_after_load);
+    assert!(!state.work.refresh.refresh_pending);
+    assert!(state.work.mutation.operation_pending.is_none());
+    assert!(!state.work.commit_files.commit_files_loading);
+
+    let epoch = state.repo.commits.pagination_epoch;
+    update(
+        &mut state,
+        Action::GitResult(GitResult::CommitsPage {
+            offset: COMMITS_PAGE_SIZE,
+            limit: COMMITS_PAGE_SIZE,
+            epoch,
+            result: Ok(vec![commit_entry("next", "next")]),
+        }),
+    );
+
+    assert!(!state.work.pagination.commits_loading_more);
+    assert!(!state.work.pagination.commits_pending_select_after_load);
+}
+
+#[test]
+fn commit_files_work_transitions_without_touching_other_work_states() {
+    let mut state = context_with_focus(PanelFocus::Commits);
+    state.repo.commits.items = vec![commit_entry("abc1234", "subject")];
+
+    let commands = update(&mut state, Action::Ui(UiAction::OpenCommitFilesPanel));
+
+    assert_eq!(
+        commands,
+        vec![Command::RefreshCommitFiles {
+            commit_id: "abc1234-full".to_string(),
+        }]
+    );
+    assert!(state.work.commit_files.commit_files_loading);
+    assert!(!state.work.refresh.refresh_pending);
+    assert!(!state.work.details.details_pending);
+    assert!(state.work.mutation.operation_pending.is_none());
+    assert!(!state.work.pagination.commits_loading_more);
+
+    update(
+        &mut state,
+        Action::GitResult(GitResult::CommitFiles {
+            commit_id: "abc1234-full".to_string(),
+            result: Ok(vec![CommitFileEntry {
+                path: "src/lib.rs".to_string(),
+                old_path: None,
+                status: CommitFileStatus::Modified,
+            }]),
+        }),
+    );
+
+    assert!(!state.work.commit_files.commit_files_loading);
 }
 
 #[test]
@@ -108,6 +275,7 @@ fn command_metadata_tracks_debounce_mutation_and_pending_labels() {
         ),
         (
             Command::RefreshFilesDetailsDiff {
+                request_id: DetailsRequestId(1),
                 targets: file_diff_targets(["src/lib.rs"]),
                 truncated_from: None,
             },
@@ -115,6 +283,7 @@ fn command_metadata_tracks_debounce_mutation_and_pending_labels() {
         ),
         (
             Command::RefreshBranchDetailsLog {
+                request_id: DetailsRequestId(1),
                 branch: "main".to_string(),
                 max_count: 50,
             },
@@ -122,6 +291,7 @@ fn command_metadata_tracks_debounce_mutation_and_pending_labels() {
         ),
         (
             Command::RefreshCommitDetailsDiff {
+                request_id: DetailsRequestId(0),
                 commit_id: "abc1234".to_string(),
             },
             Some("commit_details_diff"),
@@ -134,6 +304,7 @@ fn command_metadata_tracks_debounce_mutation_and_pending_labels() {
         ),
         (
             Command::RefreshCommitFileDiff {
+                request_id: DetailsRequestId(0),
                 target: commit_file_target,
             },
             Some("commit_file_diff"),
@@ -280,6 +451,53 @@ fn command_metadata_tracks_debounce_mutation_and_pending_labels() {
 }
 
 #[test]
+fn command_metadata_covers_branch_drilldown_and_refresh_keys() {
+    let branch_commits = Command::RefreshBranchCommits {
+        branch: "main".to_string(),
+    };
+    let branch_commit_files = Command::RefreshBranchCommitFiles {
+        branch: "main".to_string(),
+        commit_id: "abc1234".to_string(),
+    };
+
+    for (command, log_label) in [
+        (branch_commits, "refresh_branch_commits"),
+        (branch_commit_files, "refresh_branch_commit_files"),
+    ] {
+        assert_eq!(command.log_label(), log_label);
+        assert_eq!(command.debounce_key(), None);
+        assert_eq!(debounce_key_for_command(&command), None);
+        assert_eq!(command.refresh_coalescing_key(), None);
+        assert_eq!(refresh_key_for_command(&command), None);
+        assert!(!command.is_mutating());
+        assert_eq!(command.pending_operation_label(), None);
+    }
+
+    for (command, refresh_key) in [
+        (Command::RefreshAll, Some(CommandRefreshKey::All)),
+        (
+            Command::RefreshFiles,
+            Some(CommandRefreshKey::Target(RefreshTarget::Files)),
+        ),
+        (
+            Command::RefreshBranches,
+            Some(CommandRefreshKey::Target(RefreshTarget::Branches)),
+        ),
+        (
+            Command::RefreshCommits,
+            Some(CommandRefreshKey::Target(RefreshTarget::Commits)),
+        ),
+        (
+            Command::RefreshStash,
+            Some(CommandRefreshKey::Target(RefreshTarget::Stash)),
+        ),
+    ] {
+        assert_eq!(command.refresh_coalescing_key(), refresh_key);
+        assert_eq!(refresh_key_for_command(&command), refresh_key);
+    }
+}
+
+#[test]
 fn refreshed_commit_page_tracks_pagination_state() {
     let mut state = AppContext::default();
 
@@ -298,8 +516,8 @@ fn refreshed_commit_page_tracks_pagination_state() {
 
     assert_eq!(state.repo.commits.items.len(), COMMITS_PAGE_SIZE);
     assert!(state.repo.commits.has_more);
-    assert!(!state.work.commits_loading_more);
-    assert!(!state.work.commits_pending_select_after_load);
+    assert!(!state.work.pagination.commits_loading_more);
+    assert!(!state.work.pagination.commits_pending_select_after_load);
     assert_eq!(state.repo.commits.pagination_epoch, 1);
 }
 
@@ -331,12 +549,13 @@ fn commits_move_down_past_loaded_page_requests_and_appends_next_page() {
                 epoch: state.repo.commits.pagination_epoch,
             },
             Command::RefreshCommitDetailsDiff {
+                request_id: DetailsRequestId(1),
                 commit_id: "0000063-full".to_string(),
             },
         ]
     );
-    assert!(state.work.commits_loading_more);
-    assert!(state.work.commits_pending_select_after_load);
+    assert!(state.work.pagination.commits_loading_more);
+    assert!(state.work.pagination.commits_pending_select_after_load);
 
     let next_page = (COMMITS_PAGE_SIZE..COMMITS_PAGE_SIZE * 2)
         .map(|index| commit_entry(&format!("{index:07x}"), &format!("commit {index}")))
@@ -356,7 +575,7 @@ fn commits_move_down_past_loaded_page_requests_and_appends_next_page() {
     assert_eq!(state.repo.commits.items.len(), COMMITS_PAGE_SIZE * 2);
     assert_eq!(state.ui.commits.selected, COMMITS_PAGE_SIZE);
     assert!(state.repo.commits.has_more);
-    assert!(!state.work.commits_loading_more);
+    assert!(!state.work.pagination.commits_loading_more);
 }
 
 #[test]
@@ -387,12 +606,13 @@ fn commits_prefetch_before_loaded_tail_without_jumping_selection() {
                 epoch: state.repo.commits.pagination_epoch,
             },
             Command::RefreshCommitDetailsDiff {
+                request_id: DetailsRequestId(1),
                 commit_id: "000004f-full".to_string(),
             },
         ]
     );
-    assert!(state.work.commits_loading_more);
-    assert!(!state.work.commits_pending_select_after_load);
+    assert!(state.work.pagination.commits_loading_more);
+    assert!(!state.work.pagination.commits_pending_select_after_load);
     assert_eq!(
         state.ui.commits.selected,
         COMMITS_PAGE_SIZE - COMMITS_PREFETCH_THRESHOLD - 1
@@ -417,7 +637,7 @@ fn commits_prefetch_before_loaded_tail_without_jumping_selection() {
         state.ui.commits.selected,
         COMMITS_PAGE_SIZE - COMMITS_PREFETCH_THRESHOLD - 1
     );
-    assert!(!state.work.commits_loading_more);
+    assert!(!state.work.pagination.commits_loading_more);
 }
 
 #[test]
@@ -442,8 +662,8 @@ fn commits_prefetch_pending_advances_when_user_reaches_loaded_tail() {
     let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
 
     assert_commit_diff_refresh(commands, "0000063-full");
-    assert!(state.work.commits_loading_more);
-    assert!(state.work.commits_pending_select_after_load);
+    assert!(state.work.pagination.commits_loading_more);
+    assert!(state.work.pagination.commits_pending_select_after_load);
 
     let next_page = (COMMITS_PAGE_SIZE..COMMITS_PAGE_SIZE * 2)
         .map(|index| commit_entry(&format!("{index:07x}"), &format!("commit {index}")))
@@ -460,7 +680,7 @@ fn commits_prefetch_pending_advances_when_user_reaches_loaded_tail() {
     );
 
     assert_eq!(state.ui.commits.selected, COMMITS_PAGE_SIZE);
-    assert!(!state.work.commits_pending_select_after_load);
+    assert!(!state.work.pagination.commits_pending_select_after_load);
 }
 
 #[test]
@@ -679,13 +899,16 @@ fn unmerged_branch_delete_opens_force_confirm_and_can_force_delete() {
             name: "feature/mvp".to_string(),
             mode: BranchDeleteMode::Local,
             force: false,
-            result: Err("error: The branch 'feature/mvp' is not fully merged.".to_string()),
+            result: Err(GitFailure::new(
+                GitErrorKind::UnmergedBranchDelete,
+                "error: The branch 'feature/mvp' is not fully merged.",
+            )),
         }),
     );
 
     assert!(commands.is_empty());
     assert!(state.ui.branches.force_delete_confirm.active);
-    assert_eq!(state.work.operation_pending, None);
+    assert_eq!(state.work.mutation.operation_pending, None);
     assert_eq!(
         state.ui.branches.force_delete_confirm.target_branch,
         "feature/mvp"
@@ -705,6 +928,13 @@ fn unmerged_branch_delete_opens_force_confirm_and_can_force_delete() {
 #[test]
 fn force_delete_confirm_can_cancel() {
     let mut state = state_with_branches_and_files(Vec::new());
+    set_details_request(
+        &mut state,
+        DetailsRequestId(0),
+        DetailsRequestTarget::BranchLog {
+            branch: "main".to_string(),
+        },
+    );
 
     update(
         &mut state,
@@ -712,7 +942,10 @@ fn force_delete_confirm_can_cancel() {
             name: "feature/mvp".to_string(),
             mode: BranchDeleteMode::Local,
             force: false,
-            result: Err("not fully merged".to_string()),
+            result: Err(GitFailure::new(
+                GitErrorKind::UnmergedBranchDelete,
+                "not fully merged",
+            )),
         }),
     );
     let commands = update(&mut state, Action::Ui(UiAction::CancelBranchForceDelete));
@@ -727,11 +960,17 @@ fn pull_and_push_actions_emit_sync_commands() {
 
     let pull_commands = update(&mut state, Action::Ui(UiAction::Pull));
     assert_eq!(pull_commands, vec![Command::Pull]);
-    assert_eq!(state.work.operation_pending.as_deref(), Some("pull"));
+    assert_eq!(
+        state.work.mutation.operation_pending.as_deref(),
+        Some("pull")
+    );
 
     let push_commands = update(&mut state, Action::Ui(UiAction::Push));
     assert_eq!(push_commands, vec![Command::Push { force: false }]);
-    assert_eq!(state.work.operation_pending.as_deref(), Some("push"));
+    assert_eq!(
+        state.work.mutation.operation_pending.as_deref(),
+        Some("push")
+    );
 }
 
 #[test]
@@ -742,19 +981,25 @@ fn divergent_push_opens_force_confirm_then_confirms_force_push() {
         &mut state,
         Action::GitResult(GitResult::Push {
             force: false,
-            result: Err("! [rejected] main -> main (fetch first)".to_string()),
+            result: Err(GitFailure::new(
+                GitErrorKind::DivergentPush,
+                "! [rejected] main -> main (fetch first)",
+            )),
         }),
     );
 
     assert!(commands.is_empty());
     assert!(state.ui.push_force_confirm.active);
     assert!(state.ui.push_force_confirm.reason.contains("fetch first"));
-    assert_eq!(state.work.operation_pending, None);
+    assert_eq!(state.work.mutation.operation_pending, None);
 
     let commands = update(&mut state, Action::Ui(UiAction::ConfirmForcePush));
     assert_eq!(commands, vec![Command::Push { force: true }]);
     assert!(!state.ui.push_force_confirm.active);
-    assert_eq!(state.work.operation_pending.as_deref(), Some("force_push"));
+    assert_eq!(
+        state.work.mutation.operation_pending.as_deref(),
+        Some("force_push")
+    );
 }
 
 #[test]
@@ -764,7 +1009,10 @@ fn force_push_confirm_can_cancel() {
         &mut state,
         Action::GitResult(GitResult::Push {
             force: false,
-            result: Err("non-fast-forward".to_string()),
+            result: Err(GitFailure::new(
+                GitErrorKind::DivergentPush,
+                "non-fast-forward",
+            )),
         }),
     );
 
@@ -829,23 +1077,31 @@ fn branch_rebase_origin_main_emits_fixed_target() {
 }
 
 fn assert_details_refresh_for_paths(commands: Vec<Command>, expected_paths: Vec<String>) {
-    assert_eq!(
-        commands,
-        vec![Command::RefreshFilesDetailsDiff {
-            targets: file_diff_targets(expected_paths.iter()),
-            truncated_from: None,
-        }]
-    );
+    let [
+        Command::RefreshFilesDetailsDiff {
+            targets,
+            truncated_from,
+            ..
+        },
+    ] = commands.as_slice()
+    else {
+        panic!("expected files details refresh: {commands:?}");
+    };
+    assert_eq!(*targets, file_diff_targets(expected_paths.iter()));
+    assert_eq!(*truncated_from, None);
 }
 
 fn assert_branch_log_refresh(commands: Vec<Command>, expected_branch: &str) {
-    assert_eq!(
-        commands,
-        vec![Command::RefreshBranchDetailsLog {
-            branch: expected_branch.to_string(),
-            max_count: ratagit_core::BRANCH_DETAILS_LOG_MAX_COUNT,
-        }]
-    );
+    let [
+        Command::RefreshBranchDetailsLog {
+            branch, max_count, ..
+        },
+    ] = commands.as_slice()
+    else {
+        panic!("expected branch log refresh: {commands:?}");
+    };
+    assert_eq!(branch, expected_branch);
+    assert_eq!(*max_count, ratagit_core::BRANCH_DETAILS_LOG_MAX_COUNT);
 }
 
 fn assert_files_diff_refresh(commands: Vec<Command>, expected_path: &str) {
@@ -853,22 +1109,25 @@ fn assert_files_diff_refresh(commands: Vec<Command>, expected_path: &str) {
 }
 
 fn assert_files_diff_refresh_for_paths(commands: Vec<Command>, expected_paths: Vec<&str>) {
-    assert_eq!(
-        commands,
-        vec![Command::RefreshFilesDetailsDiff {
-            targets: file_diff_targets(expected_paths),
-            truncated_from: None,
-        }]
-    );
+    let [
+        Command::RefreshFilesDetailsDiff {
+            targets,
+            truncated_from,
+            ..
+        },
+    ] = commands.as_slice()
+    else {
+        panic!("expected files diff refresh: {commands:?}");
+    };
+    assert_eq!(*targets, file_diff_targets(expected_paths));
+    assert_eq!(*truncated_from, None);
 }
 
 fn assert_commit_diff_refresh(commands: Vec<Command>, expected_commit_id: &str) {
-    assert_eq!(
-        commands,
-        vec![Command::RefreshCommitDetailsDiff {
-            commit_id: expected_commit_id.to_string(),
-        }]
-    );
+    let [Command::RefreshCommitDetailsDiff { commit_id, .. }] = commands.as_slice() else {
+        panic!("expected commit diff refresh: {commands:?}");
+    };
+    assert_eq!(commit_id, expected_commit_id);
 }
 
 fn commit_files_fixture() -> Vec<CommitFileEntry> {
@@ -891,18 +1150,7 @@ fn assert_commit_file_diff_refresh(
     expected_commit_id: &str,
     expected_path: &str,
 ) {
-    assert_eq!(
-        commands,
-        vec![Command::RefreshCommitFileDiff {
-            target: CommitFileDiffTarget {
-                commit_id: expected_commit_id.to_string(),
-                paths: vec![CommitFileDiffPath {
-                    path: expected_path.to_string(),
-                    old_path: None,
-                }],
-            },
-        }]
-    );
+    assert_commit_file_diff_refresh_for_paths(commands, expected_commit_id, vec![expected_path]);
 }
 
 fn assert_commit_file_diff_refresh_for_paths(
@@ -910,21 +1158,37 @@ fn assert_commit_file_diff_refresh_for_paths(
     expected_commit_id: &str,
     expected_paths: Vec<&str>,
 ) {
+    let [Command::RefreshCommitFileDiff { target, .. }] = commands.as_slice() else {
+        panic!("expected commit file diff refresh: {commands:?}");
+    };
+    assert_eq!(target.commit_id, expected_commit_id);
     assert_eq!(
-        commands,
-        vec![Command::RefreshCommitFileDiff {
-            target: CommitFileDiffTarget {
-                commit_id: expected_commit_id.to_string(),
-                paths: expected_paths
-                    .into_iter()
-                    .map(|path| CommitFileDiffPath {
-                        path: path.to_string(),
-                        old_path: None,
-                    })
-                    .collect(),
-            },
-        }]
+        target.paths,
+        expected_paths
+            .into_iter()
+            .map(|path| CommitFileDiffPath {
+                path: path.to_string(),
+                old_path: None,
+            })
+            .collect::<Vec<_>>()
     );
+}
+
+fn set_details_request(
+    state: &mut AppContext,
+    request_id: DetailsRequestId,
+    target: DetailsRequestTarget,
+) {
+    state.work.details.details_pending = true;
+    state.work.details.details_request = Some(DetailsRequest {
+        id: request_id,
+        target,
+    });
+    state.work.details.next_details_request_id = state
+        .work
+        .details
+        .next_details_request_id
+        .max(request_id.0.saturating_add(1));
 }
 
 fn state_with_branches_and_files(files: Vec<FileEntry>) -> AppContext {
@@ -955,7 +1219,7 @@ fn branch_focus_requests_selected_branch_log_graph() {
         state.repo.details.branch_log_target,
         Some("main".to_string())
     );
-    assert!(state.work.details_pending);
+    assert!(state.work.details.details_pending);
 }
 
 #[test]
@@ -974,15 +1238,25 @@ fn branch_selection_navigation_requests_selected_branch_log_graph() {
 #[test]
 fn branch_log_cache_serves_repeated_selection_without_git_command() {
     let mut state = state_with_branches_and_files(Vec::new());
+    set_details_request(
+        &mut state,
+        DetailsRequestId(0),
+        DetailsRequestTarget::BranchLog {
+            branch: "main".to_string(),
+        },
+    );
 
     update(
         &mut state,
         Action::GitResult(GitResult::BranchDetailsLog {
+            request_id: DetailsRequestId(0),
             branch: "main".to_string(),
             result: Ok("\u{1b}[33m*\u{1b}[m commit abc1234".to_string()),
         }),
     );
     assert_eq!(state.repo.details.cached_branch_logs.len(), 1);
+    assert!(!state.work.details.details_pending);
+    assert!(state.work.details.details_request.is_none());
 
     let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
     assert_branch_log_refresh(commands, "feature/mvp");
@@ -993,7 +1267,7 @@ fn branch_log_cache_serves_repeated_selection_without_git_command() {
         state.repo.details.branch_log,
         "\u{1b}[33m*\u{1b}[m commit abc1234"
     );
-    assert!(!state.work.details_pending);
+    assert!(!state.work.details.details_pending);
 }
 
 #[test]
@@ -1001,11 +1275,18 @@ fn stale_branch_log_result_is_ignored() {
     let mut state = state_with_branches_and_files(Vec::new());
     state.ui.branches.selected = 1;
     state.repo.details.branch_log_target = Some("feature/mvp".to_string());
-    state.work.details_pending = true;
+    set_details_request(
+        &mut state,
+        DetailsRequestId(1),
+        DetailsRequestTarget::BranchLog {
+            branch: "feature/mvp".to_string(),
+        },
+    );
 
     let commands = update(
         &mut state,
         Action::GitResult(GitResult::BranchDetailsLog {
+            request_id: DetailsRequestId(0),
             branch: "main".to_string(),
             result: Ok("stale".to_string()),
         }),
@@ -1013,7 +1294,43 @@ fn stale_branch_log_result_is_ignored() {
 
     assert!(commands.is_empty());
     assert!(state.repo.details.branch_log.is_empty());
-    assert!(state.work.details_pending);
+    assert!(state.work.details.details_pending);
+    assert_eq!(
+        state
+            .work
+            .details
+            .details_request
+            .as_ref()
+            .map(|request| request.id),
+        Some(DetailsRequestId(1))
+    );
+}
+
+#[test]
+fn matching_branch_log_result_for_old_selection_clears_pending_without_applying() {
+    let mut state = state_with_branches_and_files(Vec::new());
+    state.ui.branches.selected = 1;
+    set_details_request(
+        &mut state,
+        DetailsRequestId(0),
+        DetailsRequestTarget::BranchLog {
+            branch: "main".to_string(),
+        },
+    );
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::BranchDetailsLog {
+            request_id: DetailsRequestId(0),
+            branch: "main".to_string(),
+            result: Ok("stale".to_string()),
+        }),
+    );
+
+    assert!(commands.is_empty());
+    assert!(state.repo.details.branch_log.is_empty());
+    assert!(!state.work.details.details_pending);
+    assert!(state.work.details.details_request.is_none());
 }
 
 #[test]
@@ -1036,7 +1353,7 @@ fn commit_focus_requests_selected_commit_diff() {
         state.repo.details.commit_diff_target,
         Some("abc1234-full".to_string())
     );
-    assert!(state.work.details_pending);
+    assert!(state.work.details.details_pending);
 }
 
 #[test]
@@ -1600,11 +1917,12 @@ fn commit_file_diff_stale_result_is_ignored() {
             result: Ok(commit_files_fixture()),
         }),
     );
-    state.work.details_pending = true;
+    state.work.details.details_pending = true;
 
     let commands = update(
         &mut state,
         Action::GitResult(GitResult::CommitFileDiff {
+            request_id: DetailsRequestId(0),
             target: CommitFileDiffTarget {
                 commit_id: "abc1234-full".to_string(),
                 paths: vec![CommitFileDiffPath {
@@ -1618,7 +1936,72 @@ fn commit_file_diff_stale_result_is_ignored() {
 
     assert!(commands.is_empty());
     assert!(state.repo.details.commit_file_diff.is_empty());
-    assert!(state.work.details_pending);
+    assert!(state.work.details.details_pending);
+    assert!(state.work.details.details_request.is_some());
+}
+
+#[test]
+fn commit_file_diff_result_updates_state_and_clears_request() {
+    let mut state = context_with_focus(PanelFocus::Commits);
+    state.repo.commits.items = vec![commit_entry("abc1234", "init project")];
+    update(&mut state, Action::Ui(UiAction::OpenCommitFilesPanel));
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::CommitFiles {
+            commit_id: "abc1234-full".to_string(),
+            result: Ok(commit_files_fixture()),
+        }),
+    );
+    let [Command::RefreshCommitFileDiff { request_id, target }] = commands.as_slice() else {
+        panic!("expected commit file diff refresh: {commands:?}");
+    };
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::CommitFileDiff {
+            request_id: *request_id,
+            target: target.clone(),
+            result: Ok("diff --git a/README.md b/README.md".to_string()),
+        }),
+    );
+
+    assert!(commands.is_empty());
+    assert!(state.repo.details.commit_file_diff.contains("diff --git"));
+    assert!(!state.work.details.details_pending);
+    assert!(state.work.details.details_request.is_none());
+}
+
+#[test]
+fn matching_commit_file_diff_result_for_inactive_panel_clears_pending_without_applying() {
+    let mut state = context_with_focus(PanelFocus::Commits);
+    let target = CommitFileDiffTarget {
+        commit_id: "abc1234-full".to_string(),
+        paths: vec![CommitFileDiffPath {
+            path: "README.md".to_string(),
+            old_path: None,
+        }],
+    };
+    set_details_request(
+        &mut state,
+        DetailsRequestId(0),
+        DetailsRequestTarget::CommitFileDiff {
+            target: target.clone(),
+        },
+    );
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::CommitFileDiff {
+            request_id: DetailsRequestId(0),
+            target,
+            result: Ok("stale".to_string()),
+        }),
+    );
+
+    assert!(commands.is_empty());
+    assert!(state.repo.details.commit_file_diff.is_empty());
+    assert!(!state.work.details.details_pending);
+    assert!(state.work.details.details_request.is_none());
 }
 
 #[test]
@@ -1638,11 +2021,18 @@ fn commit_details_diff_result_updates_state() {
     let mut state = context_with_focus(PanelFocus::Commits);
     state.repo.commits.items = vec![commit_entry("abc1234", "init project")];
     state.repo.details.commit_diff_target = Some("abc1234-full".to_string());
-    state.work.details_pending = true;
+    set_details_request(
+        &mut state,
+        DetailsRequestId(0),
+        DetailsRequestTarget::CommitDiff {
+            commit_id: "abc1234-full".to_string(),
+        },
+    );
 
     let commands = update(
         &mut state,
         Action::GitResult(GitResult::CommitDetailsDiff {
+            request_id: DetailsRequestId(0),
             commit_id: "abc1234-full".to_string(),
             result: Ok("commit abc1234\ndiff --git a/a.txt b/a.txt".to_string()),
         }),
@@ -1652,6 +2042,8 @@ fn commit_details_diff_result_updates_state() {
     assert!(state.repo.details.commit_diff_error.is_none());
     assert!(state.repo.details.commit_diff.contains("diff --git"));
     assert_eq!(state.repo.details.cached_commit_diffs.len(), 1);
+    assert!(!state.work.details.details_pending);
+    assert!(state.work.details.details_request.is_none());
 }
 
 #[test]
@@ -1661,10 +2053,18 @@ fn commit_details_diff_cache_serves_repeated_selection_without_git_command() {
         commit_entry("abc1234", "init project"),
         commit_entry("def5678", "wire commands"),
     ];
+    set_details_request(
+        &mut state,
+        DetailsRequestId(0),
+        DetailsRequestTarget::CommitDiff {
+            commit_id: "abc1234-full".to_string(),
+        },
+    );
 
     update(
         &mut state,
         Action::GitResult(GitResult::CommitDetailsDiff {
+            request_id: DetailsRequestId(0),
             commit_id: "abc1234-full".to_string(),
             result: Ok("cached abc diff".to_string()),
         }),
@@ -1673,12 +2073,12 @@ fn commit_details_diff_cache_serves_repeated_selection_without_git_command() {
 
     let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
     assert_commit_diff_refresh(commands, "def5678-full");
-    assert!(state.work.details_pending);
+    assert!(state.work.details.details_pending);
 
     let commands = update(&mut state, Action::Ui(UiAction::MoveUp));
     assert!(commands.is_empty());
     assert_eq!(state.repo.details.commit_diff, "cached abc diff");
-    assert!(!state.work.details_pending);
+    assert!(!state.work.details.details_pending);
 }
 
 #[test]
@@ -1690,11 +2090,18 @@ fn stale_commit_details_diff_result_is_ignored() {
     ];
     state.ui.commits.selected = 1;
     state.repo.details.commit_diff_target = Some("def5678-full".to_string());
-    state.work.details_pending = true;
+    set_details_request(
+        &mut state,
+        DetailsRequestId(1),
+        DetailsRequestTarget::CommitDiff {
+            commit_id: "def5678-full".to_string(),
+        },
+    );
 
     let commands = update(
         &mut state,
         Action::GitResult(GitResult::CommitDetailsDiff {
+            request_id: DetailsRequestId(0),
             commit_id: "abc1234-full".to_string(),
             result: Ok("stale".to_string()),
         }),
@@ -1702,7 +2109,47 @@ fn stale_commit_details_diff_result_is_ignored() {
 
     assert!(commands.is_empty());
     assert!(state.repo.details.commit_diff.is_empty());
-    assert!(state.work.details_pending);
+    assert!(state.work.details.details_pending);
+    assert_eq!(
+        state
+            .work
+            .details
+            .details_request
+            .as_ref()
+            .map(|request| request.id),
+        Some(DetailsRequestId(1))
+    );
+}
+
+#[test]
+fn matching_commit_diff_result_for_old_selection_clears_pending_without_applying() {
+    let mut state = context_with_focus(PanelFocus::Commits);
+    state.repo.commits.items = vec![
+        commit_entry("abc1234", "init project"),
+        commit_entry("def5678", "wire commands"),
+    ];
+    state.ui.commits.selected = 1;
+    set_details_request(
+        &mut state,
+        DetailsRequestId(0),
+        DetailsRequestTarget::CommitDiff {
+            commit_id: "abc1234-full".to_string(),
+        },
+    );
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::CommitDetailsDiff {
+            request_id: DetailsRequestId(0),
+            commit_id: "abc1234-full".to_string(),
+            result: Ok("stale".to_string()),
+        }),
+    );
+
+    assert!(commands.is_empty());
+    assert!(state.repo.details.commit_diff.is_empty());
+    assert!(!state.work.details.details_pending);
+    assert!(state.work.details.details_request.is_none());
 }
 
 #[test]
@@ -2030,7 +2477,7 @@ fn auto_stash_operation_failure_refreshes_after_possible_partial_mutation() {
     );
 
     assert_eq!(commands, Command::refresh_all_commands());
-    assert!(state.work.refresh_pending);
+    assert!(state.work.refresh.refresh_pending);
     assert!(
         state
             .repo
@@ -2055,7 +2502,7 @@ fn ordinary_operation_failure_does_not_refresh_after_failure() {
     );
 
     assert!(commands.is_empty());
-    assert!(!state.work.refresh_pending);
+    assert!(!state.work.refresh.refresh_pending);
     assert_eq!(state.last_operation, Some("commit".to_string()));
     assert!(
         state
@@ -2115,13 +2562,74 @@ fn refreshed_snapshot_updates_state_and_clamps_indexes() {
     assert_eq!(
         commands,
         vec![Command::RefreshFilesDetailsDiff {
+            request_id: DetailsRequestId(0),
             targets: file_diff_targets(["only.txt"]),
             truncated_from: None,
         }]
     );
     assert_eq!(state.repo.status.summary, "dirty");
+    assert_eq!(state.repo.status.index_entry_count, 1);
     assert_eq!(state.ui.files.selected, 0);
     assert_eq!(state.repo.status.refresh_count, 1);
+}
+
+#[test]
+fn split_refreshed_preserves_large_repo_status_metadata() {
+    let mut state = AppContext::default();
+
+    update(
+        &mut state,
+        Action::GitResult(GitResult::SplitRefreshed {
+            files: FilesSnapshot {
+                status_summary: "large".to_string(),
+                current_branch: "main".to_string(),
+                detached_head: false,
+                files: vec![file_entry("src/a.txt", false, false)],
+                index_entry_count: 100_000,
+                large_repo_mode: true,
+                status_truncated: true,
+                status_scan_skipped: false,
+                untracked_scan_skipped: true,
+            },
+            branches: vec![branch_entry("main", true)],
+            commits: vec![commit_entry("abc1234", "init")],
+            stashes: vec![StashEntry {
+                id: "stash@{0}".to_string(),
+                summary: "savepoint".to_string(),
+            }],
+        }),
+    );
+
+    assert_eq!(state.repo.status.index_entry_count, 100_000);
+    assert!(state.repo.status.large_repo_mode);
+    assert!(state.repo.status.status_truncated);
+    assert!(state.repo.status.untracked_scan_skipped);
+    assert_eq!(state.repo.branches.items[0].name, "main");
+    assert_eq!(state.repo.commits.items[0].summary, "init");
+    assert_eq!(state.repo.stash.items[0].summary, "savepoint");
+    assert_eq!(state.repo.status.refresh_count, 1);
+}
+
+#[test]
+fn full_refresh_failure_clears_all_pending_refresh_targets() {
+    let mut state = AppContext::default();
+    update(&mut state, Action::Ui(UiAction::RefreshAll));
+
+    update(
+        &mut state,
+        Action::GitResult(GitResult::RefreshFailed {
+            target: None,
+            error: "branches failed".to_string(),
+        }),
+    );
+
+    assert!(!state.work.refresh.refresh_pending);
+    assert!(state.work.refresh.pending_refreshes.is_empty());
+    assert_eq!(state.repo.status.refresh_count, 0);
+    assert_eq!(
+        state.repo.status.last_error.as_deref(),
+        Some("Failed to refresh: branches failed")
+    );
 }
 
 #[test]
@@ -2140,7 +2648,7 @@ fn split_refresh_results_update_panels_independently() {
     assert!(commands.is_empty());
     assert_eq!(state.repo.branches.items[0].name, "feature/mvp");
     assert!(state.repo.files.items.is_empty());
-    assert!(state.work.refresh_pending);
+    assert!(state.work.refresh.refresh_pending);
     assert_eq!(state.repo.status.refresh_count, 0);
 
     update(
@@ -2174,7 +2682,7 @@ fn split_refresh_results_update_panels_independently() {
     assert_eq!(state.repo.files.items[0].path, "only.txt");
     assert_eq!(state.repo.commits.items[0].summary, "init");
     assert_eq!(state.repo.stash.items[0].summary, "savepoint");
-    assert!(!state.work.refresh_pending);
+    assert!(!state.work.refresh.refresh_pending);
     assert_eq!(state.repo.status.refresh_count, 1);
 }
 
@@ -2199,6 +2707,7 @@ fn files_snapshot_records_large_repo_status_metadata() {
     assert_eq!(
         commands,
         vec![Command::RefreshFilesDetailsDiff {
+            request_id: DetailsRequestId(0),
             targets: file_diff_targets(["src/a.txt"]),
             truncated_from: None,
         }]
@@ -2241,7 +2750,7 @@ fn huge_repo_files_snapshot_skips_status_scan_without_details_diff_command() {
         state.repo.details.files_diff, "",
         "Files Details should not request a diff when no status rows were loaded"
     );
-    assert!(!state.work.details_pending);
+    assert!(!state.work.details.details_pending);
 }
 
 #[test]
@@ -2277,6 +2786,7 @@ fn directory_files_details_diff_is_limited_to_first_hundred_targets() {
         Command::RefreshFilesDetailsDiff {
             targets,
             truncated_from,
+            ..
         },
     ] = commands.as_slice()
     else {
@@ -2317,7 +2827,7 @@ fn untracked_directory_marker_is_not_diffed_when_scan_was_skipped() {
         state.repo.details.files_diff,
         "details(files): untracked directory scan skipped in large repo mode"
     );
-    assert!(!state.work.details_pending);
+    assert!(!state.work.details.details_pending);
 }
 
 #[test]
@@ -2334,9 +2844,18 @@ fn files_details_diff_result_updates_state() {
     state.repo.files.items = vec![file_entry("src/lib.rs", false, false)];
     state.ui.files.expanded_dirs.insert("src".to_string());
     refresh_tree_projection(&state.repo.files.items, &mut state.ui.files);
+    set_details_request(
+        &mut state,
+        DetailsRequestId(0),
+        DetailsRequestTarget::FilesDiff {
+            targets: file_diff_targets(["src/lib.rs"]),
+            truncated_from: None,
+        },
+    );
     let commands = update(
         &mut state,
         Action::GitResult(GitResult::FilesDetailsDiff {
+            request_id: DetailsRequestId(0),
             targets: file_diff_targets(["src/lib.rs"]),
             truncated_from: None,
             result: Ok("### unstaged\ndiff --git a/src/lib.rs b/src/lib.rs".to_string()),
@@ -2350,6 +2869,8 @@ fn files_details_diff_result_updates_state() {
     assert!(state.repo.details.files_error.is_none());
     assert!(state.repo.details.files_diff.contains("diff --git"));
     assert_eq!(state.repo.details.cached_files_diffs.len(), 1);
+    assert!(!state.work.details.details_pending);
+    assert!(state.work.details.details_request.is_none());
 }
 
 #[test]
@@ -2462,10 +2983,19 @@ fn files_details_diff_cache_serves_repeated_selection_without_git_command() {
         file_entry("b.txt", false, false),
     ];
     refresh_tree_projection(&state.repo.files.items, &mut state.ui.files);
+    set_details_request(
+        &mut state,
+        DetailsRequestId(0),
+        DetailsRequestTarget::FilesDiff {
+            targets: file_diff_targets(["a.txt"]),
+            truncated_from: None,
+        },
+    );
 
     update(
         &mut state,
         Action::GitResult(GitResult::FilesDetailsDiff {
+            request_id: DetailsRequestId(0),
             targets: file_diff_targets(["a.txt"]),
             truncated_from: None,
             result: Ok("cached a diff".to_string()),
@@ -2475,12 +3005,12 @@ fn files_details_diff_cache_serves_repeated_selection_without_git_command() {
 
     let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
     assert_details_refresh_for_paths(commands, vec!["b.txt".to_string()]);
-    assert!(state.work.details_pending);
+    assert!(state.work.details.details_pending);
 
     let commands = update(&mut state, Action::Ui(UiAction::MoveUp));
     assert!(commands.is_empty());
     assert_eq!(state.repo.details.files_diff, "cached a diff");
-    assert!(!state.work.details_pending);
+    assert!(!state.work.details.details_pending);
 }
 
 #[test]
@@ -2494,9 +3024,18 @@ fn files_details_diff_cache_is_bounded_and_cleared_by_repo_changes() {
     for index in 0..18 {
         state.ui.files.selected = index;
         let path = format!("file-{index:02}.txt");
+        set_details_request(
+            &mut state,
+            DetailsRequestId(index as u64),
+            DetailsRequestTarget::FilesDiff {
+                targets: file_diff_targets([path.as_str()]),
+                truncated_from: None,
+            },
+        );
         update(
             &mut state,
             Action::GitResult(GitResult::FilesDetailsDiff {
+                request_id: DetailsRequestId(index as u64),
                 targets: file_diff_targets([path.as_str()]),
                 truncated_from: None,
                 result: Ok(format!("diff {path}")),
@@ -2556,11 +3095,19 @@ fn stale_files_details_diff_result_is_ignored() {
     refresh_tree_projection(&state.repo.files.items, &mut state.ui.files);
     state.ui.files.selected = 1;
     state.repo.details.files_targets = vec!["b.txt".to_string()];
-    state.work.details_pending = true;
+    set_details_request(
+        &mut state,
+        DetailsRequestId(1),
+        DetailsRequestTarget::FilesDiff {
+            targets: file_diff_targets(["b.txt"]),
+            truncated_from: None,
+        },
+    );
 
     let commands = update(
         &mut state,
         Action::GitResult(GitResult::FilesDetailsDiff {
+            request_id: DetailsRequestId(0),
             targets: file_diff_targets(["a.txt"]),
             truncated_from: None,
             result: Ok("stale".to_string()),
@@ -2569,7 +3116,135 @@ fn stale_files_details_diff_result_is_ignored() {
 
     assert!(commands.is_empty());
     assert!(state.repo.details.files_diff.is_empty());
-    assert!(state.work.details_pending);
+    assert!(state.work.details.details_pending);
+    assert_eq!(
+        state
+            .work
+            .details
+            .details_request
+            .as_ref()
+            .map(|request| request.id),
+        Some(DetailsRequestId(1))
+    );
+}
+
+#[test]
+fn matching_files_diff_result_for_old_focus_clears_pending_without_applying() {
+    let mut state = AppContext::default();
+    state.repo.files.items = vec![file_entry("a.txt", false, false)];
+    refresh_tree_projection(&state.repo.files.items, &mut state.ui.files);
+    state.ui.last_left_focus = PanelFocus::Branches;
+    set_details_request(
+        &mut state,
+        DetailsRequestId(0),
+        DetailsRequestTarget::FilesDiff {
+            targets: file_diff_targets(["a.txt"]),
+            truncated_from: None,
+        },
+    );
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::FilesDetailsDiff {
+            request_id: DetailsRequestId(0),
+            targets: file_diff_targets(["a.txt"]),
+            truncated_from: None,
+            result: Ok("stale".to_string()),
+        }),
+    );
+
+    assert!(commands.is_empty());
+    assert!(state.repo.details.files_diff.is_empty());
+    assert!(!state.work.details.details_pending);
+    assert!(state.work.details.details_request.is_none());
+}
+
+#[test]
+fn files_snapshot_clears_pending_details_request_when_no_replacement_starts() {
+    let mut state = context_with_focus(PanelFocus::Branches);
+    set_details_request(
+        &mut state,
+        DetailsRequestId(0),
+        DetailsRequestTarget::FilesDiff {
+            targets: file_diff_targets(["old.txt"]),
+            truncated_from: None,
+        },
+    );
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::FilesRefreshed(FilesSnapshot {
+            status_summary: "clean".to_string(),
+            current_branch: "main".to_string(),
+            detached_head: false,
+            files: vec![file_entry("new.txt", false, false)],
+            index_entry_count: 1,
+            large_repo_mode: false,
+            status_truncated: false,
+            status_scan_skipped: false,
+            untracked_scan_skipped: false,
+        })),
+    );
+
+    assert!(commands.is_empty());
+    assert!(!state.work.details.details_pending);
+    assert!(state.work.details.details_request.is_none());
+}
+
+#[test]
+fn split_branch_and_commit_snapshots_do_not_clear_pending_files_details_request() {
+    let mut state = AppContext::default();
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::FilesRefreshed(FilesSnapshot {
+            status_summary: "dirty".to_string(),
+            current_branch: "main".to_string(),
+            detached_head: false,
+            files: vec![file_entry("src/lib.rs", false, false)],
+            index_entry_count: 1,
+            large_repo_mode: false,
+            status_truncated: false,
+            status_scan_skipped: false,
+            untracked_scan_skipped: false,
+        })),
+    );
+    let [Command::RefreshFilesDetailsDiff { request_id, .. }] = commands.as_slice() else {
+        panic!("expected files details refresh: {commands:?}");
+    };
+
+    update(
+        &mut state,
+        Action::GitResult(GitResult::BranchesRefreshed(vec![branch_entry(
+            "main", true,
+        )])),
+    );
+    assert!(state.work.details.details_pending);
+    assert_eq!(
+        state
+            .work
+            .details
+            .details_request
+            .as_ref()
+            .map(|request| request.id),
+        Some(*request_id)
+    );
+
+    update(
+        &mut state,
+        Action::GitResult(GitResult::CommitsRefreshed(vec![commit_entry(
+            "abc1234", "init",
+        )])),
+    );
+    assert!(state.work.details.details_pending);
+    assert_eq!(
+        state
+            .work
+            .details
+            .details_request
+            .as_ref()
+            .map(|request| request.id),
+        Some(*request_id)
+    );
 }
 
 #[test]

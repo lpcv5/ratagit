@@ -314,7 +314,7 @@ mod tests {
         let parent_height = compute_left_panel_heights(&state, 24, 2).commits;
 
         state.ui.commits.files.active = true;
-        state.work.commit_files_loading = false;
+        state.work.commit_files.commit_files_loading = false;
         let subpanel_height = compute_left_panel_heights(&state, 24, 2).commits;
 
         assert_eq!(subpanel_height, parent_height);

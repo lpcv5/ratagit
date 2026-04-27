@@ -4,32 +4,14 @@ use ratagit_core::{
 use ratatui::style::{Color, Modifier, Style};
 use unicode_width::UnicodeWidthChar;
 
-use super::panel_types::PanelSpan;
+use super::panel_types::{PanelSpan, plain_text};
 use crate::theme::{
     ICON_BATCH_SELECTED, ICON_BRANCH, ICON_DIRECTORY_CLOSED, ICON_DIRECTORY_OPEN,
     ICON_SEARCH_MATCH, ICON_STASH, RowRole, row_style,
 };
 
 pub fn format_file_tree_row(row: &FileTreeRow) -> String {
-    let indent = "  ".repeat(row.depth);
-    let batch = if row.selected_for_batch {
-        ICON_BATCH_SELECTED
-    } else {
-        " "
-    };
-    let matched = if row.matched { ICON_SEARCH_MATCH } else { " " };
-    let body = match row.kind {
-        FileRowKind::Directory => {
-            let marker = if row.expanded {
-                ICON_DIRECTORY_OPEN
-            } else {
-                ICON_DIRECTORY_CLOSED
-            };
-            format!("{marker} {}/", row.name)
-        }
-        FileRowKind::File => format!("{} {}", file_tree_status_marker(row), row.name),
-    };
-    format!("{batch}{matched} {indent}{body}")
+    plain_text(&file_tree_row_spans(row))
 }
 
 pub(crate) fn file_tree_row_spans(row: &FileTreeRow) -> Vec<PanelSpan> {
@@ -76,16 +58,7 @@ pub(crate) fn file_tree_row_spans(row: &FileTreeRow) -> Vec<PanelSpan> {
 }
 
 pub fn format_commit_entry(entry: &CommitEntry) -> String {
-    let graph = fixed_width(commit_graph(entry), 1);
-    let hash = fixed_width(&entry.id, 7);
-    let author = fixed_width(&author_initials(&entry.author_name), 2);
-    format!(
-        "{}  {}  {}  {}",
-        graph,
-        hash,
-        author,
-        commit_message_summary(entry)
-    )
+    plain_text(&commit_entry_spans(entry))
 }
 
 pub(crate) fn commit_entry_spans(entry: &CommitEntry) -> Vec<PanelSpan> {

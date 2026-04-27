@@ -32,7 +32,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 fn run_tui() -> Result<(), Box<dyn Error>> {
     let backend_factory = select_backend_factory()?;
-    let mut terminal = setup_terminal()?;
+    let mut terminal_session = TerminalSession::new()?;
     let mut runtime = build_initial_runtime(backend_factory);
     let mut spinner_frame = 0usize;
     let mut next_spinner_frame_at = Instant::now() + spinner_frame_interval();
@@ -45,7 +45,7 @@ fn run_tui() -> Result<(), Box<dyn Error>> {
             spinner_frame = spinner_frame.wrapping_add(1);
             next_spinner_frame_at = now + spinner_frame_interval();
         }
-        terminal.draw(|frame| {
+        terminal_session.terminal.draw(|frame| {
             render_terminal_with_context(frame, runtime.state(), RenderContext { spinner_frame });
         })?;
 
@@ -61,7 +61,7 @@ fn run_tui() -> Result<(), Box<dyn Error>> {
             continue;
         }
 
-        let terminal_size = terminal.size()?;
+        let terminal_size = terminal_session.terminal.size()?;
         let size = TerminalSize {
             width: terminal_size.width as usize,
             height: terminal_size.height as usize,
@@ -88,22 +88,71 @@ fn run_tui() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    restore_terminal(&mut terminal)?;
+    terminal_session.restore()?;
     Ok(())
 }
 
-fn setup_terminal() -> Result<Terminal<CrosstermBackend<Stdout>>, io::Error> {
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
-    let backend = CrosstermBackend::new(stdout);
-    Terminal::new(backend)
+struct TerminalSession {
+    terminal: Terminal<CrosstermBackend<Stdout>>,
+    restored: bool,
+}
+
+impl TerminalSession {
+    fn new() -> Result<Self, io::Error> {
+        enable_raw_mode()?;
+        let mut stdout = io::stdout();
+        if let Err(err) = execute!(stdout, EnterAlternateScreen) {
+            let _ = disable_raw_mode();
+            return Err(err);
+        }
+        let backend = CrosstermBackend::new(stdout);
+        let terminal = match Terminal::new(backend) {
+            Ok(terminal) => terminal,
+            Err(err) => {
+                let mut stdout = io::stdout();
+                let _ = execute!(stdout, LeaveAlternateScreen);
+                let _ = disable_raw_mode();
+                return Err(err);
+            }
+        };
+        Ok(Self {
+            terminal,
+            restored: false,
+        })
+    }
+
+    fn restore(&mut self) -> Result<(), io::Error> {
+        if self.restored {
+            return Ok(());
+        }
+        restore_terminal(&mut self.terminal)?;
+        self.restored = true;
+        Ok(())
+    }
+}
+
+impl Drop for TerminalSession {
+    fn drop(&mut self) {
+        let _ = self.restore();
+    }
 }
 
 fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<(), io::Error> {
-    disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
-    terminal.show_cursor()
+    let mut first_error = disable_raw_mode().err();
+    if let Err(err) = execute!(terminal.backend_mut(), LeaveAlternateScreen)
+        && first_error.is_none()
+    {
+        first_error = Some(err);
+    }
+    if let Err(err) = terminal.show_cursor()
+        && first_error.is_none()
+    {
+        first_error = Some(err);
+    }
+    if let Some(err) = first_error {
+        return Err(err);
+    }
+    Ok(())
 }
 
 type BackendFactory = Box<dyn Fn() -> Box<dyn GitBackend + Send> + Send + Sync>;
@@ -219,7 +268,10 @@ mod tests {
             select_backend_factory_for(root.clone()).expect("git backend should be selected");
         let mut backend = factory();
         let result = execute_command(&mut backend, ratagit_core::Command::RefreshAll);
-        assert!(matches!(result, ratagit_core::GitResult::Refreshed(_)));
+        assert!(matches!(
+            result,
+            ratagit_core::GitResult::SplitRefreshed { .. }
+        ));
         let _ = remove_dir_all(root);
     }
 

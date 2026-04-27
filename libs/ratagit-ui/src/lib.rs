@@ -5,6 +5,7 @@ mod frame;
 mod layout;
 mod loading_indicator;
 mod modal;
+mod panel_projection;
 mod panels;
 mod reset_modal;
 mod sync_modal;

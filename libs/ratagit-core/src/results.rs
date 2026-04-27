@@ -6,10 +6,20 @@ use crate::{
 pub(crate) fn update_git_result(state: &mut AppContext, result: GitResult) -> Vec<Command> {
     match result {
         GitResult::Refreshed(repo_snapshot) => {
-            state.work.last_completed_command = Some("refresh".to_string());
-            state.work.pending_refreshes.clear();
-            state.work.refresh_pending = false;
+            state.work.clear_refresh();
             snapshot::apply_snapshot(state, repo_snapshot);
+            state.repo.status.refresh_count = state.repo.status.refresh_count.saturating_add(1);
+            state.repo.status.last_error = None;
+            details::refresh_for_focus(state)
+        }
+        GitResult::SplitRefreshed {
+            files,
+            branches,
+            commits,
+            stashes,
+        } => {
+            state.work.clear_refresh();
+            snapshot::apply_split_snapshot(state, files, branches, commits, stashes);
             state.repo.status.refresh_count = state.repo.status.refresh_count.saturating_add(1);
             state.repo.status.last_error = None;
             details::refresh_for_focus(state)
@@ -45,16 +55,21 @@ pub(crate) fn update_git_result(state: &mut AppContext, result: GitResult) -> Ve
             result,
         } => commit_workflow::handle_commits_page_result(state, offset, limit, epoch, result),
         GitResult::FilesDetailsDiff {
+            request_id,
             targets,
             truncated_from,
             result,
-        } => details::apply_files_diff_result(state, targets, truncated_from, result),
-        GitResult::BranchDetailsLog { branch, result } => {
-            details::apply_branch_log_result(state, branch, result)
-        }
-        GitResult::CommitDetailsDiff { commit_id, result } => {
-            details::apply_commit_diff_result(state, commit_id, result)
-        }
+        } => details::apply_files_diff_result(state, request_id, targets, truncated_from, result),
+        GitResult::BranchDetailsLog {
+            request_id,
+            branch,
+            result,
+        } => details::apply_branch_log_result(state, request_id, branch, result),
+        GitResult::CommitDetailsDiff {
+            request_id,
+            commit_id,
+            result,
+        } => details::apply_commit_diff_result(state, request_id, commit_id, result),
         GitResult::BranchCommits { branch, result } => {
             crate::branches::handle_branch_commits_result(state, branch, result)
         }
@@ -66,16 +81,16 @@ pub(crate) fn update_git_result(state: &mut AppContext, result: GitResult) -> Ve
         GitResult::CommitFiles { commit_id, result } => {
             commit_workflow::handle_commit_files_result(state, commit_id, result)
         }
-        GitResult::CommitFileDiff { target, result } => {
-            details::apply_commit_file_diff_result(state, target, result)
-        }
+        GitResult::CommitFileDiff {
+            request_id,
+            target,
+            result,
+        } => details::apply_commit_file_diff_result(state, request_id, target, result),
         GitResult::RefreshFailed { target, error } => {
             if let Some(target) = target {
                 finish_refresh_target(state, target);
             } else {
-                state.work.pending_refreshes.clear();
-                state.work.refresh_pending = false;
-                state.work.last_completed_command = Some("refresh".to_string());
+                state.work.clear_refresh();
             }
             state.repo.status.last_error = Some(format!("Failed to refresh: {error}"));
             push_notice(state, &format!("Failed to refresh: {error}"));
@@ -157,11 +172,10 @@ pub(crate) fn update_git_result(state: &mut AppContext, result: GitResult) -> Ve
 }
 
 fn finish_refresh_target(state: &mut AppContext, target: RefreshTarget) {
-    state.work.pending_refreshes.remove(&target);
-    state.work.refresh_pending = !state.work.pending_refreshes.is_empty();
-    state.work.last_completed_command = Some(refresh_target_command_label(target).to_string());
-    if !state.work.refresh_pending {
-        state.work.last_completed_command = Some("refresh".to_string());
+    state
+        .work
+        .finish_refresh_target(target, refresh_target_command_label(target));
+    if !state.work.refresh.refresh_pending {
         state.repo.status.refresh_count = state.repo.status.refresh_count.saturating_add(1);
     }
 }

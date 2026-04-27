@@ -1,5 +1,6 @@
 use crate::{
-    AppContext, BranchDeleteMode, Command, ResetMode, branches, details, push_notice, with_pending,
+    AppContext, BranchDeleteMode, Command, GitErrorKind, GitFailure, ResetMode, branches, details,
+    push_notice, with_pending,
 };
 
 pub(crate) fn handle_stage_files_result(
@@ -116,24 +117,24 @@ pub(crate) fn handle_pull_result(
 pub(crate) fn handle_push_result(
     state: &mut AppContext,
     force: bool,
-    result: Result<(), String>,
+    result: Result<(), GitFailure>,
 ) -> Vec<Command> {
     if let Err(error) = &result
         && !force
-        && is_divergent_push_error(error)
+        && error.kind == GitErrorKind::DivergentPush
     {
         record_operation(state, "push");
         let full_error = format!("Push requires confirmation: {error}");
         state.repo.status.last_error = Some(full_error.clone());
         push_notice(state, &full_error);
         state.ui.push_force_confirm.active = true;
-        state.ui.push_force_confirm.reason = error.clone();
+        state.ui.push_force_confirm.reason = error.message.clone();
         return Vec::new();
     }
 
     handle_operation_result(
         state,
-        result,
+        result.map_err(|error| error.to_string()),
         if force { "force_push" } else { "push" },
         if force {
             "Force pushed to remote".to_string()
@@ -199,24 +200,24 @@ pub(crate) fn handle_delete_branch_result(
     name: String,
     mode: BranchDeleteMode,
     force: bool,
-    result: Result<(), String>,
+    result: Result<(), GitFailure>,
 ) -> Vec<Command> {
     if let Err(error) = &result
         && !force
         && branches::delete_mode_includes_local(mode)
-        && is_unmerged_branch_delete_error(error)
+        && error.kind == GitErrorKind::UnmergedBranchDelete
     {
         record_operation(state, &format!("delete_branch_{}", delete_mode_name(mode)));
         state.repo.status.last_error = Some(format!(
             "Branch is not fully merged; confirmation required: {error}"
         ));
-        branches::open_force_delete_confirm(state, name, mode, error.clone());
+        branches::open_force_delete_confirm(state, name, mode, error.message.clone());
         return Vec::new();
     }
 
     handle_operation_result(
         state,
-        result,
+        result.map_err(|error| error.to_string()),
         &format!("delete_branch_{}", delete_mode_name(mode)),
         if force {
             format!("Force deleted {} branch: {name}", delete_mode_label(mode))
@@ -436,22 +437,8 @@ fn handle_operation_result_refreshing_after_failure(
 
 fn record_operation(state: &mut AppContext, operation_key: &str) {
     let operation_key = operation_key.to_string();
-    state.work.operation_pending = None;
-    state.work.last_completed_command = Some(operation_key.clone());
+    state.work.record_operation_completed(operation_key.clone());
     state.last_operation = Some(operation_key);
-}
-
-fn is_unmerged_branch_delete_error(error: &str) -> bool {
-    error.contains("not fully merged") || error.contains("not merged")
-}
-
-pub(crate) fn is_divergent_push_error(error: &str) -> bool {
-    let lower = error.to_ascii_lowercase();
-    lower.contains("non-fast-forward")
-        || lower.contains("fetch first")
-        || lower.contains("rejected") && lower.contains("fetch")
-        || lower.contains("remote contains work")
-        || lower.contains("failed to push some refs")
 }
 
 fn first_line(message: &str) -> &str {

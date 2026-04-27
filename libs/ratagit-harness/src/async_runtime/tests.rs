@@ -6,9 +6,12 @@ use std::time::Duration;
 
 use ratagit_core::{
     AppContext, BranchDeleteMode, BranchEntry, Command, CommitEntry, CommitFileDiffTarget,
-    CommitFileEntry, FileDiffTarget, FilesSnapshot, RepoSnapshot, ResetMode, StashEntry,
+    CommitFileEntry, DetailsRequestId, FileDiffTarget, FilesSnapshot, RepoSnapshot, ResetMode,
+    StashEntry,
 };
-use ratagit_git::{GitBackend, GitError, MockGitBackend};
+use ratagit_git::{
+    GitBackendHistoryRewrite, GitBackendRead, GitBackendWrite, GitError, MockGitBackend,
+};
 use ratagit_testkit::fixture_dirty_repo;
 use ratagit_ui::TerminalSize;
 
@@ -98,7 +101,7 @@ macro_rules! delegate_recording_backend {
     };
 }
 
-impl GitBackend for RecordingBackend {
+impl GitBackendRead for RecordingBackend {
     fn refresh_snapshot(&mut self) -> Result<RepoSnapshot, GitError> {
         self.record(format!("refresh:{}", self.id));
         if let Some(started) = &self.refresh_started {
@@ -168,6 +171,15 @@ impl GitBackend for RecordingBackend {
         self.inner.files_details_diff(targets)
     }
 
+    delegate_recording_backend! {
+        branch_details_log(branch: &str, max_count: usize) -> Result<String, GitError>;
+        commit_details_diff(commit_id: &str) -> Result<String, GitError>;
+        commit_files(commit_id: &str) -> Result<Vec<CommitFileEntry>, GitError>;
+        commit_file_diff(target: &CommitFileDiffTarget) -> Result<String, GitError>;
+    }
+}
+
+impl GitBackendWrite for RecordingBackend {
     fn stage_files(&mut self, paths: &[String]) -> Result<(), GitError> {
         self.start_mutation("stage");
         let result = self.inner.stage_files(paths);
@@ -183,10 +195,6 @@ impl GitBackend for RecordingBackend {
     }
 
     delegate_recording_backend! {
-        branch_details_log(branch: &str, max_count: usize) -> Result<String, GitError>;
-        commit_details_diff(commit_id: &str) -> Result<String, GitError>;
-        commit_files(commit_id: &str) -> Result<Vec<CommitFileEntry>, GitError>;
-        commit_file_diff(target: &CommitFileDiffTarget) -> Result<String, GitError>;
         stage_file(path: &str) -> Result<(), GitError>;
         unstage_file(path: &str) -> Result<(), GitError>;
         create_commit(message: &str) -> Result<(), GitError>;
@@ -195,11 +203,6 @@ impl GitBackend for RecordingBackend {
         create_branch(name: &str, start_point: &str) -> Result<(), GitError>;
         checkout_branch(name: &str, auto_stash: bool) -> Result<(), GitError>;
         delete_branch(name: &str, mode: BranchDeleteMode, force: bool) -> Result<(), GitError>;
-        rebase_branch(target: &str, interactive: bool, auto_stash: bool) -> Result<(), GitError>;
-        squash_commits(commit_ids: &[String]) -> Result<(), GitError>;
-        fixup_commits(commit_ids: &[String]) -> Result<(), GitError>;
-        reword_commit(commit_id: &str, message: &str) -> Result<(), GitError>;
-        delete_commits(commit_ids: &[String]) -> Result<(), GitError>;
         checkout_commit_detached(commit_id: &str, auto_stash: bool) -> Result<(), GitError>;
         stash_push(message: &str) -> Result<(), GitError>;
         stash_files(message: &str, paths: &[String]) -> Result<(), GitError>;
@@ -207,6 +210,16 @@ impl GitBackend for RecordingBackend {
         reset(mode: ResetMode) -> Result<(), GitError>;
         nuke() -> Result<(), GitError>;
         discard_files(paths: &[String]) -> Result<(), GitError>;
+    }
+}
+
+impl GitBackendHistoryRewrite for RecordingBackend {
+    delegate_recording_backend! {
+        rebase_branch(target: &str, interactive: bool, auto_stash: bool) -> Result<(), GitError>;
+        squash_commits(commit_ids: &[String]) -> Result<(), GitError>;
+        fixup_commits(commit_ids: &[String]) -> Result<(), GitError>;
+        reword_commit(commit_id: &str, message: &str) -> Result<(), GitError>;
+        delete_commits(commit_ids: &[String]) -> Result<(), GitError>;
     }
 }
 
@@ -280,7 +293,7 @@ fn split_refresh_results_apply_while_files_refresh_is_blocked() {
 
     assert!(runtime.state.repo.files.items.is_empty());
     assert_eq!(runtime.state.repo.status.refresh_count, 0);
-    assert!(runtime.state.work.refresh_pending);
+    assert!(runtime.state.work.refresh.refresh_pending);
     release_tx.send(()).expect("files refresh should release");
     wait_for_quiet_tick(&mut runtime);
 }
@@ -402,10 +415,12 @@ fn debounce_window_defers_and_coalesces_async_read_commands() {
 
     runtime.process_commands(vec![
         Command::RefreshFilesDetailsDiff {
+            request_id: DetailsRequestId(0),
             targets: vec![file_diff_target("old.txt")],
             truncated_from: None,
         },
         Command::RefreshFilesDetailsDiff {
+            request_id: DetailsRequestId(1),
             targets: vec![file_diff_target("latest.txt")],
             truncated_from: None,
         },

@@ -29,12 +29,18 @@ Events:
 - render.frame
 - git.command start/finish/failure with command label, mutating flag, result
   label, and elapsed time
+- command labels and mutating flags come from centralized command metadata, so
+  scheduler, pending state, and logs classify commands consistently
 - async git worker queue delay and execution time
+- stale async read results dropped after mutation barriers
 - git.refresh step timings: head, index count, status, status parse, status
   sort, commits, branches, stashes
 - git.diff step timings: unstaged, untracked, staged
 - git CLI subprocess duration, stdout byte count, optional-locks mode, status
   mode, truncation, and failure summaries
+- typed Git failure kind for classified recovery paths such as divergent push and
+  unmerged branch delete, while preserving the user-facing error message
+- Details request ids and targets when diagnosing stale Details results
 
 ---
 

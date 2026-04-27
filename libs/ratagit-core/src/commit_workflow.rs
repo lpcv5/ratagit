@@ -68,11 +68,11 @@ pub(crate) fn load_more_commits_command(
     if !state.repo.commits.has_more || state.repo.commits.items.is_empty() {
         return Vec::new();
     }
-    if state.work.commits_loading_more {
-        state.work.commits_pending_select_after_load |= select_first_new;
+    if state.work.pagination.commits_loading_more {
+        state.work.pagination.commits_pending_select_after_load |= select_first_new;
         return Vec::new();
     }
-    state.work.commits_pending_select_after_load |= select_first_new;
+    state.work.pagination.commits_pending_select_after_load |= select_first_new;
     with_pending(
         state,
         vec![Command::LoadMoreCommits {
@@ -93,22 +93,22 @@ pub(crate) fn handle_commits_page_result(
     if epoch != state.repo.commits.pagination_epoch {
         return Vec::new();
     }
-    state.work.commits_loading_more = false;
-    state.work.last_completed_command = Some("load_more_commits".to_string());
+    state.work.pagination.commits_loading_more = false;
+    state.work.mark_command_completed("load_more_commits");
     match result {
         Ok(mut commits) => {
             if offset != state.repo.commits.items.len() {
-                state.work.commits_pending_select_after_load = false;
+                state.work.pagination.commits_pending_select_after_load = false;
                 return Vec::new();
             }
             let first_new_index = state.repo.commits.items.len();
             let loaded = commits.len();
             state.repo.commits.items.append(&mut commits);
             state.repo.commits.has_more = loaded >= limit;
-            if state.work.commits_pending_select_after_load && loaded > 0 {
+            if state.work.pagination.commits_pending_select_after_load && loaded > 0 {
                 state.ui.commits.selected = first_new_index;
             }
-            state.work.commits_pending_select_after_load = false;
+            state.work.pagination.commits_pending_select_after_load = false;
             state.repo.status.last_error = None;
             reconcile_commits_after_items_appended(
                 &state.repo.commits.items,
@@ -116,7 +116,7 @@ pub(crate) fn handle_commits_page_result(
             );
         }
         Err(error) => {
-            state.work.commits_pending_select_after_load = false;
+            state.work.pagination.commits_pending_select_after_load = false;
             let message = format!("Failed to load more commits: {error}");
             state.repo.status.last_error = Some(message.clone());
             push_notice(state, &message);
@@ -184,6 +184,7 @@ pub(crate) fn open_commit_files_panel(state: &mut AppContext) -> Vec<Command> {
     state.repo.details.commit_file_diff.clear();
     state.repo.details.commit_file_diff_target = None;
     state.repo.details.commit_file_diff_error = None;
+    details::clear_details_pending(state);
     details::reset_scroll(state);
     with_pending(state, vec![Command::RefreshCommitFiles { commit_id }])
 }
@@ -193,12 +194,12 @@ pub(crate) fn close_commit_files_panel(state: &mut AppContext) -> Vec<Command> {
         return Vec::new();
     }
     state.ui.commits.files.active = false;
-    state.work.commit_files_loading = false;
+    state.work.commit_files.commit_files_loading = false;
     clear_search_if_incompatible(state);
     state.repo.details.commit_file_diff.clear();
     state.repo.details.commit_file_diff_target = None;
     state.repo.details.commit_file_diff_error = None;
-    state.work.details_pending = false;
+    details::clear_details_pending(state);
     details::refresh_commit_diff(state)
 }
 
@@ -212,8 +213,8 @@ pub(crate) fn handle_commit_files_result(
     {
         return Vec::new();
     }
-    state.work.commit_files_loading = false;
-    state.work.last_completed_command = Some("commit_files".to_string());
+    state.work.commit_files.commit_files_loading = false;
+    state.work.mark_command_completed("commit_files");
     match result {
         Ok(files) => {
             state.repo.commits.files.items = files;

@@ -5,7 +5,9 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ratagit_core::{COMMITS_PAGE_SIZE, CommitFileStatus, CommitHashStatus, FileDiffTarget};
-use ratagit_git::{GitBackend, HybridGitBackend, is_git_repo};
+use ratagit_git::{
+    GitBackendHistoryRewrite, GitBackendRead, GitBackendWrite, HybridGitBackend, is_git_repo,
+};
 
 struct TmpGitRepo {
     path: PathBuf,

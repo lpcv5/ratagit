@@ -27,6 +27,9 @@ test flow, nondeterminism, or an assertion that no longer verifies behavior.
 ## UI Testing
 
 - Panel unit tests assert each panel's pure projection from `AppContext`.
+- Panel projection tests assert shared panel descriptors and span-backed
+  `PanelLine` rows. Plain text compatibility tests must derive text from the same
+  spans used by terminal rendering.
 - Full-screen integration tests render `render_terminal` with
   `ratatui::TestBackend`.
 - Use insta snapshots for full-screen terminal buffers.
@@ -70,6 +73,26 @@ All UI tests must use fixtures:
 
 ---
 
+## Core And Runtime Testing
+
+- Command metadata tests must cover every `Command` variant for log labels,
+  mutating classification, pending labels, debounce keys, and refresh coalescing
+  keys.
+- Work-state tests should target the typed refresh, details, mutation,
+  pagination, and Commit Files substates instead of asserting incidental bool
+  combinations.
+- Details request tests must cover stale request ids and target mismatches for
+  Files, Branches, Commits, and Commit Files.
+- Scheduler tests use injected `Instant` values and must not sleep. They cover
+  debounce, latest-details wins, refresh coalescing, and preservation of mutation
+  boundaries.
+- Git backend capability tests cover read, write, history-rewrite, shared mock,
+  boxed dispatch, and root `GitBackend` compatibility.
+- Split-refresh tests must verify that full refresh preserves `FilesSnapshot`
+  metadata, including large-repo mode, truncation, and skipped-scan flags.
+
+---
+
 ## Snapshot Rules
 
 - Snapshots must be deterministic
@@ -86,6 +109,10 @@ Scenarios must:
 - assert real `render_terminal` screen text
 - assert Git operation trace
 - assert final mock Git state
+
+Every user-visible behavior change needs a harness scenario. Internal-only
+architecture changes can be covered by unit/integration tests when rendered UI
+and Git state are intentionally unchanged.
 
 ---
 
@@ -116,3 +143,4 @@ On failure, store:
 - giant scenarios
 - implicit assertions
 - relying on timing
+- sleeping in scheduler tests

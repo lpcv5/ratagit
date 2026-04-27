@@ -57,7 +57,10 @@ Focus model:
   subview and reuses commit-list and commit-file tree UI state for isolated
   Branches interactions
 - `AppContext.work` stores visible pending refresh/details/operation state and
-  the last completed command label
+  the last completed command label through typed refresh, details, mutation,
+  pagination, and Commit Files substates
+- `AppContext.work.details` stores the active Details request id and target so
+  stale async Details results cannot clear or replace the latest request
 - `AppContext.repo.status` stores Git status performance metadata:
   `index_entry_count`, `large_repo_mode`, `status_truncated`,
   `status_scan_skipped`, and `untracked_scan_skipped`
@@ -75,6 +78,10 @@ Focus model:
 ## Interaction Model
 
 - Input is mapped to explicit `UiAction`.
+- The input layer derives an explicit `InputMode` from `AppContext` before
+  routing keys. Global `Ctrl+U` / `Ctrl+D` are handled first, modal/editor/search
+  modes keep priority over panel shortcuts, and confirmed search queries can
+  fall through to panel shortcuts only after search-specific keys are checked.
 - `Ctrl+U` and `Ctrl+D` map to global Details scroll actions before
   mode-specific key handling. The input layer computes the step as
   `max(1, details_content_height * 2 / 5)` from the current terminal layout.
@@ -92,6 +99,9 @@ Focus model:
   drops stale read results that were started before a queued mutation.
 - Runtimes coalesce redundant queued repository refresh and files-detail diff
   commands after the most recent mutation command.
+- Sync and async runtimes share the same scheduler implementation. The scheduler
+  uses `Command` metadata for mutating barriers, debounce keys, and refresh
+  coalescing keys instead of duplicating command matches in each runtime.
 - Backend output re-enters `update()` as `GitResult`.
 - UI rendering reads only `AppContext`.
 - High-frequency side effects use runtime command debouncing keyed by
@@ -212,7 +222,7 @@ Files panel interaction:
   repo mode skipped untracked scanning; Details renders a skip message from
   `AppContext.repo.details`.
 - stale details-diff results are ignored when their target list and truncation
-  metadata no longer match the current Files selection.
+  metadata no longer match the current Files selection or active request id.
 - while editor, reset, or discard modal is active, modal key handling has highest input priority
   over panel navigation mappings.
 - Branches focus maps `space` to checkout, `v` to enter visual multi-select,
@@ -309,6 +319,17 @@ Files panel interaction:
 - Stash Details projection is a placeholder in this slice and intentionally
   marked for follow-up implementation.
 
+Panel projection and row source:
+
+- Every rendered panel is projected through a shared descriptor containing panel
+  focus identity, focused state, title metadata, legacy text title, and content
+  rows.
+- `PanelLine` stores styled spans as the canonical row representation; plain text
+  snapshots derive text from those spans so terminal rendering and compatibility
+  text tests share one row source.
+- Files, commits, search-highlighted rows, and selected rows build their plain
+  text from the same span-backed formatters used by the terminal renderer.
+
 ---
 
 ## Error Presentation
@@ -316,9 +337,15 @@ Files panel interaction:
 - Git failures never crash the app.
 - Errors are stored in `AppContext.repo.status.last_error`.
 - The `Log` panel displays the latest error.
+- Git failures carry typed failure kinds plus user-facing messages. Reducers use
+  the kind for semantic recovery flows such as force-push and force-delete
+  confirmations while preserving the displayed message.
+- Commands expose centralized metadata for logging labels, mutating
+  classification, pending operation labels, debounce keys, and refresh
+  coalescing keys.
 - The `Log` panel displays pending refresh and Git operation state while work is running.
-- Details refresh progress is reflected in `AppContext.work.details_pending` for
-  command tracking, not as a transient Details panel row.
+- Details refresh progress is reflected in `AppContext.work.details` for command
+  tracking, not as a transient Details panel row.
 - Empty-state placeholders such as `<empty>` / `<none>` are not rendered; empty
   views remain visually blank.
 
@@ -409,3 +436,6 @@ Files panel interaction:
   - git operation trace
   - final mock Git state
   - input sequence
+- The manual performance suite includes pure UI operations for status rendering,
+  search rendering, and Details scroll rendering in addition to backend and tree
+  operations.

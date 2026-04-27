@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::marker::PhantomData;
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
@@ -12,7 +12,7 @@ use ratagit_ui::{
     render_terminal_text,
 };
 
-use crate::enqueue_coalesced_command;
+use crate::scheduler::{CommandScheduler, enqueue_coalesced_command};
 
 pub const DEFAULT_READ_WORKER_COUNT: usize = 4;
 
@@ -24,19 +24,12 @@ pub struct AsyncRuntime<B: GitBackend + Send + 'static> {
     result_rx: Receiver<WorkerResult>,
     workers: Vec<JoinHandle<()>>,
     terminal_size: TerminalSize,
-    debounce_window: Duration,
-    debounced: HashMap<&'static str, DebouncedCommand>,
+    scheduler: CommandScheduler,
     deferred_reads: VecDeque<Command>,
     next_read_worker: usize,
     repo_generation: u64,
     write_commands_in_flight: usize,
     _backend_type: PhantomData<B>,
-}
-
-#[derive(Debug, Clone)]
-struct DebouncedCommand {
-    due_at: Instant,
-    command: Command,
 }
 
 #[derive(Debug, Clone)]
@@ -102,8 +95,7 @@ impl<B: GitBackend + Send + 'static> AsyncRuntime<B> {
             result_rx,
             workers,
             terminal_size,
-            debounce_window: Duration::default(),
-            debounced: HashMap::new(),
+            scheduler: CommandScheduler::default(),
             deferred_reads: VecDeque::new(),
             next_read_worker: 0,
             repo_generation: 0,
@@ -113,7 +105,7 @@ impl<B: GitBackend + Send + 'static> AsyncRuntime<B> {
     }
 
     pub fn with_debounce_window(mut self, debounce_window: Duration) -> Self {
-        self.debounce_window = debounce_window;
+        self.scheduler.set_debounce_window(debounce_window);
         self
     }
 
@@ -146,26 +138,11 @@ impl<B: GitBackend + Send + 'static> AsyncRuntime<B> {
 
     fn process_commands(&mut self, initial: Vec<Command>) {
         let mut queue = VecDeque::new();
+        let now = Instant::now();
         for command in initial {
-            self.enqueue_command(command, &mut queue);
+            self.scheduler.enqueue_at(command, &mut queue, now);
         }
         self.dispatch_queue(queue);
-    }
-
-    fn enqueue_command(&mut self, command: Command, queue: &mut VecDeque<Command>) {
-        if self.debounce_window > Duration::ZERO
-            && let Some(key) = command.debounce_key()
-        {
-            self.debounced.insert(
-                key,
-                DebouncedCommand {
-                    due_at: Instant::now() + self.debounce_window,
-                    command,
-                },
-            );
-            return;
-        }
-        enqueue_coalesced_command(queue, command);
     }
 
     fn dispatch_queue(&mut self, mut queue: VecDeque<Command>) {
@@ -217,26 +194,7 @@ impl<B: GitBackend + Send + 'static> AsyncRuntime<B> {
     }
 
     fn flush_due_debounced(&mut self) {
-        if self.debounced.is_empty() {
-            return;
-        }
-
-        let now = Instant::now();
-        let due_keys = self
-            .debounced
-            .iter()
-            .filter_map(|(key, pending)| (pending.due_at <= now).then_some(*key))
-            .collect::<Vec<_>>();
-        if due_keys.is_empty() {
-            return;
-        }
-
-        let mut queue = VecDeque::new();
-        for key in due_keys {
-            if let Some(pending) = self.debounced.remove(key) {
-                enqueue_coalesced_command(&mut queue, pending.command);
-            }
-        }
+        let queue = self.scheduler.flush_due_at(Instant::now());
         self.dispatch_queue(queue);
     }
 

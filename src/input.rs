@@ -11,6 +11,56 @@ pub(crate) enum KeyEffect {
     Ignore,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum InputMode {
+    Editor,
+    BranchCreate,
+    BranchDeleteMenu,
+    BranchDeleteConfirm,
+    BranchForceDeleteConfirm,
+    BranchRebaseMenu,
+    AutoStashConfirm,
+    ResetMenu,
+    ResetDangerConfirm,
+    DiscardConfirm,
+    ForcePushConfirm,
+    SearchInput,
+    SearchQuery,
+    Panel,
+}
+
+pub(crate) fn input_mode_for_state(state: &AppContext) -> InputMode {
+    if state.ui.editor.is_active() {
+        InputMode::Editor
+    } else if state.ui.branches.create.active {
+        InputMode::BranchCreate
+    } else if state.ui.branches.delete_menu.active {
+        InputMode::BranchDeleteMenu
+    } else if state.ui.branches.delete_confirm.active {
+        InputMode::BranchDeleteConfirm
+    } else if state.ui.branches.force_delete_confirm.active {
+        InputMode::BranchForceDeleteConfirm
+    } else if state.ui.branches.rebase_menu.active {
+        InputMode::BranchRebaseMenu
+    } else if state.ui.branches.auto_stash_confirm.active {
+        InputMode::AutoStashConfirm
+    } else if state.ui.reset_menu.active {
+        InputMode::ResetMenu
+    } else if state.ui.reset_menu.danger_confirm.is_some() {
+        InputMode::ResetDangerConfirm
+    } else if state.ui.discard_confirm.active {
+        InputMode::DiscardConfirm
+    } else if state.ui.push_force_confirm.active {
+        InputMode::ForcePushConfirm
+    } else if search_input_is_current(state) {
+        InputMode::SearchInput
+    } else if search_query_is_current(state) {
+        InputMode::SearchQuery
+    } else {
+        InputMode::Panel
+    }
+}
+
 pub(crate) fn key_effect_for_key(
     state: &AppContext,
     code: KeyCode,
@@ -49,161 +99,197 @@ fn ui_action_for_key(
     details_visible_lines: usize,
     left_panel_visible_lines: usize,
 ) -> Option<UiAction> {
-    if modifiers.contains(KeyModifiers::CONTROL) {
-        match code {
-            KeyCode::Char('u') => {
-                return Some(UiAction::DetailsScrollUp {
-                    lines: details_scroll_lines,
-                });
+    if let Some(action) =
+        global_control_action_for_key(code, modifiers, details_scroll_lines, details_visible_lines)
+    {
+        return Some(action);
+    }
+
+    match input_mode_for_state(state) {
+        InputMode::Editor => return editor_action_for_key(code, modifiers),
+        InputMode::BranchCreate => return branch_create_action_for_key(code, modifiers),
+        InputMode::BranchDeleteMenu => return branch_delete_menu_action_for_key(code),
+        InputMode::BranchDeleteConfirm => return branch_delete_confirm_action_for_key(code),
+        InputMode::BranchForceDeleteConfirm => return branch_force_delete_action_for_key(code),
+        InputMode::BranchRebaseMenu => return branch_rebase_menu_action_for_key(code),
+        InputMode::AutoStashConfirm => return auto_stash_action_for_key(code),
+        InputMode::ResetMenu => return reset_menu_action_for_key(code),
+        InputMode::ResetDangerConfirm => return reset_danger_action_for_key(code),
+        InputMode::DiscardConfirm => return discard_confirm_action_for_key(code),
+        InputMode::ForcePushConfirm => return force_push_action_for_key(code),
+        InputMode::SearchInput => return search_input_action_for_key(code),
+        InputMode::SearchQuery => {
+            if let Some(action) = search_query_action_for_key(code) {
+                return Some(action);
             }
-            KeyCode::Char('d') => {
-                return Some(UiAction::DetailsScrollDown {
-                    lines: details_scroll_lines,
-                    visible_lines: details_visible_lines,
-                });
-            }
-            _ => {}
         }
+        InputMode::Panel => {}
     }
 
-    if state.ui.editor.is_active() {
-        return match code {
-            KeyCode::Enter => Some(UiAction::EditorConfirm),
-            KeyCode::Esc => Some(UiAction::EditorCancel),
-            KeyCode::Backspace => Some(UiAction::EditorBackspace),
-            KeyCode::Left => Some(UiAction::EditorMoveCursorLeft),
-            KeyCode::Right => Some(UiAction::EditorMoveCursorRight),
-            KeyCode::Home => Some(UiAction::EditorMoveCursorHome),
-            KeyCode::End => Some(UiAction::EditorMoveCursorEnd),
-            KeyCode::Tab => Some(UiAction::EditorNextField),
-            KeyCode::BackTab => Some(UiAction::EditorPrevField),
-            KeyCode::Char('j') if modifiers.contains(KeyModifiers::CONTROL) => {
-                Some(UiAction::EditorInsertNewline)
-            }
-            KeyCode::Char(ch)
-                if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
-            {
-                Some(UiAction::EditorInputChar(ch))
-            }
-            _ => None,
-        };
+    panel_action_for_key(state, code, left_panel_visible_lines)
+}
+
+fn global_control_action_for_key(
+    code: KeyCode,
+    modifiers: KeyModifiers,
+    details_scroll_lines: usize,
+    details_visible_lines: usize,
+) -> Option<UiAction> {
+    if !modifiers.contains(KeyModifiers::CONTROL) {
+        return None;
     }
 
-    if state.ui.branches.create.active {
-        return match code {
-            KeyCode::Enter => Some(UiAction::ConfirmBranchCreate),
-            KeyCode::Esc => Some(UiAction::CancelBranchCreate),
-            KeyCode::Backspace => Some(UiAction::BranchCreateBackspace),
-            KeyCode::Left => Some(UiAction::BranchCreateMoveCursorLeft),
-            KeyCode::Right => Some(UiAction::BranchCreateMoveCursorRight),
-            KeyCode::Home => Some(UiAction::BranchCreateMoveCursorHome),
-            KeyCode::End => Some(UiAction::BranchCreateMoveCursorEnd),
-            KeyCode::Char(ch)
-                if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
-            {
-                Some(UiAction::BranchCreateInputChar(ch))
-            }
-            _ => None,
-        };
+    match code {
+        KeyCode::Char('u') => Some(UiAction::DetailsScrollUp {
+            lines: details_scroll_lines,
+        }),
+        KeyCode::Char('d') => Some(UiAction::DetailsScrollDown {
+            lines: details_scroll_lines,
+            visible_lines: details_visible_lines,
+        }),
+        _ => None,
     }
+}
 
-    if state.ui.branches.delete_menu.active {
-        return match code {
-            KeyCode::Enter => Some(UiAction::ConfirmBranchDeleteMenu),
-            KeyCode::Esc => Some(UiAction::CancelBranchDeleteMenu),
-            KeyCode::Up | KeyCode::Char('k') => Some(UiAction::MoveBranchDeleteMenuUp),
-            KeyCode::Down | KeyCode::Char('j') => Some(UiAction::MoveBranchDeleteMenuDown),
-            _ => None,
-        };
-    }
-
-    if state.ui.branches.delete_confirm.active {
-        return match code {
-            KeyCode::Enter => Some(UiAction::ConfirmBranchDeleteDanger),
-            KeyCode::Esc => Some(UiAction::CancelBranchDeleteDanger),
-            _ => None,
-        };
-    }
-
-    if state.ui.branches.force_delete_confirm.active {
-        return match code {
-            KeyCode::Enter => Some(UiAction::ConfirmBranchForceDelete),
-            KeyCode::Esc => Some(UiAction::CancelBranchForceDelete),
-            _ => None,
-        };
-    }
-
-    if state.ui.branches.rebase_menu.active {
-        return match code {
-            KeyCode::Enter => Some(UiAction::ConfirmBranchRebaseMenu),
-            KeyCode::Esc => Some(UiAction::CancelBranchRebaseMenu),
-            KeyCode::Up | KeyCode::Char('k') => Some(UiAction::MoveBranchRebaseMenuUp),
-            KeyCode::Down | KeyCode::Char('j') => Some(UiAction::MoveBranchRebaseMenuDown),
-            _ => None,
-        };
-    }
-
-    if state.ui.branches.auto_stash_confirm.active {
-        return match code {
-            KeyCode::Enter => Some(UiAction::ConfirmAutoStash),
-            KeyCode::Esc => Some(UiAction::CancelAutoStash),
-            _ => None,
-        };
-    }
-
-    if state.ui.reset_menu.active {
-        return match code {
-            KeyCode::Enter => Some(UiAction::ConfirmResetMenu),
-            KeyCode::Esc => Some(UiAction::CancelResetMenu),
-            KeyCode::Up | KeyCode::Char('k') => Some(UiAction::MoveResetMenuUp),
-            KeyCode::Down | KeyCode::Char('j') => Some(UiAction::MoveResetMenuDown),
-            _ => None,
-        };
-    }
-
-    if state.ui.reset_menu.danger_confirm.is_some() {
-        return match code {
-            KeyCode::Enter => Some(UiAction::ConfirmResetDanger),
-            KeyCode::Esc => Some(UiAction::CancelResetDanger),
-            _ => None,
-        };
-    }
-
-    if state.ui.discard_confirm.active {
-        return match code {
-            KeyCode::Enter => Some(UiAction::ConfirmDiscard),
-            KeyCode::Esc => Some(UiAction::CancelDiscard),
-            _ => None,
-        };
-    }
-
-    if state.ui.push_force_confirm.active {
-        return match code {
-            KeyCode::Enter => Some(UiAction::ConfirmForcePush),
-            KeyCode::Esc => Some(UiAction::CancelForcePush),
-            _ => None,
-        };
-    }
-
-    if search_input_is_current(state) {
-        return match code {
-            KeyCode::Enter => Some(UiAction::ConfirmSearch),
-            KeyCode::Esc => Some(UiAction::CancelSearch),
-            KeyCode::Backspace => Some(UiAction::BackspaceSearch),
-            KeyCode::Char(ch) => Some(UiAction::InputSearchChar(ch)),
-            _ => None,
-        };
-    }
-
-    if search_query_is_current(state) {
-        match code {
-            KeyCode::Char('n') => return Some(UiAction::NextSearchMatch),
-            KeyCode::Char('N') => return Some(UiAction::PrevSearchMatch),
-            KeyCode::Esc => return Some(UiAction::CancelSearch),
-            _ => {}
+fn editor_action_for_key(code: KeyCode, modifiers: KeyModifiers) -> Option<UiAction> {
+    match code {
+        KeyCode::Enter => Some(UiAction::EditorConfirm),
+        KeyCode::Esc => Some(UiAction::EditorCancel),
+        KeyCode::Backspace => Some(UiAction::EditorBackspace),
+        KeyCode::Left => Some(UiAction::EditorMoveCursorLeft),
+        KeyCode::Right => Some(UiAction::EditorMoveCursorRight),
+        KeyCode::Home => Some(UiAction::EditorMoveCursorHome),
+        KeyCode::End => Some(UiAction::EditorMoveCursorEnd),
+        KeyCode::Tab => Some(UiAction::EditorNextField),
+        KeyCode::BackTab => Some(UiAction::EditorPrevField),
+        KeyCode::Char('j') if modifiers.contains(KeyModifiers::CONTROL) => {
+            Some(UiAction::EditorInsertNewline)
         }
+        KeyCode::Char(ch) if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => {
+            Some(UiAction::EditorInputChar(ch))
+        }
+        _ => None,
     }
+}
 
+fn branch_create_action_for_key(code: KeyCode, modifiers: KeyModifiers) -> Option<UiAction> {
+    match code {
+        KeyCode::Enter => Some(UiAction::ConfirmBranchCreate),
+        KeyCode::Esc => Some(UiAction::CancelBranchCreate),
+        KeyCode::Backspace => Some(UiAction::BranchCreateBackspace),
+        KeyCode::Left => Some(UiAction::BranchCreateMoveCursorLeft),
+        KeyCode::Right => Some(UiAction::BranchCreateMoveCursorRight),
+        KeyCode::Home => Some(UiAction::BranchCreateMoveCursorHome),
+        KeyCode::End => Some(UiAction::BranchCreateMoveCursorEnd),
+        KeyCode::Char(ch) if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => {
+            Some(UiAction::BranchCreateInputChar(ch))
+        }
+        _ => None,
+    }
+}
+
+fn branch_delete_menu_action_for_key(code: KeyCode) -> Option<UiAction> {
+    match code {
+        KeyCode::Enter => Some(UiAction::ConfirmBranchDeleteMenu),
+        KeyCode::Esc => Some(UiAction::CancelBranchDeleteMenu),
+        KeyCode::Up | KeyCode::Char('k') => Some(UiAction::MoveBranchDeleteMenuUp),
+        KeyCode::Down | KeyCode::Char('j') => Some(UiAction::MoveBranchDeleteMenuDown),
+        _ => None,
+    }
+}
+
+fn branch_delete_confirm_action_for_key(code: KeyCode) -> Option<UiAction> {
+    match code {
+        KeyCode::Enter => Some(UiAction::ConfirmBranchDeleteDanger),
+        KeyCode::Esc => Some(UiAction::CancelBranchDeleteDanger),
+        _ => None,
+    }
+}
+
+fn branch_force_delete_action_for_key(code: KeyCode) -> Option<UiAction> {
+    match code {
+        KeyCode::Enter => Some(UiAction::ConfirmBranchForceDelete),
+        KeyCode::Esc => Some(UiAction::CancelBranchForceDelete),
+        _ => None,
+    }
+}
+
+fn branch_rebase_menu_action_for_key(code: KeyCode) -> Option<UiAction> {
+    match code {
+        KeyCode::Enter => Some(UiAction::ConfirmBranchRebaseMenu),
+        KeyCode::Esc => Some(UiAction::CancelBranchRebaseMenu),
+        KeyCode::Up | KeyCode::Char('k') => Some(UiAction::MoveBranchRebaseMenuUp),
+        KeyCode::Down | KeyCode::Char('j') => Some(UiAction::MoveBranchRebaseMenuDown),
+        _ => None,
+    }
+}
+
+fn auto_stash_action_for_key(code: KeyCode) -> Option<UiAction> {
+    match code {
+        KeyCode::Enter => Some(UiAction::ConfirmAutoStash),
+        KeyCode::Esc => Some(UiAction::CancelAutoStash),
+        _ => None,
+    }
+}
+
+fn reset_menu_action_for_key(code: KeyCode) -> Option<UiAction> {
+    match code {
+        KeyCode::Enter => Some(UiAction::ConfirmResetMenu),
+        KeyCode::Esc => Some(UiAction::CancelResetMenu),
+        KeyCode::Up | KeyCode::Char('k') => Some(UiAction::MoveResetMenuUp),
+        KeyCode::Down | KeyCode::Char('j') => Some(UiAction::MoveResetMenuDown),
+        _ => None,
+    }
+}
+
+fn reset_danger_action_for_key(code: KeyCode) -> Option<UiAction> {
+    match code {
+        KeyCode::Enter => Some(UiAction::ConfirmResetDanger),
+        KeyCode::Esc => Some(UiAction::CancelResetDanger),
+        _ => None,
+    }
+}
+
+fn discard_confirm_action_for_key(code: KeyCode) -> Option<UiAction> {
+    match code {
+        KeyCode::Enter => Some(UiAction::ConfirmDiscard),
+        KeyCode::Esc => Some(UiAction::CancelDiscard),
+        _ => None,
+    }
+}
+
+fn force_push_action_for_key(code: KeyCode) -> Option<UiAction> {
+    match code {
+        KeyCode::Enter => Some(UiAction::ConfirmForcePush),
+        KeyCode::Esc => Some(UiAction::CancelForcePush),
+        _ => None,
+    }
+}
+
+fn search_input_action_for_key(code: KeyCode) -> Option<UiAction> {
+    match code {
+        KeyCode::Enter => Some(UiAction::ConfirmSearch),
+        KeyCode::Esc => Some(UiAction::CancelSearch),
+        KeyCode::Backspace => Some(UiAction::BackspaceSearch),
+        KeyCode::Char(ch) => Some(UiAction::InputSearchChar(ch)),
+        _ => None,
+    }
+}
+
+fn search_query_action_for_key(code: KeyCode) -> Option<UiAction> {
+    match code {
+        KeyCode::Char('n') => Some(UiAction::NextSearchMatch),
+        KeyCode::Char('N') => Some(UiAction::PrevSearchMatch),
+        KeyCode::Esc => Some(UiAction::CancelSearch),
+        _ => None,
+    }
+}
+
+fn panel_action_for_key(
+    state: &AppContext,
+    code: KeyCode,
+    left_panel_visible_lines: usize,
+) -> Option<UiAction> {
     if state.active_search_scope().is_some() && code == KeyCode::Char('/') {
         return Some(UiAction::StartSearch);
     }

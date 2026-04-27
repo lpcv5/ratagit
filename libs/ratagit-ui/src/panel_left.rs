@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use ratagit_core::{
     AppContext, BranchesSubview, CommitEntry, CommitsUiState, FileTreeRow, PanelFocus, SearchScope,
     branch_is_selected_for_batch, commit_file_tree_rows_for_read, commit_is_selected_for_batch,
@@ -7,7 +9,7 @@ use ratatui::style::Style;
 
 use super::panel_format::{
     branch_entry_role, commit_entry_spans, file_tree_row_role, file_tree_row_spans,
-    format_branch_entry, format_commit_entry, format_file_tree_row, format_stash_entry,
+    format_branch_entry, format_stash_entry,
 };
 use super::panel_scroll::render_indexed_entries_window_with;
 use super::panel_types::{PanelLine, PanelSpan};
@@ -80,10 +82,10 @@ pub(crate) fn left_panel_content_len(state: &AppContext, panel: PanelFocus) -> u
 }
 
 pub(crate) fn render_files_lines(state: &AppContext, max_lines: usize) -> Vec<PanelLine> {
-    let mut rows = file_tree_rows_for_read(&state.repo.files.items, &state.ui.files);
+    let rows = file_tree_rows_for_read(&state.repo.files.items, &state.ui.files);
     render_file_tree_lines(
         state,
-        rows.to_mut(),
+        rows.as_ref(),
         state.ui.files.selected,
         state.ui.files.scroll_offset,
         max_lines,
@@ -103,7 +105,7 @@ pub(crate) fn render_branches_lines(state: &AppContext, max_lines: usize) -> Vec
             max_lines,
         );
     }
-    let matches = search_matches_for(state, SearchScope::Branches);
+    let matches = SearchMatches::new(search_matches_for(state, SearchScope::Branches));
     render_indexed_entries_window_with(
         &state.repo.branches.items,
         state.ui.branches.selected,
@@ -117,7 +119,7 @@ pub(crate) fn render_branches_lines(state: &AppContext, max_lines: usize) -> Vec
             };
             let line = PanelLine::new(format_branch_entry(branch), role)
                 .selected(index == state.ui.branches.selected);
-            if search_matches_contains(matches, &branch.name) {
+            if matches.contains(&branch.name) {
                 highlight_search_query(line, state, SearchScope::Branches)
             } else {
                 line
@@ -144,7 +146,7 @@ fn render_commit_list_lines(
     ui: &CommitsUiState,
     max_lines: usize,
 ) -> Vec<PanelLine> {
-    let matches = search_matches_for(state, SearchScope::Commits);
+    let matches = SearchMatches::new(search_matches_for(state, SearchScope::Commits));
     render_indexed_entries_window_with(
         items,
         ui.selected,
@@ -156,10 +158,9 @@ fn render_commit_list_lines(
             } else {
                 RowRole::Normal
             };
-            let line = PanelLine::new(format_commit_entry(entry), role)
-                .selected(index == ui.selected)
-                .styled_spans(commit_entry_spans(entry));
-            if search_matches_contains(matches, &commit_key(entry)) {
+            let line = PanelLine::from_spans(commit_entry_spans(entry), role)
+                .selected(index == ui.selected);
+            if matches.contains(&commit_key(entry)) {
                 highlight_search_query(line, state, SearchScope::Commits)
             } else {
                 line
@@ -169,7 +170,7 @@ fn render_commit_list_lines(
 }
 
 pub(crate) fn render_stash_lines(state: &AppContext, max_lines: usize) -> Vec<PanelLine> {
-    let matches = search_matches_for(state, SearchScope::Stash);
+    let matches = SearchMatches::new(search_matches_for(state, SearchScope::Stash));
     render_indexed_entries_window_with(
         &state.repo.stash.items,
         state.ui.stash.selected,
@@ -178,7 +179,7 @@ pub(crate) fn render_stash_lines(state: &AppContext, max_lines: usize) -> Vec<Pa
         |index, stash| {
             let line = PanelLine::new(format_stash_entry(stash), RowRole::Normal)
                 .selected(index == state.ui.stash.selected);
-            if search_matches_contains(matches, &stash.id) {
+            if matches.contains(&stash.id) {
                 highlight_search_query(line, state, SearchScope::Stash)
             } else {
                 line
@@ -188,11 +189,11 @@ pub(crate) fn render_stash_lines(state: &AppContext, max_lines: usize) -> Vec<Pa
 }
 
 fn render_commit_file_lines(state: &AppContext, max_lines: usize) -> Vec<PanelLine> {
-    let mut rows =
+    let rows =
         commit_file_tree_rows_for_read(&state.repo.commits.files.items, &state.ui.commits.files);
     render_file_tree_lines(
         state,
-        rows.to_mut(),
+        rows.as_ref(),
         state.ui.commits.files.selected,
         state.ui.commits.files.scroll_offset,
         max_lines,
@@ -201,13 +202,13 @@ fn render_commit_file_lines(state: &AppContext, max_lines: usize) -> Vec<PanelLi
 }
 
 fn render_branch_commit_file_lines(state: &AppContext, max_lines: usize) -> Vec<PanelLine> {
-    let mut rows = commit_file_tree_rows_for_read(
+    let rows = commit_file_tree_rows_for_read(
         &state.repo.branches.commit_files.items,
         &state.ui.branches.commit_files,
     );
     render_file_tree_lines(
         state,
-        rows.to_mut(),
+        rows.as_ref(),
         state.ui.branches.commit_files.selected,
         state.ui.branches.commit_files.scroll_offset,
         max_lines,
@@ -217,32 +218,31 @@ fn render_branch_commit_file_lines(state: &AppContext, max_lines: usize) -> Vec<
 
 fn render_file_tree_lines(
     state: &AppContext,
-    rows: &mut [FileTreeRow],
+    rows: &[FileTreeRow],
     selected: usize,
     scroll_offset: usize,
     max_lines: usize,
     search_scope: SearchScope,
 ) -> Vec<PanelLine> {
-    if state.ui.search.has_query_for(search_scope) {
-        apply_tree_search_matches(rows, state, search_scope);
-    }
+    let matches = SearchMatches::new(search_matches_for(state, search_scope));
     render_indexed_entries_window_with(rows, selected, scroll_offset, max_lines, |index, row| {
-        PanelLine::new(format_file_tree_row(row), file_tree_row_role(row))
-            .selected(index == selected)
-            .styled_spans(file_tree_row_spans(row))
+        let matched = matches.contains(&row.path);
+        let mut visible_row;
+        let row = if row.matched == matched {
+            row
+        } else {
+            visible_row = row.clone();
+            visible_row.matched = matched;
+            &visible_row
+        };
+        let line = PanelLine::from_spans(file_tree_row_spans(row), file_tree_row_role(row))
+            .selected(index == selected);
+        if matched || line_contains_search_query(&line, state, search_scope) {
+            highlight_search_query(line, state, search_scope)
+        } else {
+            line
+        }
     })
-    .into_iter()
-    .map(|line| highlight_search_query(line, state, search_scope))
-    .collect()
-}
-
-fn apply_tree_search_matches(rows: &mut [FileTreeRow], state: &AppContext, scope: SearchScope) {
-    let Some(matches) = search_matches_for(state, scope) else {
-        return;
-    };
-    for row in rows {
-        row.matched = matches.iter().any(|matched| matched == &row.path);
-    }
 }
 
 fn search_matches_for(state: &AppContext, scope: SearchScope) -> Option<&[String]> {
@@ -253,8 +253,26 @@ fn search_matches_for(state: &AppContext, scope: SearchScope) -> Option<&[String
     }
 }
 
-fn search_matches_contains(matches: Option<&[String]>, key: &str) -> bool {
-    matches.is_some_and(|matches| matches.iter().any(|matched| matched == key))
+struct SearchMatches<'a> {
+    matches: Option<&'a [String]>,
+    set: Option<HashSet<&'a str>>,
+}
+
+impl<'a> SearchMatches<'a> {
+    fn new(matches: Option<&'a [String]>) -> Self {
+        let set = matches.and_then(|matches| {
+            (matches.len() > 32).then(|| matches.iter().map(String::as_str).collect())
+        });
+        Self { matches, set }
+    }
+
+    fn contains(&self, key: &str) -> bool {
+        if let Some(set) = &self.set {
+            return set.contains(key);
+        }
+        self.matches
+            .is_some_and(|matches| matches.iter().any(|matched| matched == key))
+    }
 }
 
 fn highlight_search_query(
@@ -269,23 +287,23 @@ fn highlight_search_query(
     if query.is_empty() {
         return line;
     }
-    match line.spans.take() {
-        Some(spans) => {
-            let mut highlighted = Vec::new();
-            for span in spans {
-                let (mut split, _) = highlight_text_segments(&span.text, span.style, query);
-                highlighted.append(&mut split);
-            }
-            line.spans = Some(highlighted);
-        }
-        None => {
-            let (spans, changed) = highlight_text_segments(&line.text, Style::default(), query);
-            if changed {
-                line.spans = Some(spans);
-            }
-        }
+    let mut highlighted = Vec::new();
+    for span in std::mem::take(&mut line.spans) {
+        let (mut split, _) = highlight_text_segments(&span.text, span.style, query);
+        highlighted.append(&mut split);
     }
+    line.spans = highlighted;
     line
+}
+
+fn line_contains_search_query(line: &PanelLine, state: &AppContext, scope: SearchScope) -> bool {
+    if !state.ui.search.has_query_for(scope) || state.ui.search.query.is_empty() {
+        return false;
+    }
+    let query = state.ui.search.query.to_lowercase();
+    line.spans
+        .iter()
+        .any(|span| span.text.to_lowercase().contains(&query))
 }
 
 fn highlight_text_segments(text: &str, base_style: Style, query: &str) -> (Vec<PanelSpan>, bool) {

@@ -4,6 +4,7 @@ mod commit_workflow;
 mod commits;
 mod details;
 mod editor;
+mod errors;
 mod files;
 mod navigation;
 mod operations;
@@ -17,7 +18,10 @@ mod state;
 mod text_edit;
 mod worktree;
 
-pub use actions::{Action, Command, GitResult, UiAction, debounce_key_for_command};
+pub use actions::{
+    Action, Command, CommandRefreshKey, GitResult, UiAction, debounce_key_for_command,
+    refresh_key_for_command,
+};
 pub use branches::branch_is_selected_for_batch;
 pub use commits::{
     clamp_selected as clamp_commit_selection, commit_key,
@@ -29,6 +33,7 @@ pub use commits::{
     reconcile_after_items_changed as reconcile_commits_after_items_changed, selected_commit,
     selected_commit_ids, selected_commits, toggle_multi_select as toggle_commit_multi_select,
 };
+pub use errors::{GitErrorKind, GitFailure};
 pub use files::{
     CommitFileEntry, CommitFileStatus, CommitFilesUiState, FileDiffTarget, FileEntry,
     FileInputMode, FileRowKind, FileTreeIndex, FileTreeRow, FilesUiState,
@@ -52,10 +57,11 @@ pub use state::{
     BranchForceDeleteConfirmState, BranchInputMode, BranchRebaseChoice, BranchRebaseMenuState,
     BranchesSubview, BranchesUiState, CachedBranchLog, CachedCommitDiff, CachedFilesDiff,
     CommitEditorIntent, CommitEntry, CommitField, CommitFileDiffPath, CommitFileDiffTarget,
-    CommitHashStatus, CommitInputMode, CommitsUiState, DetailsRepoState, DiscardConfirmState,
-    EditorKind, EditorState, FilesSnapshot, PanelFocus, RefreshTarget, RepoSnapshot, ResetChoice,
-    ResetMenuState, ResetMode, SearchScope, SearchState, StashEntry, StashScope, StashUiState,
-    StatusMode, StatusPanelState, WorkStatusState,
+    CommitHashStatus, CommitInputMode, CommitsUiState, DetailsRepoState, DetailsRequest,
+    DetailsRequestId, DetailsRequestTarget, DiscardConfirmState, EditorKind, EditorState,
+    FilesSnapshot, PanelFocus, RefreshTarget, RepoSnapshot, ResetChoice, ResetMenuState, ResetMode,
+    SearchScope, SearchState, StashEntry, StashScope, StashUiState, StatusMode, StatusPanelState,
+    WorkStatusState,
 };
 
 pub(crate) use actions::with_pending;

@@ -1,6 +1,7 @@
 use ratagit_core::{
     Action, AppContext, Command, CommitFileEntry, CommitFileStatus, CommitHashStatus,
-    FileDiffTarget, FilesSnapshot, GitResult, PanelFocus, ResetChoice, UiAction, update,
+    FileDiffTarget, FilesSnapshot, GitErrorKind, GitFailure, GitResult, PanelFocus, ResetChoice,
+    UiAction, update,
 };
 use ratagit_testkit::{
     fixture_commit, fixture_conflict, fixture_dirty_repo, fixture_empty_repo, fixture_file,
@@ -190,6 +191,7 @@ fn apply_mock_details_commands(state: &mut AppContext, commands: Vec<Command>) {
         [] => {}
         [
             Command::RefreshFilesDetailsDiff {
+                request_id,
                 targets,
                 truncated_from,
             },
@@ -198,6 +200,7 @@ fn apply_mock_details_commands(state: &mut AppContext, commands: Vec<Command>) {
             let follow_up = update(
                 state,
                 Action::GitResult(GitResult::FilesDetailsDiff {
+                    request_id: *request_id,
                     targets: targets.clone(),
                     truncated_from: *truncated_from,
                     result: Ok(mock_files_details_diff(&paths)),
@@ -205,20 +208,31 @@ fn apply_mock_details_commands(state: &mut AppContext, commands: Vec<Command>) {
             );
             assert!(follow_up.is_empty());
         }
-        [Command::RefreshBranchDetailsLog { branch, .. }] => {
+        [
+            Command::RefreshBranchDetailsLog {
+                request_id, branch, ..
+            },
+        ] => {
             let follow_up = update(
                 state,
                 Action::GitResult(GitResult::BranchDetailsLog {
+                    request_id: *request_id,
                     branch: branch.clone(),
                     result: Ok(mock_branch_details_log(branch)),
                 }),
             );
             assert!(follow_up.is_empty());
         }
-        [Command::RefreshCommitDetailsDiff { commit_id }] => {
+        [
+            Command::RefreshCommitDetailsDiff {
+                request_id,
+                commit_id,
+            },
+        ] => {
             let follow_up = update(
                 state,
                 Action::GitResult(GitResult::CommitDetailsDiff {
+                    request_id: *request_id,
                     commit_id: commit_id.clone(),
                     result: Ok(mock_commit_details_diff(commit_id)),
                 }),
@@ -256,10 +270,11 @@ fn apply_mock_details_commands(state: &mut AppContext, commands: Vec<Command>) {
             );
             apply_mock_details_commands(state, follow_up);
         }
-        [Command::RefreshCommitFileDiff { target }] => {
+        [Command::RefreshCommitFileDiff { request_id, target }] => {
             let follow_up = update(
                 state,
                 Action::GitResult(GitResult::CommitFileDiff {
+                    request_id: *request_id,
                     target: target.clone(),
                     result: Ok(mock_commit_file_diff(target)),
                 }),
@@ -310,7 +325,7 @@ fn snapshots_empty_repo_80x24() {
 fn bottom_keys_show_loading_indicator_before_shortcuts() {
     let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
-    state.work.refresh_pending = true;
+    state.work.refresh.refresh_pending = true;
 
     let screen = render_terminal_text_with_context(
         &state,
@@ -329,7 +344,7 @@ fn bottom_keys_show_loading_indicator_before_shortcuts() {
 fn bottom_loading_indicator_sweeps_spotlight_across_text_without_background() {
     let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
-    state.work.refresh_pending = true;
+    state.work.refresh.refresh_pending = true;
     let size = TerminalSize {
         width: 100,
         height: 30,
@@ -914,7 +929,10 @@ fn terminal_snapshot_branches_force_delete_confirm_modal() {
             name: "feature/mvp".to_string(),
             mode: ratagit_core::BranchDeleteMode::Local,
             force: false,
-            result: Err("error: The branch 'feature/mvp' is not fully merged.".to_string()),
+            result: Err(GitFailure::new(
+                GitErrorKind::UnmergedBranchDelete,
+                "error: The branch 'feature/mvp' is not fully merged.",
+            )),
         }),
     );
 
@@ -935,7 +953,10 @@ fn terminal_snapshot_force_push_confirm_modal() {
         &mut state,
         Action::GitResult(GitResult::Push {
             force: false,
-            result: Err("! [rejected] main -> main (fetch first)".to_string()),
+            result: Err(GitFailure::new(
+                GitErrorKind::DivergentPush,
+                "! [rejected] main -> main (fetch first)",
+            )),
         }),
     );
 

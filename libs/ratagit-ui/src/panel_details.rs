@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use ratagit_core::{AppContext, BranchesSubview, PanelFocus};
 use ratatui::style::{Color, Modifier, Style};
 
@@ -20,7 +22,7 @@ pub(crate) fn render_details_lines(state: &AppContext, max_lines: usize) -> Vec<
 
 pub(crate) fn render_log_lines(state: &AppContext, max_lines: usize) -> Vec<PanelLine> {
     let mut lines = Vec::new();
-    if state.work.refresh_pending {
+    if state.work.refresh.refresh_pending {
         lines.push(PanelLine::new(
             "  work=refreshing repository",
             RowRole::Notice,
@@ -57,7 +59,7 @@ pub(crate) fn render_log_lines(state: &AppContext, max_lines: usize) -> Vec<Pane
             RowRole::Notice,
         ));
     }
-    if let Some(operation) = &state.work.operation_pending {
+    if let Some(operation) = &state.work.mutation.operation_pending {
         lines.push(PanelLine::new(
             format!("  work=running {operation}"),
             RowRole::Notice,
@@ -187,7 +189,9 @@ fn render_commit_file_details_lines(state: &AppContext, max_lines: usize) -> Vec
     }
 
     if state.repo.details.commit_file_diff_target.is_none() {
-        if state.work.commit_files_loading && !state.repo.details.commit_diff.trim().is_empty() {
+        if state.work.commit_files.commit_files_loading
+            && !state.repo.details.commit_diff.trim().is_empty()
+        {
             return render_ansi_details_text(
                 &state.repo.details.commit_diff,
                 state.ui.details.scroll_offset,
@@ -219,21 +223,41 @@ fn render_commit_file_details_lines(state: &AppContext, max_lines: usize) -> Vec
 }
 
 fn render_ansi_details_text(text: &str, scroll_offset: usize, max_lines: usize) -> Vec<PanelLine> {
-    let start = if scroll_offset == 0 {
-        0
-    } else {
-        let line_count = text.lines().count();
-        details_scroll_start(line_count, scroll_offset, max_lines)
-    };
-    text.lines()
-        .skip(start)
-        .map(|line| ansi_output_line(line, "  "))
-        .take(max_lines)
-        .collect()
-}
+    if max_lines == 0 {
+        return Vec::new();
+    }
+    if scroll_offset == 0 {
+        return text
+            .lines()
+            .take(max_lines)
+            .map(|line| ansi_output_line(line, "  "))
+            .collect();
+    }
 
-fn details_scroll_start(content_len: usize, requested_offset: usize, max_lines: usize) -> usize {
-    requested_offset.min(content_len.saturating_sub(max_lines))
+    let mut requested = Vec::with_capacity(max_lines);
+    let mut tail = VecDeque::with_capacity(max_lines);
+    let mut line_count = 0usize;
+    for line in text.lines() {
+        if line_count >= scroll_offset && requested.len() < max_lines {
+            requested.push(line);
+        }
+        if tail.len() == max_lines {
+            tail.pop_front();
+        }
+        tail.push_back(line);
+        line_count += 1;
+    }
+
+    let start = scroll_offset.min(line_count.saturating_sub(max_lines));
+    let lines = if start == scroll_offset {
+        requested
+    } else {
+        tail.into_iter().collect()
+    };
+    lines
+        .into_iter()
+        .map(|line| ansi_output_line(line, "  "))
+        .collect()
 }
 
 fn render_placeholder_details_lines(message: &str, max_lines: usize) -> Vec<PanelLine> {
@@ -244,7 +268,6 @@ fn render_placeholder_details_lines(message: &str, max_lines: usize) -> Vec<Pane
 }
 
 fn ansi_output_line(line: &str, prefix: &str) -> PanelLine {
-    let mut text = prefix.to_string();
     let mut spans = vec![PanelSpan {
         text: prefix.to_string(),
         style: Style::default(),
@@ -264,7 +287,6 @@ fn ansi_output_line(line: &str, prefix: &str) -> PanelLine {
                 code.push(next);
             }
             if !plain.is_empty() {
-                text.push_str(&plain);
                 spans.push(PanelSpan {
                     text: std::mem::take(&mut plain),
                     style,
@@ -277,11 +299,10 @@ fn ansi_output_line(line: &str, prefix: &str) -> PanelLine {
     }
 
     if !plain.is_empty() {
-        text.push_str(&plain);
         spans.push(PanelSpan { text: plain, style });
     }
 
-    PanelLine::new(text, RowRole::Normal).styled_spans(spans)
+    PanelLine::from_spans(spans, RowRole::Normal)
 }
 
 fn apply_sgr_codes(mut style: Style, code: &str) -> Style {
@@ -358,7 +379,7 @@ mod tests {
             "\u{1b}[1;33m*\u{1b}[0m plain \u{1b}[91mred\u{1b}[38;5;42midx\u{1b}[38;2;1;2;3mrgb",
             "  ",
         );
-        let spans = line.spans.expect("ansi line should keep styled spans");
+        let spans = line.spans;
 
         assert_eq!(spans[1].text, "*");
         assert_eq!(
@@ -391,16 +412,13 @@ mod tests {
 
         let lines = render_details_lines(&state, 3);
 
-        assert_eq!(lines[0].text, "  diff --git a/a.txt b/a.txt");
+        assert_eq!(lines[0].text(), "  diff --git a/a.txt b/a.txt");
         assert_eq!(lines[0].role, RowRole::Normal);
-        assert_eq!(lines[1].text, "  -old");
+        assert_eq!(lines[1].text(), "  -old");
         assert_eq!(lines[1].role, RowRole::Normal);
-        assert_eq!(lines[2].text, "  +new");
+        assert_eq!(lines[2].text(), "  +new");
         assert_eq!(lines[2].role, RowRole::Normal);
-        let add_spans = lines[2]
-            .spans
-            .as_ref()
-            .expect("ansi details output should keep styled spans");
+        let add_spans = &lines[2].spans;
         assert_eq!(add_spans[1].text, "+new");
         assert_eq!(add_spans[1].style, Style::default().fg(Color::Green));
     }
@@ -417,7 +435,7 @@ mod tests {
             )]
         );
 
-        state.work.details_pending = true;
+        state.work.details.details_pending = true;
         assert_eq!(
             render_details_lines(&state, 3),
             vec![PanelLine::new(
@@ -426,7 +444,7 @@ mod tests {
             )]
         );
 
-        state.work.details_pending = false;
+        state.work.details.details_pending = false;
         state.repo.details.files_error = Some("boom".to_string());
         assert_eq!(
             render_details_lines(&state, 3),
@@ -439,7 +457,7 @@ mod tests {
         assert_eq!(
             render_details_lines(&state, 2)
                 .into_iter()
-                .map(|line| line.text)
+                .map(|line| line.text())
                 .collect::<Vec<_>>(),
             vec!["  line 3".to_string(), "  line 4".to_string()]
         );
@@ -458,7 +476,7 @@ mod tests {
         );
 
         state.repo.details.branch_log_target = Some("main".to_string());
-        state.work.details_pending = true;
+        state.work.details.details_pending = true;
         assert_eq!(
             render_details_lines(&state, 1),
             vec![PanelLine::new(
@@ -467,7 +485,7 @@ mod tests {
             )]
         );
 
-        state.work.details_pending = false;
+        state.work.details.details_pending = false;
         state.ui.last_left_focus = PanelFocus::Commits;
         assert_eq!(
             render_details_lines(&state, 1),
@@ -478,7 +496,7 @@ mod tests {
         );
 
         state.ui.commits.files.active = true;
-        state.work.commit_files_loading = true;
+        state.work.commit_files.commit_files_loading = true;
         assert_eq!(
             render_details_lines(&state, 1),
             vec![PanelLine::new(
@@ -487,7 +505,7 @@ mod tests {
             )]
         );
 
-        state.work.commit_files_loading = false;
+        state.work.commit_files.commit_files_loading = false;
         state.repo.details.commit_file_diff_target = Some(CommitFileDiffTarget {
             commit_id: "abc".to_string(),
             paths: vec![CommitFileDiffPath {
@@ -509,13 +527,16 @@ mod tests {
         let mut state = AppContext::default();
         state.ui.last_left_focus = PanelFocus::Commits;
         state.ui.commits.files.active = true;
-        state.work.commit_files_loading = true;
+        state.work.commit_files.commit_files_loading = true;
         state.repo.details.commit_diff = "commit abc1234\nAuthor: ratagit-tests".to_string();
 
         let lines = render_details_lines(&state, 2);
 
         assert_eq!(
-            lines.into_iter().map(|line| line.text).collect::<Vec<_>>(),
+            lines
+                .into_iter()
+                .map(|line| line.text())
+                .collect::<Vec<_>>(),
             vec![
                 "  commit abc1234".to_string(),
                 "  Author: ratagit-tests".to_string()

@@ -22,13 +22,15 @@ use ratagit_core::{
     UiAction, initialize_commit_files_tree, initialize_tree_with_initial_expansion,
     select_commit_file_tree_path, select_file_tree_path, selected_commit_file_targets, update,
 };
-use ratagit_git::{GitBackend, HybridGitBackend};
+use ratagit_git::{GitBackendRead, HybridGitBackend};
 use ratagit_ui::{TerminalSize, render_terminal_buffer};
 
 const DEFAULT_ITERATIONS: usize = 3;
 const DEFAULT_WARMUP: usize = 1;
 const COMMIT_FILES_NAVIGATION_STEPS: usize = 200;
 const FILES_TREE_TOGGLE_STEPS: usize = 100;
+const UI_RENDER_STEPS: usize = 100;
+const DETAILS_SCROLL_RENDER_STEPS: usize = 100;
 
 fn main() {
     if let Err(error) = run(env::args().skip(1).collect()) {
@@ -190,10 +192,13 @@ enum Operation {
     CommitFileDiff,
     FilesDetailsDiff,
     FilesTreeToggle,
+    StatusRender,
+    SearchRender,
+    DetailsScrollRender,
 }
 
 impl Operation {
-    const ALL: [Self; 11] = [
+    const ALL: [Self; 14] = [
         Self::Status,
         Self::Commits,
         Self::LoadMoreCommits,
@@ -205,6 +210,9 @@ impl Operation {
         Self::CommitFileDiff,
         Self::FilesDetailsDiff,
         Self::FilesTreeToggle,
+        Self::StatusRender,
+        Self::SearchRender,
+        Self::DetailsScrollRender,
     ];
 
     fn parse(value: &str) -> Result<Self, PerfConfigError> {
@@ -220,6 +228,9 @@ impl Operation {
             "commit-file-diff" => Ok(Self::CommitFileDiff),
             "files-details-diff" => Ok(Self::FilesDetailsDiff),
             "files-tree-toggle" => Ok(Self::FilesTreeToggle),
+            "status-render" => Ok(Self::StatusRender),
+            "search-render" => Ok(Self::SearchRender),
+            "details-scroll-render" => Ok(Self::DetailsScrollRender),
             _ => Err(PerfConfigError::InvalidValue("unknown operation")),
         }
     }
@@ -237,6 +248,9 @@ impl Operation {
             Self::CommitFileDiff => "commit-file-diff",
             Self::FilesDetailsDiff => "files-details-diff",
             Self::FilesTreeToggle => "files-tree-toggle",
+            Self::StatusRender => "status-render",
+            Self::SearchRender => "search-render",
+            Self::DetailsScrollRender => "details-scroll-render",
         }
     }
 }
@@ -689,6 +703,16 @@ fn measure_git_cli_raw(
             &config.path,
             status_args(status_mode_for_index_count(config.index_entry_count())),
         )?,
+        Operation::StatusRender | Operation::SearchRender => run_git_output(
+            git,
+            &config.path,
+            status_args(status_mode_for_index_count(config.index_entry_count())),
+        )?,
+        Operation::DetailsScrollRender => run_git_output(
+            git,
+            &config.path,
+            commit_details_diff_args(&targets.head_commit),
+        )?,
     };
     Ok(MeasurementPayload {
         output_items: 0,
@@ -809,6 +833,32 @@ fn measure_git_cli_parsed(
             let entries = parse_status_porcelain(&output)?;
             files_tree_toggle_payload(entries)
         }
+        Operation::StatusRender => {
+            let output = run_git_output(
+                git,
+                &config.path,
+                status_args(status_mode_for_index_count(config.index_entry_count())),
+            )?;
+            let entries = parse_status_porcelain(&output)?;
+            files_status_render_payload(entries)
+        }
+        Operation::SearchRender => {
+            let output = run_git_output(
+                git,
+                &config.path,
+                status_args(status_mode_for_index_count(config.index_entry_count())),
+            )?;
+            let entries = parse_status_porcelain(&output)?;
+            files_search_render_payload(entries)
+        }
+        Operation::DetailsScrollRender => {
+            let output = run_git_text_owned(
+                git,
+                &config.path,
+                commit_details_diff_args(&targets.head_commit),
+            )?;
+            details_scroll_render_payload(output)
+        }
     }
 }
 
@@ -906,6 +956,20 @@ fn measure_backend(
         Operation::FilesTreeToggle => {
             let snapshot = backend.refresh_files().map_err(|error| error.message)?;
             files_tree_toggle_payload(snapshot.files)
+        }
+        Operation::StatusRender => {
+            let snapshot = backend.refresh_files().map_err(|error| error.message)?;
+            files_status_render_payload(snapshot.files)
+        }
+        Operation::SearchRender => {
+            let snapshot = backend.refresh_files().map_err(|error| error.message)?;
+            files_search_render_payload(snapshot.files)
+        }
+        Operation::DetailsScrollRender => {
+            let diff = backend
+                .commit_details_diff(&targets.head_commit)
+                .map_err(|error| error.message)?;
+            details_scroll_render_payload(diff)
         }
     }
 }
@@ -1083,6 +1147,80 @@ fn files_tree_toggle_payload(files: Vec<FileEntry>) -> Result<MeasurementPayload
         output_items: emitted_commands,
         output_bytes,
     })
+}
+
+fn files_status_render_payload(files: Vec<FileEntry>) -> Result<MeasurementPayload, String> {
+    let output_bytes = files.iter().map(|entry| entry.path.len()).sum();
+    let mut state = AppContext::default();
+    state.ui.focus = PanelFocus::Files;
+    state.ui.last_left_focus = PanelFocus::Files;
+    state.repo.files.items = files;
+    initialize_tree_with_initial_expansion(&state.repo.files.items, &mut state.ui.files, false);
+
+    let size = perf_terminal_size();
+    for _ in 0..UI_RENDER_STEPS {
+        let _buffer = render_terminal_buffer(&state, size);
+    }
+
+    Ok(MeasurementPayload {
+        output_items: state.ui.files.tree_rows.len(),
+        output_bytes,
+    })
+}
+
+fn files_search_render_payload(files: Vec<FileEntry>) -> Result<MeasurementPayload, String> {
+    let output_bytes = files.iter().map(|entry| entry.path.len()).sum();
+    let mut state = AppContext::default();
+    state.ui.focus = PanelFocus::Files;
+    state.ui.last_left_focus = PanelFocus::Files;
+    state.repo.files.items = files;
+    initialize_tree_with_initial_expansion(&state.repo.files.items, &mut state.ui.files, false);
+    update(&mut state, Action::Ui(UiAction::StartSearch));
+    for ch in "txt".chars() {
+        update(&mut state, Action::Ui(UiAction::InputSearchChar(ch)));
+    }
+    update(&mut state, Action::Ui(UiAction::ConfirmSearch));
+
+    let size = perf_terminal_size();
+    let mut emitted_commands = 0usize;
+    for _ in 0..UI_RENDER_STEPS {
+        let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+        emitted_commands += commands.len();
+        let _buffer = render_terminal_buffer(&state, size);
+    }
+
+    Ok(MeasurementPayload {
+        output_items: state.ui.search.matches.len() + emitted_commands,
+        output_bytes,
+    })
+}
+
+fn details_scroll_render_payload(diff: String) -> Result<MeasurementPayload, String> {
+    let output_bytes = diff.len();
+    let line_count = diff.lines().count();
+    let mut state = AppContext::default();
+    state.ui.focus = PanelFocus::Details;
+    state.ui.last_left_focus = PanelFocus::Commits;
+    state.repo.details.commit_diff_target = Some("perf-suite".to_string());
+    state.repo.details.commit_diff = diff;
+
+    let size = perf_terminal_size();
+    for offset in 0..DETAILS_SCROLL_RENDER_STEPS {
+        state.ui.details.scroll_offset = offset.saturating_mul(3);
+        let _buffer = render_terminal_buffer(&state, size);
+    }
+
+    Ok(MeasurementPayload {
+        output_items: line_count,
+        output_bytes,
+    })
+}
+
+fn perf_terminal_size() -> TerminalSize {
+    TerminalSize {
+        width: 120,
+        height: 34,
+    }
 }
 
 fn commit_files_args(commit_id: &str) -> Vec<String> {

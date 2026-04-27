@@ -1,9 +1,9 @@
 use crate::{
     AppContext, BRANCH_DETAILS_LOG_MAX_COUNT, BranchesSubview, CachedBranchLog, CachedCommitDiff,
     CachedFilesDiff, Command, CommitFileDiffPath, CommitFileDiffTarget, DETAILS_DIFF_CACHE_LIMIT,
-    FILES_DETAILS_DIFF_TARGET_LIMIT, FileDiffTarget, PanelFocus, push_notice,
-    selected_branch_commit_id, selected_commit_file_targets, selected_diff_targets,
-    selected_target_paths, with_pending,
+    DetailsRequest, DetailsRequestId, DetailsRequestTarget, FILES_DETAILS_DIFF_TARGET_LIMIT,
+    FileDiffTarget, PanelFocus, push_notice, selected_branch_commit_id,
+    selected_commit_file_targets, selected_diff_targets, selected_target_paths, with_pending,
 };
 
 pub(crate) fn scroll_up(state: &mut AppContext, lines: usize) {
@@ -34,25 +34,36 @@ pub(crate) fn reset_after_snapshot(state: &mut AppContext) {
     state.repo.details.commit_file_diff.clear();
     state.repo.details.commit_file_diff_error = None;
     state.repo.details.commit_file_diff_target = None;
+    clear_details_pending(state);
     reset_scroll(state);
     clear_caches(state);
 }
 
 pub(crate) fn apply_files_diff_result(
     state: &mut AppContext,
+    request_id: DetailsRequestId,
     targets: Vec<FileDiffTarget>,
     truncated_from: Option<usize>,
     result: Result<String, String>,
 ) -> Vec<Command> {
+    let request_target = DetailsRequestTarget::FilesDiff {
+        targets: targets.clone(),
+        truncated_from,
+    };
+    if !details_request_matches(state, request_id, &request_target) {
+        return Vec::new();
+    }
     if state.ui.last_left_focus != PanelFocus::Files {
+        clear_details_pending(state);
         return Vec::new();
     }
     let current_request = files_diff_request_for_selection(state);
     if targets != current_request.targets || truncated_from != current_request.truncated_from {
+        clear_details_pending(state);
         return Vec::new();
     }
-    state.work.details_pending = false;
-    state.work.last_completed_command = Some("details".to_string());
+    clear_details_pending(state);
+    state.work.mark_command_completed("details");
     let paths = file_diff_target_paths(&targets);
     state.repo.details.files_targets = paths.clone();
     state.repo.details.files_diff_truncated_from = truncated_from;
@@ -76,17 +87,26 @@ pub(crate) fn apply_files_diff_result(
 
 pub(crate) fn apply_branch_log_result(
     state: &mut AppContext,
+    request_id: DetailsRequestId,
     branch: String,
     result: Result<String, String>,
 ) -> Vec<Command> {
+    let request_target = DetailsRequestTarget::BranchLog {
+        branch: branch.clone(),
+    };
+    if !details_request_matches(state, request_id, &request_target) {
+        return Vec::new();
+    }
     if state.ui.last_left_focus != PanelFocus::Branches {
+        clear_details_pending(state);
         return Vec::new();
     }
     if Some(branch.as_str()) != crate::selected_branch_name(state).as_deref() {
+        clear_details_pending(state);
         return Vec::new();
     }
-    state.work.details_pending = false;
-    state.work.last_completed_command = Some("branch_details".to_string());
+    clear_details_pending(state);
+    state.work.mark_command_completed("branch_details");
     state.repo.details.branch_log_target = Some(branch.clone());
     reset_scroll(state);
     match result {
@@ -108,22 +128,32 @@ pub(crate) fn apply_branch_log_result(
 
 pub(crate) fn apply_commit_diff_result(
     state: &mut AppContext,
+    request_id: DetailsRequestId,
     commit_id: String,
     result: Result<String, String>,
 ) -> Vec<Command> {
+    let request_target = DetailsRequestTarget::CommitDiff {
+        commit_id: commit_id.clone(),
+    };
+    if !details_request_matches(state, request_id, &request_target) {
+        return Vec::new();
+    }
     if state.ui.last_left_focus != PanelFocus::Commits
         && state.ui.last_left_focus != PanelFocus::Branches
     {
+        clear_details_pending(state);
         return Vec::new();
     }
     if detail_commit_files_active(state) {
+        clear_details_pending(state);
         return Vec::new();
     }
     if Some(commit_id.as_str()) != selected_detail_commit_id(state).as_deref() {
+        clear_details_pending(state);
         return Vec::new();
     }
-    state.work.details_pending = false;
-    state.work.last_completed_command = Some("commit_details".to_string());
+    clear_details_pending(state);
+    state.work.mark_command_completed("commit_details");
     state.repo.details.commit_diff_target = Some(commit_id.clone());
     reset_scroll(state);
     match result {
@@ -145,14 +175,22 @@ pub(crate) fn apply_commit_diff_result(
 
 pub(crate) fn apply_commit_file_diff_result(
     state: &mut AppContext,
+    request_id: DetailsRequestId,
     target: CommitFileDiffTarget,
     result: Result<String, String>,
 ) -> Vec<Command> {
-    if !commit_file_diff_target_matches_selection(state, &target) {
+    let request_target = DetailsRequestTarget::CommitFileDiff {
+        target: target.clone(),
+    };
+    if !details_request_matches(state, request_id, &request_target) {
         return Vec::new();
     }
-    state.work.details_pending = false;
-    state.work.last_completed_command = Some("commit_file_details".to_string());
+    if !commit_file_diff_target_matches_selection(state, &target) {
+        clear_details_pending(state);
+        return Vec::new();
+    }
+    clear_details_pending(state);
+    state.work.mark_command_completed("commit_file_details");
     state.repo.details.commit_file_diff_target = Some(target.clone());
     reset_scroll(state);
     match result {
@@ -213,7 +251,7 @@ pub(crate) fn refresh_files_details(state: &mut AppContext) -> Vec<Command> {
         state.repo.details.files_diff.clear();
         state.repo.details.files_error = None;
         state.repo.details.files_diff_truncated_from = None;
-        state.work.details_pending = false;
+        clear_details_pending(state);
         return Vec::new();
     }
     if request.targets.iter().any(|target| {
@@ -223,7 +261,7 @@ pub(crate) fn refresh_files_details(state: &mut AppContext) -> Vec<Command> {
         state.repo.details.files_diff = message.to_string();
         state.repo.details.files_error = None;
         state.repo.details.files_diff_truncated_from = None;
-        state.work.details_pending = false;
+        clear_details_pending(state);
         push_notice(state, message);
         return Vec::new();
     }
@@ -231,7 +269,7 @@ pub(crate) fn refresh_files_details(state: &mut AppContext) -> Vec<Command> {
         state.repo.details.files_diff = diff;
         state.repo.details.files_error = None;
         state.repo.details.files_diff_truncated_from = request.truncated_from;
-        state.work.details_pending = false;
+        clear_details_pending(state);
         return Vec::new();
     }
     if let Some(total) = request.truncated_from {
@@ -242,11 +280,24 @@ pub(crate) fn refresh_files_details(state: &mut AppContext) -> Vec<Command> {
             ),
         );
     }
+    let request_target = DetailsRequestTarget::FilesDiff {
+        targets: request.targets,
+        truncated_from: request.truncated_from,
+    };
+    let request_id = start_details_request(state, request_target.clone());
+    let DetailsRequestTarget::FilesDiff {
+        targets,
+        truncated_from,
+    } = request_target
+    else {
+        unreachable!();
+    };
     with_pending(
         state,
         vec![Command::RefreshFilesDetailsDiff {
-            targets: request.targets,
-            truncated_from: request.truncated_from,
+            request_id,
+            targets,
+            truncated_from,
         }],
     )
 }
@@ -260,7 +311,7 @@ pub(crate) fn refresh_commit_diff(state: &mut AppContext) -> Vec<Command> {
         if target_changed {
             reset_scroll(state);
         }
-        state.work.details_pending = false;
+        clear_details_pending(state);
         return Vec::new();
     };
     let target_changed = state.repo.details.commit_diff_target.as_ref() != Some(&commit_id);
@@ -271,10 +322,22 @@ pub(crate) fn refresh_commit_diff(state: &mut AppContext) -> Vec<Command> {
     if let Some(diff) = cached_commit_diff(state, &commit_id) {
         state.repo.details.commit_diff = diff;
         state.repo.details.commit_diff_error = None;
-        state.work.details_pending = false;
+        clear_details_pending(state);
         return Vec::new();
     }
-    with_pending(state, vec![Command::RefreshCommitDetailsDiff { commit_id }])
+    let request_id = start_details_request(
+        state,
+        DetailsRequestTarget::CommitDiff {
+            commit_id: commit_id.clone(),
+        },
+    );
+    with_pending(
+        state,
+        vec![Command::RefreshCommitDetailsDiff {
+            request_id,
+            commit_id,
+        }],
+    )
 }
 
 pub(crate) fn refresh_commit_file_diff(state: &mut AppContext) -> Vec<Command> {
@@ -305,7 +368,16 @@ pub(crate) fn refresh_commit_file_diff(state: &mut AppContext) -> Vec<Command> {
     if target_changed {
         reset_scroll(state);
     }
-    with_pending(state, vec![Command::RefreshCommitFileDiff { target }])
+    let request_id = start_details_request(
+        state,
+        DetailsRequestTarget::CommitFileDiff {
+            target: target.clone(),
+        },
+    );
+    with_pending(
+        state,
+        vec![Command::RefreshCommitFileDiff { request_id, target }],
+    )
 }
 
 pub(crate) fn clear_commit_file_details(state: &mut AppContext) {
@@ -316,7 +388,26 @@ pub(crate) fn clear_commit_file_details(state: &mut AppContext) {
     if target_changed {
         reset_scroll(state);
     }
-    state.work.details_pending = false;
+    clear_details_pending(state);
+}
+
+pub(crate) fn clear_details_pending(state: &mut AppContext) {
+    state.work.clear_details_pending();
+}
+
+pub(crate) fn clear_details_pending_if(
+    state: &mut AppContext,
+    predicate: impl FnOnce(&DetailsRequestTarget) -> bool,
+) {
+    if state
+        .work
+        .details
+        .details_request
+        .as_ref()
+        .is_some_and(|request| predicate(&request.target))
+    {
+        clear_details_pending(state);
+    }
 }
 
 pub(crate) fn reset_scroll(state: &mut AppContext) {
@@ -338,7 +429,7 @@ fn refresh_branch_log(state: &mut AppContext) -> Vec<Command> {
         if target_changed {
             reset_scroll(state);
         }
-        state.work.details_pending = false;
+        clear_details_pending(state);
         return Vec::new();
     };
     let target_changed = state.repo.details.branch_log_target.as_ref() != Some(&branch);
@@ -349,16 +440,44 @@ fn refresh_branch_log(state: &mut AppContext) -> Vec<Command> {
     if let Some(log) = cached_branch_log(state, &branch) {
         state.repo.details.branch_log = log;
         state.repo.details.branch_log_error = None;
-        state.work.details_pending = false;
+        clear_details_pending(state);
         return Vec::new();
     }
+    let request_id = start_details_request(
+        state,
+        DetailsRequestTarget::BranchLog {
+            branch: branch.clone(),
+        },
+    );
     with_pending(
         state,
         vec![Command::RefreshBranchDetailsLog {
+            request_id,
             branch,
             max_count: BRANCH_DETAILS_LOG_MAX_COUNT,
         }],
     )
+}
+
+fn start_details_request(state: &mut AppContext, target: DetailsRequestTarget) -> DetailsRequestId {
+    let id = DetailsRequestId(state.work.details.next_details_request_id);
+    state.work.details.next_details_request_id =
+        state.work.details.next_details_request_id.saturating_add(1);
+    state.work.details.details_request = Some(DetailsRequest { id, target });
+    id
+}
+
+fn details_request_matches(
+    state: &AppContext,
+    request_id: DetailsRequestId,
+    target: &DetailsRequestTarget,
+) -> bool {
+    state
+        .work
+        .details
+        .details_request
+        .as_ref()
+        .is_some_and(|request| request.id == request_id && request.target == *target)
 }
 
 fn commit_file_diff_target_matches_selection(
@@ -642,6 +761,6 @@ mod tests {
             state.repo.details.commit_file_diff,
             "diff --git a/README.md b/README.md"
         );
-        assert!(state.work.details_pending);
+        assert!(state.work.details.details_pending);
     }
 }

@@ -1,12 +1,12 @@
 use std::collections::BTreeSet;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::{Command as ProcessCommand, Stdio};
-use std::time::Instant;
+use std::process::{Command as ProcessCommand, ExitStatus, Stdio};
+use std::time::{Duration, Instant};
 
 use ratagit_core::{
     BranchDeleteMode, CommitFileDiffTarget, CommitFileEntry, CommitFileStatus, FileEntry,
-    ResetMode, StatusMode,
+    GitErrorKind, ResetMode, StatusMode,
 };
 
 use crate::status_cli::parse_porcelain_v1_z_limited;
@@ -41,6 +41,228 @@ fn status_args(mode: StatusMode) -> [&'static str; 6] {
         "--ignored=no",
         "--ignore-submodules=all",
     ]
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GitCommandOptions {
+    optional_locks_disabled: bool,
+    stdout_limit: Option<usize>,
+    capture_stderr: bool,
+    timeout: Option<Duration>,
+}
+
+impl GitCommandOptions {
+    fn new(optional_locks_disabled: bool) -> Self {
+        Self {
+            optional_locks_disabled,
+            stdout_limit: None,
+            capture_stderr: true,
+            timeout: None,
+        }
+    }
+
+    fn with_stdout_limit(mut self, stdout_limit: usize) -> Self {
+        self.stdout_limit = Some(stdout_limit);
+        self
+    }
+}
+
+#[derive(Debug)]
+struct GitCommandOutput {
+    stdout: Vec<u8>,
+    stdout_truncated: bool,
+}
+
+struct RawGitCommandOutput {
+    status: ExitStatus,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+    stdout_truncated: bool,
+    elapsed_ms: u128,
+}
+
+struct GitCommandRunner<'repo> {
+    repo_path: &'repo Path,
+}
+
+impl<'repo> GitCommandRunner<'repo> {
+    fn new(repo_path: &'repo Path) -> Self {
+        Self { repo_path }
+    }
+
+    fn run<I, S>(&self, args: I, options: GitCommandOptions) -> Result<GitCommandOutput, GitError>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let args = args
+            .into_iter()
+            .map(|arg| arg.as_ref().to_string())
+            .collect::<Vec<_>>();
+        if let Some(stdout_limit) = options.stdout_limit {
+            self.run_limited(args, options, stdout_limit)
+        } else {
+            self.run_full(args, options)
+        }
+    }
+
+    fn run_full(
+        &self,
+        args: Vec<String>,
+        options: GitCommandOptions,
+    ) -> Result<GitCommandOutput, GitError> {
+        let started = Instant::now();
+        let output = self
+            .command(&args, &options)
+            .output()
+            .map_err(|err| GitError::io(format!("failed to start git {:?}: {err}", args)))?;
+        let elapsed_ms = started.elapsed().as_millis();
+        let stderr = if options.capture_stderr {
+            output.stderr
+        } else {
+            Vec::new()
+        };
+        self.finish(
+            &args,
+            &options,
+            RawGitCommandOutput {
+                status: output.status,
+                stdout: output.stdout,
+                stderr,
+                stdout_truncated: false,
+                elapsed_ms,
+            },
+        )
+    }
+
+    fn run_limited(
+        &self,
+        args: Vec<String>,
+        options: GitCommandOptions,
+        stdout_limit: usize,
+    ) -> Result<GitCommandOutput, GitError> {
+        let started = Instant::now();
+        let mut command = self.command(&args, &options);
+        command.stdout(Stdio::piped());
+        if options.capture_stderr {
+            command.stderr(Stdio::piped());
+        }
+        let mut child = command
+            .spawn()
+            .map_err(|err| GitError::io(format!("failed to start git {:?}: {err}", args)))?;
+        let mut stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| GitError::io("failed to capture git stdout"))?;
+        let mut bytes = Vec::new();
+        let mut truncated = false;
+        let mut buffer = [0u8; 8192];
+        loop {
+            let read = stdout
+                .read(&mut buffer)
+                .map_err(|err| GitError::io(format!("failed to read git stdout: {err}")))?;
+            if read == 0 {
+                break;
+            }
+            let remaining = stdout_limit.saturating_sub(bytes.len());
+            if read > remaining {
+                bytes.extend_from_slice(&buffer[..remaining]);
+                truncated = true;
+                let _ = child.kill();
+                break;
+            }
+            bytes.extend_from_slice(&buffer[..read]);
+            if bytes.len() == stdout_limit {
+                truncated = true;
+                let _ = child.kill();
+                break;
+            }
+        }
+        drop(stdout);
+        let output = child
+            .wait_with_output()
+            .map_err(|err| GitError::io(format!("failed to wait for git {:?}: {err}", args)))?;
+        let elapsed_ms = started.elapsed().as_millis();
+        let stderr = if options.capture_stderr {
+            output.stderr
+        } else {
+            Vec::new()
+        };
+        self.finish(
+            &args,
+            &options,
+            RawGitCommandOutput {
+                status: output.status,
+                stdout: bytes,
+                stderr,
+                stdout_truncated: truncated,
+                elapsed_ms,
+            },
+        )
+    }
+
+    fn command(&self, args: &[String], options: &GitCommandOptions) -> ProcessCommand {
+        let mut command = ProcessCommand::new("git");
+        command.args(args).current_dir(self.repo_path);
+        if options.optional_locks_disabled {
+            command.env("GIT_OPTIONAL_LOCKS", "0");
+        }
+        let _timeout_ready = options.timeout;
+        command
+    }
+
+    fn finish(
+        &self,
+        args: &[String],
+        options: &GitCommandOptions,
+        output: RawGitCommandOutput,
+    ) -> Result<GitCommandOutput, GitError> {
+        let subcommand = args.first().map_or("unknown", String::as_str);
+        if !output.stdout_truncated && !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            tracing::warn!(
+                target: "ratagit.git.cli",
+                git_subcommand = subcommand,
+                optional_locks_disabled = options.optional_locks_disabled,
+                exit_code = ?output.status.code(),
+                elapsed_ms = output.elapsed_ms,
+                stdout_bytes = output.stdout.len(),
+                stderr = %stderr,
+                "git cli command failed"
+            );
+            let kind = classify_cli_error(args, &stderr);
+            return Err(GitError::cli(
+                kind,
+                format!("git {:?} failed: {}", args, stderr),
+            ));
+        }
+
+        if output.stdout_truncated {
+            tracing::warn!(
+                target: "ratagit.git.cli",
+                git_subcommand = subcommand,
+                optional_locks_disabled = options.optional_locks_disabled,
+                elapsed_ms = output.elapsed_ms,
+                stdout_bytes = output.stdout.len(),
+                stdout_limit = options.stdout_limit,
+                "git cli output truncated"
+            );
+        } else {
+            tracing::debug!(
+                target: "ratagit.git.cli",
+                git_subcommand = subcommand,
+                optional_locks_disabled = options.optional_locks_disabled,
+                elapsed_ms = output.elapsed_ms,
+                stdout_bytes = output.stdout.len(),
+                "git cli command completed"
+            );
+        }
+
+        Ok(GitCommandOutput {
+            stdout: output.stdout,
+            stdout_truncated: output.stdout_truncated,
+        })
+    }
 }
 
 impl GitCli {
@@ -97,46 +319,9 @@ impl GitCli {
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        let args = args
-            .into_iter()
-            .map(|arg| arg.as_ref().to_string())
-            .collect::<Vec<_>>();
-        let subcommand = args.first().map_or("unknown", String::as_str);
-        let started = Instant::now();
-        let mut command = ProcessCommand::new("git");
-        command.args(&args).current_dir(&self.repo_path);
-        if optional_locks_disabled {
-            command.env("GIT_OPTIONAL_LOCKS", "0");
-        }
-        let output = command
-            .output()
-            .map_err(|err| GitError::new(format!("failed to start git {:?}: {err}", args)))?;
-        let elapsed_ms = started.elapsed().as_millis();
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            tracing::warn!(
-                target: "ratagit.git.cli",
-                git_subcommand = subcommand,
-                optional_locks_disabled,
-                exit_code = ?output.status.code(),
-                elapsed_ms,
-                stdout_bytes = output.stdout.len(),
-                stderr = %stderr,
-                "git cli command failed"
-            );
-            return Err(GitError::new(format!("git {:?} failed: {}", args, stderr)));
-        }
-
-        tracing::debug!(
-            target: "ratagit.git.cli",
-            git_subcommand = subcommand,
-            optional_locks_disabled,
-            elapsed_ms,
-            stdout_bytes = output.stdout.len(),
-            "git cli command completed"
-        );
-        Ok(output.stdout)
+        GitCommandRunner::new(&self.repo_path)
+            .run(args, GitCommandOptions::new(optional_locks_disabled))
+            .map(|output| output.stdout)
     }
 
     fn run_git_read_output_limited<I, S>(
@@ -148,88 +333,11 @@ impl GitCli {
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        let args = args
-            .into_iter()
-            .map(|arg| arg.as_ref().to_string())
-            .collect::<Vec<_>>();
-        let subcommand = args.first().map_or("unknown", String::as_str);
-        let started = Instant::now();
-        let mut child = ProcessCommand::new("git")
-            .args(&args)
-            .current_dir(&self.repo_path)
-            .env("GIT_OPTIONAL_LOCKS", "0")
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|err| GitError::new(format!("failed to start git {:?}: {err}", args)))?;
-        let mut stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| GitError::new("failed to capture git stdout"))?;
-        let mut bytes = Vec::new();
-        let mut truncated = false;
-        let mut buffer = [0u8; 8192];
-        loop {
-            let read = stdout
-                .read(&mut buffer)
-                .map_err(|err| GitError::new(format!("failed to read git stdout: {err}")))?;
-            if read == 0 {
-                break;
-            }
-            let remaining = stdout_limit.saturating_sub(bytes.len());
-            if read > remaining {
-                bytes.extend_from_slice(&buffer[..remaining]);
-                truncated = true;
-                let _ = child.kill();
-                break;
-            }
-            bytes.extend_from_slice(&buffer[..read]);
-            if bytes.len() == stdout_limit {
-                truncated = true;
-                let _ = child.kill();
-                break;
-            }
-        }
-        drop(stdout);
-        let output = child
-            .wait_with_output()
-            .map_err(|err| GitError::new(format!("failed to wait for git {:?}: {err}", args)))?;
-        let elapsed_ms = started.elapsed().as_millis();
-        if !truncated && !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            tracing::warn!(
-                target: "ratagit.git.cli",
-                git_subcommand = subcommand,
-                optional_locks_disabled = true,
-                exit_code = ?output.status.code(),
-                elapsed_ms,
-                stdout_bytes = bytes.len(),
-                stderr = %stderr,
-                "git cli command failed"
-            );
-            return Err(GitError::new(format!("git {:?} failed: {}", args, stderr)));
-        }
-        if truncated {
-            tracing::warn!(
-                target: "ratagit.git.cli",
-                git_subcommand = subcommand,
-                optional_locks_disabled = true,
-                elapsed_ms,
-                stdout_bytes = bytes.len(),
-                stdout_limit,
-                "git cli output truncated"
-            );
-        } else {
-            tracing::debug!(
-                target: "ratagit.git.cli",
-                git_subcommand = subcommand,
-                optional_locks_disabled = true,
-                elapsed_ms,
-                stdout_bytes = bytes.len(),
-                "git cli command completed"
-            );
-        }
-        Ok((bytes, truncated))
+        let output = GitCommandRunner::new(&self.repo_path).run(
+            args,
+            GitCommandOptions::new(true).with_stdout_limit(stdout_limit),
+        )?;
+        Ok((output.stdout, output.stdout_truncated))
     }
 
     pub(crate) fn status_files(&self, mode: StatusMode) -> Result<StatusFilesResult, GitError> {
@@ -846,6 +954,29 @@ impl GitCli {
     }
 }
 
+pub(crate) fn classify_cli_error(args: &[String], stderr: &str) -> GitErrorKind {
+    let lower = stderr.to_ascii_lowercase();
+    if args.first().is_some_and(|arg| arg == "push") && is_divergent_push_stderr(&lower) {
+        return GitErrorKind::DivergentPush;
+    }
+    if args.first().is_some_and(|arg| arg == "branch") && is_unmerged_branch_delete_stderr(&lower) {
+        return GitErrorKind::UnmergedBranchDelete;
+    }
+    GitErrorKind::Cli
+}
+
+fn is_divergent_push_stderr(lower_stderr: &str) -> bool {
+    lower_stderr.contains("non-fast-forward")
+        || lower_stderr.contains("fetch first")
+        || lower_stderr.contains("rejected") && lower_stderr.contains("fetch")
+        || lower_stderr.contains("remote contains work")
+        || lower_stderr.contains("failed to push some refs")
+}
+
+fn is_unmerged_branch_delete_stderr(lower_stderr: &str) -> bool {
+    lower_stderr.contains("not fully merged") || lower_stderr.contains("not merged")
+}
+
 fn parse_commit_files(output: &str) -> Result<Vec<CommitFileEntry>, GitError> {
     output
         .lines()
@@ -970,6 +1101,76 @@ mod tests {
     }
 
     #[test]
+    fn git_command_options_keep_lifecycle_defaults_explicit() {
+        let options = GitCommandOptions::new(true).with_stdout_limit(1024);
+
+        assert!(options.optional_locks_disabled);
+        assert_eq!(options.stdout_limit, Some(1024));
+        assert!(options.capture_stderr);
+        assert_eq!(options.timeout, None);
+    }
+
+    #[test]
+    fn git_command_runner_start_failure_is_io() {
+        let missing_repo = std::env::temp_dir().join(format!(
+            "ratagit-missing-repo-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time should be after unix epoch")
+                .as_nanos()
+        ));
+        let runner = GitCommandRunner::new(&missing_repo);
+
+        let error = runner
+            .run(["status"], GitCommandOptions::new(false))
+            .expect_err("missing working directory should fail before git exits");
+
+        assert_eq!(error.kind, GitErrorKind::Io);
+    }
+
+    #[test]
+    fn git_command_runner_limited_output_reports_truncation() {
+        if !git_available() {
+            eprintln!(
+                "git is unavailable, skipping git_command_runner_limited_output_reports_truncation"
+            );
+            return;
+        }
+        let runner = GitCommandRunner::new(Path::new("."));
+
+        let output = runner
+            .run(
+                ["--version"],
+                GitCommandOptions::new(false).with_stdout_limit(4),
+            )
+            .expect("git --version should run");
+
+        assert_eq!(output.stdout.len(), 4);
+        assert!(output.stdout_truncated);
+    }
+
+    #[test]
+    fn git_command_runner_non_zero_exit_uses_cli_classification() {
+        if !git_available() {
+            eprintln!(
+                "git is unavailable, skipping git_command_runner_non_zero_exit_uses_cli_classification"
+            );
+            return;
+        }
+        let runner = GitCommandRunner::new(Path::new("."));
+
+        let error = runner
+            .run(
+                ["definitely-not-a-git-command"],
+                GitCommandOptions::new(false),
+            )
+            .expect_err("unknown git subcommand should fail after process start");
+
+        assert_eq!(error.kind, GitErrorKind::Cli);
+    }
+
+    #[test]
     fn append_diff_truncation_notice_starts_new_section() {
         let mut diff = "commit abc\n+partial".to_string();
 
@@ -979,5 +1180,43 @@ mod tests {
             diff,
             "commit abc\n+partial\n\n### commit diff truncated at 42 bytes\n"
         );
+    }
+
+    #[test]
+    fn classify_cli_error_detects_divergent_push() {
+        let args = vec!["push".to_string()];
+
+        let kind = classify_cli_error(&args, "! [rejected] main -> main (fetch first)");
+
+        assert_eq!(kind, GitErrorKind::DivergentPush);
+    }
+
+    #[test]
+    fn classify_cli_error_detects_unmerged_branch_delete() {
+        let args = vec![
+            "branch".to_string(),
+            "-d".to_string(),
+            "feature".to_string(),
+        ];
+
+        let kind = classify_cli_error(&args, "error: The branch 'feature' is not fully merged.");
+
+        assert_eq!(kind, GitErrorKind::UnmergedBranchDelete);
+    }
+
+    #[test]
+    fn classify_cli_error_keeps_other_cli_errors_generic() {
+        let args = vec!["status".to_string()];
+
+        let kind = classify_cli_error(&args, "fatal: not a git repository");
+
+        assert_eq!(kind, GitErrorKind::Cli);
+    }
+
+    fn git_available() -> bool {
+        ProcessCommand::new("git")
+            .arg("--version")
+            .output()
+            .is_ok_and(|output| output.status.success())
     }
 }
