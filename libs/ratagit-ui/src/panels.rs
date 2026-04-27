@@ -484,6 +484,28 @@ mod tests {
     }
 
     #[test]
+    fn log_panel_reports_huge_repo_status_scan_skip() {
+        let mut state = AppState::default();
+        state.status.large_repo_mode = true;
+        state.status.status_scan_skipped = true;
+        state.status.untracked_scan_skipped = true;
+
+        let lines = render_log_lines(&state, 3);
+
+        assert_eq!(
+            lines
+                .iter()
+                .map(|line| line.text.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "  status=huge repo metadata-only; file scan skipped",
+                "  tip=focus Commits/Branches or narrow Git outside ratagit",
+                "  notice=Ready",
+            ]
+        );
+    }
+
+    #[test]
     fn empty_lists_and_panels_render_without_empty_placeholders() {
         let mut state = AppState::default();
         let _commands = update(

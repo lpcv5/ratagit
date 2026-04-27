@@ -16,6 +16,7 @@ pub(crate) fn apply_snapshot(state: &mut AppState, snapshot: RepoSnapshot) {
             index_entry_count: 0,
             large_repo_mode: false,
             status_truncated: false,
+            status_scan_skipped: false,
             untracked_scan_skipped: false,
         },
     );
@@ -34,10 +35,16 @@ pub(crate) fn apply_files_snapshot(state: &mut AppState, snapshot: FilesSnapshot
     state.status.index_entry_count = snapshot.index_entry_count;
     state.status.large_repo_mode = snapshot.large_repo_mode;
     state.status.status_truncated = snapshot.status_truncated;
+    state.status.status_scan_skipped = snapshot.status_scan_skipped;
     state.status.untracked_scan_skipped = snapshot.untracked_scan_skipped;
     state.files.items = snapshot.files;
     initialize_tree_with_initial_expansion(&mut state.files, !snapshot.large_repo_mode);
-    if snapshot.large_repo_mode && !was_large_repo_mode {
+    if snapshot.status_scan_skipped {
+        state.files.expanded_dirs.clear();
+        state.files.lightweight_tree_projection = true;
+        state.files.tree_initialized = true;
+        crate::refresh_tree_projection(&mut state.files);
+    } else if snapshot.large_repo_mode && !was_large_repo_mode {
         state.files.expanded_dirs.clear();
         state.files.lightweight_tree_projection = true;
         crate::refresh_tree_projection(&mut state.files);

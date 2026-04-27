@@ -141,6 +141,14 @@ fn status_mode_switches_to_large_repo_fast_at_threshold() {
         status_mode_for_index_entry_count(LARGE_REPO_INDEX_ENTRY_THRESHOLD),
         StatusMode::LargeRepoFast
     );
+    assert_eq!(
+        status_mode_for_index_entry_count(HUGE_REPO_INDEX_ENTRY_THRESHOLD - 1),
+        StatusMode::LargeRepoFast
+    );
+    assert_eq!(
+        status_mode_for_index_entry_count(HUGE_REPO_INDEX_ENTRY_THRESHOLD),
+        StatusMode::HugeRepoMetadataOnly
+    );
 }
 
 #[test]

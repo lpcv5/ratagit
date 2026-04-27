@@ -1742,6 +1742,7 @@ fn split_refresh_results_update_panels_independently() {
             index_entry_count: 1,
             large_repo_mode: false,
             status_truncated: false,
+            status_scan_skipped: false,
             untracked_scan_skipped: false,
         })),
     );
@@ -1779,6 +1780,7 @@ fn files_snapshot_records_large_repo_status_metadata() {
             index_entry_count: 100_000,
             large_repo_mode: true,
             status_truncated: true,
+            status_scan_skipped: false,
             untracked_scan_skipped: true,
         })),
     );
@@ -1793,10 +1795,42 @@ fn files_snapshot_records_large_repo_status_metadata() {
     assert_eq!(state.status.index_entry_count, 100_000);
     assert!(state.status.large_repo_mode);
     assert!(state.status.status_truncated);
+    assert!(!state.status.status_scan_skipped);
     assert!(state.status.untracked_scan_skipped);
     assert!(state.files.expanded_dirs.is_empty());
     assert!(state.files.lightweight_tree_projection);
     assert!(state.files.row_descendants.is_empty());
+}
+
+#[test]
+fn huge_repo_files_snapshot_skips_status_scan_without_details_diff_command() {
+    let mut state = AppState::default();
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::FilesRefreshed(FilesSnapshot {
+            status_summary: "status scan skipped: 1000000 indexed files".to_string(),
+            current_branch: "main".to_string(),
+            detached_head: false,
+            files: Vec::new(),
+            index_entry_count: 1_000_000,
+            large_repo_mode: true,
+            status_truncated: false,
+            status_scan_skipped: true,
+            untracked_scan_skipped: true,
+        })),
+    );
+
+    assert!(commands.is_empty());
+    assert_eq!(state.status.index_entry_count, 1_000_000);
+    assert!(state.status.large_repo_mode);
+    assert!(state.status.status_scan_skipped);
+    assert!(state.status.untracked_scan_skipped);
+    assert!(state.files.items.is_empty());
+    assert_eq!(
+        state.details.files_diff, "",
+        "Files Details should not request a diff when no status rows were loaded"
+    );
+    assert!(!state.work.details_pending);
 }
 
 #[test]
@@ -1861,6 +1895,7 @@ fn untracked_directory_marker_is_not_diffed_when_scan_was_skipped() {
             index_entry_count: 100_000,
             large_repo_mode: true,
             status_truncated: false,
+            status_scan_skipped: false,
             untracked_scan_skipped: true,
         })),
     );

@@ -497,6 +497,35 @@ fn git2_commit_details_diff_emits_header_and_patch() {
 }
 
 #[test]
+fn git2_commit_details_diff_truncates_large_patch_preview() {
+    if !git_available() {
+        eprintln!(
+            "git is unavailable, skipping git2_commit_details_diff_truncates_large_patch_preview"
+        );
+        return;
+    }
+
+    let repo = seeded_repo_with_two_files("commit-details-diff-large");
+    write(repo.path().join("large.txt"), "x".repeat(2 * 1024 * 1024))
+        .expect("large file should be writable");
+    repo.run_git(&["add", "--", "large.txt"]);
+    repo.run_git(&["commit", "-m", "large patch"]);
+
+    let mut backend = HybridGitBackend::open(repo.path()).expect("hybrid backend should open");
+    let diff = backend
+        .commit_details_diff("HEAD")
+        .expect("large commit details diff should render a bounded preview");
+
+    assert!(diff.contains("commit "));
+    assert!(diff.contains("diff --git a/large.txt b/large.txt"));
+    assert!(diff.contains("### commit diff truncated at 1048576 bytes"));
+    assert!(
+        diff.len() < 1_100_000,
+        "bounded preview should stay near the configured limit"
+    );
+}
+
+#[test]
 fn git2_commit_files_and_file_diff_follow_selected_path() {
     if !git_available() {
         eprintln!(

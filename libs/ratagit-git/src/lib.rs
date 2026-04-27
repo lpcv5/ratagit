@@ -57,6 +57,7 @@ pub trait GitBackend {
             files: snapshot.files,
             large_repo_mode: false,
             status_truncated: false,
+            status_scan_skipped: false,
             untracked_scan_skipped: false,
         })
     }

@@ -109,17 +109,29 @@ impl GitBackend for HybridGitBackend {
         let index_entry_count = self.repo.index()?.len();
         trace_index_step(started, index_entry_count);
         let status_mode = status_mode_for_index_entry_count(index_entry_count);
-        let started = Instant::now();
-        let status = collect_files(&self.cli, &self.repo, status_mode)?;
-        trace_status_step(
-            started,
-            index_entry_count,
-            status.files.len(),
-            status.truncated,
-            status_mode,
-        );
-        let files = status.files;
-        let status_summary = summarize_files(&files);
+        let (files, status_truncated, status_scan_skipped, status_summary) =
+            if status_mode == StatusMode::HugeRepoMetadataOnly {
+                trace_status_skipped(index_entry_count, status_mode);
+                (
+                    Vec::new(),
+                    false,
+                    true,
+                    format!("status scan skipped: {index_entry_count} indexed files"),
+                )
+            } else {
+                let started = Instant::now();
+                let status = collect_files(&self.cli, &self.repo, status_mode)?;
+                trace_status_step(
+                    started,
+                    index_entry_count,
+                    status.files.len(),
+                    status.truncated,
+                    status_mode,
+                );
+                let status_summary = summarize_files(&status.files);
+                (status.files, status.truncated, false, status_summary)
+            };
+        let large_repo_mode = status_mode != StatusMode::Full;
 
         Ok(FilesSnapshot {
             status_summary,
@@ -127,9 +139,10 @@ impl GitBackend for HybridGitBackend {
             detached_head,
             files,
             index_entry_count,
-            large_repo_mode: status_mode == StatusMode::LargeRepoFast,
-            status_truncated: status.truncated,
-            untracked_scan_skipped: status_mode == StatusMode::LargeRepoFast,
+            large_repo_mode,
+            status_truncated,
+            status_scan_skipped,
+            untracked_scan_skipped: status_mode != StatusMode::Full,
         })
     }
 
@@ -654,9 +667,12 @@ fn summarize_files(files: &[FileEntry]) -> String {
 }
 
 pub(crate) const LARGE_REPO_INDEX_ENTRY_THRESHOLD: usize = 100_000;
+pub(crate) const HUGE_REPO_INDEX_ENTRY_THRESHOLD: usize = 1_000_000;
 
 fn status_mode_for_index_entry_count(index_entry_count: usize) -> StatusMode {
-    if index_entry_count >= LARGE_REPO_INDEX_ENTRY_THRESHOLD {
+    if index_entry_count >= HUGE_REPO_INDEX_ENTRY_THRESHOLD {
+        StatusMode::HugeRepoMetadataOnly
+    } else if index_entry_count >= LARGE_REPO_INDEX_ENTRY_THRESHOLD {
         StatusMode::LargeRepoFast
     } else {
         StatusMode::Full
@@ -706,8 +722,18 @@ fn trace_status_step(
         index_entry_count,
         result_count,
         truncated,
-        large_repo_mode = mode == StatusMode::LargeRepoFast,
+        large_repo_mode = mode != StatusMode::Full,
         "git backend status completed"
+    );
+}
+
+fn trace_status_skipped(index_entry_count: usize, mode: StatusMode) {
+    tracing::warn!(
+        target: "ratagit.git",
+        command = "status",
+        index_entry_count,
+        large_repo_mode = mode != StatusMode::Full,
+        "git backend status skipped"
     );
 }
 

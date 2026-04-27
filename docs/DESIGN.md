@@ -44,8 +44,8 @@ Focus model:
 - `AppState.work` stores visible pending refresh/details/operation state and
   the last completed command label
 - `AppState.status` stores Git status performance metadata:
-  `index_entry_count`, `large_repo_mode`, `status_truncated`, and
-  `untracked_scan_skipped`
+  `index_entry_count`, `large_repo_mode`, `status_truncated`,
+  `status_scan_skipped`, and `untracked_scan_skipped`
 - `AppState.details.files_diff_truncated_from` stores the original target count
   when Files Details diff output is limited to the first 100 targets
 - left-panel height baseline follows the Files/Branches/Commits/Stash ratio
@@ -120,6 +120,10 @@ Files panel interaction:
 - Large repo fast mode skips full untracked expansion. The Log panel renders a
   notice for the skipped untracked scan and a manual Git config tip rather than
   changing repository configuration automatically.
+- When the backend reports metadata-only huge repo mode, the Files tree remains
+  empty for that refresh and the Log panel renders a deterministic file-scan
+  skipped notice. No Files Details diff command is emitted for the empty
+  selection.
 - Status output is bounded by backend limits. `AppState.status.status_truncated`
   drives a deterministic Log notice when the result was capped.
 - Real backend status collection prefers Git CLI porcelain v1 `-z` output inside
@@ -225,8 +229,9 @@ Files panel interaction:
   - additional local commit-files shortcuts are intentionally deferred
 - Files Details projection renders merged `unstaged` and `staged` diff sections
   for current file/folder targets from `GitBackend`.
-- Commits Details projection renders the selected commit's header and patch diff
-  from `GitBackend`.
+- Commits Details projection renders the selected commit's header and bounded
+  patch diff preview from `GitBackend`; automatic full-commit previews are
+  capped at 1 MiB and include a deterministic truncation notice when capped.
 - Commit Files Details projection renders the selected commit file or folder's
   patch from `GitBackend`.
 - Files, Branches, and Commits Details projections apply the AppState-owned

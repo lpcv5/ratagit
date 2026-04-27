@@ -14,6 +14,7 @@ use crate::{GitError, validate_repo_relative_path};
 
 pub(crate) const STATUS_ENTRY_LIMIT: usize = 50_000;
 pub(crate) const STATUS_OUTPUT_LIMIT_BYTES: usize = 64 * 1024 * 1024;
+pub(crate) const COMMIT_DETAILS_DIFF_OUTPUT_LIMIT_BYTES: usize = 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct StatusFilesResult {
@@ -34,7 +35,7 @@ fn status_args(mode: StatusMode) -> [&'static str; 6] {
         "-z",
         match mode {
             StatusMode::Full => "--untracked-files=all",
-            StatusMode::LargeRepoFast => "--untracked-files=no",
+            StatusMode::LargeRepoFast | StatusMode::HugeRepoMetadataOnly => "--untracked-files=no",
         },
         "--ignored=no",
         "--ignore-submodules=all",
@@ -137,15 +138,23 @@ impl GitCli {
         Ok(output.stdout)
     }
 
-    fn run_git_read_output_limited(
+    fn run_git_read_output_limited<I, S>(
         &self,
-        args: &[&str],
+        args: I,
         stdout_limit: usize,
-    ) -> Result<(Vec<u8>, bool), GitError> {
-        let subcommand = args.first().copied().unwrap_or("unknown");
+    ) -> Result<(Vec<u8>, bool), GitError>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let args = args
+            .into_iter()
+            .map(|arg| arg.as_ref().to_string())
+            .collect::<Vec<_>>();
+        let subcommand = args.first().map_or("unknown", String::as_str);
         let started = Instant::now();
         let mut child = ProcessCommand::new("git")
-            .args(args)
+            .args(&args)
             .current_dir(&self.repo_path)
             .env("GIT_OPTIONAL_LOCKS", "0")
             .stdout(Stdio::piped())
@@ -180,6 +189,7 @@ impl GitCli {
                 break;
             }
         }
+        drop(stdout);
         let output = child
             .wait_with_output()
             .map_err(|err| GitError::new(format!("failed to wait for git {:?}: {err}", args)))?;
@@ -224,7 +234,7 @@ impl GitCli {
     pub(crate) fn status_files(&self, mode: StatusMode) -> Result<StatusFilesResult, GitError> {
         let args = status_args(mode);
         let (mut output, output_truncated) =
-            self.run_git_read_output_limited(&args, STATUS_OUTPUT_LIMIT_BYTES)?;
+            self.run_git_read_output_limited(args, STATUS_OUTPUT_LIMIT_BYTES)?;
         let raw_output_bytes = output.len();
         if output_truncated {
             if let Some(last_record_end) = output.iter().rposition(|byte| *byte == 0) {
@@ -269,13 +279,32 @@ impl GitCli {
     }
 
     pub(crate) fn commit_details_diff(&mut self, commit_id: &str) -> Result<String, GitError> {
-        self.run_git_read_owned(vec![
-            "show".to_string(),
-            "--no-color".to_string(),
-            "--format=fuller".to_string(),
-            "--patch".to_string(),
-            commit_id.to_string(),
-        ])
+        let (mut diff, truncated) = self.run_git_read_text_limited(
+            vec![
+                "show".to_string(),
+                "--no-color".to_string(),
+                "--no-ext-diff".to_string(),
+                "--no-textconv".to_string(),
+                "--no-renames".to_string(),
+                "--format=fuller".to_string(),
+                "--patch".to_string(),
+                commit_id.to_string(),
+            ],
+            COMMIT_DETAILS_DIFF_OUTPUT_LIMIT_BYTES,
+        )?;
+        if truncated {
+            append_diff_truncation_notice(&mut diff, COMMIT_DETAILS_DIFF_OUTPUT_LIMIT_BYTES);
+        }
+        Ok(diff)
+    }
+
+    fn run_git_read_text_limited(
+        &self,
+        args: Vec<String>,
+        stdout_limit: usize,
+    ) -> Result<(String, bool), GitError> {
+        self.run_git_read_output_limited(args, stdout_limit)
+            .map(|(stdout, truncated)| (String::from_utf8_lossy(&stdout).to_string(), truncated))
     }
 
     pub(crate) fn commit_files(
@@ -732,6 +761,16 @@ fn parse_commit_files(output: &str) -> Result<Vec<CommitFileEntry>, GitError> {
         .collect()
 }
 
+fn append_diff_truncation_notice(diff: &mut String, limit_bytes: usize) {
+    if !diff.ends_with('\n') {
+        diff.push('\n');
+    }
+    diff.push('\n');
+    diff.push_str(&format!(
+        "### commit diff truncated at {limit_bytes} bytes\n"
+    ));
+}
+
 fn parse_commit_file_line(line: &str) -> Result<CommitFileEntry, GitError> {
     let parts = line.split('\t').collect::<Vec<_>>();
     let Some(raw_status) = parts.first() else {
@@ -831,5 +870,18 @@ mod tests {
     fn status_args_follow_status_mode() {
         assert!(status_args(StatusMode::Full).contains(&"--untracked-files=all"));
         assert!(status_args(StatusMode::LargeRepoFast).contains(&"--untracked-files=no"));
+        assert!(status_args(StatusMode::HugeRepoMetadataOnly).contains(&"--untracked-files=no"));
+    }
+
+    #[test]
+    fn append_diff_truncation_notice_starts_new_section() {
+        let mut diff = "commit abc\n+partial".to_string();
+
+        append_diff_truncation_notice(&mut diff, 42);
+
+        assert_eq!(
+            diff,
+            "commit abc\n+partial\n\n### commit diff truncated at 42 bytes\n"
+        );
     }
 }

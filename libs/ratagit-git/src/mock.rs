@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use ratagit_core::{
     BranchDeleteMode, BranchEntry, COMMITS_PAGE_SIZE, CommitEntry, CommitFileDiffTarget,
     CommitFileEntry, CommitFileStatus, CommitHashStatus, FileDiffTarget, FilesSnapshot,
@@ -14,7 +16,9 @@ pub struct MockGitBackend {
     index_entry_count: usize,
     large_repo_mode: bool,
     status_truncated: bool,
+    status_scan_skipped: bool,
     untracked_scan_skipped: bool,
+    commit_diff_overrides: BTreeMap<String, String>,
 }
 
 impl MockGitBackend {
@@ -27,7 +31,9 @@ impl MockGitBackend {
             index_entry_count,
             large_repo_mode: false,
             status_truncated: false,
+            status_scan_skipped: false,
             untracked_scan_skipped: false,
+            commit_diff_overrides: BTreeMap::new(),
         }
     }
 
@@ -45,7 +51,44 @@ impl MockGitBackend {
             index_entry_count,
             large_repo_mode,
             status_truncated,
+            status_scan_skipped: false,
             untracked_scan_skipped,
+            commit_diff_overrides: BTreeMap::new(),
+        }
+    }
+
+    pub fn with_huge_repo_status_metadata(
+        snapshot: RepoSnapshot,
+        index_entry_count: usize,
+    ) -> Self {
+        Self {
+            snapshot,
+            operations: Vec::new(),
+            commit_sequence: 1,
+            index_entry_count,
+            large_repo_mode: true,
+            status_truncated: false,
+            status_scan_skipped: true,
+            untracked_scan_skipped: true,
+            commit_diff_overrides: BTreeMap::new(),
+        }
+    }
+
+    pub fn with_commit_diff_overrides(
+        snapshot: RepoSnapshot,
+        commit_diff_overrides: BTreeMap<String, String>,
+    ) -> Self {
+        let index_entry_count = snapshot.files.len();
+        Self {
+            snapshot,
+            operations: Vec::new(),
+            commit_sequence: 1,
+            index_entry_count,
+            large_repo_mode: false,
+            status_truncated: false,
+            status_scan_skipped: false,
+            untracked_scan_skipped: false,
+            commit_diff_overrides,
         }
     }
 
@@ -154,6 +197,7 @@ impl GitBackend for MockGitBackend {
             index_entry_count: self.index_entry_count,
             large_repo_mode: self.large_repo_mode,
             status_truncated: self.status_truncated,
+            status_scan_skipped: self.status_scan_skipped,
             untracked_scan_skipped: self.untracked_scan_skipped,
         })
     }
@@ -278,6 +322,13 @@ impl GitBackend for MockGitBackend {
             .iter()
             .find(|commit| commit_matches(commit, commit_id))
             .ok_or_else(|| GitError::new(format!("commit not found: {commit_id}")))?;
+        if let Some(diff) = self
+            .commit_diff_overrides
+            .get(&commit.full_id)
+            .or_else(|| self.commit_diff_overrides.get(&commit.id))
+        {
+            return Ok(diff.clone());
+        }
         Ok(format!(
             "commit {}\nAuthor: ratagit-tests <ratagit-tests@example.com>\n\n    {}\n\ndiff --git a/commit.txt b/commit.txt\n@@ -1 +1 @@\n-old {}\n+new {}",
             commit.full_id, commit.summary, commit.id, commit.id

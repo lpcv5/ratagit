@@ -884,6 +884,35 @@ fn terminal_snapshot_large_repo_fast_status_notice() {
             index_entry_count: 100_000,
             large_repo_mode: true,
             status_truncated: true,
+            status_scan_skipped: false,
+            untracked_scan_skipped: true,
+        },
+    );
+
+    insta::assert_snapshot!(render_terminal_text(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    ));
+}
+
+#[test]
+fn terminal_snapshot_huge_repo_metadata_only_status_notice() {
+    let snapshot = fixture_dirty_repo();
+    let mut state = AppState::default();
+    apply_files_refreshed_with_mock_details(
+        &mut state,
+        FilesSnapshot {
+            status_summary: "status scan skipped: 1000000 indexed files".to_string(),
+            current_branch: snapshot.current_branch,
+            detached_head: snapshot.detached_head,
+            files: Vec::new(),
+            index_entry_count: 1_000_000,
+            large_repo_mode: true,
+            status_truncated: false,
+            status_scan_skipped: true,
             untracked_scan_skipped: true,
         },
     );
@@ -914,6 +943,7 @@ fn terminal_snapshot_large_directory_details_limit() {
             index_entry_count: 100_000,
             large_repo_mode: true,
             status_truncated: false,
+            status_scan_skipped: false,
             untracked_scan_skipped: true,
         },
     );

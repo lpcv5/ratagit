@@ -26,7 +26,16 @@ pub(crate) fn render_log_lines(state: &AppState, max_lines: usize) -> Vec<PanelL
             RowRole::Notice,
         ));
     }
-    if state.status.large_repo_mode {
+    if state.status.status_scan_skipped {
+        lines.push(PanelLine::new(
+            "  status=huge repo metadata-only; file scan skipped",
+            RowRole::Notice,
+        ));
+        lines.push(PanelLine::new(
+            "  tip=focus Commits/Branches or narrow Git outside ratagit",
+            RowRole::Notice,
+        ));
+    } else if state.status.large_repo_mode {
         lines.push(PanelLine::new(
             "  status=large repo fast mode; untracked scan skipped",
             RowRole::Notice,

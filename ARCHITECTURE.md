@@ -128,6 +128,11 @@ internal library packages under `libs/`.
   `--untracked-files=no`, status stdout is capped at 64 MiB, parsed file entries
   are capped at 50,000, and `FilesSnapshot` records whether the status result
   was truncated or skipped untracked scanning.
+- Status refresh chooses `StatusMode::HugeRepoMetadataOnly` when the index has
+  at least 1,000,000 entries. In this mode the backend skips automatic file
+  status collection after counting the index and reports deterministic metadata
+  so Commits, Branches, Stash, and bounded Details work can load without a
+  whole-working-tree scan.
 - Read-only Git CLI commands run with `GIT_OPTIONAL_LOCKS=0` to reduce index
   lock/refresh pressure in very large repositories.
 - Internal Git CLI executor handles operations not yet represented through
@@ -181,6 +186,8 @@ internal library packages under `libs/`.
   projection that does not precompute `row_descendants` for every path. Details
   commands resolve deterministic `FileDiffTarget` values from current
   `AppState` and cap automatic file diffs to the first 100 targets.
+- Automatic full-commit Details previews are bounded in `GitBackend` so large
+  commit patches cannot feed unbounded text into `AppState` or pure rendering.
 
 ---
 

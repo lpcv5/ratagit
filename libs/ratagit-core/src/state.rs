@@ -211,6 +211,7 @@ pub struct FilesSnapshot {
     pub index_entry_count: usize,
     pub large_repo_mode: bool,
     pub status_truncated: bool,
+    pub status_scan_skipped: bool,
     pub untracked_scan_skipped: bool,
 }
 
@@ -224,6 +225,7 @@ pub struct StatusPanelState {
     pub index_entry_count: usize,
     pub large_repo_mode: bool,
     pub status_truncated: bool,
+    pub status_scan_skipped: bool,
     pub untracked_scan_skipped: bool,
 }
 
@@ -231,6 +233,7 @@ pub struct StatusPanelState {
 pub enum StatusMode {
     Full,
     LargeRepoFast,
+    HugeRepoMetadataOnly,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -545,6 +548,7 @@ impl Default for AppState {
                 index_entry_count: 0,
                 large_repo_mode: false,
                 status_truncated: false,
+                status_scan_skipped: false,
                 untracked_scan_skipped: false,
             },
             files: FilesPanelState::default(),

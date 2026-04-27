@@ -31,7 +31,7 @@ MVP v0 includes a left-nav workspace layout with six panels:
   - Patch metadata, hunk headers, additions, and removals use deterministic semantic colors
   - While a selected file diff is loading, Details shows a deterministic loading row instead of blocking input
   - Branches focus projection: show the selected branch's native `git log --graph` output with Git's ASCII graph and ANSI colors preserved, limited to 50 commits
-  - Commits focus projection: show the selected commit's header and patch diff
+  - Commits focus projection: show the selected commit's header and a bounded patch diff preview
   - Commit Files subpanel projection: show the selected file or folder's patch within the selected commit
   - Stash projection: placeholder text for now (to be implemented in a later slice)
   - `Ctrl+U` / `Ctrl+D` scroll Details content up/down globally by 2/5 of the Details content height without changing the focused panel
@@ -65,6 +65,10 @@ Files panel rules:
   repo fast status mode: tracked/index changes are shown, full untracked
   expansion is skipped, and the Log panel reports that untracked scanning was
   skipped
+- repositories with at least 1,000,000 index entries automatically enter
+  metadata-only status mode: the Files panel does not auto-load file status
+  rows, the Log panel reports that file scanning was skipped, and Commits,
+  Branches, Stash, and bounded Details previews can still load
 - status results are capped at 50,000 file entries or 64 MiB of status stdout;
   if the cap is hit, the Log panel reports that status was truncated
 - folder operations apply to descendant files present in the tree model
@@ -113,6 +117,10 @@ Files panel rules:
   skipped untracked scanning; Details shows a deterministic skip message instead
 - queued refresh/details work is coalesced so stale duplicate details commands do
   not delay the latest selection
+- automatic Commits Details patch previews are capped at 1 MiB and show a
+  deterministic truncation notice when the cap is reached; the Commit Files
+  subpanel remains the path-focused way to inspect individual files in a large
+  commit
 - branch-details log graph output is cached in `AppState` and reused when the
   same branch is selected again during the current snapshot
 - real TUI read-only Git work runs on a fixed background worker pool so initial

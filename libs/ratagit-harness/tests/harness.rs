@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::io;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
@@ -51,6 +52,12 @@ fn clean_many_commit_fixture(count: usize) -> RepoSnapshot {
 
 fn large_repo_backend(fixture: RepoSnapshot) -> MockGitBackend {
     MockGitBackend::with_status_metadata(fixture, 100_000, true, false, true)
+}
+
+fn huge_repo_backend(mut fixture: RepoSnapshot) -> MockGitBackend {
+    fixture.files.clear();
+    fixture.status_summary = "status scan skipped: 1000000 indexed files".to_string();
+    MockGitBackend::with_huge_repo_status_metadata(fixture, 1_000_000)
 }
 
 #[derive(Debug, Clone)]
@@ -346,6 +353,40 @@ fn harness_large_repo_fast_status_is_stable_with_tracing_enabled() {
         assert!(operations.contains("refresh-files"));
         assert!(git_state.contains("path: \"src/lib.rs\""));
     });
+}
+
+#[test]
+fn harness_huge_repo_status_skips_file_scan_without_blocking_commits() {
+    let mut runtime = Runtime::new(
+        AppState::default(),
+        huge_repo_backend(fixture_dirty_repo()),
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    );
+
+    runtime.dispatch_ui(UiAction::RefreshAll);
+    runtime.dispatch_ui(UiAction::FocusNext);
+    runtime.dispatch_ui(UiAction::FocusNext);
+
+    let screen = runtime.render_terminal_text();
+    let operations = runtime.backend().operations().join("\n");
+    let git_state = format!("{:#?}", runtime.backend().snapshot());
+    assert!(screen.contains("status=huge repo metadata-only; file scan skipped"));
+    assert!(screen.contains("tip=focus Commits/Branches or narrow Git outside ratagit"));
+    assert!(screen.contains("init project"));
+    assert!(screen.contains("diff --git a/commit.txt b/commit.txt"));
+    assert!(!screen.contains("README.md"));
+    assert!(operations.contains("refresh-files"));
+    assert!(operations.contains("refresh-commits"));
+    assert!(operations.contains("commit-diff:abc1234"));
+    assert!(
+        !operations
+            .lines()
+            .any(|operation| operation == "details-diff:README.md")
+    );
+    assert!(git_state.contains("current_branch: \"main\""));
 }
 
 #[test]
@@ -1292,6 +1333,37 @@ fn harness_commits_details_follow_cursor_with_commit_diff() {
             git_state_contains: &["summary: \"wire commands\""],
         },
     ));
+}
+
+#[test]
+fn harness_commits_details_renders_truncated_commit_diff_notice() {
+    let fixture = clean_three_commit_fixture();
+    let mut overrides = BTreeMap::new();
+    overrides.insert(
+        "abc1234".to_string(),
+        "commit abc1234\nAuthor: ratagit-tests <ratagit-tests@example.com>\n\n    large patch\n\ndiff --git a/large.txt b/large.txt\n@@ -0,0 +1 @@\n+partial\n\n### commit diff truncated at 1048576 bytes\n"
+            .to_string(),
+    );
+    let mut runtime = Runtime::new(
+        AppState::default(),
+        MockGitBackend::with_commit_diff_overrides(fixture, overrides),
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    );
+
+    runtime.dispatch_ui(UiAction::RefreshAll);
+    runtime.dispatch_ui(UiAction::FocusNext);
+    runtime.dispatch_ui(UiAction::FocusNext);
+
+    let screen = runtime.render_terminal_text();
+    let operations = runtime.backend().operations().join("\n");
+    let git_state = format!("{:#?}", runtime.backend().snapshot());
+    assert!(screen.contains("### commit diff truncated at 1048576 bytes"));
+    assert!(screen.contains("diff --git a/large.txt b/large.txt"));
+    assert!(operations.contains("commit-diff:abc1234"));
+    assert!(git_state.contains("summary: \"init project\""));
 }
 
 #[test]
