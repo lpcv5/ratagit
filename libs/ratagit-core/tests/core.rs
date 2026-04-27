@@ -1,11 +1,12 @@
 use ratagit_core::{
     Action, AppState, AutoStashOperation, BranchDeleteChoice, BranchDeleteMode, BranchEntry,
-    BranchRebaseChoice, COMMITS_PAGE_SIZE, COMMITS_PREFETCH_THRESHOLD, Command, CommitEditorIntent,
-    CommitEntry, CommitField, CommitFileDiffPath, CommitFileDiffTarget, CommitFileEntry,
-    CommitFileStatus, CommitHashStatus, CommitInputMode, EditorKind, FileDiffTarget, FileEntry,
-    FileInputMode, FilesSnapshot, GitResult, PanelFocus, RefreshTarget, RepoSnapshot, ResetChoice,
-    ResetMode, SearchScope, StashEntry, StashScope, UiAction, debounce_key_for_command,
-    refresh_tree_projection, selected_row, update,
+    BranchInputMode, BranchRebaseChoice, COMMITS_PAGE_SIZE, COMMITS_PREFETCH_THRESHOLD, Command,
+    CommitEditorIntent, CommitEntry, CommitField, CommitFileDiffPath, CommitFileDiffTarget,
+    CommitFileEntry, CommitFileStatus, CommitHashStatus, CommitInputMode, EditorKind,
+    FileDiffTarget, FileEntry, FileInputMode, FilesSnapshot, GitResult, PanelFocus, RefreshTarget,
+    RepoSnapshot, ResetChoice, ResetMode, SearchScope, StashEntry, StashScope, UiAction,
+    debounce_key_for_command, refresh_tree_projection, selected_commit_file_targets, selected_row,
+    update,
 };
 
 fn commit_entry(id: &str, summary: &str) -> CommitEntry {
@@ -1061,6 +1062,90 @@ fn commit_files_navigation_refreshes_selected_file_diff() {
 }
 
 #[test]
+fn commit_files_visual_mode_extends_range_and_diff_uses_selected_targets() {
+    let mut state = AppState {
+        focus: PanelFocus::Commits,
+        last_left_focus: PanelFocus::Commits,
+        ..AppState::default()
+    };
+    state.commits.items = vec![commit_entry("abc1234", "init project")];
+    update(&mut state, Action::Ui(UiAction::OpenCommitFilesPanel));
+    update(
+        &mut state,
+        Action::GitResult(GitResult::CommitFiles {
+            commit_id: "abc1234-full".to_string(),
+            result: Ok(commit_files_fixture()),
+        }),
+    );
+
+    update(
+        &mut state,
+        Action::Ui(UiAction::EnterCommitFilesMultiSelect),
+    );
+    assert_eq!(state.commits.files.mode, FileInputMode::MultiSelect);
+    assert_eq!(
+        state
+            .commits
+            .files
+            .selected_rows
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec!["README.md".to_string()]
+    );
+
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+    assert_eq!(
+        state
+            .commits
+            .files
+            .selected_rows
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec!["README.md".to_string(), "src".to_string()]
+    );
+    assert_commit_file_diff_refresh_for_paths(commands, "abc1234-full", vec!["README.md", "src"]);
+    assert_eq!(
+        selected_commit_file_targets(&state.commits.files)
+            .into_iter()
+            .map(|entry| entry.path)
+            .collect::<Vec<_>>(),
+        vec!["README.md".to_string(), "src".to_string()]
+    );
+}
+
+#[test]
+fn commit_files_visual_mode_exit_clears_selection() {
+    let mut state = AppState {
+        focus: PanelFocus::Commits,
+        last_left_focus: PanelFocus::Commits,
+        ..AppState::default()
+    };
+    state.commits.items = vec![commit_entry("abc1234", "init project")];
+    update(&mut state, Action::Ui(UiAction::OpenCommitFilesPanel));
+    update(
+        &mut state,
+        Action::GitResult(GitResult::CommitFiles {
+            commit_id: "abc1234-full".to_string(),
+            result: Ok(commit_files_fixture()),
+        }),
+    );
+
+    update(
+        &mut state,
+        Action::Ui(UiAction::EnterCommitFilesMultiSelect),
+    );
+    update(&mut state, Action::Ui(UiAction::MoveDown));
+    assert!(!state.commits.files.selected_rows.is_empty());
+
+    update(&mut state, Action::Ui(UiAction::ExitCommitFilesMultiSelect));
+    assert_eq!(state.commits.files.mode, FileInputMode::Normal);
+    assert!(state.commits.files.selection_anchor.is_none());
+    assert!(state.commits.files.selected_rows.is_empty());
+}
+
+#[test]
 fn search_selects_matches_across_left_panels() {
     let mut state = AppState {
         focus: PanelFocus::Branches,
@@ -1175,11 +1260,23 @@ fn starting_search_exits_visual_multi_select_modes() {
     let mut state = AppState::default();
     state.files.items = vec![file_entry("a.txt", false, false)];
     refresh_tree_projection(&mut state.files);
-    update(&mut state, Action::Ui(UiAction::ToggleFilesMultiSelect));
+    update(&mut state, Action::Ui(UiAction::EnterFilesMultiSelect));
     assert_eq!(state.files.mode, FileInputMode::MultiSelect);
     update(&mut state, Action::Ui(UiAction::StartSearch));
     assert_eq!(state.files.mode, FileInputMode::Normal);
     assert!(state.files.selected_rows.is_empty());
+
+    state.focus = PanelFocus::Branches;
+    state.last_left_focus = PanelFocus::Branches;
+    state.branches.items = vec![
+        branch_entry("main", true),
+        branch_entry("feature/mvp", false),
+    ];
+    update(&mut state, Action::Ui(UiAction::EnterBranchesMultiSelect));
+    assert_eq!(state.branches.mode, BranchInputMode::MultiSelect);
+    update(&mut state, Action::Ui(UiAction::StartSearch));
+    assert_eq!(state.branches.mode, BranchInputMode::Normal);
+    assert!(state.branches.selected_rows.is_empty());
 
     state.focus = PanelFocus::Commits;
     state.last_left_focus = PanelFocus::Commits;
@@ -1187,11 +1284,28 @@ fn starting_search_exits_visual_multi_select_modes() {
         commit_entry("abc1234", "init project"),
         commit_entry("def5678", "wire commands"),
     ];
-    update(&mut state, Action::Ui(UiAction::ToggleCommitsMultiSelect));
+    update(&mut state, Action::Ui(UiAction::EnterCommitsMultiSelect));
     assert_eq!(state.commits.mode, CommitInputMode::MultiSelect);
     update(&mut state, Action::Ui(UiAction::StartSearch));
     assert_eq!(state.commits.mode, CommitInputMode::Normal);
     assert!(state.commits.selected_rows.is_empty());
+
+    update(&mut state, Action::Ui(UiAction::OpenCommitFilesPanel));
+    update(
+        &mut state,
+        Action::GitResult(GitResult::CommitFiles {
+            commit_id: "abc1234-full".to_string(),
+            result: Ok(commit_files_fixture()),
+        }),
+    );
+    update(
+        &mut state,
+        Action::Ui(UiAction::EnterCommitFilesMultiSelect),
+    );
+    assert_eq!(state.commits.files.mode, FileInputMode::MultiSelect);
+    update(&mut state, Action::Ui(UiAction::StartSearch));
+    assert_eq!(state.commits.files.mode, FileInputMode::Normal);
+    assert!(state.commits.files.selected_rows.is_empty());
 }
 
 #[test]
@@ -1479,7 +1593,7 @@ fn v_visual_mode_extends_range_with_jk_movement() {
     );
     assert_details_refresh_for_paths(commands, vec!["a.txt".to_string()]);
 
-    update(&mut state, Action::Ui(UiAction::ToggleFilesMultiSelect));
+    update(&mut state, Action::Ui(UiAction::EnterFilesMultiSelect));
     assert_eq!(state.files.selection_anchor, Some("a.txt".to_string()));
     assert_eq!(
         state
@@ -1525,6 +1639,90 @@ fn v_visual_mode_extends_range_with_jk_movement() {
 }
 
 #[test]
+fn files_visual_mode_exit_clears_selection() {
+    let mut state = AppState::default();
+    state.files.items = vec![
+        file_entry("a.txt", false, false),
+        file_entry("b.txt", false, false),
+    ];
+    refresh_tree_projection(&mut state.files);
+
+    update(&mut state, Action::Ui(UiAction::EnterFilesMultiSelect));
+    update(&mut state, Action::Ui(UiAction::MoveDown));
+    assert_eq!(state.files.mode, FileInputMode::MultiSelect);
+    assert!(!state.files.selected_rows.is_empty());
+
+    update(&mut state, Action::Ui(UiAction::ExitFilesMultiSelect));
+    assert_eq!(state.files.mode, FileInputMode::Normal);
+    assert!(state.files.selection_anchor.is_none());
+    assert!(state.files.selected_rows.is_empty());
+}
+
+#[test]
+fn branch_visual_mode_extends_range_with_jk_movement() {
+    let mut state = AppState {
+        focus: PanelFocus::Branches,
+        last_left_focus: PanelFocus::Branches,
+        ..AppState::default()
+    };
+    state.branches.items = vec![
+        branch_entry("main", true),
+        branch_entry("feature/mvp", false),
+        branch_entry("topic/ui", false),
+    ];
+
+    update(&mut state, Action::Ui(UiAction::EnterBranchesMultiSelect));
+    assert_eq!(state.branches.mode, BranchInputMode::MultiSelect);
+    update(&mut state, Action::Ui(UiAction::MoveDown));
+    assert_eq!(
+        state
+            .branches
+            .selected_rows
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec!["feature/mvp".to_string(), "main".to_string()]
+    );
+    update(&mut state, Action::Ui(UiAction::MoveDown));
+    assert_eq!(
+        state
+            .branches
+            .selected_rows
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec![
+            "feature/mvp".to_string(),
+            "main".to_string(),
+            "topic/ui".to_string()
+        ]
+    );
+}
+
+#[test]
+fn branch_visual_mode_exit_clears_selection() {
+    let mut state = AppState {
+        focus: PanelFocus::Branches,
+        last_left_focus: PanelFocus::Branches,
+        ..AppState::default()
+    };
+    state.branches.items = vec![
+        branch_entry("main", true),
+        branch_entry("feature/mvp", false),
+    ];
+
+    update(&mut state, Action::Ui(UiAction::EnterBranchesMultiSelect));
+    update(&mut state, Action::Ui(UiAction::MoveDown));
+    assert_eq!(state.branches.mode, BranchInputMode::MultiSelect);
+    assert!(!state.branches.selected_rows.is_empty());
+
+    update(&mut state, Action::Ui(UiAction::ExitBranchesMultiSelect));
+    assert_eq!(state.branches.mode, BranchInputMode::Normal);
+    assert!(state.branches.selection_anchor.is_none());
+    assert!(state.branches.selected_rows.is_empty());
+}
+
+#[test]
 fn commit_visual_mode_extends_range_and_squash_uses_selected_commits() {
     let mut state = AppState {
         focus: PanelFocus::Commits,
@@ -1537,7 +1735,7 @@ fn commit_visual_mode_extends_range_and_squash_uses_selected_commits() {
         commit_entry("ccc3333", "base"),
     ];
 
-    update(&mut state, Action::Ui(UiAction::ToggleCommitsMultiSelect));
+    update(&mut state, Action::Ui(UiAction::EnterCommitsMultiSelect));
     assert_eq!(state.commits.mode, CommitInputMode::MultiSelect);
     update(&mut state, Action::Ui(UiAction::MoveDown));
     assert_eq!(
@@ -1558,6 +1756,29 @@ fn commit_visual_mode_extends_range_and_squash_uses_selected_commits() {
         }]
     );
     assert_eq!(state.commits.mode, CommitInputMode::Normal);
+}
+
+#[test]
+fn commit_visual_mode_exit_clears_selection() {
+    let mut state = AppState {
+        focus: PanelFocus::Commits,
+        last_left_focus: PanelFocus::Commits,
+        ..AppState::default()
+    };
+    state.commits.items = vec![
+        commit_entry("aaa1111", "head"),
+        commit_entry("bbb2222", "middle"),
+    ];
+
+    update(&mut state, Action::Ui(UiAction::EnterCommitsMultiSelect));
+    update(&mut state, Action::Ui(UiAction::MoveDown));
+    assert_eq!(state.commits.mode, CommitInputMode::MultiSelect);
+    assert!(!state.commits.selected_rows.is_empty());
+
+    update(&mut state, Action::Ui(UiAction::ExitCommitsMultiSelect));
+    assert_eq!(state.commits.mode, CommitInputMode::Normal);
+    assert!(state.commits.selection_anchor.is_none());
+    assert!(state.commits.selected_rows.is_empty());
 }
 
 #[test]

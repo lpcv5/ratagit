@@ -87,7 +87,6 @@ pub(crate) fn shortcut_line_for_state(state: &AppState) -> ShortcutLine {
             ("c", "commit"),
             ("s", "stash"),
             ("D", "reset"),
-            ("v", "multi"),
             ("enter", "expand"),
         ]),
         PanelFocus::Branches => segments(&[
@@ -107,7 +106,6 @@ pub(crate) fn shortcut_line_for_state(state: &AppState) -> ShortcutLine {
                     ("r", "reword"),
                     ("d", "delete"),
                     ("space", "detach"),
-                    ("v", "multi"),
                 ])
             }
         }

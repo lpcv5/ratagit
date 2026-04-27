@@ -135,7 +135,7 @@ mod tests {
         let mut state = state_with_dirty_repo();
         state.files.selected = 1;
         update(&mut state, Action::Ui(UiAction::ToggleSelectedDirectory));
-        update(&mut state, Action::Ui(UiAction::ToggleFilesMultiSelect));
+        update(&mut state, Action::Ui(UiAction::EnterFilesMultiSelect));
 
         let lines = render_files_lines(&state, 2);
 
@@ -666,6 +666,7 @@ mod tests {
         assert!(files_shortcuts.contains("c commit"));
         assert!(files_shortcuts.contains("s stash"));
         assert!(files_shortcuts.contains("D reset"));
+        assert!(!files_shortcuts.contains("v multi"));
 
         update(
             &mut state,
@@ -677,6 +678,14 @@ mod tests {
             shortcuts_for_state(&state),
             "space checkout  n new  d delete  r rebase"
         );
+
+        update(
+            &mut state,
+            Action::Ui(UiAction::FocusPanel {
+                panel: PanelFocus::Commits,
+            }),
+        );
+        assert!(!shortcuts_for_state(&state).contains("v multi"));
 
         let mut empty = AppState::default();
         update(

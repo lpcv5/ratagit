@@ -7,11 +7,12 @@ use ratagit_testkit::{
     fixture_many_files, fixture_unicode_paths,
 };
 use ratagit_ui::{
-    TerminalSize, batch_selected_row_style, buffer_contains_selected_text,
-    buffer_contains_text_with_style, buffer_to_text_with_selected_marker,
-    details_content_lines_for_terminal_size, details_scroll_lines_for_terminal_size,
-    focused_left_panel_content_lines_for_terminal_size, focused_panel_style, render,
-    render_terminal_buffer, render_terminal_buffer_with_cursor, render_terminal_text,
+    TerminalSize, batch_selected_row_style, buffer_contains_batch_selected_text,
+    buffer_contains_selected_text, buffer_contains_text_with_style,
+    buffer_to_text_with_selected_marker, details_content_lines_for_terminal_size,
+    details_scroll_lines_for_terminal_size, focused_left_panel_content_lines_for_terminal_size,
+    focused_panel_style, render, render_terminal_buffer, render_terminal_buffer_with_cursor,
+    render_terminal_text,
 };
 use ratatui::style::{Color, Modifier, Style};
 
@@ -603,7 +604,7 @@ fn terminal_snapshot_files_discard_confirm_modal() {
 fn terminal_snapshot_files_discard_confirm_multiselect_modal() {
     let mut state = AppState::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
-    update(&mut state, Action::Ui(UiAction::ToggleFilesMultiSelect));
+    update(&mut state, Action::Ui(UiAction::EnterFilesMultiSelect));
     update(&mut state, Action::Ui(UiAction::MoveDown));
     update(&mut state, Action::Ui(UiAction::OpenDiscardConfirm));
 
@@ -743,7 +744,7 @@ fn terminal_snapshot_branches_auto_stash_confirm_modal() {
 fn snapshots_files_multi_select_marks_selected_rows() {
     let mut state = AppState::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
-    update(&mut state, Action::Ui(UiAction::ToggleFilesMultiSelect));
+    update(&mut state, Action::Ui(UiAction::EnterFilesMultiSelect));
 
     let text = render(
         &state,
@@ -1254,7 +1255,7 @@ fn terminal_commit_editor_cursor_wraps_long_subject() {
 fn terminal_snapshot_files_stash_editor_modal() {
     let mut state = AppState::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
-    update(&mut state, Action::Ui(UiAction::ToggleFilesMultiSelect));
+    update(&mut state, Action::Ui(UiAction::EnterFilesMultiSelect));
     update(&mut state, Action::Ui(UiAction::MoveDown));
     update(&mut state, Action::Ui(UiAction::OpenStashEditor));
     for ch in "pick files".chars() {
@@ -1349,7 +1350,7 @@ fn terminal_buffer_highlights_selected_row_only_in_focused_panel() {
 fn terminal_buffer_highlights_marked_files_with_batch_style() {
     let mut state = AppState::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
-    update(&mut state, Action::Ui(UiAction::ToggleFilesMultiSelect));
+    update(&mut state, Action::Ui(UiAction::EnterFilesMultiSelect));
     update(&mut state, Action::Ui(UiAction::MoveDown));
 
     let buffer = render_terminal_buffer(
@@ -1370,6 +1371,69 @@ fn terminal_buffer_highlights_marked_files_with_batch_style() {
         "✓   src/",
         batch_selected_row_style()
     ));
+}
+
+#[test]
+fn terminal_buffer_highlights_marked_branches_with_batch_style() {
+    let mut state = AppState::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+    update(
+        &mut state,
+        Action::Ui(UiAction::FocusPanel {
+            panel: PanelFocus::Branches,
+        }),
+    );
+    update(&mut state, Action::Ui(UiAction::EnterBranchesMultiSelect));
+    update(&mut state, Action::Ui(UiAction::MoveDown));
+
+    let buffer = render_terminal_buffer(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    );
+
+    assert!(buffer_contains_text_with_style(
+        &buffer,
+        " main",
+        batch_selected_row_style()
+    ));
+    assert!(buffer_contains_text_with_style(
+        &buffer,
+        "  feature/mvp",
+        batch_selected_row_style()
+    ));
+}
+
+#[test]
+fn terminal_buffer_highlights_marked_commit_files_with_batch_style() {
+    let mut state = AppState::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+    update(&mut state, Action::Ui(UiAction::FocusNext));
+    update(&mut state, Action::Ui(UiAction::FocusNext));
+    let commands = update(&mut state, Action::Ui(UiAction::OpenCommitFilesPanel));
+    apply_mock_details_commands(&mut state, commands);
+    update(
+        &mut state,
+        Action::Ui(UiAction::EnterCommitFilesMultiSelect),
+    );
+    update(&mut state, Action::Ui(UiAction::MoveDown));
+
+    let buffer = render_terminal_buffer(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    );
+
+    assert!(buffer_contains_text_with_style(
+        &buffer,
+        "✓  M README.md",
+        batch_selected_row_style()
+    ));
+    assert!(buffer_contains_batch_selected_text(&buffer, " src/"));
 }
 
 #[test]

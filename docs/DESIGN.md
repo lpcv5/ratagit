@@ -94,7 +94,8 @@ Search interaction:
 - Search input replaces the bottom shortcuts with `search: <query>` until
   `Enter` confirms or `Esc` cancels.
 - Normal bottom shortcuts list only panel-specific common actions; baseline
-  navigation/search keys are omitted.
+  navigation/search keys are omitted, including the generic `v` visual-mode
+  entry key.
 - Bottom shortcut keys render as reverse-video badges, omit the old
   `keys(panel):` prefix, and use spaces instead of pipe separators.
 - Matches are case-insensitive and deterministic:
@@ -168,7 +169,7 @@ Files panel interaction:
   - directory rows resolve to descendant files in the current snapshot
   - `Enter` emits `Command::DiscardFiles`, `Esc` cancels
   - confirmation text and path summary are rendered only from `AppState.discard_confirm`
-- `v` enters visual multi-select at the current row; `j` / `k` updates the continuous anchor-to-cursor range.
+- `v` enters visual multi-select at the current row; `j` / `k` updates the continuous anchor-to-cursor range; `Esc` exits visual multi-select.
 - `/` switches the bottom keys area into search input until Enter or Esc using
   the generic search model.
 - Long file lists keep a stable bottom-reserve viewport while reversing from
@@ -191,8 +192,10 @@ Files panel interaction:
   metadata no longer match the current Files selection.
 - while editor, reset, or discard modal is active, modal key handling has highest input priority
   over panel navigation mappings.
-- Branches focus maps `space` to checkout, `n` to new branch, `d` to delete,
-  and `r` to rebase.
+- Branches focus maps `space` to checkout, `v` to enter visual multi-select,
+  `n` to new branch, `d` to delete, and `r` to rebase.
+- Branch visual multi-select is AppState-owned and follows the same continuous
+  anchor-to-cursor model as Files and Commits; `Esc` exits the mode.
 - Branch creation opens an AppState-owned input modal and emits
   `Command::CreateBranch` with the selected branch as `start_point`.
 - Branch checkout and rebase inspect current AppState file status; when dirty,
@@ -209,10 +212,10 @@ Files panel interaction:
   interactive rebase the current branch onto the selected branch.
 - Branches search selects matching branches and refreshes the branch details log.
 - Commits focus maps `s` to squash, `f` to fixup, `r` to reword, `d` to delete,
-  `space` to detached checkout, `v` to visual multi-select, and `Enter` to
-  open Commit Files for the selected commit.
+  `space` to detached checkout, `v` to enter visual multi-select, and `Enter`
+  to open Commit Files for the selected commit.
 - Commit visual multi-select is AppState-owned and follows the same continuous
-  anchor-to-cursor model as Files visual selection.
+  anchor-to-cursor model as Files visual selection; `Esc` exits the mode.
 - Commit rewrite commands require a clean working tree, reject merge commits in
   this slice, only accept unpushed commits, and are executed only through
   `GitBackend`.
@@ -240,7 +243,11 @@ Files panel interaction:
     pathspec, avoiding large descendant path argument lists
   - stale commit-files and commit-file-diff results are ignored when the user
     has moved to another commit or file
-  - `Esc` closes the subpanel and restores the selected commit diff
+  - `v` enters AppState-owned visual multi-select for the changed-file tree;
+    `j` / `k` updates the continuous range, and Details uses the selected
+    file/folder pathspecs
+  - `Esc` exits visual multi-select first; outside multi-select it closes the
+    subpanel and restores the selected commit diff
   - dynamic height calculations use the parent Commits list length so the
     subpanel keeps the same height even when a commit has only a few changed
     files

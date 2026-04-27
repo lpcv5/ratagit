@@ -27,12 +27,12 @@ pub(crate) fn toggle_selected_file_stage(state: &mut AppState) -> Vec<Command> {
     }
 }
 
-pub(crate) fn toggle_files_multi_select(state: &mut AppState) {
-    if state.files.mode == FileInputMode::MultiSelect {
-        leave_multi_select(&mut state.files);
-    } else {
-        enter_multi_select(&mut state.files);
-    }
+pub(crate) fn enter_files_multi_select(state: &mut AppState) {
+    enter_multi_select(&mut state.files);
+}
+
+pub(crate) fn exit_files_multi_select(state: &mut AppState) {
+    leave_multi_select(&mut state.files);
 }
 
 pub(crate) fn toggle_current_file_selection(state: &mut AppState) {

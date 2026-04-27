@@ -163,8 +163,20 @@ mod tests {
         );
         assert_eq!(
             map_key(&state, KeyCode::Char('v')),
-            Some(UiAction::ToggleFilesMultiSelect)
+            Some(UiAction::EnterFilesMultiSelect)
         );
+    }
+
+    #[test]
+    fn files_multiselect_uses_escape_to_exit_and_ignores_v() {
+        let mut state = AppState::default();
+        state.files.mode = ratagit_core::FileInputMode::MultiSelect;
+
+        assert_eq!(
+            map_key(&state, KeyCode::Esc),
+            Some(UiAction::ExitFilesMultiSelect)
+        );
+        assert_eq!(map_key(&state, KeyCode::Char('v')), None);
     }
 
     #[test]
@@ -190,6 +202,10 @@ mod tests {
             map_key(&state, KeyCode::Char('r')),
             Some(UiAction::OpenBranchRebaseMenu)
         );
+        assert_eq!(
+            map_key(&state, KeyCode::Char('v')),
+            Some(UiAction::EnterBranchesMultiSelect)
+        );
 
         state.focus = PanelFocus::Commits;
         assert_eq!(
@@ -214,7 +230,7 @@ mod tests {
         );
         assert_eq!(
             map_key(&state, KeyCode::Char('v')),
-            Some(UiAction::ToggleCommitsMultiSelect)
+            Some(UiAction::EnterCommitsMultiSelect)
         );
         assert_eq!(
             map_key(&state, KeyCode::Char('c')),
@@ -229,6 +245,10 @@ mod tests {
             map_key(&state, KeyCode::Esc),
             Some(UiAction::CloseCommitFilesPanel)
         );
+        assert_eq!(
+            map_key(&state, KeyCode::Char('v')),
+            Some(UiAction::EnterCommitFilesMultiSelect)
+        );
         state.search.active = true;
         state.search.scope = state.active_search_scope();
         state.search.query = "lib".to_string();
@@ -239,6 +259,20 @@ mod tests {
             Some(UiAction::ToggleCommitFilesDirectory)
         );
         assert_eq!(map_key(&state, KeyCode::Char('s')), None);
+        state.commits.files.mode = ratagit_core::FileInputMode::MultiSelect;
+        assert_eq!(
+            map_key(&state, KeyCode::Esc),
+            Some(UiAction::ExitCommitFilesMultiSelect)
+        );
+        assert_eq!(map_key(&state, KeyCode::Char('v')), None);
+
+        state.commits.files.active = false;
+        state.commits.mode = ratagit_core::CommitInputMode::MultiSelect;
+        assert_eq!(
+            map_key(&state, KeyCode::Esc),
+            Some(UiAction::ExitCommitsMultiSelect)
+        );
+        assert_eq!(map_key(&state, KeyCode::Char('v')), None);
 
         state.focus = PanelFocus::Stash;
         assert_eq!(
@@ -251,6 +285,22 @@ mod tests {
             map_key(&state, KeyCode::Char('O')),
             Some(UiAction::StashPopSelected)
         );
+    }
+
+    #[test]
+    fn branches_multiselect_uses_escape_to_exit_and_ignores_v() {
+        let mut state = AppState {
+            focus: PanelFocus::Branches,
+            last_left_focus: PanelFocus::Branches,
+            ..AppState::default()
+        };
+        state.branches.mode = ratagit_core::BranchInputMode::MultiSelect;
+
+        assert_eq!(
+            map_key(&state, KeyCode::Esc),
+            Some(UiAction::ExitBranchesMultiSelect)
+        );
+        assert_eq!(map_key(&state, KeyCode::Char('v')), None);
     }
 
     #[test]

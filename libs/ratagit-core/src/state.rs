@@ -119,6 +119,13 @@ pub enum CommitInputMode {
     MultiSelect,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BranchInputMode {
+    #[default]
+    Normal,
+    MultiSelect,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BranchEntry {
     pub name: String,
@@ -406,6 +413,9 @@ pub struct BranchesPanelState {
     pub items: Vec<BranchEntry>,
     pub selected: usize,
     pub scroll_offset: usize,
+    pub selected_rows: BTreeSet<String>,
+    pub selection_anchor: Option<String>,
+    pub mode: BranchInputMode,
     pub create: BranchCreateState,
     pub delete_menu: BranchDeleteMenuState,
     pub force_delete_confirm: BranchForceDeleteConfirmState,

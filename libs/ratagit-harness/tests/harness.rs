@@ -820,7 +820,7 @@ fn harness_files_space_toggles_directory_stage() {
 fn harness_files_multi_select_stashes_selected_targets() {
     let inputs = [
         UiAction::RefreshAll,
-        UiAction::ToggleFilesMultiSelect,
+        UiAction::EnterFilesMultiSelect,
         UiAction::MoveDown,
         UiAction::StashSelectedFiles,
     ];
@@ -955,7 +955,7 @@ fn harness_files_stash_editor_all_mode() {
 fn harness_files_stash_editor_multiselect_mode() {
     let inputs = [
         UiAction::RefreshAll,
-        UiAction::ToggleFilesMultiSelect,
+        UiAction::EnterFilesMultiSelect,
         UiAction::MoveDown,
         UiAction::OpenStashEditor,
         UiAction::EditorInputChar('p'),
@@ -993,7 +993,7 @@ fn harness_files_stash_editor_multiselect_mode() {
 fn harness_files_v_marks_individual_rows() {
     let inputs = [
         UiAction::RefreshAll,
-        UiAction::ToggleFilesMultiSelect,
+        UiAction::EnterFilesMultiSelect,
         UiAction::MoveDown,
     ];
     assert_scenario(MockScenario::new(
@@ -1007,6 +1007,30 @@ fn harness_files_v_marks_individual_rows() {
             batch_selected_screen_rows: &[" src/"],
             git_ops_contains: &["refresh"],
             git_state_contains: &["current_branch: \"main\""],
+        },
+    ));
+}
+
+#[test]
+fn harness_files_visual_multiselect_escape_exits_range() {
+    let inputs = [
+        UiAction::RefreshAll,
+        UiAction::EnterFilesMultiSelect,
+        UiAction::MoveDown,
+        UiAction::ExitFilesMultiSelect,
+        UiAction::StashSelectedFiles,
+    ];
+    assert_scenario(MockScenario::new(
+        "files_visual_multiselect_escape_exits_range",
+        fixture_dirty_repo(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &["Stashed 2 files", "README.md"],
+            screen_not_contains: &[],
+            selected_screen_rows: &[],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["stash-files:savepoint:src/lib.rs,src/main.rs"],
+            git_state_contains: &["path: \"README.md\"", "summary: \"savepoint\""],
         },
     ));
 }
@@ -1241,7 +1265,7 @@ fn harness_files_discard_current_target_with_confirmation() {
 fn harness_files_discard_visual_targets_with_confirmation() {
     let inputs = [
         UiAction::RefreshAll,
-        UiAction::ToggleFilesMultiSelect,
+        UiAction::EnterFilesMultiSelect,
         UiAction::MoveDown,
         UiAction::OpenDiscardConfirm,
         UiAction::ConfirmDiscard,
@@ -1427,12 +1451,35 @@ fn harness_commits_create_and_refresh() {
 }
 
 #[test]
+fn harness_branches_visual_multiselect_marks_rows() {
+    let inputs = [
+        UiAction::RefreshAll,
+        UiAction::FocusNext,
+        UiAction::EnterBranchesMultiSelect,
+        UiAction::MoveDown,
+    ];
+    assert_scenario(MockScenario::new(
+        "branches_visual_multiselect_marks_rows",
+        clean_three_commit_fixture(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &["main", "feature/mvp"],
+            screen_not_contains: &[],
+            selected_screen_rows: &[],
+            batch_selected_screen_rows: &["main", "feature/mvp"],
+            git_ops_contains: &["refresh"],
+            git_state_contains: &["branch: \"main\""],
+        },
+    ));
+}
+
+#[test]
 fn harness_commits_visual_multiselect_marks_rows() {
     let inputs = [
         UiAction::RefreshAll,
         UiAction::FocusNext,
         UiAction::FocusNext,
-        UiAction::ToggleCommitsMultiSelect,
+        UiAction::EnterCommitsMultiSelect,
         UiAction::MoveDown,
     ];
     assert_scenario(MockScenario::new(
@@ -1446,6 +1493,31 @@ fn harness_commits_visual_multiselect_marks_rows() {
             batch_selected_screen_rows: &["abc1234", "def5678"],
             git_ops_contains: &["refresh"],
             git_state_contains: &["summary: \"init project\""],
+        },
+    ));
+}
+
+#[test]
+fn harness_commits_visual_multiselect_escape_exits_range() {
+    let inputs = [
+        UiAction::RefreshAll,
+        UiAction::FocusNext,
+        UiAction::FocusNext,
+        UiAction::EnterCommitsMultiSelect,
+        UiAction::MoveDown,
+        UiAction::ExitCommitsMultiSelect,
+    ];
+    assert_scenario(MockScenario::new(
+        "commits_visual_multiselect_escape_exits_range",
+        clean_three_commit_fixture(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &["wire commands"],
+            screen_not_contains: &[],
+            selected_screen_rows: &["def5678"],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["refresh"],
+            git_state_contains: &["summary: \"wire commands\""],
         },
     ));
 }
@@ -1608,6 +1680,41 @@ fn harness_commit_files_search_selects_file_and_refreshes_diff() {
 }
 
 #[test]
+fn harness_commit_files_visual_multiselect_marks_rows_and_refreshes_diff() {
+    let inputs = [
+        UiAction::RefreshAll,
+        UiAction::FocusNext,
+        UiAction::FocusNext,
+        UiAction::OpenCommitFilesPanel,
+        UiAction::EnterCommitFilesMultiSelect,
+        UiAction::MoveDown,
+    ];
+    assert_scenario(MockScenario::new(
+        "commit_files_visual_multiselect_marks_rows",
+        clean_three_commit_fixture(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &[
+                "Commit Files",
+                "README.md",
+                "src/",
+                "diff --git a/README.md b/README.md",
+                "diff --git a/src b/src",
+            ],
+            screen_not_contains: &[],
+            selected_screen_rows: &[],
+            batch_selected_screen_rows: &["M README.md", " src/"],
+            git_ops_contains: &[
+                "commit-files:abc1234",
+                "commit-file-diff:abc1234:README.md",
+                "commit-file-diff:abc1234:README.md,src",
+            ],
+            git_state_contains: &["summary: \"init project\""],
+        },
+    ));
+}
+
+#[test]
 fn harness_commits_files_directory_uses_directory_pathspec() {
     let inputs = [
         UiAction::RefreshAll,
@@ -1720,7 +1827,7 @@ fn harness_commits_squash_multiselect() {
         UiAction::RefreshAll,
         UiAction::FocusNext,
         UiAction::FocusNext,
-        UiAction::ToggleCommitsMultiSelect,
+        UiAction::EnterCommitsMultiSelect,
         UiAction::MoveDown,
         UiAction::SquashSelectedCommits,
     ];

@@ -1,7 +1,8 @@
 use crate::{
-    AppState, CommitEntry, CommitInputMode, FileInputMode, SearchScope,
-    commit_file_tree_rows_for_read, commit_key, file_tree_rows_for_read, leave_commit_multi_select,
-    leave_multi_select, select_commit_file_tree_path, select_file_tree_path,
+    AppState, BranchInputMode, CommitEntry, CommitInputMode, FileInputMode, SearchScope, branches,
+    commit_file_tree_rows_for_read, commit_key, file_tree_rows_for_read,
+    leave_commit_files_multi_select, leave_commit_multi_select, leave_multi_select,
+    select_commit_file_tree_path, select_file_tree_path,
 };
 
 pub(crate) fn start_search(state: &mut AppState) {
@@ -11,8 +12,14 @@ pub(crate) fn start_search(state: &mut AppState) {
     if scope == SearchScope::Files && state.files.mode == FileInputMode::MultiSelect {
         leave_multi_select(&mut state.files);
     }
+    if scope == SearchScope::Branches && state.branches.mode == BranchInputMode::MultiSelect {
+        branches::leave_multi_select(&mut state.branches);
+    }
     if scope == SearchScope::Commits && state.commits.mode == CommitInputMode::MultiSelect {
         leave_commit_multi_select(&mut state.commits);
+    }
+    if scope == SearchScope::CommitFiles && state.commits.files.mode == FileInputMode::MultiSelect {
+        leave_commit_files_multi_select(&mut state.commits.files);
     }
     state.search.active = true;
     state.search.scope = Some(scope);

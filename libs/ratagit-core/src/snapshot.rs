@@ -89,6 +89,7 @@ pub(crate) fn apply_branches_snapshot(state: &mut AppState, branches: Vec<Branch
     state.branches.items = branches;
     state.branches.selected = clamp_index(state.branches.selected, state.branches.items.len());
     state.branches.scroll_offset = 0;
+    crate::branches::leave_multi_select(&mut state.branches);
     state.details.branch_log.clear();
     state.details.branch_log_error = None;
     state.details.branch_log_target = crate::selected_branch_name(state);

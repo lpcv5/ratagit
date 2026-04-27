@@ -1,6 +1,6 @@
 use crate::scroll::{move_selected_index, move_selected_index_with_scroll_offset};
 use crate::{
-    AppState, Command, PanelFocus, commit_workflow, move_selected, push_notice,
+    AppState, Command, PanelFocus, branches, commit_workflow, move_selected, push_notice,
     toggle_selected_directory,
 };
 
@@ -11,11 +11,7 @@ pub(crate) fn move_selection(state: &mut AppState, move_up: bool) -> Vec<Command
             Vec::new()
         }
         PanelFocus::Branches => {
-            move_selected_index(
-                &mut state.branches.selected,
-                state.branches.items.len(),
-                move_up,
-            );
+            branches::move_selected_branch(&mut state.branches, move_up);
             Vec::new()
         }
         PanelFocus::Commits => commit_workflow::move_commit_selection(state, move_up),
@@ -38,13 +34,7 @@ pub(crate) fn move_selection_in_viewport(
             Vec::new()
         }
         PanelFocus::Branches => {
-            move_selected_index_with_scroll_offset(
-                &mut state.branches.selected,
-                &mut state.branches.scroll_offset,
-                state.branches.items.len(),
-                move_up,
-                visible_lines,
-            );
+            branches::move_selected_branch_in_viewport(&mut state.branches, move_up, visible_lines);
             Vec::new()
         }
         PanelFocus::Commits => {

@@ -2,9 +2,107 @@ use crate::text_edit::{
     CursorMove, backspace_at_cursor, insert_char_at_cursor, move_cursor_in_text,
 };
 use crate::{
-    AppState, AutoStashOperation, BranchDeleteMode, BranchRebaseChoice, Command, push_notice,
-    with_pending,
+    AppState, AutoStashOperation, BranchDeleteMode, BranchInputMode, BranchRebaseChoice,
+    BranchesPanelState, Command, push_notice, with_pending,
 };
+
+pub(crate) fn move_selected_branch(state: &mut BranchesPanelState, move_up: bool) {
+    crate::scroll::move_selected_index(&mut state.selected, state.items.len(), move_up);
+    if state.mode == BranchInputMode::MultiSelect {
+        refresh_branch_multi_select_range(state);
+    }
+}
+
+pub(crate) fn move_selected_branch_in_viewport(
+    state: &mut BranchesPanelState,
+    move_up: bool,
+    visible_lines: usize,
+) {
+    crate::scroll::move_selected_index_with_scroll_offset(
+        &mut state.selected,
+        &mut state.scroll_offset,
+        state.items.len(),
+        move_up,
+        visible_lines,
+    );
+    if state.mode == BranchInputMode::MultiSelect {
+        refresh_branch_multi_select_range(state);
+    }
+}
+
+pub(crate) fn enter_multi_select(state: &mut BranchesPanelState) {
+    if state.items.is_empty() {
+        return;
+    }
+    let Some(key) = selected_branch_key(state) else {
+        return;
+    };
+    state.mode = BranchInputMode::MultiSelect;
+    state.selection_anchor = Some(key.clone());
+    state.selected_rows.clear();
+    state.selected_rows.insert(key);
+}
+
+pub(crate) fn leave_multi_select(state: &mut BranchesPanelState) {
+    state.mode = BranchInputMode::Normal;
+    state.selection_anchor = None;
+    state.selected_rows.clear();
+}
+
+pub fn branch_is_selected_for_batch(state: &BranchesPanelState, branch_name: &str) -> bool {
+    state.mode == BranchInputMode::MultiSelect && state.selected_rows.contains(branch_name)
+}
+
+fn refresh_branch_multi_select_range(state: &mut BranchesPanelState) {
+    if state.items.is_empty() {
+        leave_multi_select(state);
+        return;
+    }
+    ensure_valid_branch_selection_anchor(state);
+    let Some(anchor) = state.selection_anchor.clone() else {
+        return;
+    };
+    let Some(current) = selected_branch_key(state) else {
+        return;
+    };
+    let Some(anchor_index) = branch_index_for_key(state, &anchor) else {
+        return;
+    };
+    let Some(current_index) = branch_index_for_key(state, &current) else {
+        return;
+    };
+    let (start, end) = if anchor_index <= current_index {
+        (anchor_index, current_index)
+    } else {
+        (current_index, anchor_index)
+    };
+    state.selected_rows.clear();
+    for branch in &state.items[start..=end] {
+        state.selected_rows.insert(branch.name.clone());
+    }
+}
+
+fn ensure_valid_branch_selection_anchor(state: &mut BranchesPanelState) {
+    if state
+        .selection_anchor
+        .as_ref()
+        .is_some_and(|anchor| branch_index_for_key(state, anchor).is_some())
+    {
+        return;
+    }
+    state.selection_anchor = selected_branch_key(state);
+}
+
+fn selected_branch_key(state: &BranchesPanelState) -> Option<String> {
+    state
+        .items
+        .get(state.selected)
+        .map(|branch| branch.name.clone())
+}
+
+fn branch_index_for_key(state: &BranchesPanelState, key: &str) -> Option<usize> {
+    state.items.iter().position(|branch| branch.name == key)
+}
 
 pub(crate) fn open_create_input(state: &mut AppState) {
     let Some(start_point) = selected_branch_name(state) else {

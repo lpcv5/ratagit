@@ -1,5 +1,7 @@
 use crossterm::event::{KeyCode, KeyModifiers};
-use ratagit_core::{AppState, PanelFocus, UiAction};
+use ratagit_core::{
+    AppState, BranchInputMode, CommitInputMode, FileInputMode, PanelFocus, UiAction,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum KeyEffect {
@@ -182,11 +184,16 @@ fn ui_action_for_key(
     }
 
     if state.focus == PanelFocus::Files {
+        if state.files.mode == FileInputMode::MultiSelect && code == KeyCode::Esc {
+            return Some(UiAction::ExitFilesMultiSelect);
+        }
         match code {
             // TODO(files-hunks): map Enter to hunk-level editing/partial stage workflow.
             KeyCode::Enter => return Some(UiAction::ToggleSelectedDirectory),
             KeyCode::Char(' ') => return Some(UiAction::ToggleSelectedFileStage),
-            KeyCode::Char('v') => return Some(UiAction::ToggleFilesMultiSelect),
+            KeyCode::Char('v') if state.files.mode != FileInputMode::MultiSelect => {
+                return Some(UiAction::EnterFilesMultiSelect);
+            }
             KeyCode::Char('c') => return Some(UiAction::OpenCommitEditor),
             KeyCode::Char('s') => return Some(UiAction::OpenStashEditor),
             KeyCode::Char('d') => return Some(UiAction::OpenDiscardConfirm),
@@ -196,8 +203,14 @@ fn ui_action_for_key(
     }
 
     if state.focus == PanelFocus::Branches {
+        if state.branches.mode == BranchInputMode::MultiSelect && code == KeyCode::Esc {
+            return Some(UiAction::ExitBranchesMultiSelect);
+        }
         match code {
             KeyCode::Char(' ') => return Some(UiAction::CheckoutSelectedBranch),
+            KeyCode::Char('v') if state.branches.mode != BranchInputMode::MultiSelect => {
+                return Some(UiAction::EnterBranchesMultiSelect);
+            }
             KeyCode::Char('n') => return Some(UiAction::OpenBranchCreateInput),
             KeyCode::Char('d') => return Some(UiAction::OpenBranchDeleteMenu),
             KeyCode::Char('r') => return Some(UiAction::OpenBranchRebaseMenu),
@@ -206,19 +219,30 @@ fn ui_action_for_key(
     }
 
     if state.focus == PanelFocus::Commits && state.commits.files.active {
+        if state.commits.files.mode == FileInputMode::MultiSelect && code == KeyCode::Esc {
+            return Some(UiAction::ExitCommitFilesMultiSelect);
+        }
         if code == KeyCode::Esc {
             return Some(UiAction::CloseCommitFilesPanel);
+        }
+        if state.commits.files.mode != FileInputMode::MultiSelect && code == KeyCode::Char('v') {
+            return Some(UiAction::EnterCommitFilesMultiSelect);
         }
         if code == KeyCode::Enter {
             return Some(UiAction::ToggleCommitFilesDirectory);
         }
-        // TODO(commit-files-shortcuts): add commit-files local file actions in a later slice.
+        // TODO(commit-files-shortcuts): add more commit-files local file actions in a later slice.
     } else if state.focus == PanelFocus::Commits {
+        if state.commits.mode == CommitInputMode::MultiSelect && code == KeyCode::Esc {
+            return Some(UiAction::ExitCommitsMultiSelect);
+        }
         match code {
             KeyCode::Enter => return Some(UiAction::OpenCommitFilesPanel),
             KeyCode::Char(' ') => return Some(UiAction::CheckoutSelectedCommitDetached),
             KeyCode::Char('c') => return Some(UiAction::OpenCommitEditor),
-            KeyCode::Char('v') => return Some(UiAction::ToggleCommitsMultiSelect),
+            KeyCode::Char('v') if state.commits.mode != CommitInputMode::MultiSelect => {
+                return Some(UiAction::EnterCommitsMultiSelect);
+            }
             KeyCode::Char('s') => return Some(UiAction::SquashSelectedCommits),
             KeyCode::Char('f') => return Some(UiAction::FixupSelectedCommits),
             KeyCode::Char('r') => return Some(UiAction::OpenCommitRewordEditor),

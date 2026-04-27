@@ -100,7 +100,7 @@ Files panel rules:
   - `Enter` confirms, `Esc` cancels
 - `s` opens a stash editor modal from Files focus
   - normal mode stashes all current changes, including untracked files
-  - `v` multi-select mode stashes only selected target paths
+  - visual multi-select mode stashes only selected target paths
   - the title field shows a real terminal cursor
   - `Left` / `Right` / `Home` / `End` moves the cursor within the title
   - `Enter` confirms, `Esc` cancels
@@ -112,9 +112,9 @@ Files panel rules:
   - `Nuke` runs hard reset semantics and then removes untracked files/directories with `git clean -fd`
 - `d` opens a discard confirmation modal for the current Files target
   - normal mode targets the current file row or all descendant files for the current directory row
-  - `v` multi-select mode targets the selected visual range
+  - visual multi-select mode targets the selected visual range
   - `Enter` discards tracked changes and removes selected untracked targets, `Esc` cancels
-- `v` enters visual multi-select at the current row; `j` / `k` extends or shrinks the selected range
+- `v` enters visual multi-select at the current row; `j` / `k` extends or shrinks the selected range, and `Esc` exits multi-select
 - `/` opens search input in the bottom bar; Enter confirms, Esc cancels or clears, `n` / `N` navigate matches
 - the same search model applies to Branches, Commits, Stash, and Commit Files,
   scoped to the currently focused list or subpanel
@@ -159,6 +159,8 @@ Branches panel rules:
     modal opens first
   - confirming stashes changes, checks out the branch, then restores the stash
   - cancelling leaves the repository unchanged
+- `v` enters visual multi-select at the current branch; `j` / `k` updates the
+  continuous selected range, and `Esc` exits multi-select
 - `n` opens a branch-name input modal
   - the new branch is created from the selected branch as the start point
   - `Enter` creates the branch, `Esc` cancels
@@ -189,7 +191,7 @@ Commits panel rules:
   - green when reachable from local `main`
   - yellow when not on `main` but reachable from the current branch upstream
   - red when not reachable from the upstream or when upstream/main data is unavailable
-- `v` enters visual multi-select at the current commit; `j` / `k` updates the continuous anchor-to-cursor range
+- `v` enters visual multi-select at the current commit; `j` / `k` updates the continuous anchor-to-cursor range, and `Esc` exits multi-select
 - `s` squashes the selected commit or visual-selected commits into their parent lineage
 - `f` fixups the selected commit or visual-selected commits into their parent lineage
 - `r` opens the commit message modal prefilled with the selected commit message and rewords one commit
@@ -205,6 +207,9 @@ Commits panel rules:
   - `j` / `k` move the file cursor, and Details follows with the selected file's patch in that commit
   - selecting a folder shows a combined diff for descendant files in that commit
     without expanding the folder into a long path argument list
+  - `v` enters visual multi-select at the current file or folder row; `j` /
+    `k` updates the selected range, Details follows the selected file/folder
+    pathspecs, and `Esc` exits multi-select before closing the subpanel
   - `Esc` returns to the parent Commits panel and restores the selected commit diff
   - additional commit-files local shortcuts are deferred
 - `/` searches loaded commit rows by visible row identity: short hash, author

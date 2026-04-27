@@ -218,8 +218,12 @@ fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
             }
         }
         UiAction::ToggleSelectedFileStage => worktree::toggle_selected_file_stage(state),
-        UiAction::ToggleFilesMultiSelect => {
-            worktree::toggle_files_multi_select(state);
+        UiAction::EnterFilesMultiSelect => {
+            worktree::enter_files_multi_select(state);
+            Vec::new()
+        }
+        UiAction::ExitFilesMultiSelect => {
+            worktree::exit_files_multi_select(state);
             Vec::new()
         }
         UiAction::ToggleCurrentFileSelection => {
@@ -280,8 +284,20 @@ fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
                 Vec::new()
             }
         }
-        UiAction::ToggleCommitsMultiSelect => {
-            crate::toggle_commit_multi_select(&mut state.commits);
+        UiAction::EnterCommitFilesMultiSelect => {
+            crate::enter_commit_files_multi_select(&mut state.commits.files);
+            Vec::new()
+        }
+        UiAction::ExitCommitFilesMultiSelect => {
+            crate::leave_commit_files_multi_select(&mut state.commits.files);
+            Vec::new()
+        }
+        UiAction::EnterCommitsMultiSelect => {
+            crate::enter_commit_multi_select(&mut state.commits);
+            Vec::new()
+        }
+        UiAction::ExitCommitsMultiSelect => {
+            crate::leave_commit_multi_select(&mut state.commits);
             Vec::new()
         }
         UiAction::SquashSelectedCommits => commit_workflow::squash_selected_commits(state),
@@ -293,6 +309,14 @@ fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
         UiAction::DeleteSelectedCommits => commit_workflow::delete_selected_commits(state),
         UiAction::CheckoutSelectedCommitDetached => {
             commit_workflow::checkout_selected_commit_detached(state)
+        }
+        UiAction::EnterBranchesMultiSelect => {
+            branches::enter_multi_select(&mut state.branches);
+            Vec::new()
+        }
+        UiAction::ExitBranchesMultiSelect => {
+            branches::leave_multi_select(&mut state.branches);
+            Vec::new()
         }
         UiAction::CreateBranch { name, start_point } => {
             with_pending(state, vec![Command::CreateBranch { name, start_point }])

@@ -55,8 +55,9 @@ pub struct FileTreeRow {
     pub matched: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FileInputMode {
+    #[default]
     Normal,
     MultiSelect,
 }
@@ -86,6 +87,9 @@ pub struct CommitFilesPanelState {
     pub selected: usize,
     pub scroll_offset: usize,
     pub expanded_dirs: BTreeSet<String>,
+    pub selected_rows: BTreeSet<String>,
+    pub selection_anchor: Option<String>,
+    pub mode: FileInputMode,
     pub loading: bool,
     pub tree_rows: Vec<FileTreeRow>,
     pub row_descendants: BTreeMap<String, Vec<String>>,
@@ -291,6 +295,7 @@ pub fn initialize_commit_files_tree(state: &mut CommitFilesPanelState) {
         .tree_index
         .sync(commit_file_tree_sources(&state.items));
     refresh_commit_files_tree_projection(state);
+    clamp_commit_file_selected(state);
 }
 
 pub fn reconcile_after_items_changed(state: &mut FilesPanelState) {
@@ -345,6 +350,9 @@ pub fn move_selected_in_viewport(state: &mut FilesPanelState, move_up: bool, vis
 pub fn move_commit_file_selected(state: &mut CommitFilesPanelState, move_up: bool) {
     let len = commit_file_tree_row_len(state);
     move_selected_index(&mut state.selected, len, move_up);
+    if state.mode == FileInputMode::MultiSelect {
+        refresh_commit_files_multi_select_range(state);
+    }
 }
 
 pub fn move_commit_file_selected_in_viewport(
@@ -360,6 +368,9 @@ pub fn move_commit_file_selected_in_viewport(
         move_up,
         visible_lines,
     );
+    if state.mode == FileInputMode::MultiSelect {
+        refresh_commit_files_multi_select_range(state);
+    }
 }
 
 pub fn toggle_selected_directory(state: &mut FilesPanelState) -> bool {
@@ -396,6 +407,11 @@ pub fn toggle_commit_files_directory(state: &mut CommitFilesPanelState) -> bool 
         state.expanded_dirs.insert(row.path);
     }
     refresh_commit_files_tree_projection(state);
+    clamp_commit_file_selected(state);
+    if state.mode == FileInputMode::MultiSelect {
+        ensure_valid_commit_files_selection_anchor(state);
+        refresh_commit_files_multi_select_range(state);
+    }
     true
 }
 
@@ -418,6 +434,19 @@ pub fn leave_multi_select(state: &mut FilesPanelState) {
     state.selection_anchor = None;
     state.selected_rows.clear();
     refresh_tree_projection(state);
+}
+
+pub fn enter_commit_files_multi_select(state: &mut CommitFilesPanelState) {
+    state.mode = FileInputMode::MultiSelect;
+    state.selection_anchor = selected_commit_file_row(state).map(|row| row.path);
+    refresh_commit_files_multi_select_range(state);
+}
+
+pub fn leave_commit_files_multi_select(state: &mut CommitFilesPanelState) {
+    state.mode = FileInputMode::Normal;
+    state.selection_anchor = None;
+    state.selected_rows.clear();
+    refresh_commit_files_tree_projection(state);
 }
 
 pub fn selected_target_paths(state: &FilesPanelState) -> Vec<String> {
@@ -464,6 +493,12 @@ pub fn selected_commit_file(state: &CommitFilesPanelState) -> Option<CommitFileE
 }
 
 pub fn selected_commit_file_targets(state: &CommitFilesPanelState) -> Vec<CommitFileEntry> {
+    if state.mode == FileInputMode::MultiSelect && !state.selected_rows.is_empty() {
+        return selected_commit_file_targets_for_keys(
+            state,
+            &state.selected_rows.iter().cloned().collect::<Vec<_>>(),
+        );
+    }
     let Some(row) = selected_commit_file_row(state) else {
         return Vec::new();
     };
@@ -568,7 +603,6 @@ pub fn refresh_commit_files_tree_projection(state: &mut CommitFilesPanelState) {
     state.tree_rows = projection.rows;
     state.row_descendants = projection.row_descendants;
     state.row_index_by_path = projection.row_index_by_path;
-    clamp_commit_file_selected(state);
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -701,7 +735,7 @@ fn compute_commit_files_tree_projection(state: &CommitFilesPanelState) -> TreePr
             index,
             path,
             &state.expanded_dirs,
-            &BTreeSet::new(),
+            &state.selected_rows,
             &mut rows,
         );
     }
@@ -962,6 +996,84 @@ fn refresh_multi_select_range(state: &mut FilesPanelState) {
         state.selected_rows.insert(row.path.clone());
     }
     refresh_tree_projection(state);
+}
+
+fn ensure_valid_commit_files_selection_anchor(state: &mut CommitFilesPanelState) {
+    let rows = build_commit_file_tree_rows(state);
+    let anchor_is_valid = state
+        .selection_anchor
+        .as_ref()
+        .is_some_and(|anchor| rows.iter().any(|row| &row.path == anchor));
+    if !anchor_is_valid {
+        state.selection_anchor = rows.get(state.selected).map(|row| row.path.clone());
+    }
+}
+
+fn refresh_commit_files_multi_select_range(state: &mut CommitFilesPanelState) {
+    let rows = build_commit_file_tree_rows(state);
+    state.selected_rows.clear();
+    let Some(anchor_path) = state.selection_anchor.clone() else {
+        refresh_commit_files_tree_projection(state);
+        return;
+    };
+    let Some(anchor_index) = rows.iter().position(|row| row.path == anchor_path) else {
+        refresh_commit_files_tree_projection(state);
+        return;
+    };
+    if rows.is_empty() {
+        refresh_commit_files_tree_projection(state);
+        return;
+    }
+    let selected_index = state.selected.min(rows.len() - 1);
+    let start = anchor_index.min(selected_index);
+    let end = anchor_index.max(selected_index);
+    for row in &rows[start..=end] {
+        state.selected_rows.insert(row.path.clone());
+    }
+    refresh_commit_files_tree_projection(state);
+}
+
+fn selected_commit_file_targets_for_keys(
+    state: &CommitFilesPanelState,
+    keys: &[String],
+) -> Vec<CommitFileEntry> {
+    let entries = state
+        .items
+        .iter()
+        .map(|entry| (entry.path.as_str(), entry))
+        .collect::<BTreeMap<_, _>>();
+    let mut selected = BTreeMap::<String, CommitFileEntry>::new();
+    for key in keys {
+        let normalized_key = normalize_tree_path(key);
+        if normalized_key.is_empty() {
+            continue;
+        }
+        let prefix = format!("{normalized_key}/");
+        let row_kind = build_commit_file_tree_rows(state)
+            .iter()
+            .find(|row| row.path == *key)
+            .map(|row| row.kind);
+        if row_kind == Some(FileRowKind::Directory) {
+            selected.insert(
+                normalized_key.clone(),
+                CommitFileEntry {
+                    path: normalized_key,
+                    old_path: None,
+                    status: CommitFileStatus::Unknown,
+                },
+            );
+            continue;
+        }
+        for entry in state.items.iter().filter(|entry| {
+            normalize_tree_path(&entry.path) == normalized_key || entry.path.starts_with(&prefix)
+        }) {
+            selected.insert(entry.path.clone(), entry.clone());
+        }
+        if let Some(entry) = entries.get(key.as_str()) {
+            selected.insert(entry.path.clone(), (*entry).clone());
+        }
+    }
+    selected.into_values().collect()
 }
 
 fn expand_ancestors(expanded_dirs: &mut BTreeSet<String>, path: &str) {

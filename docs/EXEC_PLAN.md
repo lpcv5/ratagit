@@ -2,36 +2,37 @@
 
 ## Current Slice
 
-Select-list modal viewport cap: adjust the shared choice-list body so modal
-select lists render at most ten visible items.
+Branches visual multi-select: finish the AppState-owned multi-select interface
+for the remaining left-side list panel so Files, Branches, Commits, and Commit
+Files can enter visual selection with `v` and leave it with `Esc`.
 
 ## Goal
 
-- keep select-list sizing centralized in the shared modal body helper
-- show all options for short modal select lists while capping the visible
-  viewport at ten items for future longer lists
-- keep existing modal behavior, keyboard flows, and AppState ownership unchanged
-- preserve pure rendering and `AppState` as the only source of truth
+- keep visual multi-select state owned by `AppState` for Files, Branches,
+  Commits, and Commit Files
+- make `v` enter multi-select only, not toggle it off
+- make `Esc` leave Branches visual multi-select
+- keep generic `v` omitted from focused-panel shortcut rows
+- preserve pure rendering and Git side effects through existing commands
 
 ## Vertical Slice
 
-1. Shared select-list sizing
-- derive choice-list height from the number of AppState-provided choices in the
-  shared modal helper
-- derive choice-menu modal shell height from the capped list viewport so short
-  lists are not clipped
-- cap the rendered list viewport at ten visible item rows plus borders
-- leave reducers and Git commands unchanged
+1. Input and reducer behavior
+- add explicit enter/exit actions for Branches visual multi-select
+- map `v` to enter visual multi-select for Branches normal mode
+- map `Esc` to exit visual multi-select for Branches multi-select mode
+- leave Git command behavior unchanged
 
 2. Tests
-- add a unit assertion for the shared ten-item cap
-- update modal snapshots whose short lists now show all choices
-- run existing harness scenarios to prove modal workflows still preserve Git
-  state
+- add input unit coverage for Branches `v` entry and `Esc` exit
+- add reducer unit coverage that Branches movement extends visual selection and
+  exit clears it
+- add snapshot coverage for Branches batch-selected rows
+- add harness scenario that asserts Branches UI and Git state
 
 3. Documentation
-- update DESIGN modal notes for the select-list viewport rule
-- update PRODUCT only if visible behavior semantics change
+- update PRODUCT Branches behavior notes
+- update DESIGN Branches visual-mode notes
 
 4. Validation
 - run `cargo fmt`
@@ -41,7 +42,11 @@ select lists render at most ten visible items.
 ## Latest Validation
 
 - `cargo fmt`
+- `cargo test -p ratagit-core`
+- `cargo test --bin ratagit input::input_tests`
+- `cargo test -p ratagit-ui terminal_buffer_highlights_marked_branches_with_batch_style`
 - `cargo test -p ratagit-ui --test snapshots`
-- `cargo test -p ratagit-harness --test harness harness_files_reset_menu_select_list_renders_all_short_choices`
+- `cargo test -p ratagit-harness --test harness harness_branches_visual_multiselect_marks_rows`
+- `cargo test -p ratagit-harness --test harness`
 - `cargo clippy --workspace --lib --bins -- -D warnings`
 - `cargo test`

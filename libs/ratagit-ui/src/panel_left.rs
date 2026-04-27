@@ -1,6 +1,7 @@
 use ratagit_core::{
-    AppState, FileTreeRow, PanelFocus, SearchScope, commit_file_tree_rows_for_read,
-    commit_is_selected_for_batch, commit_key, file_tree_rows, file_tree_rows_for_read,
+    AppState, FileTreeRow, PanelFocus, SearchScope, branch_is_selected_for_batch,
+    commit_file_tree_rows_for_read, commit_is_selected_for_batch, commit_key, file_tree_rows,
+    file_tree_rows_for_read,
 };
 use ratatui::style::Style;
 
@@ -84,7 +85,12 @@ pub(crate) fn render_branches_lines(state: &AppState, max_lines: usize) -> Vec<P
         state.branches.scroll_offset,
         max_lines,
         |index, branch| {
-            let line = PanelLine::new(format_branch_entry(branch), branch_entry_role(branch))
+            let role = if branch_is_selected_for_batch(&state.branches, &branch.name) {
+                RowRole::BatchSelected
+            } else {
+                branch_entry_role(branch)
+            };
+            let line = PanelLine::new(format_branch_entry(branch), role)
                 .selected(index == state.branches.selected);
             if search_matches_contains(matches, &branch.name) {
                 highlight_search_query(line, state, SearchScope::Branches)
