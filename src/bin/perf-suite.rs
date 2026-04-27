@@ -17,14 +17,17 @@ use perf_repo::{
     manifest_for_config, text_repo_path,
 };
 use ratagit_core::{
-    COMMITS_PAGE_SIZE, CommitFileDiffPath, CommitFileDiffTarget, CommitFileEntry, CommitFileStatus,
-    CommitFilesPanelState, FileDiffTarget, FileEntry, initialize_commit_files_tree,
-    select_commit_file_tree_path, selected_commit_file_targets,
+    Action, AppState, COMMITS_PAGE_SIZE, CommitFileDiffPath, CommitFileDiffTarget, CommitFileEntry,
+    CommitFileStatus, CommitFilesPanelState, FileDiffTarget, FileEntry, PanelFocus, UiAction,
+    initialize_commit_files_tree, select_commit_file_tree_path, selected_commit_file_targets,
+    update,
 };
 use ratagit_git::{GitBackend, HybridGitBackend};
+use ratagit_ui::{TerminalSize, render_terminal_buffer};
 
 const DEFAULT_ITERATIONS: usize = 3;
 const DEFAULT_WARMUP: usize = 1;
+const COMMIT_FILES_NAVIGATION_STEPS: usize = 200;
 
 fn main() {
     if let Err(error) = run(env::args().skip(1).collect()) {
@@ -180,18 +183,20 @@ enum Operation {
     LoadMoreCommits,
     CommitFiles,
     CommitFilesDirectoryDiff,
+    CommitFilesNavigation,
     CommitDetailsDiff,
     CommitFileDiff,
     FilesDetailsDiff,
 }
 
 impl Operation {
-    const ALL: [Self; 8] = [
+    const ALL: [Self; 9] = [
         Self::Status,
         Self::Commits,
         Self::LoadMoreCommits,
         Self::CommitFiles,
         Self::CommitFilesDirectoryDiff,
+        Self::CommitFilesNavigation,
         Self::CommitDetailsDiff,
         Self::CommitFileDiff,
         Self::FilesDetailsDiff,
@@ -204,6 +209,7 @@ impl Operation {
             "load-more-commits" => Ok(Self::LoadMoreCommits),
             "commit-files" => Ok(Self::CommitFiles),
             "commit-files-directory-diff" => Ok(Self::CommitFilesDirectoryDiff),
+            "commit-files-navigation" => Ok(Self::CommitFilesNavigation),
             "commit-details-diff" => Ok(Self::CommitDetailsDiff),
             "commit-file-diff" => Ok(Self::CommitFileDiff),
             "files-details-diff" => Ok(Self::FilesDetailsDiff),
@@ -218,6 +224,7 @@ impl Operation {
             Self::LoadMoreCommits => "load-more-commits",
             Self::CommitFiles => "commit-files",
             Self::CommitFilesDirectoryDiff => "commit-files-directory-diff",
+            Self::CommitFilesNavigation => "commit-files-navigation",
             Self::CommitDetailsDiff => "commit-details-diff",
             Self::CommitFileDiff => "commit-file-diff",
             Self::FilesDetailsDiff => "files-details-diff",
@@ -630,6 +637,9 @@ fn measure_git_cli_raw(
             )?);
             output
         }
+        Operation::CommitFilesNavigation => {
+            run_git_output(git, &config.path, commit_files_args(&targets.head_commit))?
+        }
         Operation::CommitDetailsDiff => run_git_output(
             git,
             &config.path,
@@ -707,6 +717,12 @@ fn measure_git_cli_parsed(
                 output_items: String::from_utf8_lossy(&diff).lines().count(),
                 output_bytes: output.len() + diff.len(),
             })
+        }
+        Operation::CommitFilesNavigation => {
+            let output =
+                run_git_text_owned(git, &config.path, commit_files_args(&targets.head_commit))?;
+            let entries = parse_commit_files(&output)?;
+            commit_files_navigation_payload(&targets.head_commit, entries)
         }
         Operation::CommitDetailsDiff => {
             let output = run_git_output(
@@ -794,6 +810,12 @@ fn measure_backend(
                 output_items: diff.lines().count(),
                 output_bytes: files_bytes + diff.len(),
             })
+        }
+        Operation::CommitFilesNavigation => {
+            let files = backend
+                .commit_files(&targets.head_commit)
+                .map_err(|error| error.message)?;
+            commit_files_navigation_payload(&targets.head_commit, files)
         }
         Operation::CommitDetailsDiff => {
             let diff = backend
@@ -900,6 +922,41 @@ fn commit_log_args(skip: usize, limit: usize) -> Vec<String> {
         limit.to_string(),
         "--format=%H%x09%h%x09%an%x09%s".to_string(),
     ]
+}
+
+fn commit_files_navigation_payload(
+    commit_id: &str,
+    files: Vec<CommitFileEntry>,
+) -> Result<MeasurementPayload, String> {
+    let output_bytes = files.iter().map(|entry| entry.path.len()).sum();
+    let mut state = AppState {
+        focus: PanelFocus::Commits,
+        last_left_focus: PanelFocus::Commits,
+        ..AppState::default()
+    };
+    state.commits.files = CommitFilesPanelState {
+        active: true,
+        commit_id: Some(commit_id.to_string()),
+        items: files,
+        ..CommitFilesPanelState::default()
+    };
+    initialize_commit_files_tree(&mut state.commits.files);
+
+    let size = TerminalSize {
+        width: 120,
+        height: 34,
+    };
+    let mut emitted_commands = 0usize;
+    for _ in 0..COMMIT_FILES_NAVIGATION_STEPS {
+        let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+        emitted_commands += commands.len();
+        let _buffer = render_terminal_buffer(&state, size);
+    }
+
+    Ok(MeasurementPayload {
+        output_items: emitted_commands,
+        output_bytes,
+    })
 }
 
 fn commit_files_args(commit_id: &str) -> Vec<String> {
@@ -1501,7 +1558,7 @@ mod tests {
             "--scales".into(),
             "smoke,huge".into(),
             "--operations".into(),
-            "status,commit-files-directory-diff".into(),
+            "status,commit-files-directory-diff,commit-files-navigation".into(),
             "--iterations".into(),
             "2".into(),
             "--warmup".into(),
@@ -1517,7 +1574,11 @@ mod tests {
         assert_eq!(config.scales, vec![Scale::Smoke, Scale::Huge]);
         assert_eq!(
             config.operations,
-            vec![Operation::Status, Operation::CommitFilesDirectoryDiff]
+            vec![
+                Operation::Status,
+                Operation::CommitFilesDirectoryDiff,
+                Operation::CommitFilesNavigation
+            ]
         );
         assert_eq!(config.iterations, 2);
         assert_eq!(config.warmup, 0);
@@ -1659,6 +1720,7 @@ mod tests {
                 Operation::Status,
                 Operation::CommitFiles,
                 Operation::CommitFilesDirectoryDiff,
+                Operation::CommitFilesNavigation,
             ],
             iterations: 1,
             warmup: 0,

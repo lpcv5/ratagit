@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::scroll::{ScrollDirection, move_selected_index_with_scroll, reset_scroll_origin};
@@ -90,6 +91,7 @@ pub struct CommitFilesPanelState {
     pub tree_rows: Vec<FileTreeRow>,
     pub row_descendants: BTreeMap<String, Vec<String>>,
     pub row_index_by_path: BTreeMap<String, usize>,
+    pub item_index_by_path: BTreeMap<String, usize>,
 }
 
 impl Default for FilesPanelState {
@@ -132,6 +134,12 @@ pub fn initialize_tree_with_initial_expansion(state: &mut FilesPanelState, expan
 
 pub fn initialize_commit_files_tree(state: &mut CommitFilesPanelState) {
     state.expanded_dirs = collect_directories_from_paths(state.items.iter().map(|item| &item.path));
+    state.item_index_by_path = state
+        .items
+        .iter()
+        .enumerate()
+        .map(|(index, item)| (item.path.clone(), index))
+        .collect();
     refresh_commit_files_tree_projection(state);
 }
 
@@ -152,7 +160,7 @@ pub fn reconcile_after_items_changed(state: &mut FilesPanelState) {
 }
 
 pub fn clamp_selected(state: &mut FilesPanelState) {
-    let len = build_file_tree_rows(state).len();
+    let len = file_tree_row_len(state);
     state.selected = if len == 0 {
         0
     } else {
@@ -167,7 +175,7 @@ pub fn clamp_selected(state: &mut FilesPanelState) {
 }
 
 pub fn move_selected(state: &mut FilesPanelState, move_up: bool) {
-    let len = build_file_tree_rows(state).len();
+    let len = file_tree_row_len(state);
     move_selected_index_with_scroll(
         &mut state.selected,
         len,
@@ -181,7 +189,7 @@ pub fn move_selected(state: &mut FilesPanelState, move_up: bool) {
 }
 
 pub fn move_commit_file_selected(state: &mut CommitFilesPanelState, move_up: bool) {
-    let len = build_commit_file_tree_rows(state).len();
+    let len = commit_file_tree_row_len(state);
     move_selected_index_with_scroll(
         &mut state.selected,
         len,
@@ -268,13 +276,22 @@ pub fn selected_diff_targets(state: &FilesPanelState) -> Vec<FileDiffTarget> {
 }
 
 pub fn selected_row(state: &FilesPanelState) -> Option<FileTreeRow> {
-    build_file_tree_rows(state).into_iter().nth(state.selected)
+    if !state.tree_rows.is_empty() || state.items.is_empty() {
+        return state.tree_rows.get(state.selected).cloned();
+    }
+    compute_tree_projection(state)
+        .rows
+        .into_iter()
+        .nth(state.selected)
 }
 
 pub fn selected_commit_file(state: &CommitFilesPanelState) -> Option<CommitFileEntry> {
     let row = selected_commit_file_row(state)?;
     if row.kind != FileRowKind::File {
         return None;
+    }
+    if let Some(index) = state.item_index_by_path.get(&row.path) {
+        return state.items.get(*index).cloned();
     }
     state
         .items
@@ -317,8 +334,19 @@ pub fn select_commit_file_tree_path(state: &mut CommitFilesPanelState, path: &st
     false
 }
 
+fn selected_commit_file_row_ref(state: &CommitFilesPanelState) -> Option<&FileTreeRow> {
+    state.tree_rows.get(state.selected)
+}
+
 fn selected_commit_file_row(state: &CommitFilesPanelState) -> Option<FileTreeRow> {
-    build_commit_file_tree_rows(state)
+    if let Some(row) = selected_commit_file_row_ref(state) {
+        return Some(row.clone());
+    }
+    if state.items.is_empty() {
+        return None;
+    }
+    compute_commit_files_tree_projection(state)
+        .rows
         .into_iter()
         .nth(state.selected)
 }
@@ -335,6 +363,22 @@ pub fn build_commit_file_tree_rows(state: &CommitFilesPanelState) -> Vec<FileTre
         return state.tree_rows.clone();
     }
     compute_commit_files_tree_projection(state).rows
+}
+
+pub fn file_tree_rows_for_read(state: &FilesPanelState) -> Cow<'_, [FileTreeRow]> {
+    if !state.tree_rows.is_empty() || state.items.is_empty() {
+        Cow::Borrowed(&state.tree_rows)
+    } else {
+        Cow::Owned(compute_tree_projection(state).rows)
+    }
+}
+
+pub fn commit_file_tree_rows_for_read(state: &CommitFilesPanelState) -> Cow<'_, [FileTreeRow]> {
+    if !state.tree_rows.is_empty() || state.items.is_empty() {
+        Cow::Borrowed(&state.tree_rows)
+    } else {
+        Cow::Owned(compute_commit_files_tree_projection(state).rows)
+    }
 }
 
 pub fn file_tree_rows(state: &FilesPanelState) -> &[FileTreeRow] {
@@ -629,7 +673,7 @@ fn collect_row_descendants_from_paths<'a>(
 }
 
 fn clamp_commit_file_selected(state: &mut CommitFilesPanelState) {
-    let len = state.tree_rows.len();
+    let len = commit_file_tree_row_len(state);
     state.selected = if len == 0 {
         0
     } else {
@@ -641,6 +685,22 @@ fn clamp_commit_file_selected(state: &mut CommitFilesPanelState) {
         &mut state.scroll_direction,
         &mut state.scroll_direction_origin,
     );
+}
+
+fn file_tree_row_len(state: &FilesPanelState) -> usize {
+    if !state.tree_rows.is_empty() || state.items.is_empty() {
+        state.tree_rows.len()
+    } else {
+        compute_tree_projection(state).rows.len()
+    }
+}
+
+fn commit_file_tree_row_len(state: &CommitFilesPanelState) -> usize {
+    if !state.tree_rows.is_empty() || state.items.is_empty() {
+        state.tree_rows.len()
+    } else {
+        compute_commit_files_tree_projection(state).rows.len()
+    }
 }
 
 fn ensure_valid_selection_anchor(state: &mut FilesPanelState) {

@@ -241,8 +241,12 @@ fn render_commit_file_details_lines(state: &AppState, max_lines: usize) -> Vec<P
 }
 
 fn render_ansi_details_text(text: &str, scroll_offset: usize, max_lines: usize) -> Vec<PanelLine> {
-    let line_count = text.lines().count();
-    let start = details_scroll_start(line_count, scroll_offset, max_lines);
+    let start = if scroll_offset == 0 {
+        0
+    } else {
+        let line_count = text.lines().count();
+        details_scroll_start(line_count, scroll_offset, max_lines)
+    };
     text.lines()
         .skip(start)
         .map(|line| ansi_output_line(line, "  "))

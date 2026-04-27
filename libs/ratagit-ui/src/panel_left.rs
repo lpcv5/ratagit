@@ -1,9 +1,7 @@
-use std::collections::BTreeSet;
-
 use ratagit_core::{
-    AppState, FileTreeRow, PanelFocus, SearchScope, build_commit_file_tree_rows,
-    build_file_tree_rows, commit_file_tree_rows, commit_is_selected_for_batch, commit_key,
-    file_tree_rows,
+    AppState, FileTreeRow, PanelFocus, SearchScope, commit_file_tree_rows,
+    commit_file_tree_rows_for_read, commit_is_selected_for_batch, commit_key, file_tree_rows,
+    file_tree_rows_for_read,
 };
 use ratatui::style::Style;
 
@@ -27,7 +25,7 @@ pub(crate) fn left_panel_content_len(state: &AppState, panel: PanelFocus) -> usi
     match panel {
         PanelFocus::Files => {
             if file_tree_rows(&state.files).is_empty() && !state.files.items.is_empty() {
-                build_file_tree_rows(&state.files).len()
+                file_tree_rows_for_read(&state.files).len()
             } else {
                 file_tree_rows(&state.files).len()
             }
@@ -38,7 +36,7 @@ pub(crate) fn left_panel_content_len(state: &AppState, panel: PanelFocus) -> usi
             } else if commit_file_tree_rows(&state.commits.files).is_empty()
                 && !state.commits.files.items.is_empty()
             {
-                build_commit_file_tree_rows(&state.commits.files).len()
+                commit_file_tree_rows_for_read(&state.commits.files).len()
             } else {
                 commit_file_tree_rows(&state.commits.files).len()
             }
@@ -51,14 +49,12 @@ pub(crate) fn left_panel_content_len(state: &AppState, panel: PanelFocus) -> usi
 }
 
 pub(crate) fn render_files_lines(state: &AppState, max_lines: usize) -> Vec<PanelLine> {
-    let mut rows = if file_tree_rows(&state.files).is_empty() && !state.files.items.is_empty() {
-        build_file_tree_rows(&state.files)
-    } else {
-        file_tree_rows(&state.files).to_vec()
-    };
-    apply_tree_search_matches(&mut rows, state, SearchScope::Files);
+    let mut rows = file_tree_rows_for_read(&state.files);
+    if state.search.has_query_for(SearchScope::Files) {
+        apply_tree_search_matches(rows.to_mut(), state, SearchScope::Files);
+    }
     render_indexed_entries(
-        &rows,
+        rows.as_ref(),
         state.files.selected,
         state.files.scroll_direction,
         state.files.scroll_direction_origin,
@@ -82,7 +78,7 @@ pub(crate) fn render_branches_lines(state: &AppState, max_lines: usize) -> Vec<P
         |index, branch| {
             let line = PanelLine::new(format_branch_entry(branch), branch_entry_role(branch))
                 .selected(index == state.branches.selected);
-            if matches.contains(&branch.name) {
+            if search_matches_contains(matches, &branch.name) {
                 highlight_search_query(line, state, SearchScope::Branches)
             } else {
                 line
@@ -95,6 +91,7 @@ pub(crate) fn render_commits_lines(state: &AppState, max_lines: usize) -> Vec<Pa
     if state.commits.files.active {
         return render_commit_file_lines(state, max_lines);
     }
+    let matches = search_matches_for(state, SearchScope::Commits);
     render_indexed_entries_window_with(
         &state.commits.items,
         state.commits.selected,
@@ -102,7 +99,6 @@ pub(crate) fn render_commits_lines(state: &AppState, max_lines: usize) -> Vec<Pa
         state.commits.scroll_direction_origin,
         max_lines,
         |index, entry| {
-            let matches = search_matches_for(state, SearchScope::Commits);
             let role = if commit_is_selected_for_batch(&state.commits, entry) {
                 RowRole::BatchSelected
             } else {
@@ -111,7 +107,7 @@ pub(crate) fn render_commits_lines(state: &AppState, max_lines: usize) -> Vec<Pa
             let line = PanelLine::new(format_commit_entry(entry), role)
                 .selected(index == state.commits.selected)
                 .styled_spans(commit_entry_spans(entry));
-            if matches.contains(&commit_key(entry)) {
+            if search_matches_contains(matches, &commit_key(entry)) {
                 highlight_search_query(line, state, SearchScope::Commits)
             } else {
                 line
@@ -131,7 +127,7 @@ pub(crate) fn render_stash_lines(state: &AppState, max_lines: usize) -> Vec<Pane
         |index, stash| {
             let line = PanelLine::new(format_stash_entry(stash), RowRole::Normal)
                 .selected(index == state.stash.selected);
-            if matches.contains(&stash.id) {
+            if search_matches_contains(matches, &stash.id) {
                 highlight_search_query(line, state, SearchScope::Stash)
             } else {
                 line
@@ -141,16 +137,12 @@ pub(crate) fn render_stash_lines(state: &AppState, max_lines: usize) -> Vec<Pane
 }
 
 fn render_commit_file_lines(state: &AppState, max_lines: usize) -> Vec<PanelLine> {
-    let mut rows = if commit_file_tree_rows(&state.commits.files).is_empty()
-        && !state.commits.files.items.is_empty()
-    {
-        build_commit_file_tree_rows(&state.commits.files)
-    } else {
-        commit_file_tree_rows(&state.commits.files).to_vec()
-    };
-    apply_tree_search_matches(&mut rows, state, SearchScope::CommitFiles);
+    let mut rows = commit_file_tree_rows_for_read(&state.commits.files);
+    if state.search.has_query_for(SearchScope::CommitFiles) {
+        apply_tree_search_matches(rows.to_mut(), state, SearchScope::CommitFiles);
+    }
     render_indexed_entries(
-        &rows,
+        rows.as_ref(),
         state.commits.files.selected,
         state.commits.files.scroll_direction,
         state.commits.files.scroll_direction_origin,
@@ -164,18 +156,24 @@ fn render_commit_file_lines(state: &AppState, max_lines: usize) -> Vec<PanelLine
 }
 
 fn apply_tree_search_matches(rows: &mut [FileTreeRow], state: &AppState, scope: SearchScope) {
-    let matches = search_matches_for(state, scope);
+    let Some(matches) = search_matches_for(state, scope) else {
+        return;
+    };
     for row in rows {
-        row.matched = matches.contains(&row.path);
+        row.matched = matches.iter().any(|matched| matched == &row.path);
     }
 }
 
-fn search_matches_for(state: &AppState, scope: SearchScope) -> BTreeSet<String> {
+fn search_matches_for(state: &AppState, scope: SearchScope) -> Option<&[String]> {
     if state.search.has_query_for(scope) {
-        state.search.matches.iter().cloned().collect()
+        Some(&state.search.matches)
     } else {
-        BTreeSet::new()
+        None
     }
+}
+
+fn search_matches_contains(matches: Option<&[String]>, key: &str) -> bool {
+    matches.is_some_and(|matches| matches.iter().any(|matched| matched == key))
 }
 
 fn highlight_search_query(mut line: PanelLine, state: &AppState, scope: SearchScope) -> PanelLine {

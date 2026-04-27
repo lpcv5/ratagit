@@ -1,6 +1,6 @@
 use crate::{
     AppState, CommitEntry, CommitInputMode, FileInputMode, SearchScope,
-    build_commit_file_tree_rows, build_file_tree_rows, commit_key, leave_commit_multi_select,
+    commit_file_tree_rows_for_read, commit_key, file_tree_rows_for_read, leave_commit_multi_select,
     leave_multi_select, select_commit_file_tree_path, select_file_tree_path,
 };
 
@@ -96,7 +96,7 @@ pub(crate) fn recompute_search_matches(state: &mut AppState) {
     let query = state.search.query.to_lowercase();
     state.search.matches = match scope {
         SearchScope::Files => {
-            let rows = build_file_tree_rows(&state.files);
+            let rows = file_tree_rows_for_read(&state.files);
             collect_matches(
                 rows.iter(),
                 &query,
@@ -123,7 +123,7 @@ pub(crate) fn recompute_search_matches(state: &mut AppState) {
             |stash| format!("{} {}", stash.id, stash.summary),
         ),
         SearchScope::CommitFiles => {
-            let rows = build_commit_file_tree_rows(&state.commits.files);
+            let rows = commit_file_tree_rows_for_read(&state.commits.files);
             collect_matches(
                 rows.iter(),
                 &query,

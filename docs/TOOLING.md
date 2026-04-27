@@ -91,6 +91,10 @@ The `commit-files-directory-diff` operation models the Commit Files subpanel
 path used in the TUI: load changed files for a commit, build/select a directory
 row, then load that directory's patch.
 
+The `commit-files-navigation` operation models Commit Files keyboard movement:
+load the changed-file list, build the tree projection, repeatedly apply `j`
+movement through the reducer, and render the terminal buffer after each move.
+
 Reports are written to `tmp/perf/results/<run-id>.json` and
 `tmp/perf/results/<run-id>.md`. The suite is intentionally not part of the
 default `cargo test` or CI flow.
