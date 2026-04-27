@@ -24,7 +24,8 @@ use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let _ = init_observability(&ObserveConfig::default());
+    let observe_config = ObserveConfig::from_env();
+    let _observe_guard = init_observability(&observe_config).ok();
     run_tui()
 }
 

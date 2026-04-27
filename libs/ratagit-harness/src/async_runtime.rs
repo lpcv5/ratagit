@@ -41,7 +41,11 @@ struct DebouncedCommand {
 
 #[derive(Debug, Clone)]
 enum WorkerMessage {
-    Run { generation: u64, command: Command },
+    Run {
+        generation: u64,
+        command: Command,
+        enqueued_at: Instant,
+    },
     Stop,
 }
 
@@ -56,6 +60,15 @@ struct WorkerResult {
 enum WorkerKind {
     Read,
     Write,
+}
+
+impl WorkerKind {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Read => "read",
+            Self::Write => "write",
+        }
+    }
 }
 
 impl<B: GitBackend + Send + 'static> AsyncRuntime<B> {
@@ -181,6 +194,7 @@ impl<B: GitBackend + Send + 'static> AsyncRuntime<B> {
         let message = WorkerMessage::Run {
             generation: self.repo_generation,
             command,
+            enqueued_at: Instant::now(),
         };
         if self.read_command_txs[worker_index].send(message).is_err() {
             self.process_worker_failure("async git read worker stopped");
@@ -193,6 +207,7 @@ impl<B: GitBackend + Send + 'static> AsyncRuntime<B> {
         let message = WorkerMessage::Run {
             generation: self.repo_generation,
             command,
+            enqueued_at: Instant::now(),
         };
         if self.write_command_tx.send(message).is_err() {
             self.write_commands_in_flight = self.write_commands_in_flight.saturating_sub(1);
@@ -328,8 +343,31 @@ fn run_worker(
             WorkerMessage::Run {
                 generation,
                 command,
+                enqueued_at,
             } => {
+                let command_label = command.log_label();
+                let queue_delay_ms = enqueued_at.elapsed().as_millis();
+                let started = Instant::now();
+                tracing::debug!(
+                    target: "ratagit.runtime",
+                    worker = kind.label(),
+                    generation,
+                    command = command_label,
+                    queue_delay_ms,
+                    "async git worker command started"
+                );
                 let result = execute_command(backend, command);
+                tracing::debug!(
+                    target: "ratagit.runtime",
+                    worker = kind.label(),
+                    generation,
+                    command = command_label,
+                    result = result.log_label(),
+                    success = result.is_success(),
+                    queue_delay_ms,
+                    elapsed_ms = started.elapsed().as_millis(),
+                    "async git worker command completed"
+                );
                 if result_tx
                     .send(WorkerResult {
                         generation,

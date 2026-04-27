@@ -306,6 +306,40 @@ pub enum Command {
 }
 
 impl Command {
+    pub fn log_label(&self) -> &'static str {
+        match self {
+            Command::RefreshAll => "refresh_all",
+            Command::RefreshFiles => "refresh_files",
+            Command::RefreshBranches => "refresh_branches",
+            Command::RefreshCommits => "refresh_commits",
+            Command::RefreshStash => "refresh_stash",
+            Command::LoadMoreCommits { .. } => "load_more_commits",
+            Command::RefreshFilesDetailsDiff { .. } => "refresh_files_details_diff",
+            Command::RefreshBranchDetailsLog { .. } => "refresh_branch_details_log",
+            Command::RefreshCommitDetailsDiff { .. } => "refresh_commit_details_diff",
+            Command::RefreshCommitFiles { .. } => "refresh_commit_files",
+            Command::RefreshCommitFileDiff { .. } => "refresh_commit_file_diff",
+            Command::StageFiles { .. } => "stage_files",
+            Command::UnstageFiles { .. } => "unstage_files",
+            Command::StashFiles { .. } => "stash_files",
+            Command::Reset { .. } => "reset",
+            Command::Nuke => "nuke",
+            Command::DiscardFiles { .. } => "discard_files",
+            Command::CreateCommit { .. } => "create_commit",
+            Command::CreateBranch { .. } => "create_branch",
+            Command::CheckoutBranch { .. } => "checkout_branch",
+            Command::DeleteBranch { .. } => "delete_branch",
+            Command::RebaseBranch { .. } => "rebase_branch",
+            Command::SquashCommits { .. } => "squash_commits",
+            Command::FixupCommits { .. } => "fixup_commits",
+            Command::RewordCommit { .. } => "reword_commit",
+            Command::DeleteCommits { .. } => "delete_commits",
+            Command::CheckoutCommitDetached { .. } => "checkout_commit_detached",
+            Command::StashPush { .. } => "stash_push",
+            Command::StashPop { .. } => "stash_pop",
+        }
+    }
+
     pub fn refresh_all_commands() -> Vec<Self> {
         vec![
             Self::RefreshFiles,
@@ -420,6 +454,78 @@ impl Command {
     }
 }
 
+impl GitResult {
+    pub fn log_label(&self) -> &'static str {
+        match self {
+            GitResult::Refreshed(_) => "refreshed",
+            GitResult::FilesRefreshed(_) => "files_refreshed",
+            GitResult::BranchesRefreshed(_) => "branches_refreshed",
+            GitResult::CommitsRefreshed(_) => "commits_refreshed",
+            GitResult::StashesRefreshed(_) => "stashes_refreshed",
+            GitResult::FilesDetailsDiff { .. } => "files_details_diff",
+            GitResult::BranchDetailsLog { .. } => "branch_details_log",
+            GitResult::CommitDetailsDiff { .. } => "commit_details_diff",
+            GitResult::CommitFiles { .. } => "commit_files",
+            GitResult::CommitFileDiff { .. } => "commit_file_diff",
+            GitResult::RefreshFailed { .. } => "refresh_failed",
+            GitResult::CommitsPage { .. } => "commits_page",
+            GitResult::StageFiles { .. } => "stage_files",
+            GitResult::UnstageFiles { .. } => "unstage_files",
+            GitResult::StashFiles { .. } => "stash_files",
+            GitResult::Reset { .. } => "reset",
+            GitResult::Nuke { .. } => "nuke",
+            GitResult::DiscardFiles { .. } => "discard_files",
+            GitResult::CreateCommit { .. } => "create_commit",
+            GitResult::CreateBranch { .. } => "create_branch",
+            GitResult::CheckoutBranch { .. } => "checkout_branch",
+            GitResult::DeleteBranch { .. } => "delete_branch",
+            GitResult::RebaseBranch { .. } => "rebase_branch",
+            GitResult::SquashCommits { .. } => "squash_commits",
+            GitResult::FixupCommits { .. } => "fixup_commits",
+            GitResult::RewordCommit { .. } => "reword_commit",
+            GitResult::DeleteCommits { .. } => "delete_commits",
+            GitResult::CheckoutCommitDetached { .. } => "checkout_commit_detached",
+            GitResult::StashPush { .. } => "stash_push",
+            GitResult::StashPop { .. } => "stash_pop",
+        }
+    }
+
+    pub fn is_success(&self) -> bool {
+        match self {
+            GitResult::Refreshed(_)
+            | GitResult::FilesRefreshed(_)
+            | GitResult::BranchesRefreshed(_)
+            | GitResult::CommitsRefreshed(_)
+            | GitResult::StashesRefreshed(_) => true,
+            GitResult::RefreshFailed { .. } => false,
+            GitResult::FilesDetailsDiff { result, .. }
+            | GitResult::BranchDetailsLog { result, .. }
+            | GitResult::CommitDetailsDiff { result, .. }
+            | GitResult::CommitFileDiff { result, .. } => result.is_ok(),
+            GitResult::CommitFiles { result, .. } => result.is_ok(),
+            GitResult::CommitsPage { result, .. } => result.is_ok(),
+            GitResult::StageFiles { result, .. }
+            | GitResult::UnstageFiles { result, .. }
+            | GitResult::StashFiles { result, .. }
+            | GitResult::Reset { result, .. }
+            | GitResult::Nuke { result }
+            | GitResult::DiscardFiles { result, .. }
+            | GitResult::CreateCommit { result, .. }
+            | GitResult::CreateBranch { result, .. }
+            | GitResult::CheckoutBranch { result, .. }
+            | GitResult::DeleteBranch { result, .. }
+            | GitResult::RebaseBranch { result, .. }
+            | GitResult::SquashCommits { result, .. }
+            | GitResult::FixupCommits { result, .. }
+            | GitResult::RewordCommit { result, .. }
+            | GitResult::DeleteCommits { result, .. }
+            | GitResult::CheckoutCommitDetached { result, .. }
+            | GitResult::StashPush { result, .. }
+            | GitResult::StashPop { result, .. } => result.is_ok(),
+        }
+    }
+}
+
 pub fn debounce_key_for_command(command: &Command) -> Option<&'static str> {
     command.debounce_key()
 }
@@ -429,6 +535,50 @@ pub(crate) fn with_pending(state: &mut AppState, commands: Vec<Command>) -> Vec<
         mark_command_pending(state, command);
     }
     commands
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn command_log_labels_are_stable() {
+        assert_eq!(Command::RefreshFiles.log_label(), "refresh_files");
+        assert_eq!(
+            Command::RefreshFilesDetailsDiff {
+                targets: Vec::new(),
+                truncated_from: None,
+            }
+            .log_label(),
+            "refresh_files_details_diff"
+        );
+        assert_eq!(
+            Command::StageFiles {
+                paths: vec!["a.txt".to_string()],
+            }
+            .log_label(),
+            "stage_files"
+        );
+    }
+
+    #[test]
+    fn git_result_success_reports_inner_result_status() {
+        assert!(GitResult::BranchesRefreshed(Vec::new()).is_success());
+        assert!(
+            !GitResult::RefreshFailed {
+                target: None,
+                error: "boom".to_string(),
+            }
+            .is_success()
+        );
+        assert!(
+            !GitResult::CreateCommit {
+                message: "commit".to_string(),
+                result: Err("boom".to_string()),
+            }
+            .is_success()
+        );
+    }
 }
 
 fn mark_command_pending(state: &mut AppState, command: &Command) {

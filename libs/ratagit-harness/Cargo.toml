@@ -8,6 +8,8 @@ license.workspace = true
 ratagit-core.workspace = true
 ratagit-git.workspace = true
 ratagit-ui.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 ratagit-testkit.workspace = true
+tracing-subscriber.workspace = true

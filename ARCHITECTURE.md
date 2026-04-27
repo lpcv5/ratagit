@@ -136,8 +136,10 @@ internal library packages under `libs/`.
 
 ### ratagit-observe
 
-- tracing setup
-- log sinks
+- tracing subscriber setup
+- file log sink setup
+- environment-derived log level and path configuration
+- non-blocking log guard held by the TUI entrypoint
 
 ### ratagit-testkit
 

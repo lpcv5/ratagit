@@ -1,5 +1,6 @@
 use std::fmt;
 use std::path::{Component, Path};
+use std::time::Instant;
 
 mod cli;
 mod hybrid;
@@ -169,6 +170,40 @@ impl<T: GitBackend + ?Sized> GitBackend for Box<T> {
 }
 
 pub fn execute_command(backend: &mut dyn GitBackend, command: Command) -> GitResult {
+    let command_label = command.log_label();
+    let mutating = command.is_mutating();
+    let started = Instant::now();
+    tracing::debug!(
+        target: "ratagit.git",
+        command = command_label,
+        mutating,
+        "git command started"
+    );
+    let result = execute_command_inner(backend, command);
+    let elapsed_ms = started.elapsed().as_millis();
+    if result.is_success() {
+        tracing::debug!(
+            target: "ratagit.git",
+            command = command_label,
+            result = result.log_label(),
+            mutating,
+            elapsed_ms,
+            "git command completed"
+        );
+    } else {
+        tracing::warn!(
+            target: "ratagit.git",
+            command = command_label,
+            result = result.log_label(),
+            mutating,
+            elapsed_ms,
+            "git command failed"
+        );
+    }
+    result
+}
+
+fn execute_command_inner(backend: &mut dyn GitBackend, command: Command) -> GitResult {
     match command {
         Command::RefreshAll => match backend.refresh_snapshot() {
             Ok(snapshot) => GitResult::Refreshed(snapshot),

@@ -125,6 +125,10 @@ Files panel rules:
   read-only Git CLI commands use `GIT_OPTIONAL_LOCKS=0`, and Log suggests
   optional manual Git configuration such as `untrackedCache`, `fsmonitor`, and
   `splitIndex` for very large repositories
+- the TUI writes low-noise file logs by default and supports `RATAGIT_LOG=debug`
+  for Git backend performance diagnostics, including command timings, status
+  parse/sort timings, async worker queue delay, and truncation/fallback signals
+  without logging Git stdout or diff payloads
 
 Branches panel rules:
 

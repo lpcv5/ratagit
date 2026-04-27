@@ -1,3 +1,4 @@
+use std::io;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -17,6 +18,7 @@ use ratagit_ui::{
     TerminalSize, details_content_lines_for_terminal_size, details_scroll_lines_for_terminal_size,
     render_terminal_buffer_with_cursor,
 };
+use tracing::Level;
 
 fn assert_scenario(scenario: MockScenario<'_>) {
     let result = run_mock_scenario(scenario);
@@ -311,6 +313,39 @@ fn harness_large_repo_fast_status_shows_notice_without_full_refresh() {
     assert!(screen.contains("src/"));
     assert!(operations.contains("refresh-files"));
     assert!(!operations.lines().any(|operation| operation == "refresh"));
+}
+
+#[test]
+fn harness_large_repo_fast_status_is_stable_with_tracing_enabled() {
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(Level::DEBUG)
+        .with_writer(io::sink)
+        .finish();
+
+    tracing::subscriber::with_default(subscriber, || {
+        let mut fixture = fixture_dirty_repo();
+        fixture.files = vec![
+            fixture_file("src/lib.rs", false, false),
+            fixture_file("src/main.rs", true, false),
+        ];
+        let mut runtime = Runtime::new(
+            AppState::default(),
+            large_repo_backend(fixture),
+            TerminalSize {
+                width: 100,
+                height: 30,
+            },
+        );
+
+        runtime.dispatch_ui(UiAction::RefreshAll);
+
+        let screen = runtime.render_terminal_text();
+        let operations = runtime.backend().operations().join("\n");
+        let git_state = format!("{:#?}", runtime.backend().snapshot());
+        assert!(screen.contains("status=large repo fast mode; untracked scan skipped"));
+        assert!(operations.contains("refresh-files"));
+        assert!(git_state.contains("path: \"src/lib.rs\""));
+    });
 }
 
 #[test]

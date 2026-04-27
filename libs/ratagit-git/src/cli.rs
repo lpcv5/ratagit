@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command as ProcessCommand, Stdio};
+use std::time::Instant;
 
 use ratagit_core::{
     BranchDeleteMode, CommitFileDiffTarget, CommitFileEntry, CommitFileStatus, FileEntry,
@@ -98,6 +99,8 @@ impl GitCli {
             .into_iter()
             .map(|arg| arg.as_ref().to_string())
             .collect::<Vec<_>>();
+        let subcommand = args.first().map_or("unknown", String::as_str);
+        let started = Instant::now();
         let mut command = ProcessCommand::new("git");
         command.args(&args).current_dir(&self.repo_path);
         if optional_locks_disabled {
@@ -106,12 +109,31 @@ impl GitCli {
         let output = command
             .output()
             .map_err(|err| GitError::new(format!("failed to start git {:?}: {err}", args)))?;
+        let elapsed_ms = started.elapsed().as_millis();
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            tracing::warn!(
+                target: "ratagit.git.cli",
+                git_subcommand = subcommand,
+                optional_locks_disabled,
+                exit_code = ?output.status.code(),
+                elapsed_ms,
+                stdout_bytes = output.stdout.len(),
+                stderr = %stderr,
+                "git cli command failed"
+            );
             return Err(GitError::new(format!("git {:?} failed: {}", args, stderr)));
         }
 
+        tracing::debug!(
+            target: "ratagit.git.cli",
+            git_subcommand = subcommand,
+            optional_locks_disabled,
+            elapsed_ms,
+            stdout_bytes = output.stdout.len(),
+            "git cli command completed"
+        );
         Ok(output.stdout)
     }
 
@@ -120,6 +142,8 @@ impl GitCli {
         args: &[&str],
         stdout_limit: usize,
     ) -> Result<(Vec<u8>, bool), GitError> {
+        let subcommand = args.first().copied().unwrap_or("unknown");
+        let started = Instant::now();
         let mut child = ProcessCommand::new("git")
             .args(args)
             .current_dir(&self.repo_path)
@@ -159,9 +183,40 @@ impl GitCli {
         let output = child
             .wait_with_output()
             .map_err(|err| GitError::new(format!("failed to wait for git {:?}: {err}", args)))?;
+        let elapsed_ms = started.elapsed().as_millis();
         if !truncated && !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            tracing::warn!(
+                target: "ratagit.git.cli",
+                git_subcommand = subcommand,
+                optional_locks_disabled = true,
+                exit_code = ?output.status.code(),
+                elapsed_ms,
+                stdout_bytes = bytes.len(),
+                stderr = %stderr,
+                "git cli command failed"
+            );
             return Err(GitError::new(format!("git {:?} failed: {}", args, stderr)));
+        }
+        if truncated {
+            tracing::warn!(
+                target: "ratagit.git.cli",
+                git_subcommand = subcommand,
+                optional_locks_disabled = true,
+                elapsed_ms,
+                stdout_bytes = bytes.len(),
+                stdout_limit,
+                "git cli output truncated"
+            );
+        } else {
+            tracing::debug!(
+                target: "ratagit.git.cli",
+                git_subcommand = subcommand,
+                optional_locks_disabled = true,
+                elapsed_ms,
+                stdout_bytes = bytes.len(),
+                "git cli command completed"
+            );
         }
         Ok((bytes, truncated))
     }
@@ -170,6 +225,7 @@ impl GitCli {
         let args = status_args(mode);
         let (mut output, output_truncated) =
             self.run_git_read_output_limited(&args, STATUS_OUTPUT_LIMIT_BYTES)?;
+        let raw_output_bytes = output.len();
         if output_truncated {
             if let Some(last_record_end) = output.iter().rposition(|byte| *byte == 0) {
                 output.truncate(last_record_end + 1);
@@ -177,7 +233,19 @@ impl GitCli {
                 output.clear();
             }
         }
+        let started = Instant::now();
         let parsed = parse_porcelain_v1_z_limited(&output, STATUS_ENTRY_LIMIT)?;
+        tracing::debug!(
+            target: "ratagit.git.status",
+            mode = ?mode,
+            elapsed_ms = started.elapsed().as_millis(),
+            raw_output_bytes,
+            parsed_output_bytes = output.len(),
+            result_count = parsed.files.len(),
+            entries_truncated = parsed.truncated,
+            output_truncated,
+            "git status porcelain parsed"
+        );
         Ok(StatusFilesResult {
             files: parsed.files,
             output_truncated,

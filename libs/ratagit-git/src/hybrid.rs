@@ -105,7 +105,9 @@ impl GitBackend for HybridGitBackend {
         let started = Instant::now();
         let (current_branch, detached_head) = current_head(&self.repo)?;
         trace_step("head", started);
+        let started = Instant::now();
         let index_entry_count = self.repo.index()?.len();
+        trace_index_step(started, index_entry_count);
         let status_mode = status_mode_for_index_entry_count(index_entry_count);
         let started = Instant::now();
         let status = collect_files(&self.cli, &self.repo, status_mode)?;
@@ -416,19 +418,39 @@ fn collect_files(
 ) -> Result<CollectedFiles, GitError> {
     match cli.status_files(mode) {
         Ok(mut status) => {
+            let started = Instant::now();
             sort_files(&mut status.files);
+            trace_files_sort_step(started, status.files.len());
+            if status.output_truncated || status.entries_truncated {
+                tracing::warn!(
+                    target: "ratagit.git",
+                    output_truncated = status.output_truncated,
+                    entries_truncated = status.entries_truncated,
+                    result_count = status.files.len(),
+                    "git status result truncated"
+                );
+            }
             Ok(CollectedFiles {
                 files: status.files,
                 truncated: status.output_truncated || status.entries_truncated,
             })
         }
         Err(error) => {
-            tracing::debug!(
+            tracing::warn!(
                 target: "ratagit.git",
                 error = %error,
                 "git cli status failed; falling back to git2 status"
             );
-            collect_files_with_git2(repo, mode).map(|files| CollectedFiles {
+            let started = Instant::now();
+            let files = collect_files_with_git2(repo, mode)?;
+            tracing::debug!(
+                target: "ratagit.git",
+                mode = ?mode,
+                elapsed_ms = started.elapsed().as_millis(),
+                result_count = files.len(),
+                "git2 status fallback completed"
+            );
+            Ok(CollectedFiles {
                 files,
                 truncated: false,
             })
@@ -647,6 +669,26 @@ fn trace_step(step: &'static str, started: Instant) {
         step,
         elapsed_ms = started.elapsed().as_millis(),
         "git backend step completed"
+    );
+}
+
+fn trace_index_step(started: Instant, index_entry_count: usize) {
+    tracing::debug!(
+        target: "ratagit.git",
+        step = "index",
+        elapsed_ms = started.elapsed().as_millis(),
+        index_entry_count,
+        "git backend index count completed"
+    );
+}
+
+fn trace_files_sort_step(started: Instant, result_count: usize) {
+    tracing::debug!(
+        target: "ratagit.git",
+        step = "status_sort",
+        elapsed_ms = started.elapsed().as_millis(),
+        result_count,
+        "git backend status sort completed"
     );
 }
 
