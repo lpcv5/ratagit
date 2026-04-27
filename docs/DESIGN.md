@@ -286,10 +286,16 @@ Files panel interaction:
   confirmation use warning.
 - Files diff rows in Details are color-coded by semantics:
   - section headers (`### ...`)
-  - diff metadata (`diff --git`, `---`, `+++`, `index`)
+  - diff metadata (`diff --...`, `---`, `+++`, `index`, mode changes,
+    rename/copy headers, similarity headers, binary patch headers, submodule
+    headers, and no-newline markers)
   - hunk headers (`@@`)
   - additions (`+`)
   - removals (`-`)
+- Future hunk-level staging should replace Details' raw patch text projection
+  with an AppState-owned structured diff model of files, hunks, and lines; the
+  UI should render that model rather than deriving selectable hunk state from
+  terminal text.
 
 ---
 

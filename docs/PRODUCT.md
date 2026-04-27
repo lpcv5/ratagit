@@ -28,6 +28,7 @@ MVP v0 includes a left-nav workspace layout with six panels:
 - Details:
   - Files focus projection: show merged `unstaged` then `staged` diff for the currently selected file/folder target
   - Untracked text files render as new-file patches in the `unstaged` diff section
+  - Patch metadata, hunk headers, additions, and removals use deterministic semantic colors
   - While a selected file diff is loading, Details shows a deterministic loading row instead of blocking input
   - Branches focus projection: show the selected branch's native `git log --graph` output with Git's ASCII graph and ANSI colors preserved, limited to 50 commits
   - Commits focus projection: show the selected commit's header and patch diff

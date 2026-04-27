@@ -259,11 +259,7 @@ fn classify_diff_row_role(line: &str) -> RowRole {
     if line.starts_with("### ") {
         return RowRole::DiffSection;
     }
-    if line.starts_with("diff --git")
-        || line.starts_with("index ")
-        || line.starts_with("--- ")
-        || line.starts_with("+++ ")
-    {
+    if is_diff_metadata_row(line) {
         return RowRole::DiffMeta;
     }
     if line.starts_with("@@") {
@@ -276,6 +272,33 @@ fn classify_diff_row_role(line: &str) -> RowRole {
         return RowRole::DiffRemove;
     }
     RowRole::Normal
+}
+
+fn is_diff_metadata_row(line: &str) -> bool {
+    const PREFIXES: &[&str] = &[
+        "diff --",
+        "index ",
+        "--- ",
+        "+++ ",
+        "old mode ",
+        "new mode ",
+        "deleted file mode ",
+        "new file mode ",
+        "copy from ",
+        "copy to ",
+        "rename from ",
+        "rename to ",
+        "similarity index ",
+        "dissimilarity index ",
+        "Binary files ",
+        "GIT binary patch",
+        "literal ",
+        "delta ",
+        "Submodule ",
+        "\\ No newline at end of file",
+    ];
+
+    PREFIXES.iter().any(|prefix| line.starts_with(prefix))
 }
 
 fn ansi_branch_log_line(line: &str, prefix: &str) -> PanelLine {
@@ -397,6 +420,51 @@ mod tests {
         assert_eq!(classify_diff_row_role("index 123..456"), RowRole::DiffMeta);
         assert_eq!(classify_diff_row_role("--- a/a.txt"), RowRole::DiffMeta);
         assert_eq!(classify_diff_row_role("+++ b/a.txt"), RowRole::DiffMeta);
+        assert_eq!(
+            classify_diff_row_role("new file mode 100644"),
+            RowRole::DiffMeta
+        );
+        assert_eq!(
+            classify_diff_row_role("deleted file mode 100644"),
+            RowRole::DiffMeta
+        );
+        assert_eq!(classify_diff_row_role("old mode 100644"), RowRole::DiffMeta);
+        assert_eq!(classify_diff_row_role("new mode 100755"), RowRole::DiffMeta);
+        assert_eq!(
+            classify_diff_row_role("rename from old.txt"),
+            RowRole::DiffMeta
+        );
+        assert_eq!(
+            classify_diff_row_role("rename to new.txt"),
+            RowRole::DiffMeta
+        );
+        assert_eq!(
+            classify_diff_row_role("copy from old.txt"),
+            RowRole::DiffMeta
+        );
+        assert_eq!(classify_diff_row_role("copy to new.txt"), RowRole::DiffMeta);
+        assert_eq!(
+            classify_diff_row_role("similarity index 88%"),
+            RowRole::DiffMeta
+        );
+        assert_eq!(
+            classify_diff_row_role("dissimilarity index 99%"),
+            RowRole::DiffMeta
+        );
+        assert_eq!(
+            classify_diff_row_role("Binary files a/a.bin and b/a.bin differ"),
+            RowRole::DiffMeta
+        );
+        assert_eq!(
+            classify_diff_row_role("GIT binary patch"),
+            RowRole::DiffMeta
+        );
+        assert_eq!(classify_diff_row_role("literal 10"), RowRole::DiffMeta);
+        assert_eq!(classify_diff_row_role("delta 12"), RowRole::DiffMeta);
+        assert_eq!(
+            classify_diff_row_role("\\ No newline at end of file"),
+            RowRole::DiffMeta
+        );
         assert_eq!(classify_diff_row_role("@@ -1 +1 @@"), RowRole::DiffHunk);
         assert_eq!(classify_diff_row_role("+new"), RowRole::DiffAdd);
         assert_eq!(classify_diff_row_role("-old"), RowRole::DiffRemove);

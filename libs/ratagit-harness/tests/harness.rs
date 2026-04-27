@@ -503,6 +503,8 @@ fn harness_files_details_follow_cursor_with_combined_diff_sections() {
             screen_contains: &[
                 "### unstaged",
                 "diff --git a/src/lib.rs b/src/lib.rs",
+                "@@ -1 +1 @@",
+                "+new src/lib.rs",
                 "### staged",
                 "diff --git a/src/main.rs b/src/main.rs",
             ],

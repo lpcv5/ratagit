@@ -988,7 +988,7 @@ fn terminal_commits_panel_colors_hashes_and_authors() {
         &state,
         TerminalSize {
             width: 100,
-            height: 30,
+            height: 40,
         },
     );
 
@@ -1354,6 +1354,21 @@ fn terminal_buffer_styles_focused_panel_title() {
 fn terminal_buffer_styles_files_details_diff_rows_by_semantics() {
     let mut state = AppState::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+    state.details.files_diff = [
+        "### unstaged",
+        "diff --git a/old.bin b/new.bin",
+        "similarity index 88%",
+        "rename from old.bin",
+        "rename to new.bin",
+        "old mode 100644",
+        "new mode 100755",
+        "Binary files a/old.bin and b/new.bin differ",
+        "\\ No newline at end of file",
+        "@@ -1 +1 @@",
+        "-old README.md",
+        "+new README.md",
+    ]
+    .join("\n");
 
     let buffer = render_terminal_buffer(
         &state,
@@ -1365,7 +1380,42 @@ fn terminal_buffer_styles_files_details_diff_rows_by_semantics() {
 
     assert!(buffer_contains_text_with_style(
         &buffer,
-        "diff --git a/README.md b/README.md",
+        "diff --git a/old.bin b/new.bin",
+        Style::default().fg(Color::Cyan),
+    ));
+    assert!(buffer_contains_text_with_style(
+        &buffer,
+        "similarity index 88%",
+        Style::default().fg(Color::Cyan),
+    ));
+    assert!(buffer_contains_text_with_style(
+        &buffer,
+        "rename from old.bin",
+        Style::default().fg(Color::Cyan),
+    ));
+    assert!(buffer_contains_text_with_style(
+        &buffer,
+        "rename to new.bin",
+        Style::default().fg(Color::Cyan),
+    ));
+    assert!(buffer_contains_text_with_style(
+        &buffer,
+        "old mode 100644",
+        Style::default().fg(Color::Cyan),
+    ));
+    assert!(buffer_contains_text_with_style(
+        &buffer,
+        "new mode 100755",
+        Style::default().fg(Color::Cyan),
+    ));
+    assert!(buffer_contains_text_with_style(
+        &buffer,
+        "Binary files a/old.bin and b/new.bin differ",
+        Style::default().fg(Color::Cyan),
+    ));
+    assert!(buffer_contains_text_with_style(
+        &buffer,
+        "\\ No newline at end of file",
         Style::default().fg(Color::Cyan),
     ));
     assert!(buffer_contains_text_with_style(
