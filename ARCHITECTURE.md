@@ -69,10 +69,13 @@ Commands:
 
 The real TUI executes read-only Git commands through a fixed background worker
 pool and executes mutating Git commands through one exclusive background worker.
-The async runtime uses mutation barriers so stale read results cannot apply
-after queued repository mutations. The UI thread remains responsible only for
-input, reducer updates, result draining, and pure rendering. Harness scenarios
-may use the synchronous runtime to keep mock state assertions deterministic.
+Whole-repository refresh requests are split into independent read commands for
+Files/status, Branches, Commits, and Stash so a slow file status scan cannot
+delay other left-panel data from reaching `AppState`. The async runtime uses
+mutation barriers so stale read results cannot apply after queued repository
+mutations. The UI thread remains responsible only for input, reducer updates,
+result draining, and pure rendering. Harness scenarios may use the synchronous
+runtime to keep mock state assertions deterministic.
 
 ---
 
@@ -120,6 +123,13 @@ internal library packages under `libs/`.
   diffs, stage, and unstage
 - File status refresh uses `git status --porcelain=v1 -z` inside `GitBackend`
   for large-repository performance, with git2 status as a fallback
+- Status refresh chooses `StatusMode::LargeRepoFast` when the index has at
+  least 100,000 entries. In this mode `git status` uses
+  `--untracked-files=no`, status stdout is capped at 64 MiB, parsed file entries
+  are capped at 50,000, and `FilesSnapshot` records whether the status result
+  was truncated or skipped untracked scanning.
+- Read-only Git CLI commands run with `GIT_OPTIONAL_LOCKS=0` to reduce index
+  lock/refresh pressure in very large repositories.
 - Internal Git CLI executor handles operations not yet represented through
   git2, such as commit, branch mutation, checkout, stash, reset, nuke, and
   discard
@@ -159,9 +169,16 @@ internal library packages under `libs/`.
   - single source of truth in `AppState`
   - side effects only through `Command` + `GitBackend`
   - pure rendering in `ratagit-ui::render`
+- Refresh command execution applies per-panel `GitResult` values independently:
+  Files/status, Branches, Commits, and Stash may appear in any worker completion
+  order, and pending refresh targets are tracked in `AppState.work`.
 - Reusable projections and expensive read results, such as file-tree rows and
   files-detail diffs, are cached only in `AppState` and invalidated by reducer
   state transitions.
+- In large-repo mode, the Files tree initializes collapsed with a lightweight
+  projection that does not precompute `row_descendants` for every path. Details
+  commands resolve deterministic `FileDiffTarget` values from current
+  `AppState` and cap automatic file diffs to the first 100 targets.
 
 ---
 

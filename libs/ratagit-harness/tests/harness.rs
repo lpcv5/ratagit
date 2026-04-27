@@ -3,7 +3,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use ratagit_core::{
-    Action, AppState, BranchDeleteMode, GitResult, RepoSnapshot, ResetMode, UiAction, update,
+    Action, AppState, BranchDeleteMode, BranchEntry, CommitEntry, FileDiffTarget, FilesSnapshot,
+    GitResult, RepoSnapshot, ResetMode, StashEntry, UiAction, update,
 };
 use ratagit_git::{GitBackend, GitError, MockGitBackend};
 use ratagit_harness::{
@@ -46,6 +47,10 @@ fn clean_many_commit_fixture(count: usize) -> RepoSnapshot {
     fixture
 }
 
+fn large_repo_backend(fixture: RepoSnapshot) -> MockGitBackend {
+    MockGitBackend::with_status_metadata(fixture, 100_000, true, false, true)
+}
+
 #[derive(Debug, Clone)]
 struct BlockingBackend {
     inner: Arc<Mutex<MockGitBackend>>,
@@ -75,11 +80,33 @@ impl GitBackend for BlockingBackend {
             .load_more_commits(offset, limit)
     }
 
-    fn files_details_diff(&mut self, paths: &[String]) -> Result<String, GitError> {
+    fn refresh_files(&mut self) -> Result<FilesSnapshot, GitError> {
+        let _ = self.refresh_started.send(());
+        self.refresh_release
+            .lock()
+            .expect("release lock")
+            .recv_timeout(Duration::from_secs(2))
+            .expect("test should release files refresh");
+        self.inner.lock().expect("mock lock").refresh_files()
+    }
+
+    fn refresh_branches(&mut self) -> Result<Vec<BranchEntry>, GitError> {
+        self.inner.lock().expect("mock lock").refresh_branches()
+    }
+
+    fn refresh_commits(&mut self) -> Result<Vec<CommitEntry>, GitError> {
+        self.inner.lock().expect("mock lock").refresh_commits()
+    }
+
+    fn refresh_stashes(&mut self) -> Result<Vec<StashEntry>, GitError> {
+        self.inner.lock().expect("mock lock").refresh_stashes()
+    }
+
+    fn files_details_diff(&mut self, targets: &[FileDiffTarget]) -> Result<String, GitError> {
         self.inner
             .lock()
             .expect("mock lock")
-            .files_details_diff(paths)
+            .files_details_diff(targets)
     }
 
     fn branch_details_log(&mut self, branch: &str, max_count: usize) -> Result<String, GitError> {
@@ -260,6 +287,59 @@ fn harness_status_refresh() {
 }
 
 #[test]
+fn harness_large_repo_fast_status_shows_notice_without_full_refresh() {
+    let mut fixture = fixture_dirty_repo();
+    fixture.files = vec![
+        fixture_file("src/lib.rs", false, false),
+        fixture_file("src/main.rs", true, false),
+    ];
+    let mut runtime = Runtime::new(
+        AppState::default(),
+        large_repo_backend(fixture),
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    );
+
+    runtime.dispatch_ui(UiAction::RefreshAll);
+
+    let screen = runtime.render_terminal_text();
+    let operations = runtime.backend().operations().join("\n");
+    assert!(screen.contains("status=large repo fast mode; untracked scan skipped"));
+    assert!(screen.contains("tip=consider git untrackedCache/fsmonitor/splitIndex"));
+    assert!(screen.contains("src/"));
+    assert!(operations.contains("refresh-files"));
+    assert!(!operations.lines().any(|operation| operation == "refresh"));
+}
+
+#[test]
+fn harness_large_directory_details_limits_diff_targets() {
+    let mut fixture = fixture_dirty_repo();
+    fixture.files = (0..101)
+        .map(|index| fixture_file(&format!("src/file-{index:03}.txt"), false, false))
+        .collect();
+    let mut runtime = Runtime::new(
+        AppState::default(),
+        large_repo_backend(fixture),
+        TerminalSize {
+            width: 120,
+            height: 34,
+        },
+    );
+
+    runtime.dispatch_ui(UiAction::RefreshAll);
+
+    let screen = runtime.render_terminal_text();
+    let operations = runtime.backend().operations().join("\n");
+    assert!(screen.contains("details(files): showing first 100 of 101 files"));
+    assert!(screen.contains("details=diff limited to first 100 of 101 files"));
+    assert!(operations.contains("details-diff:src/file-000.txt"));
+    assert!(operations.contains("src/file-099.txt"));
+    assert!(!operations.contains("src/file-100.txt"));
+}
+
+#[test]
 fn async_runtime_renders_loading_before_refresh_finishes() {
     let size = TerminalSize {
         width: 100,
@@ -280,8 +360,23 @@ fn async_runtime_renders_loading_before_refresh_finishes() {
         .recv_timeout(Duration::from_secs(2))
         .expect("refresh should start on worker thread");
 
+    for _ in 0..100 {
+        runtime.tick();
+        if !runtime.state().branches.items.is_empty()
+            && !runtime.state().commits.items.is_empty()
+            && !runtime.state().stash.items.is_empty()
+        {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
     let loading_screen = runtime.render_terminal_text();
     assert!(loading_screen.contains("work=refreshing repository"));
+    assert!(loading_screen.contains("feature/mvp"));
+    assert!(loading_screen.contains("init project"));
+    assert!(loading_screen.contains("stash@{0}"));
+    assert!(!loading_screen.contains("README.md"));
     assert_eq!(runtime.state().status.refresh_count, 0);
 
     release_tx.send(()).expect("refresh should be releasable");
@@ -300,7 +395,7 @@ fn async_runtime_renders_loading_before_refresh_finishes() {
             .lock()
             .expect("mock lock")
             .operations()
-            .contains(&"refresh".to_string())
+            .contains(&"refresh-files".to_string())
     );
 }
 
@@ -666,7 +761,7 @@ fn harness_files_commit_editor_reports_terminal_cursor() {
         runtime
             .backend()
             .operations()
-            .contains(&"refresh".to_string())
+            .contains(&"refresh-files".to_string())
     );
 }
 

@@ -1,6 +1,6 @@
 use ratagit_core::{
-    Action, AppState, Command, CommitFileEntry, CommitFileStatus, CommitHashStatus, GitResult,
-    PanelFocus, ResetChoice, UiAction, update,
+    Action, AppState, Command, CommitFileEntry, CommitFileStatus, CommitHashStatus, FileDiffTarget,
+    FilesSnapshot, GitResult, PanelFocus, ResetChoice, UiAction, update,
 };
 use ratagit_testkit::{
     fixture_commit, fixture_conflict, fixture_dirty_repo, fixture_empty_repo, fixture_file,
@@ -33,6 +33,10 @@ fn mock_files_details_diff(paths: &[String]) -> String {
         ));
     }
     format!("### unstaged\n{}", blocks.join("\n"))
+}
+
+fn target_paths(targets: &[FileDiffTarget]) -> Vec<String> {
+    targets.iter().map(|target| target.path.clone()).collect()
 }
 
 fn mock_branch_details_log(branch: &str) -> String {
@@ -87,6 +91,14 @@ fn apply_refreshed_with_mock_details(state: &mut AppState, snapshot: ratagit_cor
     apply_mock_details_commands(state, commands);
 }
 
+fn apply_files_refreshed_with_mock_details(state: &mut AppState, snapshot: FilesSnapshot) {
+    let commands = update(
+        state,
+        Action::GitResult(GitResult::FilesRefreshed(snapshot)),
+    );
+    apply_mock_details_commands(state, commands);
+}
+
 fn buffer_contains_text_with_exact_fg(
     buffer: &ratagit_ui::TerminalBuffer,
     needle: &str,
@@ -113,12 +125,19 @@ fn buffer_contains_text_with_exact_fg(
 fn apply_mock_details_commands(state: &mut AppState, commands: Vec<Command>) {
     match commands.as_slice() {
         [] => {}
-        [Command::RefreshFilesDetailsDiff { paths }] => {
+        [
+            Command::RefreshFilesDetailsDiff {
+                targets,
+                truncated_from,
+            },
+        ] => {
+            let paths = target_paths(targets);
             let follow_up = update(
                 state,
                 Action::GitResult(GitResult::FilesDetailsDiff {
-                    paths: paths.clone(),
-                    result: Ok(mock_files_details_diff(paths)),
+                    targets: targets.clone(),
+                    truncated_from: *truncated_from,
+                    result: Ok(mock_files_details_diff(&paths)),
                 }),
             );
             assert!(follow_up.is_empty());
@@ -315,7 +334,7 @@ fn snapshots_files_shortcuts_include_reset_menu_key() {
 fn terminal_snapshot_refresh_pending_loading() {
     let mut state = AppState::default();
     let commands = update(&mut state, Action::Ui(UiAction::RefreshAll));
-    assert_eq!(commands, vec![Command::RefreshAll]);
+    assert_eq!(commands, Command::refresh_all_commands());
 
     insta::assert_snapshot!(render_terminal_text(
         &state,
@@ -843,6 +862,67 @@ fn terminal_snapshot_many_files_focus_expands_left_panel() {
         TerminalSize {
             width: 100,
             height: 24,
+        },
+    ));
+}
+
+#[test]
+fn terminal_snapshot_large_repo_fast_status_notice() {
+    let mut snapshot = fixture_dirty_repo();
+    snapshot.files = vec![
+        fixture_file("src/lib.rs", false, false),
+        fixture_file("src/main.rs", true, false),
+    ];
+    let mut state = AppState::default();
+    apply_files_refreshed_with_mock_details(
+        &mut state,
+        FilesSnapshot {
+            status_summary: snapshot.status_summary,
+            current_branch: snapshot.current_branch,
+            detached_head: snapshot.detached_head,
+            files: snapshot.files,
+            index_entry_count: 100_000,
+            large_repo_mode: true,
+            status_truncated: true,
+            untracked_scan_skipped: true,
+        },
+    );
+
+    insta::assert_snapshot!(render_terminal_text(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    ));
+}
+
+#[test]
+fn terminal_snapshot_large_directory_details_limit() {
+    let mut snapshot = fixture_dirty_repo();
+    snapshot.files = (0..101)
+        .map(|index| fixture_file(&format!("src/file-{index:03}.txt"), false, false))
+        .collect();
+    let mut state = AppState::default();
+    apply_files_refreshed_with_mock_details(
+        &mut state,
+        FilesSnapshot {
+            status_summary: snapshot.status_summary,
+            current_branch: snapshot.current_branch,
+            detached_head: snapshot.detached_head,
+            files: snapshot.files,
+            index_entry_count: 100_000,
+            large_repo_mode: true,
+            status_truncated: false,
+            untracked_scan_skipped: true,
+        },
+    );
+
+    insta::assert_snapshot!(render_terminal_text(
+        &state,
+        TerminalSize {
+            width: 120,
+            height: 34,
         },
     ));
 }

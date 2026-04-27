@@ -2,12 +2,26 @@ use ratagit_core::FileEntry;
 
 use crate::GitError;
 
-pub(crate) fn parse_porcelain_v1_z(output: &[u8]) -> Result<Vec<FileEntry>, GitError> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ParsedStatus {
+    pub(crate) files: Vec<FileEntry>,
+    pub(crate) truncated: bool,
+}
+
+pub(crate) fn parse_porcelain_v1_z_limited(
+    output: &[u8],
+    max_entries: usize,
+) -> Result<ParsedStatus, GitError> {
     let mut files = Vec::new();
     let mut records = output.split(|byte| *byte == 0).peekable();
+    let mut truncated = false;
     while let Some(record) = records.next() {
         if record.is_empty() {
             continue;
+        }
+        if files.len() >= max_entries {
+            truncated = true;
+            break;
         }
         let Some((status, path)) = parse_record(record)? else {
             continue;
@@ -24,7 +38,7 @@ pub(crate) fn parse_porcelain_v1_z(output: &[u8]) -> Result<Vec<FileEntry>, GitE
             untracked: status.is_untracked(),
         });
     }
-    Ok(files)
+    Ok(ParsedStatus { files, truncated })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,7 +83,9 @@ mod tests {
     use super::*;
 
     fn parse(input: &[u8]) -> Vec<FileEntry> {
-        parse_porcelain_v1_z(input).expect("porcelain should parse")
+        parse_porcelain_v1_z_limited(input, usize::MAX)
+            .expect("porcelain should parse")
+            .files
     }
 
     #[test]
@@ -138,6 +154,15 @@ mod tests {
 
     #[test]
     fn invalid_record_is_rejected() {
-        assert!(parse_porcelain_v1_z(b"M missing-space\0").is_err());
+        assert!(parse_porcelain_v1_z_limited(b"M missing-space\0", usize::MAX).is_err());
+    }
+
+    #[test]
+    fn parsing_can_stop_at_entry_limit() {
+        let parsed = parse_porcelain_v1_z_limited(b" M a.txt\0 M b.txt\0", 1)
+            .expect("porcelain should parse");
+
+        assert_eq!(parsed.files.len(), 1);
+        assert!(parsed.truncated);
     }
 }

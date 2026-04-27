@@ -1,7 +1,8 @@
 use crate::{
     AppState, BRANCH_DETAILS_LOG_MAX_COUNT, CachedBranchLog, CachedCommitDiff, CachedFilesDiff,
-    Command, CommitFileDiffPath, CommitFileDiffTarget, DETAILS_DIFF_CACHE_LIMIT, PanelFocus,
-    push_notice, selected_commit_file_targets, selected_target_paths, with_pending,
+    Command, CommitFileDiffPath, CommitFileDiffTarget, DETAILS_DIFF_CACHE_LIMIT,
+    FILES_DETAILS_DIFF_TARGET_LIMIT, FileDiffTarget, PanelFocus, push_notice,
+    selected_commit_file_targets, selected_diff_targets, selected_target_paths, with_pending,
 };
 
 pub(crate) fn scroll_up(state: &mut AppState, lines: usize) {
@@ -20,6 +21,7 @@ pub(crate) fn reset_after_snapshot(state: &mut AppState) {
     state.details.files_diff.clear();
     state.details.files_error = None;
     state.details.files_targets = selected_target_paths(&state.files);
+    state.details.files_diff_truncated_from = None;
     state.details.branch_log.clear();
     state.details.branch_log_error = None;
     state.details.branch_log_target = crate::selected_branch_name(state);
@@ -35,18 +37,22 @@ pub(crate) fn reset_after_snapshot(state: &mut AppState) {
 
 pub(crate) fn apply_files_diff_result(
     state: &mut AppState,
-    paths: Vec<String>,
+    targets: Vec<FileDiffTarget>,
+    truncated_from: Option<usize>,
     result: Result<String, String>,
 ) -> Vec<Command> {
     if state.last_left_focus != PanelFocus::Files {
         return Vec::new();
     }
-    if paths != selected_target_paths(&state.files) {
+    let current_request = files_diff_request_for_selection(state);
+    if targets != current_request.targets || truncated_from != current_request.truncated_from {
         return Vec::new();
     }
     state.work.details_pending = false;
     state.work.last_completed_command = Some("details".to_string());
+    let paths = file_diff_target_paths(&targets);
     state.details.files_targets = paths.clone();
+    state.details.files_diff_truncated_from = truncated_from;
     reset_scroll(state);
     match result {
         Ok(diff) => {
@@ -185,25 +191,53 @@ pub(crate) fn refresh_on_navigation(state: &mut AppState) -> Vec<Command> {
 }
 
 pub(crate) fn refresh_files_details(state: &mut AppState) -> Vec<Command> {
-    let paths = selected_target_paths(&state.files);
+    let request = files_diff_request_for_selection(state);
+    let paths = file_diff_target_paths(&request.targets);
     let target_changed = state.details.files_targets != paths;
     state.details.files_targets = paths.clone();
     if target_changed {
         reset_scroll(state);
     }
-    if paths.is_empty() {
+    if request.targets.is_empty() {
         state.details.files_diff.clear();
         state.details.files_error = None;
+        state.details.files_diff_truncated_from = None;
         state.work.details_pending = false;
+        return Vec::new();
+    }
+    if request.targets.iter().any(|target| {
+        target.untracked && target.is_directory_marker && state.status.untracked_scan_skipped
+    }) {
+        let message = "details(files): untracked directory scan skipped in large repo mode";
+        state.details.files_diff = message.to_string();
+        state.details.files_error = None;
+        state.details.files_diff_truncated_from = None;
+        state.work.details_pending = false;
+        push_notice(state, message);
         return Vec::new();
     }
     if let Some(diff) = cached_files_diff(state, &paths) {
         state.details.files_diff = diff;
         state.details.files_error = None;
+        state.details.files_diff_truncated_from = request.truncated_from;
         state.work.details_pending = false;
         return Vec::new();
     }
-    with_pending(state, vec![Command::RefreshFilesDetailsDiff { paths }])
+    if let Some(total) = request.truncated_from {
+        push_notice(
+            state,
+            &format!(
+                "details diff limited to first {FILES_DETAILS_DIFF_TARGET_LIMIT} of {total} files"
+            ),
+        );
+    }
+    with_pending(
+        state,
+        vec![Command::RefreshFilesDetailsDiff {
+            targets: request.targets,
+            truncated_from: request.truncated_from,
+        }],
+    )
 }
 
 pub(crate) fn refresh_commit_diff(state: &mut AppState) -> Vec<Command> {
@@ -463,4 +497,28 @@ fn scroll_max_offset(state: &AppState, visible_lines: usize) -> usize {
         }
         PanelFocus::Stash | PanelFocus::Details | PanelFocus::Log => 0,
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FilesDiffRequest {
+    targets: Vec<FileDiffTarget>,
+    truncated_from: Option<usize>,
+}
+
+fn files_diff_request_for_selection(state: &AppState) -> FilesDiffRequest {
+    let all_targets = selected_diff_targets(&state.files);
+    let total = all_targets.len();
+    let truncated_from = (total > FILES_DETAILS_DIFF_TARGET_LIMIT).then_some(total);
+    let targets = all_targets
+        .into_iter()
+        .take(FILES_DETAILS_DIFF_TARGET_LIMIT)
+        .collect();
+    FilesDiffRequest {
+        targets,
+        truncated_from,
+    }
+}
+
+fn file_diff_target_paths(targets: &[FileDiffTarget]) -> Vec<String> {
+    targets.iter().map(|target| target.path.clone()).collect()
 }

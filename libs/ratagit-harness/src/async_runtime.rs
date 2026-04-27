@@ -260,6 +260,7 @@ impl<B: GitBackend + Send + 'static> AsyncRuntime<B> {
 
     fn process_worker_failure(&mut self, error: &str) {
         self.process_git_result(GitResult::RefreshFailed {
+            target: None,
             error: error.to_string(),
         });
     }

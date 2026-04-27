@@ -18,7 +18,7 @@ pub fn update(state: &mut AppState, action: Action) -> Vec<Command> {
 
 fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
     match action {
-        UiAction::RefreshAll => with_pending(state, vec![Command::RefreshAll]),
+        UiAction::RefreshAll => with_pending(state, Command::refresh_all_commands()),
         UiAction::OpenCommitEditor => {
             editor::open_commit_editor(state);
             Vec::new()

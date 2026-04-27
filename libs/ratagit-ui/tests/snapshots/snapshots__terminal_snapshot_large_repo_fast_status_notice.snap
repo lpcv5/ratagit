@@ -1,0 +1,34 @@
+---
+source: libs/ratagit-ui/tests/snapshots.rs
+expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30, },)"
+---
+┌ [1] 󰈙 Files ───────────────────┐┌ [5]  Details ─────────────────────────────────────────────────┐
+│    src/                       ││  ### unstaged                                                  │
+│                                ││  diff --git a/src/lib.rs b/src/lib.rs                          │
+│                                ││  @@ -1 +1 @@                                                   │
+│                                ││  -old src/lib.rs                                               │
+│                                ││  +new src/lib.rs                                               │
+│                                ││  diff --git a/src/main.rs b/src/main.rs                        │
+│                                ││  @@ -1 +1 @@                                                   │
+│                                ││  -old src/main.rs                                              │
+│                                ││  +new src/main.rs                                              │
+└────────────────────────────────┘│                                                                │
+┌ [2]  Branches ────────────────┐│                                                                │
+│                                ││                                                                │
+│                                ││                                                                │
+│                                ││                                                                │
+│                                ││                                                                │
+│                                ││                                                                │
+│                                ││                                                                │
+└────────────────────────────────┘│                                                                │
+┌ [3]  Commits ─────────────────┐└────────────────────────────────────────────────────────────────┘
+│                                │┌ [6] 󰌱 Log ─────────────────────────────────────────────────────┐
+│                                ││  status=large repo fast mode; untracked scan skipped           │
+│                                ││  tip=consider git untrackedCache/fsmonitor/splitIndex          │
+│                                ││  status=truncated at 50000 file entries or 64 MiB output       │
+│                                ││  notice=Ready                                                  │
+└────────────────────────────────┘│                                                                │
+┌ [4]  Stash ───────────────────┐│                                                                │
+│                                ││                                                                │
+└────────────────────────────────┘└────────────────────────────────────────────────────────────────┘
+keys(files): space stage/unstage | d discard | c commit | s stash(all|selected) | D reset | v multi

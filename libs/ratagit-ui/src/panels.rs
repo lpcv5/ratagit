@@ -30,7 +30,7 @@ use ratagit_core::{AppState, ScrollDirection};
 #[cfg(test)]
 mod tests {
     use ratagit_core::{
-        Action, COMMITS_PAGE_SIZE, Command, GitResult, PanelFocus, UiAction, update,
+        Action, COMMITS_PAGE_SIZE, Command, FileDiffTarget, GitResult, PanelFocus, UiAction, update,
     };
     use ratagit_testkit::{fixture_commit, fixture_dirty_repo, fixture_empty_repo};
 
@@ -50,18 +50,30 @@ mod tests {
         format!("### unstaged\n{}", blocks.join("\n"))
     }
 
+    fn target_paths(targets: &[FileDiffTarget]) -> Vec<String> {
+        targets.iter().map(|target| target.path.clone()).collect()
+    }
+
     fn state_with_dirty_repo() -> AppState {
         let mut state = AppState::default();
         let commands = update(
             &mut state,
             Action::GitResult(GitResult::Refreshed(fixture_dirty_repo())),
         );
-        if let [Command::RefreshFilesDetailsDiff { paths }] = commands.as_slice() {
+        if let [
+            Command::RefreshFilesDetailsDiff {
+                targets,
+                truncated_from,
+            },
+        ] = commands.as_slice()
+        {
+            let paths = target_paths(targets);
             let follow_up = update(
                 &mut state,
                 Action::GitResult(GitResult::FilesDetailsDiff {
-                    paths: paths.clone(),
-                    result: Ok(mock_diff_for_paths(paths)),
+                    targets: targets.clone(),
+                    truncated_from: *truncated_from,
+                    result: Ok(mock_diff_for_paths(&paths)),
                 }),
             );
             assert!(follow_up.is_empty());

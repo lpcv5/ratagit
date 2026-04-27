@@ -43,6 +43,11 @@ Focus model:
   delete menu, rebase menu, and auto-stash confirmation state
 - `AppState.work` stores visible pending refresh/details/operation state and
   the last completed command label
+- `AppState.status` stores Git status performance metadata:
+  `index_entry_count`, `large_repo_mode`, `status_truncated`, and
+  `untracked_scan_skipped`
+- `AppState.details.files_diff_truncated_from` stores the original target count
+  when Files Details diff output is limited to the first 100 targets
 - left-panel height baseline follows the Files/Branches/Commits/Stash ratio
 - when `Stash` is unfocused it collapses to one content row and freed height is
   redistributed by ratio to Files/Branches/Commits
@@ -64,6 +69,10 @@ Focus model:
   and mutating commands to one exclusive write worker, then receives
   `GitResult` values through a channel; the mock harness can still use the
   synchronous runtime for deterministic scenario tests.
+- Refresh-all fan-outs to independent Files/status, Branches, Commits, and
+  Stash read commands. Each panel applies its own result into `AppState` as soon
+  as a worker finishes, so slow file status collection does not block the other
+  left panels from rendering available data.
 - The async runtime defers new read commands while a mutation is in flight and
   drops stale read results that were started before a queued mutation.
 - Runtimes coalesce redundant queued repository refresh and files-detail diff
@@ -102,8 +111,17 @@ Files panel interaction:
 - File tree rows are derived from `RepoSnapshot.files`; no UI code reads external state.
 - `AppState.files.tree_rows`, `row_descendants`, and `row_index_by_path`
   cache deterministic tree projection data after reducer-managed changes.
-- Backend status collection uses full untracked-file expansion so untracked
-  nested files appear as explicit file rows in the tree.
+- Backend status collection uses full untracked-file expansion in small
+  repositories so untracked nested files appear as explicit file rows in the
+  tree.
+- When the backend reports large repo fast mode, the Files tree initializes
+  collapsed and uses lightweight projection data to avoid constructing
+  `row_descendants` for every path during initial load.
+- Large repo fast mode skips full untracked expansion. The Log panel renders a
+  notice for the skipped untracked scan and a manual Git config tip rather than
+  changing repository configuration automatically.
+- Status output is bounded by backend limits. `AppState.status.status_truncated`
+  drives a deterministic Log notice when the result was capped.
 - Real backend status collection prefers Git CLI porcelain v1 `-z` output inside
   `GitBackend` for large-repository speed and falls back to git2 status if the
   CLI command fails.
@@ -140,8 +158,17 @@ Files panel interaction:
   downward movement; moving up does not jump to a top-reserve viewport.
 - `RefreshAll` and files selection navigation emit `RefreshFilesDetailsDiff` so
   the Details panel follows the current files cursor.
-- stale details-diff results are ignored when their path list no longer matches
-  the current Files selection.
+- Files Details commands carry deterministic `FileDiffTarget` values
+  (`path`, `untracked`, `is_directory_marker`) instead of asking the backend to
+  rediscover status metadata.
+- Folder or visual multi-select Details diffs are limited to the first 100
+  resolved targets in core before the command is emitted. The Details and Log
+  panels render the original total from `AppState.details.files_diff_truncated_from`.
+- Unknown untracked directory markers do not emit a Git diff command when large
+  repo mode skipped untracked scanning; Details renders a skip message from
+  `AppState`.
+- stale details-diff results are ignored when their target list and truncation
+  metadata no longer match the current Files selection.
 - while editor, reset, or discard modal is active, modal key handling has highest input priority
   over panel navigation mappings.
 - Branches focus maps `space` to checkout, `n` to new branch, `d` to delete,

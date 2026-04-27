@@ -1,6 +1,6 @@
 use crate::{
-    AppState, BranchDeleteMode, CommitEntry, CommitFileDiffTarget, CommitFileEntry, RepoSnapshot,
-    ResetMode, operations,
+    AppState, BranchDeleteMode, BranchEntry, CommitEntry, CommitFileDiffTarget, CommitFileEntry,
+    FileDiffTarget, FilesSnapshot, RefreshTarget, RepoSnapshot, ResetMode, StashEntry, operations,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -90,8 +90,13 @@ pub enum UiAction {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GitResult {
     Refreshed(RepoSnapshot),
+    FilesRefreshed(FilesSnapshot),
+    BranchesRefreshed(Vec<BranchEntry>),
+    CommitsRefreshed(Vec<CommitEntry>),
+    StashesRefreshed(Vec<StashEntry>),
     FilesDetailsDiff {
-        paths: Vec<String>,
+        targets: Vec<FileDiffTarget>,
+        truncated_from: Option<usize>,
         result: Result<String, String>,
     },
     BranchDetailsLog {
@@ -111,6 +116,7 @@ pub enum GitResult {
         result: Result<String, String>,
     },
     RefreshFailed {
+        target: Option<RefreshTarget>,
         error: String,
     },
     CommitsPage {
@@ -210,13 +216,18 @@ pub enum Action {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     RefreshAll,
+    RefreshFiles,
+    RefreshBranches,
+    RefreshCommits,
+    RefreshStash,
     LoadMoreCommits {
         offset: usize,
         limit: usize,
         epoch: u64,
     },
     RefreshFilesDetailsDiff {
-        paths: Vec<String>,
+        targets: Vec<FileDiffTarget>,
+        truncated_from: Option<usize>,
     },
     RefreshBranchDetailsLog {
         branch: String,
@@ -295,6 +306,15 @@ pub enum Command {
 }
 
 impl Command {
+    pub fn refresh_all_commands() -> Vec<Self> {
+        vec![
+            Self::RefreshFiles,
+            Self::RefreshBranches,
+            Self::RefreshCommits,
+            Self::RefreshStash,
+        ]
+    }
+
     pub fn debounce_key(&self) -> Option<&'static str> {
         match self {
             Command::RefreshFilesDetailsDiff { .. } => Some("files_details_diff"),
@@ -302,6 +322,10 @@ impl Command {
             Command::RefreshCommitDetailsDiff { .. } => Some("commit_details_diff"),
             Command::RefreshCommitFileDiff { .. } => Some("commit_file_diff"),
             Command::RefreshAll
+            | Command::RefreshFiles
+            | Command::RefreshBranches
+            | Command::RefreshCommits
+            | Command::RefreshStash
             | Command::LoadMoreCommits { .. }
             | Command::RefreshCommitFiles { .. }
             | Command::StageFiles { .. }
@@ -382,6 +406,10 @@ impl Command {
             Command::StashPush { .. } => Some("stash_push".to_string()),
             Command::StashPop { .. } => Some("stash_pop".to_string()),
             Command::RefreshAll
+            | Command::RefreshFiles
+            | Command::RefreshBranches
+            | Command::RefreshCommits
+            | Command::RefreshStash
             | Command::LoadMoreCommits { .. }
             | Command::RefreshFilesDetailsDiff { .. }
             | Command::RefreshBranchDetailsLog { .. }
@@ -407,6 +435,19 @@ fn mark_command_pending(state: &mut AppState, command: &Command) {
     match command {
         Command::RefreshAll => {
             state.work.refresh_pending = true;
+            state.work.pending_refreshes = RefreshTarget::ALL.into_iter().collect();
+        }
+        Command::RefreshFiles => {
+            mark_refresh_target_pending(state, RefreshTarget::Files);
+        }
+        Command::RefreshBranches => {
+            mark_refresh_target_pending(state, RefreshTarget::Branches);
+        }
+        Command::RefreshCommits => {
+            mark_refresh_target_pending(state, RefreshTarget::Commits);
+        }
+        Command::RefreshStash => {
+            mark_refresh_target_pending(state, RefreshTarget::Stash);
         }
         Command::LoadMoreCommits { .. } => {
             state.commits.loading_more = true;
@@ -426,4 +467,9 @@ fn mark_command_pending(state: &mut AppState, command: &Command) {
             }
         }
     }
+}
+
+fn mark_refresh_target_pending(state: &mut AppState, target: RefreshTarget) {
+    state.work.refresh_pending = true;
+    state.work.pending_refreshes.insert(target);
 }

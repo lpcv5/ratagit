@@ -9,8 +9,8 @@ mod status_cli;
 mod untracked_diff;
 
 use ratagit_core::{
-    BranchDeleteMode, Command, CommitEntry, CommitFileDiffTarget, CommitFileEntry, GitResult,
-    RepoSnapshot, ResetMode, StashEntry,
+    BranchDeleteMode, Command, CommitEntry, CommitFileDiffTarget, CommitFileEntry, FileDiffTarget,
+    FilesSnapshot, GitResult, RefreshTarget, RepoSnapshot, ResetMode, StashEntry,
 };
 
 pub use hybrid::HybridGitBackend;
@@ -46,12 +46,34 @@ impl std::error::Error for GitError {}
 
 pub trait GitBackend {
     fn refresh_snapshot(&mut self) -> Result<RepoSnapshot, GitError>;
+    fn refresh_files(&mut self) -> Result<FilesSnapshot, GitError> {
+        let snapshot = self.refresh_snapshot()?;
+        Ok(FilesSnapshot {
+            status_summary: snapshot.status_summary,
+            current_branch: snapshot.current_branch,
+            detached_head: snapshot.detached_head,
+            index_entry_count: snapshot.files.len(),
+            files: snapshot.files,
+            large_repo_mode: false,
+            status_truncated: false,
+            untracked_scan_skipped: false,
+        })
+    }
+    fn refresh_branches(&mut self) -> Result<Vec<ratagit_core::BranchEntry>, GitError> {
+        self.refresh_snapshot().map(|snapshot| snapshot.branches)
+    }
+    fn refresh_commits(&mut self) -> Result<Vec<CommitEntry>, GitError> {
+        self.refresh_snapshot().map(|snapshot| snapshot.commits)
+    }
+    fn refresh_stashes(&mut self) -> Result<Vec<StashEntry>, GitError> {
+        self.refresh_snapshot().map(|snapshot| snapshot.stashes)
+    }
     fn load_more_commits(
         &mut self,
         offset: usize,
         limit: usize,
     ) -> Result<Vec<CommitEntry>, GitError>;
-    fn files_details_diff(&mut self, paths: &[String]) -> Result<String, GitError>;
+    fn files_details_diff(&mut self, targets: &[FileDiffTarget]) -> Result<String, GitError>;
     fn branch_details_log(&mut self, branch: &str, max_count: usize) -> Result<String, GitError>;
     fn commit_details_diff(&mut self, commit_id: &str) -> Result<String, GitError>;
     fn commit_files(&mut self, commit_id: &str) -> Result<Vec<CommitFileEntry>, GitError>;
@@ -115,8 +137,12 @@ macro_rules! delegate_boxed_backend {
 impl<T: GitBackend + ?Sized> GitBackend for Box<T> {
     delegate_boxed_backend! {
         refresh_snapshot() -> Result<RepoSnapshot, GitError>;
+        refresh_files() -> Result<FilesSnapshot, GitError>;
+        refresh_branches() -> Result<Vec<ratagit_core::BranchEntry>, GitError>;
+        refresh_commits() -> Result<Vec<CommitEntry>, GitError>;
+        refresh_stashes() -> Result<Vec<StashEntry>, GitError>;
         load_more_commits(offset: usize, limit: usize) -> Result<Vec<CommitEntry>, GitError>;
-        files_details_diff(paths: &[String]) -> Result<String, GitError>;
+        files_details_diff(targets: &[FileDiffTarget]) -> Result<String, GitError>;
         branch_details_log(branch: &str, max_count: usize) -> Result<String, GitError>;
         commit_details_diff(commit_id: &str) -> Result<String, GitError>;
         commit_files(commit_id: &str) -> Result<Vec<CommitFileEntry>, GitError>;
@@ -147,6 +173,35 @@ pub fn execute_command(backend: &mut dyn GitBackend, command: Command) -> GitRes
         Command::RefreshAll => match backend.refresh_snapshot() {
             Ok(snapshot) => GitResult::Refreshed(snapshot),
             Err(error) => GitResult::RefreshFailed {
+                target: None,
+                error: error.message,
+            },
+        },
+        Command::RefreshFiles => match backend.refresh_files() {
+            Ok(snapshot) => GitResult::FilesRefreshed(snapshot),
+            Err(error) => GitResult::RefreshFailed {
+                target: Some(RefreshTarget::Files),
+                error: error.message,
+            },
+        },
+        Command::RefreshBranches => match backend.refresh_branches() {
+            Ok(branches) => GitResult::BranchesRefreshed(branches),
+            Err(error) => GitResult::RefreshFailed {
+                target: Some(RefreshTarget::Branches),
+                error: error.message,
+            },
+        },
+        Command::RefreshCommits => match backend.refresh_commits() {
+            Ok(commits) => GitResult::CommitsRefreshed(commits),
+            Err(error) => GitResult::RefreshFailed {
+                target: Some(RefreshTarget::Commits),
+                error: error.message,
+            },
+        },
+        Command::RefreshStash => match backend.refresh_stashes() {
+            Ok(stashes) => GitResult::StashesRefreshed(stashes),
+            Err(error) => GitResult::RefreshFailed {
+                target: Some(RefreshTarget::Stash),
                 error: error.message,
             },
         },
@@ -162,10 +217,14 @@ pub fn execute_command(backend: &mut dyn GitBackend, command: Command) -> GitRes
                 .load_more_commits(offset, limit)
                 .map_err(|error| error.message),
         },
-        Command::RefreshFilesDetailsDiff { paths } => GitResult::FilesDetailsDiff {
-            paths: paths.clone(),
+        Command::RefreshFilesDetailsDiff {
+            targets,
+            truncated_from,
+        } => GitResult::FilesDetailsDiff {
+            targets: targets.clone(),
+            truncated_from,
             result: backend
-                .files_details_diff(&paths)
+                .files_details_diff(&targets)
                 .map_err(|error| error.message),
         },
         Command::RefreshBranchDetailsLog { branch, max_count } => GitResult::BranchDetailsLog {
@@ -367,6 +426,14 @@ mod tests {
                 is_current: true,
             }],
             stashes: Vec::new(),
+        }
+    }
+
+    fn file_diff_target(path: &str, untracked: bool) -> FileDiffTarget {
+        FileDiffTarget {
+            path: path.to_string(),
+            untracked,
+            is_directory_marker: path.ends_with('/'),
         }
     }
 
@@ -630,16 +697,28 @@ mod tests {
         let result = execute_command(
             &mut backend,
             Command::RefreshFilesDetailsDiff {
-                paths: vec!["src/lib.rs".to_string(), "src/main.rs".to_string()],
+                targets: vec![
+                    file_diff_target("src/lib.rs", false),
+                    file_diff_target("src/main.rs", false),
+                ],
+                truncated_from: None,
             },
         );
 
         match result {
-            GitResult::FilesDetailsDiff { paths, result } => {
+            GitResult::FilesDetailsDiff {
+                targets,
+                truncated_from,
+                result,
+            } => {
                 assert_eq!(
-                    paths,
-                    vec!["src/lib.rs".to_string(), "src/main.rs".to_string()]
+                    targets,
+                    vec![
+                        file_diff_target("src/lib.rs", false),
+                        file_diff_target("src/main.rs", false),
+                    ]
                 );
+                assert_eq!(truncated_from, None);
                 let diff = result.expect("mock diff should succeed");
                 assert!(diff.contains("### unstaged"));
                 assert!(diff.contains("### staged"));

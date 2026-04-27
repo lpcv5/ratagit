@@ -346,7 +346,7 @@ fn handle_operation_result(
             record_operation(state, operation_key);
             push_notice(state, &success_message);
             state.status.last_error = None;
-            with_pending(state, vec![Command::RefreshAll])
+            with_pending(state, Command::refresh_all_commands())
         }
         Err(error_message) => {
             record_operation(state, operation_key);
@@ -378,7 +378,7 @@ fn handle_operation_result_refreshing_after_failure(
             let full_error = format!("{failure_prefix}: {error_message}");
             state.status.last_error = Some(full_error.clone());
             push_notice(state, &full_error);
-            with_pending(state, vec![Command::RefreshAll])
+            with_pending(state, Command::refresh_all_commands())
         }
     }
 }

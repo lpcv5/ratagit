@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use ratagit_core::{COMMITS_PAGE_SIZE, CommitFileStatus, CommitHashStatus};
+use ratagit_core::{COMMITS_PAGE_SIZE, CommitFileStatus, CommitHashStatus, FileDiffTarget};
 use ratagit_git::{GitBackend, HybridGitBackend, is_git_repo};
 
 struct TmpGitRepo {
@@ -121,6 +121,14 @@ fn feature_repo_with_three_commits(case_name: &str) -> TmpGitRepo {
 
 fn commit_id(repo: &TmpGitRepo, rev: &str) -> String {
     repo.run_git_capture(&["rev-parse", rev]).trim().to_string()
+}
+
+fn file_diff_target(path: &str, untracked: bool) -> FileDiffTarget {
+    FileDiffTarget {
+        path: path.to_string(),
+        untracked,
+        is_directory_marker: path.ends_with('/'),
+    }
 }
 
 fn log_subjects(repo: &TmpGitRepo) -> Vec<String> {
@@ -402,7 +410,10 @@ fn git2_files_details_diff_emits_unstaged_and_staged_sections() {
 
     let mut backend = HybridGitBackend::open(repo.path()).expect("hybrid backend should open");
     let diff = backend
-        .files_details_diff(&["a.txt".to_string(), "b.txt".to_string()])
+        .files_details_diff(&[
+            file_diff_target("a.txt", false),
+            file_diff_target("b.txt", false),
+        ])
         .expect("diff should render");
 
     assert!(diff.contains("### unstaged"));
@@ -425,7 +436,7 @@ fn git2_files_details_diff_emits_untracked_file_patch() {
 
     let mut backend = HybridGitBackend::open(repo.path()).expect("hybrid backend should open");
     let diff = backend
-        .files_details_diff(&["new.txt".to_string()])
+        .files_details_diff(&[file_diff_target("new.txt", true)])
         .expect("untracked diff should render");
 
     assert!(diff.contains("### unstaged"));
@@ -456,7 +467,7 @@ fn git2_files_details_diff_treats_selected_paths_as_literals() {
 
     let mut backend = HybridGitBackend::open(repo.path()).expect("hybrid backend should open");
     let diff = backend
-        .files_details_diff(&["literal[abc].txt".to_string()])
+        .files_details_diff(&[file_diff_target("literal[abc].txt", false)])
         .expect("literal path diff should render");
 
     assert!(diff.contains("diff --git a/literal[abc].txt b/literal[abc].txt"));

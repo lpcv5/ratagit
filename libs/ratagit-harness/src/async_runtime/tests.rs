@@ -5,8 +5,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use ratagit_core::{
-    AppState, BranchDeleteMode, Command, CommitEntry, CommitFileDiffTarget, CommitFileEntry,
-    RepoSnapshot, ResetMode,
+    AppState, BranchDeleteMode, BranchEntry, Command, CommitEntry, CommitFileDiffTarget,
+    CommitFileEntry, FileDiffTarget, FilesSnapshot, RepoSnapshot, ResetMode, StashEntry,
 };
 use ratagit_git::{GitBackend, GitError, MockGitBackend};
 use ratagit_testkit::fixture_dirty_repo;
@@ -114,6 +114,36 @@ impl GitBackend for RecordingBackend {
         self.inner.refresh_snapshot()
     }
 
+    fn refresh_files(&mut self) -> Result<FilesSnapshot, GitError> {
+        self.record(format!("refresh-files:{}", self.id));
+        if let Some(started) = &self.refresh_started {
+            let _ = started.send(());
+        }
+        if let Some(release) = &self.refresh_release {
+            release
+                .lock()
+                .expect("refresh release lock")
+                .recv_timeout(Duration::from_secs(2))
+                .expect("test should release refresh");
+        }
+        self.inner.refresh_files()
+    }
+
+    fn refresh_branches(&mut self) -> Result<Vec<BranchEntry>, GitError> {
+        self.record(format!("refresh-branches:{}", self.id));
+        self.inner.refresh_branches()
+    }
+
+    fn refresh_commits(&mut self) -> Result<Vec<CommitEntry>, GitError> {
+        self.record(format!("refresh-commits:{}", self.id));
+        self.inner.refresh_commits()
+    }
+
+    fn refresh_stashes(&mut self) -> Result<Vec<StashEntry>, GitError> {
+        self.record(format!("refresh-stash:{}", self.id));
+        self.inner.refresh_stashes()
+    }
+
     fn load_more_commits(
         &mut self,
         offset: usize,
@@ -123,9 +153,14 @@ impl GitBackend for RecordingBackend {
         self.inner.load_more_commits(offset, limit)
     }
 
-    fn files_details_diff(&mut self, paths: &[String]) -> Result<String, GitError> {
-        self.record(format!("details-diff:{}:{}", self.id, paths.join(",")));
-        self.inner.files_details_diff(paths)
+    fn files_details_diff(&mut self, targets: &[FileDiffTarget]) -> Result<String, GitError> {
+        let paths = targets
+            .iter()
+            .map(|target| target.path.as_str())
+            .collect::<Vec<_>>()
+            .join(",");
+        self.record(format!("details-diff:{}:{paths}", self.id));
+        self.inner.files_details_diff(targets)
     }
 
     fn stage_files(&mut self, paths: &[String]) -> Result<(), GitError> {
@@ -168,6 +203,14 @@ impl GitBackend for RecordingBackend {
     }
 }
 
+fn file_diff_target(path: &str) -> FileDiffTarget {
+    FileDiffTarget {
+        path: path.to_string(),
+        untracked: false,
+        is_directory_marker: path.ends_with('/'),
+    }
+}
+
 #[test]
 fn read_commands_are_distributed_across_read_workers() {
     let factory = RecordingFactory::new();
@@ -203,6 +246,36 @@ fn read_commands_are_distributed_across_read_workers() {
         worker_ids,
         (0..DEFAULT_READ_WORKER_COUNT).collect::<BTreeSet<_>>()
     );
+}
+
+#[test]
+fn split_refresh_results_apply_while_files_refresh_is_blocked() {
+    let (started_tx, started_rx) = std::sync::mpsc::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel();
+    let factory = RecordingFactory::with_blocking_refresh(started_tx, release_rx);
+    let runtime_factory = factory.clone();
+    let mut runtime = AsyncRuntime::new(
+        AppState::default(),
+        move || runtime_factory.build(),
+        terminal_size(),
+    );
+
+    runtime.dispatch_ui(ratagit_core::UiAction::RefreshAll);
+    started_rx
+        .recv_timeout(Duration::from_secs(2))
+        .expect("files refresh should start");
+
+    wait_for_state(&mut runtime, |runtime| {
+        !runtime.state.branches.items.is_empty()
+            && !runtime.state.commits.items.is_empty()
+            && !runtime.state.stash.items.is_empty()
+    });
+
+    assert!(runtime.state.files.items.is_empty());
+    assert_eq!(runtime.state.status.refresh_count, 0);
+    assert!(runtime.state.work.refresh_pending);
+    release_tx.send(()).expect("files refresh should release");
+    wait_for_quiet_tick(&mut runtime);
 }
 
 #[test]
@@ -321,10 +394,12 @@ fn debounce_window_defers_and_coalesces_async_read_commands() {
 
     runtime.process_commands(vec![
         Command::RefreshFilesDetailsDiff {
-            paths: vec!["old.txt".to_string()],
+            targets: vec![file_diff_target("old.txt")],
+            truncated_from: None,
         },
         Command::RefreshFilesDetailsDiff {
-            paths: vec!["latest.txt".to_string()],
+            targets: vec![file_diff_target("latest.txt")],
+            truncated_from: None,
         },
     ]);
 

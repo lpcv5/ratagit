@@ -2,9 +2,10 @@ use ratagit_core::{
     Action, AppState, AutoStashOperation, BranchDeleteChoice, BranchDeleteMode, BranchEntry,
     BranchRebaseChoice, COMMITS_PAGE_SIZE, COMMITS_PREFETCH_THRESHOLD, Command, CommitEditorIntent,
     CommitEntry, CommitField, CommitFileDiffPath, CommitFileDiffTarget, CommitFileEntry,
-    CommitFileStatus, CommitHashStatus, CommitInputMode, EditorKind, FileEntry, FileInputMode,
-    GitResult, PanelFocus, RepoSnapshot, ResetChoice, ResetMode, SearchScope, StashEntry,
-    StashScope, UiAction, debounce_key_for_command, refresh_tree_projection, selected_row, update,
+    CommitFileStatus, CommitHashStatus, CommitInputMode, EditorKind, FileDiffTarget, FileEntry,
+    FileInputMode, FilesSnapshot, GitResult, PanelFocus, RefreshTarget, RepoSnapshot, ResetChoice,
+    ResetMode, SearchScope, StashEntry, StashScope, UiAction, debounce_key_for_command,
+    refresh_tree_projection, selected_row, update,
 };
 
 fn commit_entry(id: &str, summary: &str) -> CommitEntry {
@@ -34,6 +35,21 @@ fn file_entry(path: &str, staged: bool, untracked: bool) -> FileEntry {
     }
 }
 
+fn file_diff_target(path: &str) -> FileDiffTarget {
+    FileDiffTarget {
+        path: path.to_string(),
+        untracked: false,
+        is_directory_marker: path.ends_with('/'),
+    }
+}
+
+fn file_diff_targets(paths: impl IntoIterator<Item = impl AsRef<str>>) -> Vec<FileDiffTarget> {
+    paths
+        .into_iter()
+        .map(|path| file_diff_target(path.as_ref()))
+        .collect()
+}
+
 fn branch_entry(name: &str, is_current: bool) -> BranchEntry {
     BranchEntry {
         name: name.to_string(),
@@ -45,8 +61,12 @@ fn branch_entry(name: &str, is_current: bool) -> BranchEntry {
 fn refresh_action_emits_refresh_command() {
     let mut state = AppState::default();
     let commands = update(&mut state, Action::Ui(UiAction::RefreshAll));
-    assert_eq!(commands, vec![Command::RefreshAll]);
+    assert_eq!(commands, Command::refresh_all_commands());
     assert!(state.work.refresh_pending);
+    assert_eq!(
+        state.work.pending_refreshes,
+        RefreshTarget::ALL.into_iter().collect()
+    );
 }
 
 #[test]
@@ -60,6 +80,10 @@ fn command_metadata_tracks_debounce_mutation_and_pending_labels() {
     };
     let non_mutating = vec![
         (Command::RefreshAll, None),
+        (Command::RefreshFiles, None),
+        (Command::RefreshBranches, None),
+        (Command::RefreshCommits, None),
+        (Command::RefreshStash, None),
         (
             Command::LoadMoreCommits {
                 offset: 0,
@@ -70,7 +94,8 @@ fn command_metadata_tracks_debounce_mutation_and_pending_labels() {
         ),
         (
             Command::RefreshFilesDetailsDiff {
-                paths: vec!["src/lib.rs".to_string()],
+                targets: file_diff_targets(["src/lib.rs"]),
+                truncated_from: None,
             },
             Some("files_details_diff"),
         ),
@@ -703,7 +728,8 @@ fn assert_details_refresh_for_paths(commands: Vec<Command>, expected_paths: Vec<
     assert_eq!(
         commands,
         vec![Command::RefreshFilesDetailsDiff {
-            paths: expected_paths
+            targets: file_diff_targets(expected_paths.iter()),
+            truncated_from: None,
         }]
     );
 }
@@ -726,7 +752,8 @@ fn assert_files_diff_refresh_for_paths(commands: Vec<Command>, expected_paths: V
     assert_eq!(
         commands,
         vec![Command::RefreshFilesDetailsDiff {
-            paths: expected_paths.into_iter().map(str::to_string).collect(),
+            targets: file_diff_targets(expected_paths),
+            truncated_from: None,
         }]
     );
 }
@@ -1590,7 +1617,7 @@ fn auto_stash_operation_failure_refreshes_after_possible_partial_mutation() {
         }),
     );
 
-    assert_eq!(commands, vec![Command::RefreshAll]);
+    assert_eq!(commands, Command::refresh_all_commands());
     assert!(state.work.refresh_pending);
     assert!(
         state
@@ -1677,12 +1704,99 @@ fn refreshed_snapshot_updates_state_and_clamps_indexes() {
     assert_eq!(
         commands,
         vec![Command::RefreshFilesDetailsDiff {
-            paths: vec!["only.txt".to_string()]
+            targets: file_diff_targets(["only.txt"]),
+            truncated_from: None,
         }]
     );
     assert_eq!(state.status.summary, "dirty");
     assert_eq!(state.files.selected, 0);
     assert_eq!(state.status.refresh_count, 1);
+}
+
+#[test]
+fn split_refresh_results_update_panels_independently() {
+    let mut state = AppState::default();
+    update(&mut state, Action::Ui(UiAction::RefreshAll));
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::BranchesRefreshed(vec![branch_entry(
+            "feature/mvp",
+            false,
+        )])),
+    );
+
+    assert!(commands.is_empty());
+    assert_eq!(state.branches.items[0].name, "feature/mvp");
+    assert!(state.files.items.is_empty());
+    assert!(state.work.refresh_pending);
+    assert_eq!(state.status.refresh_count, 0);
+
+    update(
+        &mut state,
+        Action::GitResult(GitResult::FilesRefreshed(FilesSnapshot {
+            status_summary: "dirty".to_string(),
+            current_branch: "main".to_string(),
+            detached_head: false,
+            files: vec![file_entry("only.txt", false, false)],
+            index_entry_count: 1,
+            large_repo_mode: false,
+            status_truncated: false,
+            untracked_scan_skipped: false,
+        })),
+    );
+    update(
+        &mut state,
+        Action::GitResult(GitResult::CommitsRefreshed(vec![commit_entry(
+            "abc1234", "init",
+        )])),
+    );
+    update(
+        &mut state,
+        Action::GitResult(GitResult::StashesRefreshed(vec![StashEntry {
+            id: "stash@{0}".to_string(),
+            summary: "savepoint".to_string(),
+        }])),
+    );
+
+    assert_eq!(state.files.items[0].path, "only.txt");
+    assert_eq!(state.commits.items[0].summary, "init");
+    assert_eq!(state.stash.items[0].summary, "savepoint");
+    assert!(!state.work.refresh_pending);
+    assert_eq!(state.status.refresh_count, 1);
+}
+
+#[test]
+fn files_snapshot_records_large_repo_status_metadata() {
+    let mut state = AppState::default();
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::FilesRefreshed(FilesSnapshot {
+            status_summary: "large".to_string(),
+            current_branch: "main".to_string(),
+            detached_head: false,
+            files: vec![file_entry("src/a.txt", false, false)],
+            index_entry_count: 100_000,
+            large_repo_mode: true,
+            status_truncated: true,
+            untracked_scan_skipped: true,
+        })),
+    );
+
+    assert_eq!(
+        commands,
+        vec![Command::RefreshFilesDetailsDiff {
+            targets: file_diff_targets(["src/a.txt"]),
+            truncated_from: None,
+        }]
+    );
+    assert_eq!(state.status.index_entry_count, 100_000);
+    assert!(state.status.large_repo_mode);
+    assert!(state.status.status_truncated);
+    assert!(state.status.untracked_scan_skipped);
+    assert!(state.files.expanded_dirs.is_empty());
+    assert!(state.files.lightweight_tree_projection);
+    assert!(state.files.row_descendants.is_empty());
 }
 
 #[test]
@@ -1695,6 +1809,68 @@ fn files_selection_navigation_requests_details_refresh() {
 
     let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
     assert_details_refresh_for_paths(commands, vec!["b.txt".to_string()]);
+}
+
+#[test]
+fn directory_files_details_diff_is_limited_to_first_hundred_targets() {
+    let mut state = AppState::default();
+    state.files.items = (0..101)
+        .map(|index| file_entry(&format!("src/file-{index:03}.txt"), false, false))
+        .collect();
+    state.files.lightweight_tree_projection = true;
+    refresh_tree_projection(&mut state.files);
+
+    let commands = update(
+        &mut state,
+        Action::Ui(UiAction::FocusPanel {
+            panel: PanelFocus::Files,
+        }),
+    );
+
+    let [
+        Command::RefreshFilesDetailsDiff {
+            targets,
+            truncated_from,
+        },
+    ] = commands.as_slice()
+    else {
+        panic!("expected files details diff refresh: {commands:?}");
+    };
+    assert_eq!(targets.len(), 100);
+    assert_eq!(*truncated_from, Some(101));
+    assert_eq!(targets[0].path, "src/file-000.txt");
+    assert_eq!(targets[99].path, "src/file-099.txt");
+    assert!(
+        state
+            .notices
+            .iter()
+            .any(|notice| notice.contains("details diff limited to first 100 of 101 files"))
+    );
+}
+
+#[test]
+fn untracked_directory_marker_is_not_diffed_when_scan_was_skipped() {
+    let mut state = AppState::default();
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::FilesRefreshed(FilesSnapshot {
+            status_summary: "large".to_string(),
+            current_branch: "main".to_string(),
+            detached_head: false,
+            files: vec![file_entry("generated/", false, true)],
+            index_entry_count: 100_000,
+            large_repo_mode: true,
+            status_truncated: false,
+            untracked_scan_skipped: true,
+        })),
+    );
+
+    assert!(commands.is_empty());
+    assert_eq!(
+        state.details.files_diff,
+        "details(files): untracked directory scan skipped in large repo mode"
+    );
+    assert!(!state.work.details_pending);
 }
 
 #[test]
@@ -1718,7 +1894,8 @@ fn files_details_diff_result_updates_state() {
     let commands = update(
         &mut state,
         Action::GitResult(GitResult::FilesDetailsDiff {
-            paths: vec!["src/lib.rs".to_string()],
+            targets: file_diff_targets(["src/lib.rs"]),
+            truncated_from: None,
             result: Ok("### unstaged\ndiff --git a/src/lib.rs b/src/lib.rs".to_string()),
         }),
     );
@@ -1846,7 +2023,8 @@ fn files_details_diff_cache_serves_repeated_selection_without_git_command() {
     update(
         &mut state,
         Action::GitResult(GitResult::FilesDetailsDiff {
-            paths: vec!["a.txt".to_string()],
+            targets: file_diff_targets(["a.txt"]),
+            truncated_from: None,
             result: Ok("cached a diff".to_string()),
         }),
     );
@@ -1876,7 +2054,8 @@ fn files_details_diff_cache_is_bounded_and_cleared_by_repo_changes() {
         update(
             &mut state,
             Action::GitResult(GitResult::FilesDetailsDiff {
-                paths: vec![path.clone()],
+                targets: file_diff_targets([path.as_str()]),
+                truncated_from: None,
                 result: Ok(format!("diff {path}")),
             }),
         );
@@ -1937,7 +2116,8 @@ fn stale_files_details_diff_result_is_ignored() {
     let commands = update(
         &mut state,
         Action::GitResult(GitResult::FilesDetailsDiff {
-            paths: vec!["a.txt".to_string()],
+            targets: file_diff_targets(["a.txt"]),
+            truncated_from: None,
             result: Ok("stale".to_string()),
         }),
     );
@@ -2239,7 +2419,7 @@ fn reset_git_result_reports_success_and_failure() {
             result: Ok(()),
         }),
     );
-    assert_eq!(commands, vec![Command::RefreshAll]);
+    assert_eq!(commands, Command::refresh_all_commands());
     assert_eq!(state.last_operation, Some("reset_mixed".to_string()));
     assert!(
         state

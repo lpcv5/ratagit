@@ -203,17 +203,52 @@ pub struct RepoSnapshot {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FilesSnapshot {
+    pub status_summary: String,
+    pub current_branch: String,
+    pub detached_head: bool,
+    pub files: Vec<crate::FileEntry>,
+    pub index_entry_count: usize,
+    pub large_repo_mode: bool,
+    pub status_truncated: bool,
+    pub untracked_scan_skipped: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StatusPanelState {
     pub summary: String,
     pub current_branch: String,
     pub detached_head: bool,
     pub refresh_count: u64,
     pub last_error: Option<String>,
+    pub index_entry_count: usize,
+    pub large_repo_mode: bool,
+    pub status_truncated: bool,
+    pub untracked_scan_skipped: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StatusMode {
+    Full,
+    LargeRepoFast,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum RefreshTarget {
+    Files,
+    Branches,
+    Commits,
+    Stash,
+}
+
+impl RefreshTarget {
+    pub const ALL: [Self; 4] = [Self::Files, Self::Branches, Self::Commits, Self::Stash];
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct WorkStatusState {
     pub refresh_pending: bool,
+    pub pending_refreshes: BTreeSet<RefreshTarget>,
     pub details_pending: bool,
     pub operation_pending: Option<String>,
     pub last_completed_command: Option<String>,
@@ -442,6 +477,7 @@ pub struct DetailsPanelState {
     pub files_diff: String,
     pub files_targets: Vec<String>,
     pub files_error: Option<String>,
+    pub files_diff_truncated_from: Option<usize>,
     pub cached_files_diffs: Vec<CachedFilesDiff>,
     pub branch_log: String,
     pub branch_log_target: Option<String>,
@@ -506,6 +542,10 @@ impl Default for AppState {
                 detached_head: false,
                 refresh_count: 0,
                 last_error: None,
+                index_entry_count: 0,
+                large_repo_mode: false,
+                status_truncated: false,
+                untracked_scan_skipped: false,
             },
             files: FilesPanelState::default(),
             commits: CommitsPanelState::default(),

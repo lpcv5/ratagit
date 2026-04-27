@@ -57,11 +57,20 @@ Navigation rules:
 Files panel rules:
 
 - file rows come from Git status data only; the app does not scan the working tree separately
-- untracked entries are requested with full file granularity (equivalent to
-  `git status --untracked-files=all`) so nested untracked files appear as file rows
+- small repositories request untracked entries with full file granularity
+  (equivalent to `git status --untracked-files=all`) so nested untracked files
+  appear as file rows
+- repositories with at least 100,000 index entries automatically enter large
+  repo fast status mode: tracked/index changes are shown, full untracked
+  expansion is skipped, and the Log panel reports that untracked scanning was
+  skipped
+- status results are capped at 50,000 file entries or 64 MiB of status stdout;
+  if the cap is hit, the Log panel reports that status was truncated
 - folder operations apply to descendant files present in the tree model
 - file-tree rows and descendant targets are cached in `AppState` after status
   refresh or tree/search changes, so rendering does not rebuild them every frame
+- in large repo fast mode, the Files tree starts collapsed and uses a lightweight
+  projection instead of precomputing every directory descendant set
 - repeated file-detail diffs are cached in `AppState` and reused when the same
   target path list is selected again
 - `space` stages unstaged targets or unstages targets when all selected targets are staged
@@ -96,6 +105,11 @@ Files panel rules:
   whole row
 - `Enter` still toggles directory expand/collapse; hunk editing and partial-stage flow are explicitly deferred
 - details-diff side effects for high-frequency files navigation are debounced to keep `j` / `k` scrolling smooth
+- Files Details automatically limits folder or multi-select diffs to the first
+  100 resolved file targets and shows a deterministic "first 100 of N files"
+  notice when results are truncated
+- unknown untracked directory markers are not diffed when large repo mode has
+  skipped untracked scanning; Details shows a deterministic skip message instead
 - queued refresh/details work is coalesced so stale duplicate details commands do
   not delay the latest selection
 - branch-details log graph output is cached in `AppState` and reused when the
@@ -103,8 +117,13 @@ Files panel rules:
 - real TUI read-only Git work runs on a fixed background worker pool so initial
   refresh, details, log, and pagination work do not block drawing or keyboard
   input; mutating Git work remains serialized through one exclusive worker
-- real backend file status refresh uses Git porcelain status inside `GitBackend`
-  for large repositories while preserving full untracked-file expansion
+- initial and manual refresh load Files/status, Branches, Commits, and Stash as
+  independent read-worker jobs, so a slow Files status scan does not hold back
+  the other left panels
+- real backend file status refresh uses Git porcelain status inside `GitBackend`;
+  read-only Git CLI commands use `GIT_OPTIONAL_LOCKS=0`, and Log suggests
+  optional manual Git configuration such as `untrackedCache`, `fsmonitor`, and
+  `splitIndex` for very large repositories
 
 Branches panel rules:
 

@@ -141,13 +141,13 @@ fn enqueue_coalesced_command(queue: &mut VecDeque<Command>, command: Command) {
         .iter()
         .rposition(|command| command.is_mutating())
         .map_or(0, |index| index + 1);
-    if matches!(command, Command::RefreshAll) {
+    if let Some(target) = refresh_command_key(&command) {
         if !queue
             .iter()
             .skip(search_start)
-            .any(|queued| matches!(queued, Command::RefreshAll))
+            .any(|queued| refresh_command_key(queued) == Some(target))
         {
-            queue.push_back(Command::RefreshAll);
+            queue.push_back(command);
         }
         return;
     }
@@ -156,6 +156,17 @@ fn enqueue_coalesced_command(queue: &mut VecDeque<Command>, command: Command) {
         remove_queued_command_with_debounce_key(queue, search_start, key);
     }
     queue.push_back(command);
+}
+
+fn refresh_command_key(command: &Command) -> Option<&'static str> {
+    match command {
+        Command::RefreshAll => Some("all"),
+        Command::RefreshFiles => Some("files"),
+        Command::RefreshBranches => Some("branches"),
+        Command::RefreshCommits => Some("commits"),
+        Command::RefreshStash => Some("stash"),
+        _ => None,
+    }
 }
 
 fn remove_queued_command_with_debounce_key(
@@ -332,9 +343,18 @@ fn sanitize_name(name: &str) -> String {
 mod tests {
     use std::time::Duration;
 
+    use ratagit_core::FileDiffTarget;
     use ratagit_testkit::fixture_dirty_repo;
 
     use super::*;
+
+    fn file_diff_target(path: &str) -> FileDiffTarget {
+        FileDiffTarget {
+            path: path.to_string(),
+            untracked: false,
+            is_directory_marker: path.ends_with('/'),
+        }
+    }
 
     #[test]
     fn refresh_details_diff_runs_immediately_when_debounce_is_disabled() {
@@ -350,7 +370,7 @@ mod tests {
         runtime.dispatch_ui(UiAction::RefreshAll);
 
         let operations = runtime.backend().operations();
-        assert!(operations.iter().any(|op| op == "refresh"));
+        assert!(operations.iter().any(|op| op == "refresh-files"));
         assert!(operations.iter().any(|op| op == "details-diff:README.md"));
     }
 
@@ -371,7 +391,11 @@ mod tests {
         runtime.dispatch_ui(UiAction::MoveDown);
 
         let operations_before_tick = runtime.backend().operations();
-        assert!(operations_before_tick.iter().any(|op| op == "refresh"));
+        assert!(
+            operations_before_tick
+                .iter()
+                .any(|op| op == "refresh-files")
+        );
         assert!(
             !operations_before_tick
                 .iter()
@@ -423,7 +447,8 @@ mod tests {
         enqueue_coalesced_command(
             &mut queue,
             Command::RefreshFilesDetailsDiff {
-                paths: vec!["old.txt".to_string()],
+                targets: vec![file_diff_target("old.txt")],
+                truncated_from: None,
             },
         );
         enqueue_coalesced_command(
@@ -435,13 +460,15 @@ mod tests {
         enqueue_coalesced_command(
             &mut queue,
             Command::RefreshFilesDetailsDiff {
-                paths: vec!["stale.txt".to_string()],
+                targets: vec![file_diff_target("stale.txt")],
+                truncated_from: None,
             },
         );
         enqueue_coalesced_command(
             &mut queue,
             Command::RefreshFilesDetailsDiff {
-                paths: vec!["latest.txt".to_string()],
+                targets: vec![file_diff_target("latest.txt")],
+                truncated_from: None,
             },
         );
 
@@ -449,13 +476,15 @@ mod tests {
             queue.into_iter().collect::<Vec<_>>(),
             vec![
                 Command::RefreshFilesDetailsDiff {
-                    paths: vec!["old.txt".to_string()]
+                    targets: vec![file_diff_target("old.txt")],
+                    truncated_from: None,
                 },
                 Command::StageFiles {
                     paths: vec!["a.txt".to_string()]
                 },
                 Command::RefreshFilesDetailsDiff {
-                    paths: vec!["latest.txt".to_string()]
+                    targets: vec![file_diff_target("latest.txt")],
+                    truncated_from: None,
                 },
             ]
         );

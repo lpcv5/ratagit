@@ -1,16 +1,42 @@
 use crate::{
-    AppState, Command, GitResult, commit_workflow, details, operations, push_notice, snapshot,
+    AppState, Command, GitResult, PanelFocus, RefreshTarget, commit_workflow, details, operations,
+    push_notice, snapshot,
 };
 
 pub(crate) fn update_git_result(state: &mut AppState, result: GitResult) -> Vec<Command> {
     match result {
         GitResult::Refreshed(repo_snapshot) => {
-            state.work.refresh_pending = false;
             state.work.last_completed_command = Some("refresh".to_string());
+            state.work.pending_refreshes.clear();
+            state.work.refresh_pending = false;
             snapshot::apply_snapshot(state, repo_snapshot);
             state.status.refresh_count = state.status.refresh_count.saturating_add(1);
             state.status.last_error = None;
             details::refresh_for_focus(state)
+        }
+        GitResult::FilesRefreshed(files_snapshot) => {
+            snapshot::apply_files_snapshot(state, files_snapshot);
+            finish_refresh_target(state, RefreshTarget::Files);
+            state.status.last_error = None;
+            refresh_details_if_focus(state, PanelFocus::Files)
+        }
+        GitResult::BranchesRefreshed(branches) => {
+            snapshot::apply_branches_snapshot(state, branches);
+            finish_refresh_target(state, RefreshTarget::Branches);
+            state.status.last_error = None;
+            refresh_details_if_focus(state, PanelFocus::Branches)
+        }
+        GitResult::CommitsRefreshed(commits) => {
+            snapshot::apply_commits_snapshot(state, commits);
+            finish_refresh_target(state, RefreshTarget::Commits);
+            state.status.last_error = None;
+            refresh_details_if_focus(state, PanelFocus::Commits)
+        }
+        GitResult::StashesRefreshed(stashes) => {
+            snapshot::apply_stashes_snapshot(state, stashes);
+            finish_refresh_target(state, RefreshTarget::Stash);
+            state.status.last_error = None;
+            refresh_details_if_focus(state, PanelFocus::Stash)
         }
         GitResult::CommitsPage {
             offset,
@@ -18,9 +44,11 @@ pub(crate) fn update_git_result(state: &mut AppState, result: GitResult) -> Vec<
             epoch,
             result,
         } => commit_workflow::handle_commits_page_result(state, offset, limit, epoch, result),
-        GitResult::FilesDetailsDiff { paths, result } => {
-            details::apply_files_diff_result(state, paths, result)
-        }
+        GitResult::FilesDetailsDiff {
+            targets,
+            truncated_from,
+            result,
+        } => details::apply_files_diff_result(state, targets, truncated_from, result),
         GitResult::BranchDetailsLog { branch, result } => {
             details::apply_branch_log_result(state, branch, result)
         }
@@ -33,9 +61,14 @@ pub(crate) fn update_git_result(state: &mut AppState, result: GitResult) -> Vec<
         GitResult::CommitFileDiff { target, result } => {
             details::apply_commit_file_diff_result(state, target, result)
         }
-        GitResult::RefreshFailed { error } => {
-            state.work.refresh_pending = false;
-            state.work.last_completed_command = Some("refresh".to_string());
+        GitResult::RefreshFailed { target, error } => {
+            if let Some(target) = target {
+                finish_refresh_target(state, target);
+            } else {
+                state.work.pending_refreshes.clear();
+                state.work.refresh_pending = false;
+                state.work.last_completed_command = Some("refresh".to_string());
+            }
             state.status.last_error = Some(format!("Failed to refresh: {error}"));
             push_notice(state, &format!("Failed to refresh: {error}"));
             Vec::new()
@@ -110,5 +143,32 @@ pub(crate) fn update_git_result(state: &mut AppState, result: GitResult) -> Vec<
         GitResult::StashPop { stash_id, result } => {
             operations::handle_stash_pop_result(state, stash_id, result)
         }
+    }
+}
+
+fn finish_refresh_target(state: &mut AppState, target: RefreshTarget) {
+    state.work.pending_refreshes.remove(&target);
+    state.work.refresh_pending = !state.work.pending_refreshes.is_empty();
+    state.work.last_completed_command = Some(refresh_target_command_label(target).to_string());
+    if !state.work.refresh_pending {
+        state.work.last_completed_command = Some("refresh".to_string());
+        state.status.refresh_count = state.status.refresh_count.saturating_add(1);
+    }
+}
+
+fn refresh_details_if_focus(state: &mut AppState, panel: PanelFocus) -> Vec<Command> {
+    if state.focus == panel {
+        details::refresh_for_focus(state)
+    } else {
+        Vec::new()
+    }
+}
+
+fn refresh_target_command_label(target: RefreshTarget) -> &'static str {
+    match target {
+        RefreshTarget::Files => "refresh_files",
+        RefreshTarget::Branches => "refresh_branches",
+        RefreshTarget::Commits => "refresh_commits",
+        RefreshTarget::Stash => "refresh_stash",
     }
 }

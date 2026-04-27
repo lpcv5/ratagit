@@ -1,17 +1,43 @@
 use std::collections::BTreeSet;
+use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::Command as ProcessCommand;
+use std::process::{Command as ProcessCommand, Stdio};
 
 use ratagit_core::{
-    BranchDeleteMode, CommitFileDiffTarget, CommitFileEntry, CommitFileStatus, FileEntry, ResetMode,
+    BranchDeleteMode, CommitFileDiffTarget, CommitFileEntry, CommitFileStatus, FileEntry,
+    ResetMode, StatusMode,
 };
 
-use crate::status_cli::parse_porcelain_v1_z;
+use crate::status_cli::parse_porcelain_v1_z_limited;
 use crate::{GitError, validate_repo_relative_path};
+
+pub(crate) const STATUS_ENTRY_LIMIT: usize = 50_000;
+pub(crate) const STATUS_OUTPUT_LIMIT_BYTES: usize = 64 * 1024 * 1024;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct StatusFilesResult {
+    pub(crate) files: Vec<FileEntry>,
+    pub(crate) output_truncated: bool,
+    pub(crate) entries_truncated: bool,
+}
 
 #[derive(Debug, Clone)]
 pub(crate) struct GitCli {
     repo_path: PathBuf,
+}
+
+fn status_args(mode: StatusMode) -> [&'static str; 6] {
+    [
+        "status",
+        "--porcelain=v1",
+        "-z",
+        match mode {
+            StatusMode::Full => "--untracked-files=all",
+            StatusMode::LargeRepoFast => "--untracked-files=no",
+        },
+        "--ignored=no",
+        "--ignore-submodules=all",
+    ]
 }
 
 impl GitCli {
@@ -29,8 +55,8 @@ impl GitCli {
         self.run_git_text(args)
     }
 
-    fn run_git_bytes(&self, args: &[&str]) -> Result<Vec<u8>, GitError> {
-        self.run_git_output(args.iter().copied())
+    fn run_git_read_owned(&self, args: Vec<String>) -> Result<String, GitError> {
+        self.run_git_read_text(args)
     }
 
     fn run_git_text<I, S>(&self, args: I) -> Result<String, GitError>
@@ -42,7 +68,28 @@ impl GitCli {
             .map(|stdout| String::from_utf8_lossy(&stdout).to_string())
     }
 
+    fn run_git_read_text<I, S>(&self, args: I) -> Result<String, GitError>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        self.run_git_output_with_options(args, true)
+            .map(|stdout| String::from_utf8_lossy(&stdout).to_string())
+    }
+
     fn run_git_output<I, S>(&self, args: I) -> Result<Vec<u8>, GitError>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        self.run_git_output_with_options(args, false)
+    }
+
+    fn run_git_output_with_options<I, S>(
+        &self,
+        args: I,
+        optional_locks_disabled: bool,
+    ) -> Result<Vec<u8>, GitError>
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
@@ -51,9 +98,12 @@ impl GitCli {
             .into_iter()
             .map(|arg| arg.as_ref().to_string())
             .collect::<Vec<_>>();
-        let output = ProcessCommand::new("git")
-            .args(&args)
-            .current_dir(&self.repo_path)
+        let mut command = ProcessCommand::new("git");
+        command.args(&args).current_dir(&self.repo_path);
+        if optional_locks_disabled {
+            command.env("GIT_OPTIONAL_LOCKS", "0");
+        }
+        let output = command
             .output()
             .map_err(|err| GitError::new(format!("failed to start git {:?}: {err}", args)))?;
 
@@ -65,16 +115,74 @@ impl GitCli {
         Ok(output.stdout)
     }
 
-    pub(crate) fn status_files(&self) -> Result<Vec<FileEntry>, GitError> {
-        let output = self.run_git_bytes(&[
-            "status",
-            "--porcelain=v1",
-            "-z",
-            "--untracked-files=all",
-            "--ignored=no",
-            "--ignore-submodules=all",
-        ])?;
-        parse_porcelain_v1_z(&output)
+    fn run_git_read_output_limited(
+        &self,
+        args: &[&str],
+        stdout_limit: usize,
+    ) -> Result<(Vec<u8>, bool), GitError> {
+        let mut child = ProcessCommand::new("git")
+            .args(args)
+            .current_dir(&self.repo_path)
+            .env("GIT_OPTIONAL_LOCKS", "0")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|err| GitError::new(format!("failed to start git {:?}: {err}", args)))?;
+        let mut stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| GitError::new("failed to capture git stdout"))?;
+        let mut bytes = Vec::new();
+        let mut truncated = false;
+        let mut buffer = [0u8; 8192];
+        loop {
+            let read = stdout
+                .read(&mut buffer)
+                .map_err(|err| GitError::new(format!("failed to read git stdout: {err}")))?;
+            if read == 0 {
+                break;
+            }
+            let remaining = stdout_limit.saturating_sub(bytes.len());
+            if read > remaining {
+                bytes.extend_from_slice(&buffer[..remaining]);
+                truncated = true;
+                let _ = child.kill();
+                break;
+            }
+            bytes.extend_from_slice(&buffer[..read]);
+            if bytes.len() == stdout_limit {
+                truncated = true;
+                let _ = child.kill();
+                break;
+            }
+        }
+        let output = child
+            .wait_with_output()
+            .map_err(|err| GitError::new(format!("failed to wait for git {:?}: {err}", args)))?;
+        if !truncated && !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            return Err(GitError::new(format!("git {:?} failed: {}", args, stderr)));
+        }
+        Ok((bytes, truncated))
+    }
+
+    pub(crate) fn status_files(&self, mode: StatusMode) -> Result<StatusFilesResult, GitError> {
+        let args = status_args(mode);
+        let (mut output, output_truncated) =
+            self.run_git_read_output_limited(&args, STATUS_OUTPUT_LIMIT_BYTES)?;
+        if output_truncated {
+            if let Some(last_record_end) = output.iter().rposition(|byte| *byte == 0) {
+                output.truncate(last_record_end + 1);
+            } else {
+                output.clear();
+            }
+        }
+        let parsed = parse_porcelain_v1_z_limited(&output, STATUS_ENTRY_LIMIT)?;
+        Ok(StatusFilesResult {
+            files: parsed.files,
+            output_truncated,
+            entries_truncated: parsed.truncated,
+        })
     }
 
     pub(crate) fn branch_details_log(
@@ -82,7 +190,7 @@ impl GitCli {
         branch: &str,
         max_count: usize,
     ) -> Result<String, GitError> {
-        self.run_git_owned(vec![
+        self.run_git_read_owned(vec![
             "log".to_string(),
             "--graph".to_string(),
             "--color=always".to_string(),
@@ -93,7 +201,7 @@ impl GitCli {
     }
 
     pub(crate) fn commit_details_diff(&mut self, commit_id: &str) -> Result<String, GitError> {
-        self.run_git_owned(vec![
+        self.run_git_read_owned(vec![
             "show".to_string(),
             "--no-color".to_string(),
             "--format=fuller".to_string(),
@@ -106,7 +214,7 @@ impl GitCli {
         &mut self,
         commit_id: &str,
     ) -> Result<Vec<CommitFileEntry>, GitError> {
-        let output = self.run_git_owned(vec![
+        let output = self.run_git_read_owned(vec![
             "diff-tree".to_string(),
             "--root".to_string(),
             "--no-commit-id".to_string(),
@@ -144,7 +252,7 @@ impl GitCli {
                 args.push(path.path.clone());
             }
         }
-        self.run_git_owned(args)
+        self.run_git_read_owned(args)
     }
 
     pub(crate) fn create_commit(&mut self, message: &str) -> Result<(), GitError> {
@@ -645,4 +753,15 @@ fn remove_untracked_path(repo_path: &Path, relative_path: &str) -> Result<(), Gi
         })?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn status_args_follow_status_mode() {
+        assert!(status_args(StatusMode::Full).contains(&"--untracked-files=all"));
+        assert!(status_args(StatusMode::LargeRepoFast).contains(&"--untracked-files=no"));
+    }
 }

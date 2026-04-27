@@ -1,6 +1,7 @@
 use ratagit_core::{
     BranchDeleteMode, BranchEntry, COMMITS_PAGE_SIZE, CommitEntry, CommitFileDiffTarget,
-    CommitFileEntry, CommitFileStatus, CommitHashStatus, RepoSnapshot, ResetMode, StashEntry,
+    CommitFileEntry, CommitFileStatus, CommitHashStatus, FileDiffTarget, FilesSnapshot,
+    RepoSnapshot, ResetMode, StashEntry,
 };
 
 use crate::{GitBackend, GitError, resequence_stashes};
@@ -10,14 +11,41 @@ pub struct MockGitBackend {
     snapshot: RepoSnapshot,
     operations: Vec<String>,
     commit_sequence: u64,
+    index_entry_count: usize,
+    large_repo_mode: bool,
+    status_truncated: bool,
+    untracked_scan_skipped: bool,
 }
 
 impl MockGitBackend {
     pub fn new(snapshot: RepoSnapshot) -> Self {
+        let index_entry_count = snapshot.files.len();
         Self {
             snapshot,
             operations: Vec::new(),
             commit_sequence: 1,
+            index_entry_count,
+            large_repo_mode: false,
+            status_truncated: false,
+            untracked_scan_skipped: false,
+        }
+    }
+
+    pub fn with_status_metadata(
+        snapshot: RepoSnapshot,
+        index_entry_count: usize,
+        large_repo_mode: bool,
+        status_truncated: bool,
+        untracked_scan_skipped: bool,
+    ) -> Self {
+        Self {
+            snapshot,
+            operations: Vec::new(),
+            commit_sequence: 1,
+            index_entry_count,
+            large_repo_mode,
+            status_truncated,
+            untracked_scan_skipped,
         }
     }
 
@@ -116,6 +144,41 @@ impl GitBackend for MockGitBackend {
         Ok(snapshot)
     }
 
+    fn refresh_files(&mut self) -> Result<FilesSnapshot, GitError> {
+        self.operations.push("refresh-files".to_string());
+        Ok(FilesSnapshot {
+            status_summary: self.snapshot.status_summary.clone(),
+            current_branch: self.snapshot.current_branch.clone(),
+            detached_head: self.snapshot.detached_head,
+            files: self.snapshot.files.clone(),
+            index_entry_count: self.index_entry_count,
+            large_repo_mode: self.large_repo_mode,
+            status_truncated: self.status_truncated,
+            untracked_scan_skipped: self.untracked_scan_skipped,
+        })
+    }
+
+    fn refresh_branches(&mut self) -> Result<Vec<BranchEntry>, GitError> {
+        self.operations.push("refresh-branches".to_string());
+        Ok(self.snapshot.branches.clone())
+    }
+
+    fn refresh_commits(&mut self) -> Result<Vec<CommitEntry>, GitError> {
+        self.operations.push("refresh-commits".to_string());
+        Ok(self
+            .snapshot
+            .commits
+            .iter()
+            .take(COMMITS_PAGE_SIZE)
+            .cloned()
+            .collect())
+    }
+
+    fn refresh_stashes(&mut self) -> Result<Vec<StashEntry>, GitError> {
+        self.operations.push("refresh-stash".to_string());
+        Ok(self.snapshot.stashes.clone())
+    }
+
     fn load_more_commits(
         &mut self,
         offset: usize,
@@ -133,7 +196,11 @@ impl GitBackend for MockGitBackend {
             .collect())
     }
 
-    fn files_details_diff(&mut self, paths: &[String]) -> Result<String, GitError> {
+    fn files_details_diff(&mut self, targets: &[FileDiffTarget]) -> Result<String, GitError> {
+        let paths = targets
+            .iter()
+            .map(|target| target.path.clone())
+            .collect::<Vec<_>>();
         self.operations
             .push(format!("details-diff:{}", paths.join(",")));
         if paths.is_empty() {

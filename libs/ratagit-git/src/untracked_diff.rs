@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
-use ratagit_core::FileEntry;
+use ratagit_core::FileDiffTarget;
 
 use crate::{GitError, validate_repo_relative_path};
 
@@ -11,22 +11,17 @@ const MAX_UNTRACKED_DIFF_BYTES: usize = 256 * 1024;
 
 pub(crate) fn format_untracked_diffs(
     workdir: &Path,
-    files: Vec<FileEntry>,
-    selected_paths: &[String],
+    targets: &[FileDiffTarget],
 ) -> Result<String, GitError> {
-    let selected = selected_paths
-        .iter()
-        .map(String::as_str)
-        .collect::<Vec<_>>();
-    let mut seen = BTreeSet::new();
     let mut patches = Vec::new();
+    let mut seen = BTreeSet::new();
     let mut emitted_files = 0usize;
     let mut emitted_bytes = 0usize;
-    for file in files
-        .into_iter()
-        .filter(|entry| entry.untracked && path_matches_any(&entry.path, &selected))
+    for target in targets
+        .iter()
+        .filter(|target| target.untracked && !target.is_directory_marker)
     {
-        if !seen.insert(file.path.clone()) {
+        if !seen.insert(target.path.clone()) {
             continue;
         }
         if emitted_files >= MAX_UNTRACKED_DIFF_FILES {
@@ -42,7 +37,7 @@ pub(crate) fn format_untracked_diffs(
             ));
             break;
         }
-        let patch = format_untracked_file_diff(workdir, &file.path, remaining_bytes)?;
+        let patch = format_untracked_file_diff(workdir, &target.path, remaining_bytes)?;
         emitted_bytes = emitted_bytes.saturating_add(patch.len());
         emitted_files += 1;
         let truncated = patch.contains("untracked diff omitted:");
@@ -52,20 +47,6 @@ pub(crate) fn format_untracked_diffs(
         }
     }
     Ok(patches.join("\n"))
-}
-
-fn path_matches_any(path: &str, selected_paths: &[&str]) -> bool {
-    selected_paths
-        .iter()
-        .any(|selected| path == *selected || path_is_under_directory(path, selected))
-}
-
-fn path_is_under_directory(path: &str, selected: &str) -> bool {
-    let directory = selected.trim_end_matches('/');
-    !directory.is_empty()
-        && path.len() > directory.len()
-        && path.starts_with(directory)
-        && path.as_bytes().get(directory.len()) == Some(&b'/')
 }
 
 fn format_untracked_file_diff(
@@ -134,14 +115,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn path_matching_supports_exact_files_and_directories() {
-        assert!(path_matches_any("new.txt", &["new.txt"]));
-        assert!(path_matches_any("nested/new.txt", &["nested"]));
-        assert!(path_matches_any("nested/new.txt", &["nested/"]));
-        assert!(!path_matches_any("nested-new.txt", &["nested"]));
-    }
-
-    #[test]
     fn trim_line_ending_handles_lf_crlf_and_plain_text() {
         assert_eq!(trim_line_ending("hello\n"), "hello");
         assert_eq!(trim_line_ending("hello\r\n"), "hello");
@@ -167,12 +140,11 @@ mod tests {
 
         let diff = format_untracked_diffs(
             &root,
-            vec![FileEntry {
+            &[FileDiffTarget {
                 path: "huge.txt".to_string(),
-                staged: false,
                 untracked: true,
+                is_directory_marker: false,
             }],
-            &["huge.txt".to_string()],
         )
         .expect("diff should be generated");
 

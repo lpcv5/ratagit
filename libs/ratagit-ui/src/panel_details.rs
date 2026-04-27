@@ -26,6 +26,28 @@ pub(crate) fn render_log_lines(state: &AppState, max_lines: usize) -> Vec<PanelL
             RowRole::Notice,
         ));
     }
+    if state.status.large_repo_mode {
+        lines.push(PanelLine::new(
+            "  status=large repo fast mode; untracked scan skipped",
+            RowRole::Notice,
+        ));
+        lines.push(PanelLine::new(
+            "  tip=consider git untrackedCache/fsmonitor/splitIndex",
+            RowRole::Notice,
+        ));
+    }
+    if state.status.status_truncated {
+        lines.push(PanelLine::new(
+            "  status=truncated at 50000 file entries or 64 MiB output",
+            RowRole::Notice,
+        ));
+    }
+    if let Some(total) = state.details.files_diff_truncated_from {
+        lines.push(PanelLine::new(
+            format!("  details=diff limited to first 100 of {total} files"),
+            RowRole::Notice,
+        ));
+    }
     if let Some(operation) = &state.work.operation_pending {
         lines.push(PanelLine::new(
             format!("  work=running {operation}"),
@@ -73,14 +95,23 @@ fn render_files_details_lines(state: &AppState, max_lines: usize) -> Vec<PanelLi
     }
 
     // TODO(files-hunks): upgrade details rows into selectable hunk models for partial staging.
+    let mut rendered = Vec::new();
+    if let Some(total) = state.details.files_diff_truncated_from {
+        rendered.push(PanelLine::new(
+            format!("  details(files): showing first 100 of {total} files"),
+            RowRole::Notice,
+        ));
+    }
     let lines = state.details.files_diff.lines().collect::<Vec<_>>();
     let start = details_scroll_start(lines.len(), state.details.scroll_offset, max_lines);
-    lines
-        .into_iter()
-        .skip(start)
-        .map(|line| PanelLine::new(format!("  {line}"), classify_diff_row_role(line)))
-        .take(max_lines)
-        .collect()
+    rendered.extend(
+        lines
+            .into_iter()
+            .skip(start)
+            .map(|line| PanelLine::new(format!("  {line}"), classify_diff_row_role(line)))
+            .take(max_lines.saturating_sub(rendered.len())),
+    );
+    rendered
 }
 
 fn render_branch_details_lines(state: &AppState, max_lines: usize) -> Vec<PanelLine> {

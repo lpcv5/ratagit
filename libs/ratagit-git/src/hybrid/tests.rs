@@ -108,7 +108,8 @@ fn git2_status_fallback_collects_modified_and_nested_untracked_files() {
     create_dir_all(root.join("nested")).expect("nested dir should be creatable");
     write(root.join("nested").join("new.txt"), "new\n").expect("untracked file should write");
 
-    let files = collect_files_with_git2(&repo).expect("git2 fallback should collect files");
+    let files = collect_files_with_git2(&repo, StatusMode::Full)
+        .expect("git2 fallback should collect files");
     let entries = files
         .iter()
         .map(|entry| (entry.path.as_str(), entry.staged, entry.untracked))
@@ -123,4 +124,16 @@ fn git2_status_fallback_collects_modified_and_nested_untracked_files() {
     );
 
     let _ = remove_dir_all(root);
+}
+
+#[test]
+fn status_mode_switches_to_large_repo_fast_at_threshold() {
+    assert_eq!(
+        status_mode_for_index_entry_count(LARGE_REPO_INDEX_ENTRY_THRESHOLD - 1),
+        StatusMode::Full
+    );
+    assert_eq!(
+        status_mode_for_index_entry_count(LARGE_REPO_INDEX_ENTRY_THRESHOLD),
+        StatusMode::LargeRepoFast
+    );
 }

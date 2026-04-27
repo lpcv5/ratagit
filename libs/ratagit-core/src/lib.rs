@@ -28,15 +28,16 @@ pub use commits::{
     selected_commit_ids, selected_commits, toggle_multi_select as toggle_commit_multi_select,
 };
 pub use files::{
-    CommitFileEntry, CommitFileStatus, CommitFilesPanelState, FileEntry, FileInputMode,
-    FileRowKind, FileTreeRow, FilesPanelState, build_commit_file_tree_rows, build_file_tree_rows,
-    clamp_selected as clamp_file_selection, collect_directories, commit_file_tree_rows,
-    enter_multi_select, file_tree_rows, initialize_commit_files_tree, initialize_tree_if_needed,
-    leave_multi_select, move_commit_file_selected, move_selected, reconcile_after_items_changed,
+    CommitFileEntry, CommitFileStatus, CommitFilesPanelState, FileDiffTarget, FileEntry,
+    FileInputMode, FileRowKind, FileTreeRow, FilesPanelState, build_commit_file_tree_rows,
+    build_file_tree_rows, clamp_selected as clamp_file_selection, collect_directories,
+    commit_file_tree_rows, enter_multi_select, file_tree_rows, initialize_commit_files_tree,
+    initialize_tree_if_needed, initialize_tree_with_initial_expansion, leave_multi_select,
+    move_commit_file_selected, move_selected, reconcile_after_items_changed,
     refresh_commit_files_tree_projection, refresh_tree_projection, select_commit_file_tree_path,
-    select_file_tree_path, selected_commit_file, selected_commit_file_targets, selected_row,
-    selected_target_paths, toggle_commit_files_directory, toggle_current_row_selection,
-    toggle_selected_directory,
+    select_file_tree_path, selected_commit_file, selected_commit_file_targets,
+    selected_diff_targets, selected_row, selected_target_paths, toggle_commit_files_directory,
+    toggle_current_row_selection, toggle_selected_directory,
 };
 pub use reducer::update;
 pub use scroll::ScrollDirection;
@@ -46,9 +47,9 @@ pub use state::{
     BranchRebaseChoice, BranchRebaseMenuState, BranchesPanelState, CachedBranchLog,
     CachedCommitDiff, CachedFilesDiff, CommitEditorIntent, CommitEntry, CommitField,
     CommitFileDiffPath, CommitFileDiffTarget, CommitHashStatus, CommitInputMode, CommitsPanelState,
-    DetailsPanelState, DiscardConfirmState, EditorKind, EditorState, PanelFocus, RepoSnapshot,
-    ResetChoice, ResetMenuState, ResetMode, SearchScope, SearchState, StashEntry, StashPanelState,
-    StashScope, StatusPanelState, WorkStatusState,
+    DetailsPanelState, DiscardConfirmState, EditorKind, EditorState, FilesSnapshot, PanelFocus,
+    RefreshTarget, RepoSnapshot, ResetChoice, ResetMenuState, ResetMode, SearchScope, SearchState,
+    StashEntry, StashPanelState, StashScope, StatusMode, StatusPanelState, WorkStatusState,
 };
 
 pub(crate) use actions::with_pending;
@@ -59,3 +60,4 @@ const DETAILS_DIFF_CACHE_LIMIT: usize = 16;
 pub const BRANCH_DETAILS_LOG_MAX_COUNT: usize = 50;
 pub const COMMITS_PAGE_SIZE: usize = 100;
 pub const COMMITS_PREFETCH_THRESHOLD: usize = 20;
+pub const FILES_DETAILS_DIFF_TARGET_LIMIT: usize = 100;

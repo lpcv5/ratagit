@@ -1,7 +1,8 @@
 use std::sync::{Arc, Mutex};
 
 use ratagit_core::{
-    BranchDeleteMode, CommitEntry, CommitFileDiffTarget, CommitFileEntry, RepoSnapshot, ResetMode,
+    BranchDeleteMode, BranchEntry, CommitEntry, CommitFileDiffTarget, CommitFileEntry,
+    FileDiffTarget, FilesSnapshot, RepoSnapshot, ResetMode, StashEntry,
 };
 
 use crate::{GitBackend, GitError, MockGitBackend};
@@ -51,8 +52,12 @@ macro_rules! delegate_shared_backend {
 impl GitBackend for SharedMockGitBackend {
     delegate_shared_backend! {
         refresh_snapshot() -> Result<RepoSnapshot, GitError>;
+        refresh_files() -> Result<FilesSnapshot, GitError>;
+        refresh_branches() -> Result<Vec<BranchEntry>, GitError>;
+        refresh_commits() -> Result<Vec<CommitEntry>, GitError>;
+        refresh_stashes() -> Result<Vec<StashEntry>, GitError>;
         load_more_commits(offset: usize, limit: usize) -> Result<Vec<CommitEntry>, GitError>;
-        files_details_diff(paths: &[String]) -> Result<String, GitError>;
+        files_details_diff(targets: &[FileDiffTarget]) -> Result<String, GitError>;
         branch_details_log(branch: &str, max_count: usize) -> Result<String, GitError>;
         commit_details_diff(commit_id: &str) -> Result<String, GitError>;
         commit_files(commit_id: &str) -> Result<Vec<CommitFileEntry>, GitError>;
