@@ -2,56 +2,50 @@
 
 ## Current Slice
 
-Large-repository commit list backend optimization.
+Commit Files directory diff performance and command-length fix.
 
 ## Goal
 
-- bring `HybridGitBackend` commit-list and commit-pagination performance close
-  to the parsed Git CLI baseline in synthetic large repositories
-- preserve `CommitHashStatus` semantics for merged, pushed, and unpushed commits
-  so commit rewrite safety checks remain strict
-- reuse the existing `tmp/perf/suite/large` synthetic repository for validation
-  and avoid regenerating large test data during the optimization loop
+- prevent Commit Files folder selections from expanding into very large
+  `git show` pathspec lists
+- avoid Windows command-line length failures when selected commit folders contain
+  many changed files
+- cap very large commit file/folder patch previews so Details rendering remains
+  responsive
+- keep Details behavior the same for users: selecting a commit file shows that
+  file's patch, selecting a commit folder shows that folder's combined patch
 
 ## Vertical Slice
 
-1. Backend behavior
-- read commit page metadata through `git log` formatted output instead of
-  per-commit libgit2 revwalk object lookup on the hot path
-- parse full hash, short hash, parents, author, and full message from
-  NUL-delimited CLI output so multiline commit bodies remain stable
-- keep a libgit2 fallback if the Git CLI page read fails
+1. Core selection behavior
+- keep file-row selections resolving to the exact changed file entry so rename
+  old paths remain included
+- resolve directory-row selections to one directory pathspec instead of all
+  descendant changed files
 
-2. Commit status classification
-- classify page commit hashes in batches by walking `main` and upstream tips
-  once per page instead of running reachability checks per commit
-- preserve detached-head behavior by skipping upstream classification when HEAD
-  is detached
-- keep `MergedToMain` precedence over `Pushed`, with remaining commits marked
-  `Unpushed`
+2. Git backend behavior
+- continue using `git show --patch <commit> -- <pathspec>` for commit-file
+  Details
+- rely on Git's directory pathspec matching for folder rows instead of sending
+  every descendant path as a command argument
+- keep rename file targets passing both old and new paths
+- apply the existing 1 MiB patch preview cap to commit file/folder diffs
 
-3. Performance suite
-- rerun the release large-only suite without `--regenerate`
-- require `commits` and `load-more-commits` backend medians to be no more than
-  1.25x the parsed Git CLI medians
-- ensure `status`, `commit-details-diff`, and `files-details-diff` do not
-  regress by more than 10% from the prior release baseline
+3. Tests
+- update core tests so Commit Files directory selections emit one directory
+  pathspec
+- add a regression test with many files under one directory to prove command
+  generation stays bounded
+- add a Git CLI integration test proving a directory pathspec returns patches
+  for descendant files
+- add a backend integration test proving large commit-file patches are truncated
+  deterministically
 
-4. Tests
-- add parser coverage for commit metadata, multiline message bodies, merge
-  parents, and empty-summary filtering
-- add batch hash-status classification coverage for main, upstream, unpushed,
-  and detached-head behavior
-- keep existing integration, snapshot, and harness coverage passing without UI
-  changes
+4. Documentation
+- record that Commit Files folder diffs use directory pathspecs rather than
+  expanded descendant lists
 
-5. Documentation
-- record the optimization slice and release performance validation command
-
-6. Validation
+5. Validation
 - run `cargo fmt`
 - run `cargo clippy --workspace --lib --bins -- -D warnings`
 - run `cargo test`
-- run `cargo run --release --bin perf-suite -- --scales large --operations
-  commits,load-more-commits,status,commit-details-diff,files-details-diff
-  --iterations 5 --warmup 1`

@@ -218,8 +218,8 @@ Files panel interaction:
   - `Enter` toggles the selected directory row, while file rows leave a notice
   - Details follows the selected file or folder via
     `Command::RefreshCommitFileDiff`
-  - directory selections resolve to descendant commit files and request one
-    combined path-limited patch
+  - directory selections request one combined patch using the directory
+    pathspec, avoiding large descendant path argument lists
   - stale commit-files and commit-file-diff results are ignored when the user
     has moved to another commit or file
   - `Esc` closes the subpanel and restores the selected commit diff
@@ -233,7 +233,8 @@ Files panel interaction:
   patch diff preview from `GitBackend`; automatic full-commit previews are
   capped at 1 MiB and include a deterministic truncation notice when capped.
 - Commit Files Details projection renders the selected commit file or folder's
-  patch from `GitBackend`.
+  patch from `GitBackend`; backend output is capped at the same 1 MiB preview
+  limit used by automatic commit previews.
 - Files, Branches, and Commits Details projections apply the AppState-owned
   `scroll_offset`; loading, empty, and error rows ignore the offset.
 - Details scroll resets when the selected details target changes or accepted

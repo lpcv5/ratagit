@@ -1436,7 +1436,7 @@ fn harness_commit_files_search_selects_file_and_refreshes_diff() {
 }
 
 #[test]
-fn harness_commits_files_directory_shows_descendant_diff() {
+fn harness_commits_files_directory_uses_directory_pathspec() {
     let inputs = [
         UiAction::RefreshAll,
         UiAction::FocusNext,
@@ -1450,18 +1450,14 @@ fn harness_commits_files_directory_shows_descendant_diff() {
         clean_three_commit_fixture(),
         &inputs,
         ScenarioExpectations {
-            screen_contains: &[
-                "Commit Files",
-                " src/",
-                "diff --git a/src/lib.rs b/src/lib.rs",
-            ],
+            screen_contains: &["Commit Files", " src/", "diff --git a/src b/src"],
             screen_not_contains: &["A lib.rs"],
             selected_screen_rows: &[" src/"],
             batch_selected_screen_rows: &[],
             git_ops_contains: &[
                 "commit-files:abc1234",
                 "commit-file-diff:abc1234:README.md",
-                "commit-file-diff:abc1234:src/lib.rs",
+                "commit-file-diff:abc1234:src",
             ],
             git_state_contains: &["summary: \"init project\""],
         },

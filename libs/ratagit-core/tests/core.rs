@@ -1054,7 +1054,7 @@ fn commit_files_navigation_refreshes_selected_file_diff() {
     );
 
     let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
-    assert_commit_file_diff_refresh_for_paths(commands, "abc1234-full", vec!["src/lib.rs"]);
+    assert_commit_file_diff_refresh_for_paths(commands, "abc1234-full", vec!["src"]);
     let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
 
     assert_commit_file_diff_refresh(commands, "abc1234-full", "src/lib.rs");
@@ -1195,7 +1195,7 @@ fn starting_search_exits_visual_multi_select_modes() {
 }
 
 #[test]
-fn commit_files_directory_selection_refreshes_descendant_diffs() {
+fn commit_files_directory_selection_refreshes_directory_diff() {
     let mut state = AppState {
         focus: PanelFocus::Commits,
         last_left_focus: PanelFocus::Commits,
@@ -1213,7 +1213,7 @@ fn commit_files_directory_selection_refreshes_descendant_diffs() {
 
     let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
 
-    assert_commit_file_diff_refresh_for_paths(commands, "abc1234-full", vec!["src/lib.rs"]);
+    assert_commit_file_diff_refresh_for_paths(commands, "abc1234-full", vec!["src"]);
 }
 
 #[test]
@@ -1236,9 +1236,38 @@ fn commit_files_enter_toggles_selected_directory() {
 
     let commands = update(&mut state, Action::Ui(UiAction::ToggleCommitFilesDirectory));
 
-    assert_commit_file_diff_refresh_for_paths(commands, "abc1234-full", vec!["src/lib.rs"]);
+    assert_commit_file_diff_refresh_for_paths(commands, "abc1234-full", vec!["src"]);
     assert!(!state.commits.files.expanded_dirs.contains("src"));
     assert_eq!(state.commits.files.tree_rows.len(), 2);
+}
+
+#[test]
+fn commit_files_large_directory_selection_uses_single_pathspec() {
+    let mut state = AppState {
+        focus: PanelFocus::Commits,
+        last_left_focus: PanelFocus::Commits,
+        ..AppState::default()
+    };
+    state.commits.items = vec![commit_entry("abc1234", "large commit")];
+    update(&mut state, Action::Ui(UiAction::OpenCommitFilesPanel));
+    let files = (0..500)
+        .map(|index| CommitFileEntry {
+            path: format!("src/generated/file_{index:04}.rs"),
+            old_path: None,
+            status: CommitFileStatus::Modified,
+        })
+        .collect::<Vec<_>>();
+    update(
+        &mut state,
+        Action::GitResult(GitResult::CommitFiles {
+            commit_id: "abc1234-full".to_string(),
+            result: Ok(files),
+        }),
+    );
+
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+
+    assert_commit_file_diff_refresh_for_paths(commands, "abc1234-full", vec!["src/generated"]);
 }
 
 #[test]

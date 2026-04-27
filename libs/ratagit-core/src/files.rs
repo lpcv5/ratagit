@@ -290,21 +290,11 @@ pub fn selected_commit_file_targets(state: &CommitFilesPanelState) -> Vec<Commit
     if row.kind == FileRowKind::File {
         return selected_commit_file(state).into_iter().collect();
     }
-    let descendants = if state.row_descendants.is_empty() && !state.items.is_empty() {
-        compute_commit_files_tree_projection(state).row_descendants
-    } else {
-        state.row_descendants.clone()
-    };
-    let Some(paths) = descendants.get(&row.path) else {
-        return Vec::new();
-    };
-    let path_set = paths.iter().collect::<BTreeSet<_>>();
-    state
-        .items
-        .iter()
-        .filter(|item| path_set.contains(&item.path))
-        .cloned()
-        .collect()
+    vec![CommitFileEntry {
+        path: row.path,
+        old_path: None,
+        status: CommitFileStatus::Unknown,
+    }]
 }
 
 pub fn select_file_tree_path(state: &mut FilesPanelState, path: &str) -> bool {

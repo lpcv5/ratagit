@@ -439,6 +439,35 @@ fn cli_commit_file_diff_for_rename_includes_old_and_new_paths() {
 }
 
 #[test]
+fn cli_commit_file_diff_accepts_directory_pathspec() {
+    if !git_available() {
+        eprintln!("git is unavailable, skipping cli_commit_file_diff_accepts_directory_pathspec");
+        return;
+    }
+
+    let repo = seeded_repo_with_two_files("cli-commit-file-diff-directory");
+    create_dir_all(repo.path().join("src")).expect("src dir should be creatable");
+    write(repo.path().join("src").join("a.rs"), "fn a() {}\n").expect("a.rs should be writable");
+    write(repo.path().join("src").join("b.rs"), "fn b() {}\n").expect("b.rs should be writable");
+    repo.run_git(&["add", "--", "src"]);
+    repo.run_git(&["commit", "-m", "add src files"]);
+
+    let mut backend = HybridGitBackend::open(repo.path()).expect("hybrid backend should open");
+    let diff = backend
+        .commit_file_diff(&CommitFileDiffTarget {
+            commit_id: "HEAD".to_string(),
+            paths: vec![CommitFileDiffPath {
+                path: "src".to_string(),
+                old_path: None,
+            }],
+        })
+        .expect("directory commit file diff should succeed");
+
+    assert!(diff.contains("diff --git a/src/a.rs b/src/a.rs"));
+    assert!(diff.contains("diff --git a/src/b.rs b/src/b.rs"));
+}
+
+#[test]
 fn cli_delete_branch_reports_worktree_occupancy() {
     if !git_available() {
         eprintln!("git is unavailable, skipping cli_delete_branch_reports_worktree_occupancy");

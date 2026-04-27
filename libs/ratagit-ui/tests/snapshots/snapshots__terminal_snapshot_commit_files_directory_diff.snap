@@ -1,16 +1,17 @@
 ---
 source: libs/ratagit-ui/tests/snapshots.rs
+assertion_line: 450
 expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30, },)"
 ---
 ┌ [1] 󰈙 Files ───────────────────┐┌ [5]  Details ─────────────────────────────────────────────────┐
-│    README.md                  ││  diff --git a/src/lib.rs b/src/lib.rs                          │
+│    README.md                  ││  diff --git a/src b/src                                        │
 │    src/                       ││  @@ -1 +1 @@                                                   │
-│      lib.rs                   ││  -old src/lib.rs                                               │
-│      main.rs                  ││  +new src/lib.rs                                               │
-│                                ││  diff --git a/src/old_name.rs b/src/new_name.rs                │
-│                                ││  @@ -1 +1 @@                                                   │
-│                                ││  -old src/old_name.rs                                          │
-│                                ││  +new src/new_name.rs                                          │
+│      lib.rs                   ││  -old src                                                      │
+│      main.rs                  ││  +new src                                                      │
+│                                ││                                                                │
+│                                ││                                                                │
+│                                ││                                                                │
+│                                ││                                                                │
 │                                ││                                                                │
 └────────────────────────────────┘│                                                                │
 ┌ [2]  Branches ────────────────┐│                                                                │

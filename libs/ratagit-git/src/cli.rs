@@ -362,7 +362,12 @@ impl GitCli {
                 args.push(path.path.clone());
             }
         }
-        self.run_git_read_owned(args)
+        let (mut diff, truncated) =
+            self.run_git_read_text_limited(args, COMMIT_DETAILS_DIFF_OUTPUT_LIMIT_BYTES)?;
+        if truncated {
+            append_diff_truncation_notice(&mut diff, COMMIT_DETAILS_DIFF_OUTPUT_LIMIT_BYTES);
+        }
+        Ok(diff)
     }
 
     pub(crate) fn create_commit(&mut self, message: &str) -> Result<(), GitError> {

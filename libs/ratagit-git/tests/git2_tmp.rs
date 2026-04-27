@@ -562,6 +562,41 @@ fn git2_commit_files_and_file_diff_follow_selected_path() {
 }
 
 #[test]
+fn git2_commit_file_diff_truncates_large_patch_preview() {
+    if !git_available() {
+        eprintln!(
+            "git is unavailable, skipping git2_commit_file_diff_truncates_large_patch_preview"
+        );
+        return;
+    }
+
+    let repo = seeded_repo_with_two_files("commit-file-diff-large");
+    write(repo.path().join("large.txt"), "x".repeat(2 * 1024 * 1024))
+        .expect("large file should be writable");
+    repo.run_git(&["add", "--", "large.txt"]);
+    repo.run_git(&["commit", "-m", "large file patch"]);
+
+    let target = ratagit_core::CommitFileDiffTarget {
+        commit_id: "HEAD".to_string(),
+        paths: vec![ratagit_core::CommitFileDiffPath {
+            path: "large.txt".to_string(),
+            old_path: None,
+        }],
+    };
+    let mut backend = HybridGitBackend::open(repo.path()).expect("hybrid backend should open");
+    let diff = backend
+        .commit_file_diff(&target)
+        .expect("large commit file diff should render a bounded preview");
+
+    assert!(diff.contains("diff --git a/large.txt b/large.txt"));
+    assert!(diff.contains("### commit diff truncated at 1048576 bytes"));
+    assert!(
+        diff.len() < 1_100_000,
+        "bounded preview should stay near the configured limit"
+    );
+}
+
+#[test]
 fn git2_stage_and_unstage_files_preserves_worktree_changes() {
     if !git_available() {
         eprintln!(

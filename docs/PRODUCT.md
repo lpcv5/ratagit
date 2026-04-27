@@ -117,10 +117,10 @@ Files panel rules:
   skipped untracked scanning; Details shows a deterministic skip message instead
 - queued refresh/details work is coalesced so stale duplicate details commands do
   not delay the latest selection
-- automatic Commits Details patch previews are capped at 1 MiB and show a
-  deterministic truncation notice when the cap is reached; the Commit Files
-  subpanel remains the path-focused way to inspect individual files in a large
-  commit
+- automatic Commits Details and Commit Files patch previews are capped at 1 MiB
+  and show a deterministic truncation notice when the cap is reached; the
+  Commit Files subpanel remains the path-focused way to inspect individual
+  files in a large commit
 - branch-details log graph output is cached in `AppState` and reused when the
   same branch is selected again during the current snapshot
 - real TUI read-only Git work runs on a fixed background worker pool so initial
@@ -190,6 +190,7 @@ Commits panel rules:
   - folder rows can be expanded/collapsed with `Enter`
   - `j` / `k` move the file cursor, and Details follows with the selected file's patch in that commit
   - selecting a folder shows a combined diff for descendant files in that commit
+    without expanding the folder into a long path argument list
   - `Esc` returns to the parent Commits panel and restores the selected commit diff
   - additional commit-files local shortcuts are deferred
 - `/` searches loaded commit rows by visible row identity: short hash, author
