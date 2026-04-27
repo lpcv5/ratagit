@@ -6,8 +6,8 @@ use unicode_width::UnicodeWidthChar;
 
 use super::panel_types::PanelSpan;
 use crate::theme::{
-    ICON_BATCH_SELECTED, ICON_BRANCH, ICON_DIRECTORY_CLOSED, ICON_DIRECTORY_OPEN, ICON_FILE,
-    ICON_FILE_STAGED, ICON_FILE_UNTRACKED, ICON_SEARCH_MATCH, ICON_STASH, RowRole, row_style,
+    ICON_BATCH_SELECTED, ICON_BRANCH, ICON_DIRECTORY_CLOSED, ICON_DIRECTORY_OPEN,
+    ICON_SEARCH_MATCH, ICON_STASH, RowRole, row_style,
 };
 
 pub fn format_file_tree_row(row: &FileTreeRow) -> String {
@@ -27,18 +27,7 @@ pub fn format_file_tree_row(row: &FileTreeRow) -> String {
             };
             format!("{marker} {}/", row.name)
         }
-        FileRowKind::File => {
-            let marker = if let Some(status) = row.commit_status {
-                commit_file_status_marker(status)
-            } else if row.untracked {
-                ICON_FILE_UNTRACKED
-            } else if row.staged {
-                ICON_FILE_STAGED
-            } else {
-                ICON_FILE
-            };
-            format!("{marker} {}", row.name)
-        }
+        FileRowKind::File => format!("{} {}", file_tree_status_marker(row), row.name),
     };
     format!("{batch}{matched} {indent}{body}")
 }
@@ -59,35 +48,31 @@ pub(crate) fn file_tree_row_spans(row: &FileTreeRow) -> Vec<PanelSpan> {
             } else {
                 ICON_DIRECTORY_CLOSED
             };
-            (marker, format!(" {}/", row.name))
+            (marker.to_string(), format!(" {}/", row.name))
         }
-        FileRowKind::File => {
-            let marker = if let Some(status) = row.commit_status {
-                commit_file_status_marker(status)
-            } else if row.untracked {
-                ICON_FILE_UNTRACKED
-            } else if row.staged {
-                ICON_FILE_STAGED
-            } else {
-                ICON_FILE
-            };
-            (marker, format!(" {}", row.name))
-        }
+        FileRowKind::File => (file_tree_status_marker(row), format!(" {}", row.name)),
     };
-    vec![
+    let mut spans = vec![
         PanelSpan {
             text: prefix,
             style: Style::default(),
         },
         PanelSpan {
-            text: marker.to_string(),
+            text: marker.trim_end_matches('U').to_string(),
             style: file_tree_marker_style(row),
         },
-        PanelSpan {
-            text: suffix,
-            style: Style::default(),
-        },
-    ]
+    ];
+    if row.kind == FileRowKind::File && row.conflicted {
+        spans.push(PanelSpan {
+            text: "U".to_string(),
+            style: row_style(RowRole::DiffRemove),
+        });
+    }
+    spans.push(PanelSpan {
+        text: suffix,
+        style: file_tree_name_style(row),
+    });
+    spans
 }
 
 pub fn format_commit_entry(entry: &CommitEntry) -> String {
@@ -191,6 +176,27 @@ fn file_tree_marker_style(row: &FileTreeRow) -> Style {
     }
 }
 
+fn file_tree_name_style(row: &FileTreeRow) -> Style {
+    if row.kind == FileRowKind::File && row.staged {
+        row_style(RowRole::FileStaged)
+    } else {
+        Style::default()
+    }
+}
+
+fn file_tree_status_marker(row: &FileTreeRow) -> String {
+    let status = row.commit_status.unwrap_or(if row.untracked {
+        ratagit_core::CommitFileStatus::Unknown
+    } else {
+        ratagit_core::CommitFileStatus::Modified
+    });
+    let mut marker = commit_file_status_marker(status).to_string();
+    if row.conflicted {
+        marker.push('U');
+    }
+    marker
+}
+
 fn fixed_width(text: &str, width: usize) -> String {
     let mut output = String::new();
     let mut used = 0usize;
@@ -289,8 +295,9 @@ fn commit_file_status_style(status: ratagit_core::CommitFileStatus) -> Style {
         ratagit_core::CommitFileStatus::Renamed | ratagit_core::CommitFileStatus::Copied => {
             row_style(RowRole::DiffMeta)
         }
-        ratagit_core::CommitFileStatus::Modified
-        | ratagit_core::CommitFileStatus::TypeChanged
-        | ratagit_core::CommitFileStatus::Unknown => Style::default(),
+        ratagit_core::CommitFileStatus::Modified | ratagit_core::CommitFileStatus::TypeChanged => {
+            row_style(RowRole::SearchMatch)
+        }
+        ratagit_core::CommitFileStatus::Unknown => row_style(RowRole::FileUntracked),
     }
 }

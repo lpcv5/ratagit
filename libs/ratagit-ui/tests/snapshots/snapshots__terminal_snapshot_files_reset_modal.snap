@@ -1,13 +1,12 @@
 ---
 source: libs/ratagit-ui/tests/snapshots.rs
-assertion_line: 562
 expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30, },)"
 ---
 ╭ 1  󰈙 Files ────────────────────╮ 5   Details ───────────────────────────────────────────────────╮
-│    README.md                  │  ### unstaged                                                   │
+│   ? README.md                  │  ### unstaged                                                   │
 │    src/                       │  diff --git a/README.md b/README.md                             │
-│      lib.rs                   │  @@ -1 +1 @@                                                    │
-│      main.rs     ╭ ⚠ Reset ─────────────────────────────────────────────────╮                   │
+│     M lib.rs                   │  @@ -1 +1 @@                                                    │
+│     M main.rs     ╭ ⚠ Reset ─────────────────────────────────────────────────╮                   │
 │                   │ Choose reset scope for the whole repo.                   │                   │
 │                   │ ╭ Mode ────────────────────────────────────────────────╮ │                   │
 │                   │ │▌ mixed                                               │ │                   │

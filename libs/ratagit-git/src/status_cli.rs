@@ -1,4 +1,4 @@
-use ratagit_core::FileEntry;
+use ratagit_core::{CommitFileStatus, FileEntry};
 
 use crate::GitError;
 
@@ -36,6 +36,8 @@ pub(crate) fn parse_porcelain_v1_z_limited(
             path,
             staged: status.is_staged(),
             untracked: status.is_untracked(),
+            status: status.file_status(),
+            conflicted: status.is_conflicted(),
         });
     }
     Ok(ParsedStatus { files, truncated })
@@ -62,6 +64,38 @@ impl PorcelainStatus {
 
     fn is_rename_or_copy(self) -> bool {
         matches!(self.index, b'R' | b'C') || matches!(self.worktree, b'R' | b'C')
+    }
+
+    fn is_conflicted(self) -> bool {
+        matches!(
+            (self.index, self.worktree),
+            (b'U', b'U')
+                | (b'A', b'A')
+                | (b'D', b'D')
+                | (b'A', b'U')
+                | (b'U', b'A')
+                | (b'D', b'U')
+                | (b'U', b'D')
+        )
+    }
+
+    fn file_status(self) -> CommitFileStatus {
+        if self.is_untracked() {
+            return CommitFileStatus::Unknown;
+        }
+        match [self.index, self.worktree]
+            .into_iter()
+            .find(|status| !matches!(status, b' ' | b'U'))
+            .unwrap_or(if self.is_conflicted() { b'M' } else { b'?' })
+        {
+            b'A' => CommitFileStatus::Added,
+            b'M' => CommitFileStatus::Modified,
+            b'D' => CommitFileStatus::Deleted,
+            b'R' => CommitFileStatus::Renamed,
+            b'C' => CommitFileStatus::Copied,
+            b'T' => CommitFileStatus::TypeChanged,
+            _ => CommitFileStatus::Unknown,
+        }
     }
 }
 
@@ -101,26 +135,36 @@ mod tests {
                     path: "src/lib.rs".to_string(),
                     staged: false,
                     untracked: false,
+                    status: CommitFileStatus::Modified,
+                    conflicted: false,
                 },
                 FileEntry {
                     path: "staged.txt".to_string(),
                     staged: true,
                     untracked: false,
+                    status: CommitFileStatus::Added,
+                    conflicted: false,
                 },
                 FileEntry {
                     path: "nested/new.txt".to_string(),
                     staged: false,
                     untracked: true,
+                    status: CommitFileStatus::Unknown,
+                    conflicted: false,
                 },
                 FileEntry {
                     path: "conflict.txt".to_string(),
                     staged: true,
                     untracked: false,
+                    status: CommitFileStatus::Modified,
+                    conflicted: true,
                 },
                 FileEntry {
                     path: "docs/你好.md".to_string(),
                     staged: false,
                     untracked: false,
+                    status: CommitFileStatus::Modified,
+                    conflicted: false,
                 },
             ]
         );
@@ -137,11 +181,15 @@ mod tests {
                     path: "new-name.txt".to_string(),
                     staged: true,
                     untracked: false,
+                    status: CommitFileStatus::Renamed,
+                    conflicted: false,
                 },
                 FileEntry {
                     path: "copy.txt".to_string(),
                     staged: true,
                     untracked: false,
+                    status: CommitFileStatus::Copied,
+                    conflicted: false,
                 },
             ]
         );

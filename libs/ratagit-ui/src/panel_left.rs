@@ -58,23 +58,14 @@ pub(crate) fn left_panel_content_len(state: &AppContext, panel: PanelFocus) -> u
 
 pub(crate) fn render_files_lines(state: &AppContext, max_lines: usize) -> Vec<PanelLine> {
     let mut rows = file_tree_rows_for_read(&state.repo.files.items, &state.ui.files);
-    if state.ui.search.has_query_for(SearchScope::Files) {
-        apply_tree_search_matches(rows.to_mut(), state, SearchScope::Files);
-    }
-    render_indexed_entries_window_with(
-        rows.as_ref(),
+    render_file_tree_lines(
+        state,
+        rows.to_mut(),
         state.ui.files.selected,
         state.ui.files.scroll_offset,
         max_lines,
-        |index, row| {
-            PanelLine::new(format_file_tree_row(row), file_tree_row_role(row))
-                .selected(index == state.ui.files.selected)
-                .styled_spans(file_tree_row_spans(row))
-        },
+        SearchScope::Files,
     )
-    .into_iter()
-    .map(|line| highlight_search_query(line, state, SearchScope::Files))
-    .collect()
 }
 
 pub(crate) fn render_branches_lines(state: &AppContext, max_lines: usize) -> Vec<PanelLine> {
@@ -151,22 +142,34 @@ pub(crate) fn render_stash_lines(state: &AppContext, max_lines: usize) -> Vec<Pa
 fn render_commit_file_lines(state: &AppContext, max_lines: usize) -> Vec<PanelLine> {
     let mut rows =
         commit_file_tree_rows_for_read(&state.repo.commits.files.items, &state.ui.commits.files);
-    if state.ui.search.has_query_for(SearchScope::CommitFiles) {
-        apply_tree_search_matches(rows.to_mut(), state, SearchScope::CommitFiles);
-    }
-    render_indexed_entries_window_with(
-        rows.as_ref(),
+    render_file_tree_lines(
+        state,
+        rows.to_mut(),
         state.ui.commits.files.selected,
         state.ui.commits.files.scroll_offset,
         max_lines,
-        |index, row| {
-            PanelLine::new(format_file_tree_row(row), file_tree_row_role(row))
-                .selected(index == state.ui.commits.files.selected)
-                .styled_spans(file_tree_row_spans(row))
-        },
+        SearchScope::CommitFiles,
     )
+}
+
+fn render_file_tree_lines(
+    state: &AppContext,
+    rows: &mut [FileTreeRow],
+    selected: usize,
+    scroll_offset: usize,
+    max_lines: usize,
+    search_scope: SearchScope,
+) -> Vec<PanelLine> {
+    if state.ui.search.has_query_for(search_scope) {
+        apply_tree_search_matches(rows, state, search_scope);
+    }
+    render_indexed_entries_window_with(rows, selected, scroll_offset, max_lines, |index, row| {
+        PanelLine::new(format_file_tree_row(row), file_tree_row_role(row))
+            .selected(index == selected)
+            .styled_spans(file_tree_row_spans(row))
+    })
     .into_iter()
-    .map(|line| highlight_search_query(line, state, SearchScope::CommitFiles))
+    .map(|line| highlight_search_query(line, state, search_scope))
     .collect()
 }
 

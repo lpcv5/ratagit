@@ -33,6 +33,12 @@ fn file_entry(path: &str, staged: bool, untracked: bool) -> FileEntry {
         path: path.to_string(),
         staged,
         untracked,
+        status: if untracked {
+            CommitFileStatus::Unknown
+        } else {
+            CommitFileStatus::Modified
+        },
+        conflicted: false,
     }
 }
 

@@ -355,9 +355,9 @@ fn snapshots_dirty_repo_100x30() {
     assert!(text.contains("[5]  Details"));
     assert!(text.contains("[6] 󰌱 Log"));
     assert!(text.contains(" src/"));
-    assert!(text.contains(" main.rs"));
-    assert!(text.contains(" lib.rs"));
-    assert!(text.contains(" README.md"));
+    assert!(text.contains("M main.rs"));
+    assert!(text.contains("M lib.rs"));
+    assert!(text.contains("? README.md"));
     assert_no_cursor_marker(&text);
 }
 
@@ -942,7 +942,7 @@ fn snapshots_files_multi_select_marks_selected_rows() {
         },
     )
     .as_text();
-    assert!(text.contains("✓   README.md"));
+    assert!(text.contains("✓  ? README.md"));
     assert_no_cursor_marker(&text);
 }
 
@@ -962,10 +962,10 @@ fn snapshots_files_list_scrolls_to_keep_selection_visible() {
         },
     )
     .as_text();
-    assert!(text.contains("    file-16.txt"));
-    assert!(text.contains("    file-17.txt"));
-    assert!(text.contains("    file-20.txt"));
-    assert!(text.contains(" file-23.txt"));
+    assert!(text.contains("   M file-16.txt"));
+    assert!(text.contains("   M file-17.txt"));
+    assert!(text.contains("   M file-20.txt"));
+    assert!(text.contains("M file-23.txt"));
     assert_no_cursor_marker(&text);
     assert!(!text.contains("file-24.txt"));
 
@@ -976,7 +976,7 @@ fn snapshots_files_list_scrolls_to_keep_selection_visible() {
             height: 30,
         },
     );
-    assert!(screen.contains(">│    file-20.txt"));
+    assert!(screen.contains(">│   M file-20.txt"));
 }
 
 #[test]
@@ -1002,13 +1002,13 @@ fn snapshots_files_list_reversing_up_does_not_jump_to_top_reserve() {
     }
 
     let text = render(&state, size).as_text();
-    assert!(text.contains("    file-17.txt"));
-    assert!(text.contains("    file-20.txt"));
-    assert!(text.contains(" file-24.txt"));
+    assert!(text.contains("   M file-17.txt"));
+    assert!(text.contains("   M file-20.txt"));
+    assert!(text.contains("M file-24.txt"));
     assert_no_cursor_marker(&text);
 
     let screen = render_terminal_snapshot_with_cursor_marker(&state, size);
-    assert!(screen.contains(">│    file-20.txt"));
+    assert!(screen.contains(">│   M file-20.txt"));
 }
 
 #[test]
@@ -1038,18 +1038,18 @@ fn snapshots_files_list_reversing_down_does_not_jump_to_bottom_reserve() {
     );
 
     let text = render(&state, size).as_text();
-    assert!(text.contains("    file-17.txt"));
-    assert!(text.contains("    file-21.txt"));
-    assert!(text.contains(" file-24.txt"));
+    assert!(text.contains("   M file-17.txt"));
+    assert!(text.contains("   M file-21.txt"));
+    assert!(text.contains("M file-24.txt"));
 
     update(
         &mut state,
         Action::Ui(UiAction::MoveDownInViewport { visible_lines }),
     );
     let text = render(&state, size).as_text();
-    assert!(text.contains("    file-18.txt"));
-    assert!(text.contains("    file-22.txt"));
-    assert!(text.contains(" file-25.txt"));
+    assert!(text.contains("   M file-18.txt"));
+    assert!(text.contains("   M file-22.txt"));
+    assert!(text.contains("M file-25.txt"));
 }
 
 #[test]
@@ -1295,7 +1295,7 @@ fn terminal_snapshot_files_search_updates_screen() {
     );
 
     assert!(screen.contains("search: li"));
-    assert!(screen.contains("    lib.rs"));
+    assert!(screen.contains("   M lib.rs"));
     assert_no_cursor_marker(&screen);
 }
 
@@ -1530,7 +1530,7 @@ fn terminal_buffer_highlights_selected_row_only_in_focused_panel() {
         },
     );
 
-    assert!(buffer_contains_selected_text(&buffer, " README.md"));
+    assert!(buffer_contains_selected_text(&buffer, "? README.md"));
     assert!(!buffer_contains_selected_text(&buffer, " main"));
 }
 
@@ -1551,7 +1551,7 @@ fn terminal_buffer_highlights_marked_files_with_batch_style() {
 
     assert!(buffer_contains_text_with_style(
         &buffer,
-        "✓   README.md",
+        "✓  ? README.md",
         batch_selected_row_style()
     ));
     assert!(buffer_contains_text_with_style(
@@ -1643,7 +1643,7 @@ fn terminal_buffer_moves_selection_highlight_with_focus() {
         },
     );
 
-    assert!(!buffer_contains_selected_text(&buffer, " README.md"));
+    assert!(!buffer_contains_selected_text(&buffer, "? README.md"));
     assert!(buffer_contains_selected_text(&buffer, " main"));
 }
 

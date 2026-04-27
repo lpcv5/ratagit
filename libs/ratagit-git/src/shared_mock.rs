@@ -89,7 +89,7 @@ impl GitBackend for SharedMockGitBackend {
 
 #[cfg(test)]
 mod tests {
-    use ratagit_core::{BranchEntry, FileEntry, StashEntry};
+    use ratagit_core::{BranchEntry, CommitFileStatus, FileEntry, StashEntry};
 
     use super::*;
 
@@ -102,6 +102,8 @@ mod tests {
                 path: "a.txt".to_string(),
                 staged: false,
                 untracked: false,
+                status: CommitFileStatus::Modified,
+                conflicted: false,
             }],
             commits: Vec::new(),
             branches: vec![BranchEntry {

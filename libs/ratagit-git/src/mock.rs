@@ -400,6 +400,9 @@ impl GitBackend for MockGitBackend {
             .find(|entry| entry.path == path)
             .ok_or_else(|| GitError::new(format!("file not found: {path}")))?;
         entry.staged = true;
+        if entry.untracked {
+            entry.status = CommitFileStatus::Added;
+        }
         Ok(())
     }
 
@@ -412,6 +415,9 @@ impl GitBackend for MockGitBackend {
             .find(|entry| entry.path == path)
             .ok_or_else(|| GitError::new(format!("file not found: {path}")))?;
         entry.staged = false;
+        if entry.untracked {
+            entry.status = CommitFileStatus::Unknown;
+        }
         Ok(())
     }
 
@@ -426,6 +432,9 @@ impl GitBackend for MockGitBackend {
                 .find(|entry| entry.path == *path)
                 .ok_or_else(|| GitError::new(format!("file not found: {path}")))?;
             entry.staged = true;
+            if entry.untracked {
+                entry.status = CommitFileStatus::Added;
+            }
         }
         Ok(())
     }
@@ -441,6 +450,9 @@ impl GitBackend for MockGitBackend {
                 .find(|entry| entry.path == *path)
                 .ok_or_else(|| GitError::new(format!("file not found: {path}")))?;
             entry.staged = false;
+            if entry.untracked {
+                entry.status = CommitFileStatus::Unknown;
+            }
         }
         Ok(())
     }

@@ -126,10 +126,10 @@ mod tests {
 
         let lines = render_files_lines(&state, 4);
 
-        assert_eq!(lines[0].text, "    README.md");
+        assert_eq!(lines[0].text, "   ? README.md");
         assert_eq!(lines[1].text, "    src/");
-        assert_eq!(lines[2].text, "      lib.rs");
-        assert_eq!(lines[3].text, "      main.rs");
+        assert_eq!(lines[2].text, "     M lib.rs");
+        assert_eq!(lines[3].text, "     M main.rs");
         assert!(lines[1].selected);
         assert!(!lines.iter().any(|line| line.text.contains('>')));
     }
@@ -143,7 +143,7 @@ mod tests {
 
         let lines = render_files_lines(&state, 2);
 
-        assert_eq!(lines[0].text, "    README.md");
+        assert_eq!(lines[0].text, "   ? README.md");
         assert_eq!(lines[1].text, "✓   src/");
         assert_eq!(lines[1].role, RowRole::BatchSelected);
         assert!(lines[1].selected);
@@ -160,7 +160,7 @@ mod tests {
 
         let line = lines
             .iter()
-            .find(|line| line.text.contains("    lib.rs"))
+            .find(|line| line.text.contains("   M lib.rs"))
             .expect("lib.rs row should be marked as a search match");
         assert_eq!(line.role, RowRole::Normal);
         assert!(has_search_span(line, "li"));
@@ -306,6 +306,149 @@ mod tests {
                 |span| span.text == " lib.rs" && span.style == ratatui::style::Style::default()
             )
         );
+    }
+
+    #[test]
+    fn files_panel_colors_staged_file_name_and_status_marker() {
+        let state = state_with_dirty_repo();
+
+        let lines = render_files_lines(&state, 4);
+        let line = lines
+            .iter()
+            .find(|line| line.text.contains("M main.rs"))
+            .expect("staged file row should render");
+        let spans = line.spans.as_ref().expect("tree row should have spans");
+
+        assert!(
+            spans
+                .iter()
+                .any(|span| span.text == "M" && span.style == row_style(RowRole::SearchMatch))
+        );
+        assert!(spans.iter().any(
+            |span| span.text == " main.rs" && span.style == row_style(RowRole::FileStaged)
+        ));
+    }
+
+    #[test]
+    fn files_panel_appends_colored_conflict_suffix() {
+        let mut snapshot = fixture_dirty_repo();
+        snapshot.files = vec![ratagit_core::FileEntry {
+            path: "conflict.rs".to_string(),
+            staged: true,
+            untracked: false,
+            status: ratagit_core::CommitFileStatus::Modified,
+            conflicted: true,
+        }];
+        let mut state = AppContext::default();
+        update(
+            &mut state,
+            Action::GitResult(GitResult::Refreshed(snapshot)),
+        );
+
+        let lines = render_files_lines(&state, 1);
+        let line = lines.first().expect("conflict file should render");
+        let spans = line.spans.as_ref().expect("tree row should have spans");
+
+        assert_eq!(line.text, "   MU conflict.rs");
+        assert!(
+            spans
+                .iter()
+                .any(|span| span.text == "M" && span.style == row_style(RowRole::SearchMatch))
+        );
+        assert!(
+            spans
+                .iter()
+                .any(|span| span.text == "U" && span.style == row_style(RowRole::DiffRemove))
+        );
+    }
+
+    #[test]
+    fn commit_file_tree_colors_all_status_markers() {
+        let mut state = state_with_dirty_repo();
+        update(
+            &mut state,
+            Action::Ui(UiAction::FocusPanel {
+                panel: PanelFocus::Commits,
+            }),
+        );
+        let commands = update(&mut state, Action::Ui(UiAction::OpenCommitFilesPanel));
+        let [Command::RefreshCommitFiles { commit_id }] = commands.as_slice() else {
+            panic!("expected commit files refresh");
+        };
+        let statuses = [
+            (
+                "added.rs",
+                ratagit_core::CommitFileStatus::Added,
+                RowRole::DiffAdd,
+            ),
+            (
+                "modified.rs",
+                ratagit_core::CommitFileStatus::Modified,
+                RowRole::SearchMatch,
+            ),
+            (
+                "deleted.rs",
+                ratagit_core::CommitFileStatus::Deleted,
+                RowRole::DiffRemove,
+            ),
+            (
+                "renamed.rs",
+                ratagit_core::CommitFileStatus::Renamed,
+                RowRole::DiffMeta,
+            ),
+            (
+                "copied.rs",
+                ratagit_core::CommitFileStatus::Copied,
+                RowRole::DiffMeta,
+            ),
+            (
+                "typechanged.rs",
+                ratagit_core::CommitFileStatus::TypeChanged,
+                RowRole::SearchMatch,
+            ),
+            (
+                "unknown.rs",
+                ratagit_core::CommitFileStatus::Unknown,
+                RowRole::FileUntracked,
+            ),
+        ];
+        update(
+            &mut state,
+            Action::GitResult(GitResult::CommitFiles {
+                commit_id: commit_id.clone(),
+                result: Ok(statuses
+                    .iter()
+                    .map(|(path, status, _)| ratagit_core::CommitFileEntry {
+                        path: (*path).to_string(),
+                        old_path: None,
+                        status: *status,
+                    })
+                    .collect()),
+            }),
+        );
+
+        let lines = render_commits_lines(&state, 10);
+
+        for (path, status, role) in statuses {
+            let marker = match status {
+                ratagit_core::CommitFileStatus::Added => "A",
+                ratagit_core::CommitFileStatus::Modified => "M",
+                ratagit_core::CommitFileStatus::Deleted => "D",
+                ratagit_core::CommitFileStatus::Renamed => "R",
+                ratagit_core::CommitFileStatus::Copied => "C",
+                ratagit_core::CommitFileStatus::TypeChanged => "T",
+                ratagit_core::CommitFileStatus::Unknown => "?",
+            };
+            let line = lines
+                .iter()
+                .find(|line| line.text.contains(path))
+                .expect("status file row should render");
+            assert!(line.spans.as_ref().is_some_and(|spans| {
+                spans
+                    .iter()
+                    .any(|span| span.text == marker && span.style == row_style(role))
+            }));
+        }
     }
 
     #[test]

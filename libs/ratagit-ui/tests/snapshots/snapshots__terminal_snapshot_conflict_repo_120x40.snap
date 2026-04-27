@@ -3,9 +3,9 @@ source: libs/ratagit-ui/tests/snapshots.rs
 expression: "render_terminal_text(&state, TerminalSize { width: 120, height: 40, },)"
 ---
 ╭ 1  󰈙 Files ───────────────────────────╮ 5   Details ────────────────────────────────────────────────────────────────╮
-│    Cargo.toml (both modified)        │  ### unstaged                                                                │
+│   MU Cargo.toml (both modified)       │  ### unstaged                                                                │
 │    src/                              │  diff --git a/Cargo.toml (both modified) b/Cargo.toml (both modified)        │
-│      conflict.rs (both modified)     │  @@ -1 +1 @@                                                                 │
+│     MU conflict.rs (both modified)    │  @@ -1 +1 @@                                                                 │
 │                                       │  -old Cargo.toml (both modified)                                             │
 │                                       │  +new Cargo.toml (both modified)                                             │
 │                                       │                                                                              │

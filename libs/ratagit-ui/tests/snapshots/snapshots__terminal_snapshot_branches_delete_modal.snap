@@ -1,13 +1,12 @@
 ---
 source: libs/ratagit-ui/tests/snapshots.rs
-assertion_line: 661
 expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30, },)"
 ---
 ╭ 1  󰈙 Files ────────────────────╮ 5   Details ───────────────────────────────────────────────────╮
-│    README.md                  │  * commit abc1234                                               │
+│   ? README.md                  │  * commit abc1234                                               │
 │    src/                       │  Author: ratagit-tests <ratagit-tests@example.com>              │
-│      lib.rs                   │                                                                 │
-│      main.rs     ╭ ‼ Delete Branch ─────────────────────────────────────────╮                   │
+│     M lib.rs                   │                                                                 │
+│     M main.rs     ╭ ‼ Delete Branch ─────────────────────────────────────────╮                   │
 │                   │ Target: feature/mvp                                      │                   │
 │                   │ ╭ Choice ──────────────────────────────────────────────╮ │                   │
 │                   │ │▌ delete local                                        │ │                   │

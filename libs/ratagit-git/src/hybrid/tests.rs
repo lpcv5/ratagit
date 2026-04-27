@@ -39,11 +39,15 @@ fn sort_files_is_deterministic_by_path() {
             path: "z.txt".to_string(),
             staged: false,
             untracked: false,
+            status: CommitFileStatus::Modified,
+            conflicted: false,
         },
         FileEntry {
             path: "a.txt".to_string(),
             staged: true,
             untracked: false,
+            status: CommitFileStatus::Modified,
+            conflicted: false,
         },
     ];
     sort_files(&mut files);
@@ -73,11 +77,15 @@ fn summarize_files_matches_app_status_summary_shape() {
             path: "staged.txt".to_string(),
             staged: true,
             untracked: false,
+            status: CommitFileStatus::Modified,
+            conflicted: false,
         },
         FileEntry {
             path: "new.txt".to_string(),
             staged: false,
             untracked: true,
+            status: CommitFileStatus::Unknown,
+            conflicted: false,
         },
     ];
     assert_eq!(summarize_files(&files), "staged: 1, unstaged: 1");

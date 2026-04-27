@@ -1184,9 +1184,46 @@ fn parse_status_porcelain(output: &[u8]) -> Result<Vec<FileEntry>, String> {
             path,
             staged: matches!(index, b'A' | b'M' | b'D' | b'R' | b'C' | b'T' | b'U'),
             untracked: index == b'?' && worktree == b'?',
+            status: status_from_porcelain_pair(index, worktree),
+            conflicted: porcelain_pair_is_conflicted(index, worktree),
         });
     }
     Ok(entries)
+}
+
+fn porcelain_pair_is_conflicted(index: u8, worktree: u8) -> bool {
+    matches!(
+        (index, worktree),
+        (b'U', b'U')
+            | (b'A', b'A')
+            | (b'D', b'D')
+            | (b'A', b'U')
+            | (b'U', b'A')
+            | (b'D', b'U')
+            | (b'U', b'D')
+    )
+}
+
+fn status_from_porcelain_pair(index: u8, worktree: u8) -> CommitFileStatus {
+    if index == b'?' && worktree == b'?' {
+        return CommitFileStatus::Unknown;
+    }
+    match [index, worktree]
+        .into_iter()
+        .find(|status| !matches!(status, b' ' | b'U'))
+        .unwrap_or(if porcelain_pair_is_conflicted(index, worktree) {
+            b'M'
+        } else {
+            b'?'
+        }) {
+        b'A' => CommitFileStatus::Added,
+        b'M' => CommitFileStatus::Modified,
+        b'D' => CommitFileStatus::Deleted,
+        b'R' => CommitFileStatus::Renamed,
+        b'C' => CommitFileStatus::Copied,
+        b'T' => CommitFileStatus::TypeChanged,
+        _ => CommitFileStatus::Unknown,
+    }
 }
 
 fn parse_commit_files(output: &str) -> Result<Vec<CommitFileEntry>, String> {
@@ -1916,6 +1953,8 @@ mod tests {
             path: path.to_string(),
             staged: false,
             untracked: false,
+            status: CommitFileStatus::Modified,
+            conflicted: false,
         }
     }
 

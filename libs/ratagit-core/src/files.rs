@@ -8,6 +8,8 @@ pub struct FileEntry {
     pub path: String,
     pub staged: bool,
     pub untracked: bool,
+    pub status: CommitFileStatus,
+    pub conflicted: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,6 +53,7 @@ pub struct FileTreeRow {
     pub staged: bool,
     pub untracked: bool,
     pub commit_status: Option<CommitFileStatus>,
+    pub conflicted: bool,
     pub selected_for_batch: bool,
     pub matched: bool,
 }
@@ -108,6 +111,7 @@ struct FileTreeNode {
     staged: bool,
     untracked: bool,
     commit_status: Option<CommitFileStatus>,
+    conflicted: bool,
     children: BTreeSet<String>,
     ref_count: usize,
 }
@@ -119,6 +123,7 @@ struct FileTreeSource {
     staged: bool,
     untracked: bool,
     commit_status: Option<CommitFileStatus>,
+    conflicted: bool,
 }
 
 impl FileTreeIndex {
@@ -184,6 +189,7 @@ impl FileTreeIndex {
                     staged: false,
                     untracked: false,
                     commit_status: None,
+                    conflicted: false,
                     children: BTreeSet::new(),
                     ref_count: 0,
                 });
@@ -211,6 +217,7 @@ impl FileTreeIndex {
                     node.staged = false;
                     node.untracked = false;
                     node.commit_status = None;
+                    node.conflicted = false;
                 }
                 node.ref_count == 0
             } else {
@@ -233,6 +240,7 @@ impl FileTreeIndex {
             node.staged = source.staged;
             node.untracked = source.untracked;
             node.commit_status = source.commit_status;
+            node.conflicted = source.conflicted;
         }
     }
 }
@@ -648,7 +656,17 @@ fn compute_tree_projection(items: &[FileEntry], state: &FilesUiState) -> TreePro
     }
     let entry_status = items
         .iter()
-        .map(|entry| (entry.path.clone(), (entry.staged, entry.untracked)))
+        .map(|entry| {
+            (
+                entry.path.clone(),
+                (
+                    entry.staged,
+                    entry.untracked,
+                    entry.status,
+                    entry.conflicted,
+                ),
+            )
+        })
         .collect::<BTreeMap<_, _>>();
     compute_tree_projection_from_paths(
         items.iter().map(|entry| entry.path.clone()),
@@ -664,6 +682,15 @@ fn compute_tree_projection(items: &[FileEntry], state: &FilesUiState) -> TreePro
                     .descendants
                     .iter()
                     .all(|path| entry_status.get(path).is_some_and(|status| status.1));
+            let commit_status = if context.kind == FileRowKind::File {
+                entry_status.get(&context.path).map(|status| status.2)
+            } else {
+                None
+            };
+            let conflicted = context.kind == FileRowKind::File
+                && entry_status
+                    .get(&context.path)
+                    .is_some_and(|status| status.3);
             FileTreeRow {
                 depth: context.depth,
                 expanded: context.expanded,
@@ -673,7 +700,8 @@ fn compute_tree_projection(items: &[FileEntry], state: &FilesUiState) -> TreePro
                 kind: context.kind,
                 staged,
                 untracked,
-                commit_status: None,
+                commit_status,
+                conflicted,
                 matched: false,
             }
         },
@@ -733,6 +761,7 @@ fn append_lightweight_tree_rows(
         staged: node.staged,
         untracked: node.untracked,
         commit_status: node.commit_status,
+        conflicted: node.conflicted,
         matched: false,
     });
     if node.kind != FileRowKind::Directory || !expanded_dirs.contains(path) {
@@ -879,7 +908,8 @@ fn file_tree_sources(items: &[FileEntry]) -> BTreeMap<String, FileTreeSource> {
                     kind,
                     staged: entry.staged,
                     untracked: entry.untracked,
-                    commit_status: None,
+                    commit_status: Some(entry.status),
+                    conflicted: entry.conflicted,
                 },
             ))
         })
@@ -902,6 +932,7 @@ fn commit_file_tree_sources(items: &[CommitFileEntry]) -> BTreeMap<String, FileT
                     staged: false,
                     untracked: false,
                     commit_status: Some(entry.status),
+                    conflicted: false,
                 },
             ))
         })
@@ -1293,16 +1324,22 @@ mod tests {
                 path: "src/main.rs".to_string(),
                 staged: true,
                 untracked: false,
+                status: CommitFileStatus::Modified,
+                conflicted: false,
             },
             FileEntry {
                 path: "src/ui/list.rs".to_string(),
                 staged: false,
                 untracked: false,
+                status: CommitFileStatus::Modified,
+                conflicted: false,
             },
             FileEntry {
                 path: "README.md".to_string(),
                 staged: false,
                 untracked: true,
+                status: CommitFileStatus::Unknown,
+                conflicted: false,
             },
         ];
         let mut state = FilesUiState::default();
@@ -1372,6 +1409,8 @@ mod tests {
             path: "libs/ratagit-git/tests/".to_string(),
             staged: false,
             untracked: true,
+            status: CommitFileStatus::Unknown,
+            conflicted: false,
         }];
         let mut state = FilesUiState::default();
         initialize_tree_if_needed(&items, &mut state);
@@ -1398,16 +1437,22 @@ mod tests {
                 path: "src/lib.rs".to_string(),
                 staged: false,
                 untracked: false,
+                status: CommitFileStatus::Modified,
+                conflicted: false,
             },
             FileEntry {
                 path: "src/ui/list.rs".to_string(),
                 staged: false,
                 untracked: false,
+                status: CommitFileStatus::Modified,
+                conflicted: false,
             },
             FileEntry {
                 path: "README.md".to_string(),
                 staged: false,
                 untracked: true,
+                status: CommitFileStatus::Unknown,
+                conflicted: false,
             },
         ];
         let mut state = FilesUiState {
@@ -1499,6 +1544,8 @@ mod tests {
             path: "src/lib.rs".to_string(),
             staged: false,
             untracked: false,
+            status: CommitFileStatus::Modified,
+            conflicted: false,
         }]));
         let before_children = index.nodes.get("src").expect("src node").children.clone();
 
@@ -1506,6 +1553,8 @@ mod tests {
             path: "src/lib.rs".to_string(),
             staged: true,
             untracked: false,
+            status: CommitFileStatus::Modified,
+            conflicted: false,
         }]));
 
         assert_eq!(

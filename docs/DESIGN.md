@@ -123,6 +123,9 @@ Files panel interaction:
 - `AppContext.repo.files.items` stores Git-derived file rows while
   `AppContext.ui.files` stores tree expansion, visible-row selection, visual
   selection anchor, and batch rows.
+- Workspace file rows carry both action metadata (`staged`, `untracked`) and
+  display metadata (`status`, `conflicted`) so rendering can show Git status
+  characters without rediscovering status outside `AppContext`.
 - File tree rows are derived from `RepoSnapshot.files`; no UI code reads external state.
 - `AppContext.ui.files.tree_rows`, `row_descendants`, and `row_index_by_path`
   cache deterministic tree projection data after reducer-managed changes.
@@ -133,6 +136,10 @@ Files panel interaction:
 - Tree indexes sync item changes by removing, adding, or metadata-updating
   changed source paths. When the path topology is stable, status-only refreshes
   update node metadata without rebuilding child relationships.
+- Files and Commit Files share one tree row renderer. Directory rows keep their
+  expand/collapse icons; file rows render Git status markers (`A/M/D/R/C/T/?`),
+  workspace conflict rows append `U`, and staged workspace file names use the
+  staged-file style.
 - Backend status collection uses full untracked-file expansion in small
   repositories so untracked nested files appear as explicit file rows in the
   tree.

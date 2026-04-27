@@ -8,8 +8,9 @@ use git2::{
     StatusShow,
 };
 use ratagit_core::{
-    BranchDeleteMode, BranchEntry, COMMITS_PAGE_SIZE, CommitEntry, CommitHashStatus,
-    FileDiffTarget, FileEntry, FilesSnapshot, RepoSnapshot, ResetMode, StashEntry, StatusMode,
+    BranchDeleteMode, BranchEntry, COMMITS_PAGE_SIZE, CommitEntry, CommitFileStatus,
+    CommitHashStatus, FileDiffTarget, FileEntry, FilesSnapshot, RepoSnapshot, ResetMode,
+    StashEntry, StatusMode,
 };
 
 use crate::cli::GitCli;
@@ -824,6 +825,30 @@ fn file_entry_from_status(path: String, status: Status) -> FileEntry {
         path,
         staged,
         untracked,
+        status: file_status_from_git2(status),
+        conflicted: status.contains(Status::CONFLICTED),
+    }
+}
+
+fn file_status_from_git2(status: Status) -> CommitFileStatus {
+    if status.contains(Status::WT_NEW) && !status.contains(Status::INDEX_NEW) {
+        return CommitFileStatus::Unknown;
+    }
+    if status.contains(Status::INDEX_NEW) || status.contains(Status::WT_NEW) {
+        CommitFileStatus::Added
+    } else if status.contains(Status::INDEX_DELETED) || status.contains(Status::WT_DELETED) {
+        CommitFileStatus::Deleted
+    } else if status.contains(Status::INDEX_RENAMED) || status.contains(Status::WT_RENAMED) {
+        CommitFileStatus::Renamed
+    } else if status.contains(Status::INDEX_TYPECHANGE) || status.contains(Status::WT_TYPECHANGE) {
+        CommitFileStatus::TypeChanged
+    } else if status.contains(Status::INDEX_MODIFIED)
+        || status.contains(Status::WT_MODIFIED)
+        || status.contains(Status::CONFLICTED)
+    {
+        CommitFileStatus::Modified
+    } else {
+        CommitFileStatus::Unknown
     }
 }
 

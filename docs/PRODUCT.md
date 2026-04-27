@@ -94,12 +94,14 @@ Files panel rules:
 - Files and Commit Files share cached file-tree rows and parent/child indexes
   in `AppContext`, so rendering and folder toggles do not rebuild tree topology
   every frame
+- Files and Commit Files render file rows with explicit Git status characters
+  instead of file-state icons. Workspace rows use `A/M/D/R/C/T/?`, append `U`
+  for conflicted files, and render staged file names in green.
 - in large repo fast mode, the Files tree starts collapsed and uses a lightweight
   projection and cached child index instead of precomputing every directory
   descendant set or rescanning every file path on folder expand/collapse
-- in Commit Files, Git status letters keep their existing `A/M/D/R/C/T` display
-  and status colors apply to the letter only; file names stay in the default
-  foreground
+- in Commit Files, Git status letters use `A/M/D/R/C/T/?`; status colors apply
+  to the letter only and file names stay in the default foreground
 - repeated file-detail diffs are cached in `AppContext` and reused when the same
   target path list is selected again
 - `space` stages unstaged targets or unstages targets when all selected targets are staged
@@ -217,7 +219,8 @@ Commits panel rules:
 - `space` checks out the selected commit as detached HEAD; dirty worktrees use the same explicit auto-stash confirmation as branch checkout
 - `Enter` opens a Files subpanel for the selected commit
   - rows use the same tree display as the Files panel
-  - file rows show changed-file status markers: `A`, `M`, `D`, `R`, `C`, or `T`
+  - file rows show changed-file status markers: `A`, `M`, `D`, `R`, `C`, `T`,
+    or `?`
   - the subpanel keeps the parent Commits panel height even when the selected commit has only a few changed files
   - folder rows can be expanded/collapsed with `Enter`
   - `j` / `k` move the file cursor, and Details follows with the selected file's patch in that commit

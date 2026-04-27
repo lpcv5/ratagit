@@ -1,5 +1,6 @@
 use ratagit_core::{
-    BranchEntry, CommitEntry, CommitHashStatus, FileEntry, RepoSnapshot, StashEntry,
+    BranchEntry, CommitEntry, CommitFileStatus, CommitHashStatus, FileEntry, RepoSnapshot,
+    StashEntry,
 };
 
 pub fn fixture_commit(id: &str, summary: &str) -> CommitEntry {
@@ -20,6 +21,12 @@ pub fn fixture_file(path: &str, staged: bool, untracked: bool) -> FileEntry {
         path: path.to_string(),
         staged,
         untracked,
+        status: if untracked {
+            CommitFileStatus::Unknown
+        } else {
+            CommitFileStatus::Modified
+        },
+        conflicted: false,
     }
 }
 
@@ -83,6 +90,9 @@ pub fn fixture_conflict() -> RepoSnapshot {
         fixture_file("src/conflict.rs (both modified)", false, false),
         fixture_file("Cargo.toml (both modified)", false, false),
     ];
+    for file in &mut snapshot.files {
+        file.conflicted = true;
+    }
     snapshot
 }
 

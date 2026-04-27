@@ -1078,7 +1078,7 @@ fn harness_files_v_marks_individual_rows() {
         fixture_dirty_repo(),
         &inputs,
         ScenarioExpectations {
-            screen_contains: &["✓   README.md", "✓   src/"],
+            screen_contains: &["✓  ? README.md", "✓   src/"],
             screen_not_contains: &[],
             selected_screen_rows: &[],
             batch_selected_screen_rows: &[" src/"],
@@ -1380,7 +1380,7 @@ fn harness_files_discard_current_target_with_confirmation() {
         &inputs,
         ScenarioExpectations {
             screen_contains: &["Discarded README.md", "space  stage/unstage"],
-            screen_not_contains: &[" README.md"],
+            screen_not_contains: &["? README.md"],
             selected_screen_rows: &[],
             batch_selected_screen_rows: &[],
             git_ops_contains: &["discard-files:README.md", "refresh"],
@@ -1404,7 +1404,7 @@ fn harness_files_discard_visual_targets_with_confirmation() {
         &inputs,
         ScenarioExpectations {
             screen_contains: &["Discarded 3 files", "details(files): no diff"],
-            screen_not_contains: &[" README.md", " lib.rs", " main.rs"],
+            screen_not_contains: &["? README.md", "M lib.rs", "M main.rs"],
             selected_screen_rows: &[],
             batch_selected_screen_rows: &[],
             git_ops_contains: &["discard-files:README.md,src/lib.rs,src/main.rs", "refresh"],
@@ -1446,13 +1446,13 @@ fn harness_files_scroll_keeps_selection_visible() {
         &inputs,
         ScenarioExpectations {
             screen_contains: &[
-                "    file-18.txt",
-                "    file-19.txt",
-                "    file-20.txt",
-                "    file-23.txt",
+                "   M file-18.txt",
+                "   M file-19.txt",
+                "   M file-20.txt",
+                "   M file-23.txt",
             ],
             screen_not_contains: &[],
-            selected_screen_rows: &[" file-20.txt"],
+            selected_screen_rows: &["M file-20.txt"],
             batch_selected_screen_rows: &[],
             git_ops_contains: &["refresh"],
             git_state_contains: &["path: \"file-20.txt\""],
@@ -1471,9 +1471,9 @@ fn harness_files_reversing_up_does_not_jump_to_top_reserve() {
         fixture_many_files(),
         &inputs,
         ScenarioExpectations {
-            screen_contains: &["    file-17.txt", "    file-20.txt", "    file-22.txt"],
+            screen_contains: &["   M file-17.txt", "   M file-20.txt", "   M file-22.txt"],
             screen_not_contains: &[],
-            selected_screen_rows: &[" file-20.txt"],
+            selected_screen_rows: &["M file-20.txt"],
             batch_selected_screen_rows: &[],
             git_ops_contains: &["refresh"],
             git_state_contains: &["path: \"file-24.txt\""],
@@ -1493,9 +1493,9 @@ fn harness_files_reversing_down_does_not_jump_to_bottom_reserve() {
         fixture_many_files(),
         &inputs,
         ScenarioExpectations {
-            screen_contains: &["    file-17.txt", "    file-21.txt", "    file-22.txt"],
+            screen_contains: &["   M file-17.txt", "   M file-21.txt", "   M file-22.txt"],
             screen_not_contains: &[],
-            selected_screen_rows: &[" file-21.txt"],
+            selected_screen_rows: &["M file-21.txt"],
             batch_selected_screen_rows: &[],
             git_ops_contains: &["refresh"],
             git_state_contains: &["path: \"file-24.txt\""],
@@ -1544,7 +1544,7 @@ fn harness_untracked_directory_marker_displays_as_tree_directory() {
         &inputs,
         ScenarioExpectations {
             screen_contains: &[" tests/"],
-            screen_not_contains: &[" libs/ratagit-git/tests/"],
+            screen_not_contains: &["? libs/ratagit-git/tests/"],
             selected_screen_rows: &[],
             batch_selected_screen_rows: &[],
             git_ops_contains: &["refresh"],

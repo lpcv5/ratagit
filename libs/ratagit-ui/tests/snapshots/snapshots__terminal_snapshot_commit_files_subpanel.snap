@@ -3,10 +3,10 @@ source: libs/ratagit-ui/tests/snapshots.rs
 expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30, },)"
 ---
 ╭ 1  󰈙 Files ────────────────────╮ 5   Details ───────────────────────────────────────────────────╮
-│    README.md                  │  diff --git a/README.md b/README.md                             │
+│   ? README.md                  │  diff --git a/README.md b/README.md                             │
 │    src/                       │  @@ -1 +1 @@                                                    │
-│      lib.rs                   │  -old README.md                                                 │
-│      main.rs                  │  +new README.md                                                 │
+│     M lib.rs                   │  -old README.md                                                 │
+│     M main.rs                  │  +new README.md                                                 │
 │                                │                                                                 │
 │                                │                                                                 │
 │                                │                                                                 │

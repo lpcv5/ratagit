@@ -442,8 +442,8 @@ pub(crate) fn validate_repo_relative_path(path: &str) -> Result<&Path, GitError>
 #[cfg(test)]
 mod tests {
     use ratagit_core::{
-        BranchDeleteMode, BranchEntry, COMMITS_PAGE_SIZE, CommitEntry, CommitHashStatus, FileEntry,
-        ResetMode,
+        BranchDeleteMode, BranchEntry, COMMITS_PAGE_SIZE, CommitEntry, CommitFileStatus,
+        CommitHashStatus, FileEntry, ResetMode,
     };
 
     use super::*;
@@ -500,6 +500,8 @@ mod tests {
                 path: "a.txt".to_string(),
                 staged: false,
                 untracked: false,
+                status: CommitFileStatus::Modified,
+                conflicted: false,
             }],
             commits: Vec::new(),
             branches: vec![BranchEntry {
@@ -726,11 +728,15 @@ mod tests {
                     path: "src/lib.rs".to_string(),
                     staged: false,
                     untracked: false,
+                    status: CommitFileStatus::Modified,
+                    conflicted: false,
                 },
                 FileEntry {
                     path: "src/main.rs".to_string(),
                     staged: true,
                     untracked: false,
+                    status: CommitFileStatus::Modified,
+                    conflicted: false,
                 },
             ],
             commits: vec![test_commit("mock-0001", "initial")],
@@ -783,6 +789,8 @@ mod tests {
             path: "a.txt".to_string(),
             staged: false,
             untracked: false,
+            status: CommitFileStatus::Modified,
+            conflicted: false,
         });
         let mut backend: Box<dyn GitBackend> = Box::new(MockGitBackend::new(snapshot));
 
@@ -891,16 +899,22 @@ mod tests {
                     path: "staged.txt".to_string(),
                     staged: true,
                     untracked: false,
+                    status: CommitFileStatus::Modified,
+                    conflicted: false,
                 },
                 FileEntry {
                     path: "unstaged.txt".to_string(),
                     staged: false,
                     untracked: false,
+                    status: CommitFileStatus::Modified,
+                    conflicted: false,
                 },
                 FileEntry {
                     path: "new.txt".to_string(),
                     staged: false,
                     untracked: true,
+                    status: CommitFileStatus::Unknown,
+                    conflicted: false,
                 },
             ],
             commits: Vec::new(),
