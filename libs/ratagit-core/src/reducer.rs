@@ -193,6 +193,12 @@ fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
         }
         UiAction::MoveUp => move_selection_and_refresh_details(state, true),
         UiAction::MoveDown => move_selection_and_refresh_details(state, false),
+        UiAction::MoveUpInViewport { visible_lines } => {
+            move_selection_in_viewport_and_refresh_details(state, true, visible_lines)
+        }
+        UiAction::MoveDownInViewport { visible_lines } => {
+            move_selection_in_viewport_and_refresh_details(state, false, visible_lines)
+        }
         UiAction::DetailsScrollUp { lines } => {
             details::scroll_up(state, lines);
             Vec::new()
@@ -312,6 +318,16 @@ fn update_git_result(state: &mut AppState, result: GitResult) -> Vec<Command> {
 
 fn move_selection_and_refresh_details(state: &mut AppState, move_up: bool) -> Vec<Command> {
     let mut commands = navigation::move_selection(state, move_up);
+    commands.extend(details::refresh_on_navigation(state));
+    commands
+}
+
+fn move_selection_in_viewport_and_refresh_details(
+    state: &mut AppState,
+    move_up: bool,
+    visible_lines: usize,
+) -> Vec<Command> {
+    let mut commands = navigation::move_selection_in_viewport(state, move_up, visible_lines);
     commands.extend(details::refresh_on_navigation(state));
     commands
 }

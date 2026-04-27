@@ -11,6 +11,8 @@ pub enum UiAction {
     FocusPanel { panel: crate::PanelFocus },
     MoveUp,
     MoveDown,
+    MoveUpInViewport { visible_lines: usize },
+    MoveDownInViewport { visible_lines: usize },
     DetailsScrollUp { lines: usize },
     DetailsScrollDown { lines: usize, visible_lines: usize },
     ToggleSelectedDirectory,

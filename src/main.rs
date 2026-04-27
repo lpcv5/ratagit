@@ -18,7 +18,7 @@ use ratagit_observe::{ObserveConfig, init_observability};
 use ratagit_testkit::fixture_dirty_repo;
 use ratagit_ui::{
     TerminalSize, details_content_lines_for_terminal_size, details_scroll_lines_for_terminal_size,
-    render_terminal,
+    focused_left_panel_content_lines_for_terminal_size, render_terminal,
 };
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
@@ -54,14 +54,14 @@ fn run_tui() -> Result<(), Box<dyn Error>> {
         }
 
         let terminal_size = terminal.size()?;
-        let details_scroll_lines = details_scroll_lines_for_terminal_size(TerminalSize {
+        let size = TerminalSize {
             width: terminal_size.width as usize,
             height: terminal_size.height as usize,
-        });
-        let details_visible_lines = details_content_lines_for_terminal_size(TerminalSize {
-            width: terminal_size.width as usize,
-            height: terminal_size.height as usize,
-        });
+        };
+        let details_scroll_lines = details_scroll_lines_for_terminal_size(size);
+        let details_visible_lines = details_content_lines_for_terminal_size(size);
+        let left_panel_visible_lines =
+            focused_left_panel_content_lines_for_terminal_size(runtime.state(), size);
 
         match key_effect_for_key(
             runtime.state(),
@@ -69,6 +69,7 @@ fn run_tui() -> Result<(), Box<dyn Error>> {
             key.modifiers,
             details_scroll_lines,
             details_visible_lines,
+            left_panel_visible_lines,
         ) {
             KeyEffect::Quit => break,
             KeyEffect::Dispatch(action) => {

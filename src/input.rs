@@ -14,6 +14,7 @@ pub(crate) fn key_effect_for_key(
     modifiers: KeyModifiers,
     details_scroll_lines: usize,
     details_visible_lines: usize,
+    left_panel_visible_lines: usize,
 ) -> KeyEffect {
     if code == KeyCode::Char('c') && modifiers.contains(KeyModifiers::CONTROL) {
         return KeyEffect::Quit;
@@ -25,6 +26,7 @@ pub(crate) fn key_effect_for_key(
         modifiers,
         details_scroll_lines,
         details_visible_lines,
+        left_panel_visible_lines,
     ) {
         return KeyEffect::Dispatch(action);
     }
@@ -42,6 +44,7 @@ fn ui_action_for_key(
     modifiers: KeyModifiers,
     details_scroll_lines: usize,
     details_visible_lines: usize,
+    left_panel_visible_lines: usize,
 ) -> Option<UiAction> {
     if modifiers.contains(KeyModifiers::CONTROL) {
         match code {
@@ -228,8 +231,12 @@ fn ui_action_for_key(
         KeyCode::Char('r') => Some(UiAction::RefreshAll),
         KeyCode::Char('l') => Some(UiAction::FocusNext),
         KeyCode::Char('h') => Some(UiAction::FocusPrev),
-        KeyCode::Down | KeyCode::Char('j') => Some(UiAction::MoveDown),
-        KeyCode::Up | KeyCode::Char('k') => Some(UiAction::MoveUp),
+        KeyCode::Down | KeyCode::Char('j') => Some(UiAction::MoveDownInViewport {
+            visible_lines: left_panel_visible_lines,
+        }),
+        KeyCode::Up | KeyCode::Char('k') => Some(UiAction::MoveUpInViewport {
+            visible_lines: left_panel_visible_lines,
+        }),
         KeyCode::Char('1') => Some(UiAction::FocusPanel {
             panel: PanelFocus::Files,
         }),

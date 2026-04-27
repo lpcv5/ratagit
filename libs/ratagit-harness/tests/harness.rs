@@ -13,7 +13,8 @@ use ratagit_harness::{
     AsyncRuntime, MockScenario, Runtime, ScenarioExpectations, run_mock_scenario,
 };
 use ratagit_testkit::{
-    fixture_commit, fixture_dirty_repo, fixture_empty_repo, fixture_file, fixture_many_files,
+    fixture_branch, fixture_commit, fixture_dirty_repo, fixture_empty_repo, fixture_file,
+    fixture_many_files,
 };
 use ratagit_ui::{
     TerminalSize, details_content_lines_for_terminal_size, details_scroll_lines_for_terminal_size,
@@ -46,6 +47,14 @@ fn clean_many_commit_fixture(count: usize) -> RepoSnapshot {
     let mut fixture = clean_commit_fixture();
     fixture.commits = (0..count)
         .map(|index| fixture_commit(&format!("c{index:06}"), &format!("commit {index}")))
+        .collect();
+    fixture
+}
+
+fn many_branch_fixture(count: usize) -> RepoSnapshot {
+    let mut fixture = fixture_dirty_repo();
+    fixture.branches = (0..count)
+        .map(|index| fixture_branch(&format!("branch-{index}"), index == 0))
         .collect();
     fixture
 }
@@ -1302,6 +1311,34 @@ fn harness_files_reversing_down_does_not_jump_to_bottom_reserve() {
             batch_selected_screen_rows: &[],
             git_ops_contains: &["refresh"],
             git_state_contains: &["path: \"file-24.txt\""],
+        },
+    ));
+}
+
+#[test]
+fn harness_branches_reversing_inside_threshold_keeps_scroll_stable() {
+    let inputs = std::iter::once(UiAction::RefreshAll)
+        .chain(std::iter::once(UiAction::FocusNext))
+        .chain(std::iter::repeat_n(
+            UiAction::MoveDownInViewport { visible_lines: 8 },
+            10,
+        ))
+        .chain([
+            UiAction::MoveUpInViewport { visible_lines: 8 },
+            UiAction::MoveDownInViewport { visible_lines: 8 },
+        ])
+        .collect::<Vec<_>>();
+    assert_scenario(MockScenario::new(
+        "branches_reversing_inside_threshold_keeps_scroll_stable",
+        many_branch_fixture(30),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &["  branch-6", "  branch-10"],
+            screen_not_contains: &[],
+            selected_screen_rows: &["branch-10"],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["refresh"],
+            git_state_contains: &["name: \"branch-10\""],
         },
     ));
 }

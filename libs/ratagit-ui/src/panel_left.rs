@@ -45,8 +45,7 @@ pub(crate) fn render_files_lines(state: &AppState, max_lines: usize) -> Vec<Pane
     render_indexed_entries_window_with(
         rows.as_ref(),
         state.files.selected,
-        state.files.scroll_direction,
-        state.files.scroll_direction_origin,
+        state.files.scroll_offset,
         max_lines,
         |index, row| {
             PanelLine::new(format_file_tree_row(row), file_tree_row_role(row))
@@ -64,8 +63,7 @@ pub(crate) fn render_branches_lines(state: &AppState, max_lines: usize) -> Vec<P
     render_indexed_entries_window_with(
         &state.branches.items,
         state.branches.selected,
-        None,
-        state.branches.selected,
+        state.branches.scroll_offset,
         max_lines,
         |index, branch| {
             let line = PanelLine::new(format_branch_entry(branch), branch_entry_role(branch))
@@ -87,8 +85,7 @@ pub(crate) fn render_commits_lines(state: &AppState, max_lines: usize) -> Vec<Pa
     render_indexed_entries_window_with(
         &state.commits.items,
         state.commits.selected,
-        state.commits.scroll_direction,
-        state.commits.scroll_direction_origin,
+        state.commits.scroll_offset,
         max_lines,
         |index, entry| {
             let role = if commit_is_selected_for_batch(&state.commits, entry) {
@@ -113,8 +110,7 @@ pub(crate) fn render_stash_lines(state: &AppState, max_lines: usize) -> Vec<Pane
     render_indexed_entries_window_with(
         &state.stash.items,
         state.stash.selected,
-        None,
-        state.stash.selected,
+        state.stash.scroll_offset,
         max_lines,
         |index, stash| {
             let line = PanelLine::new(format_stash_entry(stash), RowRole::Normal)
@@ -136,8 +132,7 @@ fn render_commit_file_lines(state: &AppState, max_lines: usize) -> Vec<PanelLine
     render_indexed_entries_window_with(
         rows.as_ref(),
         state.commits.files.selected,
-        state.commits.files.scroll_direction,
-        state.commits.files.scroll_direction_origin,
+        state.commits.files.scroll_offset,
         max_lines,
         |index, row| {
             PanelLine::new(format_file_tree_row(row), file_tree_row_role(row))

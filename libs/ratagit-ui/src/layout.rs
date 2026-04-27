@@ -129,6 +129,22 @@ pub fn details_content_lines_for_terminal_size(size: TerminalSize) -> usize {
     details_panel_height.saturating_sub(2)
 }
 
+pub fn focused_left_panel_content_lines_for_terminal_size(
+    state: &AppState,
+    size: TerminalSize,
+) -> usize {
+    let body_height = size.height.max(1).saturating_sub(1);
+    let heights = compute_left_panel_heights(state, body_height, 2);
+    match state.focus {
+        PanelFocus::Files => heights.files,
+        PanelFocus::Branches => heights.branches,
+        PanelFocus::Commits => heights.commits,
+        PanelFocus::Stash => heights.stash,
+        PanelFocus::Details | PanelFocus::Log => 0,
+    }
+    .saturating_sub(2)
+}
+
 fn collapse_stash_when_unfocused(
     content: &mut [usize; LEFT_PANEL_COUNT],
     stash_target: usize,

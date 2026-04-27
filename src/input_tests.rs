@@ -5,6 +5,7 @@ mod tests {
 
     const TEST_DETAILS_SCROLL_LINES: usize = 7;
     const TEST_DETAILS_VISIBLE_LINES: usize = 18;
+    const TEST_LEFT_PANEL_VISIBLE_LINES: usize = 8;
 
     fn map_key(state: &AppState, code: KeyCode) -> Option<UiAction> {
         ui_action_for_key(
@@ -13,6 +14,7 @@ mod tests {
             KeyModifiers::NONE,
             TEST_DETAILS_SCROLL_LINES,
             TEST_DETAILS_VISIBLE_LINES,
+            TEST_LEFT_PANEL_VISIBLE_LINES,
         )
     }
 
@@ -287,7 +289,8 @@ mod tests {
                 KeyCode::Char('j'),
                 KeyModifiers::CONTROL,
                 TEST_DETAILS_SCROLL_LINES,
-                TEST_DETAILS_VISIBLE_LINES
+                TEST_DETAILS_VISIBLE_LINES,
+                TEST_LEFT_PANEL_VISIBLE_LINES,
             ),
             Some(UiAction::EditorInsertNewline)
         );
@@ -317,7 +320,8 @@ mod tests {
                 KeyCode::Char('q'),
                 KeyModifiers::NONE,
                 TEST_DETAILS_SCROLL_LINES,
-                TEST_DETAILS_VISIBLE_LINES
+                TEST_DETAILS_VISIBLE_LINES,
+                TEST_LEFT_PANEL_VISIBLE_LINES,
             ),
             KeyEffect::Dispatch(UiAction::EditorInputChar('q'))
         );
@@ -333,7 +337,8 @@ mod tests {
                 KeyCode::Char('u'),
                 KeyModifiers::CONTROL,
                 TEST_DETAILS_SCROLL_LINES,
-                TEST_DETAILS_VISIBLE_LINES
+                TEST_DETAILS_VISIBLE_LINES,
+                TEST_LEFT_PANEL_VISIBLE_LINES,
             ),
             Some(UiAction::DetailsScrollUp {
                 lines: TEST_DETAILS_SCROLL_LINES
@@ -345,7 +350,8 @@ mod tests {
                 KeyCode::Char('d'),
                 KeyModifiers::CONTROL,
                 TEST_DETAILS_SCROLL_LINES,
-                TEST_DETAILS_VISIBLE_LINES
+                TEST_DETAILS_VISIBLE_LINES,
+                TEST_LEFT_PANEL_VISIBLE_LINES,
             ),
             Some(UiAction::DetailsScrollDown {
                 lines: TEST_DETAILS_SCROLL_LINES,
@@ -364,7 +370,8 @@ mod tests {
                 KeyCode::Char('d'),
                 KeyModifiers::CONTROL,
                 TEST_DETAILS_SCROLL_LINES,
-                TEST_DETAILS_VISIBLE_LINES
+                TEST_DETAILS_VISIBLE_LINES,
+                TEST_LEFT_PANEL_VISIBLE_LINES,
             ),
             Some(UiAction::DetailsScrollDown {
                 lines: TEST_DETAILS_SCROLL_LINES,
@@ -543,7 +550,8 @@ mod tests {
                 KeyCode::Char('c'),
                 KeyModifiers::CONTROL,
                 TEST_DETAILS_SCROLL_LINES,
-                TEST_DETAILS_VISIBLE_LINES
+                TEST_DETAILS_VISIBLE_LINES,
+                TEST_LEFT_PANEL_VISIBLE_LINES,
             ),
             KeyEffect::Quit
         );
@@ -559,7 +567,8 @@ mod tests {
                 KeyCode::Char('q'),
                 KeyModifiers::NONE,
                 TEST_DETAILS_SCROLL_LINES,
-                TEST_DETAILS_VISIBLE_LINES
+                TEST_DETAILS_VISIBLE_LINES,
+                TEST_LEFT_PANEL_VISIBLE_LINES,
             ),
             KeyEffect::Quit
         );
@@ -569,7 +578,8 @@ mod tests {
                 KeyCode::F(1),
                 KeyModifiers::NONE,
                 TEST_DETAILS_SCROLL_LINES,
-                TEST_DETAILS_VISIBLE_LINES
+                TEST_DETAILS_VISIBLE_LINES,
+                TEST_LEFT_PANEL_VISIBLE_LINES,
             ),
             KeyEffect::Ignore
         );
@@ -579,11 +589,28 @@ mod tests {
         );
         assert_eq!(
             map_key(&state, KeyCode::Char('j')),
-            Some(UiAction::MoveDown)
+            Some(UiAction::MoveDownInViewport {
+                visible_lines: TEST_LEFT_PANEL_VISIBLE_LINES
+            })
         );
-        assert_eq!(map_key(&state, KeyCode::Down), Some(UiAction::MoveDown));
-        assert_eq!(map_key(&state, KeyCode::Char('k')), Some(UiAction::MoveUp));
-        assert_eq!(map_key(&state, KeyCode::Up), Some(UiAction::MoveUp));
+        assert_eq!(
+            map_key(&state, KeyCode::Down),
+            Some(UiAction::MoveDownInViewport {
+                visible_lines: TEST_LEFT_PANEL_VISIBLE_LINES
+            })
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Char('k')),
+            Some(UiAction::MoveUpInViewport {
+                visible_lines: TEST_LEFT_PANEL_VISIBLE_LINES
+            })
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Up),
+            Some(UiAction::MoveUpInViewport {
+                visible_lines: TEST_LEFT_PANEL_VISIBLE_LINES
+            })
+        );
         assert_eq!(
             map_key(&state, KeyCode::Char('1')),
             Some(UiAction::FocusPanel {

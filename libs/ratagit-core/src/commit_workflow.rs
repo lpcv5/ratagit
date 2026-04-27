@@ -5,7 +5,8 @@ use crate::{
     AppState, AutoStashOperation, Command, CommitEntry, CommitFilesPanelState, CommitHashStatus,
     CommitInputMode, PanelFocus, SearchScope, branches, commit_key, details,
     initialize_commit_files_tree, leave_commit_multi_select, mark_commit_file_items_changed,
-    move_commit_file_selected, move_commit_selected, operations, push_notice,
+    move_commit_file_selected, move_commit_file_selected_in_viewport, move_commit_selected,
+    move_commit_selected_in_viewport, operations, push_notice,
     reconcile_commits_after_items_appended, selected_commit, selected_commit_ids, selected_commits,
 };
 
@@ -139,6 +140,28 @@ pub(crate) fn move_commit_selection(state: &mut AppState, move_up: bool) -> Vec<
     }
 }
 
+pub(crate) fn move_commit_selection_in_viewport(
+    state: &mut AppState,
+    move_up: bool,
+    visible_lines: usize,
+) -> Vec<Command> {
+    if state.commits.files.active {
+        move_commit_file_selected_in_viewport(&mut state.commits.files, move_up, visible_lines);
+        return Vec::new();
+    }
+    let was_at_loaded_end = !move_up
+        && !state.commits.items.is_empty()
+        && state.commits.selected + 1 >= state.commits.items.len();
+    move_commit_selected_in_viewport(&mut state.commits, move_up, visible_lines);
+    if was_at_loaded_end {
+        load_more_commits_command(state, true)
+    } else if should_prefetch_commits(state, move_up) {
+        load_more_commits_command(state, false)
+    } else {
+        Vec::new()
+    }
+}
+
 pub(crate) fn open_commit_files_panel(state: &mut AppState) -> Vec<Command> {
     let Some(commit_id) = selected_commit_id(state) else {
         push_notice(state, "No commit selected");
@@ -189,8 +212,7 @@ pub(crate) fn handle_commit_files_result(
             state.commits.files.items = files;
             mark_commit_file_items_changed(&mut state.commits.files);
             state.commits.files.selected = 0;
-            state.commits.files.scroll_direction = None;
-            state.commits.files.scroll_direction_origin = 0;
+            state.commits.files.scroll_offset = 0;
             initialize_commit_files_tree(&mut state.commits.files);
             if state.search.scope == Some(SearchScope::CommitFiles)
                 && !state.search.query.is_empty()

@@ -10,8 +10,8 @@ use ratagit_ui::{
     TerminalSize, batch_selected_row_style, buffer_contains_selected_text,
     buffer_contains_text_with_style, buffer_to_text_with_selected_marker,
     details_content_lines_for_terminal_size, details_scroll_lines_for_terminal_size,
-    focused_panel_style, render, render_terminal_buffer, render_terminal_buffer_with_cursor,
-    render_terminal_text,
+    focused_left_panel_content_lines_for_terminal_size, focused_panel_style, render,
+    render_terminal_buffer, render_terminal_buffer_with_cursor, render_terminal_text,
 };
 use ratatui::style::{Color, Modifier, Style};
 
@@ -755,70 +755,71 @@ fn snapshots_files_list_scrolls_to_keep_selection_visible() {
 #[test]
 fn snapshots_files_list_reversing_up_does_not_jump_to_top_reserve() {
     let mut state = AppState::default();
+    let size = TerminalSize {
+        width: 100,
+        height: 30,
+    };
     apply_refreshed_with_mock_details(&mut state, fixture_many_files());
+    let visible_lines = focused_left_panel_content_lines_for_terminal_size(&state, size);
     for _ in 0..25 {
-        update(&mut state, Action::Ui(UiAction::MoveDown));
+        update(
+            &mut state,
+            Action::Ui(UiAction::MoveDownInViewport { visible_lines }),
+        );
     }
     for _ in 0..5 {
-        update(&mut state, Action::Ui(UiAction::MoveUp));
+        update(
+            &mut state,
+            Action::Ui(UiAction::MoveUpInViewport { visible_lines }),
+        );
     }
 
-    let text = render(
-        &state,
-        TerminalSize {
-            width: 100,
-            height: 30,
-        },
-    )
-    .as_text();
+    let text = render(&state, size).as_text();
     assert!(text.contains("    file-17.txt"));
     assert!(text.contains("    file-20.txt"));
     assert!(text.contains(" file-24.txt"));
     assert_no_cursor_marker(&text);
 
-    let screen = render_terminal_snapshot_with_cursor_marker(
-        &state,
-        TerminalSize {
-            width: 100,
-            height: 30,
-        },
-    );
+    let screen = render_terminal_snapshot_with_cursor_marker(&state, size);
     assert!(screen.contains(">│    file-20.txt"));
 }
 
 #[test]
 fn snapshots_files_list_reversing_down_does_not_jump_to_bottom_reserve() {
     let mut state = AppState::default();
+    let size = TerminalSize {
+        width: 100,
+        height: 30,
+    };
     apply_refreshed_with_mock_details(&mut state, fixture_many_files());
+    let visible_lines = focused_left_panel_content_lines_for_terminal_size(&state, size);
     for _ in 0..25 {
-        update(&mut state, Action::Ui(UiAction::MoveDown));
+        update(
+            &mut state,
+            Action::Ui(UiAction::MoveDownInViewport { visible_lines }),
+        );
     }
     for _ in 0..5 {
-        update(&mut state, Action::Ui(UiAction::MoveUp));
+        update(
+            &mut state,
+            Action::Ui(UiAction::MoveUpInViewport { visible_lines }),
+        );
     }
-    update(&mut state, Action::Ui(UiAction::MoveDown));
+    update(
+        &mut state,
+        Action::Ui(UiAction::MoveDownInViewport { visible_lines }),
+    );
 
-    let text = render(
-        &state,
-        TerminalSize {
-            width: 100,
-            height: 30,
-        },
-    )
-    .as_text();
+    let text = render(&state, size).as_text();
     assert!(text.contains("    file-17.txt"));
     assert!(text.contains("    file-21.txt"));
     assert!(text.contains(" file-24.txt"));
 
-    update(&mut state, Action::Ui(UiAction::MoveDown));
-    let text = render(
-        &state,
-        TerminalSize {
-            width: 100,
-            height: 30,
-        },
-    )
-    .as_text();
+    update(
+        &mut state,
+        Action::Ui(UiAction::MoveDownInViewport { visible_lines }),
+    );
+    let text = render(&state, size).as_text();
     assert!(text.contains("    file-18.txt"));
     assert!(text.contains("    file-22.txt"));
     assert!(text.contains(" file-25.txt"));

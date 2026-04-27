@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::scroll::{ScrollDirection, move_selected_index_with_scroll, reset_scroll_origin};
+use crate::scroll::{move_selected_index, move_selected_index_with_scroll_offset};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileEntry {
@@ -65,13 +65,12 @@ pub enum FileInputMode {
 pub struct FilesPanelState {
     pub items: Vec<FileEntry>,
     pub selected: usize,
+    pub scroll_offset: usize,
     pub expanded_dirs: BTreeSet<String>,
     pub selected_rows: BTreeSet<String>,
     pub selection_anchor: Option<String>,
     pub mode: FileInputMode,
     pub tree_initialized: bool,
-    pub scroll_direction: Option<ScrollDirection>,
-    pub scroll_direction_origin: usize,
     pub tree_rows: Vec<FileTreeRow>,
     pub row_descendants: BTreeMap<String, Vec<String>>,
     pub row_index_by_path: BTreeMap<String, usize>,
@@ -85,10 +84,9 @@ pub struct CommitFilesPanelState {
     pub commit_id: Option<String>,
     pub items: Vec<CommitFileEntry>,
     pub selected: usize,
+    pub scroll_offset: usize,
     pub expanded_dirs: BTreeSet<String>,
     pub loading: bool,
-    pub scroll_direction: Option<ScrollDirection>,
-    pub scroll_direction_origin: usize,
     pub tree_rows: Vec<FileTreeRow>,
     pub row_descendants: BTreeMap<String, Vec<String>>,
     pub row_index_by_path: BTreeMap<String, usize>,
@@ -243,13 +241,12 @@ impl Default for FilesPanelState {
         Self {
             items: Vec::new(),
             selected: 0,
+            scroll_offset: 0,
             expanded_dirs: BTreeSet::new(),
             selected_rows: BTreeSet::new(),
             selection_anchor: None,
             mode: FileInputMode::Normal,
             tree_initialized: false,
-            scroll_direction: None,
-            scroll_direction_origin: 0,
             tree_rows: Vec::new(),
             row_descendants: BTreeMap::new(),
             row_index_by_path: BTreeMap::new(),
@@ -320,22 +317,25 @@ pub fn clamp_selected(state: &mut FilesPanelState) {
     } else {
         state.selected.min(len - 1)
     };
-    reset_scroll_origin(
-        state.selected,
-        len,
-        &mut state.scroll_direction,
-        &mut state.scroll_direction_origin,
-    );
+    state.scroll_offset = 0;
 }
 
 pub fn move_selected(state: &mut FilesPanelState, move_up: bool) {
     let len = file_tree_row_len(state);
-    move_selected_index_with_scroll(
+    move_selected_index(&mut state.selected, len, move_up);
+    if state.mode == FileInputMode::MultiSelect {
+        refresh_multi_select_range(state);
+    }
+}
+
+pub fn move_selected_in_viewport(state: &mut FilesPanelState, move_up: bool, visible_lines: usize) {
+    let len = file_tree_row_len(state);
+    move_selected_index_with_scroll_offset(
         &mut state.selected,
+        &mut state.scroll_offset,
         len,
         move_up,
-        &mut state.scroll_direction,
-        &mut state.scroll_direction_origin,
+        visible_lines,
     );
     if state.mode == FileInputMode::MultiSelect {
         refresh_multi_select_range(state);
@@ -344,12 +344,21 @@ pub fn move_selected(state: &mut FilesPanelState, move_up: bool) {
 
 pub fn move_commit_file_selected(state: &mut CommitFilesPanelState, move_up: bool) {
     let len = commit_file_tree_row_len(state);
-    move_selected_index_with_scroll(
+    move_selected_index(&mut state.selected, len, move_up);
+}
+
+pub fn move_commit_file_selected_in_viewport(
+    state: &mut CommitFilesPanelState,
+    move_up: bool,
+    visible_lines: usize,
+) {
+    let len = commit_file_tree_row_len(state);
+    move_selected_index_with_scroll_offset(
         &mut state.selected,
+        &mut state.scroll_offset,
         len,
         move_up,
-        &mut state.scroll_direction,
-        &mut state.scroll_direction_origin,
+        visible_lines,
     );
 }
 
@@ -901,12 +910,7 @@ fn clamp_commit_file_selected(state: &mut CommitFilesPanelState) {
     } else {
         state.selected.min(len - 1)
     };
-    reset_scroll_origin(
-        state.selected,
-        len,
-        &mut state.scroll_direction,
-        &mut state.scroll_direction_origin,
-    );
+    state.scroll_offset = 0;
 }
 
 fn file_tree_row_len(state: &FilesPanelState) -> usize {

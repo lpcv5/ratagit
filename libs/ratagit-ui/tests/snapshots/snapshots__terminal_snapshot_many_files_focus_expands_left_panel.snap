@@ -1,6 +1,6 @@
 ---
 source: libs/ratagit-ui/tests/snapshots.rs
-assertion_line: 642
+assertion_line: 864
 expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 24, },)"
 ---
 ┌ [1] 󰈙 Files ───────────────────┐┌ [5]  Details ─────────────────────────────────────────────────┐
@@ -18,10 +18,10 @@ expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 24,
 │    file-11.txt                ││                                                                │
 └────────────────────────────────┘│                                                                │
 ┌ [2]  Branches ────────────────┐│                                                                │
-│  feature/mvp                   │└────────────────────────────────────────────────────────────────┘
+│ main                          │└────────────────────────────────────────────────────────────────┘
 └────────────────────────────────┘┌ [6] 󰌱 Log ─────────────────────────────────────────────────────┐
 ┌ [3]  Commits ─────────────────┐│  notice=Ready                                                  │
-│●  def5678  RT  wire commands   ││                                                                │
+│●  abc1234  RT  init project    ││                                                                │
 └────────────────────────────────┘│                                                                │
 ┌ [4]  Stash ───────────────────┐│                                                                │
 │ stash@{0} WIP on main: local t││                                                                │

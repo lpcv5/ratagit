@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use crate::{CommitFilesPanelState, FilesPanelState, ScrollDirection};
+use crate::{CommitFilesPanelState, FilesPanelState};
 
 fn next_choice<T: Copy + PartialEq, const N: usize>(choices: [T; N], selected: T) -> T {
     let index = choices
@@ -261,12 +261,11 @@ pub struct WorkStatusState {
 pub struct CommitsPanelState {
     pub items: Vec<CommitEntry>,
     pub selected: usize,
+    pub scroll_offset: usize,
     pub files: CommitFilesPanelState,
     pub selected_rows: BTreeSet<String>,
     pub selection_anchor: Option<String>,
     pub mode: CommitInputMode,
-    pub scroll_direction: Option<ScrollDirection>,
-    pub scroll_direction_origin: usize,
     pub has_more: bool,
     pub loading_more: bool,
     pub pending_select_after_load: bool,
@@ -406,6 +405,7 @@ impl EditorState {
 pub struct BranchesPanelState {
     pub items: Vec<BranchEntry>,
     pub selected: usize,
+    pub scroll_offset: usize,
     pub create: BranchCreateState,
     pub delete_menu: BranchDeleteMenuState,
     pub force_delete_confirm: BranchForceDeleteConfirmState,
@@ -473,6 +473,7 @@ pub struct AutoStashConfirmState {
 pub struct StashPanelState {
     pub items: Vec<StashEntry>,
     pub selected: usize,
+    pub scroll_offset: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]

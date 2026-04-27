@@ -15,7 +15,10 @@ pub use frame::{
     buffer_contains_batch_selected_text, buffer_contains_selected_text,
     buffer_contains_text_with_style, buffer_to_text_with_selected_marker,
 };
-pub use layout::{details_content_lines_for_terminal_size, details_scroll_lines_for_terminal_size};
+pub use layout::{
+    details_content_lines_for_terminal_size, details_scroll_lines_for_terminal_size,
+    focused_left_panel_content_lines_for_terminal_size,
+};
 pub use panels::{
     format_branch_entry, format_commit_entry, format_file_tree_row, format_stash_entry,
 };

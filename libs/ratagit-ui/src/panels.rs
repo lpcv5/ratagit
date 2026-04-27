@@ -26,13 +26,13 @@ use panel_scroll::scroll_window_start;
 pub(crate) use panel_shortcuts::shortcuts_for_state;
 pub(crate) use panel_types::PanelLine;
 #[cfg(test)]
-use ratagit_core::{AppState, ScrollDirection};
+use ratagit_core::AppState;
 #[cfg(test)]
 mod tests {
     use ratagit_core::{
         Action, COMMITS_PAGE_SIZE, Command, FileDiffTarget, GitResult, PanelFocus, UiAction, update,
     };
-    use ratagit_testkit::{fixture_commit, fixture_dirty_repo, fixture_empty_repo};
+    use ratagit_testkit::{fixture_branch, fixture_commit, fixture_dirty_repo, fixture_empty_repo};
 
     use super::*;
 
@@ -88,6 +88,15 @@ mod tests {
         state.focus = PanelFocus::Commits;
         state.commits.items = (0..count)
             .map(|index| fixture_commit(&format!("{index:07x}"), &format!("commit {index}")))
+            .collect();
+        state
+    }
+
+    fn branch_scroll_state(count: usize) -> AppState {
+        let mut state = state_with_dirty_repo();
+        state.focus = PanelFocus::Branches;
+        state.branches.items = (0..count)
+            .map(|index| fixture_branch(&format!("branch-{index}"), index == 0))
             .collect();
         state
     }
@@ -297,34 +306,77 @@ mod tests {
 
     #[test]
     fn scroll_window_uses_bottom_reserve_while_moving_down() {
-        assert_eq!(
-            scroll_window_start(30, 20, Some(ScrollDirection::Down), 0, 8, 3),
-            16
-        );
+        assert_eq!(scroll_window_start(30, 20, 0, 8), 16);
     }
 
     #[test]
     fn scroll_window_reverses_up_without_immediate_top_jump() {
-        assert_eq!(
-            scroll_window_start(30, 24, Some(ScrollDirection::Up), 25, 8, 3),
-            21
-        );
-        assert_eq!(
-            scroll_window_start(30, 23, Some(ScrollDirection::Up), 25, 8, 3),
-            20
-        );
+        assert_eq!(scroll_window_start(30, 24, 21, 8), 21);
+        assert_eq!(scroll_window_start(30, 23, 21, 8), 20);
     }
 
     #[test]
     fn scroll_window_reverses_down_without_immediate_bottom_jump() {
-        assert_eq!(
-            scroll_window_start(30, 21, Some(ScrollDirection::Down), 20, 8, 3),
-            17
+        assert_eq!(scroll_window_start(30, 21, 17, 8), 17);
+        assert_eq!(scroll_window_start(30, 22, 17, 8), 18);
+    }
+
+    #[test]
+    fn branches_panel_keeps_window_stable_when_reversing_inside_threshold() {
+        let mut state = branch_scroll_state(30);
+        for _ in 0..10 {
+            update(
+                &mut state,
+                Action::Ui(UiAction::MoveDownInViewport { visible_lines: 8 }),
+            );
+        }
+        let before = render_branches_lines(&state, 8);
+
+        update(
+            &mut state,
+            Action::Ui(UiAction::MoveUpInViewport { visible_lines: 8 }),
         );
-        assert_eq!(
-            scroll_window_start(30, 22, Some(ScrollDirection::Down), 20, 8, 3),
-            18
+        update(
+            &mut state,
+            Action::Ui(UiAction::MoveDownInViewport { visible_lines: 8 }),
         );
+        let after = render_branches_lines(&state, 8);
+
+        assert_eq!(before[0].text, after[0].text);
+        assert!(after[4].text.contains("branch-10"));
+        assert!(after[4].selected);
+    }
+
+    #[test]
+    fn commits_panel_keeps_window_stable_when_jk_repeats_in_middle() {
+        let mut state = commit_scroll_state(30);
+        for _ in 0..20 {
+            update(
+                &mut state,
+                Action::Ui(UiAction::MoveDownInViewport { visible_lines: 8 }),
+            );
+        }
+        for _ in 0..2 {
+            update(
+                &mut state,
+                Action::Ui(UiAction::MoveUpInViewport { visible_lines: 8 }),
+            );
+        }
+        let before = render_commits_lines(&state, 8);
+
+        update(
+            &mut state,
+            Action::Ui(UiAction::MoveDownInViewport { visible_lines: 8 }),
+        );
+        update(
+            &mut state,
+            Action::Ui(UiAction::MoveUpInViewport { visible_lines: 8 }),
+        );
+        let after = render_commits_lines(&state, 8);
+
+        assert_eq!(before[0].text, after[0].text);
+        assert!(after[3].text.contains("commit 18"));
+        assert!(after[3].selected);
     }
 
     #[test]
@@ -374,16 +426,25 @@ mod tests {
     fn commits_panel_reversing_up_waits_for_top_threshold() {
         let mut state = commit_scroll_state(30);
         for _ in 0..10 {
-            update(&mut state, Action::Ui(UiAction::MoveDown));
+            update(
+                &mut state,
+                Action::Ui(UiAction::MoveDownInViewport { visible_lines: 8 }),
+            );
         }
 
-        update(&mut state, Action::Ui(UiAction::MoveUp));
+        update(
+            &mut state,
+            Action::Ui(UiAction::MoveUpInViewport { visible_lines: 8 }),
+        );
         let lines = render_commits_lines(&state, 8);
         assert!(lines[0].text.contains("commit 6"));
         assert!(lines[3].text.contains("commit 9"));
         assert!(lines[3].selected);
 
-        update(&mut state, Action::Ui(UiAction::MoveUp));
+        update(
+            &mut state,
+            Action::Ui(UiAction::MoveUpInViewport { visible_lines: 8 }),
+        );
         let lines = render_commits_lines(&state, 8);
         assert!(lines[0].text.contains("commit 5"));
         assert!(lines[3].text.contains("commit 8"));

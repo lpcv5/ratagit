@@ -23,6 +23,7 @@ pub use commits::{
     enter_multi_select as enter_commit_multi_select,
     is_selected_for_batch as commit_is_selected_for_batch,
     leave_multi_select as leave_commit_multi_select, move_selected as move_commit_selected,
+    move_selected_in_viewport as move_commit_selected_in_viewport,
     reconcile_after_items_appended as reconcile_commits_after_items_appended,
     reconcile_after_items_changed as reconcile_commits_after_items_changed, selected_commit,
     selected_commit_ids, selected_commits, toggle_multi_select as toggle_commit_multi_select,
@@ -35,14 +36,14 @@ pub use files::{
     file_tree_rows, file_tree_rows_for_read, initialize_commit_files_tree,
     initialize_tree_if_needed, initialize_tree_with_initial_expansion, leave_multi_select,
     mark_commit_file_items_changed, mark_file_items_changed, move_commit_file_selected,
-    move_selected, reconcile_after_items_changed, refresh_commit_files_tree_projection,
-    refresh_tree_projection, select_commit_file_tree_path, select_file_tree_path,
-    selected_commit_file, selected_commit_file_targets, selected_diff_targets, selected_row,
-    selected_target_paths, toggle_commit_files_directory, toggle_current_row_selection,
-    toggle_selected_directory,
+    move_commit_file_selected_in_viewport, move_selected, move_selected_in_viewport,
+    reconcile_after_items_changed, refresh_commit_files_tree_projection, refresh_tree_projection,
+    select_commit_file_tree_path, select_file_tree_path, selected_commit_file,
+    selected_commit_file_targets, selected_diff_targets, selected_row, selected_target_paths,
+    toggle_commit_files_directory, toggle_current_row_selection, toggle_selected_directory,
 };
 pub use reducer::update;
-pub use scroll::ScrollDirection;
+pub use scroll::scroll_offset_for_selection;
 pub use state::{
     AppState, AutoStashConfirmState, AutoStashOperation, BranchCreateState, BranchDeleteChoice,
     BranchDeleteMenuState, BranchDeleteMode, BranchEntry, BranchForceDeleteConfirmState,

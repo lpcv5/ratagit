@@ -88,6 +88,7 @@ pub(crate) fn apply_commits_snapshot(state: &mut AppState, commits: Vec<CommitEn
 pub(crate) fn apply_branches_snapshot(state: &mut AppState, branches: Vec<BranchEntry>) {
     state.branches.items = branches;
     state.branches.selected = clamp_index(state.branches.selected, state.branches.items.len());
+    state.branches.scroll_offset = 0;
     state.details.branch_log.clear();
     state.details.branch_log_error = None;
     state.details.branch_log_target = crate::selected_branch_name(state);
@@ -99,6 +100,7 @@ pub(crate) fn apply_branches_snapshot(state: &mut AppState, branches: Vec<Branch
 pub(crate) fn apply_stashes_snapshot(state: &mut AppState, stashes: Vec<StashEntry>) {
     state.stash.items = stashes;
     state.stash.selected = clamp_index(state.stash.selected, state.stash.items.len());
+    state.stash.scroll_offset = 0;
     state.search.clear();
 }
 

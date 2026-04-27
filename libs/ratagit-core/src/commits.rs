@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use crate::scroll::{move_selected_index_with_scroll, reset_scroll_origin};
+use crate::scroll::{move_selected_index, move_selected_index_with_scroll_offset};
 use crate::{CommitEntry, CommitInputMode, CommitsPanelState};
 
 pub fn commit_key(entry: &CommitEntry) -> String {
@@ -63,12 +63,24 @@ pub fn toggle_multi_select(state: &mut CommitsPanelState) {
 
 pub fn move_selected(state: &mut CommitsPanelState, move_up: bool) {
     let len = state.items.len();
-    move_selected_index_with_scroll(
+    move_selected_index(&mut state.selected, len, move_up);
+    if state.mode == CommitInputMode::MultiSelect {
+        refresh_multi_select_range(state);
+    }
+}
+
+pub fn move_selected_in_viewport(
+    state: &mut CommitsPanelState,
+    move_up: bool,
+    visible_lines: usize,
+) {
+    let len = state.items.len();
+    move_selected_index_with_scroll_offset(
         &mut state.selected,
+        &mut state.scroll_offset,
         len,
         move_up,
-        &mut state.scroll_direction,
-        &mut state.scroll_direction_origin,
+        visible_lines,
     );
     if state.mode == CommitInputMode::MultiSelect {
         refresh_multi_select_range(state);
@@ -86,12 +98,10 @@ pub fn reconcile_after_items_changed(state: &mut CommitsPanelState) {
 }
 
 pub fn reconcile_after_items_appended(state: &mut CommitsPanelState) {
-    let scroll_direction = state.scroll_direction;
-    let scroll_direction_origin = state.scroll_direction_origin;
+    let scroll_offset = state.scroll_offset;
     reconcile_after_items_changed(state);
     if !state.items.is_empty() {
-        state.scroll_direction = scroll_direction;
-        state.scroll_direction_origin = scroll_direction_origin.min(state.items.len() - 1);
+        state.scroll_offset = scroll_offset.min(state.items.len() - 1);
     }
 }
 
@@ -101,12 +111,7 @@ pub fn clamp_selected(state: &mut CommitsPanelState) {
     } else {
         state.selected.min(state.items.len() - 1)
     };
-    reset_scroll_origin(
-        state.selected,
-        state.items.len(),
-        &mut state.scroll_direction,
-        &mut state.scroll_direction_origin,
-    );
+    state.scroll_offset = 0;
 }
 
 pub fn is_selected_for_batch(state: &CommitsPanelState, entry: &CommitEntry) -> bool {
