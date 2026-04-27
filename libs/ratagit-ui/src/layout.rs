@@ -1,4 +1,4 @@
-use ratagit_core::{AppState, PanelFocus};
+use ratagit_core::{AppContext, PanelFocus};
 
 use crate::frame::TerminalSize;
 use crate::panels::left_panel_content_len;
@@ -47,7 +47,7 @@ impl LeftPanelHeights {
 }
 
 pub(crate) fn compute_left_panel_heights(
-    state: &AppState,
+    state: &AppContext,
     total_height: usize,
     panel_chrome_height: usize,
 ) -> LeftPanelHeights {
@@ -70,7 +70,7 @@ pub(crate) fn compute_left_panel_heights(
     };
     let stash_collapsed_lines = if available_content > 0 { 1 } else { 0 };
 
-    if state.focus != PanelFocus::Stash {
+    if state.ui.focus != PanelFocus::Stash {
         collapse_stash_when_unfocused(
             &mut content,
             stash_collapsed_lines,
@@ -79,7 +79,7 @@ pub(crate) fn compute_left_panel_heights(
         );
     }
 
-    if let Some(focus_index) = left_panel_index(state.focus)
+    if let Some(focus_index) = left_panel_index(state.ui.focus)
         && focus_index != STASH_INDEX
     {
         let content_lengths = [
@@ -130,12 +130,12 @@ pub fn details_content_lines_for_terminal_size(size: TerminalSize) -> usize {
 }
 
 pub fn focused_left_panel_content_lines_for_terminal_size(
-    state: &AppState,
+    state: &AppContext,
     size: TerminalSize,
 ) -> usize {
     let body_height = size.height.max(1).saturating_sub(1);
     let heights = compute_left_panel_heights(state, body_height, 2);
-    match state.focus {
+    match state.ui.focus {
         PanelFocus::Files => heights.files,
         PanelFocus::Branches => heights.branches,
         PanelFocus::Commits => heights.commits,
@@ -250,13 +250,13 @@ fn split_by_weights<const N: usize>(total: usize, weights: &[usize; N]) -> [usiz
 
 #[cfg(test)]
 mod tests {
-    use ratagit_core::{Action, AppState, GitResult, PanelFocus, update};
+    use ratagit_core::{Action, AppContext, GitResult, PanelFocus, update};
     use ratagit_testkit::{fixture_commit, fixture_many_files};
 
     use super::*;
 
-    fn state_with_many_files() -> AppState {
-        let mut state = AppState::default();
+    fn state_with_many_files() -> AppContext {
+        let mut state = AppContext::default();
         let _commands = update(
             &mut state,
             Action::GitResult(GitResult::Refreshed(fixture_many_files())),
@@ -266,7 +266,7 @@ mod tests {
 
     #[test]
     fn stash_collapses_to_single_content_line_when_unfocused() {
-        let state = AppState::default();
+        let state = AppContext::default();
         let heights = compute_left_panel_heights(&state, 40, 2);
 
         assert_eq!(heights.stash.saturating_sub(2), 1);
@@ -274,15 +274,13 @@ mod tests {
 
     #[test]
     fn stash_focus_restores_default_height() {
-        let mut focused_stash = AppState {
-            focus: PanelFocus::Stash,
-            last_left_focus: PanelFocus::Stash,
-            ..AppState::default()
-        };
+        let mut focused_stash = AppContext::default();
+        focused_stash.ui.focus = PanelFocus::Stash;
+        focused_stash.ui.last_left_focus = PanelFocus::Stash;
         let focused = compute_left_panel_heights(&focused_stash, 40, 2);
 
-        focused_stash.focus = PanelFocus::Files;
-        focused_stash.last_left_focus = PanelFocus::Files;
+        focused_stash.ui.focus = PanelFocus::Files;
+        focused_stash.ui.last_left_focus = PanelFocus::Files;
         let collapsed = compute_left_panel_heights(&focused_stash, 40, 2);
 
         assert!(focused.stash > collapsed.stash);
@@ -292,11 +290,11 @@ mod tests {
     #[test]
     fn focused_left_panel_expands_when_content_overflows() {
         let mut state = state_with_many_files();
-        state.focus = PanelFocus::Details;
+        state.ui.focus = PanelFocus::Details;
         let baseline = compute_left_panel_heights(&state, 40, 2);
 
-        state.focus = PanelFocus::Files;
-        state.last_left_focus = PanelFocus::Files;
+        state.ui.focus = PanelFocus::Files;
+        state.ui.last_left_focus = PanelFocus::Files;
         let expanded = compute_left_panel_heights(&state, 40, 2);
 
         assert!(expanded.files > baseline.files);
@@ -307,18 +305,16 @@ mod tests {
 
     #[test]
     fn commit_files_subpanel_keeps_parent_commits_height() {
-        let mut state = AppState {
-            focus: PanelFocus::Commits,
-            last_left_focus: PanelFocus::Commits,
-            ..AppState::default()
-        };
-        state.commits.items = (0..30)
+        let mut state = AppContext::default();
+        state.ui.focus = PanelFocus::Commits;
+        state.ui.last_left_focus = PanelFocus::Commits;
+        state.repo.commits.items = (0..30)
             .map(|index| fixture_commit(&format!("{index:07x}"), &format!("commit {index}")))
             .collect();
         let parent_height = compute_left_panel_heights(&state, 24, 2).commits;
 
-        state.commits.files.active = true;
-        state.commits.files.loading = false;
+        state.ui.commits.files.active = true;
+        state.work.commit_files_loading = false;
         let subpanel_height = compute_left_panel_heights(&state, 24, 2).commits;
 
         assert_eq!(subpanel_height, parent_height);

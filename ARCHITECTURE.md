@@ -4,7 +4,7 @@ ratagit is a lazygit-like Git TUI built with Rust and ratatui.
 
 The system follows a strict unidirectional data flow:
 
-Input → Action → Update → AppState → Render
+Input → Action → Update → AppContext → Render
 
 ---
 
@@ -12,11 +12,28 @@ Input → Action → Update → AppState → Render
 
 ### 1. Single Source of Truth
 
-All UI must be derived from `AppState`.
+All UI must be derived from `AppContext`.
 
 - No hidden state
 - No implicit global variables
-- No UI-only state outside AppState
+- No UI-only state outside AppContext
+- No `GitBackend`, runtime handles, environment, clock, or external dependency
+  handles inside AppContext
+
+`AppContext` is the pure root state object. Its top-level categories are:
+
+- `repo`: Git/backend-derived data, including status, file rows, branch rows,
+  commit rows, stash rows, Commit Files rows, Details text/errors/caches, and
+  commit pagination metadata
+- `ui`: interaction state, including focus, search, panel selections, scroll
+  offsets, tree projection caches, multi-select state, Details scroll offset,
+  and modal/editor state
+- `work`: pending refresh/details/operation state, commit pagination loading
+  intent, Commit Files loading state, and the last completed command label
+
+Cross-layer helpers must make data/UI dependencies explicit. For example, a
+Files helper that needs both repository rows and tree selection state receives
+`repo.files.items` and `ui.files` separately instead of a mixed panel state.
 
 ---
 
@@ -25,7 +42,7 @@ All UI must be derived from `AppState`.
 UI rendering must be pure:
 
 ```text
-(AppState, TerminalSize) -> Frame
+(AppContext, TerminalSize) -> Frame
 ```
 
 Forbidden:
@@ -47,7 +64,7 @@ CLI → Core → UI
 Rules:
 
 - UI cannot call Git
-- UI cannot mutate AppState
+- UI cannot mutate AppContext
 - Core owns all state transitions
 - Git is accessed only via `GitBackend`
 
@@ -58,7 +75,7 @@ Rules:
 Update returns commands:
 
 ```rust
-fn update(state: &mut AppState, action: Action) -> Vec<Command>
+fn update(state: &mut AppContext, action: Action) -> Vec<Command>
 ```
 
 Commands:
@@ -71,7 +88,7 @@ The real TUI executes read-only Git commands through a fixed background worker
 pool and executes mutating Git commands through one exclusive background worker.
 Whole-repository refresh requests are split into independent read commands for
 Files/status, Branches, Commits, and Stash so a slow file status scan cannot
-delay other left-panel data from reaching `AppState`. The async runtime uses
+delay other left-panel data from reaching `AppContext`. The async runtime uses
 mutation barriers so stale read results cannot apply after queued repository
 mutations. The UI thread remains responsible only for input, reducer updates,
 result draining, and pure rendering. Harness scenarios may use the synchronous
@@ -83,7 +100,7 @@ runtime to keep mock state assertions deterministic.
 
 Same:
 
-- AppState
+- AppContext
 - terminal size
 - input sequence
 
@@ -104,7 +121,7 @@ internal library packages under `libs/`.
 
 ### ratagit-core
 
-- AppState
+- AppContext
 - Action
 - Reducer (update)
 - Command
@@ -173,25 +190,25 @@ internal library packages under `libs/`.
   `Cargo.toml` via workspace inheritance.
 - Runtime command execution uses `ratagit-harness::AsyncRuntime` in the real TUI
   and `ratagit-harness::Runtime` in deterministic harness scenarios to preserve:
-  - single source of truth in `AppState`
+  - single source of truth in `AppContext`
   - side effects only through `Command` + `GitBackend`
   - pure rendering in `ratagit-ui::render`
 - Refresh command execution applies per-panel `GitResult` values independently:
   Files/status, Branches, Commits, and Stash may appear in any worker completion
-  order, and pending refresh targets are tracked in `AppState.work`.
+  order, and pending refresh targets are tracked in `AppContext.work`.
 - Reusable projections and expensive read results, such as file-tree rows and
-  files-detail diffs, are cached only in `AppState` and invalidated by reducer
+  files-detail diffs, are cached only in `AppContext` and invalidated by reducer
   state transitions.
-- Files and Commit Files use the same `AppState`-owned tree index for
+- Files and Commit Files use the same `AppContext`-owned tree index for
   deterministic parent/child relationships. Folder expand/collapse rebuilds
   visible rows from cached children without rescanning every file path, and
   item changes sync through remove/add/metadata updates. In large-repo mode,
   the Files tree initializes collapsed with a lightweight projection that does
   not precompute `row_descendants` for every path. Details commands resolve
-  deterministic `FileDiffTarget` values from current `AppState` and cap
+  deterministic `FileDiffTarget` values from current `AppContext` and cap
   automatic file diffs to the first 100 targets.
 - Automatic full-commit Details previews are bounded in `GitBackend` so large
-  commit patches cannot feed unbounded text into `AppState` or pure rendering.
+  commit patches cannot feed unbounded text into `AppContext` or pure rendering.
 
 ---
 
@@ -199,10 +216,10 @@ internal library packages under `libs/`.
 
 ```text
 drain GitResult channel
-→ render AppState
+→ render AppContext
 → read input
 → map to Action
-→ update(AppState)
+→ update(AppContext)
 → enqueue Commands
 → worker pool runs GitBackend
 → receive results
@@ -216,8 +233,8 @@ drain GitResult channel
 - UI directly mutates state
 - UI calls Git
 - logic inside render()
-- branching based on terminal state outside AppState
-- hidden caches not in AppState
+- branching based on terminal state outside AppContext
+- hidden caches not in AppContext
 
 ---
 
@@ -242,10 +259,14 @@ drain GitResult channel
 
 ## State Design Rules
 
-AppState must:
+AppContext must:
 
 - be serializable (for debugging)
 - be inspectable
+- keep Git-derived data in `repo`
+- keep interaction state and render caches in `ui`
+- keep pending-work state in `work`
+- keep top-level `notices` and `last_operation` only for app-wide feedback
 - avoid nested complexity explosion
 
 ---

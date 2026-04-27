@@ -1,11 +1,11 @@
-use ratagit_core::{AppState, PanelFocus};
+use ratagit_core::{AppContext, PanelFocus};
 use ratatui::style::{Color, Modifier, Style};
 
 use super::panel_types::{PanelLine, PanelSpan};
 use crate::theme::RowRole;
 
-pub(crate) fn render_details_lines(state: &AppState, max_lines: usize) -> Vec<PanelLine> {
-    match state.last_left_focus {
+pub(crate) fn render_details_lines(state: &AppContext, max_lines: usize) -> Vec<PanelLine> {
+    match state.ui.last_left_focus {
         PanelFocus::Files => render_files_details_lines(state, max_lines),
         PanelFocus::Branches => render_branch_details_lines(state, max_lines),
         PanelFocus::Commits => render_commit_details_lines(state, max_lines),
@@ -18,7 +18,7 @@ pub(crate) fn render_details_lines(state: &AppState, max_lines: usize) -> Vec<Pa
     }
 }
 
-pub(crate) fn render_log_lines(state: &AppState, max_lines: usize) -> Vec<PanelLine> {
+pub(crate) fn render_log_lines(state: &AppContext, max_lines: usize) -> Vec<PanelLine> {
     let mut lines = Vec::new();
     if state.work.refresh_pending {
         lines.push(PanelLine::new(
@@ -26,7 +26,7 @@ pub(crate) fn render_log_lines(state: &AppState, max_lines: usize) -> Vec<PanelL
             RowRole::Notice,
         ));
     }
-    if state.status.status_scan_skipped {
+    if state.repo.status.status_scan_skipped {
         lines.push(PanelLine::new(
             "  status=huge repo metadata-only; file scan skipped",
             RowRole::Notice,
@@ -35,7 +35,7 @@ pub(crate) fn render_log_lines(state: &AppState, max_lines: usize) -> Vec<PanelL
             "  tip=focus Commits/Branches or narrow Git outside ratagit",
             RowRole::Notice,
         ));
-    } else if state.status.large_repo_mode {
+    } else if state.repo.status.large_repo_mode {
         lines.push(PanelLine::new(
             "  status=large repo fast mode; untracked scan skipped",
             RowRole::Notice,
@@ -45,13 +45,13 @@ pub(crate) fn render_log_lines(state: &AppState, max_lines: usize) -> Vec<PanelL
             RowRole::Notice,
         ));
     }
-    if state.status.status_truncated {
+    if state.repo.status.status_truncated {
         lines.push(PanelLine::new(
             "  status=truncated at 50000 file entries or 64 MiB output",
             RowRole::Notice,
         ));
     }
-    if let Some(total) = state.details.files_diff_truncated_from {
+    if let Some(total) = state.repo.details.files_diff_truncated_from {
         lines.push(PanelLine::new(
             format!("  details=diff limited to first 100 of {total} files"),
             RowRole::Notice,
@@ -63,7 +63,7 @@ pub(crate) fn render_log_lines(state: &AppState, max_lines: usize) -> Vec<PanelL
             RowRole::Notice,
         ));
     }
-    if let Some(error) = &state.status.last_error {
+    if let Some(error) = &state.repo.status.last_error {
         lines.push(PanelLine::new(format!("  error={error}"), RowRole::Error));
     }
 
@@ -80,16 +80,16 @@ pub(crate) fn render_log_lines(state: &AppState, max_lines: usize) -> Vec<PanelL
     lines.into_iter().take(max_lines).collect()
 }
 
-fn render_files_details_lines(state: &AppState, max_lines: usize) -> Vec<PanelLine> {
+fn render_files_details_lines(state: &AppContext, max_lines: usize) -> Vec<PanelLine> {
     if max_lines == 0 {
         return Vec::new();
     }
 
-    if let Some(error) = &state.details.files_error {
+    if let Some(error) = &state.repo.details.files_error {
         return vec![PanelLine::new(format!("  error={error}"), RowRole::Error)];
     }
 
-    if state.details.files_diff.trim().is_empty() {
+    if state.repo.details.files_diff.trim().is_empty() {
         return vec![PanelLine::new(
             "  details(files): no diff for current selection",
             RowRole::Muted,
@@ -98,37 +98,37 @@ fn render_files_details_lines(state: &AppState, max_lines: usize) -> Vec<PanelLi
 
     // TODO(files-hunks): upgrade details rows into selectable hunk models for partial staging.
     let mut rendered = Vec::new();
-    if let Some(total) = state.details.files_diff_truncated_from {
+    if let Some(total) = state.repo.details.files_diff_truncated_from {
         rendered.push(PanelLine::new(
             format!("  details(files): showing first 100 of {total} files"),
             RowRole::Notice,
         ));
     }
     rendered.extend(render_ansi_details_text(
-        &state.details.files_diff,
-        state.details.scroll_offset,
+        &state.repo.details.files_diff,
+        state.ui.details.scroll_offset,
         max_lines.saturating_sub(rendered.len()),
     ));
     rendered
 }
 
-fn render_branch_details_lines(state: &AppState, max_lines: usize) -> Vec<PanelLine> {
+fn render_branch_details_lines(state: &AppContext, max_lines: usize) -> Vec<PanelLine> {
     if max_lines == 0 {
         return Vec::new();
     }
 
-    if state.details.branch_log_target.is_none() {
+    if state.repo.details.branch_log_target.is_none() {
         return vec![PanelLine::new(
             "  details(branches): no branch selected",
             RowRole::Muted,
         )];
     }
 
-    if let Some(error) = &state.details.branch_log_error {
+    if let Some(error) = &state.repo.details.branch_log_error {
         return vec![PanelLine::new(format!("  error={error}"), RowRole::Error)];
     }
 
-    if state.details.branch_log.trim().is_empty() {
+    if state.repo.details.branch_log.trim().is_empty() {
         return vec![PanelLine::new(
             "  details(branches): no log graph for current selection",
             RowRole::Muted,
@@ -136,32 +136,32 @@ fn render_branch_details_lines(state: &AppState, max_lines: usize) -> Vec<PanelL
     }
 
     render_ansi_details_text(
-        &state.details.branch_log,
-        state.details.scroll_offset,
+        &state.repo.details.branch_log,
+        state.ui.details.scroll_offset,
         max_lines,
     )
 }
 
-fn render_commit_details_lines(state: &AppState, max_lines: usize) -> Vec<PanelLine> {
-    if state.commits.files.active {
+fn render_commit_details_lines(state: &AppContext, max_lines: usize) -> Vec<PanelLine> {
+    if state.ui.commits.files.active {
         return render_commit_file_details_lines(state, max_lines);
     }
     if max_lines == 0 {
         return Vec::new();
     }
 
-    if state.details.commit_diff_target.is_none() {
+    if state.repo.details.commit_diff_target.is_none() {
         return vec![PanelLine::new(
             "  details(commits): no commit selected",
             RowRole::Muted,
         )];
     }
 
-    if let Some(error) = &state.details.commit_diff_error {
+    if let Some(error) = &state.repo.details.commit_diff_error {
         return vec![PanelLine::new(format!("  error={error}"), RowRole::Error)];
     }
 
-    if state.details.commit_diff.trim().is_empty() {
+    if state.repo.details.commit_diff.trim().is_empty() {
         return vec![PanelLine::new(
             "  details(commits): no diff for current selection",
             RowRole::Muted,
@@ -169,22 +169,22 @@ fn render_commit_details_lines(state: &AppState, max_lines: usize) -> Vec<PanelL
     }
 
     render_ansi_details_text(
-        &state.details.commit_diff,
-        state.details.scroll_offset,
+        &state.repo.details.commit_diff,
+        state.ui.details.scroll_offset,
         max_lines,
     )
 }
 
-fn render_commit_file_details_lines(state: &AppState, max_lines: usize) -> Vec<PanelLine> {
+fn render_commit_file_details_lines(state: &AppContext, max_lines: usize) -> Vec<PanelLine> {
     if max_lines == 0 {
         return Vec::new();
     }
 
-    if state.details.commit_file_diff_target.is_none() {
-        if state.commits.files.loading && !state.details.commit_diff.trim().is_empty() {
+    if state.repo.details.commit_file_diff_target.is_none() {
+        if state.work.commit_files_loading && !state.repo.details.commit_diff.trim().is_empty() {
             return render_ansi_details_text(
-                &state.details.commit_diff,
-                state.details.scroll_offset,
+                &state.repo.details.commit_diff,
+                state.ui.details.scroll_offset,
                 max_lines,
             );
         }
@@ -194,11 +194,11 @@ fn render_commit_file_details_lines(state: &AppState, max_lines: usize) -> Vec<P
         )];
     }
 
-    if let Some(error) = &state.details.commit_file_diff_error {
+    if let Some(error) = &state.repo.details.commit_file_diff_error {
         return vec![PanelLine::new(format!("  error={error}"), RowRole::Error)];
     }
 
-    if state.details.commit_file_diff.trim().is_empty() {
+    if state.repo.details.commit_file_diff.trim().is_empty() {
         return vec![PanelLine::new(
             "  details(commit files): no diff for current file",
             RowRole::Muted,
@@ -206,8 +206,8 @@ fn render_commit_file_details_lines(state: &AppState, max_lines: usize) -> Vec<P
     }
 
     render_ansi_details_text(
-        &state.details.commit_file_diff,
-        state.details.scroll_offset,
+        &state.repo.details.commit_file_diff,
+        state.ui.details.scroll_offset,
         max_lines,
     )
 }
@@ -373,12 +373,10 @@ mod tests {
 
     #[test]
     fn details_diff_output_preserves_ansi_spans_without_semantic_roles() {
-        let mut state = AppState {
-            last_left_focus: PanelFocus::Commits,
-            ..AppState::default()
-        };
-        state.details.commit_diff_target = Some("abc1234".to_string());
-        state.details.commit_diff = concat!(
+        let mut state = AppContext::default();
+        state.ui.last_left_focus = PanelFocus::Commits;
+        state.repo.details.commit_diff_target = Some("abc1234".to_string());
+        state.repo.details.commit_diff = concat!(
             "\u{1b}[1mdiff --git a/a.txt b/a.txt\u{1b}[m\n",
             "\u{1b}[31m-old\u{1b}[m\n",
             "\u{1b}[32m+new\u{1b}[m"
@@ -403,10 +401,8 @@ mod tests {
 
     #[test]
     fn details_lines_report_empty_loading_error_and_clamped_scroll_states() {
-        let mut state = AppState {
-            last_left_focus: PanelFocus::Files,
-            ..AppState::default()
-        };
+        let mut state = AppContext::default();
+        state.ui.last_left_focus = PanelFocus::Files;
         assert_eq!(
             render_details_lines(&state, 3),
             vec![PanelLine::new(
@@ -425,15 +421,15 @@ mod tests {
         );
 
         state.work.details_pending = false;
-        state.details.files_error = Some("boom".to_string());
+        state.repo.details.files_error = Some("boom".to_string());
         assert_eq!(
             render_details_lines(&state, 3),
             vec![PanelLine::new("  error=boom", RowRole::Error)]
         );
 
-        state.details.files_error = None;
-        state.details.files_diff = "line 1\nline 2\nline 3\nline 4".to_string();
-        state.details.scroll_offset = 99;
+        state.repo.details.files_error = None;
+        state.repo.details.files_diff = "line 1\nline 2\nline 3\nline 4".to_string();
+        state.ui.details.scroll_offset = 99;
         assert_eq!(
             render_details_lines(&state, 2)
                 .into_iter()
@@ -445,10 +441,8 @@ mod tests {
 
     #[test]
     fn branch_commit_and_commit_file_placeholders_use_current_state() {
-        let mut state = AppState {
-            last_left_focus: PanelFocus::Branches,
-            ..AppState::default()
-        };
+        let mut state = AppContext::default();
+        state.ui.last_left_focus = PanelFocus::Branches;
         assert_eq!(
             render_details_lines(&state, 1),
             vec![PanelLine::new(
@@ -457,7 +451,7 @@ mod tests {
             )]
         );
 
-        state.details.branch_log_target = Some("main".to_string());
+        state.repo.details.branch_log_target = Some("main".to_string());
         state.work.details_pending = true;
         assert_eq!(
             render_details_lines(&state, 1),
@@ -468,7 +462,7 @@ mod tests {
         );
 
         state.work.details_pending = false;
-        state.last_left_focus = PanelFocus::Commits;
+        state.ui.last_left_focus = PanelFocus::Commits;
         assert_eq!(
             render_details_lines(&state, 1),
             vec![PanelLine::new(
@@ -477,8 +471,8 @@ mod tests {
             )]
         );
 
-        state.commits.files.active = true;
-        state.commits.files.loading = true;
+        state.ui.commits.files.active = true;
+        state.work.commit_files_loading = true;
         assert_eq!(
             render_details_lines(&state, 1),
             vec![PanelLine::new(
@@ -487,8 +481,8 @@ mod tests {
             )]
         );
 
-        state.commits.files.loading = false;
-        state.details.commit_file_diff_target = Some(CommitFileDiffTarget {
+        state.work.commit_files_loading = false;
+        state.repo.details.commit_file_diff_target = Some(CommitFileDiffTarget {
             commit_id: "abc".to_string(),
             paths: vec![CommitFileDiffPath {
                 path: "a.txt".to_string(),
@@ -506,13 +500,11 @@ mod tests {
 
     #[test]
     fn commit_files_loading_keeps_parent_commit_details_visible() {
-        let mut state = AppState {
-            last_left_focus: PanelFocus::Commits,
-            ..AppState::default()
-        };
-        state.commits.files.active = true;
-        state.commits.files.loading = true;
-        state.details.commit_diff = "commit abc1234\nAuthor: ratagit-tests".to_string();
+        let mut state = AppContext::default();
+        state.ui.last_left_focus = PanelFocus::Commits;
+        state.ui.commits.files.active = true;
+        state.work.commit_files_loading = true;
+        state.repo.details.commit_diff = "commit abc1234\nAuthor: ratagit-tests".to_string();
 
         let lines = render_details_lines(&state, 2);
 

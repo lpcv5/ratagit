@@ -3,7 +3,7 @@ use std::fs::{create_dir_all, write};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use ratagit_core::{Action, AppState, Command, UiAction, update};
+use ratagit_core::{Action, AppContext, Command, UiAction, update};
 use ratagit_git::{GitBackend, MockGitBackend, execute_command};
 use ratagit_ui::{
     RenderedFrame, TerminalBuffer, TerminalSize, buffer_contains_batch_selected_text,
@@ -15,7 +15,7 @@ pub use async_runtime::AsyncRuntime;
 
 #[derive(Debug)]
 pub struct Runtime<B: GitBackend> {
-    state: AppState,
+    state: AppContext,
     backend: B,
     terminal_size: TerminalSize,
     debounce_window: Duration,
@@ -29,7 +29,7 @@ struct DebouncedCommand {
 }
 
 impl<B: GitBackend> Runtime<B> {
-    pub fn new(state: AppState, backend: B, terminal_size: TerminalSize) -> Self {
+    pub fn new(state: AppContext, backend: B, terminal_size: TerminalSize) -> Self {
         Self {
             state,
             backend,
@@ -44,7 +44,7 @@ impl<B: GitBackend> Runtime<B> {
         self
     }
 
-    pub fn state(&self) -> &AppState {
+    pub fn state(&self) -> &AppContext {
         &self.state
     }
 
@@ -231,7 +231,7 @@ pub struct ScenarioExpectations<'a> {
 
 pub fn run_mock_scenario(scenario: MockScenario<'_>) -> Result<(), ScenarioFailure> {
     let mut runtime = Runtime::new(
-        AppState::default(),
+        AppContext::default(),
         MockGitBackend::new(scenario.fixture),
         scenario.terminal_size,
     );
@@ -302,7 +302,7 @@ fn write_failure_artifacts(
     scenario_name: &str,
     frame_text: &str,
     screen_text: &str,
-    app_state_dump: &str,
+    app_context_dump: &str,
     operations_text: &str,
     git_state_text: &str,
     input_text: &str,
@@ -313,7 +313,7 @@ fn write_failure_artifacts(
     let _ = create_dir_all(&base);
     let _ = write(base.join("buffer.txt"), frame_text);
     let _ = write(base.join("screen.txt"), screen_text);
-    let _ = write(base.join("app_state.txt"), app_state_dump);
+    let _ = write(base.join("app_context.txt"), app_context_dump);
     let _ = write(base.join("git_ops.txt"), operations_text);
     let _ = write(base.join("git_state.txt"), git_state_text);
     let _ = write(base.join("input_sequence.txt"), input_text);
@@ -359,7 +359,7 @@ mod tests {
     #[test]
     fn refresh_details_diff_runs_immediately_when_debounce_is_disabled() {
         let mut runtime = Runtime::new(
-            AppState::default(),
+            AppContext::default(),
             MockGitBackend::new(fixture_dirty_repo()),
             TerminalSize {
                 width: 100,
@@ -377,7 +377,7 @@ mod tests {
     #[test]
     fn files_details_diff_is_debounced_to_latest_command() {
         let mut runtime = Runtime::new(
-            AppState::default(),
+            AppContext::default(),
             MockGitBackend::new(fixture_dirty_repo()),
             TerminalSize {
                 width: 100,

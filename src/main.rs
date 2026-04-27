@@ -11,7 +11,7 @@ use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
 use input::{KeyEffect, key_effect_for_key};
-use ratagit_core::{AppState, UiAction};
+use ratagit_core::{AppContext, UiAction};
 use ratagit_git::{GitBackend, HybridGitBackend, SharedMockGitBackend, is_git_repo};
 use ratagit_harness::AsyncRuntime;
 use ratagit_observe::{ObserveConfig, init_observability};
@@ -104,7 +104,7 @@ fn build_initial_runtime(
     backend_factory: BackendFactory,
 ) -> AsyncRuntime<Box<dyn GitBackend + Send>> {
     AsyncRuntime::new(
-        AppState::default(),
+        AppContext::default(),
         backend_factory,
         initial_terminal_size(),
     )
@@ -213,7 +213,7 @@ mod tests {
     fn wait_for_refresh(runtime: &mut AsyncRuntime<Box<dyn GitBackend + Send>>) {
         for _ in 0..100 {
             runtime.tick();
-            if runtime.state().status.refresh_count > 0 {
+            if runtime.state().repo.status.refresh_count > 0 {
                 return;
             }
             std::thread::sleep(Duration::from_millis(10));

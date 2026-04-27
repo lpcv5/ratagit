@@ -1,4 +1,4 @@
-use ratagit_core::{AppState, PanelFocus};
+use ratagit_core::{AppContext, PanelFocus};
 use ratatui::backend::{Backend, TestBackend};
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::text::{Line, Span};
@@ -23,7 +23,7 @@ use crate::theme::{
     selected_row_style, title_badge_style,
 };
 
-pub fn render_terminal(frame: &mut Frame<'_>, state: &AppState) {
+pub fn render_terminal(frame: &mut Frame<'_>, state: &AppContext) {
     let area = frame.area();
     let root = Layout::default()
         .direction(Direction::Vertical)
@@ -38,16 +38,16 @@ pub fn render_terminal(frame: &mut Frame<'_>, state: &AppState) {
     render_discard_modal(frame, state, root[0]);
 }
 
-pub fn render_terminal_text(state: &AppState, size: TerminalSize) -> String {
+pub fn render_terminal_text(state: &AppContext, size: TerminalSize) -> String {
     buffer_to_text(&render_terminal_buffer(state, size))
 }
 
-pub fn render_terminal_buffer(state: &AppState, size: TerminalSize) -> TerminalBuffer {
+pub fn render_terminal_buffer(state: &AppContext, size: TerminalSize) -> TerminalBuffer {
     render_terminal_buffer_with_cursor(state, size).0
 }
 
 pub fn render_terminal_buffer_with_cursor(
-    state: &AppState,
+    state: &AppContext,
     size: TerminalSize,
 ) -> (TerminalBuffer, Option<TerminalCursor>) {
     let backend = TestBackend::new(size.width.max(1) as u16, size.height.max(1) as u16);
@@ -55,7 +55,7 @@ pub fn render_terminal_buffer_with_cursor(
     terminal
         .draw(|frame| render_terminal(frame, state))
         .expect("terminal render should succeed");
-    let cursor = if state.editor.is_active() || state.branches.create.active {
+    let cursor = if state.ui.editor.is_active() || state.ui.branches.create.active {
         let position = terminal
             .backend_mut()
             .get_cursor_position()
@@ -70,7 +70,7 @@ pub fn render_terminal_buffer_with_cursor(
     (terminal.backend().buffer().clone(), cursor)
 }
 
-fn render_panel_grid(frame: &mut Frame<'_>, state: &AppState, area: Rect) {
+fn render_panel_grid(frame: &mut Frame<'_>, state: &AppContext, area: Rect) {
     let columns = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(34), Constraint::Percentage(66)])
@@ -136,12 +136,12 @@ fn render_panel_grid(frame: &mut Frame<'_>, state: &AppState, area: Rect) {
 
 fn render_block_panel(
     frame: &mut Frame<'_>,
-    state: &AppState,
+    state: &AppContext,
     panel: PanelFocus,
     area: Rect,
     lines: Vec<PanelLine>,
 ) {
-    let focused = state.focus == panel;
+    let focused = state.ui.focus == panel;
     let border_style = if focused {
         focused_panel_style()
     } else {
@@ -195,7 +195,7 @@ fn panel_borders(panel: PanelFocus, focused: bool) -> Borders {
 }
 
 fn panel_title_line(
-    state: &AppState,
+    state: &AppContext,
     panel: PanelFocus,
     focused: bool,
     title_style: ratatui::style::Style,
@@ -219,7 +219,7 @@ fn line_to_ratatui_line(line: &PanelLine) -> Line<'static> {
     Line::from(line.text.clone())
 }
 
-fn render_shortcuts(frame: &mut Frame<'_>, state: &AppState, area: Rect) {
+fn render_shortcuts(frame: &mut Frame<'_>, state: &AppContext, area: Rect) {
     let widget = Paragraph::new(shortcut_line_to_ratatui_line(shortcut_line_for_state(
         state,
     )));

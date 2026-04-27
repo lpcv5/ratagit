@@ -17,9 +17,9 @@ use perf_repo::{
     manifest_for_config, text_repo_path,
 };
 use ratagit_core::{
-    Action, AppState, COMMITS_PAGE_SIZE, CommitFileDiffPath, CommitFileDiffTarget, CommitFileEntry,
-    CommitFileStatus, CommitFilesPanelState, FileDiffTarget, FileEntry, PanelFocus, UiAction,
-    initialize_commit_files_tree, initialize_tree_with_initial_expansion,
+    Action, AppContext, COMMITS_PAGE_SIZE, CommitFileDiffPath, CommitFileDiffTarget,
+    CommitFileEntry, CommitFileStatus, CommitFilesUiState, FileDiffTarget, FileEntry, PanelFocus,
+    UiAction, initialize_commit_files_tree, initialize_tree_with_initial_expansion,
     select_commit_file_tree_path, select_file_tree_path, selected_commit_file_targets, update,
 };
 use ratagit_git::{GitBackend, HybridGitBackend};
@@ -915,18 +915,15 @@ fn commit_files_directory_diff_target(
     files: Vec<CommitFileEntry>,
     targets: &BenchTargets,
 ) -> Result<CommitFileDiffTarget, String> {
-    let mut panel = CommitFilesPanelState {
-        items: files,
-        ..CommitFilesPanelState::default()
-    };
-    initialize_commit_files_tree(&mut panel);
-    if !select_commit_file_tree_path(&mut panel, &targets.commit_files_directory_path) {
+    let mut panel = CommitFilesUiState::default();
+    initialize_commit_files_tree(&files, &mut panel);
+    if !select_commit_file_tree_path(&files, &mut panel, &targets.commit_files_directory_path) {
         return Err(format!(
             "commit files directory path not found: {}",
             targets.commit_files_directory_path
         ));
     }
-    let paths = selected_commit_file_targets(&panel)
+    let paths = selected_commit_file_targets(&files, &panel)
         .into_iter()
         .map(|file| CommitFileDiffPath {
             path: file.path,
@@ -992,18 +989,16 @@ fn commit_files_navigation_payload(
     files: Vec<CommitFileEntry>,
 ) -> Result<MeasurementPayload, String> {
     let output_bytes = files.iter().map(|entry| entry.path.len()).sum();
-    let mut state = AppState {
-        focus: PanelFocus::Commits,
-        last_left_focus: PanelFocus::Commits,
-        ..AppState::default()
-    };
-    state.commits.files = CommitFilesPanelState {
+    let mut state = AppContext::default();
+    state.ui.focus = PanelFocus::Commits;
+    state.ui.last_left_focus = PanelFocus::Commits;
+    state.repo.commits.files.items = files;
+    state.ui.commits.files = CommitFilesUiState {
         active: true,
         commit_id: Some(commit_id.to_string()),
-        items: files,
-        ..CommitFilesPanelState::default()
+        ..CommitFilesUiState::default()
     };
-    initialize_commit_files_tree(&mut state.commits.files);
+    initialize_commit_files_tree(&state.repo.commits.files.items, &mut state.ui.commits.files);
 
     let size = TerminalSize {
         width: 120,
@@ -1028,19 +1023,21 @@ fn commit_files_tree_toggle_payload(
 ) -> Result<MeasurementPayload, String> {
     let output_bytes = files.iter().map(|entry| entry.path.len()).sum();
     let target = select_commit_files_directory_path(&files).map_err(|error| error.to_string())?;
-    let mut state = AppState {
-        focus: PanelFocus::Commits,
-        last_left_focus: PanelFocus::Commits,
-        ..AppState::default()
-    };
-    state.commits.files = CommitFilesPanelState {
+    let mut state = AppContext::default();
+    state.ui.focus = PanelFocus::Commits;
+    state.ui.last_left_focus = PanelFocus::Commits;
+    state.repo.commits.files.items = files;
+    state.ui.commits.files = CommitFilesUiState {
         active: true,
         commit_id: Some(commit_id.to_string()),
-        items: files,
-        ..CommitFilesPanelState::default()
+        ..CommitFilesUiState::default()
     };
-    initialize_commit_files_tree(&mut state.commits.files);
-    if !select_commit_file_tree_path(&mut state.commits.files, &target) {
+    initialize_commit_files_tree(&state.repo.commits.files.items, &mut state.ui.commits.files);
+    if !select_commit_file_tree_path(
+        &state.repo.commits.files.items,
+        &mut state.ui.commits.files,
+        &target,
+    ) {
         return Err(format!("commit files directory path not found: {target}"));
     }
 
@@ -1064,10 +1061,10 @@ fn commit_files_tree_toggle_payload(
 fn files_tree_toggle_payload(files: Vec<FileEntry>) -> Result<MeasurementPayload, String> {
     let output_bytes = files.iter().map(|entry| entry.path.len()).sum();
     let target = select_files_directory_path(&files).map_err(|error| error.to_string())?;
-    let mut state = AppState::default();
-    state.files.items = files;
-    initialize_tree_with_initial_expansion(&mut state.files, false);
-    if !select_file_tree_path(&mut state.files, &target) {
+    let mut state = AppContext::default();
+    state.repo.files.items = files;
+    initialize_tree_with_initial_expansion(&state.repo.files.items, &mut state.ui.files, false);
+    if !select_file_tree_path(&state.repo.files.items, &mut state.ui.files, &target) {
         return Err(format!("files directory path not found: {target}"));
     }
 

@@ -80,7 +80,7 @@ Files panel rules:
   if the cap is hit, the Log panel reports that status was truncated
 - folder operations apply to descendant files present in the tree model
 - Files and Commit Files share cached file-tree rows and parent/child indexes
-  in `AppState`, so rendering and folder toggles do not rebuild tree topology
+  in `AppContext`, so rendering and folder toggles do not rebuild tree topology
   every frame
 - in large repo fast mode, the Files tree starts collapsed and uses a lightweight
   projection and cached child index instead of precomputing every directory
@@ -88,7 +88,7 @@ Files panel rules:
 - in Commit Files, Git status letters keep their existing `A/M/D/R/C/T` display
   and status colors apply to the letter only; file names stay in the default
   foreground
-- repeated file-detail diffs are cached in `AppState` and reused when the same
+- repeated file-detail diffs are cached in `AppContext` and reused when the same
   target path list is selected again
 - `space` stages unstaged targets or unstages targets when all selected targets are staged
 - `c` opens a commit editor modal from Files focus
@@ -134,7 +134,7 @@ Files panel rules:
   show a deterministic truncation notice when the cap is reached, and the
   Commit Files subpanel remains the path-focused way to inspect individual
   files in a large commit
-- branch-details log graph output is cached in `AppState` and reused when the
+- branch-details log graph output is cached in `AppContext` and reused when the
   same branch is selected again during the current snapshot
 - real TUI read-only Git work runs on a fixed background worker pool so initial
   refresh, details, log, and pagination work do not block drawing or keyboard

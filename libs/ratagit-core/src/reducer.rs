@@ -5,18 +5,18 @@ use crate::search::{
 };
 use crate::text_edit::CursorMove;
 use crate::{
-    Action, AppState, Command, GitResult, UiAction, branches, commit_workflow, details, editor,
+    Action, AppContext, Command, GitResult, UiAction, branches, commit_workflow, details, editor,
     navigation, results, toggle_commit_files_directory, worktree,
 };
 
-pub fn update(state: &mut AppState, action: Action) -> Vec<Command> {
+pub fn update(state: &mut AppContext, action: Action) -> Vec<Command> {
     match action {
         Action::Ui(ui_action) => update_ui(state, ui_action),
         Action::GitResult(git_result) => update_git_result(state, git_result),
     }
 }
 
-fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
+fn update_ui(state: &mut AppContext, action: UiAction) -> Vec<Command> {
     match action {
         UiAction::RefreshAll => with_pending(state, Command::refresh_all_commands()),
         UiAction::OpenCommitEditor => {
@@ -65,11 +65,11 @@ fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
             Vec::new()
         }
         UiAction::MoveBranchDeleteMenuUp => {
-            state.branches.delete_menu.selected = state.branches.delete_menu.selected.prev();
+            state.ui.branches.delete_menu.selected = state.ui.branches.delete_menu.selected.prev();
             Vec::new()
         }
         UiAction::MoveBranchDeleteMenuDown => {
-            state.branches.delete_menu.selected = state.branches.delete_menu.selected.next();
+            state.ui.branches.delete_menu.selected = state.ui.branches.delete_menu.selected.next();
             Vec::new()
         }
         UiAction::ConfirmBranchDeleteMenu => branches::confirm_delete_menu(state),
@@ -87,11 +87,11 @@ fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
             Vec::new()
         }
         UiAction::MoveBranchRebaseMenuUp => {
-            state.branches.rebase_menu.selected = state.branches.rebase_menu.selected.prev();
+            state.ui.branches.rebase_menu.selected = state.ui.branches.rebase_menu.selected.prev();
             Vec::new()
         }
         UiAction::MoveBranchRebaseMenuDown => {
-            state.branches.rebase_menu.selected = state.branches.rebase_menu.selected.next();
+            state.ui.branches.rebase_menu.selected = state.ui.branches.rebase_menu.selected.next();
             Vec::new()
         }
         UiAction::ConfirmBranchRebaseMenu => branches::confirm_rebase_menu(state),
@@ -109,16 +109,16 @@ fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
             Vec::new()
         }
         UiAction::MoveResetMenuUp => {
-            state.reset_menu.selected = state.reset_menu.selected.prev();
+            state.ui.reset_menu.selected = state.ui.reset_menu.selected.prev();
             Vec::new()
         }
         UiAction::MoveResetMenuDown => {
-            state.reset_menu.selected = state.reset_menu.selected.next();
+            state.ui.reset_menu.selected = state.ui.reset_menu.selected.next();
             Vec::new()
         }
         UiAction::ConfirmResetMenu => worktree::confirm_reset_menu(state),
         UiAction::CancelResetMenu => {
-            state.reset_menu.active = false;
+            state.ui.reset_menu.active = false;
             Vec::new()
         }
         UiAction::OpenDiscardConfirm => {
@@ -168,25 +168,25 @@ fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
         }
         UiAction::EditorConfirm => editor::confirm(state),
         UiAction::EditorCancel => {
-            state.editor.kind = None;
+            state.ui.editor.kind = None;
             Vec::new()
         }
         UiAction::FocusNext => {
-            state.focus = state.focus.next_left();
-            state.last_left_focus = state.focus;
+            state.ui.focus = state.ui.focus.next_left();
+            state.ui.last_left_focus = state.ui.focus;
             clear_search_if_incompatible(state);
             details::refresh_on_focus(state)
         }
         UiAction::FocusPrev => {
-            state.focus = state.focus.prev_left();
-            state.last_left_focus = state.focus;
+            state.ui.focus = state.ui.focus.prev_left();
+            state.ui.last_left_focus = state.ui.focus;
             clear_search_if_incompatible(state);
             details::refresh_on_focus(state)
         }
         UiAction::FocusPanel { panel } => {
-            state.focus = panel;
+            state.ui.focus = panel;
             if panel.is_left_panel() {
-                state.last_left_focus = panel;
+                state.ui.last_left_focus = panel;
             }
             clear_search_if_incompatible(state);
             details::refresh_on_focus(state)
@@ -271,13 +271,16 @@ fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
         UiAction::UnstageSelectedFile => worktree::unstage_selected_file(state),
         UiAction::StashSelectedFiles => worktree::stash_selected_files(state),
         UiAction::CreateCommit { message } => {
-            state.commits.draft_message = message.clone();
+            state.ui.commits.draft_message = message.clone();
             with_pending(state, vec![Command::CreateCommit { message }])
         }
         UiAction::OpenCommitFilesPanel => commit_workflow::open_commit_files_panel(state),
         UiAction::CloseCommitFilesPanel => commit_workflow::close_commit_files_panel(state),
         UiAction::ToggleCommitFilesDirectory => {
-            if toggle_commit_files_directory(&mut state.commits.files) {
+            if toggle_commit_files_directory(
+                &state.repo.commits.files.items,
+                &mut state.ui.commits.files,
+            ) {
                 details::refresh_commit_file_diff(state)
             } else {
                 push_notice(state, "Selected commit file is not a directory");
@@ -285,19 +288,25 @@ fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
             }
         }
         UiAction::EnterCommitFilesMultiSelect => {
-            crate::enter_commit_files_multi_select(&mut state.commits.files);
+            crate::enter_commit_files_multi_select(
+                &state.repo.commits.files.items,
+                &mut state.ui.commits.files,
+            );
             Vec::new()
         }
         UiAction::ExitCommitFilesMultiSelect => {
-            crate::leave_commit_files_multi_select(&mut state.commits.files);
+            crate::leave_commit_files_multi_select(
+                &state.repo.commits.files.items,
+                &mut state.ui.commits.files,
+            );
             Vec::new()
         }
         UiAction::EnterCommitsMultiSelect => {
-            crate::enter_commit_multi_select(&mut state.commits);
+            crate::enter_commit_multi_select(&state.repo.commits.items, &mut state.ui.commits);
             Vec::new()
         }
         UiAction::ExitCommitsMultiSelect => {
-            crate::leave_commit_multi_select(&mut state.commits);
+            crate::leave_commit_multi_select(&mut state.ui.commits);
             Vec::new()
         }
         UiAction::SquashSelectedCommits => commit_workflow::squash_selected_commits(state),
@@ -311,11 +320,11 @@ fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
             commit_workflow::checkout_selected_commit_detached(state)
         }
         UiAction::EnterBranchesMultiSelect => {
-            branches::enter_multi_select(&mut state.branches);
+            branches::enter_multi_select(&state.repo.branches.items, &mut state.ui.branches);
             Vec::new()
         }
         UiAction::ExitBranchesMultiSelect => {
-            branches::leave_multi_select(&mut state.branches);
+            branches::leave_multi_select(&mut state.ui.branches);
             Vec::new()
         }
         UiAction::CreateBranch { name, start_point } => {
@@ -336,18 +345,18 @@ fn update_ui(state: &mut AppState, action: UiAction) -> Vec<Command> {
     }
 }
 
-fn update_git_result(state: &mut AppState, result: GitResult) -> Vec<Command> {
+fn update_git_result(state: &mut AppContext, result: GitResult) -> Vec<Command> {
     results::update_git_result(state, result)
 }
 
-fn move_selection_and_refresh_details(state: &mut AppState, move_up: bool) -> Vec<Command> {
+fn move_selection_and_refresh_details(state: &mut AppContext, move_up: bool) -> Vec<Command> {
     let mut commands = navigation::move_selection(state, move_up);
     commands.extend(details::refresh_on_navigation(state));
     commands
 }
 
 fn move_selection_in_viewport_and_refresh_details(
-    state: &mut AppState,
+    state: &mut AppContext,
     move_up: bool,
     visible_lines: usize,
 ) -> Vec<Command> {
@@ -356,7 +365,7 @@ fn move_selection_in_viewport_and_refresh_details(
     commands
 }
 
-pub(crate) fn push_notice(state: &mut AppState, message: &str) {
+pub(crate) fn push_notice(state: &mut AppContext, message: &str) {
     state.notices.push(message.to_string());
     if state.notices.len() > 10 {
         let keep_from = state.notices.len() - 10;

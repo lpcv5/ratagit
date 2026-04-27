@@ -24,7 +24,7 @@ For every feature:
 
 - Follow ARCHITECTURE.md strictly
 - Keep rendering pure
-- Use AppState as the only source of truth
+- Use AppContext as the only source of truth
 - Add tests before expanding scope
 - Update docs when behavior changes
 - Use the `apply_patch` tool for code edits instead of command-line file writes

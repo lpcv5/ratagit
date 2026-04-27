@@ -2,7 +2,7 @@ use crate::actions::with_pending;
 use crate::search::{clear_search_if_incompatible, recompute_search_matches};
 use crate::selectors::{repository_has_uncommitted_changes, selected_commit_id};
 use crate::{
-    AppState, AutoStashOperation, Command, CommitEntry, CommitFilesPanelState, CommitHashStatus,
+    AppContext, AutoStashOperation, Command, CommitEntry, CommitFilesUiState, CommitHashStatus,
     CommitInputMode, PanelFocus, SearchScope, branches, commit_key, details,
     initialize_commit_files_tree, leave_commit_multi_select, mark_commit_file_items_changed,
     move_commit_file_selected, move_commit_file_selected_in_viewport, move_commit_selected,
@@ -17,30 +17,30 @@ enum CommitRewriteKind {
     Delete,
 }
 
-pub(crate) fn squash_selected_commits(state: &mut AppState) -> Vec<Command> {
+pub(crate) fn squash_selected_commits(state: &mut AppContext) -> Vec<Command> {
     rewrite_selected_commits(state, CommitRewriteKind::Squash, "squash", |commit_ids| {
         Command::SquashCommits { commit_ids }
     })
 }
 
-pub(crate) fn fixup_selected_commits(state: &mut AppState) -> Vec<Command> {
+pub(crate) fn fixup_selected_commits(state: &mut AppContext) -> Vec<Command> {
     rewrite_selected_commits(state, CommitRewriteKind::Fixup, "fixup", |commit_ids| {
         Command::FixupCommits { commit_ids }
     })
 }
 
-pub(crate) fn delete_selected_commits(state: &mut AppState) -> Vec<Command> {
+pub(crate) fn delete_selected_commits(state: &mut AppContext) -> Vec<Command> {
     rewrite_selected_commits(state, CommitRewriteKind::Delete, "delete", |commit_ids| {
         Command::DeleteCommits { commit_ids }
     })
 }
 
-pub(crate) fn checkout_selected_commit_detached(state: &mut AppState) -> Vec<Command> {
-    if state.commits.mode == CommitInputMode::MultiSelect {
+pub(crate) fn checkout_selected_commit_detached(state: &mut AppContext) -> Vec<Command> {
+    if state.ui.commits.mode == CommitInputMode::MultiSelect {
         push_notice(state, "Detached checkout supports one commit at a time");
         return Vec::new();
     }
-    let Some(commit) = selected_commit(&state.commits) else {
+    let Some(commit) = selected_commit(&state.repo.commits.items, &state.ui.commits) else {
         push_notice(state, "No commit selected");
         return Vec::new();
     };
@@ -62,75 +62,78 @@ pub(crate) fn checkout_selected_commit_detached(state: &mut AppState) -> Vec<Com
 }
 
 pub(crate) fn load_more_commits_command(
-    state: &mut AppState,
+    state: &mut AppContext,
     select_first_new: bool,
 ) -> Vec<Command> {
-    if !state.commits.has_more || state.commits.items.is_empty() {
+    if !state.repo.commits.has_more || state.repo.commits.items.is_empty() {
         return Vec::new();
     }
-    if state.commits.loading_more {
-        state.commits.pending_select_after_load |= select_first_new;
+    if state.work.commits_loading_more {
+        state.work.commits_pending_select_after_load |= select_first_new;
         return Vec::new();
     }
-    state.commits.pending_select_after_load |= select_first_new;
+    state.work.commits_pending_select_after_load |= select_first_new;
     with_pending(
         state,
         vec![Command::LoadMoreCommits {
-            offset: state.commits.items.len(),
+            offset: state.repo.commits.items.len(),
             limit: crate::COMMITS_PAGE_SIZE,
-            epoch: state.commits.pagination_epoch,
+            epoch: state.repo.commits.pagination_epoch,
         }],
     )
 }
 
 pub(crate) fn handle_commits_page_result(
-    state: &mut AppState,
+    state: &mut AppContext,
     offset: usize,
     limit: usize,
     epoch: u64,
     result: Result<Vec<CommitEntry>, String>,
 ) -> Vec<Command> {
-    if epoch != state.commits.pagination_epoch {
+    if epoch != state.repo.commits.pagination_epoch {
         return Vec::new();
     }
-    state.commits.loading_more = false;
+    state.work.commits_loading_more = false;
     state.work.last_completed_command = Some("load_more_commits".to_string());
     match result {
         Ok(mut commits) => {
-            if offset != state.commits.items.len() {
-                state.commits.pending_select_after_load = false;
+            if offset != state.repo.commits.items.len() {
+                state.work.commits_pending_select_after_load = false;
                 return Vec::new();
             }
-            let first_new_index = state.commits.items.len();
+            let first_new_index = state.repo.commits.items.len();
             let loaded = commits.len();
-            state.commits.items.append(&mut commits);
-            state.commits.has_more = loaded >= limit;
-            if state.commits.pending_select_after_load && loaded > 0 {
-                state.commits.selected = first_new_index;
+            state.repo.commits.items.append(&mut commits);
+            state.repo.commits.has_more = loaded >= limit;
+            if state.work.commits_pending_select_after_load && loaded > 0 {
+                state.ui.commits.selected = first_new_index;
             }
-            state.commits.pending_select_after_load = false;
-            state.status.last_error = None;
-            reconcile_commits_after_items_appended(&mut state.commits);
+            state.work.commits_pending_select_after_load = false;
+            state.repo.status.last_error = None;
+            reconcile_commits_after_items_appended(
+                &state.repo.commits.items,
+                &mut state.ui.commits,
+            );
         }
         Err(error) => {
-            state.commits.pending_select_after_load = false;
+            state.work.commits_pending_select_after_load = false;
             let message = format!("Failed to load more commits: {error}");
-            state.status.last_error = Some(message.clone());
+            state.repo.status.last_error = Some(message.clone());
             push_notice(state, &message);
         }
     }
     Vec::new()
 }
 
-pub(crate) fn move_commit_selection(state: &mut AppState, move_up: bool) -> Vec<Command> {
-    if state.commits.files.active {
-        move_commit_file_selected(&mut state.commits.files, move_up);
+pub(crate) fn move_commit_selection(state: &mut AppContext, move_up: bool) -> Vec<Command> {
+    if state.ui.commits.files.active {
+        move_commit_file_selected(&mut state.ui.commits.files, move_up);
         return Vec::new();
     }
     let was_at_loaded_end = !move_up
-        && !state.commits.items.is_empty()
-        && state.commits.selected + 1 >= state.commits.items.len();
-    move_commit_selected(&mut state.commits, move_up);
+        && !state.repo.commits.items.is_empty()
+        && state.ui.commits.selected + 1 >= state.repo.commits.items.len();
+    move_commit_selected(&state.repo.commits.items, &mut state.ui.commits, move_up);
     if was_at_loaded_end {
         load_more_commits_command(state, true)
     } else if should_prefetch_commits(state, move_up) {
@@ -141,18 +144,23 @@ pub(crate) fn move_commit_selection(state: &mut AppState, move_up: bool) -> Vec<
 }
 
 pub(crate) fn move_commit_selection_in_viewport(
-    state: &mut AppState,
+    state: &mut AppContext,
     move_up: bool,
     visible_lines: usize,
 ) -> Vec<Command> {
-    if state.commits.files.active {
-        move_commit_file_selected_in_viewport(&mut state.commits.files, move_up, visible_lines);
+    if state.ui.commits.files.active {
+        move_commit_file_selected_in_viewport(&mut state.ui.commits.files, move_up, visible_lines);
         return Vec::new();
     }
     let was_at_loaded_end = !move_up
-        && !state.commits.items.is_empty()
-        && state.commits.selected + 1 >= state.commits.items.len();
-    move_commit_selected_in_viewport(&mut state.commits, move_up, visible_lines);
+        && !state.repo.commits.items.is_empty()
+        && state.ui.commits.selected + 1 >= state.repo.commits.items.len();
+    move_commit_selected_in_viewport(
+        &state.repo.commits.items,
+        &mut state.ui.commits,
+        move_up,
+        visible_lines,
+    );
     if was_at_loaded_end {
         load_more_commits_command(state, true)
     } else if should_prefetch_commits(state, move_up) {
@@ -162,71 +170,76 @@ pub(crate) fn move_commit_selection_in_viewport(
     }
 }
 
-pub(crate) fn open_commit_files_panel(state: &mut AppState) -> Vec<Command> {
+pub(crate) fn open_commit_files_panel(state: &mut AppContext) -> Vec<Command> {
     let Some(commit_id) = selected_commit_id(state) else {
         push_notice(state, "No commit selected");
         return Vec::new();
     };
-    state.commits.files = CommitFilesPanelState {
+    state.ui.commits.files = CommitFilesUiState {
         active: true,
         commit_id: Some(commit_id.clone()),
-        loading: true,
-        ..CommitFilesPanelState::default()
+        ..CommitFilesUiState::default()
     };
     clear_search_if_incompatible(state);
-    state.details.commit_file_diff.clear();
-    state.details.commit_file_diff_target = None;
-    state.details.commit_file_diff_error = None;
+    state.repo.details.commit_file_diff.clear();
+    state.repo.details.commit_file_diff_target = None;
+    state.repo.details.commit_file_diff_error = None;
     details::reset_scroll(state);
     with_pending(state, vec![Command::RefreshCommitFiles { commit_id }])
 }
 
-pub(crate) fn close_commit_files_panel(state: &mut AppState) -> Vec<Command> {
-    if !state.commits.files.active {
+pub(crate) fn close_commit_files_panel(state: &mut AppContext) -> Vec<Command> {
+    if !state.ui.commits.files.active {
         return Vec::new();
     }
-    state.commits.files.active = false;
-    state.commits.files.loading = false;
+    state.ui.commits.files.active = false;
+    state.work.commit_files_loading = false;
     clear_search_if_incompatible(state);
-    state.details.commit_file_diff.clear();
-    state.details.commit_file_diff_target = None;
-    state.details.commit_file_diff_error = None;
+    state.repo.details.commit_file_diff.clear();
+    state.repo.details.commit_file_diff_target = None;
+    state.repo.details.commit_file_diff_error = None;
     state.work.details_pending = false;
     details::refresh_commit_diff(state)
 }
 
 pub(crate) fn handle_commit_files_result(
-    state: &mut AppState,
+    state: &mut AppContext,
     commit_id: String,
     result: Result<Vec<crate::CommitFileEntry>, String>,
 ) -> Vec<Command> {
-    if !state.commits.files.active
-        || state.commits.files.commit_id.as_deref() != Some(commit_id.as_str())
+    if !state.ui.commits.files.active
+        || state.ui.commits.files.commit_id.as_deref() != Some(commit_id.as_str())
     {
         return Vec::new();
     }
-    state.commits.files.loading = false;
+    state.work.commit_files_loading = false;
     state.work.last_completed_command = Some("commit_files".to_string());
     match result {
         Ok(files) => {
-            state.commits.files.items = files;
-            mark_commit_file_items_changed(&mut state.commits.files);
-            state.commits.files.selected = 0;
-            state.commits.files.scroll_offset = 0;
-            initialize_commit_files_tree(&mut state.commits.files);
-            if state.search.scope == Some(SearchScope::CommitFiles)
-                && !state.search.query.is_empty()
+            state.repo.commits.files.items = files;
+            mark_commit_file_items_changed(
+                &state.repo.commits.files.items,
+                &mut state.ui.commits.files,
+            );
+            state.ui.commits.files.selected = 0;
+            state.ui.commits.files.scroll_offset = 0;
+            initialize_commit_files_tree(
+                &state.repo.commits.files.items,
+                &mut state.ui.commits.files,
+            );
+            if state.ui.search.scope == Some(SearchScope::CommitFiles)
+                && !state.ui.search.query.is_empty()
             {
                 recompute_search_matches(state);
             }
-            state.status.last_error = None;
+            state.repo.status.last_error = None;
             details::refresh_commit_file_diff(state)
         }
         Err(error) => {
             let message = format!("Failed to refresh commit files: {error}");
-            state.status.last_error = Some(message.clone());
-            state.details.commit_file_diff.clear();
-            state.details.commit_file_diff_error = Some(message.clone());
+            state.repo.status.last_error = Some(message.clone());
+            state.repo.details.commit_file_diff.clear();
+            state.repo.details.commit_file_diff_error = Some(message.clone());
             push_notice(state, &message);
             Vec::new()
         }
@@ -234,7 +247,7 @@ pub(crate) fn handle_commit_files_result(
 }
 
 fn rewrite_selected_commits(
-    state: &mut AppState,
+    state: &mut AppContext,
     _kind: CommitRewriteKind,
     action_label: &str,
     command: impl FnOnce(Vec<String>) -> Command,
@@ -243,7 +256,7 @@ fn rewrite_selected_commits(
         push_notice(state, "Commit rewrite requires a clean working tree");
         return Vec::new();
     }
-    let commits = selected_commits(&state.commits);
+    let commits = selected_commits(&state.repo.commits.items, &state.ui.commits);
     if commits.is_empty() {
         push_notice(state, "No commit selected");
         return Vec::new();
@@ -259,13 +272,13 @@ fn rewrite_selected_commits(
         push_notice(state, "Commit rewrite does not support merge commits yet");
         return Vec::new();
     }
-    let commit_ids = selected_commit_ids(&state.commits);
+    let commit_ids = selected_commit_ids(&state.repo.commits.items, &state.ui.commits);
     if commit_ids.is_empty() {
         push_notice(state, "No commit selected");
         return Vec::new();
     }
-    if state.commits.mode == CommitInputMode::MultiSelect {
-        leave_commit_multi_select(&mut state.commits);
+    if state.ui.commits.mode == CommitInputMode::MultiSelect {
+        leave_commit_multi_select(&mut state.ui.commits);
     }
     push_notice(
         state,
@@ -277,16 +290,17 @@ fn rewrite_selected_commits(
     with_pending(state, vec![command(commit_ids)])
 }
 
-fn should_prefetch_commits(state: &AppState, move_up: bool) -> bool {
+fn should_prefetch_commits(state: &AppContext, move_up: bool) -> bool {
     !move_up
-        && state.focus == PanelFocus::Commits
-        && state.commits.has_more
-        && !state.commits.items.is_empty()
+        && state.ui.focus == PanelFocus::Commits
+        && state.repo.commits.has_more
+        && !state.repo.commits.items.is_empty()
         && state
+            .repo
             .commits
             .items
             .len()
             .saturating_sub(1)
-            .saturating_sub(state.commits.selected)
+            .saturating_sub(state.ui.commits.selected)
             <= crate::COMMITS_PREFETCH_THRESHOLD
 }

@@ -1,22 +1,30 @@
 use crate::scroll::{move_selected_index, move_selected_index_with_scroll_offset};
 use crate::{
-    AppState, Command, PanelFocus, branches, commit_workflow, move_selected, push_notice,
+    AppContext, Command, PanelFocus, branches, commit_workflow, move_selected, push_notice,
     toggle_selected_directory,
 };
 
-pub(crate) fn move_selection(state: &mut AppState, move_up: bool) -> Vec<Command> {
-    match state.focus {
+pub(crate) fn move_selection(state: &mut AppContext, move_up: bool) -> Vec<Command> {
+    match state.ui.focus {
         PanelFocus::Files => {
-            move_selected(&mut state.files, move_up);
+            move_selected(&mut state.ui.files, move_up);
             Vec::new()
         }
         PanelFocus::Branches => {
-            branches::move_selected_branch(&mut state.branches, move_up);
+            branches::move_selected_branch(
+                &state.repo.branches.items,
+                &mut state.ui.branches,
+                move_up,
+            );
             Vec::new()
         }
         PanelFocus::Commits => commit_workflow::move_commit_selection(state, move_up),
         PanelFocus::Stash => {
-            move_selected_index(&mut state.stash.selected, state.stash.items.len(), move_up);
+            move_selected_index(
+                &mut state.ui.stash.selected,
+                state.repo.stash.items.len(),
+                move_up,
+            );
             Vec::new()
         }
         PanelFocus::Details | PanelFocus::Log => Vec::new(),
@@ -24,17 +32,22 @@ pub(crate) fn move_selection(state: &mut AppState, move_up: bool) -> Vec<Command
 }
 
 pub(crate) fn move_selection_in_viewport(
-    state: &mut AppState,
+    state: &mut AppContext,
     move_up: bool,
     visible_lines: usize,
 ) -> Vec<Command> {
-    match state.focus {
+    match state.ui.focus {
         PanelFocus::Files => {
-            crate::move_selected_in_viewport(&mut state.files, move_up, visible_lines);
+            crate::move_selected_in_viewport(&mut state.ui.files, move_up, visible_lines);
             Vec::new()
         }
         PanelFocus::Branches => {
-            branches::move_selected_branch_in_viewport(&mut state.branches, move_up, visible_lines);
+            branches::move_selected_branch_in_viewport(
+                &state.repo.branches.items,
+                &mut state.ui.branches,
+                move_up,
+                visible_lines,
+            );
             Vec::new()
         }
         PanelFocus::Commits => {
@@ -42,9 +55,9 @@ pub(crate) fn move_selection_in_viewport(
         }
         PanelFocus::Stash => {
             move_selected_index_with_scroll_offset(
-                &mut state.stash.selected,
-                &mut state.stash.scroll_offset,
-                state.stash.items.len(),
+                &mut state.ui.stash.selected,
+                &mut state.ui.stash.scroll_offset,
+                state.repo.stash.items.len(),
                 move_up,
                 visible_lines,
             );
@@ -54,8 +67,8 @@ pub(crate) fn move_selection_in_viewport(
     }
 }
 
-pub(crate) fn toggle_selected_directory_or_notice(state: &mut AppState) -> bool {
-    if toggle_selected_directory(&mut state.files) {
+pub(crate) fn toggle_selected_directory_or_notice(state: &mut AppContext) -> bool {
+    if toggle_selected_directory(&state.repo.files.items, &mut state.ui.files) {
         true
     } else {
         push_notice(state, "Selected file is not a directory");

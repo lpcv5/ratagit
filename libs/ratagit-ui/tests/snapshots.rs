@@ -1,6 +1,6 @@
 use ratagit_core::{
-    Action, AppState, Command, CommitFileEntry, CommitFileStatus, CommitHashStatus, FileDiffTarget,
-    FilesSnapshot, GitResult, PanelFocus, ResetChoice, UiAction, update,
+    Action, AppContext, Command, CommitFileEntry, CommitFileStatus, CommitHashStatus,
+    FileDiffTarget, FilesSnapshot, GitResult, PanelFocus, ResetChoice, UiAction, update,
 };
 use ratagit_testkit::{
     fixture_commit, fixture_conflict, fixture_dirty_repo, fixture_empty_repo, fixture_file,
@@ -26,7 +26,7 @@ const MODAL_WARNING: Color = Color::Rgb(0xe0, 0xaf, 0x68);
 const MODAL_SCRIM: Color = Color::Rgb(0x16, 0x1b, 0x2d);
 
 fn render_snapshot(snapshot: ratagit_core::RepoSnapshot, size: TerminalSize) -> String {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, snapshot);
     render(&state, size).as_text()
 }
@@ -96,12 +96,12 @@ fn mock_commit_file_diff(target: &ratagit_core::CommitFileDiffTarget) -> String 
         .join("\n")
 }
 
-fn apply_refreshed_with_mock_details(state: &mut AppState, snapshot: ratagit_core::RepoSnapshot) {
+fn apply_refreshed_with_mock_details(state: &mut AppContext, snapshot: ratagit_core::RepoSnapshot) {
     let commands = update(state, Action::GitResult(GitResult::Refreshed(snapshot)));
     apply_mock_details_commands(state, commands);
 }
 
-fn apply_files_refreshed_with_mock_details(state: &mut AppState, snapshot: FilesSnapshot) {
+fn apply_files_refreshed_with_mock_details(state: &mut AppContext, snapshot: FilesSnapshot) {
     let commands = update(
         state,
         Action::GitResult(GitResult::FilesRefreshed(snapshot)),
@@ -159,7 +159,7 @@ fn buffer_contains_text_with_exact_style(
     })
 }
 
-fn apply_mock_details_commands(state: &mut AppState, commands: Vec<Command>) {
+fn apply_mock_details_commands(state: &mut AppContext, commands: Vec<Command>) {
     match commands.as_slice() {
         [] => {}
         [
@@ -231,7 +231,7 @@ fn assert_no_cursor_marker(text: &str) {
     );
 }
 
-fn render_terminal_snapshot_with_cursor_marker(state: &AppState, size: TerminalSize) -> String {
+fn render_terminal_snapshot_with_cursor_marker(state: &AppContext, size: TerminalSize) -> String {
     buffer_to_text_with_selected_marker(&render_terminal_buffer(state, size))
 }
 
@@ -309,7 +309,7 @@ fn snapshots_unicode_paths_are_stable() {
 
 #[test]
 fn snapshots_shortcuts_follow_current_focus() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     let commands = update(
         &mut state,
@@ -334,7 +334,7 @@ fn snapshots_shortcuts_follow_current_focus() {
 
 #[test]
 fn snapshots_files_search_input_replaces_shortcut_bar() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     update(&mut state, Action::Ui(UiAction::StartSearch));
     update(&mut state, Action::Ui(UiAction::InputSearchChar('l')));
@@ -355,7 +355,7 @@ fn snapshots_files_search_input_replaces_shortcut_bar() {
 
 #[test]
 fn snapshots_files_shortcuts_include_reset_menu_key() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
 
     let text = render(
@@ -371,7 +371,7 @@ fn snapshots_files_shortcuts_include_reset_menu_key() {
 
 #[test]
 fn terminal_snapshot_refresh_pending_loading() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     let commands = update(&mut state, Action::Ui(UiAction::RefreshAll));
     assert_eq!(commands, Command::refresh_all_commands());
 
@@ -386,7 +386,7 @@ fn terminal_snapshot_refresh_pending_loading() {
 
 #[test]
 fn terminal_snapshot_files_details_pending_loading() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     let commands = update(
         &mut state,
         Action::GitResult(GitResult::Refreshed(fixture_dirty_repo())),
@@ -407,7 +407,7 @@ fn terminal_snapshot_files_details_pending_loading() {
 
 #[test]
 fn terminal_snapshot_files_details_scrolled_down() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     let size = TerminalSize {
         width: 80,
         height: 14,
@@ -428,7 +428,7 @@ fn terminal_snapshot_files_details_scrolled_down() {
 
 #[test]
 fn terminal_snapshot_commits_details_diff() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     let commands = update(
         &mut state,
@@ -449,7 +449,7 @@ fn terminal_snapshot_commits_details_diff() {
 
 #[test]
 fn terminal_snapshot_commit_files_subpanel() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     let commands = update(
         &mut state,
@@ -472,7 +472,7 @@ fn terminal_snapshot_commit_files_subpanel() {
 
 #[test]
 fn terminal_snapshot_commit_files_directory_diff() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     let commands = update(
         &mut state,
@@ -497,7 +497,7 @@ fn terminal_snapshot_commit_files_directory_diff() {
 
 #[test]
 fn terminal_snapshot_commit_files_loading() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     let commands = update(
         &mut state,
@@ -523,7 +523,7 @@ fn terminal_snapshot_commit_files_loading() {
 
 #[test]
 fn terminal_snapshot_commit_files_empty() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     let commands = update(
         &mut state,
@@ -556,7 +556,7 @@ fn terminal_snapshot_commit_files_empty() {
 
 #[test]
 fn terminal_snapshot_files_reset_modal() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     update(&mut state, Action::Ui(UiAction::OpenResetMenu));
 
@@ -571,10 +571,10 @@ fn terminal_snapshot_files_reset_modal() {
 
 #[test]
 fn terminal_snapshot_files_reset_modal_nuke_description() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     update(&mut state, Action::Ui(UiAction::OpenResetMenu));
-    state.reset_menu.selected = ResetChoice::Nuke;
+    state.ui.reset_menu.selected = ResetChoice::Nuke;
 
     insta::assert_snapshot!(render_terminal_text(
         &state,
@@ -587,7 +587,7 @@ fn terminal_snapshot_files_reset_modal_nuke_description() {
 
 #[test]
 fn terminal_snapshot_files_discard_confirm_modal() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     update(&mut state, Action::Ui(UiAction::OpenDiscardConfirm));
 
@@ -602,7 +602,7 @@ fn terminal_snapshot_files_discard_confirm_modal() {
 
 #[test]
 fn terminal_snapshot_files_discard_confirm_multiselect_modal() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     update(&mut state, Action::Ui(UiAction::EnterFilesMultiSelect));
     update(&mut state, Action::Ui(UiAction::MoveDown));
@@ -619,7 +619,7 @@ fn terminal_snapshot_files_discard_confirm_multiselect_modal() {
 
 #[test]
 fn terminal_snapshot_branches_create_modal() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     let commands = update(
         &mut state,
@@ -646,7 +646,7 @@ fn terminal_snapshot_branches_create_modal() {
 
 #[test]
 fn terminal_snapshot_branches_delete_modal() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     let commands = update(
         &mut state,
@@ -670,7 +670,7 @@ fn terminal_snapshot_branches_delete_modal() {
 
 #[test]
 fn terminal_snapshot_branches_force_delete_confirm_modal() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     update(
         &mut state,
@@ -693,7 +693,7 @@ fn terminal_snapshot_branches_force_delete_confirm_modal() {
 
 #[test]
 fn terminal_snapshot_branches_rebase_modal() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     let commands = update(
         &mut state,
@@ -718,7 +718,7 @@ fn terminal_snapshot_branches_rebase_modal() {
 
 #[test]
 fn terminal_snapshot_branches_auto_stash_confirm_modal() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     let commands = update(
         &mut state,
@@ -742,7 +742,7 @@ fn terminal_snapshot_branches_auto_stash_confirm_modal() {
 
 #[test]
 fn snapshots_files_multi_select_marks_selected_rows() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     update(&mut state, Action::Ui(UiAction::EnterFilesMultiSelect));
 
@@ -760,7 +760,7 @@ fn snapshots_files_multi_select_marks_selected_rows() {
 
 #[test]
 fn snapshots_files_list_scrolls_to_keep_selection_visible() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_many_files());
     for _ in 0..20 {
         update(&mut state, Action::Ui(UiAction::MoveDown));
@@ -793,7 +793,7 @@ fn snapshots_files_list_scrolls_to_keep_selection_visible() {
 
 #[test]
 fn snapshots_files_list_reversing_up_does_not_jump_to_top_reserve() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     let size = TerminalSize {
         width: 100,
         height: 30,
@@ -825,7 +825,7 @@ fn snapshots_files_list_reversing_up_does_not_jump_to_top_reserve() {
 
 #[test]
 fn snapshots_files_list_reversing_down_does_not_jump_to_bottom_reserve() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     let size = TerminalSize {
         width: 100,
         height: 30,
@@ -866,7 +866,7 @@ fn snapshots_files_list_reversing_down_does_not_jump_to_bottom_reserve() {
 
 #[test]
 fn terminal_snapshot_empty_repo_80x24() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_empty_repo());
 
     insta::assert_snapshot!(render_terminal_text(
@@ -880,7 +880,7 @@ fn terminal_snapshot_empty_repo_80x24() {
 
 #[test]
 fn terminal_snapshot_dirty_repo_100x30() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
 
     insta::assert_snapshot!(render_terminal_text(
@@ -894,7 +894,7 @@ fn terminal_snapshot_dirty_repo_100x30() {
 
 #[test]
 fn terminal_snapshot_many_files_focus_expands_left_panel() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_many_files());
 
     insta::assert_snapshot!(render_terminal_text(
@@ -913,7 +913,7 @@ fn terminal_snapshot_large_repo_fast_status_notice() {
         fixture_file("src/lib.rs", false, false),
         fixture_file("src/main.rs", true, false),
     ];
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_files_refreshed_with_mock_details(
         &mut state,
         FilesSnapshot {
@@ -941,7 +941,7 @@ fn terminal_snapshot_large_repo_fast_status_notice() {
 #[test]
 fn terminal_snapshot_huge_repo_metadata_only_status_notice() {
     let snapshot = fixture_dirty_repo();
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_files_refreshed_with_mock_details(
         &mut state,
         FilesSnapshot {
@@ -972,7 +972,7 @@ fn terminal_snapshot_large_directory_details_limit() {
     snapshot.files = (0..101)
         .map(|index| fixture_file(&format!("src/file-{index:03}.txt"), false, false))
         .collect();
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_files_refreshed_with_mock_details(
         &mut state,
         FilesSnapshot {
@@ -999,7 +999,7 @@ fn terminal_snapshot_large_directory_details_limit() {
 
 #[test]
 fn terminal_snapshot_conflict_repo_120x40() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_conflict());
 
     insta::assert_snapshot!(render_terminal_text(
@@ -1013,7 +1013,7 @@ fn terminal_snapshot_conflict_repo_120x40() {
 
 #[test]
 fn terminal_snapshot_focus_and_keys_follow_actions() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     update(&mut state, Action::Ui(UiAction::FocusNext));
     update(&mut state, Action::Ui(UiAction::FocusNext));
@@ -1053,7 +1053,7 @@ fn terminal_commits_panel_colors_hashes_and_authors() {
     unpushed_commit.author_name = "Alice Baker".to_string();
     snapshot.commits = vec![main_commit, pushed_commit, unpushed_commit];
 
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, snapshot);
     let buffer = render_terminal_buffer(
         &state,
@@ -1092,7 +1092,7 @@ fn terminal_commits_panel_colors_hashes_and_authors() {
 
 #[test]
 fn terminal_snapshot_files_search_updates_screen() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     update(&mut state, Action::Ui(UiAction::StartSearch));
     update(&mut state, Action::Ui(UiAction::InputSearchChar('l')));
@@ -1113,7 +1113,7 @@ fn terminal_snapshot_files_search_updates_screen() {
 
 #[test]
 fn terminal_snapshot_error_is_visible_in_log_panel() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     update(
         &mut state,
@@ -1136,7 +1136,7 @@ fn terminal_snapshot_error_is_visible_in_log_panel() {
 
 #[test]
 fn terminal_snapshot_files_commit_editor_modal() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     update(&mut state, Action::Ui(UiAction::OpenCommitEditor));
     for ch in "feat: add modal".chars() {
@@ -1162,7 +1162,7 @@ fn terminal_snapshot_files_commit_editor_modal() {
 
 #[test]
 fn terminal_commit_editor_cursor_follows_active_body_field() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     update(&mut state, Action::Ui(UiAction::OpenCommitEditor));
     for ch in "feat".chars() {
@@ -1190,7 +1190,7 @@ fn terminal_commit_editor_cursor_follows_active_body_field() {
 
 #[test]
 fn terminal_commit_editor_cursor_wraps_long_body_line() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     update(&mut state, Action::Ui(UiAction::OpenCommitEditor));
     update(&mut state, Action::Ui(UiAction::EditorNextField));
@@ -1212,7 +1212,7 @@ fn terminal_commit_editor_cursor_wraps_long_body_line() {
 
 #[test]
 fn terminal_commit_editor_cursor_follows_subject_field() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     update(&mut state, Action::Ui(UiAction::OpenCommitEditor));
     for ch in "feat".chars() {
@@ -1232,7 +1232,7 @@ fn terminal_commit_editor_cursor_follows_subject_field() {
 
 #[test]
 fn terminal_commit_editor_cursor_wraps_long_subject() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     update(&mut state, Action::Ui(UiAction::OpenCommitEditor));
     for ch in "x".repeat(75).chars() {
@@ -1253,7 +1253,7 @@ fn terminal_commit_editor_cursor_wraps_long_subject() {
 
 #[test]
 fn terminal_snapshot_files_stash_editor_modal() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     update(&mut state, Action::Ui(UiAction::EnterFilesMultiSelect));
     update(&mut state, Action::Ui(UiAction::MoveDown));
@@ -1273,7 +1273,7 @@ fn terminal_snapshot_files_stash_editor_modal() {
 
 #[test]
 fn terminal_stash_editor_cursor_follows_title() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     update(&mut state, Action::Ui(UiAction::OpenStashEditor));
     for ch in "pick".chars() {
@@ -1293,7 +1293,7 @@ fn terminal_stash_editor_cursor_follows_title() {
 
 #[test]
 fn terminal_stash_editor_cursor_wraps_long_title() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     update(&mut state, Action::Ui(UiAction::OpenStashEditor));
     for ch in "x".repeat(75).chars() {
@@ -1314,7 +1314,7 @@ fn terminal_stash_editor_cursor_wraps_long_title() {
 
 #[test]
 fn terminal_snapshot_untracked_directory_marker_renders_as_directory_node() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     let mut snapshot = fixture_empty_repo();
     snapshot.files = vec![fixture_file("libs/ratagit-git/tests/", false, true)];
     snapshot.status_summary = "staged: 0, unstaged: 1".to_string();
@@ -1331,7 +1331,7 @@ fn terminal_snapshot_untracked_directory_marker_renders_as_directory_node() {
 
 #[test]
 fn terminal_buffer_highlights_selected_row_only_in_focused_panel() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
 
     let buffer = render_terminal_buffer(
@@ -1348,7 +1348,7 @@ fn terminal_buffer_highlights_selected_row_only_in_focused_panel() {
 
 #[test]
 fn terminal_buffer_highlights_marked_files_with_batch_style() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     update(&mut state, Action::Ui(UiAction::EnterFilesMultiSelect));
     update(&mut state, Action::Ui(UiAction::MoveDown));
@@ -1375,7 +1375,7 @@ fn terminal_buffer_highlights_marked_files_with_batch_style() {
 
 #[test]
 fn terminal_buffer_highlights_marked_branches_with_batch_style() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     update(
         &mut state,
@@ -1408,7 +1408,7 @@ fn terminal_buffer_highlights_marked_branches_with_batch_style() {
 
 #[test]
 fn terminal_buffer_highlights_marked_commit_files_with_batch_style() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     update(&mut state, Action::Ui(UiAction::FocusNext));
     update(&mut state, Action::Ui(UiAction::FocusNext));
@@ -1438,7 +1438,7 @@ fn terminal_buffer_highlights_marked_commit_files_with_batch_style() {
 
 #[test]
 fn terminal_buffer_moves_selection_highlight_with_focus() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     update(
         &mut state,
@@ -1461,7 +1461,7 @@ fn terminal_buffer_moves_selection_highlight_with_focus() {
 
 #[test]
 fn terminal_buffer_styles_focused_panel_title() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
 
     let buffer = render_terminal_buffer(
@@ -1486,7 +1486,7 @@ fn terminal_buffer_styles_focused_panel_title() {
 
 #[test]
 fn terminal_buffer_uses_rounded_shared_panel_borders() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
 
     let screen = render_terminal_text(
@@ -1505,7 +1505,7 @@ fn terminal_buffer_uses_rounded_shared_panel_borders() {
 
 #[test]
 fn terminal_buffer_focused_shared_panel_uses_complete_border() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     update(
         &mut state,
@@ -1527,7 +1527,7 @@ fn terminal_buffer_focused_shared_panel_uses_complete_border() {
 
 #[test]
 fn terminal_buffer_styles_panel_number_as_badge() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
 
     let buffer = render_terminal_buffer(
@@ -1558,7 +1558,7 @@ fn terminal_buffer_styles_panel_number_as_badge() {
 
 #[test]
 fn terminal_buffer_styles_shortcut_keys_as_badges() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
 
     let buffer = render_terminal_buffer(
@@ -1595,9 +1595,9 @@ fn terminal_buffer_styles_shortcut_keys_as_badges() {
 
 #[test]
 fn terminal_buffer_styles_files_details_diff_from_ansi() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
-    state.details.files_diff = [
+    state.repo.details.files_diff = [
         "### unstaged",
         "\u{1b}[1mdiff --git a/old.bin b/new.bin\u{1b}[m",
         "similarity index 88%",
@@ -1645,7 +1645,7 @@ fn terminal_buffer_styles_files_details_diff_from_ansi() {
 
 #[test]
 fn terminal_buffer_styles_branch_details_log_from_ansi() {
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     let commands = update(
         &mut state,
@@ -1693,7 +1693,7 @@ fn terminal_buffer_styles_modal_titles_by_tone() {
         .add_modifier(Modifier::BOLD);
     let scrim_style = Style::default().fg(MODAL_DIM).bg(MODAL_SCRIM);
 
-    let mut commit_state = AppState::default();
+    let mut commit_state = AppContext::default();
     apply_refreshed_with_mock_details(&mut commit_state, fixture_dirty_repo());
     update(&mut commit_state, Action::Ui(UiAction::OpenCommitEditor));
     let commit_buffer = render_terminal_buffer(
@@ -1733,7 +1733,7 @@ fn terminal_buffer_styles_modal_titles_by_tone() {
     assert!(commit_screen.contains("╭ ✎ Commit Message"));
     assert!(commit_screen.contains("────────────────"));
 
-    let mut reset_state = AppState::default();
+    let mut reset_state = AppContext::default();
     apply_refreshed_with_mock_details(&mut reset_state, fixture_dirty_repo());
     update(&mut reset_state, Action::Ui(UiAction::OpenResetMenu));
     let reset_buffer = render_terminal_buffer(
@@ -1754,7 +1754,7 @@ fn terminal_buffer_styles_modal_titles_by_tone() {
         selected_choice_style
     ));
 
-    let mut discard_state = AppState::default();
+    let mut discard_state = AppContext::default();
     apply_refreshed_with_mock_details(&mut discard_state, fixture_dirty_repo());
     update(&mut discard_state, Action::Ui(UiAction::OpenDiscardConfirm));
     let discard_buffer = render_terminal_buffer(

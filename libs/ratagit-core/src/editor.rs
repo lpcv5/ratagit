@@ -5,15 +5,15 @@ use crate::text_edit::{
 };
 use crate::worktree::{close_discard_confirm, stash_scope_for_current_files_selection};
 use crate::{
-    AppState, Command, CommitEditorIntent, CommitField, CommitHashStatus, CommitInputMode,
+    AppContext, Command, CommitEditorIntent, CommitField, CommitHashStatus, CommitInputMode,
     EditorKind, StashScope, branches, commit_key, push_notice, selected_commit,
 };
 
-pub(crate) fn open_commit_editor(state: &mut AppState) {
-    state.reset_menu.active = false;
+pub(crate) fn open_commit_editor(state: &mut AppContext) {
+    state.ui.reset_menu.active = false;
     close_discard_confirm(state);
     branches::close_popovers(state);
-    state.editor.kind = Some(EditorKind::Commit {
+    state.ui.editor.kind = Some(EditorKind::Commit {
         message: String::new(),
         message_cursor: 0,
         body: String::new(),
@@ -23,19 +23,19 @@ pub(crate) fn open_commit_editor(state: &mut AppState) {
     });
 }
 
-pub(crate) fn open_stash_editor(state: &mut AppState) {
-    state.reset_menu.active = false;
+pub(crate) fn open_stash_editor(state: &mut AppContext) {
+    state.ui.reset_menu.active = false;
     close_discard_confirm(state);
     branches::close_popovers(state);
-    state.editor.kind = Some(EditorKind::Stash {
+    state.ui.editor.kind = Some(EditorKind::Stash {
         title: String::new(),
         title_cursor: 0,
         scope: stash_scope_for_current_files_selection(state),
     });
 }
 
-pub(crate) fn open_commit_reword_editor(state: &mut AppState) {
-    if state.commits.mode == CommitInputMode::MultiSelect {
+pub(crate) fn open_commit_reword_editor(state: &mut AppContext) {
+    if state.ui.commits.mode == CommitInputMode::MultiSelect {
         push_notice(state, "Reword supports one commit at a time");
         return;
     }
@@ -43,7 +43,7 @@ pub(crate) fn open_commit_reword_editor(state: &mut AppState) {
         push_notice(state, "Commit rewrite requires a clean working tree");
         return;
     }
-    let Some(commit) = selected_commit(&state.commits) else {
+    let Some(commit) = selected_commit(&state.repo.commits.items, &state.ui.commits) else {
         push_notice(state, "No commit selected");
         return;
     };
@@ -55,11 +55,11 @@ pub(crate) fn open_commit_reword_editor(state: &mut AppState) {
         push_notice(state, "Commit rewrite only supports unpushed commits");
         return;
     }
-    state.reset_menu.active = false;
+    state.ui.reset_menu.active = false;
     close_discard_confirm(state);
     branches::close_popovers(state);
     let (message, body) = split_commit_message(&commit.message);
-    state.editor.kind = Some(EditorKind::Commit {
+    state.ui.editor.kind = Some(EditorKind::Commit {
         message_cursor: message.len(),
         body_cursor: body.len(),
         message,
@@ -71,8 +71,8 @@ pub(crate) fn open_commit_reword_editor(state: &mut AppState) {
     });
 }
 
-pub(crate) fn input_char(state: &mut AppState, ch: char) {
-    let Some(editor) = state.editor.kind.as_mut() else {
+pub(crate) fn input_char(state: &mut AppContext, ch: char) {
+    let Some(editor) = state.ui.editor.kind.as_mut() else {
         return;
     };
 
@@ -96,8 +96,8 @@ pub(crate) fn input_char(state: &mut AppState, ch: char) {
     }
 }
 
-pub(crate) fn backspace(state: &mut AppState) {
-    let Some(editor) = state.editor.kind.as_mut() else {
+pub(crate) fn backspace(state: &mut AppContext) {
+    let Some(editor) = state.ui.editor.kind.as_mut() else {
         return;
     };
 
@@ -121,8 +121,8 @@ pub(crate) fn backspace(state: &mut AppState) {
     }
 }
 
-pub(crate) fn move_cursor(state: &mut AppState, movement: CursorMove) {
-    let Some(editor) = state.editor.kind.as_mut() else {
+pub(crate) fn move_cursor(state: &mut AppContext, movement: CursorMove) {
+    let Some(editor) = state.ui.editor.kind.as_mut() else {
         return;
     };
 
@@ -146,8 +146,8 @@ pub(crate) fn move_cursor(state: &mut AppState, movement: CursorMove) {
     }
 }
 
-pub(crate) fn switch_field(state: &mut AppState, previous: bool) {
-    let Some(editor) = state.editor.kind.as_mut() else {
+pub(crate) fn switch_field(state: &mut AppContext, previous: bool) {
+    let Some(editor) = state.ui.editor.kind.as_mut() else {
         return;
     };
 
@@ -160,8 +160,8 @@ pub(crate) fn switch_field(state: &mut AppState, previous: bool) {
     }
 }
 
-pub(crate) fn insert_newline(state: &mut AppState) {
-    let Some(editor) = state.editor.kind.as_mut() else {
+pub(crate) fn insert_newline(state: &mut AppContext) {
+    let Some(editor) = state.ui.editor.kind.as_mut() else {
         return;
     };
 
@@ -176,8 +176,8 @@ pub(crate) fn insert_newline(state: &mut AppState) {
     }
 }
 
-pub(crate) fn confirm(state: &mut AppState) -> Vec<Command> {
-    let Some(editor) = state.editor.kind.clone() else {
+pub(crate) fn confirm(state: &mut AppContext) -> Vec<Command> {
+    let Some(editor) = state.ui.editor.kind.clone() else {
         return Vec::new();
     };
 
@@ -194,8 +194,8 @@ pub(crate) fn confirm(state: &mut AppState) -> Vec<Command> {
             }
 
             let commit_message = build_commit_message(&message, &body);
-            state.commits.draft_message = message.trim().to_string();
-            state.editor.kind = None;
+            state.ui.commits.draft_message = message.trim().to_string();
+            state.ui.editor.kind = None;
             match intent {
                 CommitEditorIntent::Create => with_pending(
                     state,
@@ -214,7 +214,7 @@ pub(crate) fn confirm(state: &mut AppState) -> Vec<Command> {
         }
         EditorKind::Stash { title, scope, .. } => match scope {
             StashScope::All => {
-                state.editor.kind = None;
+                state.ui.editor.kind = None;
                 with_pending(state, vec![Command::StashPush { message: title }])
             }
             StashScope::SelectedPaths(paths) => {
@@ -223,7 +223,7 @@ pub(crate) fn confirm(state: &mut AppState) -> Vec<Command> {
                     return Vec::new();
                 }
 
-                state.editor.kind = None;
+                state.ui.editor.kind = None;
                 with_pending(
                     state,
                     vec![Command::StashFiles {

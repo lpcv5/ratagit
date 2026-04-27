@@ -1,4 +1,4 @@
-use ratagit_core::{AppState, PanelFocus};
+use ratagit_core::{AppContext, PanelFocus};
 
 use crate::frame::{RenderedFrame, TerminalSize, normalize_lines, pad_and_truncate};
 use crate::layout::compute_left_panel_heights;
@@ -7,7 +7,7 @@ use crate::panels::{
     render_files_lines, render_log_lines, render_stash_lines, shortcuts_for_state,
 };
 
-pub fn render(state: &AppState, size: TerminalSize) -> RenderedFrame {
+pub fn render(state: &AppContext, size: TerminalSize) -> RenderedFrame {
     let width = size.width.max(1);
     let height = size.height.max(1);
     let mut lines = Vec::with_capacity(height);
@@ -21,7 +21,11 @@ pub fn render(state: &AppState, size: TerminalSize) -> RenderedFrame {
     normalize_lines(lines, TerminalSize { width, height })
 }
 
-fn render_workspace_rows(state: &AppState, total_width: usize, body_height: usize) -> Vec<String> {
+fn render_workspace_rows(
+    state: &AppContext,
+    total_width: usize,
+    body_height: usize,
+) -> Vec<String> {
     let separator = " | ";
     let separator_width = separator.len();
     if total_width <= separator_width {
@@ -35,28 +39,28 @@ fn render_workspace_rows(state: &AppState, total_width: usize, body_height: usiz
     let left_panels = [
         render_panel(
             panel_title(state, PanelFocus::Files),
-            state.focus == PanelFocus::Files,
+            state.ui.focus == PanelFocus::Files,
             left_width,
             left_heights.files,
             render_files_lines(state, left_heights.files.saturating_sub(1)),
         ),
         render_panel(
             panel_title(state, PanelFocus::Branches),
-            state.focus == PanelFocus::Branches,
+            state.ui.focus == PanelFocus::Branches,
             left_width,
             left_heights.branches,
             render_branches_lines(state, left_heights.branches.saturating_sub(1)),
         ),
         render_panel(
             panel_title(state, PanelFocus::Commits),
-            state.focus == PanelFocus::Commits,
+            state.ui.focus == PanelFocus::Commits,
             left_width,
             left_heights.commits,
             render_commits_lines(state, left_heights.commits.saturating_sub(1)),
         ),
         render_panel(
             panel_title(state, PanelFocus::Stash),
-            state.focus == PanelFocus::Stash,
+            state.ui.focus == PanelFocus::Stash,
             left_width,
             left_heights.stash,
             render_stash_lines(state, left_heights.stash.saturating_sub(1)),
@@ -67,14 +71,14 @@ fn render_workspace_rows(state: &AppState, total_width: usize, body_height: usiz
     let right_panels = [
         render_panel(
             panel_title(state, PanelFocus::Details),
-            state.focus == PanelFocus::Details,
+            state.ui.focus == PanelFocus::Details,
             right_width,
             right_heights[0],
             render_details_lines(state, right_heights[0].saturating_sub(1)),
         ),
         render_panel(
             panel_title(state, PanelFocus::Log),
-            state.focus == PanelFocus::Log,
+            state.ui.focus == PanelFocus::Log,
             right_width,
             right_heights[1],
             render_log_lines(state, right_heights[1].saturating_sub(1)),

@@ -5,8 +5,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use ratagit_core::{
-    Action, AppState, BranchDeleteMode, BranchEntry, CommitEntry, FileDiffTarget, FilesSnapshot,
-    GitResult, RepoSnapshot, ResetMode, StashEntry, UiAction, update,
+    Action, AppContext, BranchDeleteMode, BranchEntry, CommitEntry, FileDiffTarget, FilesSnapshot,
+    GitResult, PanelFocus, RepoSnapshot, ResetMode, StashEntry, UiAction, update,
 };
 use ratagit_git::{GitBackend, GitError, MockGitBackend};
 use ratagit_harness::{
@@ -312,6 +312,50 @@ fn harness_status_refresh() {
 }
 
 #[test]
+fn harness_app_context_categorizes_branch_ui_and_repo_state() {
+    let inputs = [
+        UiAction::RefreshAll,
+        UiAction::FocusPanel {
+            panel: PanelFocus::Branches,
+        },
+        UiAction::MoveDown,
+    ];
+    assert_scenario(MockScenario::new(
+        "app_context_categorized_branch_navigation",
+        fixture_dirty_repo(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &["Branches", "feature/mvp"],
+            screen_not_contains: &[],
+            selected_screen_rows: &["feature/mvp"],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["refresh", "branch-log:feature/mvp:50"],
+            git_state_contains: &["current_branch: \"main\"", "name: \"feature/mvp\""],
+        },
+    ));
+
+    let mut runtime = Runtime::new(
+        AppContext::default(),
+        MockGitBackend::new(fixture_dirty_repo()),
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    );
+    for action in inputs {
+        runtime.dispatch_ui(action);
+    }
+
+    let state = runtime.state();
+    assert_eq!(state.ui.focus, PanelFocus::Branches);
+    assert_eq!(state.ui.last_left_focus, PanelFocus::Branches);
+    assert_eq!(state.ui.branches.selected, 1);
+    assert_eq!(state.repo.branches.items[1].name, "feature/mvp");
+    assert_eq!(state.repo.status.current_branch, "main");
+    assert_eq!(runtime.backend().snapshot().current_branch, "main");
+}
+
+#[test]
 fn harness_large_repo_fast_status_shows_notice_without_full_refresh() {
     let mut fixture = fixture_dirty_repo();
     fixture.files = vec![
@@ -319,7 +363,7 @@ fn harness_large_repo_fast_status_shows_notice_without_full_refresh() {
         fixture_file("src/main.rs", true, false),
     ];
     let mut runtime = Runtime::new(
-        AppState::default(),
+        AppContext::default(),
         large_repo_backend(fixture),
         TerminalSize {
             width: 100,
@@ -352,7 +396,7 @@ fn harness_large_repo_fast_status_is_stable_with_tracing_enabled() {
             fixture_file("src/main.rs", true, false),
         ];
         let mut runtime = Runtime::new(
-            AppState::default(),
+            AppContext::default(),
             large_repo_backend(fixture),
             TerminalSize {
                 width: 100,
@@ -379,7 +423,7 @@ fn harness_large_repo_files_tree_expand_uses_lightweight_projection() {
         fixture_file("src/main.rs", true, false),
     ];
     let mut runtime = Runtime::new(
-        AppState::default(),
+        AppContext::default(),
         large_repo_backend(fixture),
         TerminalSize {
             width: 100,
@@ -404,7 +448,7 @@ fn harness_large_repo_files_tree_expand_uses_lightweight_projection() {
 #[test]
 fn harness_huge_repo_status_skips_file_scan_without_blocking_commits() {
     let mut runtime = Runtime::new(
-        AppState::default(),
+        AppContext::default(),
         huge_repo_backend(fixture_dirty_repo()),
         TerminalSize {
             width: 100,
@@ -442,7 +486,7 @@ fn harness_large_directory_details_limits_diff_targets() {
         .map(|index| fixture_file(&format!("src/file-{index:03}.txt"), false, false))
         .collect();
     let mut runtime = Runtime::new(
-        AppState::default(),
+        AppContext::default(),
         large_repo_backend(fixture),
         TerminalSize {
             width: 120,
@@ -475,7 +519,7 @@ fn async_runtime_renders_loading_before_refresh_finishes() {
         refresh_started: started_tx,
         refresh_release: Arc::new(Mutex::new(release_rx)),
     };
-    let mut runtime = AsyncRuntime::new(AppState::default(), move || backend.clone(), size);
+    let mut runtime = AsyncRuntime::new(AppContext::default(), move || backend.clone(), size);
 
     runtime.dispatch_ui(UiAction::RefreshAll);
     started_rx
@@ -484,9 +528,9 @@ fn async_runtime_renders_loading_before_refresh_finishes() {
 
     for _ in 0..100 {
         runtime.tick();
-        if !runtime.state().branches.items.is_empty()
-            && !runtime.state().commits.items.is_empty()
-            && !runtime.state().stash.items.is_empty()
+        if !runtime.state().repo.branches.items.is_empty()
+            && !runtime.state().repo.commits.items.is_empty()
+            && !runtime.state().repo.stash.items.is_empty()
         {
             break;
         }
@@ -499,18 +543,18 @@ fn async_runtime_renders_loading_before_refresh_finishes() {
     assert!(loading_screen.contains("init project"));
     assert!(loading_screen.contains("stash@{0}"));
     assert!(!loading_screen.contains("README.md"));
-    assert_eq!(runtime.state().status.refresh_count, 0);
+    assert_eq!(runtime.state().repo.status.refresh_count, 0);
 
     release_tx.send(()).expect("refresh should be releasable");
     for _ in 0..100 {
         runtime.tick();
-        if runtime.state().status.refresh_count == 1 {
+        if runtime.state().repo.status.refresh_count == 1 {
             break;
         }
         std::thread::sleep(Duration::from_millis(10));
     }
 
-    assert_eq!(runtime.state().status.refresh_count, 1);
+    assert_eq!(runtime.state().repo.status.refresh_count, 1);
     assert!(runtime.render_terminal_text().contains("README.md"));
     assert!(
         inner
@@ -535,13 +579,13 @@ fn async_runtime_drops_blocked_read_result_after_queued_mutation() {
         refresh_started: started_tx,
         refresh_release: Arc::new(Mutex::new(release_rx)),
     };
-    let mut state = AppState::default();
+    let mut state = AppContext::default();
     update(
         &mut state,
         Action::GitResult(GitResult::Refreshed(fixture_dirty_repo())),
     );
     state.work.details_pending = false;
-    let baseline_refresh_count = state.status.refresh_count;
+    let baseline_refresh_count = state.repo.status.refresh_count;
     let mut runtime = AsyncRuntime::new(state, move || backend.clone(), size);
 
     runtime.dispatch_ui(UiAction::RefreshAll);
@@ -556,6 +600,7 @@ fn async_runtime_drops_blocked_read_result_after_queued_mutation() {
         runtime.tick();
         if runtime
             .state()
+            .repo
             .status
             .last_error
             .as_deref()
@@ -568,6 +613,7 @@ fn async_runtime_drops_blocked_read_result_after_queued_mutation() {
     assert!(
         runtime
             .state()
+            .repo
             .status
             .last_error
             .as_deref()
@@ -580,10 +626,14 @@ fn async_runtime_drops_blocked_read_result_after_queued_mutation() {
         std::thread::sleep(Duration::from_millis(10));
     }
 
-    assert_eq!(runtime.state().status.refresh_count, baseline_refresh_count);
+    assert_eq!(
+        runtime.state().repo.status.refresh_count,
+        baseline_refresh_count
+    );
     assert!(
         runtime
             .state()
+            .repo
             .status
             .last_error
             .as_deref()
@@ -645,7 +695,7 @@ fn harness_files_details_follow_cursor_with_combined_diff_sections() {
 #[test]
 fn harness_files_details_reuses_cached_diff_when_selection_repeats() {
     let mut runtime = Runtime::new(
-        AppState::default(),
+        AppContext::default(),
         MockGitBackend::new(fixture_dirty_repo()),
         TerminalSize {
             width: 100,
@@ -678,7 +728,7 @@ fn harness_files_details_reuses_cached_diff_when_selection_repeats() {
             .contains("diff --git a/README.md")
     );
     assert_eq!(
-        runtime.state().details.files_targets,
+        runtime.state().repo.details.files_targets,
         vec!["README.md".to_string()]
     );
 }
@@ -690,7 +740,7 @@ fn harness_details_keeps_previous_content_while_new_diff_is_pending() {
         height: 30,
     };
     let mut runtime = Runtime::new(
-        AppState::default(),
+        AppContext::default(),
         MockGitBackend::new(fixture_dirty_repo()),
         size,
     );
@@ -893,7 +943,7 @@ fn harness_files_commit_editor_reports_terminal_cursor() {
         height: 30,
     };
     let mut runtime = Runtime::new(
-        AppState::default(),
+        AppContext::default(),
         MockGitBackend::new(fixture_dirty_repo()),
         size,
     );
@@ -1559,7 +1609,7 @@ fn harness_commits_details_renders_truncated_commit_diff_notice() {
             .to_string(),
     );
     let mut runtime = Runtime::new(
-        AppState::default(),
+        AppContext::default(),
         MockGitBackend::with_commit_diff_overrides(fixture, overrides),
         TerminalSize {
             width: 100,
@@ -1620,7 +1670,7 @@ fn harness_commit_files_subpanel_keeps_commits_panel_height() {
         height: 30,
     };
     let mut runtime = Runtime::new(
-        AppState::default(),
+        AppContext::default(),
         MockGitBackend::new(clean_many_commit_fixture(30)),
         size,
     );

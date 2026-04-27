@@ -12,7 +12,7 @@ The focused panel is highlighted with a border/title accent. Selectable rows use
 color-only cursor highlighting: the selected row is highlighted only inside the
 focused selectable panel, and inactive panels render their selected row as plain
 text. Left list panels keep deterministic selected row indexes. Right panels are
-read-only views derived from `AppState`. The app does not render a top
+read-only views derived from `AppContext`. The app does not render a top
 branch/focus/status summary.
 Panel titles include numbered focus hints `[1]..[6]`; the terminal UI renders
 the numbers as reverse-video badges.
@@ -22,35 +22,41 @@ Focus model:
 - default focus starts at `Files`
 - `h` / `l` map to `FocusPrev` / `FocusNext` and cycle only left panels
 - `FocusPanel` supports direct focus selection (`1..6` in app input map)
-- `AppState.last_left_focus` tracks the last active left panel for `Details` projection
-- `AppState.details` stores files-detail diff text, target paths, and detail-refresh errors
-- `AppState.details` also stores a bounded files-detail diff cache keyed by the
+- `AppContext` is pure categorized state: `repo` stores Git/backend-derived
+  data, `ui` stores focus/search/selections/scroll/modals/projection caches,
+  and `work` stores pending command/loading state
+- `AppContext.ui.last_left_focus` tracks the last active left panel for `Details` projection
+- `AppContext.repo.details` stores files-detail diff text, target paths, and detail-refresh errors
+- `AppContext.repo.details` also stores a bounded files-detail diff cache keyed by the
   exact target path list
-- `AppState.details` stores commit-detail diff text, selected commit target,
+- `AppContext.repo.details` stores commit-detail diff text, selected commit target,
   detail-refresh errors, and a bounded commit-detail cache keyed by full commit id
 - Details diff/log text is stored as backend output and rendered through a pure
   ANSI-to-span projection; UI rendering does not reparse patch rows into
   metadata/hunk/add/remove roles
-- `AppState.details.scroll_offset` stores the global Details viewport offset
+- `AppContext.ui.details.scroll_offset` stores the global Details viewport offset
   used by `Ctrl+U` / `Ctrl+D`; the action carries terminal-size-derived scroll
   and visible-line counts
-- `AppState.editor` stores active commit/stash editor modal state (type + fields + cursor indexes + scope)
-- `AppState.reset_menu` stores whether the Files reset menu is active and which reset choice is selected
-- `AppState.discard_confirm` stores whether the discard confirmation modal is active and the resolved target paths
-- `AppState.search` stores generic panel-scoped search input, query, matches,
+- `AppContext.ui.editor` stores active commit/stash editor modal state (type + fields + cursor indexes + scope)
+- `AppContext.ui.reset_menu` stores whether the Files reset menu is active and which reset choice is selected
+- `AppContext.ui.discard_confirm` stores whether the discard confirmation modal is active and the resolved target paths
+- `AppContext.ui.search` stores generic panel-scoped search input, query, matches,
   and current match index for searchable left panels and subpanels
-- `AppState.commits` stores commit rows, cursor selection, visual selection anchor, and selected visual range
-- `AppState.commits.files` stores the active Commit Files subpanel state,
-  including selected commit id, changed-file rows, tree projection, and cursor
-  scroll state
-- `AppState.branches` stores local branch rows plus active branch creation,
-  delete menu, rebase menu, and auto-stash confirmation state
-- `AppState.work` stores visible pending refresh/details/operation state and
+- `AppContext.repo.commits.items` stores commit rows while
+  `AppContext.ui.commits` stores cursor selection, visual selection anchor, and
+  selected visual range
+- `AppContext.repo.commits.files.items` stores Commit Files backend rows while
+  `AppContext.ui.commits.files` stores the active subpanel, selected commit id,
+  tree projection, and cursor scroll state
+- `AppContext.repo.branches.items` stores local branch rows while
+  `AppContext.ui.branches` stores active branch creation, delete menu, rebase
+  menu, and auto-stash confirmation state
+- `AppContext.work` stores visible pending refresh/details/operation state and
   the last completed command label
-- `AppState.status` stores Git status performance metadata:
+- `AppContext.repo.status` stores Git status performance metadata:
   `index_entry_count`, `large_repo_mode`, `status_truncated`,
   `status_scan_skipped`, and `untracked_scan_skipped`
-- `AppState.details.files_diff_truncated_from` stores the original target count
+- `AppContext.repo.details.files_diff_truncated_from` stores the original target count
   when Files Details diff output is limited to the first 100 targets
 - left-panel height baseline follows the Files/Branches/Commits/Stash ratio
 - when `Stash` is unfocused it collapses to one content row and freed height is
@@ -74,7 +80,7 @@ Focus model:
   `GitResult` values through a channel; the mock harness can still use the
   synchronous runtime for deterministic scenario tests.
 - Refresh-all fan-outs to independent Files/status, Branches, Commits, and
-  Stash read commands. Each panel applies its own result into `AppState` as soon
+  Stash read commands. Each panel applies its own result into `AppContext` as soon
   as a worker finishes, so slow file status collection does not block the other
   left panels from rendering available data.
 - The async runtime defers new read commands while a mutation is in flight and
@@ -82,14 +88,14 @@ Focus model:
 - Runtimes coalesce redundant queued repository refresh and files-detail diff
   commands after the most recent mutation command.
 - Backend output re-enters `update()` as `GitResult`.
-- UI rendering reads only `AppState`.
+- UI rendering reads only `AppContext`.
 - High-frequency side effects use runtime command debouncing keyed by
   `ratagit_core::debounce_key_for_command`, so rapid navigation can collapse to
   the latest command while keeping state transitions deterministic.
 
 Search interaction:
 
-- `/` activates `AppState.search` for the current Files, Branches, Commits,
+- `/` activates `AppContext.ui.search` for the current Files, Branches, Commits,
   Stash, or Commit Files scope.
 - Search input replaces the bottom shortcuts with `search: <query>` until
   `Enter` confirms or `Esc` cancels.
@@ -114,11 +120,13 @@ Search interaction:
 
 Files panel interaction:
 
-- `AppState.files` stores tree expansion, visible-row selection, visual selection anchor, and batch rows.
+- `AppContext.repo.files.items` stores Git-derived file rows while
+  `AppContext.ui.files` stores tree expansion, visible-row selection, visual
+  selection anchor, and batch rows.
 - File tree rows are derived from `RepoSnapshot.files`; no UI code reads external state.
-- `AppState.files.tree_rows`, `row_descendants`, and `row_index_by_path`
+- `AppContext.ui.files.tree_rows`, `row_descendants`, and `row_index_by_path`
   cache deterministic tree projection data after reducer-managed changes.
-- `AppState.files.tree_index` and `AppState.commits.files.tree_index` share the
+- `AppContext.ui.files.tree_index` and `AppContext.ui.commits.files.tree_index` share the
   same deterministic parent/child tree index. Expanding or collapsing one
   directory rebuilds visible rows from cached children instead of rescanning
   every file path.
@@ -138,7 +146,7 @@ Files panel interaction:
   empty for that refresh and the Log panel renders a deterministic file-scan
   skipped notice. No Files Details diff command is emitted for the empty
   selection.
-- Status output is bounded by backend limits. `AppState.status.status_truncated`
+- Status output is bounded by backend limits. `AppContext.repo.status.status_truncated`
   drives a deterministic Log notice when the result was capped.
 - Real backend status collection prefers Git CLI porcelain v1 `-z` output inside
   `GitBackend` for large-repository speed and falls back to git2 status if the
@@ -147,7 +155,7 @@ Files panel interaction:
 - `space` toggles stage state for the current target or visual-selected batch.
 - `c` opens commit editor modal:
   - commit message + multiline body fields
-  - active field cursor is stored in `AppState` and rendered with the terminal cursor
+  - active field cursor is stored in `AppContext.ui.editor` and rendered with the terminal cursor
   - `Left` / `Right` / `Home` / `End` moves within the active field
   - `Tab` / `Shift+Tab` field switching
   - `Ctrl+J` inserts newline in body
@@ -155,7 +163,7 @@ Files panel interaction:
 - `s` opens stash editor modal:
   - normal files mode -> stash all changes, including untracked files
   - visual multi-select mode -> stash selected target paths only
-  - title cursor is stored in `AppState` and rendered with the terminal cursor
+  - title cursor is stored in `AppContext.ui.editor` and rendered with the terminal cursor
   - `Left` / `Right` / `Home` / `End` moves within the title field
   - `Enter` confirms, `Esc` cancels
 - `D` opens a repository reset modal:
@@ -168,7 +176,7 @@ Files panel interaction:
   - targets are resolved when the modal opens from the current cursor target or visual-selected rows
   - directory rows resolve to descendant files in the current snapshot
   - `Enter` emits `Command::DiscardFiles`, `Esc` cancels
-  - confirmation text and path summary are rendered only from `AppState.discard_confirm`
+  - confirmation text and path summary are rendered only from `AppContext.ui.discard_confirm`
 - `v` enters visual multi-select at the current row; `j` / `k` updates the continuous anchor-to-cursor range; `Esc` exits visual multi-select.
 - `/` switches the bottom keys area into search input until Enter or Esc using
   the generic search model.
@@ -184,28 +192,28 @@ Files panel interaction:
   formatter because plain Git diff does not include untracked contents.
 - Folder or visual multi-select Details diffs are limited to the first 100
   resolved targets in core before the command is emitted. The Details and Log
-  panels render the original total from `AppState.details.files_diff_truncated_from`.
+  panels render the original total from `AppContext.repo.details.files_diff_truncated_from`.
 - Unknown untracked directory markers do not emit a Git diff command when large
   repo mode skipped untracked scanning; Details renders a skip message from
-  `AppState`.
+  `AppContext.repo.details`.
 - stale details-diff results are ignored when their target list and truncation
   metadata no longer match the current Files selection.
 - while editor, reset, or discard modal is active, modal key handling has highest input priority
   over panel navigation mappings.
 - Branches focus maps `space` to checkout, `v` to enter visual multi-select,
   `n` to new branch, `d` to delete, and `r` to rebase.
-- Branch visual multi-select is AppState-owned and follows the same continuous
+- Branch visual multi-select is AppContext-owned and follows the same continuous
   anchor-to-cursor model as Files and Commits; `Esc` exits the mode.
-- Branch creation opens an AppState-owned input modal and emits
+- Branch creation opens an AppContext-owned input modal and emits
   `Command::CreateBranch` with the selected branch as `start_point`.
-- Branch checkout and rebase inspect current AppState file status; when dirty,
+- Branch checkout and rebase inspect current AppContext file status; when dirty,
   they open an auto-stash confirmation modal before emitting commands with
   `auto_stash=true`.
-- Branch deletion opens an AppState-owned select list for local, remote, or both:
+- Branch deletion opens an AppContext-owned select list for local, remote, or both:
   local deletion is blocked in the reducer when the selected branch is current,
   and `GitBackend` also blocks branches checked out in any worktree. The real
   backend first tries `git branch -d`; if Git reports the branch is not fully
-  merged, the reducer stores a force-delete confirmation modal in `AppState`.
+  merged, the reducer stores a force-delete confirmation modal in `AppContext`.
   Confirming emits the same deletion command with `force=true`, which maps local
   deletion to `git branch -D`.
 - Branch rebase options are simple, interactive, and `origin/main`; simple and
@@ -214,7 +222,7 @@ Files panel interaction:
 - Commits focus maps `s` to squash, `f` to fixup, `r` to reword, `d` to delete,
   `space` to detached checkout, `v` to enter visual multi-select, and `Enter`
   to open Commit Files for the selected commit.
-- Commit visual multi-select is AppState-owned and follows the same continuous
+- Commit visual multi-select is AppContext-owned and follows the same continuous
   anchor-to-cursor model as Files visual selection; `Esc` exits the mode.
 - Commit rewrite commands require a clean working tree, reject merge commits in
   this slice, only accept unpushed commits, and are executed only through
@@ -222,13 +230,13 @@ Files panel interaction:
 - Squash/fixup reject root-parent targets in this slice because the replay path
   amends the selected commit into its parent.
 - Commit reword reuses the existing commit editor modal with a reword intent
-  stored in `AppState.editor`; confirming emits `Command::RewordCommit`.
+  stored in `AppContext.ui.editor`; confirming emits `Command::RewordCommit`.
 - Commits search selects matching loaded commits and refreshes the commit diff;
   it does not request additional pages.
 - Detached commit checkout uses `Command::CheckoutCommitDetached`; when the
   working tree is dirty it opens the shared auto-stash confirmation modal before
   dispatching with `auto_stash=true`.
-- Commit Files is an AppState-owned subpanel under Commits:
+- Commit Files is an AppContext-owned subpanel under Commits:
   - opening emits `Command::RefreshCommitFiles` for the selected commit
   - rows reuse the shared Files tree projection/rendering shape but use commit
     changed-file status markers (`A/M/D/R/C/T`) instead of working-tree status
@@ -243,7 +251,7 @@ Files panel interaction:
     pathspec, avoiding large descendant path argument lists
   - stale commit-files and commit-file-diff results are ignored when the user
     has moved to another commit or file
-  - `v` enters AppState-owned visual multi-select for the changed-file tree;
+  - `v` enters AppContext-owned visual multi-select for the changed-file tree;
     `j` / `k` updates the continuous range, and Details uses the selected
     file/folder pathspecs
   - `Esc` exits visual multi-select first; outside multi-select it closes the
@@ -261,8 +269,8 @@ Files panel interaction:
 - Commit Files Details projection renders the selected commit file or folder's
   patch from `GitBackend`; backend output is capped at the same 1 MiB preview
   limit used by automatic commit previews.
-- Files, Branches, and Commits Details projections apply the AppState-owned
-  `scroll_offset`; empty and error rows ignore the offset.
+- Files, Branches, and Commits Details projections apply the
+  `AppContext.ui.details.scroll_offset`; empty and error rows ignore the offset.
 - Pending Details refreshes keep the previous Details content visible until new
   content or an error result arrives; rendering does not replace content with a
   transient loading row.
@@ -270,10 +278,10 @@ Files panel interaction:
   details content refreshes.
 - Details downward scroll clamps `scroll_offset` to the last visible page
   (`content_len - visible_lines`) to avoid hidden overscroll at the bottom.
-- Repeated Files Details selections reuse the AppState-owned diff cache without
+- Repeated Files Details selections reuse the `AppContext.repo.details` diff cache without
   emitting a new Git command; the cache is cleared after snapshot refreshes and
   successful mutating Git operations.
-- Repeated Commit Details selections reuse the AppState-owned diff cache without
+- Repeated Commit Details selections reuse the `AppContext.repo.details` diff cache without
   emitting a new Git command; the cache is cleared after snapshot refreshes and
   successful mutating Git operations.
 - Stash Details projection is a placeholder in this slice and intentionally
@@ -284,10 +292,10 @@ Files panel interaction:
 ## Error Presentation
 
 - Git failures never crash the app.
-- Errors are stored in `AppState.status.last_error`.
+- Errors are stored in `AppContext.repo.status.last_error`.
 - The `Log` panel displays the latest error.
 - The `Log` panel displays pending refresh and Git operation state while work is running.
-- Details refresh progress is reflected in `AppState.work.details_pending` for
+- Details refresh progress is reflected in `AppContext.work.details_pending` for
   command tracking, not as a transient Details panel row.
 - Empty-state placeholders such as `<empty>` / `<none>` are not rendered; empty
   views remain visually blank.
@@ -311,18 +319,19 @@ Files panel interaction:
 - Commit rows use fixed graph/hash/author/message columns; the graph is a `●`
   placeholder until a later topology pass, hash colors represent main/upstream
   reachability, and author initials use deterministic per-author colors.
-- Files and Commits share the same AppState-owned scroll direction/origin helper
+- Files and Commits share the same AppContext-owned scroll direction/origin helper
   so list windows move only after the cursor crosses the three-row top/bottom
   reserve.
-- Commit pagination is AppState-owned: refresh stores the first 100 commits,
+- Commit pagination is AppContext-owned: refresh stores the first 100 commits,
   Commits navigation prefetches the next 100 when the cursor enters the last 20
-  loaded commits, and successful pages append to `AppState.commits.items`.
+  loaded commits, successful pages append to `AppContext.repo.commits.items`,
+  and loading intent stays in `AppContext.work`.
 - Visible cursor markers such as `>` are not rendered; selection is tested
   through buffer styles.
 - Modal overlays use the internal `ratagit-ui` modal system for deterministic
   centering, sizing, borders, inner padding, input blocks, and action footers.
 - Business modal renderers call the shared modal shell with a `ModalSpec`,
-  action rows, and an AppState-derived content renderer; the shell owns the
+  action rows, and an AppContext-derived content renderer; the shell owns the
   title, scrim, content area, footer separator, and action row rendering.
 - Modal overlays render above a deterministic scrim, use rounded borders,
   top-biased placement, a shared footer separator, and width clamping near
@@ -336,7 +345,7 @@ Files panel interaction:
   accent while still rendering explicit warning text.
 - Confirmation modals share the `Confirm` title with the tone icon, center a
   primary question plus secondary consequence text, and render compact
-  AppState-derived details below the message.
+  AppContext-derived details below the message.
 - Choice-menu modals reuse a shared body shape: intro text, choice list,
   description label, and description text. The shared choice list derives its
   viewport from the available choices, sizes the modal shell to fit that
@@ -353,7 +362,7 @@ Files panel interaction:
   - additions (`+`)
   - removals (`-`)
 - Future hunk-level staging should replace Details' raw patch text projection
-  with an AppState-owned structured diff model of files, hunks, and lines; the
+  with an AppContext-owned structured diff model of files, hunks, and lines; the
   UI should render that model rather than deriving selectable hunk state from
   terminal text.
 
@@ -361,7 +370,7 @@ Files panel interaction:
 
 ## Snapshot and Harness Design
 
-- UI panel unit tests assert pure panel projections from `AppState`.
+- UI panel unit tests assert pure panel projections from `AppContext`.
 - Full-screen UI tests render fixed terminal sizes through `render_terminal`
   and `ratatui::TestBackend`.
 - Style-sensitive assertions inspect terminal buffer cells instead of relying on
@@ -374,7 +383,7 @@ Files panel interaction:
 - On failure, harness writes artifacts:
   - compatibility text buffer
   - real terminal screen
-  - AppState dump
+  - AppContext dump
   - git operation trace
   - final mock Git state
   - input sequence

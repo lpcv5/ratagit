@@ -1,11 +1,11 @@
 use crate::{
-    AppState, BranchEntry, CommitEntry, CommitFilesPanelState, FilesSnapshot, RepoSnapshot,
+    AppContext, BranchEntry, CommitEntry, CommitFilesUiState, FilesSnapshot, RepoSnapshot,
     StashEntry, clamp_commit_selection, clamp_file_selection, details,
     initialize_tree_with_initial_expansion, mark_file_items_changed, reconcile_after_items_changed,
     reconcile_commits_after_items_changed,
 };
 
-pub(crate) fn apply_snapshot(state: &mut AppState, snapshot: RepoSnapshot) {
+pub(crate) fn apply_snapshot(state: &mut AppContext, snapshot: RepoSnapshot) {
     apply_files_snapshot(
         state,
         FilesSnapshot {
@@ -24,85 +24,91 @@ pub(crate) fn apply_snapshot(state: &mut AppState, snapshot: RepoSnapshot) {
     apply_branches_snapshot(state, snapshot.branches);
     apply_stashes_snapshot(state, snapshot.stashes);
     details::reset_after_snapshot(state);
-    state.search.clear();
+    state.ui.search.clear();
 }
 
-pub(crate) fn apply_files_snapshot(state: &mut AppState, snapshot: FilesSnapshot) {
-    let was_large_repo_mode = state.status.large_repo_mode;
-    state.status.summary = snapshot.status_summary;
-    state.status.current_branch = snapshot.current_branch;
-    state.status.detached_head = snapshot.detached_head;
-    state.status.index_entry_count = snapshot.index_entry_count;
-    state.status.large_repo_mode = snapshot.large_repo_mode;
-    state.status.status_truncated = snapshot.status_truncated;
-    state.status.status_scan_skipped = snapshot.status_scan_skipped;
-    state.status.untracked_scan_skipped = snapshot.untracked_scan_skipped;
-    state.files.items = snapshot.files;
-    mark_file_items_changed(&mut state.files);
-    initialize_tree_with_initial_expansion(&mut state.files, !snapshot.large_repo_mode);
+pub(crate) fn apply_files_snapshot(state: &mut AppContext, snapshot: FilesSnapshot) {
+    let was_large_repo_mode = state.repo.status.large_repo_mode;
+    state.repo.status.summary = snapshot.status_summary;
+    state.repo.status.current_branch = snapshot.current_branch;
+    state.repo.status.detached_head = snapshot.detached_head;
+    state.repo.status.index_entry_count = snapshot.index_entry_count;
+    state.repo.status.large_repo_mode = snapshot.large_repo_mode;
+    state.repo.status.status_truncated = snapshot.status_truncated;
+    state.repo.status.status_scan_skipped = snapshot.status_scan_skipped;
+    state.repo.status.untracked_scan_skipped = snapshot.untracked_scan_skipped;
+    state.repo.files.items = snapshot.files;
+    mark_file_items_changed(&state.repo.files.items, &mut state.ui.files);
+    initialize_tree_with_initial_expansion(
+        &state.repo.files.items,
+        &mut state.ui.files,
+        !snapshot.large_repo_mode,
+    );
     if snapshot.status_scan_skipped {
-        state.files.expanded_dirs.clear();
-        state.files.lightweight_tree_projection = true;
-        state.files.tree_initialized = true;
-        crate::refresh_tree_projection(&mut state.files);
+        state.ui.files.expanded_dirs.clear();
+        state.ui.files.lightweight_tree_projection = true;
+        state.ui.files.tree_initialized = true;
+        crate::refresh_tree_projection(&state.repo.files.items, &mut state.ui.files);
     } else if snapshot.large_repo_mode && !was_large_repo_mode {
-        state.files.expanded_dirs.clear();
-        state.files.lightweight_tree_projection = true;
-        crate::refresh_tree_projection(&mut state.files);
+        state.ui.files.expanded_dirs.clear();
+        state.ui.files.lightweight_tree_projection = true;
+        crate::refresh_tree_projection(&state.repo.files.items, &mut state.ui.files);
     } else if !snapshot.large_repo_mode && was_large_repo_mode {
-        state.files.lightweight_tree_projection = false;
-        state.files.expanded_dirs = crate::collect_directories(&state.files.items);
-        crate::refresh_tree_projection(&mut state.files);
+        state.ui.files.lightweight_tree_projection = false;
+        state.ui.files.expanded_dirs = crate::collect_directories(&state.repo.files.items);
+        crate::refresh_tree_projection(&state.repo.files.items, &mut state.ui.files);
     }
-    reconcile_after_items_changed(&mut state.files);
-    clamp_file_selection(&mut state.files);
-    state.details.files_diff.clear();
-    state.details.files_error = None;
-    state.details.files_targets = crate::selected_target_paths(&state.files);
-    state.details.files_diff_truncated_from = None;
-    state.details.cached_files_diffs.clear();
+    reconcile_after_items_changed(&state.repo.files.items, &mut state.ui.files);
+    clamp_file_selection(&state.repo.files.items, &mut state.ui.files);
+    state.repo.details.files_diff.clear();
+    state.repo.details.files_error = None;
+    state.repo.details.files_targets =
+        crate::selected_target_paths(&state.repo.files.items, &state.ui.files);
+    state.repo.details.files_diff_truncated_from = None;
+    state.repo.details.cached_files_diffs.clear();
     details::reset_scroll(state);
-    state.search.clear();
+    state.ui.search.clear();
 }
 
-pub(crate) fn apply_commits_snapshot(state: &mut AppState, commits: Vec<CommitEntry>) {
-    state.commits.items = commits;
-    state.commits.files = CommitFilesPanelState::default();
-    state.commits.has_more = state.commits.items.len() >= crate::COMMITS_PAGE_SIZE;
-    state.commits.loading_more = false;
-    state.commits.pending_select_after_load = false;
-    state.commits.pagination_epoch = state.commits.pagination_epoch.wrapping_add(1);
-    reconcile_commits_after_items_changed(&mut state.commits);
-    clamp_commit_selection(&mut state.commits);
-    state.details.commit_diff.clear();
-    state.details.commit_diff_error = None;
-    state.details.commit_diff_target = crate::selected_commit_id(state);
-    state.details.commit_file_diff.clear();
-    state.details.commit_file_diff_error = None;
-    state.details.commit_file_diff_target = None;
-    state.details.cached_commit_diffs.clear();
+pub(crate) fn apply_commits_snapshot(state: &mut AppContext, commits: Vec<CommitEntry>) {
+    state.repo.commits.items = commits;
+    state.ui.commits.files = CommitFilesUiState::default();
+    state.repo.commits.has_more = state.repo.commits.items.len() >= crate::COMMITS_PAGE_SIZE;
+    state.work.commits_loading_more = false;
+    state.work.commits_pending_select_after_load = false;
+    state.repo.commits.pagination_epoch = state.repo.commits.pagination_epoch.wrapping_add(1);
+    reconcile_commits_after_items_changed(&state.repo.commits.items, &mut state.ui.commits);
+    clamp_commit_selection(&state.repo.commits.items, &mut state.ui.commits);
+    state.repo.details.commit_diff.clear();
+    state.repo.details.commit_diff_error = None;
+    state.repo.details.commit_diff_target = crate::selected_commit_id(state);
+    state.repo.details.commit_file_diff.clear();
+    state.repo.details.commit_file_diff_error = None;
+    state.repo.details.commit_file_diff_target = None;
+    state.repo.details.cached_commit_diffs.clear();
     details::reset_scroll(state);
-    state.search.clear();
+    state.ui.search.clear();
 }
 
-pub(crate) fn apply_branches_snapshot(state: &mut AppState, branches: Vec<BranchEntry>) {
-    state.branches.items = branches;
-    state.branches.selected = clamp_index(state.branches.selected, state.branches.items.len());
-    state.branches.scroll_offset = 0;
-    crate::branches::leave_multi_select(&mut state.branches);
-    state.details.branch_log.clear();
-    state.details.branch_log_error = None;
-    state.details.branch_log_target = crate::selected_branch_name(state);
-    state.details.cached_branch_logs.clear();
+pub(crate) fn apply_branches_snapshot(state: &mut AppContext, branches: Vec<BranchEntry>) {
+    state.repo.branches.items = branches;
+    state.ui.branches.selected =
+        clamp_index(state.ui.branches.selected, state.repo.branches.items.len());
+    state.ui.branches.scroll_offset = 0;
+    crate::branches::leave_multi_select(&mut state.ui.branches);
+    state.repo.details.branch_log.clear();
+    state.repo.details.branch_log_error = None;
+    state.repo.details.branch_log_target = crate::selected_branch_name(state);
+    state.repo.details.cached_branch_logs.clear();
     details::reset_scroll(state);
-    state.search.clear();
+    state.ui.search.clear();
 }
 
-pub(crate) fn apply_stashes_snapshot(state: &mut AppState, stashes: Vec<StashEntry>) {
-    state.stash.items = stashes;
-    state.stash.selected = clamp_index(state.stash.selected, state.stash.items.len());
-    state.stash.scroll_offset = 0;
-    state.search.clear();
+pub(crate) fn apply_stashes_snapshot(state: &mut AppContext, stashes: Vec<StashEntry>) {
+    state.repo.stash.items = stashes;
+    state.ui.stash.selected = clamp_index(state.ui.stash.selected, state.repo.stash.items.len());
+    state.ui.stash.scroll_offset = 0;
+    state.ui.search.clear();
 }
 
 fn clamp_index(index: usize, len: usize) -> usize {

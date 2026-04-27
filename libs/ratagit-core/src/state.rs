@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use crate::{CommitFilesPanelState, FilesPanelState};
+use crate::{CommitFilesUiState, FilesUiState};
 
 fn next_choice<T: Copy + PartialEq, const N: usize>(choices: [T; N], selected: T) -> T {
     let index = choices
@@ -262,21 +262,47 @@ pub struct WorkStatusState {
     pub details_pending: bool,
     pub operation_pending: Option<String>,
     pub last_completed_command: Option<String>,
+    pub commits_loading_more: bool,
+    pub commits_pending_select_after_load: bool,
+    pub commit_files_loading: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct CommitsPanelState {
+pub struct FilesRepoState {
+    pub items: Vec<crate::FileEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct CommitFilesRepoState {
+    pub items: Vec<crate::CommitFileEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct CommitsRepoState {
     pub items: Vec<CommitEntry>,
+    pub files: CommitFilesRepoState,
+    pub has_more: bool,
+    pub pagination_epoch: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct BranchesRepoState {
+    pub items: Vec<BranchEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct StashRepoState {
+    pub items: Vec<StashEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct CommitsUiState {
     pub selected: usize,
     pub scroll_offset: usize,
-    pub files: CommitFilesPanelState,
+    pub files: CommitFilesUiState,
     pub selected_rows: BTreeSet<String>,
     pub selection_anchor: Option<String>,
     pub mode: CommitInputMode,
-    pub has_more: bool,
-    pub loading_more: bool,
-    pub pending_select_after_load: bool,
-    pub pagination_epoch: u64,
     pub draft_message: String,
 }
 
@@ -409,8 +435,7 @@ impl EditorState {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct BranchesPanelState {
-    pub items: Vec<BranchEntry>,
+pub struct BranchesUiState {
     pub selected: usize,
     pub scroll_offset: usize,
     pub selected_rows: BTreeSet<String>,
@@ -480,14 +505,13 @@ pub struct AutoStashConfirmState {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct StashPanelState {
-    pub items: Vec<StashEntry>,
+pub struct StashUiState {
     pub selected: usize,
     pub scroll_offset: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct DetailsPanelState {
+pub struct DetailsRepoState {
     pub files_diff: String,
     pub files_targets: Vec<String>,
     pub files_error: Option<String>,
@@ -504,6 +528,10 @@ pub struct DetailsPanelState {
     pub commit_file_diff: String,
     pub commit_file_diff_target: Option<CommitFileDiffTarget>,
     pub commit_file_diff_error: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct DetailsUiState {
     pub scroll_offset: usize,
 }
 
@@ -526,30 +554,18 @@ pub struct CachedCommitDiff {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AppState {
-    pub focus: PanelFocus,
-    pub last_left_focus: PanelFocus,
-    pub search: SearchState,
+pub struct RepoState {
     pub status: StatusPanelState,
-    pub files: FilesPanelState,
-    pub commits: CommitsPanelState,
-    pub branches: BranchesPanelState,
-    pub stash: StashPanelState,
-    pub details: DetailsPanelState,
-    pub editor: EditorState,
-    pub reset_menu: ResetMenuState,
-    pub discard_confirm: DiscardConfirmState,
-    pub work: WorkStatusState,
-    pub notices: Vec<String>,
-    pub last_operation: Option<String>,
+    pub files: FilesRepoState,
+    pub commits: CommitsRepoState,
+    pub branches: BranchesRepoState,
+    pub stash: StashRepoState,
+    pub details: DetailsRepoState,
 }
 
-impl Default for AppState {
+impl Default for RepoState {
     fn default() -> Self {
         Self {
-            focus: PanelFocus::Files,
-            last_left_focus: PanelFocus::Files,
-            search: SearchState::default(),
             status: StatusPanelState {
                 summary: "No data yet".to_string(),
                 current_branch: "unknown".to_string(),
@@ -562,14 +578,62 @@ impl Default for AppState {
                 status_scan_skipped: false,
                 untracked_scan_skipped: false,
             },
-            files: FilesPanelState::default(),
-            commits: CommitsPanelState::default(),
-            branches: BranchesPanelState::default(),
-            stash: StashPanelState::default(),
-            details: DetailsPanelState::default(),
+            files: FilesRepoState::default(),
+            commits: CommitsRepoState::default(),
+            branches: BranchesRepoState::default(),
+            stash: StashRepoState::default(),
+            details: DetailsRepoState::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UiState {
+    pub focus: PanelFocus,
+    pub last_left_focus: PanelFocus,
+    pub search: SearchState,
+    pub files: FilesUiState,
+    pub commits: CommitsUiState,
+    pub branches: BranchesUiState,
+    pub stash: StashUiState,
+    pub details: DetailsUiState,
+    pub editor: EditorState,
+    pub reset_menu: ResetMenuState,
+    pub discard_confirm: DiscardConfirmState,
+}
+
+impl Default for UiState {
+    fn default() -> Self {
+        Self {
+            focus: PanelFocus::Files,
+            last_left_focus: PanelFocus::Files,
+            search: SearchState::default(),
+            files: FilesUiState::default(),
+            commits: CommitsUiState::default(),
+            branches: BranchesUiState::default(),
+            stash: StashUiState::default(),
+            details: DetailsUiState::default(),
             editor: EditorState::default(),
             reset_menu: ResetMenuState::default(),
             discard_confirm: DiscardConfirmState::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppContext {
+    pub repo: RepoState,
+    pub ui: UiState,
+    pub work: WorkStatusState,
+    pub notices: Vec<String>,
+    pub last_operation: Option<String>,
+}
+
+impl Default for AppContext {
+    fn default() -> Self {
+        Self {
+            repo: RepoState::default(),
+            ui: UiState::default(),
             work: WorkStatusState::default(),
             notices: vec!["Ready".to_string()],
             last_operation: None,
@@ -577,12 +641,12 @@ impl Default for AppState {
     }
 }
 
-impl AppState {
+impl AppContext {
     pub fn active_search_scope(&self) -> Option<SearchScope> {
-        match self.focus {
+        match self.ui.focus {
             PanelFocus::Files => Some(SearchScope::Files),
             PanelFocus::Branches => Some(SearchScope::Branches),
-            PanelFocus::Commits if self.commits.files.active => Some(SearchScope::CommitFiles),
+            PanelFocus::Commits if self.ui.commits.files.active => Some(SearchScope::CommitFiles),
             PanelFocus::Commits => Some(SearchScope::Commits),
             PanelFocus::Stash => Some(SearchScope::Stash),
             PanelFocus::Details | PanelFocus::Log => None,
@@ -593,6 +657,28 @@ impl AppState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn app_context_default_groups_repo_ui_and_work_state() {
+        let state = AppContext::default();
+
+        assert_eq!(state.repo.status.summary, "No data yet");
+        assert!(state.repo.files.items.is_empty());
+        assert!(state.repo.commits.items.is_empty());
+        assert!(state.repo.branches.items.is_empty());
+        assert!(state.repo.stash.items.is_empty());
+        assert!(state.repo.details.files_diff.is_empty());
+
+        assert_eq!(state.ui.focus, PanelFocus::Files);
+        assert_eq!(state.ui.last_left_focus, PanelFocus::Files);
+        assert!(!state.ui.search.active);
+        assert_eq!(state.ui.details.scroll_offset, 0);
+
+        assert!(!state.work.refresh_pending);
+        assert!(!state.work.details_pending);
+        assert!(state.work.operation_pending.is_none());
+        assert_eq!(state.notices, vec!["Ready".to_string()]);
+    }
 
     #[test]
     fn bounded_choices_move_to_edges_without_wrapping() {

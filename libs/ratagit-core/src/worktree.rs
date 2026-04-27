@@ -1,12 +1,12 @@
 use crate::actions::with_pending;
 use crate::selectors::{file_staged, selected_targets_are_all_staged};
 use crate::{
-    AppState, Command, FileInputMode, ResetChoice, StashScope, branches, enter_multi_select,
+    AppContext, Command, FileInputMode, ResetChoice, StashScope, branches, enter_multi_select,
     leave_multi_select, push_notice, selected_target_paths, toggle_current_row_selection,
 };
 
-pub(crate) fn toggle_selected_file_stage(state: &mut AppState) -> Vec<Command> {
-    let paths = selected_target_paths(&state.files);
+pub(crate) fn toggle_selected_file_stage(state: &mut AppContext) -> Vec<Command> {
+    let paths = selected_target_paths(&state.repo.files.items, &state.ui.files);
     if paths.is_empty() {
         push_notice(state, "No file selected");
         return Vec::new();
@@ -27,20 +27,20 @@ pub(crate) fn toggle_selected_file_stage(state: &mut AppState) -> Vec<Command> {
     }
 }
 
-pub(crate) fn enter_files_multi_select(state: &mut AppState) {
-    enter_multi_select(&mut state.files);
+pub(crate) fn enter_files_multi_select(state: &mut AppContext) {
+    enter_multi_select(&state.repo.files.items, &mut state.ui.files);
 }
 
-pub(crate) fn exit_files_multi_select(state: &mut AppState) {
-    leave_multi_select(&mut state.files);
+pub(crate) fn exit_files_multi_select(state: &mut AppContext) {
+    leave_multi_select(&state.repo.files.items, &mut state.ui.files);
 }
 
-pub(crate) fn toggle_current_file_selection(state: &mut AppState) {
-    toggle_current_row_selection(&mut state.files);
+pub(crate) fn toggle_current_file_selection(state: &mut AppContext) {
+    toggle_current_row_selection(&state.repo.files.items, &mut state.ui.files);
 }
 
-pub(crate) fn stage_selected_file(state: &mut AppState) -> Vec<Command> {
-    let paths = selected_target_paths(&state.files)
+pub(crate) fn stage_selected_file(state: &mut AppContext) -> Vec<Command> {
+    let paths = selected_target_paths(&state.repo.files.items, &state.ui.files)
         .into_iter()
         .filter(|path| file_staged(state, path) == Some(false))
         .collect::<Vec<_>>();
@@ -52,8 +52,8 @@ pub(crate) fn stage_selected_file(state: &mut AppState) -> Vec<Command> {
     }
 }
 
-pub(crate) fn unstage_selected_file(state: &mut AppState) -> Vec<Command> {
-    let paths = selected_target_paths(&state.files)
+pub(crate) fn unstage_selected_file(state: &mut AppContext) -> Vec<Command> {
+    let paths = selected_target_paths(&state.repo.files.items, &state.ui.files)
         .into_iter()
         .filter(|path| file_staged(state, path) == Some(true))
         .collect::<Vec<_>>();
@@ -65,8 +65,8 @@ pub(crate) fn unstage_selected_file(state: &mut AppState) -> Vec<Command> {
     }
 }
 
-pub(crate) fn stash_selected_files(state: &mut AppState) -> Vec<Command> {
-    let paths = selected_target_paths(&state.files);
+pub(crate) fn stash_selected_files(state: &mut AppContext) -> Vec<Command> {
+    let paths = selected_target_paths(&state.repo.files.items, &state.ui.files);
     if paths.is_empty() {
         push_notice(state, "No file selected");
         Vec::new()
@@ -81,9 +81,9 @@ pub(crate) fn stash_selected_files(state: &mut AppState) -> Vec<Command> {
     }
 }
 
-pub(crate) fn stash_scope_for_current_files_selection(state: &AppState) -> StashScope {
-    if state.files.mode == FileInputMode::MultiSelect {
-        let paths = selected_target_paths(&state.files);
+pub(crate) fn stash_scope_for_current_files_selection(state: &AppContext) -> StashScope {
+    if state.ui.files.mode == FileInputMode::MultiSelect {
+        let paths = selected_target_paths(&state.repo.files.items, &state.ui.files);
         if !paths.is_empty() {
             return StashScope::SelectedPaths(paths);
         }
@@ -91,20 +91,20 @@ pub(crate) fn stash_scope_for_current_files_selection(state: &AppState) -> Stash
     StashScope::All
 }
 
-pub(crate) fn open_reset_menu(state: &mut AppState) {
-    state.editor.kind = None;
+pub(crate) fn open_reset_menu(state: &mut AppContext) {
+    state.ui.editor.kind = None;
     close_discard_confirm(state);
     branches::close_popovers(state);
-    state.reset_menu.active = true;
-    state.reset_menu.selected = ResetChoice::Mixed;
+    state.ui.reset_menu.active = true;
+    state.ui.reset_menu.selected = ResetChoice::Mixed;
 }
 
-pub(crate) fn confirm_reset_menu(state: &mut AppState) -> Vec<Command> {
-    if !state.reset_menu.active {
+pub(crate) fn confirm_reset_menu(state: &mut AppContext) -> Vec<Command> {
+    if !state.ui.reset_menu.active {
         return Vec::new();
     }
-    let choice = state.reset_menu.selected;
-    state.reset_menu.active = false;
+    let choice = state.ui.reset_menu.selected;
+    state.ui.reset_menu.active = false;
     if choice == ResetChoice::Nuke {
         with_pending(state, vec![Command::Nuke])
     } else if let Some(mode) = choice.reset_mode() {
@@ -114,25 +114,25 @@ pub(crate) fn confirm_reset_menu(state: &mut AppState) -> Vec<Command> {
     }
 }
 
-pub(crate) fn open_discard_confirm(state: &mut AppState) {
-    let paths = selected_target_paths(&state.files);
+pub(crate) fn open_discard_confirm(state: &mut AppContext) {
+    let paths = selected_target_paths(&state.repo.files.items, &state.ui.files);
     if paths.is_empty() {
         push_notice(state, "No file selected");
         return;
     }
 
-    state.editor.kind = None;
-    state.reset_menu.active = false;
+    state.ui.editor.kind = None;
+    state.ui.reset_menu.active = false;
     branches::close_popovers(state);
-    state.discard_confirm.active = true;
-    state.discard_confirm.paths = paths;
+    state.ui.discard_confirm.active = true;
+    state.ui.discard_confirm.paths = paths;
 }
 
-pub(crate) fn confirm_discard(state: &mut AppState) -> Vec<Command> {
-    if !state.discard_confirm.active {
+pub(crate) fn confirm_discard(state: &mut AppContext) -> Vec<Command> {
+    if !state.ui.discard_confirm.active {
         return Vec::new();
     }
-    let paths = state.discard_confirm.paths.clone();
+    let paths = state.ui.discard_confirm.paths.clone();
     close_discard_confirm(state);
     if paths.is_empty() {
         push_notice(state, "No file selected");
@@ -142,7 +142,7 @@ pub(crate) fn confirm_discard(state: &mut AppState) -> Vec<Command> {
     }
 }
 
-pub(crate) fn close_discard_confirm(state: &mut AppState) {
-    state.discard_confirm.active = false;
-    state.discard_confirm.paths.clear();
+pub(crate) fn close_discard_confirm(state: &mut AppContext) {
+    state.ui.discard_confirm.active = false;
+    state.ui.discard_confirm.paths.clear();
 }

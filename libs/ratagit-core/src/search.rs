@@ -1,109 +1,114 @@
 use crate::{
-    AppState, BranchInputMode, CommitEntry, CommitInputMode, FileInputMode, SearchScope, branches,
-    commit_file_tree_rows_for_read, commit_key, file_tree_rows_for_read,
+    AppContext, BranchInputMode, CommitEntry, CommitInputMode, FileInputMode, SearchScope,
+    branches, commit_file_tree_rows_for_read, commit_key, file_tree_rows_for_read,
     leave_commit_files_multi_select, leave_commit_multi_select, leave_multi_select,
     select_commit_file_tree_path, select_file_tree_path,
 };
 
-pub(crate) fn start_search(state: &mut AppState) {
+pub(crate) fn start_search(state: &mut AppContext) {
     let Some(scope) = state.active_search_scope() else {
         return;
     };
-    if scope == SearchScope::Files && state.files.mode == FileInputMode::MultiSelect {
-        leave_multi_select(&mut state.files);
+    if scope == SearchScope::Files && state.ui.files.mode == FileInputMode::MultiSelect {
+        leave_multi_select(&state.repo.files.items, &mut state.ui.files);
     }
-    if scope == SearchScope::Branches && state.branches.mode == BranchInputMode::MultiSelect {
-        branches::leave_multi_select(&mut state.branches);
+    if scope == SearchScope::Branches && state.ui.branches.mode == BranchInputMode::MultiSelect {
+        branches::leave_multi_select(&mut state.ui.branches);
     }
-    if scope == SearchScope::Commits && state.commits.mode == CommitInputMode::MultiSelect {
-        leave_commit_multi_select(&mut state.commits);
+    if scope == SearchScope::Commits && state.ui.commits.mode == CommitInputMode::MultiSelect {
+        leave_commit_multi_select(&mut state.ui.commits);
     }
-    if scope == SearchScope::CommitFiles && state.commits.files.mode == FileInputMode::MultiSelect {
-        leave_commit_files_multi_select(&mut state.commits.files);
+    if scope == SearchScope::CommitFiles
+        && state.ui.commits.files.mode == FileInputMode::MultiSelect
+    {
+        leave_commit_files_multi_select(
+            &state.repo.commits.files.items,
+            &mut state.ui.commits.files,
+        );
     }
-    state.search.active = true;
-    state.search.scope = Some(scope);
-    state.search.query.clear();
-    state.search.matches.clear();
-    state.search.current_match = None;
+    state.ui.search.active = true;
+    state.ui.search.scope = Some(scope);
+    state.ui.search.query.clear();
+    state.ui.search.matches.clear();
+    state.ui.search.current_match = None;
 }
 
-pub(crate) fn input_search_char(state: &mut AppState, ch: char) {
+pub(crate) fn input_search_char(state: &mut AppContext, ch: char) {
     if !search_input_is_current(state) {
         return;
     }
-    state.search.query.push(ch);
+    state.ui.search.query.push(ch);
     recompute_search_matches(state);
 }
 
-pub(crate) fn backspace_search(state: &mut AppState) {
+pub(crate) fn backspace_search(state: &mut AppContext) {
     if !search_input_is_current(state) {
         return;
     }
-    state.search.query.pop();
+    state.ui.search.query.pop();
     recompute_search_matches(state);
 }
 
-pub(crate) fn confirm_search(state: &mut AppState) -> bool {
+pub(crate) fn confirm_search(state: &mut AppContext) -> bool {
     if !search_input_is_current(state) {
         return false;
     }
-    state.search.active = false;
+    state.ui.search.active = false;
     recompute_search_matches(state);
-    if state.search.matches.is_empty() {
+    if state.ui.search.matches.is_empty() {
         return false;
     }
-    state.search.current_match = Some(0);
+    state.ui.search.current_match = Some(0);
     select_current_search_match(state)
 }
 
-pub(crate) fn cancel_search(state: &mut AppState) {
-    if state.search.scope == state.active_search_scope()
-        && (state.search.active || !state.search.query.is_empty())
+pub(crate) fn cancel_search(state: &mut AppContext) {
+    if state.ui.search.scope == state.active_search_scope()
+        && (state.ui.search.active || !state.ui.search.query.is_empty())
     {
-        state.search.clear();
+        state.ui.search.clear();
     }
 }
 
-pub(crate) fn jump_search_match(state: &mut AppState, previous: bool) -> bool {
-    if state.search.scope != state.active_search_scope() || state.search.query.is_empty() {
+pub(crate) fn jump_search_match(state: &mut AppContext, previous: bool) -> bool {
+    if state.ui.search.scope != state.active_search_scope() || state.ui.search.query.is_empty() {
         return false;
     }
     recompute_search_matches(state);
-    if state.search.matches.is_empty() {
+    if state.ui.search.matches.is_empty() {
         return false;
     }
-    let len = state.search.matches.len();
-    let next = match (state.search.current_match, previous) {
+    let len = state.ui.search.matches.len();
+    let next = match (state.ui.search.current_match, previous) {
         (Some(index), true) => (index + len - 1) % len,
         (Some(index), false) => (index + 1) % len,
         (None, _) => 0,
     };
-    state.search.current_match = Some(next);
+    state.ui.search.current_match = Some(next);
     select_current_search_match(state)
 }
 
-pub(crate) fn clear_search_if_incompatible(state: &mut AppState) {
-    if state.search.scope.is_some() && state.search.scope != state.active_search_scope() {
-        state.search.clear();
+pub(crate) fn clear_search_if_incompatible(state: &mut AppContext) {
+    if state.ui.search.scope.is_some() && state.ui.search.scope != state.active_search_scope() {
+        state.ui.search.clear();
     }
 }
 
-pub(crate) fn recompute_search_matches(state: &mut AppState) {
-    if state.search.query.is_empty() {
-        state.search.matches.clear();
-        state.search.current_match = None;
+pub(crate) fn recompute_search_matches(state: &mut AppContext) {
+    if state.ui.search.query.is_empty() {
+        state.ui.search.matches.clear();
+        state.ui.search.current_match = None;
         return;
     }
-    let Some(scope) = state.search.scope else {
-        state.search.matches.clear();
-        state.search.current_match = None;
+    let Some(scope) = state.ui.search.scope else {
+        state.ui.search.matches.clear();
+        state.ui.search.current_match = None;
         return;
     };
-    let query = state.search.query.to_lowercase();
-    state.search.matches = match scope {
+    let query = state.ui.search.query.to_lowercase();
+    state.ui.search.matches = match scope {
         SearchScope::Files => {
-            let rows = file_tree_rows_for_read(&state.files);
+            let rows = file_tree_rows_for_read(&state.repo.files.items, &state.ui.files);
             collect_matches(
                 rows.iter(),
                 &query,
@@ -112,25 +117,28 @@ pub(crate) fn recompute_search_matches(state: &mut AppState) {
             )
         }
         SearchScope::Branches => collect_matches(
-            state.branches.items.iter(),
+            state.repo.branches.items.iter(),
             &query,
             |branch| branch.name.clone(),
             |branch| branch.name.clone(),
         ),
         SearchScope::Commits => collect_matches(
-            state.commits.items.iter(),
+            state.repo.commits.items.iter(),
             &query,
             commit_key,
             commit_search_text,
         ),
         SearchScope::Stash => collect_matches(
-            state.stash.items.iter(),
+            state.repo.stash.items.iter(),
             &query,
             |stash| stash.id.clone(),
             |stash| format!("{} {}", stash.id, stash.summary),
         ),
         SearchScope::CommitFiles => {
-            let rows = commit_file_tree_rows_for_read(&state.commits.files);
+            let rows = commit_file_tree_rows_for_read(
+                &state.repo.commits.files.items,
+                &state.ui.commits.files,
+            );
             collect_matches(
                 rows.iter(),
                 &query,
@@ -139,15 +147,16 @@ pub(crate) fn recompute_search_matches(state: &mut AppState) {
             )
         }
     };
-    if state.search.matches.is_empty() {
-        state.search.current_match = None;
+    if state.ui.search.matches.is_empty() {
+        state.ui.search.current_match = None;
     } else {
-        state.search.current_match = Some(
+        state.ui.search.current_match = Some(
             state
+                .ui
                 .search
                 .current_match
                 .unwrap_or(0)
-                .min(state.search.matches.len() - 1),
+                .min(state.ui.search.matches.len() - 1),
         );
     }
 }
@@ -164,25 +173,28 @@ fn collect_matches<'a, T: 'a>(
         .collect()
 }
 
-fn search_input_is_current(state: &AppState) -> bool {
-    state.search.active && state.search.scope == state.active_search_scope()
+fn search_input_is_current(state: &AppContext) -> bool {
+    state.ui.search.active && state.ui.search.scope == state.active_search_scope()
 }
 
-fn select_current_search_match(state: &mut AppState) -> bool {
-    let Some(scope) = state.search.scope else {
+fn select_current_search_match(state: &mut AppContext) -> bool {
+    let Some(scope) = state.ui.search.scope else {
         return false;
     };
-    let Some(index) = state.search.current_match else {
+    let Some(index) = state.ui.search.current_match else {
         return false;
     };
-    let Some(key) = state.search.matches.get(index).cloned() else {
+    let Some(key) = state.ui.search.matches.get(index).cloned() else {
         return false;
     };
     match scope {
-        SearchScope::Files => select_file_tree_path(&mut state.files, &key),
+        SearchScope::Files => {
+            select_file_tree_path(&state.repo.files.items, &mut state.ui.files, &key)
+        }
         SearchScope::Branches => select_index_by_key(
-            &mut state.branches.selected,
+            &mut state.ui.branches.selected,
             state
+                .repo
                 .branches
                 .items
                 .iter()
@@ -190,16 +202,20 @@ fn select_current_search_match(state: &mut AppState) -> bool {
             &key,
         ),
         SearchScope::Commits => select_index_by_key(
-            &mut state.commits.selected,
-            state.commits.items.iter().map(commit_key),
+            &mut state.ui.commits.selected,
+            state.repo.commits.items.iter().map(commit_key),
             &key,
         ),
         SearchScope::Stash => select_index_by_key(
-            &mut state.stash.selected,
-            state.stash.items.iter().map(|stash| stash.id.clone()),
+            &mut state.ui.stash.selected,
+            state.repo.stash.items.iter().map(|stash| stash.id.clone()),
             &key,
         ),
-        SearchScope::CommitFiles => select_commit_file_tree_path(&mut state.commits.files, &key),
+        SearchScope::CommitFiles => select_commit_file_tree_path(
+            &state.repo.commits.files.items,
+            &mut state.ui.commits.files,
+            &key,
+        ),
     }
 }
 

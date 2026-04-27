@@ -1,11 +1,11 @@
-use ratagit_core::AppState;
+use ratagit_core::AppContext;
 use ratatui::Frame;
 use ratatui::layout::Rect;
 
 use crate::modal::{ConfirmBody, ModalSpec, ModalTone, render_confirm_body, render_modal};
 
-pub(crate) fn render_discard_modal(frame: &mut Frame<'_>, state: &AppState, area: Rect) {
-    if !state.discard_confirm.active {
+pub(crate) fn render_discard_modal(frame: &mut Frame<'_>, state: &AppContext, area: Rect) {
+    if !state.ui.discard_confirm.active {
         return;
     }
 
@@ -21,7 +21,7 @@ pub(crate) fn render_discard_modal(frame: &mut Frame<'_>, state: &AppState, area
                 ModalTone::Danger,
                 ConfirmBody::new("Discard selected file changes?")
                     .secondary("This action cannot be undone.")
-                    .details(format_discard_details(&state.discard_confirm.paths)),
+                    .details(format_discard_details(&state.ui.discard_confirm.paths)),
             );
         },
     );

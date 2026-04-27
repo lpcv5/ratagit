@@ -1,41 +1,41 @@
 use crate::{
-    AppState, Command, GitResult, PanelFocus, RefreshTarget, commit_workflow, details, operations,
-    push_notice, snapshot,
+    AppContext, Command, GitResult, PanelFocus, RefreshTarget, commit_workflow, details,
+    operations, push_notice, snapshot,
 };
 
-pub(crate) fn update_git_result(state: &mut AppState, result: GitResult) -> Vec<Command> {
+pub(crate) fn update_git_result(state: &mut AppContext, result: GitResult) -> Vec<Command> {
     match result {
         GitResult::Refreshed(repo_snapshot) => {
             state.work.last_completed_command = Some("refresh".to_string());
             state.work.pending_refreshes.clear();
             state.work.refresh_pending = false;
             snapshot::apply_snapshot(state, repo_snapshot);
-            state.status.refresh_count = state.status.refresh_count.saturating_add(1);
-            state.status.last_error = None;
+            state.repo.status.refresh_count = state.repo.status.refresh_count.saturating_add(1);
+            state.repo.status.last_error = None;
             details::refresh_for_focus(state)
         }
         GitResult::FilesRefreshed(files_snapshot) => {
             snapshot::apply_files_snapshot(state, files_snapshot);
             finish_refresh_target(state, RefreshTarget::Files);
-            state.status.last_error = None;
+            state.repo.status.last_error = None;
             refresh_details_if_focus(state, PanelFocus::Files)
         }
         GitResult::BranchesRefreshed(branches) => {
             snapshot::apply_branches_snapshot(state, branches);
             finish_refresh_target(state, RefreshTarget::Branches);
-            state.status.last_error = None;
+            state.repo.status.last_error = None;
             refresh_details_if_focus(state, PanelFocus::Branches)
         }
         GitResult::CommitsRefreshed(commits) => {
             snapshot::apply_commits_snapshot(state, commits);
             finish_refresh_target(state, RefreshTarget::Commits);
-            state.status.last_error = None;
+            state.repo.status.last_error = None;
             refresh_details_if_focus(state, PanelFocus::Commits)
         }
         GitResult::StashesRefreshed(stashes) => {
             snapshot::apply_stashes_snapshot(state, stashes);
             finish_refresh_target(state, RefreshTarget::Stash);
-            state.status.last_error = None;
+            state.repo.status.last_error = None;
             refresh_details_if_focus(state, PanelFocus::Stash)
         }
         GitResult::CommitsPage {
@@ -69,7 +69,7 @@ pub(crate) fn update_git_result(state: &mut AppState, result: GitResult) -> Vec<
                 state.work.refresh_pending = false;
                 state.work.last_completed_command = Some("refresh".to_string());
             }
-            state.status.last_error = Some(format!("Failed to refresh: {error}"));
+            state.repo.status.last_error = Some(format!("Failed to refresh: {error}"));
             push_notice(state, &format!("Failed to refresh: {error}"));
             Vec::new()
         }
@@ -146,18 +146,18 @@ pub(crate) fn update_git_result(state: &mut AppState, result: GitResult) -> Vec<
     }
 }
 
-fn finish_refresh_target(state: &mut AppState, target: RefreshTarget) {
+fn finish_refresh_target(state: &mut AppContext, target: RefreshTarget) {
     state.work.pending_refreshes.remove(&target);
     state.work.refresh_pending = !state.work.pending_refreshes.is_empty();
     state.work.last_completed_command = Some(refresh_target_command_label(target).to_string());
     if !state.work.refresh_pending {
         state.work.last_completed_command = Some("refresh".to_string());
-        state.status.refresh_count = state.status.refresh_count.saturating_add(1);
+        state.repo.status.refresh_count = state.repo.status.refresh_count.saturating_add(1);
     }
 }
 
-fn refresh_details_if_focus(state: &mut AppState, panel: PanelFocus) -> Vec<Command> {
-    if state.focus == panel {
+fn refresh_details_if_focus(state: &mut AppContext, panel: PanelFocus) -> Vec<Command> {
+    if state.ui.focus == panel {
         details::refresh_for_focus(state)
     } else {
         Vec::new()

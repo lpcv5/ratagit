@@ -5,7 +5,7 @@ use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use ratagit_core::{Action, AppState, Command, GitResult, UiAction, update};
+use ratagit_core::{Action, AppContext, Command, GitResult, UiAction, update};
 use ratagit_git::{GitBackend, execute_command};
 use ratagit_ui::{
     RenderedFrame, TerminalBuffer, TerminalSize, render, render_terminal_buffer,
@@ -18,7 +18,7 @@ pub const DEFAULT_READ_WORKER_COUNT: usize = 4;
 
 #[derive(Debug)]
 pub struct AsyncRuntime<B: GitBackend + Send + 'static> {
-    state: AppState,
+    state: AppContext,
     read_command_txs: Vec<Sender<WorkerMessage>>,
     write_command_tx: Sender<WorkerMessage>,
     result_rx: Receiver<WorkerResult>,
@@ -72,7 +72,7 @@ impl WorkerKind {
 }
 
 impl<B: GitBackend + Send + 'static> AsyncRuntime<B> {
-    pub fn new<F>(state: AppState, backend_factory: F, terminal_size: TerminalSize) -> Self
+    pub fn new<F>(state: AppContext, backend_factory: F, terminal_size: TerminalSize) -> Self
     where
         F: Fn() -> B + Send + Sync + 'static,
     {
@@ -117,7 +117,7 @@ impl<B: GitBackend + Send + 'static> AsyncRuntime<B> {
         self
     }
 
-    pub fn state(&self) -> &AppState {
+    pub fn state(&self) -> &AppContext {
         &self.state
     }
 

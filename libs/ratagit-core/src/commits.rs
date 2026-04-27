@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use crate::scroll::{move_selected_index, move_selected_index_with_scroll_offset};
-use crate::{CommitEntry, CommitInputMode, CommitsPanelState};
+use crate::{CommitEntry, CommitInputMode, CommitsUiState};
 
 pub fn commit_key(entry: &CommitEntry) -> String {
     if entry.full_id.is_empty() {
@@ -11,70 +11,69 @@ pub fn commit_key(entry: &CommitEntry) -> String {
     }
 }
 
-pub fn selected_commit(state: &CommitsPanelState) -> Option<CommitEntry> {
-    state.items.get(state.selected).cloned()
+pub fn selected_commit(items: &[CommitEntry], state: &CommitsUiState) -> Option<CommitEntry> {
+    items.get(state.selected).cloned()
 }
 
-pub fn selected_commit_ids(state: &CommitsPanelState) -> Vec<String> {
+pub fn selected_commit_ids(items: &[CommitEntry], state: &CommitsUiState) -> Vec<String> {
     if state.mode == CommitInputMode::MultiSelect && !state.selected_rows.is_empty() {
-        return state
-            .items
+        return items
             .iter()
             .filter(|entry| state.selected_rows.contains(&commit_key(entry)))
             .map(commit_key)
             .collect();
     }
-    selected_commit(state)
+    selected_commit(items, state)
         .map(|entry| vec![commit_key(&entry)])
         .unwrap_or_default()
 }
 
-pub fn selected_commits(state: &CommitsPanelState) -> Vec<CommitEntry> {
+pub fn selected_commits(items: &[CommitEntry], state: &CommitsUiState) -> Vec<CommitEntry> {
     if state.mode == CommitInputMode::MultiSelect && !state.selected_rows.is_empty() {
-        return state
-            .items
+        return items
             .iter()
             .filter(|entry| state.selected_rows.contains(&commit_key(entry)))
             .cloned()
             .collect();
     }
-    selected_commit(state).into_iter().collect()
+    selected_commit(items, state).into_iter().collect()
 }
 
-pub fn enter_multi_select(state: &mut CommitsPanelState) {
+pub fn enter_multi_select(items: &[CommitEntry], state: &mut CommitsUiState) {
     state.mode = CommitInputMode::MultiSelect;
-    state.selection_anchor = selected_commit(state).map(|entry| commit_key(&entry));
-    refresh_multi_select_range(state);
+    state.selection_anchor = selected_commit(items, state).map(|entry| commit_key(&entry));
+    refresh_multi_select_range(items, state);
 }
 
-pub fn leave_multi_select(state: &mut CommitsPanelState) {
+pub fn leave_multi_select(state: &mut CommitsUiState) {
     state.mode = CommitInputMode::Normal;
     state.selection_anchor = None;
     state.selected_rows.clear();
 }
 
-pub fn toggle_multi_select(state: &mut CommitsPanelState) {
+pub fn toggle_multi_select(items: &[CommitEntry], state: &mut CommitsUiState) {
     if state.mode == CommitInputMode::MultiSelect {
         leave_multi_select(state);
     } else {
-        enter_multi_select(state);
+        enter_multi_select(items, state);
     }
 }
 
-pub fn move_selected(state: &mut CommitsPanelState, move_up: bool) {
-    let len = state.items.len();
+pub fn move_selected(items: &[CommitEntry], state: &mut CommitsUiState, move_up: bool) {
+    let len = items.len();
     move_selected_index(&mut state.selected, len, move_up);
     if state.mode == CommitInputMode::MultiSelect {
-        refresh_multi_select_range(state);
+        refresh_multi_select_range(items, state);
     }
 }
 
 pub fn move_selected_in_viewport(
-    state: &mut CommitsPanelState,
+    items: &[CommitEntry],
+    state: &mut CommitsUiState,
     move_up: bool,
     visible_lines: usize,
 ) {
-    let len = state.items.len();
+    let len = items.len();
     move_selected_index_with_scroll_offset(
         &mut state.selected,
         &mut state.scroll_offset,
@@ -83,73 +82,69 @@ pub fn move_selected_in_viewport(
         visible_lines,
     );
     if state.mode == CommitInputMode::MultiSelect {
-        refresh_multi_select_range(state);
+        refresh_multi_select_range(items, state);
     }
 }
 
-pub fn reconcile_after_items_changed(state: &mut CommitsPanelState) {
-    let valid_rows = state.items.iter().map(commit_key).collect::<BTreeSet<_>>();
+pub fn reconcile_after_items_changed(items: &[CommitEntry], state: &mut CommitsUiState) {
+    let valid_rows = items.iter().map(commit_key).collect::<BTreeSet<_>>();
     state.selected_rows.retain(|key| valid_rows.contains(key));
-    clamp_selected(state);
+    clamp_selected(items, state);
     if state.mode == CommitInputMode::MultiSelect {
-        ensure_valid_selection_anchor(state);
-        refresh_multi_select_range(state);
+        ensure_valid_selection_anchor(items, state);
+        refresh_multi_select_range(items, state);
     }
 }
 
-pub fn reconcile_after_items_appended(state: &mut CommitsPanelState) {
+pub fn reconcile_after_items_appended(items: &[CommitEntry], state: &mut CommitsUiState) {
     let scroll_offset = state.scroll_offset;
-    reconcile_after_items_changed(state);
-    if !state.items.is_empty() {
-        state.scroll_offset = scroll_offset.min(state.items.len() - 1);
+    reconcile_after_items_changed(items, state);
+    if !items.is_empty() {
+        state.scroll_offset = scroll_offset.min(items.len() - 1);
     }
 }
 
-pub fn clamp_selected(state: &mut CommitsPanelState) {
-    state.selected = if state.items.is_empty() {
+pub fn clamp_selected(items: &[CommitEntry], state: &mut CommitsUiState) {
+    state.selected = if items.is_empty() {
         0
     } else {
-        state.selected.min(state.items.len() - 1)
+        state.selected.min(items.len() - 1)
     };
     state.scroll_offset = 0;
 }
 
-pub fn is_selected_for_batch(state: &CommitsPanelState, entry: &CommitEntry) -> bool {
+pub fn is_selected_for_batch(state: &CommitsUiState, entry: &CommitEntry) -> bool {
     state.mode == CommitInputMode::MultiSelect && state.selected_rows.contains(&commit_key(entry))
 }
 
-fn ensure_valid_selection_anchor(state: &mut CommitsPanelState) {
+fn ensure_valid_selection_anchor(items: &[CommitEntry], state: &mut CommitsUiState) {
     let anchor_valid = state
         .selection_anchor
         .as_ref()
-        .is_some_and(|anchor| state.items.iter().any(|entry| commit_key(entry) == *anchor));
+        .is_some_and(|anchor| items.iter().any(|entry| commit_key(entry) == *anchor));
     if !anchor_valid {
-        state.selection_anchor = selected_commit(state).map(|entry| commit_key(&entry));
+        state.selection_anchor = selected_commit(items, state).map(|entry| commit_key(&entry));
     }
 }
 
-fn refresh_multi_select_range(state: &mut CommitsPanelState) {
+fn refresh_multi_select_range(items: &[CommitEntry], state: &mut CommitsUiState) {
     state.selected_rows.clear();
     let Some(anchor) = state.selection_anchor.clone() else {
         return;
     };
-    let Some(anchor_index) = state
-        .items
-        .iter()
-        .position(|entry| commit_key(entry) == anchor)
-    else {
+    let Some(anchor_index) = items.iter().position(|entry| commit_key(entry) == anchor) else {
         return;
     };
-    if state.items.is_empty() {
+    if items.is_empty() {
         return;
     }
-    let selected = state.selected.min(state.items.len() - 1);
+    let selected = state.selected.min(items.len() - 1);
     let (start, end) = if anchor_index <= selected {
         (anchor_index, selected)
     } else {
         (selected, anchor_index)
     };
-    for entry in &state.items[start..=end] {
+    for entry in &items[start..=end] {
         state.selected_rows.insert(commit_key(entry));
     }
 }

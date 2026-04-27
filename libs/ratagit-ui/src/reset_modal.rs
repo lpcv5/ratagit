@@ -1,4 +1,4 @@
-use ratagit_core::{AppState, ResetChoice};
+use ratagit_core::{AppContext, ResetChoice};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Style;
@@ -9,8 +9,8 @@ use crate::modal::{
 };
 use crate::theme::{modal_danger_style, modal_muted_style};
 
-pub(crate) fn render_reset_modal(frame: &mut Frame<'_>, state: &AppState, area: Rect) {
-    if !state.reset_menu.active {
+pub(crate) fn render_reset_modal(frame: &mut Frame<'_>, state: &AppContext, area: Rect) {
+    if !state.ui.reset_menu.active {
         return;
     }
 
@@ -37,9 +37,9 @@ pub(crate) fn render_reset_modal(frame: &mut Frame<'_>, state: &AppState, area: 
                     intro: "Choose reset scope for the whole repo.".to_string(),
                     list_title: "Mode",
                     choices: &choices,
-                    selected: state.reset_menu.selected,
+                    selected: state.ui.reset_menu.selected,
                     list_height: 5,
-                    description: reset_choice_description(state.reset_menu.selected).to_string(),
+                    description: reset_choice_description(state.ui.reset_menu.selected).to_string(),
                 },
             );
         },

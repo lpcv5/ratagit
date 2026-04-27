@@ -7,7 +7,7 @@ mod tests {
     const TEST_DETAILS_VISIBLE_LINES: usize = 18;
     const TEST_LEFT_PANEL_VISIBLE_LINES: usize = 8;
 
-    fn map_key(state: &AppState, code: KeyCode) -> Option<UiAction> {
+    fn map_key(state: &AppContext, code: KeyCode) -> Option<UiAction> {
         ui_action_for_key(
             state,
             code,
@@ -18,9 +18,9 @@ mod tests {
         )
     }
 
-    fn active_commit_editor_state() -> AppState {
-        let mut state = AppState::default();
-        state.editor.kind = Some(ratagit_core::EditorKind::Commit {
+    fn active_commit_editor_state() -> AppContext {
+        let mut state = AppContext::default();
+        state.ui.editor.kind = Some(ratagit_core::EditorKind::Commit {
             message: String::new(),
             message_cursor: 0,
             body: String::new(),
@@ -31,47 +31,47 @@ mod tests {
         state
     }
 
-    fn active_reset_menu_state() -> AppState {
-        let mut state = AppState::default();
-        state.reset_menu.active = true;
+    fn active_reset_menu_state() -> AppContext {
+        let mut state = AppContext::default();
+        state.ui.reset_menu.active = true;
         state
     }
 
-    fn active_discard_confirm_state() -> AppState {
-        let mut state = AppState::default();
-        state.discard_confirm.active = true;
-        state.discard_confirm.paths = vec!["a.txt".to_string()];
+    fn active_discard_confirm_state() -> AppContext {
+        let mut state = AppContext::default();
+        state.ui.discard_confirm.active = true;
+        state.ui.discard_confirm.paths = vec!["a.txt".to_string()];
         state
     }
 
-    fn active_branch_create_state() -> AppState {
-        let mut state = AppState::default();
-        state.branches.create.active = true;
+    fn active_branch_create_state() -> AppContext {
+        let mut state = AppContext::default();
+        state.ui.branches.create.active = true;
         state
     }
 
-    fn active_branch_delete_menu_state() -> AppState {
-        let mut state = AppState::default();
-        state.branches.delete_menu.active = true;
+    fn active_branch_delete_menu_state() -> AppContext {
+        let mut state = AppContext::default();
+        state.ui.branches.delete_menu.active = true;
         state
     }
 
-    fn active_branch_force_delete_state() -> AppState {
-        let mut state = AppState::default();
-        state.branches.force_delete_confirm.active = true;
+    fn active_branch_force_delete_state() -> AppContext {
+        let mut state = AppContext::default();
+        state.ui.branches.force_delete_confirm.active = true;
         state
     }
 
-    fn active_branch_rebase_menu_state() -> AppState {
-        let mut state = AppState::default();
-        state.branches.rebase_menu.active = true;
+    fn active_branch_rebase_menu_state() -> AppContext {
+        let mut state = AppContext::default();
+        state.ui.branches.rebase_menu.active = true;
         state
     }
 
-    fn active_auto_stash_confirm_state() -> AppState {
-        let mut state = AppState::default();
-        state.branches.auto_stash_confirm.active = true;
-        state.branches.auto_stash_confirm.operation =
+    fn active_auto_stash_confirm_state() -> AppContext {
+        let mut state = AppContext::default();
+        state.ui.branches.auto_stash_confirm.active = true;
+        state.ui.branches.auto_stash_confirm.operation =
             Some(ratagit_core::AutoStashOperation::Rebase {
                 target: "main".to_string(),
                 interactive: false,
@@ -81,7 +81,7 @@ mod tests {
 
     #[test]
     fn panel_navigation_uses_h_and_l_not_tab() {
-        let state = AppState::default();
+        let state = AppContext::default();
         assert_eq!(
             map_key(&state, KeyCode::Char('l')),
             Some(UiAction::FocusNext)
@@ -96,9 +96,9 @@ mod tests {
 
     #[test]
     fn search_input_maps_text_until_confirm_or_escape() {
-        let mut state = AppState::default();
-        state.search.active = true;
-        state.search.scope = state.active_search_scope();
+        let mut state = AppContext::default();
+        state.ui.search.active = true;
+        state.ui.search.scope = state.active_search_scope();
         assert_eq!(
             map_key(&state, KeyCode::Char('r')),
             Some(UiAction::InputSearchChar('r'))
@@ -116,11 +116,11 @@ mod tests {
 
     #[test]
     fn confirmed_search_query_maps_repeat_navigation_keys() {
-        let mut state = AppState::default();
-        state.search.active = false;
-        state.search.scope = state.active_search_scope();
-        state.search.query = "lib".to_string();
-        state.search.current_match = Some(0);
+        let mut state = AppContext::default();
+        state.ui.search.active = false;
+        state.ui.search.scope = state.active_search_scope();
+        state.ui.search.query = "lib".to_string();
+        state.ui.search.current_match = Some(0);
 
         assert_eq!(
             map_key(&state, KeyCode::Char('n')),
@@ -136,7 +136,7 @@ mod tests {
 
     #[test]
     fn files_panel_git_keys_map_to_file_actions() {
-        let state = AppState::default();
+        let state = AppContext::default();
         assert_eq!(
             map_key(&state, KeyCode::Char(' ')),
             Some(UiAction::ToggleSelectedFileStage)
@@ -169,8 +169,8 @@ mod tests {
 
     #[test]
     fn files_multiselect_uses_escape_to_exit_and_ignores_v() {
-        let mut state = AppState::default();
-        state.files.mode = ratagit_core::FileInputMode::MultiSelect;
+        let mut state = AppContext::default();
+        state.ui.files.mode = ratagit_core::FileInputMode::MultiSelect;
 
         assert_eq!(
             map_key(&state, KeyCode::Esc),
@@ -181,11 +181,9 @@ mod tests {
 
     #[test]
     fn focused_panel_git_keys_map_to_panel_actions() {
-        let mut state = AppState {
-            focus: PanelFocus::Branches,
-            last_left_focus: PanelFocus::Branches,
-            ..AppState::default()
-        };
+        let mut state = AppContext::default();
+        state.ui.focus = PanelFocus::Branches;
+        state.ui.last_left_focus = PanelFocus::Branches;
         assert_eq!(
             map_key(&state, KeyCode::Char('n')),
             Some(UiAction::OpenBranchCreateInput)
@@ -207,7 +205,7 @@ mod tests {
             Some(UiAction::EnterBranchesMultiSelect)
         );
 
-        state.focus = PanelFocus::Commits;
+        state.ui.focus = PanelFocus::Commits;
         assert_eq!(
             map_key(&state, KeyCode::Char('s')),
             Some(UiAction::SquashSelectedCommits)
@@ -240,7 +238,7 @@ mod tests {
             map_key(&state, KeyCode::Enter),
             Some(UiAction::OpenCommitFilesPanel)
         );
-        state.commits.files.active = true;
+        state.ui.commits.files.active = true;
         assert_eq!(
             map_key(&state, KeyCode::Esc),
             Some(UiAction::CloseCommitFilesPanel)
@@ -249,32 +247,32 @@ mod tests {
             map_key(&state, KeyCode::Char('v')),
             Some(UiAction::EnterCommitFilesMultiSelect)
         );
-        state.search.active = true;
-        state.search.scope = state.active_search_scope();
-        state.search.query = "lib".to_string();
+        state.ui.search.active = true;
+        state.ui.search.scope = state.active_search_scope();
+        state.ui.search.query = "lib".to_string();
         assert_eq!(map_key(&state, KeyCode::Esc), Some(UiAction::CancelSearch));
-        state.search.clear();
+        state.ui.search.clear();
         assert_eq!(
             map_key(&state, KeyCode::Enter),
             Some(UiAction::ToggleCommitFilesDirectory)
         );
         assert_eq!(map_key(&state, KeyCode::Char('s')), None);
-        state.commits.files.mode = ratagit_core::FileInputMode::MultiSelect;
+        state.ui.commits.files.mode = ratagit_core::FileInputMode::MultiSelect;
         assert_eq!(
             map_key(&state, KeyCode::Esc),
             Some(UiAction::ExitCommitFilesMultiSelect)
         );
         assert_eq!(map_key(&state, KeyCode::Char('v')), None);
 
-        state.commits.files.active = false;
-        state.commits.mode = ratagit_core::CommitInputMode::MultiSelect;
+        state.ui.commits.files.active = false;
+        state.ui.commits.mode = ratagit_core::CommitInputMode::MultiSelect;
         assert_eq!(
             map_key(&state, KeyCode::Esc),
             Some(UiAction::ExitCommitsMultiSelect)
         );
         assert_eq!(map_key(&state, KeyCode::Char('v')), None);
 
-        state.focus = PanelFocus::Stash;
+        state.ui.focus = PanelFocus::Stash;
         assert_eq!(
             map_key(&state, KeyCode::Char('p')),
             Some(UiAction::StashPush {
@@ -289,12 +287,10 @@ mod tests {
 
     #[test]
     fn branches_multiselect_uses_escape_to_exit_and_ignores_v() {
-        let mut state = AppState {
-            focus: PanelFocus::Branches,
-            last_left_focus: PanelFocus::Branches,
-            ..AppState::default()
-        };
-        state.branches.mode = ratagit_core::BranchInputMode::MultiSelect;
+        let mut state = AppContext::default();
+        state.ui.focus = PanelFocus::Branches;
+        state.ui.last_left_focus = PanelFocus::Branches;
+        state.ui.branches.mode = ratagit_core::BranchInputMode::MultiSelect;
 
         assert_eq!(
             map_key(&state, KeyCode::Esc),
@@ -306,8 +302,8 @@ mod tests {
     #[test]
     fn editor_mode_maps_keys_before_any_other_mode() {
         let mut state = active_commit_editor_state();
-        state.search.active = true;
-        state.search.scope = state.active_search_scope();
+        state.ui.search.active = true;
+        state.ui.search.scope = state.active_search_scope();
 
         assert_eq!(
             map_key(&state, KeyCode::Enter),
@@ -379,7 +375,7 @@ mod tests {
 
     #[test]
     fn ctrl_u_and_ctrl_d_map_to_global_details_scroll() {
-        let state = AppState::default();
+        let state = AppContext::default();
 
         assert_eq!(
             ui_action_for_key(
@@ -609,7 +605,7 @@ mod tests {
 
     #[test]
     fn key_effect_handles_plain_quit_ignored_and_global_navigation() {
-        let state = AppState::default();
+        let state = AppContext::default();
 
         assert_eq!(
             key_effect_for_key(

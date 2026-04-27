@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use ratagit_core::{
-    AppState, BranchDeleteMode, BranchEntry, Command, CommitEntry, CommitFileDiffTarget,
+    AppContext, BranchDeleteMode, BranchEntry, Command, CommitEntry, CommitFileDiffTarget,
     CommitFileEntry, FileDiffTarget, FilesSnapshot, RepoSnapshot, ResetMode, StashEntry,
 };
 use ratagit_git::{GitBackend, GitError, MockGitBackend};
@@ -217,7 +217,7 @@ fn read_commands_are_distributed_across_read_workers() {
     let log = Arc::clone(&factory.log);
     let runtime_factory = factory.clone();
     let mut runtime = AsyncRuntime::new(
-        AppState::default(),
+        AppContext::default(),
         move || runtime_factory.build(),
         terminal_size(),
     );
@@ -255,7 +255,7 @@ fn split_refresh_results_apply_while_files_refresh_is_blocked() {
     let factory = RecordingFactory::with_blocking_refresh(started_tx, release_rx);
     let runtime_factory = factory.clone();
     let mut runtime = AsyncRuntime::new(
-        AppState::default(),
+        AppContext::default(),
         move || runtime_factory.build(),
         terminal_size(),
     );
@@ -266,13 +266,13 @@ fn split_refresh_results_apply_while_files_refresh_is_blocked() {
         .expect("files refresh should start");
 
     wait_for_state(&mut runtime, |runtime| {
-        !runtime.state.branches.items.is_empty()
-            && !runtime.state.commits.items.is_empty()
-            && !runtime.state.stash.items.is_empty()
+        !runtime.state.repo.branches.items.is_empty()
+            && !runtime.state.repo.commits.items.is_empty()
+            && !runtime.state.repo.stash.items.is_empty()
     });
 
-    assert!(runtime.state.files.items.is_empty());
-    assert_eq!(runtime.state.status.refresh_count, 0);
+    assert!(runtime.state.repo.files.items.is_empty());
+    assert_eq!(runtime.state.repo.status.refresh_count, 0);
     assert!(runtime.state.work.refresh_pending);
     release_tx.send(()).expect("files refresh should release");
     wait_for_quiet_tick(&mut runtime);
@@ -285,7 +285,7 @@ fn mutating_commands_are_serialized_on_the_write_worker() {
     let max_mutation_active = Arc::clone(&factory.max_mutation_active);
     let runtime_factory = factory.clone();
     let mut runtime = AsyncRuntime::new(
-        AppState::default(),
+        AppContext::default(),
         move || runtime_factory.build(),
         terminal_size(),
     );
@@ -319,7 +319,7 @@ fn read_commands_are_deferred_while_mutation_is_pending() {
     let log = Arc::clone(&factory.log);
     let runtime_factory = factory.clone();
     let mut runtime = AsyncRuntime::new(
-        AppState::default(),
+        AppContext::default(),
         move || runtime_factory.build(),
         terminal_size(),
     );
@@ -348,7 +348,7 @@ fn stale_read_results_are_dropped_after_a_queued_mutation() {
     let factory = RecordingFactory::with_blocking_refresh(started_tx, release_rx);
     let runtime_factory = factory.clone();
     let mut runtime = AsyncRuntime::new(
-        AppState::default(),
+        AppContext::default(),
         move || runtime_factory.build(),
         terminal_size(),
     );
@@ -362,17 +362,18 @@ fn stale_read_results_are_dropped_after_a_queued_mutation() {
         paths: vec!["missing.txt".to_string()],
     }]);
     wait_for_state(&mut runtime, |runtime| {
-        runtime.state.status.last_error.is_some()
+        runtime.state.repo.status.last_error.is_some()
     });
 
-    assert_eq!(runtime.state.status.refresh_count, 0);
+    assert_eq!(runtime.state.repo.status.refresh_count, 0);
     release_tx.send(()).expect("refresh should release");
     wait_for_quiet_tick(&mut runtime);
 
-    assert_eq!(runtime.state.status.refresh_count, 0);
+    assert_eq!(runtime.state.repo.status.refresh_count, 0);
     assert!(
         runtime
             .state
+            .repo
             .status
             .last_error
             .as_deref()
@@ -386,7 +387,7 @@ fn debounce_window_defers_and_coalesces_async_read_commands() {
     let log = Arc::clone(&factory.log);
     let runtime_factory = factory.clone();
     let mut runtime = AsyncRuntime::new(
-        AppState::default(),
+        AppContext::default(),
         move || runtime_factory.build(),
         terminal_size(),
     )
@@ -417,7 +418,7 @@ fn render_smoke_paths_use_current_state_without_dispatching_git() {
     let log = Arc::clone(&factory.log);
     let runtime_factory = factory.clone();
     let runtime = AsyncRuntime::new(
-        AppState::default(),
+        AppContext::default(),
         move || runtime_factory.build(),
         terminal_size(),
     );
@@ -435,7 +436,7 @@ fn empty_read_worker_pool_reports_refresh_failure() {
     let factory = RecordingFactory::new();
     let runtime_factory = factory.clone();
     let mut runtime = AsyncRuntime::new(
-        AppState::default(),
+        AppContext::default(),
         move || runtime_factory.build(),
         terminal_size(),
     );
@@ -448,7 +449,7 @@ fn empty_read_worker_pool_reports_refresh_failure() {
     }]);
 
     assert_eq!(
-        runtime.state.status.last_error.as_deref(),
+        runtime.state.repo.status.last_error.as_deref(),
         Some("Failed to refresh: async git read worker pool is empty")
     );
 }

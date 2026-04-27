@@ -26,7 +26,7 @@ use panel_scroll::scroll_window_start;
 pub(crate) use panel_shortcuts::{ShortcutLine, shortcut_line_for_state, shortcuts_for_state};
 pub(crate) use panel_types::PanelLine;
 #[cfg(test)]
-use ratagit_core::AppState;
+use ratagit_core::AppContext;
 #[cfg(test)]
 mod tests {
     use ratagit_core::{
@@ -54,8 +54,8 @@ mod tests {
         targets.iter().map(|target| target.path.clone()).collect()
     }
 
-    fn state_with_dirty_repo() -> AppState {
-        let mut state = AppState::default();
+    fn state_with_dirty_repo() -> AppContext {
+        let mut state = AppContext::default();
         let commands = update(
             &mut state,
             Action::GitResult(GitResult::Refreshed(fixture_dirty_repo())),
@@ -83,19 +83,19 @@ mod tests {
         state
     }
 
-    fn commit_scroll_state(count: usize) -> AppState {
+    fn commit_scroll_state(count: usize) -> AppContext {
         let mut state = state_with_dirty_repo();
-        state.focus = PanelFocus::Commits;
-        state.commits.items = (0..count)
+        state.ui.focus = PanelFocus::Commits;
+        state.repo.commits.items = (0..count)
             .map(|index| fixture_commit(&format!("{index:07x}"), &format!("commit {index}")))
             .collect();
         state
     }
 
-    fn branch_scroll_state(count: usize) -> AppState {
+    fn branch_scroll_state(count: usize) -> AppContext {
         let mut state = state_with_dirty_repo();
-        state.focus = PanelFocus::Branches;
-        state.branches.items = (0..count)
+        state.ui.focus = PanelFocus::Branches;
+        state.repo.branches.items = (0..count)
             .map(|index| fixture_branch(&format!("branch-{index}"), index == 0))
             .collect();
         state
@@ -118,7 +118,7 @@ mod tests {
     #[test]
     fn files_panel_projects_tree_rows_and_selection() {
         let mut state = state_with_dirty_repo();
-        state.files.selected = 1;
+        state.ui.files.selected = 1;
 
         let lines = render_files_lines(&state, 4);
 
@@ -133,7 +133,7 @@ mod tests {
     #[test]
     fn files_panel_projects_collapsed_directory_and_multi_select() {
         let mut state = state_with_dirty_repo();
-        state.files.selected = 1;
+        state.ui.files.selected = 1;
         update(&mut state, Action::Ui(UiAction::ToggleSelectedDirectory));
         update(&mut state, Action::Ui(UiAction::EnterFilesMultiSelect));
 
@@ -382,7 +382,7 @@ mod tests {
     #[test]
     fn branches_panel_projects_current_and_selected_rows() {
         let mut state = state_with_dirty_repo();
-        state.branches.selected = 1;
+        state.ui.branches.selected = 1;
 
         let lines = render_branches_lines(&state, 2);
 
@@ -394,7 +394,7 @@ mod tests {
     #[test]
     fn commits_panel_projects_four_commit_columns_and_selection() {
         let mut state = state_with_dirty_repo();
-        state.commits.selected = 1;
+        state.ui.commits.selected = 1;
 
         let lines = render_commits_lines(&state, 3);
 
@@ -454,7 +454,7 @@ mod tests {
     #[test]
     fn commits_panel_keeps_window_continuous_after_page_append() {
         let mut state = commit_scroll_state(COMMITS_PAGE_SIZE);
-        state.commits.has_more = true;
+        state.repo.commits.has_more = true;
 
         for _ in 0..COMMITS_PAGE_SIZE - 1 {
             update(&mut state, Action::Ui(UiAction::MoveDown));
@@ -466,7 +466,7 @@ mod tests {
 
         update(&mut state, Action::Ui(UiAction::MoveDown));
 
-        let epoch = state.commits.pagination_epoch;
+        let epoch = state.repo.commits.pagination_epoch;
         update(
             &mut state,
             Action::GitResult(GitResult::CommitsPage {
@@ -540,9 +540,9 @@ mod tests {
     #[test]
     fn details_panel_projects_commit_diff_with_git_ansi_spans() {
         let mut state = state_with_dirty_repo();
-        state.last_left_focus = PanelFocus::Commits;
-        state.details.commit_diff_target = Some("abc1234".to_string());
-        state.details.commit_diff = concat!(
+        state.ui.last_left_focus = PanelFocus::Commits;
+        state.repo.details.commit_diff_target = Some("abc1234".to_string());
+        state.repo.details.commit_diff = concat!(
             "commit abc1234\n",
             "Author: ratagit-tests\n",
             "\n",
@@ -570,9 +570,9 @@ mod tests {
     }
 
     #[test]
-    fn details_panel_applies_app_state_scroll_offset() {
+    fn details_panel_applies_app_context_scroll_offset() {
         let mut state = state_with_dirty_repo();
-        state.details.scroll_offset = 2;
+        state.ui.details.scroll_offset = 2;
 
         let lines = render_details_lines(&state, 3);
 
@@ -610,10 +610,10 @@ mod tests {
 
     #[test]
     fn log_panel_reports_huge_repo_status_scan_skip() {
-        let mut state = AppState::default();
-        state.status.large_repo_mode = true;
-        state.status.status_scan_skipped = true;
-        state.status.untracked_scan_skipped = true;
+        let mut state = AppContext::default();
+        state.repo.status.large_repo_mode = true;
+        state.repo.status.status_scan_skipped = true;
+        state.repo.status.untracked_scan_skipped = true;
 
         let lines = render_log_lines(&state, 3);
 
@@ -632,7 +632,7 @@ mod tests {
 
     #[test]
     fn empty_lists_and_panels_render_without_empty_placeholders() {
-        let mut state = AppState::default();
+        let mut state = AppContext::default();
         let _commands = update(
             &mut state,
             Action::GitResult(GitResult::Refreshed(fixture_empty_repo())),
@@ -687,7 +687,7 @@ mod tests {
         );
         assert!(!shortcuts_for_state(&state).contains("v multi"));
 
-        let mut empty = AppState::default();
+        let mut empty = AppContext::default();
         update(
             &mut empty,
             Action::GitResult(GitResult::Refreshed(fixture_empty_repo())),
@@ -710,7 +710,7 @@ mod tests {
             "arrows/Home/End cursor  Enter confirm  Esc cancel"
         );
 
-        state.editor.kind = None;
+        state.ui.editor.kind = None;
         update(&mut state, Action::Ui(UiAction::OpenResetMenu));
         assert_eq!(
             shortcuts_for_state(&state),

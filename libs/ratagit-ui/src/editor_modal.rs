@@ -1,4 +1,4 @@
-use ratagit_core::{AppState, CommitField, EditorKind, StashScope};
+use ratagit_core::{AppContext, CommitField, EditorKind, StashScope};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
 use ratatui::text::Line;
@@ -11,8 +11,8 @@ use crate::modal::{
     render_section_label, render_text,
 };
 
-pub(crate) fn render_editor_modal(frame: &mut Frame<'_>, state: &AppState, area: Rect) {
-    let Some(editor) = &state.editor.kind else {
+pub(crate) fn render_editor_modal(frame: &mut Frame<'_>, state: &AppContext, area: Rect) {
+    let Some(editor) = &state.ui.editor.kind else {
         return;
     };
 
@@ -196,8 +196,8 @@ fn body_lines(body: &str) -> Vec<String> {
     body.split('\n').map(str::to_string).collect()
 }
 
-fn editor_cursor_position(state: &AppState, area: Rect) -> Option<TerminalCursor> {
-    let editor = state.editor.kind.as_ref()?;
+fn editor_cursor_position(state: &AppContext, area: Rect) -> Option<TerminalCursor> {
+    let editor = state.ui.editor.kind.as_ref()?;
     let content = modal_content_rect(area, editor_modal_spec(editor))?;
     match editor {
         EditorKind::Commit {

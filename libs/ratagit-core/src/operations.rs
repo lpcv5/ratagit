@@ -1,9 +1,9 @@
 use crate::{
-    AppState, BranchDeleteMode, Command, ResetMode, branches, details, push_notice, with_pending,
+    AppContext, BranchDeleteMode, Command, ResetMode, branches, details, push_notice, with_pending,
 };
 
 pub(crate) fn handle_stage_files_result(
-    state: &mut AppState,
+    state: &mut AppContext,
     paths: Vec<String>,
     result: Result<(), String>,
 ) -> Vec<Command> {
@@ -17,7 +17,7 @@ pub(crate) fn handle_stage_files_result(
 }
 
 pub(crate) fn handle_unstage_files_result(
-    state: &mut AppState,
+    state: &mut AppContext,
     paths: Vec<String>,
     result: Result<(), String>,
 ) -> Vec<Command> {
@@ -31,7 +31,7 @@ pub(crate) fn handle_unstage_files_result(
 }
 
 pub(crate) fn handle_stash_files_result(
-    state: &mut AppState,
+    state: &mut AppContext,
     message: String,
     paths: Vec<String>,
     result: Result<(), String>,
@@ -46,7 +46,7 @@ pub(crate) fn handle_stash_files_result(
 }
 
 pub(crate) fn handle_reset_result(
-    state: &mut AppState,
+    state: &mut AppContext,
     mode: ResetMode,
     result: Result<(), String>,
 ) -> Vec<Command> {
@@ -59,7 +59,10 @@ pub(crate) fn handle_reset_result(
     )
 }
 
-pub(crate) fn handle_nuke_result(state: &mut AppState, result: Result<(), String>) -> Vec<Command> {
+pub(crate) fn handle_nuke_result(
+    state: &mut AppContext,
+    result: Result<(), String>,
+) -> Vec<Command> {
     handle_operation_result(
         state,
         result,
@@ -70,7 +73,7 @@ pub(crate) fn handle_nuke_result(state: &mut AppState, result: Result<(), String
 }
 
 pub(crate) fn handle_discard_files_result(
-    state: &mut AppState,
+    state: &mut AppContext,
     paths: Vec<String>,
     result: Result<(), String>,
 ) -> Vec<Command> {
@@ -84,7 +87,7 @@ pub(crate) fn handle_discard_files_result(
 }
 
 pub(crate) fn handle_create_commit_result(
-    state: &mut AppState,
+    state: &mut AppContext,
     message: String,
     result: Result<(), String>,
 ) -> Vec<Command> {
@@ -98,7 +101,7 @@ pub(crate) fn handle_create_commit_result(
 }
 
 pub(crate) fn handle_create_branch_result(
-    state: &mut AppState,
+    state: &mut AppContext,
     name: String,
     start_point: String,
     result: Result<(), String>,
@@ -113,7 +116,7 @@ pub(crate) fn handle_create_branch_result(
 }
 
 pub(crate) fn handle_checkout_branch_result(
-    state: &mut AppState,
+    state: &mut AppContext,
     name: String,
     auto_stash: bool,
     result: Result<(), String>,
@@ -144,7 +147,7 @@ pub(crate) fn handle_checkout_branch_result(
 }
 
 pub(crate) fn handle_delete_branch_result(
-    state: &mut AppState,
+    state: &mut AppContext,
     name: String,
     mode: BranchDeleteMode,
     force: bool,
@@ -156,7 +159,7 @@ pub(crate) fn handle_delete_branch_result(
         && is_unmerged_branch_delete_error(error)
     {
         record_operation(state, &format!("delete_branch_{}", delete_mode_name(mode)));
-        state.status.last_error = Some(format!(
+        state.repo.status.last_error = Some(format!(
             "Branch is not fully merged; confirmation required: {error}"
         ));
         branches::open_force_delete_confirm(state, name, mode, error.clone());
@@ -180,7 +183,7 @@ pub(crate) fn handle_delete_branch_result(
 }
 
 pub(crate) fn handle_rebase_branch_result(
-    state: &mut AppState,
+    state: &mut AppContext,
     target: String,
     interactive: bool,
     auto_stash: bool,
@@ -218,7 +221,7 @@ pub(crate) fn handle_rebase_branch_result(
 }
 
 pub(crate) fn handle_squash_commits_result(
-    state: &mut AppState,
+    state: &mut AppContext,
     commit_ids: Vec<String>,
     result: Result<(), String>,
 ) -> Vec<Command> {
@@ -232,7 +235,7 @@ pub(crate) fn handle_squash_commits_result(
 }
 
 pub(crate) fn handle_fixup_commits_result(
-    state: &mut AppState,
+    state: &mut AppContext,
     commit_ids: Vec<String>,
     result: Result<(), String>,
 ) -> Vec<Command> {
@@ -246,7 +249,7 @@ pub(crate) fn handle_fixup_commits_result(
 }
 
 pub(crate) fn handle_reword_commit_result(
-    state: &mut AppState,
+    state: &mut AppContext,
     commit_id: String,
     message: String,
     result: Result<(), String>,
@@ -261,7 +264,7 @@ pub(crate) fn handle_reword_commit_result(
 }
 
 pub(crate) fn handle_delete_commits_result(
-    state: &mut AppState,
+    state: &mut AppContext,
     commit_ids: Vec<String>,
     result: Result<(), String>,
 ) -> Vec<Command> {
@@ -275,7 +278,7 @@ pub(crate) fn handle_delete_commits_result(
 }
 
 pub(crate) fn handle_checkout_commit_detached_result(
-    state: &mut AppState,
+    state: &mut AppContext,
     commit_id: String,
     auto_stash: bool,
     result: Result<(), String>,
@@ -306,7 +309,7 @@ pub(crate) fn handle_checkout_commit_detached_result(
 }
 
 pub(crate) fn handle_stash_push_result(
-    state: &mut AppState,
+    state: &mut AppContext,
     message: String,
     result: Result<(), String>,
 ) -> Vec<Command> {
@@ -320,7 +323,7 @@ pub(crate) fn handle_stash_push_result(
 }
 
 pub(crate) fn handle_stash_pop_result(
-    state: &mut AppState,
+    state: &mut AppContext,
     stash_id: String,
     result: Result<(), String>,
 ) -> Vec<Command> {
@@ -334,7 +337,7 @@ pub(crate) fn handle_stash_pop_result(
 }
 
 fn handle_operation_result(
-    state: &mut AppState,
+    state: &mut AppContext,
     result: Result<(), String>,
     operation_key: &str,
     success_message: String,
@@ -345,13 +348,13 @@ fn handle_operation_result(
             details::clear_caches(state);
             record_operation(state, operation_key);
             push_notice(state, &success_message);
-            state.status.last_error = None;
+            state.repo.status.last_error = None;
             with_pending(state, Command::refresh_all_commands())
         }
         Err(error_message) => {
             record_operation(state, operation_key);
             let full_error = format!("{failure_prefix}: {error_message}");
-            state.status.last_error = Some(full_error.clone());
+            state.repo.status.last_error = Some(full_error.clone());
             push_notice(state, &full_error);
             Vec::new()
         }
@@ -359,7 +362,7 @@ fn handle_operation_result(
 }
 
 fn handle_operation_result_refreshing_after_failure(
-    state: &mut AppState,
+    state: &mut AppContext,
     result: Result<(), String>,
     operation_key: &str,
     success_message: String,
@@ -376,14 +379,14 @@ fn handle_operation_result_refreshing_after_failure(
         Err(error_message) => {
             record_operation(state, operation_key);
             let full_error = format!("{failure_prefix}: {error_message}");
-            state.status.last_error = Some(full_error.clone());
+            state.repo.status.last_error = Some(full_error.clone());
             push_notice(state, &full_error);
             with_pending(state, Command::refresh_all_commands())
         }
     }
 }
 
-fn record_operation(state: &mut AppState, operation_key: &str) {
+fn record_operation(state: &mut AppContext, operation_key: &str) {
     let operation_key = operation_key.to_string();
     state.work.operation_pending = None;
     state.work.last_completed_command = Some(operation_key.clone());

@@ -30,8 +30,8 @@ pub use commits::{
     selected_commit_ids, selected_commits, toggle_multi_select as toggle_commit_multi_select,
 };
 pub use files::{
-    CommitFileEntry, CommitFileStatus, CommitFilesPanelState, FileDiffTarget, FileEntry,
-    FileInputMode, FileRowKind, FileTreeIndex, FileTreeRow, FilesPanelState,
+    CommitFileEntry, CommitFileStatus, CommitFilesUiState, FileDiffTarget, FileEntry,
+    FileInputMode, FileRowKind, FileTreeIndex, FileTreeRow, FilesUiState,
     build_commit_file_tree_rows, build_file_tree_rows, clamp_selected as clamp_file_selection,
     collect_directories, commit_file_tree_rows, commit_file_tree_rows_for_read,
     enter_commit_files_multi_select, enter_multi_select, file_tree_rows, file_tree_rows_for_read,
@@ -47,15 +47,14 @@ pub use files::{
 pub use reducer::update;
 pub use scroll::scroll_offset_for_selection;
 pub use state::{
-    AppState, AutoStashConfirmState, AutoStashOperation, BranchCreateState, BranchDeleteChoice,
+    AppContext, AutoStashConfirmState, AutoStashOperation, BranchCreateState, BranchDeleteChoice,
     BranchDeleteMenuState, BranchDeleteMode, BranchEntry, BranchForceDeleteConfirmState,
-    BranchInputMode, BranchRebaseChoice, BranchRebaseMenuState, BranchesPanelState,
-    CachedBranchLog, CachedCommitDiff, CachedFilesDiff, CommitEditorIntent, CommitEntry,
-    CommitField, CommitFileDiffPath, CommitFileDiffTarget, CommitHashStatus, CommitInputMode,
-    CommitsPanelState, DetailsPanelState, DiscardConfirmState, EditorKind, EditorState,
-    FilesSnapshot, PanelFocus, RefreshTarget, RepoSnapshot, ResetChoice, ResetMenuState, ResetMode,
-    SearchScope, SearchState, StashEntry, StashPanelState, StashScope, StatusMode,
-    StatusPanelState, WorkStatusState,
+    BranchInputMode, BranchRebaseChoice, BranchRebaseMenuState, BranchesUiState, CachedBranchLog,
+    CachedCommitDiff, CachedFilesDiff, CommitEditorIntent, CommitEntry, CommitField,
+    CommitFileDiffPath, CommitFileDiffTarget, CommitHashStatus, CommitInputMode, CommitsUiState,
+    DetailsRepoState, DiscardConfirmState, EditorKind, EditorState, FilesSnapshot, PanelFocus,
+    RefreshTarget, RepoSnapshot, ResetChoice, ResetMenuState, ResetMode, SearchScope, SearchState,
+    StashEntry, StashScope, StashUiState, StatusMode, StatusPanelState, WorkStatusState,
 };
 
 pub(crate) use actions::with_pending;

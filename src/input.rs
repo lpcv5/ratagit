@@ -1,6 +1,6 @@
 use crossterm::event::{KeyCode, KeyModifiers};
 use ratagit_core::{
-    AppState, BranchInputMode, CommitInputMode, FileInputMode, PanelFocus, UiAction,
+    AppContext, BranchInputMode, CommitInputMode, FileInputMode, PanelFocus, UiAction,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -11,7 +11,7 @@ pub(crate) enum KeyEffect {
 }
 
 pub(crate) fn key_effect_for_key(
-    state: &AppState,
+    state: &AppContext,
     code: KeyCode,
     modifiers: KeyModifiers,
     details_scroll_lines: usize,
@@ -41,7 +41,7 @@ pub(crate) fn key_effect_for_key(
 }
 
 fn ui_action_for_key(
-    state: &AppState,
+    state: &AppContext,
     code: KeyCode,
     modifiers: KeyModifiers,
     details_scroll_lines: usize,
@@ -65,7 +65,7 @@ fn ui_action_for_key(
         }
     }
 
-    if state.editor.is_active() {
+    if state.ui.editor.is_active() {
         return match code {
             KeyCode::Enter => Some(UiAction::EditorConfirm),
             KeyCode::Esc => Some(UiAction::EditorCancel),
@@ -88,7 +88,7 @@ fn ui_action_for_key(
         };
     }
 
-    if state.branches.create.active {
+    if state.ui.branches.create.active {
         return match code {
             KeyCode::Enter => Some(UiAction::ConfirmBranchCreate),
             KeyCode::Esc => Some(UiAction::CancelBranchCreate),
@@ -106,7 +106,7 @@ fn ui_action_for_key(
         };
     }
 
-    if state.branches.delete_menu.active {
+    if state.ui.branches.delete_menu.active {
         return match code {
             KeyCode::Enter => Some(UiAction::ConfirmBranchDeleteMenu),
             KeyCode::Esc => Some(UiAction::CancelBranchDeleteMenu),
@@ -116,7 +116,7 @@ fn ui_action_for_key(
         };
     }
 
-    if state.branches.force_delete_confirm.active {
+    if state.ui.branches.force_delete_confirm.active {
         return match code {
             KeyCode::Enter => Some(UiAction::ConfirmBranchForceDelete),
             KeyCode::Esc => Some(UiAction::CancelBranchForceDelete),
@@ -124,7 +124,7 @@ fn ui_action_for_key(
         };
     }
 
-    if state.branches.rebase_menu.active {
+    if state.ui.branches.rebase_menu.active {
         return match code {
             KeyCode::Enter => Some(UiAction::ConfirmBranchRebaseMenu),
             KeyCode::Esc => Some(UiAction::CancelBranchRebaseMenu),
@@ -134,7 +134,7 @@ fn ui_action_for_key(
         };
     }
 
-    if state.branches.auto_stash_confirm.active {
+    if state.ui.branches.auto_stash_confirm.active {
         return match code {
             KeyCode::Enter => Some(UiAction::ConfirmAutoStash),
             KeyCode::Esc => Some(UiAction::CancelAutoStash),
@@ -142,7 +142,7 @@ fn ui_action_for_key(
         };
     }
 
-    if state.reset_menu.active {
+    if state.ui.reset_menu.active {
         return match code {
             KeyCode::Enter => Some(UiAction::ConfirmResetMenu),
             KeyCode::Esc => Some(UiAction::CancelResetMenu),
@@ -152,7 +152,7 @@ fn ui_action_for_key(
         };
     }
 
-    if state.discard_confirm.active {
+    if state.ui.discard_confirm.active {
         return match code {
             KeyCode::Enter => Some(UiAction::ConfirmDiscard),
             KeyCode::Esc => Some(UiAction::CancelDiscard),
@@ -183,15 +183,15 @@ fn ui_action_for_key(
         return Some(UiAction::StartSearch);
     }
 
-    if state.focus == PanelFocus::Files {
-        if state.files.mode == FileInputMode::MultiSelect && code == KeyCode::Esc {
+    if state.ui.focus == PanelFocus::Files {
+        if state.ui.files.mode == FileInputMode::MultiSelect && code == KeyCode::Esc {
             return Some(UiAction::ExitFilesMultiSelect);
         }
         match code {
             // TODO(files-hunks): map Enter to hunk-level editing/partial stage workflow.
             KeyCode::Enter => return Some(UiAction::ToggleSelectedDirectory),
             KeyCode::Char(' ') => return Some(UiAction::ToggleSelectedFileStage),
-            KeyCode::Char('v') if state.files.mode != FileInputMode::MultiSelect => {
+            KeyCode::Char('v') if state.ui.files.mode != FileInputMode::MultiSelect => {
                 return Some(UiAction::EnterFilesMultiSelect);
             }
             KeyCode::Char('c') => return Some(UiAction::OpenCommitEditor),
@@ -202,13 +202,13 @@ fn ui_action_for_key(
         }
     }
 
-    if state.focus == PanelFocus::Branches {
-        if state.branches.mode == BranchInputMode::MultiSelect && code == KeyCode::Esc {
+    if state.ui.focus == PanelFocus::Branches {
+        if state.ui.branches.mode == BranchInputMode::MultiSelect && code == KeyCode::Esc {
             return Some(UiAction::ExitBranchesMultiSelect);
         }
         match code {
             KeyCode::Char(' ') => return Some(UiAction::CheckoutSelectedBranch),
-            KeyCode::Char('v') if state.branches.mode != BranchInputMode::MultiSelect => {
+            KeyCode::Char('v') if state.ui.branches.mode != BranchInputMode::MultiSelect => {
                 return Some(UiAction::EnterBranchesMultiSelect);
             }
             KeyCode::Char('n') => return Some(UiAction::OpenBranchCreateInput),
@@ -218,29 +218,29 @@ fn ui_action_for_key(
         }
     }
 
-    if state.focus == PanelFocus::Commits && state.commits.files.active {
-        if state.commits.files.mode == FileInputMode::MultiSelect && code == KeyCode::Esc {
+    if state.ui.focus == PanelFocus::Commits && state.ui.commits.files.active {
+        if state.ui.commits.files.mode == FileInputMode::MultiSelect && code == KeyCode::Esc {
             return Some(UiAction::ExitCommitFilesMultiSelect);
         }
         if code == KeyCode::Esc {
             return Some(UiAction::CloseCommitFilesPanel);
         }
-        if state.commits.files.mode != FileInputMode::MultiSelect && code == KeyCode::Char('v') {
+        if state.ui.commits.files.mode != FileInputMode::MultiSelect && code == KeyCode::Char('v') {
             return Some(UiAction::EnterCommitFilesMultiSelect);
         }
         if code == KeyCode::Enter {
             return Some(UiAction::ToggleCommitFilesDirectory);
         }
         // TODO(commit-files-shortcuts): add more commit-files local file actions in a later slice.
-    } else if state.focus == PanelFocus::Commits {
-        if state.commits.mode == CommitInputMode::MultiSelect && code == KeyCode::Esc {
+    } else if state.ui.focus == PanelFocus::Commits {
+        if state.ui.commits.mode == CommitInputMode::MultiSelect && code == KeyCode::Esc {
             return Some(UiAction::ExitCommitsMultiSelect);
         }
         match code {
             KeyCode::Enter => return Some(UiAction::OpenCommitFilesPanel),
             KeyCode::Char(' ') => return Some(UiAction::CheckoutSelectedCommitDetached),
             KeyCode::Char('c') => return Some(UiAction::OpenCommitEditor),
-            KeyCode::Char('v') if state.commits.mode != CommitInputMode::MultiSelect => {
+            KeyCode::Char('v') if state.ui.commits.mode != CommitInputMode::MultiSelect => {
                 return Some(UiAction::EnterCommitsMultiSelect);
             }
             KeyCode::Char('s') => return Some(UiAction::SquashSelectedCommits),
@@ -291,16 +291,16 @@ fn ui_action_for_key(
     }
 }
 
-fn search_input_is_current(state: &AppState) -> bool {
+fn search_input_is_current(state: &AppContext) -> bool {
     state
         .active_search_scope()
-        .is_some_and(|scope| state.search.is_input_active_for(scope))
+        .is_some_and(|scope| state.ui.search.is_input_active_for(scope))
 }
 
-fn search_query_is_current(state: &AppState) -> bool {
+fn search_query_is_current(state: &AppContext) -> bool {
     state
         .active_search_scope()
-        .is_some_and(|scope| state.search.has_query_for(scope))
+        .is_some_and(|scope| state.ui.search.has_query_for(scope))
 }
 
 #[cfg(test)]

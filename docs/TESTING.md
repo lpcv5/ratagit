@@ -26,7 +26,7 @@ test flow, nondeterminism, or an assertion that no longer verifies behavior.
 
 ## UI Testing
 
-- Panel unit tests assert each panel's pure projection from `AppState`.
+- Panel unit tests assert each panel's pure projection from `AppContext`.
 - Full-screen integration tests render `render_terminal` with
   `ratatui::TestBackend`.
 - Use insta snapshots for full-screen terminal buffers.
@@ -95,7 +95,7 @@ On failure, store:
 
 - buffer snapshot
 - real screen snapshot
-- AppState dump
+- AppContext dump
 - Git operation trace
 - final mock Git state
 - input sequence

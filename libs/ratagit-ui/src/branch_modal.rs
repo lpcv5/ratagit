@@ -1,4 +1,4 @@
-use ratagit_core::{AppState, AutoStashOperation, BranchDeleteChoice, BranchRebaseChoice};
+use ratagit_core::{AppContext, AutoStashOperation, BranchDeleteChoice, BranchRebaseChoice};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
 use ratatui::style::Style;
@@ -14,41 +14,41 @@ use crate::modal::{
 };
 use crate::theme::modal_muted_style;
 
-pub(crate) fn render_branch_modals(frame: &mut Frame<'_>, state: &AppState, area: Rect) {
-    if state.branches.create.active {
+pub(crate) fn render_branch_modals(frame: &mut Frame<'_>, state: &AppContext, area: Rect) {
+    if state.ui.branches.create.active {
         render_branch_create_modal(frame, state, area);
     }
-    if state.branches.delete_menu.active {
+    if state.ui.branches.delete_menu.active {
         render_branch_delete_modal(frame, state, area);
     }
-    if state.branches.force_delete_confirm.active {
+    if state.ui.branches.force_delete_confirm.active {
         render_force_delete_modal(frame, state, area);
     }
-    if state.branches.rebase_menu.active {
+    if state.ui.branches.rebase_menu.active {
         render_branch_rebase_modal(frame, state, area);
     }
-    if state.branches.auto_stash_confirm.active {
+    if state.ui.branches.auto_stash_confirm.active {
         render_auto_stash_modal(frame, state, area);
     }
 }
 
 pub(crate) fn branch_create_cursor_position(
-    state: &AppState,
+    state: &AppContext,
     area: Rect,
 ) -> Option<TerminalCursor> {
-    if !state.branches.create.active {
+    if !state.ui.branches.create.active {
         return None;
     }
     let content = modal_content_rect(area, branch_create_spec())?;
     let rows = branch_create_rows(content);
     single_line_cursor_position(
         rows[2],
-        &state.branches.create.name,
-        state.branches.create.cursor,
+        &state.ui.branches.create.name,
+        state.ui.branches.create.cursor,
     )
 }
 
-fn render_branch_create_modal(frame: &mut Frame<'_>, state: &AppState, area: Rect) {
+fn render_branch_create_modal(frame: &mut Frame<'_>, state: &AppContext, area: Rect) {
     let rendered = render_modal(
         frame,
         area,
@@ -60,13 +60,13 @@ fn render_branch_create_modal(frame: &mut Frame<'_>, state: &AppState, area: Rec
             render_text(
                 frame,
                 rows[1],
-                format!("Start point: {}", state.branches.create.start_point),
+                format!("Start point: {}", state.ui.branches.create.start_point),
             );
             render_input_block(
                 frame,
                 rows[2],
                 "Branch name",
-                vec![Line::from(state.branches.create.name.clone())],
+                vec![Line::from(state.ui.branches.create.name.clone())],
                 true,
                 ModalTone::Info,
             );
@@ -82,7 +82,7 @@ fn render_branch_create_modal(frame: &mut Frame<'_>, state: &AppState, area: Rec
     }
 }
 
-fn render_branch_delete_modal(frame: &mut Frame<'_>, state: &AppState, area: Rect) {
+fn render_branch_delete_modal(frame: &mut Frame<'_>, state: &AppContext, area: Rect) {
     let choices = branch_delete_choices();
     render_modal(
         frame,
@@ -103,12 +103,12 @@ fn render_branch_delete_modal(frame: &mut Frame<'_>, state: &AppState, area: Rec
                 content,
                 ModalTone::Danger,
                 ChoiceMenuBody {
-                    intro: format!("Target: {}", state.branches.delete_menu.target_branch),
+                    intro: format!("Target: {}", state.ui.branches.delete_menu.target_branch),
                     list_title: "Choice",
                     choices: &choices,
-                    selected: state.branches.delete_menu.selected,
+                    selected: state.ui.branches.delete_menu.selected,
                     list_height: 4,
-                    description: branch_delete_description(state.branches.delete_menu.selected)
+                    description: branch_delete_description(state.ui.branches.delete_menu.selected)
                         .to_string(),
                 },
             );
@@ -116,7 +116,7 @@ fn render_branch_delete_modal(frame: &mut Frame<'_>, state: &AppState, area: Rec
     );
 }
 
-fn render_branch_rebase_modal(frame: &mut Frame<'_>, state: &AppState, area: Rect) {
+fn render_branch_rebase_modal(frame: &mut Frame<'_>, state: &AppContext, area: Rect) {
     let choices = branch_rebase_choices();
     render_modal(
         frame,
@@ -139,15 +139,15 @@ fn render_branch_rebase_modal(frame: &mut Frame<'_>, state: &AppState, area: Rec
                 ChoiceMenuBody {
                     intro: format!(
                         "Selected target: {}",
-                        state.branches.rebase_menu.target_branch
+                        state.ui.branches.rebase_menu.target_branch
                     ),
                     list_title: "Choice",
                     choices: &choices,
-                    selected: state.branches.rebase_menu.selected,
+                    selected: state.ui.branches.rebase_menu.selected,
                     list_height: 4,
                     description: branch_rebase_description(
-                        state.branches.rebase_menu.selected,
-                        &state.branches.rebase_menu.target_branch,
+                        state.ui.branches.rebase_menu.selected,
+                        &state.ui.branches.rebase_menu.target_branch,
                     ),
                 },
             );
@@ -155,7 +155,7 @@ fn render_branch_rebase_modal(frame: &mut Frame<'_>, state: &AppState, area: Rec
     );
 }
 
-fn render_force_delete_modal(frame: &mut Frame<'_>, state: &AppState, area: Rect) {
+fn render_force_delete_modal(frame: &mut Frame<'_>, state: &AppContext, area: Rect) {
     render_modal(
         frame,
         area,
@@ -168,26 +168,26 @@ fn render_force_delete_modal(frame: &mut Frame<'_>, state: &AppState, area: Rect
                 ModalTone::Danger,
                 ConfirmBody::new(format!(
                     "Force delete branch: {}?",
-                    state.branches.force_delete_confirm.target_branch
+                    state.ui.branches.force_delete_confirm.target_branch
                 ))
                 .secondary("This action cannot be undone.")
                 .details(format!(
                     "Git refused safe deletion:\n{}",
-                    state.branches.force_delete_confirm.reason
+                    state.ui.branches.force_delete_confirm.reason
                 )),
             );
         },
     );
 }
 
-fn render_auto_stash_modal(frame: &mut Frame<'_>, state: &AppState, area: Rect) {
+fn render_auto_stash_modal(frame: &mut Frame<'_>, state: &AppContext, area: Rect) {
     render_modal(
         frame,
         area,
         ModalSpec::new("Confirm", ModalTone::Warning, 72, 10, 20, 7, 1),
         &[&[("Enter", "auto stash"), ("Esc", "cancel")]],
         |frame, content| {
-            let operation = state.branches.auto_stash_confirm.operation.as_ref();
+            let operation = state.ui.branches.auto_stash_confirm.operation.as_ref();
             render_confirm_body(
                 frame,
                 content,

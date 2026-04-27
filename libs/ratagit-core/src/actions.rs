@@ -1,5 +1,5 @@
 use crate::{
-    AppState, BranchDeleteMode, BranchEntry, CommitEntry, CommitFileDiffTarget, CommitFileEntry,
+    AppContext, BranchDeleteMode, BranchEntry, CommitEntry, CommitFileDiffTarget, CommitFileEntry,
     FileDiffTarget, FilesSnapshot, RefreshTarget, RepoSnapshot, ResetMode, StashEntry, operations,
 };
 
@@ -538,7 +538,7 @@ pub fn debounce_key_for_command(command: &Command) -> Option<&'static str> {
     command.debounce_key()
 }
 
-pub(crate) fn with_pending(state: &mut AppState, commands: Vec<Command>) -> Vec<Command> {
+pub(crate) fn with_pending(state: &mut AppContext, commands: Vec<Command>) -> Vec<Command> {
     for command in &commands {
         mark_command_pending(state, command);
     }
@@ -589,7 +589,7 @@ mod tests {
     }
 }
 
-fn mark_command_pending(state: &mut AppState, command: &Command) {
+fn mark_command_pending(state: &mut AppContext, command: &Command) {
     match command {
         Command::RefreshAll => {
             state.work.refresh_pending = true;
@@ -608,7 +608,7 @@ fn mark_command_pending(state: &mut AppState, command: &Command) {
             mark_refresh_target_pending(state, RefreshTarget::Stash);
         }
         Command::LoadMoreCommits { .. } => {
-            state.commits.loading_more = true;
+            state.work.commits_loading_more = true;
         }
         Command::RefreshFilesDetailsDiff { .. }
         | Command::RefreshBranchDetailsLog { .. }
@@ -617,7 +617,7 @@ fn mark_command_pending(state: &mut AppState, command: &Command) {
             state.work.details_pending = true;
         }
         Command::RefreshCommitFiles { .. } => {
-            state.commits.files.loading = true;
+            state.work.commit_files_loading = true;
         }
         _ => {
             if let Some(label) = command.pending_operation_label() {
@@ -627,7 +627,7 @@ fn mark_command_pending(state: &mut AppState, command: &Command) {
     }
 }
 
-fn mark_refresh_target_pending(state: &mut AppState, target: RefreshTarget) {
+fn mark_refresh_target_pending(state: &mut AppContext, target: RefreshTarget) {
     state.work.refresh_pending = true;
     state.work.pending_refreshes.insert(target);
 }
