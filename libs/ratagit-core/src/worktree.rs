@@ -94,6 +94,7 @@ pub(crate) fn stash_scope_for_current_files_selection(state: &AppContext) -> Sta
 pub(crate) fn open_reset_menu(state: &mut AppContext) {
     state.ui.editor.kind = None;
     close_discard_confirm(state);
+    close_reset_danger_confirm(state);
     branches::close_popovers(state);
     state.ui.reset_menu.active = true;
     state.ui.reset_menu.selected = ResetChoice::Mixed;
@@ -105,6 +106,21 @@ pub(crate) fn confirm_reset_menu(state: &mut AppContext) -> Vec<Command> {
     }
     let choice = state.ui.reset_menu.selected;
     state.ui.reset_menu.active = false;
+    if matches!(choice, ResetChoice::Hard | ResetChoice::Nuke) {
+        state.ui.reset_menu.danger_confirm = Some(choice);
+        Vec::new()
+    } else if let Some(mode) = choice.reset_mode() {
+        with_pending(state, vec![Command::Reset { mode }])
+    } else {
+        Vec::new()
+    }
+}
+
+pub(crate) fn confirm_reset_danger(state: &mut AppContext) -> Vec<Command> {
+    let Some(choice) = state.ui.reset_menu.danger_confirm else {
+        return Vec::new();
+    };
+    close_reset_danger_confirm(state);
     if choice == ResetChoice::Nuke {
         with_pending(state, vec![Command::Nuke])
     } else if let Some(mode) = choice.reset_mode() {
@@ -112,6 +128,10 @@ pub(crate) fn confirm_reset_menu(state: &mut AppContext) -> Vec<Command> {
     } else {
         Vec::new()
     }
+}
+
+pub(crate) fn close_reset_danger_confirm(state: &mut AppContext) {
+    state.ui.reset_menu.danger_confirm = None;
 }
 
 pub(crate) fn open_discard_confirm(state: &mut AppContext) {
@@ -123,6 +143,7 @@ pub(crate) fn open_discard_confirm(state: &mut AppContext) {
 
     state.ui.editor.kind = None;
     state.ui.reset_menu.active = false;
+    close_reset_danger_confirm(state);
     branches::close_popovers(state);
     state.ui.discard_confirm.active = true;
     state.ui.discard_confirm.paths = paths;

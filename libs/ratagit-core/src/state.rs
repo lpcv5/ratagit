@@ -383,6 +383,7 @@ impl ResetChoice {
 pub struct ResetMenuState {
     pub active: bool,
     pub selected: ResetChoice,
+    pub danger_confirm: Option<ResetChoice>,
 }
 
 impl Default for ResetMenuState {
@@ -390,6 +391,7 @@ impl Default for ResetMenuState {
         Self {
             active: false,
             selected: ResetChoice::Mixed,
+            danger_confirm: None,
         }
     }
 }
@@ -449,6 +451,7 @@ pub struct BranchesUiState {
     pub mode: BranchInputMode,
     pub create: BranchCreateState,
     pub delete_menu: BranchDeleteMenuState,
+    pub delete_confirm: BranchDeleteConfirmState,
     pub force_delete_confirm: BranchForceDeleteConfirmState,
     pub rebase_menu: BranchRebaseMenuState,
     pub auto_stash_confirm: AutoStashConfirmState,
@@ -477,6 +480,13 @@ impl Default for BranchDeleteMenuState {
             target_branch: String::new(),
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct BranchDeleteConfirmState {
+    pub active: bool,
+    pub target_branch: String,
+    pub mode: Option<BranchDeleteMode>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]

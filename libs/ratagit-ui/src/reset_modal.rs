@@ -4,12 +4,17 @@ use ratatui::layout::Rect;
 use ratatui::style::Style;
 
 use crate::modal::{
-    ChoiceMenuBody, ModalSpec, ModalTone, choice_menu_modal_height, render_choice_menu_body,
-    render_modal,
+    ChoiceMenuBody, ConfirmBody, ModalSpec, ModalTone, choice_menu_modal_height,
+    render_choice_menu_body, render_confirm_body, render_modal,
 };
 use crate::theme::{modal_danger_style, modal_muted_style};
 
 pub(crate) fn render_reset_modal(frame: &mut Frame<'_>, state: &AppContext, area: Rect) {
+    if state.ui.reset_menu.danger_confirm.is_some() {
+        render_reset_danger_modal(frame, state, area);
+        return;
+    }
+
     if !state.ui.reset_menu.active {
         return;
     }
@@ -41,6 +46,30 @@ pub(crate) fn render_reset_modal(frame: &mut Frame<'_>, state: &AppContext, area
                     list_height: 5,
                     description: reset_choice_description(state.ui.reset_menu.selected).to_string(),
                 },
+            );
+        },
+    );
+}
+
+fn render_reset_danger_modal(frame: &mut Frame<'_>, state: &AppContext, area: Rect) {
+    let choice = state
+        .ui
+        .reset_menu
+        .danger_confirm
+        .unwrap_or(ResetChoice::Hard);
+    render_modal(
+        frame,
+        area,
+        ModalSpec::new("Confirm", ModalTone::Danger, 76, 12, 20, 8, 1),
+        &[&[("Enter", reset_confirm_action(choice)), ("Esc", "cancel")]],
+        |frame, content| {
+            render_confirm_body(
+                frame,
+                content,
+                ModalTone::Danger,
+                ConfirmBody::new(reset_confirm_question(choice))
+                    .secondary("This can discard uncommitted work that reflog cannot restore.")
+                    .details(reset_confirm_details(choice)),
             );
         },
     );
@@ -84,5 +113,26 @@ fn reset_choice_description(choice: ResetChoice) -> &'static str {
         ResetChoice::Nuke => {
             "Nuke: hard reset, then remove untracked files/directories with `git clean -fd`."
         }
+    }
+}
+
+fn reset_confirm_action(choice: ResetChoice) -> &'static str {
+    match choice {
+        ResetChoice::Nuke => "nuke",
+        _ => "reset hard",
+    }
+}
+
+fn reset_confirm_question(choice: ResetChoice) -> &'static str {
+    match choice {
+        ResetChoice::Nuke => "Nuke working tree?",
+        _ => "Hard reset working tree to HEAD?",
+    }
+}
+
+fn reset_confirm_details(choice: ResetChoice) -> &'static str {
+    match choice {
+        ResetChoice::Nuke => "Runs `git reset --hard HEAD` and `git clean -fd`.",
+        _ => "Runs `git reset --hard HEAD`.",
     }
 }

@@ -666,6 +666,40 @@ fn terminal_snapshot_files_reset_modal_nuke_description() {
 }
 
 #[test]
+fn terminal_snapshot_files_reset_hard_confirm_modal() {
+    let mut state = AppContext::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+    update(&mut state, Action::Ui(UiAction::OpenResetMenu));
+    state.ui.reset_menu.selected = ResetChoice::Hard;
+    update(&mut state, Action::Ui(UiAction::ConfirmResetMenu));
+
+    insta::assert_snapshot!(render_terminal_text(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    ));
+}
+
+#[test]
+fn terminal_snapshot_files_reset_nuke_confirm_modal() {
+    let mut state = AppContext::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+    update(&mut state, Action::Ui(UiAction::OpenResetMenu));
+    state.ui.reset_menu.selected = ResetChoice::Nuke;
+    update(&mut state, Action::Ui(UiAction::ConfirmResetMenu));
+
+    insta::assert_snapshot!(render_terminal_text(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    ));
+}
+
+#[test]
 fn terminal_snapshot_files_discard_confirm_modal() {
     let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
@@ -738,6 +772,59 @@ fn terminal_snapshot_branches_delete_modal() {
     let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
     apply_mock_details_commands(&mut state, commands);
     update(&mut state, Action::Ui(UiAction::OpenBranchDeleteMenu));
+
+    insta::assert_snapshot!(render_terminal_text(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    ));
+}
+
+#[test]
+fn terminal_snapshot_branches_remote_delete_confirm_modal() {
+    let mut state = AppContext::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+    let commands = update(
+        &mut state,
+        Action::Ui(UiAction::FocusPanel {
+            panel: PanelFocus::Branches,
+        }),
+    );
+    apply_mock_details_commands(&mut state, commands);
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+    apply_mock_details_commands(&mut state, commands);
+    update(&mut state, Action::Ui(UiAction::OpenBranchDeleteMenu));
+    update(&mut state, Action::Ui(UiAction::MoveBranchDeleteMenuDown));
+    update(&mut state, Action::Ui(UiAction::ConfirmBranchDeleteMenu));
+
+    insta::assert_snapshot!(render_terminal_text(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    ));
+}
+
+#[test]
+fn terminal_snapshot_branches_both_delete_confirm_modal() {
+    let mut state = AppContext::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+    let commands = update(
+        &mut state,
+        Action::Ui(UiAction::FocusPanel {
+            panel: PanelFocus::Branches,
+        }),
+    );
+    apply_mock_details_commands(&mut state, commands);
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+    apply_mock_details_commands(&mut state, commands);
+    update(&mut state, Action::Ui(UiAction::OpenBranchDeleteMenu));
+    update(&mut state, Action::Ui(UiAction::MoveBranchDeleteMenuDown));
+    update(&mut state, Action::Ui(UiAction::MoveBranchDeleteMenuDown));
+    update(&mut state, Action::Ui(UiAction::ConfirmBranchDeleteMenu));
 
     insta::assert_snapshot!(render_terminal_text(
         &state,

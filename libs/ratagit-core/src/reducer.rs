@@ -89,6 +89,11 @@ fn update_ui(state: &mut AppContext, action: UiAction) -> Vec<Command> {
             branches::close_delete_menu(state);
             Vec::new()
         }
+        UiAction::ConfirmBranchDeleteDanger => branches::confirm_delete_danger(state),
+        UiAction::CancelBranchDeleteDanger => {
+            branches::close_delete_confirm(state);
+            Vec::new()
+        }
         UiAction::ConfirmBranchForceDelete => branches::confirm_force_delete(state),
         UiAction::CancelBranchForceDelete => {
             branches::close_force_delete_confirm(state);
@@ -131,6 +136,11 @@ fn update_ui(state: &mut AppContext, action: UiAction) -> Vec<Command> {
         UiAction::ConfirmResetMenu => worktree::confirm_reset_menu(state),
         UiAction::CancelResetMenu => {
             state.ui.reset_menu.active = false;
+            Vec::new()
+        }
+        UiAction::ConfirmResetDanger => worktree::confirm_reset_danger(state),
+        UiAction::CancelResetDanger => {
+            worktree::close_reset_danger_confirm(state);
             Vec::new()
         }
         UiAction::OpenDiscardConfirm => {

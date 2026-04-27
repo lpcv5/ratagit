@@ -2,31 +2,33 @@
 
 ## Current Slice
 
-Show an animated loading spinner and loading type before the bottom key area
-while repository work is pending.
+Add confirmation modals before Git operations that can discard unrecoverable
+worktree data or remove remote branches.
 
 ## Goal
 
-- keep rendering pure by passing animation frame through an explicit render context
-- derive loading visibility and type from `AppContext.work`
-- keep the bottom key area unchanged when no work is pending
-- animate the spinner in the real TUI without adding animation frame to business state
+- keep confirmations in `AppContext.ui` as the only source of truth
+- keep rendering pure and deterministic
+- require explicit confirmation for `reset --hard`, `nuke`, and remote branch deletion
+- preserve existing force push, force branch delete, discard, and auto-stash flows
+- avoid extra confirmation for recoverable operations such as pull, normal push,
+  checkout, rebase, and private commit rewrites
 
 ## Vertical Slice
 
-1. Render context
-- add a render context carrying the current spinner frame
-- preserve deterministic default render APIs for tests and harnesses
+1. Core state and reducer
+- add reset danger confirmation state for `hard` and `Nuke`
+- add branch delete confirmation state for remote and local+remote deletes
+- confirm actions emit the existing Git commands; cancel actions leave Git state unchanged
 
-2. Loading indicator
-- add a bottom-bar loading indicator component
-- show spinner and loading type before shortcut keys when work is pending
-- derive type from operations, refreshes, details, Commit Files, and commit pagination
+2. UI and input
+- render danger confirmation modals using existing modal primitives
+- route Enter/Esc to confirm/cancel while a confirmation is active
 
 3. Tests and harness
-- add unit coverage for loading type priority and spinner frame selection
-- add UI snapshot/render coverage for the bottom loading prefix
-- update harness coverage for async refresh loading state
+- add reducer coverage for confirm/cancel behavior
+- add UI snapshot coverage for hard reset, nuke, remote delete, and local+remote delete confirmations
+- add harness scenarios asserting no Git mutation before confirmation and mutation after confirmation
 
 4. Documentation
 - update `docs/PRODUCT.md` because behavior changes
@@ -39,9 +41,5 @@ while repository work is pending.
 ## Latest Validation
 
 - `cargo fmt`
-- `cargo check -p ratagit-core`
-- `cargo check --workspace`
-- `cargo test --workspace --no-run`
-- `cargo test -p ratagit-harness --test harness`
 - `cargo clippy --workspace --lib --bins -- -D warnings`
 - `cargo test`

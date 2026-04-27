@@ -11,6 +11,7 @@ use crate::{
 
 pub(crate) fn open_commit_editor(state: &mut AppContext) {
     state.ui.reset_menu.active = false;
+    state.ui.reset_menu.danger_confirm = None;
     close_discard_confirm(state);
     branches::close_popovers(state);
     state.ui.editor.kind = Some(EditorKind::Commit {
@@ -25,6 +26,7 @@ pub(crate) fn open_commit_editor(state: &mut AppContext) {
 
 pub(crate) fn open_stash_editor(state: &mut AppContext) {
     state.ui.reset_menu.active = false;
+    state.ui.reset_menu.danger_confirm = None;
     close_discard_confirm(state);
     branches::close_popovers(state);
     state.ui.editor.kind = Some(EditorKind::Stash {
@@ -56,6 +58,7 @@ pub(crate) fn open_commit_reword_editor(state: &mut AppContext) {
         return;
     }
     state.ui.reset_menu.active = false;
+    state.ui.reset_menu.danger_confirm = None;
     close_discard_confirm(state);
     branches::close_popovers(state);
     let (message, body) = split_commit_message(&commit.message);

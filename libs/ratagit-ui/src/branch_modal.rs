@@ -1,4 +1,6 @@
-use ratagit_core::{AppContext, AutoStashOperation, BranchDeleteChoice, BranchRebaseChoice};
+use ratagit_core::{
+    AppContext, AutoStashOperation, BranchDeleteChoice, BranchDeleteMode, BranchRebaseChoice,
+};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
 use ratatui::style::Style;
@@ -21,6 +23,9 @@ pub(crate) fn render_branch_modals(frame: &mut Frame<'_>, state: &AppContext, ar
     if state.ui.branches.delete_menu.active {
         render_branch_delete_modal(frame, state, area);
     }
+    if state.ui.branches.delete_confirm.active {
+        render_branch_delete_confirm_modal(frame, state, area);
+    }
     if state.ui.branches.force_delete_confirm.active {
         render_force_delete_modal(frame, state, area);
     }
@@ -30,6 +35,35 @@ pub(crate) fn render_branch_modals(frame: &mut Frame<'_>, state: &AppContext, ar
     if state.ui.branches.auto_stash_confirm.active {
         render_auto_stash_modal(frame, state, area);
     }
+}
+
+fn render_branch_delete_confirm_modal(frame: &mut Frame<'_>, state: &AppContext, area: Rect) {
+    let mode = state
+        .ui
+        .branches
+        .delete_confirm
+        .mode
+        .unwrap_or(BranchDeleteMode::Remote);
+    let branch = &state.ui.branches.delete_confirm.target_branch;
+    render_modal(
+        frame,
+        area,
+        ModalSpec::new("Confirm", ModalTone::Danger, 76, 12, 20, 8, 1),
+        &[&[
+            ("Enter", branch_delete_confirm_action(mode)),
+            ("Esc", "cancel"),
+        ]],
+        |frame, content| {
+            render_confirm_body(
+                frame,
+                content,
+                ModalTone::Danger,
+                ConfirmBody::new(branch_delete_confirm_question(mode, branch))
+                    .secondary("Remote branch deletion may affect other collaborators.")
+                    .details(branch_delete_confirm_details(mode, branch)),
+            );
+        },
+    );
 }
 
 pub(crate) fn branch_create_cursor_position(
@@ -239,6 +273,30 @@ fn branch_delete_description(choice: BranchDeleteChoice) -> &'static str {
         BranchDeleteChoice::Local => "Delete the selected local branch with `git branch -d`.",
         BranchDeleteChoice::Remote => "Delete `origin/<branch>` with `git push origin --delete`.",
         BranchDeleteChoice::Both => "Delete the local branch first, then delete `origin/<branch>`.",
+    }
+}
+
+fn branch_delete_confirm_action(mode: BranchDeleteMode) -> &'static str {
+    match mode {
+        BranchDeleteMode::Remote => "delete remote",
+        BranchDeleteMode::Both => "delete both",
+        BranchDeleteMode::Local => "delete local",
+    }
+}
+
+fn branch_delete_confirm_question(mode: BranchDeleteMode, branch: &str) -> String {
+    match mode {
+        BranchDeleteMode::Remote => format!("Delete remote branch origin/{branch}?"),
+        BranchDeleteMode::Both => format!("Delete local and remote branch {branch}?"),
+        BranchDeleteMode::Local => format!("Delete local branch {branch}?"),
+    }
+}
+
+fn branch_delete_confirm_details(mode: BranchDeleteMode, branch: &str) -> String {
+    match mode {
+        BranchDeleteMode::Remote => format!("Runs `git push origin --delete {branch}`."),
+        BranchDeleteMode::Both => format!("Deletes local branch, then origin/{branch}."),
+        BranchDeleteMode::Local => "Runs `git branch -d`.".to_string(),
     }
 }
 

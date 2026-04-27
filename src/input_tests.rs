@@ -37,6 +37,12 @@ mod tests {
         state
     }
 
+    fn active_reset_danger_state() -> AppContext {
+        let mut state = AppContext::default();
+        state.ui.reset_menu.danger_confirm = Some(ratagit_core::ResetChoice::Hard);
+        state
+    }
+
     fn active_discard_confirm_state() -> AppContext {
         let mut state = AppContext::default();
         state.ui.discard_confirm.active = true;
@@ -66,6 +72,14 @@ mod tests {
     fn active_branch_force_delete_state() -> AppContext {
         let mut state = AppContext::default();
         state.ui.branches.force_delete_confirm.active = true;
+        state
+    }
+
+    fn active_branch_delete_confirm_state() -> AppContext {
+        let mut state = AppContext::default();
+        state.ui.branches.delete_confirm.active = true;
+        state.ui.branches.delete_confirm.target_branch = "feature/mvp".to_string();
+        state.ui.branches.delete_confirm.mode = Some(ratagit_core::BranchDeleteMode::Remote);
         state
     }
 
@@ -486,6 +500,21 @@ mod tests {
     }
 
     #[test]
+    fn reset_danger_confirm_maps_confirm_and_cancel_before_panels() {
+        let state = active_reset_danger_state();
+
+        assert_eq!(
+            map_key(&state, KeyCode::Enter),
+            Some(UiAction::ConfirmResetDanger)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Esc),
+            Some(UiAction::CancelResetDanger)
+        );
+        assert_eq!(map_key(&state, KeyCode::Char('D')), None);
+    }
+
+    #[test]
     fn branch_create_input_maps_text_until_confirm_or_cancel() {
         let state = active_branch_create_state();
 
@@ -550,6 +579,17 @@ mod tests {
         assert_eq!(
             map_key(&state, KeyCode::Char('j')),
             Some(UiAction::MoveBranchDeleteMenuDown)
+        );
+        assert_eq!(map_key(&state, KeyCode::Char('d')), None);
+
+        let state = active_branch_delete_confirm_state();
+        assert_eq!(
+            map_key(&state, KeyCode::Enter),
+            Some(UiAction::ConfirmBranchDeleteDanger)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Esc),
+            Some(UiAction::CancelBranchDeleteDanger)
         );
         assert_eq!(map_key(&state, KeyCode::Char('d')), None);
 

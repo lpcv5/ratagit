@@ -77,6 +77,10 @@ pub(crate) fn shortcut_line_for_state(state: &AppContext) -> ShortcutLine {
         return segments(&[("j/k", "select"), ("Enter", "delete"), ("Esc", "cancel")]);
     }
 
+    if state.ui.branches.delete_confirm.active {
+        return segments(&[("Enter", "confirm"), ("Esc", "cancel")]);
+    }
+
     if state.ui.branches.force_delete_confirm.active {
         return segments(&[("Enter", "force delete"), ("Esc", "cancel")]);
     }
@@ -91,6 +95,10 @@ pub(crate) fn shortcut_line_for_state(state: &AppContext) -> ShortcutLine {
 
     if state.ui.reset_menu.active {
         return segments(&[("j/k", "select"), ("Enter", "confirm"), ("Esc", "cancel")]);
+    }
+
+    if state.ui.reset_menu.danger_confirm.is_some() {
+        return segments(&[("Enter", "confirm"), ("Esc", "cancel")]);
     }
 
     if state.ui.discard_confirm.active {

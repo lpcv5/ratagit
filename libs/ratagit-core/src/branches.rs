@@ -208,6 +208,10 @@ pub(crate) fn confirm_delete_menu(state: &mut AppContext) -> Vec<Command> {
         return Vec::new();
     }
     close_delete_menu(state);
+    if matches!(mode, BranchDeleteMode::Remote | BranchDeleteMode::Both) {
+        open_delete_confirm(state, name, mode);
+        return Vec::new();
+    }
     with_pending(
         state,
         vec![Command::DeleteBranch {
@@ -216,6 +220,41 @@ pub(crate) fn confirm_delete_menu(state: &mut AppContext) -> Vec<Command> {
             force: false,
         }],
     )
+}
+
+pub(crate) fn open_delete_confirm(state: &mut AppContext, name: String, mode: BranchDeleteMode) {
+    close_popovers(state);
+    state.ui.branches.delete_confirm.active = true;
+    state.ui.branches.delete_confirm.target_branch = name;
+    state.ui.branches.delete_confirm.mode = Some(mode);
+}
+
+pub(crate) fn confirm_delete_danger(state: &mut AppContext) -> Vec<Command> {
+    if !state.ui.branches.delete_confirm.active {
+        return Vec::new();
+    }
+    let name = state.ui.branches.delete_confirm.target_branch.clone();
+    let mode = state
+        .ui
+        .branches
+        .delete_confirm
+        .mode
+        .unwrap_or(BranchDeleteMode::Remote);
+    close_delete_confirm(state);
+    with_pending(
+        state,
+        vec![Command::DeleteBranch {
+            name,
+            mode,
+            force: false,
+        }],
+    )
+}
+
+pub(crate) fn close_delete_confirm(state: &mut AppContext) {
+    state.ui.branches.delete_confirm.active = false;
+    state.ui.branches.delete_confirm.target_branch.clear();
+    state.ui.branches.delete_confirm.mode = None;
 }
 
 pub(crate) fn close_delete_menu(state: &mut AppContext) {
@@ -352,8 +391,10 @@ pub(crate) fn close_auto_stash_confirm(state: &mut AppContext) {
 }
 
 pub(crate) fn close_popovers(state: &mut AppContext) {
+    state.ui.reset_menu.danger_confirm = None;
     close_create_input(state);
     close_delete_menu(state);
+    close_delete_confirm(state);
     close_force_delete_confirm(state);
     close_rebase_menu(state);
     close_auto_stash_confirm(state);

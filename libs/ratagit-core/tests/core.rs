@@ -587,7 +587,25 @@ fn branch_delete_menu_blocks_current_local_delete() {
 }
 
 #[test]
-fn branch_delete_menu_selects_mode_and_emits_command() {
+fn branch_delete_menu_local_emits_command() {
+    let mut state = state_with_branches_and_files(Vec::new());
+    state.ui.branches.selected = 1;
+
+    update(&mut state, Action::Ui(UiAction::OpenBranchDeleteMenu));
+    let commands = update(&mut state, Action::Ui(UiAction::ConfirmBranchDeleteMenu));
+
+    assert_eq!(
+        commands,
+        vec![Command::DeleteBranch {
+            name: "feature/mvp".to_string(),
+            mode: BranchDeleteMode::Local,
+            force: false,
+        }]
+    );
+}
+
+#[test]
+fn branch_remote_delete_requires_confirmation() {
     let mut state = state_with_branches_and_files(Vec::new());
     state.ui.branches.selected = 1;
 
@@ -597,6 +615,34 @@ fn branch_delete_menu_selects_mode_and_emits_command() {
         state.ui.branches.delete_menu.selected,
         BranchDeleteChoice::Remote
     );
+    let commands = update(&mut state, Action::Ui(UiAction::ConfirmBranchDeleteMenu));
+
+    assert!(commands.is_empty());
+    assert!(state.ui.branches.delete_confirm.active);
+    assert_eq!(
+        state.ui.branches.delete_confirm.mode,
+        Some(BranchDeleteMode::Remote)
+    );
+
+    let commands = update(&mut state, Action::Ui(UiAction::ConfirmBranchDeleteDanger));
+
+    assert_eq!(
+        commands,
+        vec![Command::DeleteBranch {
+            name: "feature/mvp".to_string(),
+            mode: BranchDeleteMode::Remote,
+            force: false,
+        }]
+    );
+}
+
+#[test]
+fn branch_both_delete_requires_confirmation_and_can_cancel() {
+    let mut state = state_with_branches_and_files(Vec::new());
+    state.ui.branches.selected = 1;
+
+    update(&mut state, Action::Ui(UiAction::OpenBranchDeleteMenu));
+    update(&mut state, Action::Ui(UiAction::MoveBranchDeleteMenuDown));
     update(&mut state, Action::Ui(UiAction::MoveBranchDeleteMenuDown));
     assert_eq!(
         state.ui.branches.delete_menu.selected,
@@ -604,14 +650,17 @@ fn branch_delete_menu_selects_mode_and_emits_command() {
     );
     let commands = update(&mut state, Action::Ui(UiAction::ConfirmBranchDeleteMenu));
 
+    assert!(commands.is_empty());
+    assert!(state.ui.branches.delete_confirm.active);
     assert_eq!(
-        commands,
-        vec![Command::DeleteBranch {
-            name: "feature/mvp".to_string(),
-            mode: BranchDeleteMode::Both,
-            force: false,
-        }]
+        state.ui.branches.delete_confirm.mode,
+        Some(BranchDeleteMode::Both)
     );
+
+    let commands = update(&mut state, Action::Ui(UiAction::CancelBranchDeleteDanger));
+
+    assert!(commands.is_empty());
+    assert!(!state.ui.branches.delete_confirm.active);
 }
 
 #[test]
@@ -2622,7 +2671,7 @@ fn reset_menu_opens_moves_and_cancels() {
 }
 
 #[test]
-fn reset_menu_confirm_emits_selected_reset_command() {
+fn reset_menu_confirm_emits_recoverable_reset_commands() {
     let cases = [
         (
             ResetChoice::Mixed,
@@ -2636,6 +2685,23 @@ fn reset_menu_confirm_emits_selected_reset_command() {
                 mode: ResetMode::Soft,
             },
         ),
+    ];
+
+    for (choice, expected_command) in cases {
+        let mut state = AppContext::default();
+        update(&mut state, Action::Ui(UiAction::OpenResetMenu));
+        state.ui.reset_menu.selected = choice;
+
+        let commands = update(&mut state, Action::Ui(UiAction::ConfirmResetMenu));
+
+        assert_eq!(commands, vec![expected_command]);
+        assert!(!state.ui.reset_menu.active);
+    }
+}
+
+#[test]
+fn reset_menu_hard_and_nuke_require_confirmation() {
+    let cases = [
         (
             ResetChoice::Hard,
             Command::Reset {
@@ -2652,9 +2718,28 @@ fn reset_menu_confirm_emits_selected_reset_command() {
 
         let commands = update(&mut state, Action::Ui(UiAction::ConfirmResetMenu));
 
-        assert_eq!(commands, vec![expected_command]);
+        assert!(commands.is_empty());
         assert!(!state.ui.reset_menu.active);
+        assert_eq!(state.ui.reset_menu.danger_confirm, Some(choice));
+
+        let commands = update(&mut state, Action::Ui(UiAction::ConfirmResetDanger));
+
+        assert_eq!(commands, vec![expected_command]);
+        assert!(state.ui.reset_menu.danger_confirm.is_none());
     }
+}
+
+#[test]
+fn reset_danger_confirmation_can_cancel() {
+    let mut state = AppContext::default();
+    update(&mut state, Action::Ui(UiAction::OpenResetMenu));
+    state.ui.reset_menu.selected = ResetChoice::Hard;
+    update(&mut state, Action::Ui(UiAction::ConfirmResetMenu));
+
+    let commands = update(&mut state, Action::Ui(UiAction::CancelResetDanger));
+
+    assert!(commands.is_empty());
+    assert!(state.ui.reset_menu.danger_confirm.is_none());
 }
 
 #[test]

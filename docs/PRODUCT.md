@@ -48,6 +48,10 @@ Navigation rules:
 - `Ctrl+U` / `Ctrl+D` scrolls the Details panel content by 2/5 of its content height regardless of the current focus
 - `p` pulls and `P` pushes from normal mode regardless of focused panel; active
   text inputs and confirmation modals keep their own key handling
+- confirmation modals are reserved for operations that can discard unrecoverable
+  working tree data, remove remote branches, force delete local branches, or
+  force push; recoverable operations such as normal pull/push, checkout, rebase,
+  and private commit rewrites do not add extra confirmations
 - all panel titles show numbered focus hints: `[1]..[6]`; in the terminal UI
   these hints render as badge-style reverse-video numbers
 - top branch/focus/status summary is hidden to prioritize panels
@@ -115,7 +119,9 @@ Files panel rules:
 - `D` opens a repository reset menu from Files focus
   - choices are `mixed`, `soft`, `hard`, and `Nuke`
   - `j` / `k` or arrow keys move the menu selection
-  - `Enter` immediately confirms, `Esc` cancels
+  - `Enter` immediately runs `mixed` or `soft`; `hard` and `Nuke` open a danger
+    confirmation modal before running
+  - `Esc` cancels the menu or confirmation
   - reset choices target `HEAD`
   - `Nuke` runs hard reset semantics and then removes untracked files/directories with `git clean -fd`
 - `d` opens a discard confirmation modal for the current Files target
@@ -175,6 +181,8 @@ Branches panel rules:
 - `d` opens a branch delete menu
   - choices are local, remote, and local plus remote
   - local deletion uses safe `git branch -d`
+  - remote deletion and local plus remote deletion open a danger confirmation
+    before mutating Git state
   - if Git reports the branch is not fully merged, a force-delete confirmation
     modal opens so the user can decide whether to delete with `git branch -D`
   - remote deletion targets `origin/<selected-local-branch>`

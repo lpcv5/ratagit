@@ -1253,6 +1253,7 @@ fn harness_files_reset_hard_menu() {
         UiAction::MoveResetMenuDown,
         UiAction::MoveResetMenuDown,
         UiAction::ConfirmResetMenu,
+        UiAction::ConfirmResetDanger,
     ];
     assert_scenario(MockScenario::new(
         "files_reset_hard_menu",
@@ -1282,6 +1283,7 @@ fn harness_files_reset_nuke_menu() {
         UiAction::MoveResetMenuDown,
         UiAction::MoveResetMenuDown,
         UiAction::ConfirmResetMenu,
+        UiAction::ConfirmResetDanger,
     ];
     assert_scenario(MockScenario::new(
         "files_reset_nuke_menu",
@@ -1294,6 +1296,55 @@ fn harness_files_reset_nuke_menu() {
             batch_selected_screen_rows: &[],
             git_ops_contains: &["nuke", "refresh"],
             git_state_contains: &["status_summary: \"staged: 0, unstaged: 0\"", "files: []"],
+        },
+    ));
+}
+
+#[test]
+fn harness_files_reset_hard_requires_confirmation() {
+    let inputs = [
+        UiAction::RefreshAll,
+        UiAction::OpenResetMenu,
+        UiAction::MoveResetMenuDown,
+        UiAction::MoveResetMenuDown,
+        UiAction::ConfirmResetMenu,
+    ];
+    assert_scenario(MockScenario::new(
+        "files_reset_hard_requires_confirmation",
+        fixture_dirty_repo(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &["Hard reset working tree to HEAD?", "Enter  confirm"],
+            screen_not_contains: &["Reset hard to HEAD"],
+            selected_screen_rows: &[],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["refresh"],
+            git_state_contains: &["path: \"src/main.rs\"", "path: \"README.md\""],
+        },
+    ));
+}
+
+#[test]
+fn harness_files_reset_hard_confirmation_can_cancel() {
+    let inputs = [
+        UiAction::RefreshAll,
+        UiAction::OpenResetMenu,
+        UiAction::MoveResetMenuDown,
+        UiAction::MoveResetMenuDown,
+        UiAction::ConfirmResetMenu,
+        UiAction::CancelResetDanger,
+    ];
+    assert_scenario(MockScenario::new(
+        "files_reset_hard_confirm_cancel",
+        fixture_dirty_repo(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &["README.md", "space  stage/unstage"],
+            screen_not_contains: &["Reset hard to HEAD"],
+            selected_screen_rows: &[],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["refresh"],
+            git_state_contains: &["path: \"src/main.rs\"", "path: \"README.md\""],
         },
     ));
 }
@@ -2181,6 +2232,57 @@ fn harness_branches_delete_local_branch() {
             batch_selected_screen_rows: &[],
             git_ops_contains: &["delete-local:feature/mvp"],
             git_state_contains: &["current_branch: \"main\""],
+        },
+    ));
+}
+
+#[test]
+fn harness_branches_delete_remote_requires_confirmation() {
+    let inputs = [
+        UiAction::RefreshAll,
+        UiAction::FocusNext,
+        UiAction::MoveDown,
+        UiAction::OpenBranchDeleteMenu,
+        UiAction::MoveBranchDeleteMenuDown,
+        UiAction::ConfirmBranchDeleteMenu,
+    ];
+    assert_scenario(MockScenario::new(
+        "branches_delete_remote_requires_confirmation",
+        fixture_dirty_repo(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &["Delete remote branch origin/feature/mvp?", "Enter  confirm"],
+            screen_not_contains: &["Deleted remote branch"],
+            selected_screen_rows: &[],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["refresh"],
+            git_state_contains: &["current_branch: \"main\"", "name: \"feature/mvp\""],
+        },
+    ));
+}
+
+#[test]
+fn harness_branches_delete_remote_after_confirmation() {
+    let inputs = [
+        UiAction::RefreshAll,
+        UiAction::FocusNext,
+        UiAction::MoveDown,
+        UiAction::OpenBranchDeleteMenu,
+        UiAction::MoveBranchDeleteMenuDown,
+        UiAction::ConfirmBranchDeleteMenu,
+        UiAction::ConfirmBranchDeleteDanger,
+    ];
+    assert_scenario(MockScenario::new(
+        "branches_delete_remote_after_confirmation",
+        fixture_dirty_repo(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &["Deleted remote branch: feature/mvp"],
+            screen_not_contains: &["Delete remote branch origin/feature/mvp?"],
+            selected_screen_rows: &[],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["delete-remote:origin/feature/mvp", "refresh"],
+            git_state_contains: &["current_branch: \"main\"", "name: \"feature/mvp\""],
         },
     ));
 }

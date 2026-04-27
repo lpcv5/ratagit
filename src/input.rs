@@ -116,6 +116,14 @@ fn ui_action_for_key(
         };
     }
 
+    if state.ui.branches.delete_confirm.active {
+        return match code {
+            KeyCode::Enter => Some(UiAction::ConfirmBranchDeleteDanger),
+            KeyCode::Esc => Some(UiAction::CancelBranchDeleteDanger),
+            _ => None,
+        };
+    }
+
     if state.ui.branches.force_delete_confirm.active {
         return match code {
             KeyCode::Enter => Some(UiAction::ConfirmBranchForceDelete),
@@ -148,6 +156,14 @@ fn ui_action_for_key(
             KeyCode::Esc => Some(UiAction::CancelResetMenu),
             KeyCode::Up | KeyCode::Char('k') => Some(UiAction::MoveResetMenuUp),
             KeyCode::Down | KeyCode::Char('j') => Some(UiAction::MoveResetMenuDown),
+            _ => None,
+        };
+    }
+
+    if state.ui.reset_menu.danger_confirm.is_some() {
+        return match code {
+            KeyCode::Enter => Some(UiAction::ConfirmResetDanger),
+            KeyCode::Esc => Some(UiAction::CancelResetDanger),
             _ => None,
         };
     }
