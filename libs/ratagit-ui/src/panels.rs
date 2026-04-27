@@ -412,36 +412,50 @@ mod tests {
     }
 
     #[test]
-    fn details_panel_projects_files_diff_with_colored_roles() {
+    fn details_panel_projects_files_diff_as_native_output_lines() {
         let state = state_with_dirty_repo();
 
         let lines = render_details_lines(&state, 5);
 
         assert_eq!(lines[0].text, "  ### unstaged");
-        assert_eq!(lines[0].role, RowRole::DiffSection);
-        assert_eq!(lines[1].role, RowRole::DiffMeta);
-        assert_eq!(lines[2].role, RowRole::DiffHunk);
-        assert_eq!(lines[3].role, RowRole::DiffRemove);
-        assert_eq!(lines[4].role, RowRole::DiffAdd);
+        assert!(lines.iter().all(|line| line.role == RowRole::Normal));
+        assert!(
+            lines
+                .iter()
+                .all(|line| line.spans.as_ref().is_some_and(|spans| !spans.is_empty()))
+        );
     }
 
     #[test]
-    fn details_panel_projects_commit_diff_with_colored_patch_roles() {
+    fn details_panel_projects_commit_diff_with_git_ansi_spans() {
         let mut state = state_with_dirty_repo();
         state.last_left_focus = PanelFocus::Commits;
         state.details.commit_diff_target = Some("abc1234".to_string());
-        state.details.commit_diff =
-            "commit abc1234\nAuthor: ratagit-tests\n\ndiff --git a/a.txt b/a.txt\n@@ -1 +1 @@\n-old\n+new"
-                .to_string();
+        state.details.commit_diff = concat!(
+            "commit abc1234\n",
+            "Author: ratagit-tests\n",
+            "\n",
+            "\u{1b}[1mdiff --git a/a.txt b/a.txt\u{1b}[m\n",
+            "\u{1b}[36m@@ -1 +1 @@\u{1b}[m\n",
+            "\u{1b}[31m-old\u{1b}[m\n",
+            "\u{1b}[32m+new\u{1b}[m"
+        )
+        .to_string();
 
         let lines = render_details_lines(&state, 7);
 
         assert_eq!(lines[0].text, "  commit abc1234");
         assert_eq!(lines[0].role, RowRole::Normal);
-        assert_eq!(lines[3].role, RowRole::DiffMeta);
-        assert_eq!(lines[4].role, RowRole::DiffHunk);
-        assert_eq!(lines[5].role, RowRole::DiffRemove);
-        assert_eq!(lines[6].role, RowRole::DiffAdd);
+        assert!(lines.iter().all(|line| line.role == RowRole::Normal));
+        let add_spans = lines[6]
+            .spans
+            .as_ref()
+            .expect("commit diff should preserve ansi spans");
+        assert_eq!(add_spans[1].text, "+new");
+        assert_eq!(
+            add_spans[1].style,
+            ratatui::style::Style::default().fg(ratatui::style::Color::Green)
+        );
     }
 
     #[test]

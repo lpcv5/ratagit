@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use git2::{
-    BranchType, Diff, DiffDelta, DiffFormat, DiffOptions, ErrorCode, Object, Oid, Repository,
-    Status, StatusEntry, StatusOptions, StatusShow, Tree,
+    BranchType, DiffDelta, ErrorCode, Object, Oid, Repository, Status, StatusEntry, StatusOptions,
+    StatusShow,
 };
 use ratagit_core::{
     BranchDeleteMode, BranchEntry, COMMITS_PAGE_SIZE, CommitEntry, CommitHashStatus,
@@ -48,22 +48,6 @@ impl HybridGitBackend {
             Err(error) if error.code() == ErrorCode::NotFound => Ok(stashes),
             Err(error) => Err(error.into()),
         }
-    }
-
-    fn head_tree(&self) -> Result<Option<Tree<'_>>, GitError> {
-        let head = match self.repo.head() {
-            Ok(head) => head,
-            Err(error) if is_missing_head_error(&error) => {
-                return Ok(None);
-            }
-            Err(error) => return Err(error.into()),
-        };
-        let commit = match head.peel_to_commit() {
-            Ok(commit) => commit,
-            Err(error) if is_missing_head_error(&error) => return Ok(None),
-            Err(error) => return Err(error.into()),
-        };
-        Ok(Some(commit.tree()?))
     }
 
     fn head_object(&self) -> Result<Option<Object<'_>>, GitError> {
@@ -203,13 +187,8 @@ impl GitBackend for HybridGitBackend {
         }
 
         let selected_paths = selected_pathspecs(targets.iter().map(|target| &target.path))?;
-        let mut unstaged_options = diff_options(&selected_paths);
         let started = Instant::now();
-        let mut unstaged = format_diff(
-            &self
-                .repo
-                .diff_index_to_workdir(None, Some(&mut unstaged_options))?,
-        )?;
+        let mut unstaged = self.cli.files_unstaged_diff(&selected_paths)?;
         trace_diff_step("unstaged_diff", started, selected_paths.len());
         let started = Instant::now();
         let untracked = format_untracked_diffs(&self.workdir, targets)?;
@@ -221,14 +200,8 @@ impl GitBackend for HybridGitBackend {
             unstaged.push_str(&untracked);
         }
 
-        let head_tree = self.head_tree()?;
-        let mut staged_options = diff_options(&selected_paths);
         let started = Instant::now();
-        let staged = format_diff(&self.repo.diff_tree_to_index(
-            head_tree.as_ref(),
-            None,
-            Some(&mut staged_options),
-        )?)?;
+        let staged = self.cli.files_staged_diff(&selected_paths)?;
         trace_diff_step("staged_diff", started, selected_paths.len());
 
         let mut sections = Vec::new();
@@ -965,24 +938,6 @@ fn selected_pathspecs<'a>(
             Ok(path.clone())
         })
         .collect()
-}
-
-fn diff_options(paths: &[String]) -> DiffOptions {
-    let mut options = DiffOptions::new();
-    options.disable_pathspec_match(true);
-    for path in paths {
-        options.pathspec(path.as_str());
-    }
-    options
-}
-
-fn format_diff(diff: &Diff<'_>) -> Result<String, GitError> {
-    let mut bytes = Vec::new();
-    diff.print(DiffFormat::Patch, |_delta, _hunk, line| {
-        bytes.extend_from_slice(line.content());
-        true
-    })?;
-    Ok(String::from_utf8_lossy(&bytes).to_string())
 }
 
 fn short_oid(oid: Oid) -> String {

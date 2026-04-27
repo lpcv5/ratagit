@@ -15,6 +15,7 @@ use crate::{GitError, validate_repo_relative_path};
 pub(crate) const STATUS_ENTRY_LIMIT: usize = 50_000;
 pub(crate) const STATUS_OUTPUT_LIMIT_BYTES: usize = 64 * 1024 * 1024;
 pub(crate) const COMMIT_DETAILS_DIFF_OUTPUT_LIMIT_BYTES: usize = 1024 * 1024;
+pub(crate) const FILES_DETAILS_DIFF_OUTPUT_LIMIT_BYTES: usize = 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct StatusFilesResult {
@@ -291,11 +292,46 @@ impl GitCli {
         ])
     }
 
+    pub(crate) fn files_unstaged_diff(&mut self, paths: &[String]) -> Result<String, GitError> {
+        self.files_diff(false, paths)
+    }
+
+    pub(crate) fn files_staged_diff(&mut self, paths: &[String]) -> Result<String, GitError> {
+        self.files_diff(true, paths)
+    }
+
+    fn files_diff(&mut self, staged: bool, paths: &[String]) -> Result<String, GitError> {
+        let mut args = vec![
+            "diff".to_string(),
+            "--color=always".to_string(),
+            "--no-ext-diff".to_string(),
+            "--no-textconv".to_string(),
+        ];
+        if staged {
+            args.push("--cached".to_string());
+        }
+        args.push("--".to_string());
+        for path in paths {
+            args.push(literal_pathspec(path)?);
+        }
+
+        let (mut diff, truncated) =
+            self.run_git_read_text_limited(args, FILES_DETAILS_DIFF_OUTPUT_LIMIT_BYTES)?;
+        if truncated {
+            append_diff_truncation_notice(
+                &mut diff,
+                "files diff",
+                FILES_DETAILS_DIFF_OUTPUT_LIMIT_BYTES,
+            );
+        }
+        Ok(diff)
+    }
+
     pub(crate) fn commit_details_diff(&mut self, commit_id: &str) -> Result<String, GitError> {
         let (mut diff, truncated) = self.run_git_read_text_limited(
             vec![
                 "show".to_string(),
-                "--no-color".to_string(),
+                "--color=always".to_string(),
                 "--no-ext-diff".to_string(),
                 "--no-textconv".to_string(),
                 "--no-renames".to_string(),
@@ -306,7 +342,11 @@ impl GitCli {
             COMMIT_DETAILS_DIFF_OUTPUT_LIMIT_BYTES,
         )?;
         if truncated {
-            append_diff_truncation_notice(&mut diff, COMMIT_DETAILS_DIFF_OUTPUT_LIMIT_BYTES);
+            append_diff_truncation_notice(
+                &mut diff,
+                "commit diff",
+                COMMIT_DETAILS_DIFF_OUTPUT_LIMIT_BYTES,
+            );
         }
         Ok(diff)
     }
@@ -343,7 +383,7 @@ impl GitCli {
     ) -> Result<String, GitError> {
         let mut args = vec![
             "show".to_string(),
-            "--no-color".to_string(),
+            "--color=always".to_string(),
             "--format=".to_string(),
             "--patch".to_string(),
             "--find-renames".to_string(),
@@ -356,16 +396,20 @@ impl GitCli {
             if let Some(old_path) = &path.old_path
                 && pushed.insert(old_path.clone())
             {
-                args.push(old_path.clone());
+                args.push(literal_pathspec(old_path)?);
             }
             if pushed.insert(path.path.clone()) {
-                args.push(path.path.clone());
+                args.push(literal_pathspec(&path.path)?);
             }
         }
         let (mut diff, truncated) =
             self.run_git_read_text_limited(args, COMMIT_DETAILS_DIFF_OUTPUT_LIMIT_BYTES)?;
         if truncated {
-            append_diff_truncation_notice(&mut diff, COMMIT_DETAILS_DIFF_OUTPUT_LIMIT_BYTES);
+            append_diff_truncation_notice(
+                &mut diff,
+                "commit diff",
+                COMMIT_DETAILS_DIFF_OUTPUT_LIMIT_BYTES,
+            );
         }
         Ok(diff)
     }
@@ -779,14 +823,17 @@ fn parse_commit_files(output: &str) -> Result<Vec<CommitFileEntry>, GitError> {
         .collect()
 }
 
-fn append_diff_truncation_notice(diff: &mut String, limit_bytes: usize) {
+fn append_diff_truncation_notice(diff: &mut String, label: &str, limit_bytes: usize) {
     if !diff.ends_with('\n') {
         diff.push('\n');
     }
     diff.push('\n');
-    diff.push_str(&format!(
-        "### commit diff truncated at {limit_bytes} bytes\n"
-    ));
+    diff.push_str(&format!("### {label} truncated at {limit_bytes} bytes\n"));
+}
+
+fn literal_pathspec(path: &str) -> Result<String, GitError> {
+    validate_repo_relative_path(path)?;
+    Ok(format!(":(literal){path}"))
 }
 
 fn parse_commit_file_line(line: &str) -> Result<CommitFileEntry, GitError> {
@@ -895,7 +942,7 @@ mod tests {
     fn append_diff_truncation_notice_starts_new_section() {
         let mut diff = "commit abc\n+partial".to_string();
 
-        append_diff_truncation_notice(&mut diff, 42);
+        append_diff_truncation_notice(&mut diff, "commit diff", 42);
 
         assert_eq!(
             diff,

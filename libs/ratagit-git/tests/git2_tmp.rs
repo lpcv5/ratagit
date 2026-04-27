@@ -131,6 +131,24 @@ fn file_diff_target(path: &str, untracked: bool) -> FileDiffTarget {
     }
 }
 
+fn strip_ansi(input: &str) -> String {
+    let mut output = String::new();
+    let mut chars = input.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\u{1b}' && chars.peek() == Some(&'[') {
+            chars.next();
+            for next in chars.by_ref() {
+                if next.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+        } else {
+            output.push(ch);
+        }
+    }
+    output
+}
+
 fn log_subjects(repo: &TmpGitRepo) -> Vec<String> {
     repo.run_git_capture(&["log", "--format=%s"])
         .lines()
@@ -488,12 +506,14 @@ fn git2_commit_details_diff_emits_header_and_patch() {
     let diff = backend
         .commit_details_diff(&commit)
         .expect("commit details diff should render");
+    let plain_diff = strip_ansi(&diff);
 
-    assert!(diff.contains(&format!("commit {commit}")));
-    assert!(diff.contains("Author:"));
-    assert!(diff.contains("diff --git a/b.txt b/b.txt"));
-    assert!(diff.contains("-b1"));
-    assert!(diff.contains("+third"));
+    assert!(plain_diff.contains(&format!("commit {commit}")));
+    assert!(plain_diff.contains("Author:"));
+    assert!(plain_diff.contains("diff --git a/b.txt b/b.txt"));
+    assert!(plain_diff.contains("-b1"));
+    assert!(plain_diff.contains("+third"));
+    assert!(diff.contains('\u{1b}'));
 }
 
 #[test]
@@ -555,10 +575,12 @@ fn git2_commit_files_and_file_diff_follow_selected_path() {
     let diff = backend
         .commit_file_diff(&target)
         .expect("commit file diff should render");
+    let plain_diff = strip_ansi(&diff);
 
-    assert!(diff.contains("diff --git a/b.txt b/b.txt"));
-    assert!(diff.contains("-b1"));
-    assert!(diff.contains("+third"));
+    assert!(plain_diff.contains("diff --git a/b.txt b/b.txt"));
+    assert!(plain_diff.contains("-b1"));
+    assert!(plain_diff.contains("+third"));
+    assert!(diff.contains('\u{1b}'));
 }
 
 #[test]

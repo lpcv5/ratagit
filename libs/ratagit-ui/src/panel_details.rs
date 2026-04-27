@@ -111,15 +111,11 @@ fn render_files_details_lines(state: &AppState, max_lines: usize) -> Vec<PanelLi
             RowRole::Notice,
         ));
     }
-    let lines = state.details.files_diff.lines().collect::<Vec<_>>();
-    let start = details_scroll_start(lines.len(), state.details.scroll_offset, max_lines);
-    rendered.extend(
-        lines
-            .into_iter()
-            .skip(start)
-            .map(|line| PanelLine::new(format!("  {line}"), classify_diff_row_role(line)))
-            .take(max_lines.saturating_sub(rendered.len())),
-    );
+    rendered.extend(render_ansi_details_text(
+        &state.details.files_diff,
+        state.details.scroll_offset,
+        max_lines.saturating_sub(rendered.len()),
+    ));
     rendered
 }
 
@@ -153,14 +149,11 @@ fn render_branch_details_lines(state: &AppState, max_lines: usize) -> Vec<PanelL
         )];
     }
 
-    let lines = state.details.branch_log.lines().collect::<Vec<_>>();
-    let start = details_scroll_start(lines.len(), state.details.scroll_offset, max_lines);
-    lines
-        .into_iter()
-        .skip(start)
-        .map(|line| ansi_branch_log_line(line, "  "))
-        .take(max_lines)
-        .collect()
+    render_ansi_details_text(
+        &state.details.branch_log,
+        state.details.scroll_offset,
+        max_lines,
+    )
 }
 
 fn render_commit_details_lines(state: &AppState, max_lines: usize) -> Vec<PanelLine> {
@@ -196,14 +189,11 @@ fn render_commit_details_lines(state: &AppState, max_lines: usize) -> Vec<PanelL
         )];
     }
 
-    let lines = state.details.commit_diff.lines().collect::<Vec<_>>();
-    let start = details_scroll_start(lines.len(), state.details.scroll_offset, max_lines);
-    lines
-        .into_iter()
-        .skip(start)
-        .map(|line| PanelLine::new(format!("  {line}"), classify_diff_row_role(line)))
-        .take(max_lines)
-        .collect()
+    render_ansi_details_text(
+        &state.details.commit_diff,
+        state.details.scroll_offset,
+        max_lines,
+    )
 }
 
 fn render_commit_file_details_lines(state: &AppState, max_lines: usize) -> Vec<PanelLine> {
@@ -243,12 +233,19 @@ fn render_commit_file_details_lines(state: &AppState, max_lines: usize) -> Vec<P
         )];
     }
 
-    let lines = state.details.commit_file_diff.lines().collect::<Vec<_>>();
-    let start = details_scroll_start(lines.len(), state.details.scroll_offset, max_lines);
-    lines
-        .into_iter()
+    render_ansi_details_text(
+        &state.details.commit_file_diff,
+        state.details.scroll_offset,
+        max_lines,
+    )
+}
+
+fn render_ansi_details_text(text: &str, scroll_offset: usize, max_lines: usize) -> Vec<PanelLine> {
+    let line_count = text.lines().count();
+    let start = details_scroll_start(line_count, scroll_offset, max_lines);
+    text.lines()
         .skip(start)
-        .map(|line| PanelLine::new(format!("  {line}"), classify_diff_row_role(line)))
+        .map(|line| ansi_output_line(line, "  "))
         .take(max_lines)
         .collect()
 }
@@ -264,53 +261,7 @@ fn render_placeholder_details_lines(message: &str, max_lines: usize) -> Vec<Pane
     vec![PanelLine::new(message, RowRole::Muted)]
 }
 
-fn classify_diff_row_role(line: &str) -> RowRole {
-    if line.starts_with("### ") {
-        return RowRole::DiffSection;
-    }
-    if is_diff_metadata_row(line) {
-        return RowRole::DiffMeta;
-    }
-    if line.starts_with("@@") {
-        return RowRole::DiffHunk;
-    }
-    if line.starts_with('+') && !line.starts_with("+++") {
-        return RowRole::DiffAdd;
-    }
-    if line.starts_with('-') && !line.starts_with("---") {
-        return RowRole::DiffRemove;
-    }
-    RowRole::Normal
-}
-
-fn is_diff_metadata_row(line: &str) -> bool {
-    const PREFIXES: &[&str] = &[
-        "diff --",
-        "index ",
-        "--- ",
-        "+++ ",
-        "old mode ",
-        "new mode ",
-        "deleted file mode ",
-        "new file mode ",
-        "copy from ",
-        "copy to ",
-        "rename from ",
-        "rename to ",
-        "similarity index ",
-        "dissimilarity index ",
-        "Binary files ",
-        "GIT binary patch",
-        "literal ",
-        "delta ",
-        "Submodule ",
-        "\\ No newline at end of file",
-    ];
-
-    PREFIXES.iter().any(|prefix| line.starts_with(prefix))
-}
-
-fn ansi_branch_log_line(line: &str, prefix: &str) -> PanelLine {
+fn ansi_output_line(line: &str, prefix: &str) -> PanelLine {
     let mut text = prefix.to_string();
     let mut spans = vec![PanelSpan {
         text: prefix.to_string(),
@@ -420,69 +371,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn diff_row_roles_cover_sections_metadata_hunks_and_changes() {
-        assert_eq!(classify_diff_row_role("### unstaged"), RowRole::DiffSection);
-        assert_eq!(
-            classify_diff_row_role("diff --git a/a.txt b/a.txt"),
-            RowRole::DiffMeta
-        );
-        assert_eq!(classify_diff_row_role("index 123..456"), RowRole::DiffMeta);
-        assert_eq!(classify_diff_row_role("--- a/a.txt"), RowRole::DiffMeta);
-        assert_eq!(classify_diff_row_role("+++ b/a.txt"), RowRole::DiffMeta);
-        assert_eq!(
-            classify_diff_row_role("new file mode 100644"),
-            RowRole::DiffMeta
-        );
-        assert_eq!(
-            classify_diff_row_role("deleted file mode 100644"),
-            RowRole::DiffMeta
-        );
-        assert_eq!(classify_diff_row_role("old mode 100644"), RowRole::DiffMeta);
-        assert_eq!(classify_diff_row_role("new mode 100755"), RowRole::DiffMeta);
-        assert_eq!(
-            classify_diff_row_role("rename from old.txt"),
-            RowRole::DiffMeta
-        );
-        assert_eq!(
-            classify_diff_row_role("rename to new.txt"),
-            RowRole::DiffMeta
-        );
-        assert_eq!(
-            classify_diff_row_role("copy from old.txt"),
-            RowRole::DiffMeta
-        );
-        assert_eq!(classify_diff_row_role("copy to new.txt"), RowRole::DiffMeta);
-        assert_eq!(
-            classify_diff_row_role("similarity index 88%"),
-            RowRole::DiffMeta
-        );
-        assert_eq!(
-            classify_diff_row_role("dissimilarity index 99%"),
-            RowRole::DiffMeta
-        );
-        assert_eq!(
-            classify_diff_row_role("Binary files a/a.bin and b/a.bin differ"),
-            RowRole::DiffMeta
-        );
-        assert_eq!(
-            classify_diff_row_role("GIT binary patch"),
-            RowRole::DiffMeta
-        );
-        assert_eq!(classify_diff_row_role("literal 10"), RowRole::DiffMeta);
-        assert_eq!(classify_diff_row_role("delta 12"), RowRole::DiffMeta);
-        assert_eq!(
-            classify_diff_row_role("\\ No newline at end of file"),
-            RowRole::DiffMeta
-        );
-        assert_eq!(classify_diff_row_role("@@ -1 +1 @@"), RowRole::DiffHunk);
-        assert_eq!(classify_diff_row_role("+new"), RowRole::DiffAdd);
-        assert_eq!(classify_diff_row_role("-old"), RowRole::DiffRemove);
-        assert_eq!(classify_diff_row_role(" context"), RowRole::Normal);
-    }
-
-    #[test]
     fn ansi_sgr_parser_handles_reset_bright_indexed_and_rgb_colors() {
-        let line = ansi_branch_log_line(
+        let line = ansi_output_line(
             "\u{1b}[1;33m*\u{1b}[0m plain \u{1b}[91mred\u{1b}[38;5;42midx\u{1b}[38;2;1;2;3mrgb",
             "  ",
         );
@@ -503,6 +393,36 @@ mod tests {
         assert_eq!(spans[4].style, Style::default().fg(Color::Indexed(42)));
         assert_eq!(spans[5].text, "rgb");
         assert_eq!(spans[5].style, Style::default().fg(Color::Rgb(1, 2, 3)));
+    }
+
+    #[test]
+    fn details_diff_output_preserves_ansi_spans_without_semantic_roles() {
+        let mut state = AppState {
+            last_left_focus: PanelFocus::Commits,
+            ..AppState::default()
+        };
+        state.details.commit_diff_target = Some("abc1234".to_string());
+        state.details.commit_diff = concat!(
+            "\u{1b}[1mdiff --git a/a.txt b/a.txt\u{1b}[m\n",
+            "\u{1b}[31m-old\u{1b}[m\n",
+            "\u{1b}[32m+new\u{1b}[m"
+        )
+        .to_string();
+
+        let lines = render_details_lines(&state, 3);
+
+        assert_eq!(lines[0].text, "  diff --git a/a.txt b/a.txt");
+        assert_eq!(lines[0].role, RowRole::Normal);
+        assert_eq!(lines[1].text, "  -old");
+        assert_eq!(lines[1].role, RowRole::Normal);
+        assert_eq!(lines[2].text, "  +new");
+        assert_eq!(lines[2].role, RowRole::Normal);
+        let add_spans = lines[2]
+            .spans
+            .as_ref()
+            .expect("ansi details output should keep styled spans");
+        assert_eq!(add_spans[1].text, "+new");
+        assert_eq!(add_spans[1].style, Style::default().fg(Color::Green));
     }
 
     #[test]

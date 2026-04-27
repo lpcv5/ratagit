@@ -87,6 +87,10 @@ Each operation records:
 - `git_cli_parsed`: Git command output plus local parsing/conversion time
 - `backend`: `HybridGitBackend` method time returning structured data
 
+The `commit-files-directory-diff` operation models the Commit Files subpanel
+path used in the TUI: load changed files for a commit, build/select a directory
+row, then load that directory's patch.
+
 Reports are written to `tmp/perf/results/<run-id>.json` and
 `tmp/perf/results/<run-id>.md`. The suite is intentionally not part of the
 default `cargo test` or CI flow.

@@ -2,6 +2,7 @@
 #[allow(dead_code)]
 mod perf_repo;
 
+use std::collections::BTreeMap;
 use std::env;
 use std::error::Error;
 use std::fmt::{self, Display};
@@ -17,7 +18,8 @@ use perf_repo::{
 };
 use ratagit_core::{
     COMMITS_PAGE_SIZE, CommitFileDiffPath, CommitFileDiffTarget, CommitFileEntry, CommitFileStatus,
-    FileDiffTarget, FileEntry,
+    CommitFilesPanelState, FileDiffTarget, FileEntry, initialize_commit_files_tree,
+    select_commit_file_tree_path, selected_commit_file_targets,
 };
 use ratagit_git::{GitBackend, HybridGitBackend};
 
@@ -177,17 +179,19 @@ enum Operation {
     Commits,
     LoadMoreCommits,
     CommitFiles,
+    CommitFilesDirectoryDiff,
     CommitDetailsDiff,
     CommitFileDiff,
     FilesDetailsDiff,
 }
 
 impl Operation {
-    const ALL: [Self; 7] = [
+    const ALL: [Self; 8] = [
         Self::Status,
         Self::Commits,
         Self::LoadMoreCommits,
         Self::CommitFiles,
+        Self::CommitFilesDirectoryDiff,
         Self::CommitDetailsDiff,
         Self::CommitFileDiff,
         Self::FilesDetailsDiff,
@@ -199,6 +203,7 @@ impl Operation {
             "commits" => Ok(Self::Commits),
             "load-more-commits" => Ok(Self::LoadMoreCommits),
             "commit-files" => Ok(Self::CommitFiles),
+            "commit-files-directory-diff" => Ok(Self::CommitFilesDirectoryDiff),
             "commit-details-diff" => Ok(Self::CommitDetailsDiff),
             "commit-file-diff" => Ok(Self::CommitFileDiff),
             "files-details-diff" => Ok(Self::FilesDetailsDiff),
@@ -212,6 +217,7 @@ impl Operation {
             Self::Commits => "commits",
             Self::LoadMoreCommits => "load-more-commits",
             Self::CommitFiles => "commit-files",
+            Self::CommitFilesDirectoryDiff => "commit-files-directory-diff",
             Self::CommitDetailsDiff => "commit-details-diff",
             Self::CommitFileDiff => "commit-file-diff",
             Self::FilesDetailsDiff => "files-details-diff",
@@ -273,6 +279,7 @@ struct PerfRecord {
 struct BenchTargets {
     head_commit: String,
     commit_file_target: CommitFileDiffTarget,
+    commit_files_directory_path: String,
     files_diff_targets: Vec<FileDiffTarget>,
     files_diff_paths: Vec<String>,
 }
@@ -451,6 +458,7 @@ fn build_targets(config: &LargeRepoConfig) -> Result<BenchTargets, Box<dyn Error
     )?;
     let commit_files = parse_commit_files(&commit_files_output)?;
     let commit_file_path = select_commit_file_path(&commit_files)?;
+    let commit_files_directory_path = select_commit_files_directory_path(&commit_files)?;
     let commit_file_target = CommitFileDiffTarget {
         commit_id: head_commit.clone(),
         paths: vec![CommitFileDiffPath {
@@ -472,6 +480,7 @@ fn build_targets(config: &LargeRepoConfig) -> Result<BenchTargets, Box<dyn Error
     Ok(BenchTargets {
         head_commit,
         commit_file_target,
+        commit_files_directory_path,
         files_diff_targets,
         files_diff_paths,
     })
@@ -507,6 +516,29 @@ fn select_commit_file_path(
         path: selected.path.clone(),
         old_path: selected.old_path.clone(),
     })
+}
+
+fn select_commit_files_directory_path(
+    entries: &[CommitFileEntry],
+) -> Result<String, Box<dyn Error>> {
+    let mut counts = BTreeMap::<String, usize>::new();
+    for entry in entries {
+        let parts = entry.path.split('/').collect::<Vec<_>>();
+        for end in 1..parts.len() {
+            *counts.entry(parts[..end].join("/")).or_default() += 1;
+        }
+    }
+    counts
+        .into_iter()
+        .max_by(|left, right| {
+            left.1
+                .cmp(&right.1)
+                .then_with(|| right.0.len().cmp(&left.0.len()))
+                .then_with(|| right.0.cmp(&left.0))
+        })
+        .map(|(path, _count)| path)
+        .or_else(|| entries.first().map(|entry| entry.path.clone()))
+        .ok_or_else(|| "HEAD commit has no changed files".into())
 }
 
 fn measure_record(
@@ -582,6 +614,22 @@ fn measure_git_cli_raw(
         Operation::CommitFiles => {
             run_git_output(git, &config.path, commit_files_args(&targets.head_commit))?
         }
+        Operation::CommitFilesDirectoryDiff => {
+            let mut output =
+                run_git_output(git, &config.path, commit_files_args(&targets.head_commit))?;
+            output.extend(run_git_output(
+                git,
+                &config.path,
+                commit_file_diff_args(&CommitFileDiffTarget {
+                    commit_id: targets.head_commit.clone(),
+                    paths: vec![CommitFileDiffPath {
+                        path: targets.commit_files_directory_path.clone(),
+                        old_path: None,
+                    }],
+                }),
+            )?);
+            output
+        }
         Operation::CommitDetailsDiff => run_git_output(
             git,
             &config.path,
@@ -646,6 +694,18 @@ fn measure_git_cli_parsed(
             Ok(MeasurementPayload {
                 output_items: entries.len(),
                 output_bytes: output.len(),
+            })
+        }
+        Operation::CommitFilesDirectoryDiff => {
+            let output =
+                run_git_text_owned(git, &config.path, commit_files_args(&targets.head_commit))?;
+            let entries = parse_commit_files(&output)?;
+            let target =
+                commit_files_directory_diff_target(&targets.head_commit, entries, targets)?;
+            let diff = run_git_output(git, &config.path, commit_file_diff_args(&target))?;
+            Ok(MeasurementPayload {
+                output_items: String::from_utf8_lossy(&diff).lines().count(),
+                output_bytes: output.len() + diff.len(),
             })
         }
         Operation::CommitDetailsDiff => {
@@ -721,6 +781,20 @@ fn measure_backend(
                 output_bytes: files.iter().map(|entry| entry.path.len()).sum(),
             })
         }
+        Operation::CommitFilesDirectoryDiff => {
+            let files = backend
+                .commit_files(&targets.head_commit)
+                .map_err(|error| error.message)?;
+            let files_bytes = files.iter().map(|entry| entry.path.len()).sum::<usize>();
+            let target = commit_files_directory_diff_target(&targets.head_commit, files, targets)?;
+            let diff = backend
+                .commit_file_diff(&target)
+                .map_err(|error| error.message)?;
+            Ok(MeasurementPayload {
+                output_items: diff.lines().count(),
+                output_bytes: files_bytes + diff.len(),
+            })
+        }
         Operation::CommitDetailsDiff => {
             let diff = backend
                 .commit_details_diff(&targets.head_commit)
@@ -749,6 +823,41 @@ fn measure_backend(
             })
         }
     }
+}
+
+fn commit_files_directory_diff_target(
+    commit_id: &str,
+    files: Vec<CommitFileEntry>,
+    targets: &BenchTargets,
+) -> Result<CommitFileDiffTarget, String> {
+    let mut panel = CommitFilesPanelState {
+        items: files,
+        ..CommitFilesPanelState::default()
+    };
+    initialize_commit_files_tree(&mut panel);
+    if !select_commit_file_tree_path(&mut panel, &targets.commit_files_directory_path) {
+        return Err(format!(
+            "commit files directory path not found: {}",
+            targets.commit_files_directory_path
+        ));
+    }
+    let paths = selected_commit_file_targets(&panel)
+        .into_iter()
+        .map(|file| CommitFileDiffPath {
+            path: file.path,
+            old_path: file.old_path,
+        })
+        .collect::<Vec<_>>();
+    if paths.is_empty() {
+        return Err(format!(
+            "commit files directory selected no targets: {}",
+            targets.commit_files_directory_path
+        ));
+    }
+    Ok(CommitFileDiffTarget {
+        commit_id: commit_id.to_string(),
+        paths,
+    })
 }
 
 fn time_result<T>(operation: impl FnOnce() -> Result<T, String>) -> (Duration, Result<T, String>) {
@@ -809,7 +918,7 @@ fn commit_files_args(commit_id: &str) -> Vec<String> {
 fn commit_details_diff_args(commit_id: &str) -> Vec<String> {
     vec![
         "show".to_string(),
-        "--no-color".to_string(),
+        "--color=always".to_string(),
         "--no-ext-diff".to_string(),
         "--no-textconv".to_string(),
         "--no-renames".to_string(),
@@ -822,7 +931,7 @@ fn commit_details_diff_args(commit_id: &str) -> Vec<String> {
 fn commit_file_diff_args(target: &CommitFileDiffTarget) -> Vec<String> {
     let mut args = vec![
         "show".to_string(),
-        "--no-color".to_string(),
+        "--color=always".to_string(),
         "--format=".to_string(),
         "--patch".to_string(),
         "--find-renames".to_string(),
@@ -846,7 +955,7 @@ fn files_details_diff_cli_output(
 ) -> Result<Vec<u8>, String> {
     let mut unstaged_args = vec![
         "diff".to_string(),
-        "--no-color".to_string(),
+        "--color=always".to_string(),
         "--no-ext-diff".to_string(),
         "--no-textconv".to_string(),
         "--".to_string(),
@@ -857,7 +966,7 @@ fn files_details_diff_cli_output(
     let mut staged_args = vec![
         "diff".to_string(),
         "--cached".to_string(),
-        "--no-color".to_string(),
+        "--color=always".to_string(),
         "--no-ext-diff".to_string(),
         "--no-textconv".to_string(),
         "--".to_string(),
@@ -1392,7 +1501,7 @@ mod tests {
             "--scales".into(),
             "smoke,huge".into(),
             "--operations".into(),
-            "status,commit-files".into(),
+            "status,commit-files-directory-diff".into(),
             "--iterations".into(),
             "2".into(),
             "--warmup".into(),
@@ -1408,7 +1517,7 @@ mod tests {
         assert_eq!(config.scales, vec![Scale::Smoke, Scale::Huge]);
         assert_eq!(
             config.operations,
-            vec![Operation::Status, Operation::CommitFiles]
+            vec![Operation::Status, Operation::CommitFilesDirectoryDiff]
         );
         assert_eq!(config.iterations, 2);
         assert_eq!(config.warmup, 0);
@@ -1467,6 +1576,21 @@ mod tests {
         assert_eq!(files[0].status, CommitFileStatus::Added);
         assert_eq!(files[1].old_path.as_deref(), Some("old.txt"));
         assert_eq!(files[1].path, "renamed.txt");
+    }
+
+    #[test]
+    fn selects_largest_commit_files_directory_for_panel_perf_target() {
+        let entries = vec![
+            commit_file("data/text/c0001/0001/a.txt"),
+            commit_file("data/text/c0001/0002/b.txt"),
+            commit_file("data/text/c0001/0003/c.txt"),
+            commit_file("data/binary/c0001/0001/blob.bin"),
+        ];
+
+        let directory =
+            select_commit_files_directory_path(&entries).expect("directory target should select");
+
+        assert_eq!(directory, "data");
     }
 
     #[test]
@@ -1531,7 +1655,11 @@ mod tests {
             root: root.clone(),
             output: output.clone(),
             scales: vec![Scale::Smoke],
-            operations: vec![Operation::Status, Operation::CommitFiles],
+            operations: vec![
+                Operation::Status,
+                Operation::CommitFiles,
+                Operation::CommitFilesDirectoryDiff,
+            ],
             iterations: 1,
             warmup: 0,
             git: "git".to_string(),
@@ -1567,6 +1695,14 @@ mod tests {
             output_bytes: 0,
             success: true,
             error: None,
+        }
+    }
+
+    fn commit_file(path: &str) -> CommitFileEntry {
+        CommitFileEntry {
+            path: path.to_string(),
+            old_path: None,
+            status: CommitFileStatus::Modified,
         }
     }
 
