@@ -3,14 +3,14 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
 use ratatui::style::Style;
 use ratatui::text::Line;
-use ratatui::widgets::{Paragraph, Wrap};
+use ratatui::widgets::Paragraph;
 use unicode_width::UnicodeWidthStr;
 
 use crate::frame::TerminalCursor;
 use crate::modal::{
-    ModalSpec, ModalTone, modal_content_rect, render_action_footer, render_choice_list,
-    render_input_block, render_modal_frame, render_muted_text, render_section_label,
-    render_warning_text,
+    ChoiceMenuBody, ConfirmBody, ModalSpec, ModalTone, choice_menu_modal_height,
+    modal_content_rect, render_choice_menu_body, render_confirm_body, render_input_block,
+    render_modal, render_section_label, render_text,
 };
 use crate::theme::modal_muted_style;
 
@@ -49,246 +49,162 @@ pub(crate) fn branch_create_cursor_position(
 }
 
 fn render_branch_create_modal(frame: &mut Frame<'_>, state: &AppState, area: Rect) {
-    let Some(modal) = render_modal_frame(frame, area, branch_create_spec()) else {
-        return;
-    };
-    let rows = branch_create_rows(modal.content);
-    render_section_label(frame, rows[0], "Create branch from selected branch");
-    frame.render_widget(
-        Paragraph::new(format!(
-            "Start point: {}",
-            state.branches.create.start_point
-        )),
-        rows[1],
-    );
-    render_input_block(
+    let rendered = render_modal(
         frame,
-        rows[2],
-        "Branch name",
-        vec![Line::from(state.branches.create.name.clone())],
-        true,
-        ModalTone::Info,
+        area,
+        branch_create_spec(),
+        &[&[("Enter", "create"), ("Esc", "cancel")]],
+        |frame, content| {
+            let rows = branch_create_rows(content);
+            render_section_label(frame, rows[0], "Create branch from selected branch");
+            render_text(
+                frame,
+                rows[1],
+                format!("Start point: {}", state.branches.create.start_point),
+            );
+            render_input_block(
+                frame,
+                rows[2],
+                "Branch name",
+                vec![Line::from(state.branches.create.name.clone())],
+                true,
+                ModalTone::Info,
+            );
+            if rows.len() > 3 {
+                frame.render_widget(Paragraph::new(""), rows[3]);
+            }
+        },
     );
-    if rows.len() > 3 {
-        frame.render_widget(Paragraph::new(""), rows[3]);
-    }
-    if let Some(footer) = modal.footer {
-        render_action_footer(
-            frame,
-            footer,
-            ModalTone::Info,
-            &[("Enter", "create"), ("Esc", "cancel")],
-        );
-    }
-    if let Some(cursor) = branch_create_cursor_position(state, area) {
+    if rendered.is_some()
+        && let Some(cursor) = branch_create_cursor_position(state, area)
+    {
         frame.set_cursor_position(Position::new(cursor.x, cursor.y));
     }
 }
 
 fn render_branch_delete_modal(frame: &mut Frame<'_>, state: &AppState, area: Rect) {
-    let Some(modal) = render_modal_frame(
+    let choices = branch_delete_choices();
+    render_modal(
         frame,
         area,
-        ModalSpec::new("Delete Branch", ModalTone::Danger, 72, 12, 20, 8, 1),
-    ) else {
-        return;
-    };
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Length(4),
-            Constraint::Length(1),
-            Constraint::Min(2),
-        ])
-        .split(modal.content);
-    frame.render_widget(
-        Paragraph::new(format!(
-            "Target: {}",
-            state.branches.delete_menu.target_branch
-        )),
-        rows[0],
-    );
-    let choices = branch_delete_choices();
-    render_choice_list(
-        frame,
-        rows[1],
-        "Choice",
-        &choices,
-        state.branches.delete_menu.selected,
-        ModalTone::Danger,
-    );
-    render_section_label(frame, rows[2], "Description");
-    frame.render_widget(
-        Paragraph::new(branch_delete_description(
-            state.branches.delete_menu.selected,
-        ))
-        .wrap(Wrap { trim: false }),
-        rows[3],
-    );
-    if let Some(footer) = modal.footer {
-        render_action_footer(
-            frame,
-            footer,
+        ModalSpec::new(
+            "Delete Branch",
             ModalTone::Danger,
-            &[("j/k", "select"), ("Enter", "delete"), ("Esc", "cancel")],
-        );
-    }
+            72,
+            choice_menu_modal_height(choices.len(), 1),
+            20,
+            8,
+            1,
+        ),
+        &[&[("j/k", "select"), ("Enter", "delete"), ("Esc", "cancel")]],
+        |frame, content| {
+            render_choice_menu_body(
+                frame,
+                content,
+                ModalTone::Danger,
+                ChoiceMenuBody {
+                    intro: format!("Target: {}", state.branches.delete_menu.target_branch),
+                    list_title: "Choice",
+                    choices: &choices,
+                    selected: state.branches.delete_menu.selected,
+                    list_height: 4,
+                    description: branch_delete_description(state.branches.delete_menu.selected)
+                        .to_string(),
+                },
+            );
+        },
+    );
 }
 
 fn render_branch_rebase_modal(frame: &mut Frame<'_>, state: &AppState, area: Rect) {
-    let Some(modal) = render_modal_frame(
+    let choices = branch_rebase_choices();
+    render_modal(
         frame,
         area,
-        ModalSpec::new("Rebase", ModalTone::Warning, 74, 12, 20, 8, 1),
-    ) else {
-        return;
-    };
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Length(4),
-            Constraint::Length(1),
-            Constraint::Min(2),
-        ])
-        .split(modal.content);
-    frame.render_widget(
-        Paragraph::new(format!(
-            "Selected target: {}",
-            state.branches.rebase_menu.target_branch
-        )),
-        rows[0],
-    );
-    let choices = branch_rebase_choices();
-    render_choice_list(
-        frame,
-        rows[1],
-        "Choice",
-        &choices,
-        state.branches.rebase_menu.selected,
-        ModalTone::Warning,
-    );
-    render_section_label(frame, rows[2], "Description");
-    frame.render_widget(
-        Paragraph::new(branch_rebase_description(
-            state.branches.rebase_menu.selected,
-            &state.branches.rebase_menu.target_branch,
-        ))
-        .wrap(Wrap { trim: false }),
-        rows[3],
-    );
-    if let Some(footer) = modal.footer {
-        render_action_footer(
-            frame,
-            footer,
+        ModalSpec::new(
+            "Rebase",
             ModalTone::Warning,
-            &[("j/k", "select"), ("Enter", "rebase"), ("Esc", "cancel")],
-        );
-    }
+            74,
+            choice_menu_modal_height(choices.len(), 1),
+            20,
+            8,
+            1,
+        ),
+        &[&[("j/k", "select"), ("Enter", "rebase"), ("Esc", "cancel")]],
+        |frame, content| {
+            render_choice_menu_body(
+                frame,
+                content,
+                ModalTone::Warning,
+                ChoiceMenuBody {
+                    intro: format!(
+                        "Selected target: {}",
+                        state.branches.rebase_menu.target_branch
+                    ),
+                    list_title: "Choice",
+                    choices: &choices,
+                    selected: state.branches.rebase_menu.selected,
+                    list_height: 4,
+                    description: branch_rebase_description(
+                        state.branches.rebase_menu.selected,
+                        &state.branches.rebase_menu.target_branch,
+                    ),
+                },
+            );
+        },
+    );
 }
 
 fn render_force_delete_modal(frame: &mut Frame<'_>, state: &AppState, area: Rect) {
-    let Some(modal) = render_modal_frame(
+    render_modal(
         frame,
         area,
-        ModalSpec::new("Force Delete Branch", ModalTone::Danger, 76, 12, 20, 8, 1),
-    ) else {
-        return;
-    };
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Min(4),
-            Constraint::Length(1),
-        ])
-        .split(modal.content);
-    render_warning_text(
-        frame,
-        rows[0],
-        ModalTone::Danger,
-        "Branch is not fully merged.",
+        ModalSpec::new("Confirm", ModalTone::Danger, 76, 12, 20, 8, 1),
+        &[&[("Enter", "force delete"), ("Esc", "cancel")]],
+        |frame, content| {
+            render_confirm_body(
+                frame,
+                content,
+                ModalTone::Danger,
+                ConfirmBody::new(format!(
+                    "Force delete branch: {}?",
+                    state.branches.force_delete_confirm.target_branch
+                ))
+                .secondary("This action cannot be undone.")
+                .details(format!(
+                    "Git refused safe deletion:\n{}",
+                    state.branches.force_delete_confirm.reason
+                )),
+            );
+        },
     );
-    frame.render_widget(
-        Paragraph::new(format!(
-            "Target: {}",
-            state.branches.force_delete_confirm.target_branch
-        )),
-        rows[1],
-    );
-    frame.render_widget(
-        Paragraph::new(format!(
-            "Git refused safe deletion:\n{}",
-            state.branches.force_delete_confirm.reason
-        ))
-        .wrap(Wrap { trim: false }),
-        rows[2],
-    );
-    render_warning_text(
-        frame,
-        rows[3],
-        ModalTone::Danger,
-        "Force delete removes the branch name even if commits are only reachable there.",
-    );
-    if let Some(footer) = modal.footer {
-        render_action_footer(
-            frame,
-            footer,
-            ModalTone::Danger,
-            &[("Enter", "force delete"), ("Esc", "cancel")],
-        );
-    }
 }
 
 fn render_auto_stash_modal(frame: &mut Frame<'_>, state: &AppState, area: Rect) {
-    let Some(modal) = render_modal_frame(
+    render_modal(
         frame,
         area,
-        ModalSpec::new("Auto Stash", ModalTone::Warning, 72, 10, 20, 7, 1),
-    ) else {
-        return;
-    };
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Length(2),
-            Constraint::Length(1),
-            Constraint::Min(1),
-        ])
-        .split(modal.content);
-    render_warning_text(
-        frame,
-        rows[0],
-        ModalTone::Warning,
-        "Working tree has uncommitted changes.",
+        ModalSpec::new("Confirm", ModalTone::Warning, 72, 10, 20, 7, 1),
+        &[&[("Enter", "auto stash"), ("Esc", "cancel")]],
+        |frame, content| {
+            let operation = state.branches.auto_stash_confirm.operation.as_ref();
+            render_confirm_body(
+                frame,
+                content,
+                ModalTone::Warning,
+                ConfirmBody::new(auto_stash_confirm_question(operation))
+                    .secondary("The stash will be restored after the operation.")
+                    .details(format!(
+                        "Operation: {}",
+                        auto_stash_operation_label(operation)
+                    )),
+            );
+        },
     );
-    render_muted_text(
-        frame,
-        rows[1],
-        "Auto stash before the operation, then restore the stash afterward?",
-    );
-    render_section_label(frame, rows[2], "Operation");
-    frame.render_widget(
-        Paragraph::new(auto_stash_operation_label(
-            state.branches.auto_stash_confirm.operation.as_ref(),
-        )),
-        rows[3],
-    );
-    if let Some(footer) = modal.footer {
-        render_action_footer(
-            frame,
-            footer,
-            ModalTone::Warning,
-            &[("Enter", "auto stash"), ("Esc", "cancel")],
-        );
-    }
 }
 
 fn branch_create_spec() -> ModalSpec {
-    ModalSpec::new("Create Branch", ModalTone::Info, 72, 10, 20, 7, 1)
+    ModalSpec::new("Create Branch", ModalTone::Info, 72, 10, 20, 7, 1).with_icon("")
 }
 
 fn branch_create_rows(area: Rect) -> std::rc::Rc<[Rect]> {
@@ -352,6 +268,19 @@ fn branch_rebase_description(choice: BranchRebaseChoice, selected_target: &str) 
         BranchRebaseChoice::OriginMain => {
             "Rebase the current branch onto `origin/main`.".to_string()
         }
+    }
+}
+
+fn auto_stash_confirm_question(operation: Option<&AutoStashOperation>) -> String {
+    match operation {
+        Some(AutoStashOperation::Checkout { branch }) => {
+            format!("Auto stash before checkout {branch}?")
+        }
+        Some(AutoStashOperation::CheckoutCommitDetached { .. }) => {
+            "Auto stash before detached checkout?".to_string()
+        }
+        Some(AutoStashOperation::Rebase { .. }) => "Auto stash before rebase?".to_string(),
+        None => "Auto stash before this operation?".to_string(),
     }
 }
 

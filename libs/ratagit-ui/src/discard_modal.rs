@@ -1,67 +1,38 @@
 use ratagit_core::AppState;
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::widgets::{Paragraph, Wrap};
+use ratatui::layout::Rect;
 
-use crate::modal::{
-    ModalSpec, ModalTone, render_action_footer, render_modal_frame, render_muted_text,
-    render_section_label, render_warning_text,
-};
+use crate::modal::{ConfirmBody, ModalSpec, ModalTone, render_confirm_body, render_modal};
 
 pub(crate) fn render_discard_modal(frame: &mut Frame<'_>, state: &AppState, area: Rect) {
     if !state.discard_confirm.active {
         return;
     }
 
-    let Some(modal) = render_modal_frame(
+    render_modal(
         frame,
         area,
-        ModalSpec::new("Discard Changes", ModalTone::Danger, 72, 12, 20, 8, 1),
-    ) else {
-        return;
-    };
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Min(3),
-            Constraint::Length(2),
-        ])
-        .split(modal.content);
+        ModalSpec::new("Confirm", ModalTone::Danger, 72, 12, 20, 8, 1),
+        &[&[("Enter", "discard"), ("Esc", "cancel")]],
+        |frame, content| {
+            render_confirm_body(
+                frame,
+                content,
+                ModalTone::Danger,
+                ConfirmBody::new("Discard selected file changes?")
+                    .secondary("This action cannot be undone.")
+                    .details(format_discard_details(&state.discard_confirm.paths)),
+            );
+        },
+    );
+}
 
-    render_warning_text(
-        frame,
-        rows[0],
-        ModalTone::Danger,
-        "Discard selected file changes?",
-    );
-    render_section_label(
-        frame,
-        rows[1],
-        format!(
-            "Targets: {}",
-            format_target_count(&state.discard_confirm.paths)
-        ),
-    );
-    frame.render_widget(
-        Paragraph::new(format_target_paths(&state.discard_confirm.paths))
-            .wrap(Wrap { trim: false }),
-        rows[2],
-    );
-    render_muted_text(
-        frame,
-        rows[3],
-        "This removes tracked changes and deletes untracked targets.",
-    );
-    if let Some(footer) = modal.footer {
-        render_action_footer(
-            frame,
-            footer,
-            ModalTone::Danger,
-            &[("Enter", "discard"), ("Esc", "cancel")],
-        );
-    }
+fn format_discard_details(paths: &[String]) -> String {
+    format!(
+        "Targets: {}\n{}",
+        format_target_count(paths),
+        format_target_paths(paths)
+    )
 }
 
 fn format_target_count(paths: &[String]) -> String {

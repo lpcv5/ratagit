@@ -2,41 +2,36 @@
 
 ## Current Slice
 
-Terminal visual polish: rounded panel borders, badge-style titles, and
-badge-style bottom shortcuts.
+Select-list modal viewport cap: adjust the shared choice-list body so modal
+select lists render at most ten visible items.
 
 ## Goal
 
-- replace square terminal panel corners with rounded corners
-- avoid double-drawn shared panel edges by letting right-side and lower panels
-  omit the shared border side
-- render the focused panel with a complete border even when that side would be
-  shared while inactive
-- render numbered focus hints as reverse-video title badges
-- render bottom shortcut keys as reverse-video badges without `keys(panel):`
-  prefixes or pipe separators
+- keep select-list sizing centralized in the shared modal body helper
+- show all options for short modal select lists while capping the visible
+  viewport at ten items for future longer lists
+- keep existing modal behavior, keyboard flows, and AppState ownership unchanged
 - preserve pure rendering and `AppState` as the only source of truth
 
 ## Vertical Slice
 
-1. Terminal frame rendering
-- add deterministic panel border selection per grid position
-- make focused panel border selection override shared-edge omission
-- use rounded border symbols for terminal panel blocks
-- render terminal panel titles from styled spans so the numbered hint can be a
-  badge while the icon/title text keeps the panel accent
-- render terminal shortcuts from structured key/action segments
+1. Shared select-list sizing
+- derive choice-list height from the number of AppState-provided choices in the
+  shared modal helper
+- derive choice-menu modal shell height from the capped list viewport so short
+  lists are not clipped
+- cap the rendered list viewport at ten visible item rows plus borders
+- leave reducers and Git commands unchanged
 
 2. Tests
-- add focused UI buffer coverage for rounded/shared panel chrome and title badge
-  styling
-- add focused UI buffer coverage for shortcut key badge styling
-- update terminal snapshots for the panel chrome and shortcut changes
-- update harness coverage that asserts the visible title labels and Git state
+- add a unit assertion for the shared ten-item cap
+- update modal snapshots whose short lists now show all choices
+- run existing harness scenarios to prove modal workflows still preserve Git
+  state
 
 3. Documentation
-- update PRODUCT behavior notes for badge-style numbered focus hints
-- update DESIGN visual theme notes for rounded/shared terminal panel chrome
+- update DESIGN modal notes for the select-list viewport rule
+- update PRODUCT only if visible behavior semantics change
 
 4. Validation
 - run `cargo fmt`
@@ -46,5 +41,7 @@ badge-style bottom shortcuts.
 ## Latest Validation
 
 - `cargo fmt`
+- `cargo test -p ratagit-ui --test snapshots`
+- `cargo test -p ratagit-harness --test harness harness_files_reset_menu_select_list_renders_all_short_choices`
 - `cargo clippy --workspace --lib --bins -- -D warnings`
 - `cargo test`

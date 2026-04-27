@@ -15,6 +15,15 @@ use ratagit_ui::{
 };
 use ratatui::style::{Color, Modifier, Style};
 
+const MODAL_ACTIVE: Color = Color::Rgb(0x7a, 0xa2, 0xf7);
+const MODAL_TEXT: Color = Color::Rgb(0xc0, 0xca, 0xf5);
+const MODAL_DIM: Color = Color::Rgb(0x56, 0x5f, 0x89);
+const MODAL_BORDER: Color = Color::Rgb(0x3b, 0x42, 0x61);
+const MODAL_SURFACE: Color = Color::Rgb(0x24, 0x28, 0x3b);
+const MODAL_DANGER: Color = Color::Rgb(0xf7, 0x76, 0x8e);
+const MODAL_WARNING: Color = Color::Rgb(0xe0, 0xaf, 0x68);
+const MODAL_SCRIM: Color = Color::Rgb(0x16, 0x1b, 0x2d);
+
 fn render_snapshot(snapshot: ratagit_core::RepoSnapshot, size: TerminalSize) -> String {
     let mut state = AppState::default();
     apply_refreshed_with_mock_details(&mut state, snapshot);
@@ -1175,7 +1184,7 @@ fn terminal_commit_editor_cursor_follows_active_body_field() {
         },
     );
 
-    assert_eq!(cursor.expect("editor cursor should render").y, 14);
+    assert_eq!(cursor.expect("editor cursor should render").y, 11);
 }
 
 #[test]
@@ -1197,7 +1206,7 @@ fn terminal_commit_editor_cursor_wraps_long_body_line() {
     );
     let cursor = cursor.expect("editor cursor should render");
 
-    assert_eq!((cursor.x, cursor.y), (20, 14));
+    assert_eq!((cursor.x, cursor.y), (44, 11));
 }
 
 #[test]
@@ -1217,7 +1226,7 @@ fn terminal_commit_editor_cursor_follows_subject_field() {
         },
     );
 
-    assert_eq!(cursor.expect("editor cursor should render").y, 10);
+    assert_eq!(cursor.expect("editor cursor should render").y, 7);
 }
 
 #[test]
@@ -1238,7 +1247,7 @@ fn terminal_commit_editor_cursor_wraps_long_subject() {
     );
     let cursor = cursor.expect("editor cursor should render");
 
-    assert_eq!((cursor.x, cursor.y), (20, 11));
+    assert_eq!((cursor.x, cursor.y), (44, 8));
 }
 
 #[test]
@@ -1278,7 +1287,7 @@ fn terminal_stash_editor_cursor_follows_title() {
         },
     );
 
-    assert_eq!(cursor.expect("editor cursor should render").y, 12);
+    assert_eq!(cursor.expect("editor cursor should render").y, 8);
 }
 
 #[test]
@@ -1299,7 +1308,7 @@ fn terminal_stash_editor_cursor_wraps_long_title() {
     );
     let cursor = cursor.expect("editor cursor should render");
 
-    assert_eq!((cursor.x, cursor.y), (20, 13));
+    assert_eq!((cursor.x, cursor.y), (44, 9));
 }
 
 #[test]
@@ -1605,12 +1614,20 @@ fn terminal_buffer_styles_branch_details_log_from_ansi() {
 #[test]
 fn terminal_buffer_styles_modal_titles_by_tone() {
     let info_style = Style::default()
-        .fg(Color::Cyan)
+        .fg(MODAL_ACTIVE)
         .add_modifier(Modifier::BOLD);
     let warning_style = Style::default()
-        .fg(Color::Yellow)
+        .fg(MODAL_WARNING)
         .add_modifier(Modifier::BOLD);
-    let danger_style = Style::default().fg(Color::Red).add_modifier(Modifier::BOLD);
+    let danger_style = Style::default()
+        .fg(MODAL_DANGER)
+        .add_modifier(Modifier::BOLD);
+    let border_style = Style::default().fg(MODAL_BORDER);
+    let selected_choice_style = Style::default()
+        .fg(MODAL_TEXT)
+        .bg(MODAL_SURFACE)
+        .add_modifier(Modifier::BOLD);
+    let scrim_style = Style::default().fg(MODAL_DIM).bg(MODAL_SCRIM);
 
     let mut commit_state = AppState::default();
     apply_refreshed_with_mock_details(&mut commit_state, fixture_dirty_repo());
@@ -1627,6 +1644,30 @@ fn terminal_buffer_styles_modal_titles_by_tone() {
         "Commit Message",
         info_style
     ));
+    assert!(buffer_contains_text_with_exact_style(
+        &commit_buffer,
+        "README.md",
+        scrim_style
+    ));
+    assert!(buffer_contains_text_with_exact_style(
+        &commit_buffer,
+        "Subject",
+        info_style
+    ));
+    assert!(buffer_contains_text_with_exact_style(
+        &commit_buffer,
+        "Body",
+        border_style
+    ));
+    let commit_screen = render_terminal_text(
+        &commit_state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    );
+    assert!(commit_screen.contains("╭ ✎ Commit Message"));
+    assert!(commit_screen.contains("────────────────"));
 
     let mut reset_state = AppState::default();
     apply_refreshed_with_mock_details(&mut reset_state, fixture_dirty_repo());
@@ -1643,6 +1684,11 @@ fn terminal_buffer_styles_modal_titles_by_tone() {
         "Reset",
         warning_style
     ));
+    assert!(buffer_contains_text_with_exact_style(
+        &reset_buffer,
+        "mixed",
+        selected_choice_style
+    ));
 
     let mut discard_state = AppState::default();
     apply_refreshed_with_mock_details(&mut discard_state, fixture_dirty_repo());
@@ -1656,7 +1702,7 @@ fn terminal_buffer_styles_modal_titles_by_tone() {
     );
     assert!(buffer_contains_text_with_style(
         &discard_buffer,
-        "Discard Changes",
+        "Confirm",
         danger_style
     ));
     assert!(buffer_contains_text_with_style(

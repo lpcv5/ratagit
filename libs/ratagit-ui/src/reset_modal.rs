@@ -1,12 +1,11 @@
 use ratagit_core::{AppState, ResetChoice};
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::layout::Rect;
 use ratatui::style::Style;
-use ratatui::widgets::{Paragraph, Wrap};
 
 use crate::modal::{
-    ModalSpec, ModalTone, render_action_footer, render_choice_list, render_modal_frame,
-    render_section_label,
+    ChoiceMenuBody, ModalSpec, ModalTone, choice_menu_modal_height, render_choice_menu_body,
+    render_modal,
 };
 use crate::theme::{modal_danger_style, modal_muted_style};
 
@@ -15,52 +14,36 @@ pub(crate) fn render_reset_modal(frame: &mut Frame<'_>, state: &AppState, area: 
         return;
     }
 
-    let Some(modal) = render_modal_frame(
+    let choices = reset_choices();
+    render_modal(
         frame,
         area,
-        ModalSpec::new("Reset", ModalTone::Warning, 72, 13, 20, 8, 1),
-    ) else {
-        return;
-    };
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Length(5),
-            Constraint::Length(1),
-            Constraint::Min(2),
-        ])
-        .split(modal.content);
-
-    frame.render_widget(
-        Paragraph::new("Choose reset scope for the whole repo."),
-        rows[0],
-    );
-
-    let choices = reset_choices();
-    render_choice_list(
-        frame,
-        rows[1],
-        "Mode",
-        &choices,
-        state.reset_menu.selected,
-        ModalTone::Warning,
-    );
-
-    render_section_label(frame, rows[2], "Description");
-    frame.render_widget(
-        Paragraph::new(reset_choice_description(state.reset_menu.selected))
-            .wrap(Wrap { trim: false }),
-        rows[3],
-    );
-    if let Some(footer) = modal.footer {
-        render_action_footer(
-            frame,
-            footer,
+        ModalSpec::new(
+            "Reset",
             ModalTone::Warning,
-            &[("j/k", "select"), ("Enter", "confirm"), ("Esc", "cancel")],
-        );
-    }
+            72,
+            choice_menu_modal_height(choices.len(), 1),
+            20,
+            8,
+            1,
+        ),
+        &[&[("j/k", "select"), ("Enter", "confirm"), ("Esc", "cancel")]],
+        |frame, content| {
+            render_choice_menu_body(
+                frame,
+                content,
+                ModalTone::Warning,
+                ChoiceMenuBody {
+                    intro: "Choose reset scope for the whole repo.".to_string(),
+                    list_title: "Mode",
+                    choices: &choices,
+                    selected: state.reset_menu.selected,
+                    list_height: 5,
+                    description: reset_choice_description(state.reset_menu.selected).to_string(),
+                },
+            );
+        },
+    );
 }
 
 fn reset_choices() -> Vec<(ResetChoice, &'static str, Style)> {

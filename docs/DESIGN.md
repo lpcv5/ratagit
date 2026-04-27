@@ -314,9 +314,26 @@ Files panel interaction:
   through buffer styles.
 - Modal overlays use the internal `ratagit-ui` modal system for deterministic
   centering, sizing, borders, inner padding, input blocks, and action footers.
+- Business modal renderers call the shared modal shell with a `ModalSpec`,
+  action rows, and an AppState-derived content renderer; the shell owns the
+  title, scrim, content area, footer separator, and action row rendering.
+- Modal overlays render above a deterministic scrim, use rounded borders,
+  top-biased placement, a shared footer separator, and width clamping near
+  50-60% of the terminal with bounded minimum and maximum widths.
+- `ratagit-ui` exposes modal colors through a default theme palette with
+  semantic roles for active accent, text, dim text, background, selected
+  surface, border, warning, danger, and success so additional palettes can be
+  added without rewriting modal renderers.
 - Modal tones are semantic and text-backed: editor modals use an info accent,
   repository reset uses a warning accent, and discard confirmation uses a danger
   accent while still rendering explicit warning text.
+- Confirmation modals share the `Confirm` title with the tone icon, center a
+  primary question plus secondary consequence text, and render compact
+  AppState-derived details below the message.
+- Choice-menu modals reuse a shared body shape: intro text, choice list,
+  description label, and description text. The shared choice list derives its
+  viewport from the available choices, sizes the modal shell to fit that
+  viewport when the terminal allows, and caps visible rows at ten items.
 - Branch creation uses the info modal tone, branch delete uses danger, and
   branch force-delete confirmation uses danger; branch rebase plus auto-stash
   confirmation use warning.

@@ -912,7 +912,7 @@ fn harness_files_commit_editor_reports_terminal_cursor() {
     }
 
     let (_, cursor) = render_terminal_buffer_with_cursor(runtime.state(), size);
-    assert_eq!(cursor.expect("editor cursor should render").y, 14);
+    assert_eq!(cursor.expect("editor cursor should render").y, 11);
     assert!(
         runtime
             .backend()
@@ -1101,6 +1101,24 @@ fn harness_stash_search_selects_match_without_git_operation() {
 }
 
 #[test]
+fn harness_files_reset_menu_select_list_renders_all_short_choices() {
+    let inputs = [UiAction::RefreshAll, UiAction::OpenResetMenu];
+    assert_scenario(MockScenario::new(
+        "files_reset_menu_select_list_renders_all_short_choices",
+        fixture_dirty_repo(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &["Reset", "mixed", "soft", "hard", "Nuke"],
+            screen_not_contains: &["Reset mixed to HEAD"],
+            selected_screen_rows: &[],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["refresh"],
+            git_state_contains: &["current_branch: \"main\"", "path: \"README.md\""],
+        },
+    ));
+}
+
+#[test]
 fn harness_files_reset_mixed_menu() {
     let inputs = [
         UiAction::RefreshAll,
@@ -1175,6 +1193,24 @@ fn harness_files_reset_nuke_menu() {
             batch_selected_screen_rows: &[],
             git_ops_contains: &["nuke", "refresh"],
             git_state_contains: &["status_summary: \"staged: 0, unstaged: 0\"", "files: []"],
+        },
+    ));
+}
+
+#[test]
+fn harness_files_discard_confirmation_modal_renders() {
+    let inputs = [UiAction::RefreshAll, UiAction::OpenDiscardConfirm];
+    assert_scenario(MockScenario::new(
+        "files_discard_confirm_modal_renders",
+        fixture_dirty_repo(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &["‼ Confirm", "Targets: 1 file", "Enter discard  Esc cancel"],
+            screen_not_contains: &["Discarded README.md"],
+            selected_screen_rows: &[],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["refresh"],
+            git_state_contains: &["path: \"README.md\""],
         },
     ));
 }

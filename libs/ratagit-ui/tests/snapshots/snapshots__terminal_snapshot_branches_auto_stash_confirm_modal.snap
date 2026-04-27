@@ -7,20 +7,20 @@ expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30,
 │    src/                       │  Author: ratagit-tests <ratagit-tests@example.com>              │
 │      lib.rs                   │                                                                 │
 │      main.rs                  │      init project on feature/mvp                                │
+│                   ╭ ⚠ Confirm ───────────────────────────────────────────────╮                   │
+│                   │                                                          │                   │
+│                   │          Auto stash before checkout feature/mvp?         │                   │
+│                   │      The stash will be restored after the operation.     │                   │
+│                   │                                                          │                   │
+╰───────────────────│              Operation: checkout feature/mvp             │                   │
+╭ 2   Branches ────│                                                          │                   │
+│ main             │ ──────────────────────────────────────────────────────── │                   │
+│  feature/mvp      │ Enter auto stash  Esc cancel                             │                   │
+│                   ╰──────────────────────────────────────────────────────────╯                   │
 │                                │                                                                 │
 │                                │                                                                 │
 │                                │                                                                 │
-│                                │                                                                 │
-│             ┌ Auto Stash ──────────────────────────────────────────────────────────┐             │
-╰─────────────│ Working tree has uncommitted changes.                                │             │
-╭ 2   Branche│ Auto stash before the operation, then restore the stash afterward?   │             │
-│ main       │                                                                      │             │
-│  feature/mvp│ Operation                                                            │             │
-│             │ checkout feature/mvp                                                 │             │
-│             │                                                                      │             │
-│             │                                                                      │             │
-│             │ Enter auto stash  |  Esc cancel                                      │             │
-╰─────────────└──────────────────────────────────────────────────────────────────────┘             │
+╰────────────────────────────────╯                                                                 │
 │ 3   Commits                   │─────────────────────────────────────────────────────────────────╯
 │●  abc1234  RT  init project    │ 6  󰌱 Log                                                        │
 │●  def5678  RT  wire commands   │  notice=Ready                                                   │

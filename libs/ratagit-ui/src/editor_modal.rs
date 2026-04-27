@@ -7,8 +7,8 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::frame::TerminalCursor;
 use crate::modal::{
-    ModalSpec, ModalTone, modal_content_rect, render_action_footer, render_input_block,
-    render_modal_frame, render_section_label,
+    ModalSpec, ModalTone, modal_content_rect, render_input_block, render_modal,
+    render_section_label, render_text,
 };
 
 pub(crate) fn render_editor_modal(frame: &mut Frame<'_>, state: &AppState, area: Rect) {
@@ -16,12 +16,7 @@ pub(crate) fn render_editor_modal(frame: &mut Frame<'_>, state: &AppState, area:
         return;
     };
 
-    let spec = editor_modal_spec(editor);
-    let Some(modal) = render_modal_frame(frame, area, spec) else {
-        return;
-    };
-
-    match editor {
+    let rendered = match editor {
         EditorKind::Commit {
             message,
             message_cursor: _,
@@ -29,32 +24,55 @@ pub(crate) fn render_editor_modal(frame: &mut Frame<'_>, state: &AppState, area:
             body_cursor,
             active_field,
             ..
-        } => render_commit_editor(
+        } => render_modal(
             frame,
-            modal.content,
-            modal.footer,
-            CommitEditorContent {
-                message,
-                body,
-                body_cursor: *body_cursor,
-                active_field: *active_field,
+            area,
+            editor_modal_spec(editor),
+            &[
+                &[
+                    ("Tab/Shift+Tab", "field"),
+                    ("Left/Right/Home/End", "cursor"),
+                ],
+                &[
+                    ("Ctrl+J", "newline"),
+                    ("Enter", "confirm"),
+                    ("Esc", "cancel"),
+                ],
+            ],
+            |frame, content| {
+                render_commit_editor(
+                    frame,
+                    content,
+                    CommitEditorContent {
+                        message,
+                        body,
+                        body_cursor: *body_cursor,
+                        active_field: *active_field,
+                    },
+                );
             },
         ),
         EditorKind::Stash {
             title,
             title_cursor,
             scope,
-        } => render_stash_editor(
+        } => render_modal(
             frame,
-            modal.content,
-            modal.footer,
-            title,
-            *title_cursor,
-            scope,
+            area,
+            editor_modal_spec(editor),
+            &[
+                &[("Left/Right/Home/End", "cursor")],
+                &[("Enter", "confirm"), ("Esc", "cancel")],
+            ],
+            |frame, content| {
+                render_stash_editor(frame, content, title, *title_cursor, scope);
+            },
         ),
-    }
+    };
 
-    if let Some(cursor) = editor_cursor_position(state, area) {
+    if rendered.is_some()
+        && let Some(cursor) = editor_cursor_position(state, area)
+    {
         frame.set_cursor_position(Position::new(cursor.x, cursor.y));
     }
 }
@@ -62,7 +80,7 @@ pub(crate) fn render_editor_modal(frame: &mut Frame<'_>, state: &AppState, area:
 fn editor_modal_spec(editor: &EditorKind) -> ModalSpec {
     let target_height = match editor {
         EditorKind::Commit { .. } => 15,
-        EditorKind::Stash { .. } => 10,
+        EditorKind::Stash { .. } => 11,
     };
     ModalSpec::new(
         editor_modal_title(editor),
@@ -73,6 +91,7 @@ fn editor_modal_spec(editor: &EditorKind) -> ModalSpec {
         6,
         2,
     )
+    .with_icon("✎")
 }
 
 fn editor_modal_title(editor: &EditorKind) -> &'static str {
@@ -89,12 +108,7 @@ struct CommitEditorContent<'a> {
     active_field: CommitField,
 }
 
-fn render_commit_editor(
-    frame: &mut Frame<'_>,
-    area: Rect,
-    footer: Option<Rect>,
-    content: CommitEditorContent<'_>,
-) {
+fn render_commit_editor(frame: &mut Frame<'_>, area: Rect, content: CommitEditorContent<'_>) {
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -125,37 +139,11 @@ fn render_commit_editor(
         content.active_field == CommitField::Body,
         ModalTone::Info,
     );
-    if let Some(footer) = footer {
-        let footer_rows = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Length(1), Constraint::Length(1)])
-            .split(footer);
-        render_action_footer(
-            frame,
-            footer_rows[0],
-            ModalTone::Info,
-            &[
-                ("Tab/Shift+Tab", "field"),
-                ("Left/Right/Home/End", "cursor"),
-            ],
-        );
-        render_action_footer(
-            frame,
-            footer_rows[1],
-            ModalTone::Info,
-            &[
-                ("Ctrl+J", "newline"),
-                ("Enter", "confirm"),
-                ("Esc", "cancel"),
-            ],
-        );
-    }
 }
 
 fn render_stash_editor(
     frame: &mut Frame<'_>,
     area: Rect,
-    footer: Option<Rect>,
     title: &str,
     _title_cursor: usize,
     scope: &StashScope,
@@ -182,27 +170,9 @@ fn render_stash_editor(
         StashScope::All => "all changes".to_string(),
         StashScope::SelectedPaths(paths) => format!("selected files ({})", paths.len()),
     };
-    frame.render_widget(Paragraph::new(format!("Scope: {scope_text}")), rows[2]);
+    render_text(frame, rows[2], format!("Scope: {scope_text}"));
     if rows.len() > 3 {
         frame.render_widget(Paragraph::new(""), rows[3]);
-    }
-    if let Some(footer) = footer {
-        let footer_rows = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Length(1), Constraint::Length(1)])
-            .split(footer);
-        render_action_footer(
-            frame,
-            footer_rows[0],
-            ModalTone::Info,
-            &[("Left/Right/Home/End", "cursor")],
-        );
-        render_action_footer(
-            frame,
-            footer_rows[1],
-            ModalTone::Info,
-            &[("Enter", "confirm"), ("Esc", "cancel")],
-        );
     }
 }
 
