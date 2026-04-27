@@ -263,6 +263,19 @@ impl GitCli {
         })
     }
 
+    pub(crate) fn commit_log_page(&self, offset: usize, limit: usize) -> Result<Vec<u8>, GitError> {
+        self.run_git_output_with_options(
+            vec![
+                "log".to_string(),
+                format!("--skip={offset}"),
+                "-n".to_string(),
+                limit.to_string(),
+                "--format=%x1e%H%x00%h%x00%P%x00%an%x00%B%x00".to_string(),
+            ],
+            true,
+        )
+    }
+
     pub(crate) fn branch_details_log(
         &mut self,
         branch: &str,

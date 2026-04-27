@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -152,6 +153,7 @@ impl GitBackend for HybridGitBackend {
         trace_step("head", started);
         let started = Instant::now();
         let commits = collect_commits_page(
+            &self.cli,
             &self.repo,
             &current_branch,
             detached_head,
@@ -185,7 +187,14 @@ impl GitBackend for HybridGitBackend {
         limit: usize,
     ) -> Result<Vec<CommitEntry>, GitError> {
         let (current_branch, detached_head) = current_head(&self.repo)?;
-        collect_commits_page(&self.repo, &current_branch, detached_head, offset, limit)
+        collect_commits_page(
+            &self.cli,
+            &self.repo,
+            &current_branch,
+            detached_head,
+            offset,
+            limit,
+        )
     }
 
     fn files_details_diff(&mut self, targets: &[FileDiffTarget]) -> Result<String, GitError> {
@@ -501,6 +510,62 @@ fn collect_files_with_git2(
 }
 
 fn collect_commits_page(
+    cli: &GitCli,
+    repo: &Repository,
+    current_branch: &str,
+    detached_head: bool,
+    offset: usize,
+    limit: usize,
+) -> Result<Vec<CommitEntry>, GitError> {
+    if head_is_missing(repo)? {
+        return Ok(Vec::new());
+    }
+    match collect_commits_page_with_cli(cli, repo, current_branch, detached_head, offset, limit) {
+        Ok(commits) => return Ok(commits),
+        Err(error) => {
+            tracing::warn!(
+                target: "ratagit.git",
+                error = %error,
+                offset,
+                limit,
+                "git cli commit page failed; falling back to git2 revwalk"
+            );
+        }
+    }
+    collect_commits_page_with_git2(repo, current_branch, detached_head, offset, limit)
+}
+
+fn collect_commits_page_with_cli(
+    cli: &GitCli,
+    repo: &Repository,
+    current_branch: &str,
+    detached_head: bool,
+    offset: usize,
+    limit: usize,
+) -> Result<Vec<CommitEntry>, GitError> {
+    let output = cli.commit_log_page(offset, limit)?;
+    let parsed = parse_commit_log_page(&output)?;
+    let oids = parsed.iter().map(|entry| entry.oid).collect::<Vec<_>>();
+    let statuses = classify_commit_hash_statuses(repo, current_branch, detached_head, &oids)?;
+    Ok(parsed
+        .into_iter()
+        .map(|entry| CommitEntry {
+            id: entry.id,
+            full_id: entry.full_id,
+            summary: entry.summary,
+            message: entry.message,
+            author_name: entry.author_name,
+            graph: "●".to_string(),
+            hash_status: statuses
+                .get(&entry.oid)
+                .copied()
+                .unwrap_or(CommitHashStatus::Unpushed),
+            is_merge: entry.is_merge,
+        })
+        .collect())
+}
+
+fn collect_commits_page_with_git2(
     repo: &Repository,
     current_branch: &str,
     detached_head: bool,
@@ -547,6 +612,131 @@ fn collect_commits_page(
         });
     }
     Ok(commits)
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct ParsedCommitLogEntry {
+    oid: Oid,
+    id: String,
+    full_id: String,
+    summary: String,
+    message: String,
+    author_name: String,
+    is_merge: bool,
+}
+
+fn parse_commit_log_page(output: &[u8]) -> Result<Vec<ParsedCommitLogEntry>, GitError> {
+    let mut entries = Vec::new();
+    for record in output.split(|byte| *byte == 0x1e) {
+        if record.iter().all(|byte| byte.is_ascii_whitespace()) {
+            continue;
+        }
+        let fields = record.split(|byte| *byte == 0).collect::<Vec<_>>();
+        if fields.len() < 5 {
+            return Err(GitError::new("invalid git log record"));
+        }
+        let full_id = utf8_field(fields[0], "full commit id")?.trim();
+        let oid = Oid::from_str(full_id)
+            .map_err(|error| GitError::new(format!("invalid commit id from git log: {error}")))?;
+        let id = utf8_field(fields[1], "short commit id")?.trim();
+        let parents = utf8_field(fields[2], "commit parents")?.trim();
+        let author_name = utf8_field(fields[3], "commit author")?.trim();
+        let message = utf8_field(fields[4], "commit message")?
+            .trim_end()
+            .to_string();
+        let summary = message.lines().next().unwrap_or("").trim().to_string();
+        if summary.is_empty() {
+            continue;
+        }
+        entries.push(ParsedCommitLogEntry {
+            oid,
+            id: if id.is_empty() {
+                short_oid(oid)
+            } else {
+                id.to_string()
+            },
+            full_id: oid.to_string(),
+            summary,
+            message,
+            author_name: if author_name.is_empty() {
+                "unknown".to_string()
+            } else {
+                author_name.to_string()
+            },
+            is_merge: parents.split_whitespace().count() > 1,
+        });
+    }
+    Ok(entries)
+}
+
+fn utf8_field<'a>(field: &'a [u8], label: &str) -> Result<&'a str, GitError> {
+    std::str::from_utf8(field)
+        .map_err(|error| GitError::new(format!("invalid utf-8 {label} from git log: {error}")))
+}
+
+fn classify_commit_hash_statuses(
+    repo: &Repository,
+    current_branch: &str,
+    detached_head: bool,
+    oids: &[Oid],
+) -> Result<HashMap<Oid, CommitHashStatus>, GitError> {
+    let mut statuses = oids
+        .iter()
+        .copied()
+        .map(|oid| (oid, CommitHashStatus::Unpushed))
+        .collect::<HashMap<_, _>>();
+    if statuses.is_empty() {
+        return Ok(statuses);
+    }
+    if let Ok(main_oid) = repo.refname_to_id("refs/heads/main") {
+        mark_reachable_commits(
+            repo,
+            main_oid,
+            &mut statuses,
+            CommitHashStatus::MergedToMain,
+        )?;
+    }
+    if !detached_head && let Some(upstream_oid) = upstream_oid(repo, current_branch)? {
+        mark_reachable_commits(repo, upstream_oid, &mut statuses, CommitHashStatus::Pushed)?;
+    }
+    Ok(statuses)
+}
+
+fn mark_reachable_commits(
+    repo: &Repository,
+    tip: Oid,
+    statuses: &mut HashMap<Oid, CommitHashStatus>,
+    status: CommitHashStatus,
+) -> Result<(), GitError> {
+    let mut remaining = statuses
+        .iter()
+        .filter_map(|(oid, current_status)| {
+            (*current_status == CommitHashStatus::Unpushed).then_some(*oid)
+        })
+        .collect::<HashSet<_>>();
+    if remaining.is_empty() {
+        return Ok(());
+    }
+    let mut revwalk = repo.revwalk()?;
+    revwalk.push(tip)?;
+    for oid in revwalk {
+        let oid = oid?;
+        if remaining.remove(&oid) {
+            statuses.insert(oid, status);
+            if remaining.is_empty() {
+                break;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn head_is_missing(repo: &Repository) -> Result<bool, GitError> {
+    match repo.head() {
+        Ok(_) => Ok(false),
+        Err(error) if is_missing_head_error(&error) => Ok(true),
+        Err(error) => Err(error.into()),
+    }
 }
 
 fn upstream_oid(repo: &Repository, current_branch: &str) -> Result<Option<Oid>, GitError> {

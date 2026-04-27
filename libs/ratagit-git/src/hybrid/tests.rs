@@ -1,7 +1,7 @@
 use super::*;
 use std::fs::{create_dir_all, remove_dir_all, write};
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -152,6 +152,87 @@ fn status_mode_switches_to_large_repo_fast_at_threshold() {
 }
 
 #[test]
+fn commit_log_parser_reads_multiline_messages_merges_and_skips_empty_summaries() {
+    let first = "1111111111111111111111111111111111111111";
+    let second = "2222222222222222222222222222222222222222";
+    let parent_a = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    let parent_b = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    let output = format!(
+        "\x1e{first}\x001111111\x00{parent_a} {parent_b}\x00Alice Baker\x00subject line\n\nbody line\n\x00\n\
+         \x1e{second}\x002222222\x00\x00Bob Creator\x00\n\n\x00\n",
+    );
+
+    let entries = parse_commit_log_page(output.as_bytes()).expect("commit log should parse");
+
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].full_id, first);
+    assert_eq!(entries[0].id, "1111111");
+    assert_eq!(entries[0].summary, "subject line");
+    assert_eq!(entries[0].message, "subject line\n\nbody line");
+    assert_eq!(entries[0].author_name, "Alice Baker");
+    assert!(entries[0].is_merge);
+}
+
+#[test]
+fn batch_hash_status_classifies_main_upstream_unpushed_and_detached() {
+    let root = unique_temp_path("ratagit-batch-hash-status");
+    create_dir_all(&root).expect("temp repo should be creatable");
+    let repo = Repository::init(&root).expect("repo should initialize");
+
+    let main_oid = create_empty_commit(&repo, "main", &[]);
+    let pushed_oid = create_empty_commit(&repo, "pushed", &[main_oid]);
+    let unpushed_oid = create_empty_commit(&repo, "unpushed", &[pushed_oid]);
+    repo.reference("refs/heads/main", main_oid, true, "main ref")
+        .expect("main ref should write");
+    repo.reference(
+        "refs/heads/feature/upstream",
+        pushed_oid,
+        true,
+        "upstream ref",
+    )
+    .expect("upstream ref should write");
+    repo.reference(
+        "refs/heads/feature/status",
+        unpushed_oid,
+        true,
+        "feature ref",
+    )
+    .expect("feature ref should write");
+    repo.set_head("refs/heads/feature/status")
+        .expect("feature branch should be current");
+    let mut config = repo.config().expect("repo config should open");
+    config
+        .set_str("branch.feature/status.remote", ".")
+        .expect("upstream remote should write");
+    config
+        .set_str("branch.feature/status.merge", "refs/heads/feature/upstream")
+        .expect("upstream merge should write");
+
+    let oids = vec![unpushed_oid, pushed_oid, main_oid];
+    let statuses = classify_commit_hash_statuses(&repo, "feature/status", false, &oids)
+        .expect("statuses should classify");
+    assert_eq!(
+        statuses.get(&unpushed_oid),
+        Some(&CommitHashStatus::Unpushed)
+    );
+    assert_eq!(statuses.get(&pushed_oid), Some(&CommitHashStatus::Pushed));
+    assert_eq!(
+        statuses.get(&main_oid),
+        Some(&CommitHashStatus::MergedToMain)
+    );
+
+    let detached = classify_commit_hash_statuses(&repo, "feature/status", true, &oids)
+        .expect("detached statuses should classify");
+    assert_eq!(detached.get(&pushed_oid), Some(&CommitHashStatus::Unpushed));
+    assert_eq!(
+        detached.get(&main_oid),
+        Some(&CommitHashStatus::MergedToMain)
+    );
+
+    let _ = remove_dir_all(root);
+}
+
+#[test]
 fn refresh_files_emits_debug_performance_events_without_stdout_payload() {
     let root = std::env::temp_dir().join(format!(
         "ratagit-git-tracing-{}-{}",
@@ -205,6 +286,33 @@ fn refresh_files_emits_debug_performance_events_without_stdout_payload() {
     assert!(!logs.contains("secret stdout payload"));
 
     let _ = remove_dir_all(root);
+}
+
+fn unique_temp_path(label: &str) -> PathBuf {
+    std::env::temp_dir().join(format!(
+        "{}-{}-{}",
+        label,
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be after epoch")
+            .as_nanos()
+    ))
+}
+
+fn create_empty_commit(repo: &Repository, message: &str, parents: &[Oid]) -> Oid {
+    let mut index = repo.index().expect("index should open");
+    let tree_oid = index.write_tree().expect("tree should write");
+    let tree = repo.find_tree(tree_oid).expect("tree should exist");
+    let signature = Signature::now("ratagit-tests", "ratagit-tests@example.com")
+        .expect("signature should build");
+    let parent_commits = parents
+        .iter()
+        .map(|oid| repo.find_commit(*oid).expect("parent commit should exist"))
+        .collect::<Vec<_>>();
+    let parent_refs = parent_commits.iter().collect::<Vec<_>>();
+    repo.commit(None, &signature, &signature, message, &tree, &parent_refs)
+        .expect("commit should write")
 }
 
 #[derive(Clone, Default)]
