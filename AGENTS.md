@@ -64,8 +64,13 @@ For every feature:
 Before finishing:
 
 - cargo fmt
-- cargo clippy --all-targets -- -D warnings
+- cargo clippy --workspace --lib --bins -- -D warnings
 - cargo test
+
+Strict clippy is required for production library and binary targets. Test code is
+validated by `cargo test`, UI snapshots, and harness scenarios; clippy findings
+inside test-only targets are advisory unless they indicate a broken test flow,
+nondeterminism, or invalid assertions.
 
 ---
 

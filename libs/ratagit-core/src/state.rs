@@ -2,6 +2,22 @@ use std::collections::BTreeSet;
 
 use crate::{CommitFilesPanelState, FilesPanelState, ScrollDirection};
 
+fn next_choice<T: Copy + PartialEq, const N: usize>(choices: [T; N], selected: T) -> T {
+    let index = choices
+        .iter()
+        .position(|choice| *choice == selected)
+        .unwrap_or(0);
+    choices[(index + 1).min(N - 1)]
+}
+
+fn prev_choice<T: Copy + PartialEq, const N: usize>(choices: [T; N], selected: T) -> T {
+    let index = choices
+        .iter()
+        .position(|choice| *choice == selected)
+        .unwrap_or(0);
+    choices[index.saturating_sub(1)]
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PanelFocus {
     Files,
@@ -96,8 +112,9 @@ pub enum CommitHashStatus {
     Unpushed,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CommitInputMode {
+    #[default]
     Normal,
     MultiSelect,
 }
@@ -126,19 +143,11 @@ impl BranchDeleteChoice {
     pub const ALL: [Self; 3] = [Self::Local, Self::Remote, Self::Both];
 
     pub fn next(self) -> Self {
-        let index = Self::ALL
-            .iter()
-            .position(|choice| *choice == self)
-            .unwrap_or(0);
-        Self::ALL[(index + 1).min(Self::ALL.len() - 1)]
+        next_choice(Self::ALL, self)
     }
 
     pub fn prev(self) -> Self {
-        let index = Self::ALL
-            .iter()
-            .position(|choice| *choice == self)
-            .unwrap_or(0);
-        Self::ALL[index.saturating_sub(1)]
+        prev_choice(Self::ALL, self)
     }
 
     pub fn delete_mode(self) -> BranchDeleteMode {
@@ -161,19 +170,11 @@ impl BranchRebaseChoice {
     pub const ALL: [Self; 3] = [Self::Simple, Self::Interactive, Self::OriginMain];
 
     pub fn next(self) -> Self {
-        let index = Self::ALL
-            .iter()
-            .position(|choice| *choice == self)
-            .unwrap_or(0);
-        Self::ALL[(index + 1).min(Self::ALL.len() - 1)]
+        next_choice(Self::ALL, self)
     }
 
     pub fn prev(self) -> Self {
-        let index = Self::ALL
-            .iter()
-            .position(|choice| *choice == self)
-            .unwrap_or(0);
-        Self::ALL[index.saturating_sub(1)]
+        prev_choice(Self::ALL, self)
     }
 }
 
@@ -218,7 +219,7 @@ pub struct WorkStatusState {
     pub last_completed_command: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct CommitsPanelState {
     pub items: Vec<CommitEntry>,
     pub selected: usize,
@@ -291,19 +292,11 @@ impl ResetChoice {
     pub const ALL: [Self; 4] = [Self::Mixed, Self::Soft, Self::Hard, Self::Nuke];
 
     pub fn next(self) -> Self {
-        let index = Self::ALL
-            .iter()
-            .position(|choice| *choice == self)
-            .unwrap_or(0);
-        Self::ALL[(index + 1).min(Self::ALL.len() - 1)]
+        next_choice(Self::ALL, self)
     }
 
     pub fn prev(self) -> Self {
-        let index = Self::ALL
-            .iter()
-            .position(|choice| *choice == self)
-            .unwrap_or(0);
-        Self::ALL[index.saturating_sub(1)]
+        prev_choice(Self::ALL, self)
     }
 
     pub fn reset_mode(self) -> Option<ResetMode> {
@@ -371,7 +364,7 @@ impl EditorState {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct BranchesPanelState {
     pub items: Vec<BranchEntry>,
     pub selected: usize,
@@ -438,13 +431,13 @@ pub struct AutoStashConfirmState {
     pub operation: Option<AutoStashOperation>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct StashPanelState {
     pub items: Vec<StashEntry>,
     pub selected: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DetailsPanelState {
     pub files_diff: String,
     pub files_targets: Vec<String>,
@@ -515,52 +508,10 @@ impl Default for AppState {
                 last_error: None,
             },
             files: FilesPanelState::default(),
-            commits: CommitsPanelState {
-                items: Vec::new(),
-                selected: 0,
-                files: CommitFilesPanelState::default(),
-                selected_rows: BTreeSet::new(),
-                selection_anchor: None,
-                mode: CommitInputMode::Normal,
-                scroll_direction: None,
-                scroll_direction_origin: 0,
-                has_more: false,
-                loading_more: false,
-                pending_select_after_load: false,
-                pagination_epoch: 0,
-                draft_message: String::new(),
-            },
-            branches: BranchesPanelState {
-                items: Vec::new(),
-                selected: 0,
-                create: BranchCreateState::default(),
-                delete_menu: BranchDeleteMenuState::default(),
-                force_delete_confirm: BranchForceDeleteConfirmState::default(),
-                rebase_menu: BranchRebaseMenuState::default(),
-                auto_stash_confirm: AutoStashConfirmState::default(),
-            },
-            stash: StashPanelState {
-                items: Vec::new(),
-                selected: 0,
-            },
-            details: DetailsPanelState {
-                files_diff: String::new(),
-                files_targets: Vec::new(),
-                files_error: None,
-                cached_files_diffs: Vec::new(),
-                branch_log: String::new(),
-                branch_log_target: None,
-                branch_log_error: None,
-                cached_branch_logs: Vec::new(),
-                commit_diff: String::new(),
-                commit_diff_target: None,
-                commit_diff_error: None,
-                cached_commit_diffs: Vec::new(),
-                commit_file_diff: String::new(),
-                commit_file_diff_target: None,
-                commit_file_diff_error: None,
-                scroll_offset: 0,
-            },
+            commits: CommitsPanelState::default(),
+            branches: BranchesPanelState::default(),
+            stash: StashPanelState::default(),
+            details: DetailsPanelState::default(),
             editor: EditorState::default(),
             reset_menu: ResetMenuState::default(),
             discard_confirm: DiscardConfirmState::default(),
@@ -581,5 +532,34 @@ impl AppState {
             PanelFocus::Stash => Some(SearchScope::Stash),
             PanelFocus::Details | PanelFocus::Log => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bounded_choices_move_to_edges_without_wrapping() {
+        assert_eq!(BranchDeleteChoice::Local.prev(), BranchDeleteChoice::Local);
+        assert_eq!(BranchDeleteChoice::Local.next(), BranchDeleteChoice::Remote);
+        assert_eq!(BranchDeleteChoice::Both.next(), BranchDeleteChoice::Both);
+
+        assert_eq!(
+            BranchRebaseChoice::Simple.prev(),
+            BranchRebaseChoice::Simple
+        );
+        assert_eq!(
+            BranchRebaseChoice::Interactive.next(),
+            BranchRebaseChoice::OriginMain
+        );
+        assert_eq!(
+            BranchRebaseChoice::OriginMain.next(),
+            BranchRebaseChoice::OriginMain
+        );
+
+        assert_eq!(ResetChoice::Mixed.prev(), ResetChoice::Mixed);
+        assert_eq!(ResetChoice::Soft.next(), ResetChoice::Hard);
+        assert_eq!(ResetChoice::Nuke.next(), ResetChoice::Nuke);
     }
 }

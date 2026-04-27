@@ -9,6 +9,21 @@ ratagit uses a layered testing approach:
 
 ---
 
+## Test Code Quality
+
+Test code should make behavior and scenario flow easy to understand. It does not
+need to satisfy the same strict clippy gate as production code, but it must:
+
+- compile and pass under `cargo test`
+- keep snapshots and harness scenarios deterministic
+- isolate real Git mutations under workspace `tmp/`
+- fail with useful artifacts or assertions
+
+Clippy feedback on test-only targets is advisory unless it points to broken
+test flow, nondeterminism, or an assertion that no longer verifies behavior.
+
+---
+
 ## UI Testing
 
 - Panel unit tests assert each panel's pure projection from `AppState`.

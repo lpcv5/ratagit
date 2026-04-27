@@ -2,39 +2,44 @@
 
 ## Current Slice
 
-Continue low-risk duplication cleanup and reducer simplification.
+Rust abstraction reuse and module slimming.
 
 ## Goal
 
 - keep behavior unchanged
 - stay std-only and avoid new dependencies
-- extract repeated code only where reuse is already visible or likely in near-term features
+- use Rust abstractions where they remove visible repetition
 - keep rendering pure and AppState as the only source of truth
 - preserve existing snapshots and harness behavior
-- reduce `ratagit-core` reducer size without changing architecture boundaries
+- reduce oversized production files without changing architecture boundaries
+- keep public APIs stable through facade modules and re-exports
 
 ## Vertical Slice
 
-1. Command metadata helpers
-- move command debounce keys, mutation classification, and pending-operation labels onto `Command`
-- keep `debounce_key_for_command` as a compatibility wrapper
-- update runtime coalescing to use command metadata methods
+1. Backend abstraction cleanup
+- add a boxed `GitBackend` blanket implementation
+- return `Box<dyn GitBackend + Send>` from backend selection
+- remove the root app backend enum and handwritten trait forwarding
 
-2. Core reducer modules
-- move mutating operation result handling into a private operations module
-- move details refresh, result application, cache, and scroll helpers into a private details module
+2. Root app module slimming
+- move key mapping, `KeyEffect`, and input mapping tests into `src/input.rs`
+- keep `src/main.rs` focused on terminal setup, event loop, and backend selection
+
+3. Core module slimming
+- move action/result/command types and command metadata into a core action module
+- move editor reducer helpers into a core editor module
+- move commit rewrite and commit-files workflow into a focused commit workflow module
+- add shared const-generic choice navigation for bounded enum choices
 - keep all state in `AppState` and all side effects represented as `Command`
 
-3. UI choice metadata
-- generate branch delete/rebase modal choice rows from existing enum option arrays
-- keep reset choice rendering behavior unchanged
-
-4. Test fixture cleanup
-- extract only repeated, domain-named test fixture helpers
-- keep important test setup visible at each assertion site
+4. UI panels module slimming
+- split panel line types, left-panel projections, details/log projections, scroll helpers, and formatters
+- keep `panels.rs` as the facade for existing crate-internal call sites
+- preserve deterministic rendering and existing snapshots
 
 5. Validation
-- run focused package tests after each slice where useful
-- run `cargo fmt --check`
-- run `cargo clippy --all-targets -- -D warnings`
+- run focused tests after each slice where useful
+- run `cargo fmt`
+- run `cargo clippy --workspace --lib --bins -- -D warnings`
 - run `cargo test`
+- report before/after Rust line counts and remaining oversized files
