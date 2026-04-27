@@ -114,10 +114,13 @@ Files panel interaction:
 - File tree rows are derived from `RepoSnapshot.files`; no UI code reads external state.
 - `AppState.files.tree_rows`, `row_descendants`, and `row_index_by_path`
   cache deterministic tree projection data after reducer-managed changes.
-- `AppState.files.lightweight_tree_index` caches deterministic parent/child
-  relationships for large-repo fast mode, so expanding or collapsing one
+- `AppState.files.tree_index` and `AppState.commits.files.tree_index` share the
+  same deterministic parent/child tree index. Expanding or collapsing one
   directory rebuilds visible rows from cached children instead of rescanning
   every file path.
+- Tree indexes sync item changes by removing, adding, or metadata-updating
+  changed source paths. When the path topology is stable, status-only refreshes
+  update node metadata without rebuilding child relationships.
 - Backend status collection uses full untracked-file expansion in small
   repositories so untracked nested files appear as explicit file rows in the
   tree.
@@ -221,8 +224,10 @@ Files panel interaction:
   dispatching with `auto_stash=true`.
 - Commit Files is an AppState-owned subpanel under Commits:
   - opening emits `Command::RefreshCommitFiles` for the selected commit
-  - rows reuse the Files tree projection/rendering shape but use commit
+  - rows reuse the shared Files tree projection/rendering shape but use commit
     changed-file status markers (`A/M/D/R/C/T`) instead of working-tree status
+  - status markers are colored by Git status while file names keep the default
+    foreground
   - `j` / `k` move the Commit Files cursor through the shared panel navigation
     action path
   - `Enter` toggles the selected directory row, while file rows leave a notice

@@ -241,8 +241,58 @@ mod tests {
             .iter()
             .find(|line| line.text.contains("   A lib.rs"))
             .expect("lib.rs row should be marked as a search match");
-        assert_eq!(line.role, RowRole::DiffAdd);
+        assert_eq!(line.role, RowRole::Normal);
+        assert!(line.spans.as_ref().is_some_and(|spans| {
+            spans
+                .iter()
+                .any(|span| span.text == "A" && span.style == row_style(RowRole::DiffAdd))
+        }));
         assert!(has_search_span(line, "lib"));
+    }
+
+    #[test]
+    fn commit_file_tree_colors_status_marker_not_file_name() {
+        let mut state = state_with_dirty_repo();
+        update(
+            &mut state,
+            Action::Ui(UiAction::FocusPanel {
+                panel: PanelFocus::Commits,
+            }),
+        );
+        let commands = update(&mut state, Action::Ui(UiAction::OpenCommitFilesPanel));
+        let [Command::RefreshCommitFiles { commit_id }] = commands.as_slice() else {
+            panic!("expected commit files refresh");
+        };
+        update(
+            &mut state,
+            Action::GitResult(GitResult::CommitFiles {
+                commit_id: commit_id.clone(),
+                result: Ok(vec![ratagit_core::CommitFileEntry {
+                    path: "src/lib.rs".to_string(),
+                    old_path: None,
+                    status: ratagit_core::CommitFileStatus::Added,
+                }]),
+            }),
+        );
+
+        let lines = render_commits_lines(&state, 4);
+        let line = lines
+            .iter()
+            .find(|line| line.text.contains("A lib.rs"))
+            .expect("added file row should render");
+        let spans = line.spans.as_ref().expect("tree row should have spans");
+
+        assert_eq!(line.role, RowRole::Normal);
+        assert!(
+            spans
+                .iter()
+                .any(|span| span.text == "A" && span.style == row_style(RowRole::DiffAdd))
+        );
+        assert!(
+            spans.iter().any(
+                |span| span.text == " lib.rs" && span.style == ratatui::style::Style::default()
+            )
+        );
     }
 
     #[test]

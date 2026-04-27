@@ -185,6 +185,7 @@ enum Operation {
     CommitFiles,
     CommitFilesDirectoryDiff,
     CommitFilesNavigation,
+    CommitFilesTreeToggle,
     CommitDetailsDiff,
     CommitFileDiff,
     FilesDetailsDiff,
@@ -192,13 +193,14 @@ enum Operation {
 }
 
 impl Operation {
-    const ALL: [Self; 10] = [
+    const ALL: [Self; 11] = [
         Self::Status,
         Self::Commits,
         Self::LoadMoreCommits,
         Self::CommitFiles,
         Self::CommitFilesDirectoryDiff,
         Self::CommitFilesNavigation,
+        Self::CommitFilesTreeToggle,
         Self::CommitDetailsDiff,
         Self::CommitFileDiff,
         Self::FilesDetailsDiff,
@@ -213,6 +215,7 @@ impl Operation {
             "commit-files" => Ok(Self::CommitFiles),
             "commit-files-directory-diff" => Ok(Self::CommitFilesDirectoryDiff),
             "commit-files-navigation" => Ok(Self::CommitFilesNavigation),
+            "commit-files-tree-toggle" => Ok(Self::CommitFilesTreeToggle),
             "commit-details-diff" => Ok(Self::CommitDetailsDiff),
             "commit-file-diff" => Ok(Self::CommitFileDiff),
             "files-details-diff" => Ok(Self::FilesDetailsDiff),
@@ -229,6 +232,7 @@ impl Operation {
             Self::CommitFiles => "commit-files",
             Self::CommitFilesDirectoryDiff => "commit-files-directory-diff",
             Self::CommitFilesNavigation => "commit-files-navigation",
+            Self::CommitFilesTreeToggle => "commit-files-tree-toggle",
             Self::CommitDetailsDiff => "commit-details-diff",
             Self::CommitFileDiff => "commit-file-diff",
             Self::FilesDetailsDiff => "files-details-diff",
@@ -666,6 +670,9 @@ fn measure_git_cli_raw(
         Operation::CommitFilesNavigation => {
             run_git_output(git, &config.path, commit_files_args(&targets.head_commit))?
         }
+        Operation::CommitFilesTreeToggle => {
+            run_git_output(git, &config.path, commit_files_args(&targets.head_commit))?
+        }
         Operation::CommitDetailsDiff => run_git_output(
             git,
             &config.path,
@@ -754,6 +761,12 @@ fn measure_git_cli_parsed(
                 run_git_text_owned(git, &config.path, commit_files_args(&targets.head_commit))?;
             let entries = parse_commit_files(&output)?;
             commit_files_navigation_payload(&targets.head_commit, entries)
+        }
+        Operation::CommitFilesTreeToggle => {
+            let output =
+                run_git_text_owned(git, &config.path, commit_files_args(&targets.head_commit))?;
+            let entries = parse_commit_files(&output)?;
+            commit_files_tree_toggle_payload(&targets.head_commit, entries)
         }
         Operation::CommitDetailsDiff => {
             let output = run_git_output(
@@ -856,6 +869,12 @@ fn measure_backend(
                 .commit_files(&targets.head_commit)
                 .map_err(|error| error.message)?;
             commit_files_navigation_payload(&targets.head_commit, files)
+        }
+        Operation::CommitFilesTreeToggle => {
+            let files = backend
+                .commit_files(&targets.head_commit)
+                .map_err(|error| error.message)?;
+            commit_files_tree_toggle_payload(&targets.head_commit, files)
         }
         Operation::CommitDetailsDiff => {
             let diff = backend
@@ -993,6 +1012,45 @@ fn commit_files_navigation_payload(
     let mut emitted_commands = 0usize;
     for _ in 0..COMMIT_FILES_NAVIGATION_STEPS {
         let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+        emitted_commands += commands.len();
+        let _buffer = render_terminal_buffer(&state, size);
+    }
+
+    Ok(MeasurementPayload {
+        output_items: emitted_commands,
+        output_bytes,
+    })
+}
+
+fn commit_files_tree_toggle_payload(
+    commit_id: &str,
+    files: Vec<CommitFileEntry>,
+) -> Result<MeasurementPayload, String> {
+    let output_bytes = files.iter().map(|entry| entry.path.len()).sum();
+    let target = select_commit_files_directory_path(&files).map_err(|error| error.to_string())?;
+    let mut state = AppState {
+        focus: PanelFocus::Commits,
+        last_left_focus: PanelFocus::Commits,
+        ..AppState::default()
+    };
+    state.commits.files = CommitFilesPanelState {
+        active: true,
+        commit_id: Some(commit_id.to_string()),
+        items: files,
+        ..CommitFilesPanelState::default()
+    };
+    initialize_commit_files_tree(&mut state.commits.files);
+    if !select_commit_file_tree_path(&mut state.commits.files, &target) {
+        return Err(format!("commit files directory path not found: {target}"));
+    }
+
+    let size = TerminalSize {
+        width: 120,
+        height: 34,
+    };
+    let mut emitted_commands = 0usize;
+    for _ in 0..FILES_TREE_TOGGLE_STEPS {
+        let commands = update(&mut state, Action::Ui(UiAction::ToggleCommitFilesDirectory));
         emitted_commands += commands.len();
         let _buffer = render_terminal_buffer(&state, size);
     }
@@ -1629,7 +1687,7 @@ mod tests {
             "--scales".into(),
             "smoke,huge".into(),
             "--operations".into(),
-            "status,commit-files-directory-diff,commit-files-navigation,files-tree-toggle".into(),
+            "status,commit-files-directory-diff,commit-files-navigation,commit-files-tree-toggle,files-tree-toggle".into(),
             "--iterations".into(),
             "2".into(),
             "--warmup".into(),
@@ -1649,6 +1707,7 @@ mod tests {
                 Operation::Status,
                 Operation::CommitFilesDirectoryDiff,
                 Operation::CommitFilesNavigation,
+                Operation::CommitFilesTreeToggle,
                 Operation::FilesTreeToggle
             ]
         );
@@ -1806,6 +1865,7 @@ mod tests {
                 Operation::CommitFiles,
                 Operation::CommitFilesDirectoryDiff,
                 Operation::CommitFilesNavigation,
+                Operation::CommitFilesTreeToggle,
                 Operation::FilesTreeToggle,
             ],
             iterations: 1,

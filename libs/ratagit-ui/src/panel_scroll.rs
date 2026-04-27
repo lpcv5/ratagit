@@ -1,48 +1,6 @@
 use ratagit_core::ScrollDirection;
 
 use super::panel_types::PanelLine;
-use crate::theme::RowRole;
-
-pub(crate) fn render_indexed_entries<T>(
-    items: &[T],
-    selected: usize,
-    scroll_direction: Option<ScrollDirection>,
-    scroll_direction_origin: usize,
-    max_lines: usize,
-    format_item: impl Fn(&T) -> String,
-    item_role: impl Fn(&T) -> RowRole,
-) -> Vec<PanelLine> {
-    render_indexed_entries_window(
-        items,
-        selected,
-        scroll_direction,
-        scroll_direction_origin,
-        max_lines,
-        format_item,
-        item_role,
-    )
-}
-
-fn render_indexed_entries_window<T>(
-    items: &[T],
-    selected: usize,
-    scroll_direction: Option<ScrollDirection>,
-    scroll_direction_origin: usize,
-    max_lines: usize,
-    format_item: impl Fn(&T) -> String,
-    item_role: impl Fn(&T) -> RowRole,
-) -> Vec<PanelLine> {
-    render_indexed_entries_window_with(
-        items,
-        selected,
-        scroll_direction,
-        scroll_direction_origin,
-        max_lines,
-        |index, item| {
-            PanelLine::new(format_item(item), item_role(item)).selected(index == selected)
-        },
-    )
-}
 
 pub(crate) fn render_indexed_entries_window_with<T>(
     items: &[T],

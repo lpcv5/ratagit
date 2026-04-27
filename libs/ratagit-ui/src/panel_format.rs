@@ -7,7 +7,7 @@ use unicode_width::UnicodeWidthChar;
 use super::panel_types::PanelSpan;
 use crate::theme::{
     ICON_BATCH_SELECTED, ICON_BRANCH, ICON_DIRECTORY_CLOSED, ICON_DIRECTORY_OPEN, ICON_FILE,
-    ICON_FILE_STAGED, ICON_FILE_UNTRACKED, ICON_SEARCH_MATCH, ICON_STASH, RowRole,
+    ICON_FILE_STAGED, ICON_FILE_UNTRACKED, ICON_SEARCH_MATCH, ICON_STASH, RowRole, row_style,
 };
 
 pub fn format_file_tree_row(row: &FileTreeRow) -> String {
@@ -41,6 +41,53 @@ pub fn format_file_tree_row(row: &FileTreeRow) -> String {
         }
     };
     format!("{batch}{matched} {indent}{body}")
+}
+
+pub(crate) fn file_tree_row_spans(row: &FileTreeRow) -> Vec<PanelSpan> {
+    let indent = "  ".repeat(row.depth);
+    let batch = if row.selected_for_batch {
+        ICON_BATCH_SELECTED
+    } else {
+        " "
+    };
+    let matched = if row.matched { ICON_SEARCH_MATCH } else { " " };
+    let prefix = format!("{batch}{matched} {indent}");
+    let (marker, suffix) = match row.kind {
+        FileRowKind::Directory => {
+            let marker = if row.expanded {
+                ICON_DIRECTORY_OPEN
+            } else {
+                ICON_DIRECTORY_CLOSED
+            };
+            (marker, format!(" {}/", row.name))
+        }
+        FileRowKind::File => {
+            let marker = if let Some(status) = row.commit_status {
+                commit_file_status_marker(status)
+            } else if row.untracked {
+                ICON_FILE_UNTRACKED
+            } else if row.staged {
+                ICON_FILE_STAGED
+            } else {
+                ICON_FILE
+            };
+            (marker, format!(" {}", row.name))
+        }
+    };
+    vec![
+        PanelSpan {
+            text: prefix,
+            style: Style::default(),
+        },
+        PanelSpan {
+            text: marker.to_string(),
+            style: file_tree_marker_style(row),
+        },
+        PanelSpan {
+            text: suffix,
+            style: Style::default(),
+        },
+    ]
 }
 
 pub fn format_commit_entry(entry: &CommitEntry) -> String {
@@ -107,12 +154,6 @@ pub fn format_stash_entry(entry: &StashEntry) -> String {
 pub(crate) fn file_tree_row_role(row: &FileTreeRow) -> RowRole {
     if row.selected_for_batch {
         RowRole::BatchSelected
-    } else if let Some(status) = row.commit_status {
-        commit_file_status_role(status)
-    } else if row.untracked {
-        RowRole::FileUntracked
-    } else if row.staged {
-        RowRole::FileStaged
     } else {
         RowRole::Normal
     }
@@ -135,6 +176,18 @@ fn commit_file_status_marker(status: ratagit_core::CommitFileStatus) -> &'static
         ratagit_core::CommitFileStatus::Copied => "C",
         ratagit_core::CommitFileStatus::TypeChanged => "T",
         ratagit_core::CommitFileStatus::Unknown => "?",
+    }
+}
+
+fn file_tree_marker_style(row: &FileTreeRow) -> Style {
+    if let Some(status) = row.commit_status {
+        commit_file_status_style(status)
+    } else if row.untracked {
+        row_style(RowRole::FileUntracked)
+    } else if row.staged {
+        row_style(RowRole::FileStaged)
+    } else {
+        Style::default()
     }
 }
 
@@ -229,15 +282,15 @@ fn author_initials(author_name: &str) -> String {
         .collect()
 }
 
-fn commit_file_status_role(status: ratagit_core::CommitFileStatus) -> RowRole {
+fn commit_file_status_style(status: ratagit_core::CommitFileStatus) -> Style {
     match status {
-        ratagit_core::CommitFileStatus::Added => RowRole::DiffAdd,
-        ratagit_core::CommitFileStatus::Deleted => RowRole::DiffRemove,
+        ratagit_core::CommitFileStatus::Added => row_style(RowRole::DiffAdd),
+        ratagit_core::CommitFileStatus::Deleted => row_style(RowRole::DiffRemove),
         ratagit_core::CommitFileStatus::Renamed | ratagit_core::CommitFileStatus::Copied => {
-            RowRole::DiffMeta
+            row_style(RowRole::DiffMeta)
         }
         ratagit_core::CommitFileStatus::Modified
         | ratagit_core::CommitFileStatus::TypeChanged
-        | ratagit_core::CommitFileStatus::Unknown => RowRole::Normal,
+        | ratagit_core::CommitFileStatus::Unknown => Style::default(),
     }
 }

@@ -1495,6 +1495,36 @@ fn harness_commits_files_directory_uses_directory_pathspec() {
 }
 
 #[test]
+fn harness_commit_files_tree_toggle_reopens_shared_tree_rows() {
+    let inputs = [
+        UiAction::RefreshAll,
+        UiAction::FocusNext,
+        UiAction::FocusNext,
+        UiAction::OpenCommitFilesPanel,
+        UiAction::MoveDown,
+        UiAction::ToggleCommitFilesDirectory,
+        UiAction::ToggleCommitFilesDirectory,
+    ];
+    assert_scenario(MockScenario::new(
+        "commit_files_tree_toggle_reopens_shared_tree_rows",
+        clean_three_commit_fixture(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &["Commit Files", " src/", "A lib.rs"],
+            screen_not_contains: &[],
+            selected_screen_rows: &[" src/"],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &[
+                "commit-files:abc1234",
+                "commit-file-diff:abc1234:README.md",
+                "commit-file-diff:abc1234:src",
+            ],
+            git_state_contains: &["summary: \"init project\""],
+        },
+    ));
+}
+
+#[test]
 fn harness_commits_lazy_loads_next_page_when_scrolling_past_first_hundred() {
     let mut inputs = vec![
         UiAction::RefreshAll,

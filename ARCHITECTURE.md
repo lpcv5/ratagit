@@ -182,12 +182,14 @@ internal library packages under `libs/`.
 - Reusable projections and expensive read results, such as file-tree rows and
   files-detail diffs, are cached only in `AppState` and invalidated by reducer
   state transitions.
-- In large-repo mode, the Files tree initializes collapsed with a lightweight
-  projection that does not precompute `row_descendants` for every path.
-  Reducer-managed file status changes also populate an `AppState` child index
-  so folder expand/collapse can rebuild visible rows without rescanning every
-  file path. Details commands resolve deterministic `FileDiffTarget` values
-  from current `AppState` and cap automatic file diffs to the first 100 targets.
+- Files and Commit Files use the same `AppState`-owned tree index for
+  deterministic parent/child relationships. Folder expand/collapse rebuilds
+  visible rows from cached children without rescanning every file path, and
+  item changes sync through remove/add/metadata updates. In large-repo mode,
+  the Files tree initializes collapsed with a lightweight projection that does
+  not precompute `row_descendants` for every path. Details commands resolve
+  deterministic `FileDiffTarget` values from current `AppState` and cap
+  automatic file diffs to the first 100 targets.
 - Automatic full-commit Details previews are bounded in `GitBackend` so large
   commit patches cannot feed unbounded text into `AppState` or pure rendering.
 

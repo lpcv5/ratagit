@@ -4,9 +4,9 @@ use crate::selectors::{repository_has_uncommitted_changes, selected_commit_id};
 use crate::{
     AppState, AutoStashOperation, Command, CommitEntry, CommitFilesPanelState, CommitHashStatus,
     CommitInputMode, PanelFocus, SearchScope, branches, commit_key, details,
-    initialize_commit_files_tree, leave_commit_multi_select, move_commit_file_selected,
-    move_commit_selected, operations, push_notice, reconcile_commits_after_items_appended,
-    selected_commit, selected_commit_ids, selected_commits,
+    initialize_commit_files_tree, leave_commit_multi_select, mark_commit_file_items_changed,
+    move_commit_file_selected, move_commit_selected, operations, push_notice,
+    reconcile_commits_after_items_appended, selected_commit, selected_commit_ids, selected_commits,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -187,6 +187,7 @@ pub(crate) fn handle_commit_files_result(
     match result {
         Ok(files) => {
             state.commits.files.items = files;
+            mark_commit_file_items_changed(&mut state.commits.files);
             state.commits.files.selected = 0;
             state.commits.files.scroll_direction = None;
             state.commits.files.scroll_direction_origin = 0;

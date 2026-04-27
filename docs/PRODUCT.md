@@ -73,11 +73,15 @@ Files panel rules:
 - status results are capped at 50,000 file entries or 64 MiB of status stdout;
   if the cap is hit, the Log panel reports that status was truncated
 - folder operations apply to descendant files present in the tree model
-- file-tree rows and descendant targets are cached in `AppState` after status
-  refresh or tree/search changes, so rendering does not rebuild them every frame
+- Files and Commit Files share cached file-tree rows and parent/child indexes
+  in `AppState`, so rendering and folder toggles do not rebuild tree topology
+  every frame
 - in large repo fast mode, the Files tree starts collapsed and uses a lightweight
   projection and cached child index instead of precomputing every directory
   descendant set or rescanning every file path on folder expand/collapse
+- in Commit Files, Git status letters keep their existing `A/M/D/R/C/T` display
+  and status colors apply to the letter only; file names stay in the default
+  foreground
 - repeated file-detail diffs are cached in `AppState` and reused when the same
   target path list is selected again
 - `space` stages unstaged targets or unstages targets when all selected targets are staged

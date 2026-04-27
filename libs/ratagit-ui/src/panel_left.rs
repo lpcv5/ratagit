@@ -6,10 +6,10 @@ use ratagit_core::{
 use ratatui::style::Style;
 
 use super::panel_format::{
-    branch_entry_role, commit_entry_spans, file_tree_row_role, format_branch_entry,
-    format_commit_entry, format_file_tree_row, format_stash_entry,
+    branch_entry_role, commit_entry_spans, file_tree_row_role, file_tree_row_spans,
+    format_branch_entry, format_commit_entry, format_file_tree_row, format_stash_entry,
 };
-use super::panel_scroll::{render_indexed_entries, render_indexed_entries_window_with};
+use super::panel_scroll::render_indexed_entries_window_with;
 use super::panel_types::{PanelLine, PanelSpan};
 use crate::theme::{RowRole, panel_label, row_style};
 
@@ -53,14 +53,17 @@ pub(crate) fn render_files_lines(state: &AppState, max_lines: usize) -> Vec<Pane
     if state.search.has_query_for(SearchScope::Files) {
         apply_tree_search_matches(rows.to_mut(), state, SearchScope::Files);
     }
-    render_indexed_entries(
+    render_indexed_entries_window_with(
         rows.as_ref(),
         state.files.selected,
         state.files.scroll_direction,
         state.files.scroll_direction_origin,
         max_lines,
-        format_file_tree_row,
-        file_tree_row_role,
+        |index, row| {
+            PanelLine::new(format_file_tree_row(row), file_tree_row_role(row))
+                .selected(index == state.files.selected)
+                .styled_spans(file_tree_row_spans(row))
+        },
     )
     .into_iter()
     .map(|line| highlight_search_query(line, state, SearchScope::Files))
@@ -141,14 +144,17 @@ fn render_commit_file_lines(state: &AppState, max_lines: usize) -> Vec<PanelLine
     if state.search.has_query_for(SearchScope::CommitFiles) {
         apply_tree_search_matches(rows.to_mut(), state, SearchScope::CommitFiles);
     }
-    render_indexed_entries(
+    render_indexed_entries_window_with(
         rows.as_ref(),
         state.commits.files.selected,
         state.commits.files.scroll_direction,
         state.commits.files.scroll_direction_origin,
         max_lines,
-        format_file_tree_row,
-        file_tree_row_role,
+        |index, row| {
+            PanelLine::new(format_file_tree_row(row), file_tree_row_role(row))
+                .selected(index == state.commits.files.selected)
+                .styled_spans(file_tree_row_spans(row))
+        },
     )
     .into_iter()
     .map(|line| highlight_search_query(line, state, SearchScope::CommitFiles))
