@@ -122,6 +122,33 @@ fn buffer_contains_text_with_exact_fg(
     })
 }
 
+fn buffer_contains_text_with_exact_style(
+    buffer: &ratagit_ui::TerminalBuffer,
+    needle: &str,
+    style: Style,
+) -> bool {
+    let width = buffer.area.width as usize;
+    if width == 0 {
+        return false;
+    }
+    buffer.content().chunks(width).any(|cells| {
+        let line = cells.iter().map(|cell| cell.symbol()).collect::<String>();
+        let Some(byte_start) = line.find(needle) else {
+            return false;
+        };
+        let start = line[..byte_start].chars().count();
+        cells
+            .iter()
+            .skip(start)
+            .take(needle.chars().count())
+            .all(|cell| {
+                style.fg.is_none_or(|fg| cell.fg == fg)
+                    && style.bg.is_none_or(|bg| cell.bg == bg)
+                    && cell.modifier.contains(style.add_modifier)
+            })
+    })
+}
+
 fn apply_mock_details_commands(state: &mut AppState, commands: Vec<Command>) {
     match commands.as_slice() {
         [] => {}
@@ -215,7 +242,8 @@ fn snapshots_empty_repo_80x24() {
     assert!(text.contains("[5]  Details"));
     assert!(!text.contains("<empty>"));
     assert!(!text.contains("<none>"));
-    assert!(text.contains("keys(files):"));
+    assert!(text.contains("space stage/unstage"));
+    assert!(!text.contains("keys(files):"));
     assert_no_cursor_marker(&text);
     assert!(!text.contains("tab/shift+tab"));
     assert!(!text.contains("1-6 focus panel"));
@@ -312,6 +340,7 @@ fn snapshots_files_search_input_replaces_shortcut_bar() {
     .as_text();
     assert!(text.contains("search: li"));
     assert!(!text.contains("keys(files):"));
+    assert!(!text.contains("space stage/unstage"));
 }
 
 #[test]
@@ -989,13 +1018,14 @@ fn terminal_snapshot_focus_and_keys_follow_actions() {
 
     assert!(screen.contains(" Commits"));
     assert!(!screen.contains("Commits *"));
-    assert!(screen.contains("keys(commits): enter files"));
+    assert!(screen.contains("enter  files"));
     assert!(!screen.contains(" Keys "));
+    assert!(!screen.contains("keys(commits):"));
     assert!(
         screen
             .lines()
             .last()
-            .is_some_and(|line| line.starts_with("keys(commits): enter files"))
+            .is_some_and(|line| line.starts_with(" enter  files"))
     );
 }
 
@@ -1369,15 +1399,124 @@ fn terminal_buffer_styles_focused_panel_title() {
         },
     );
 
-    assert!(buffer_contains_text_with_style(
+    assert!(buffer_contains_text_with_exact_style(
         &buffer,
         "󰈙 Files",
         focused_panel_style()
     ));
-    assert!(!buffer_contains_text_with_style(
+    assert!(!buffer_contains_text_with_exact_style(
         &buffer,
         " Branches",
         focused_panel_style()
+    ));
+}
+
+#[test]
+fn terminal_buffer_uses_rounded_shared_panel_borders() {
+    let mut state = AppState::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+
+    let screen = render_terminal_text(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    );
+    let first_line = screen.lines().next().expect("screen should have lines");
+
+    assert!(first_line.starts_with('╭'));
+    assert!(!screen.contains('┌'));
+    assert_eq!(first_line.matches('╭').count(), 1);
+}
+
+#[test]
+fn terminal_buffer_focused_shared_panel_uses_complete_border() {
+    let mut state = AppState::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+    update(
+        &mut state,
+        Action::Ui(UiAction::FocusPanel {
+            panel: PanelFocus::Branches,
+        }),
+    );
+
+    let screen = render_terminal_text(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    );
+
+    assert!(screen.contains("╭ 2   Branches"));
+}
+
+#[test]
+fn terminal_buffer_styles_panel_number_as_badge() {
+    let mut state = AppState::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+
+    let buffer = render_terminal_buffer(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    );
+
+    assert!(buffer_contains_text_with_exact_style(
+        &buffer,
+        " 1 ",
+        Style::default()
+            .fg(Color::Black)
+            .bg(Color::Yellow)
+            .add_modifier(Modifier::BOLD),
+    ));
+    assert!(buffer_contains_text_with_exact_style(
+        &buffer,
+        " 2 ",
+        Style::default()
+            .fg(Color::Black)
+            .bg(Color::DarkGray)
+            .add_modifier(Modifier::BOLD),
+    ));
+}
+
+#[test]
+fn terminal_buffer_styles_shortcut_keys_as_badges() {
+    let mut state = AppState::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+
+    let buffer = render_terminal_buffer(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    );
+    let screen = render_terminal_text(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    );
+
+    assert!(!screen.contains("keys(files):"));
+    assert!(
+        screen
+            .lines()
+            .last()
+            .is_some_and(|line| !line.contains('|'))
+    );
+    assert!(buffer_contains_text_with_exact_style(
+        &buffer,
+        " space ",
+        Style::default()
+            .fg(Color::Black)
+            .bg(Color::Yellow)
+            .add_modifier(Modifier::BOLD),
     ));
 }
 

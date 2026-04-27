@@ -1,29 +1,28 @@
 ---
 source: libs/ratagit-ui/tests/snapshots.rs
-assertion_line: 864
 expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 24, },)"
 ---
-┌ [1] 󰈙 Files ───────────────────┐┌ [5]  Details ─────────────────────────────────────────────────┐
-│    file-00.txt                ││  ### unstaged                                                  │
-│    file-01.txt                ││  diff --git a/file-00.txt b/file-00.txt                        │
-│    file-02.txt                ││  @@ -1 +1 @@                                                   │
-│    file-03.txt                ││  -old file-00.txt                                              │
-│    file-04.txt                ││  +new file-00.txt                                              │
-│    file-05.txt                ││                                                                │
-│    file-06.txt                ││                                                                │
-│    file-07.txt                ││                                                                │
-│    file-08.txt                ││                                                                │
-│    file-09.txt                ││                                                                │
-│    file-10.txt                ││                                                                │
-│    file-11.txt                ││                                                                │
-└────────────────────────────────┘│                                                                │
-┌ [2]  Branches ────────────────┐│                                                                │
-│ main                          │└────────────────────────────────────────────────────────────────┘
-└────────────────────────────────┘┌ [6] 󰌱 Log ─────────────────────────────────────────────────────┐
-┌ [3]  Commits ─────────────────┐│  notice=Ready                                                  │
-│●  abc1234  RT  init project    ││                                                                │
-└────────────────────────────────┘│                                                                │
-┌ [4]  Stash ───────────────────┐│                                                                │
-│ stash@{0} WIP on main: local t││                                                                │
-└────────────────────────────────┘└────────────────────────────────────────────────────────────────┘
-keys(files): space stage/unstage | d discard | c commit | s stash(all|selected) | D reset | v multi
+╭ 1  󰈙 Files ────────────────────╮ 5   Details ───────────────────────────────────────────────────╮
+│    file-00.txt                │  ### unstaged                                                   │
+│    file-01.txt                │  diff --git a/file-00.txt b/file-00.txt                         │
+│    file-02.txt                │  @@ -1 +1 @@                                                    │
+│    file-03.txt                │  -old file-00.txt                                               │
+│    file-04.txt                │  +new file-00.txt                                               │
+│    file-05.txt                │                                                                 │
+│    file-06.txt                │                                                                 │
+│    file-07.txt                │                                                                 │
+│    file-08.txt                │                                                                 │
+│    file-09.txt                │                                                                 │
+│    file-10.txt                │                                                                 │
+│    file-11.txt                │                                                                 │
+╰────────────────────────────────╯                                                                 │
+│ 2   Branches                  │                                                                 │
+│ main                          │─────────────────────────────────────────────────────────────────╯
+╰────────────────────────────────╯ 6  󰌱 Log                                                        │
+│ 3   Commits                   │  notice=Ready                                                   │
+│●  abc1234  RT  init project    │                                                                 │
+╰────────────────────────────────╯                                                                 │
+│ 4   Stash                     │                                                                 │
+│ stash@{0} WIP on main: local t│                                                                 │
+╰────────────────────────────────╯─────────────────────────────────────────────────────────────────╯
+ space  stage/unstage   d  discard   c  commit   s  stash   D  reset   v  multi   enter  expand

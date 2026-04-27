@@ -182,7 +182,7 @@ mod tests {
 
         let screen = runtime.render_terminal_text();
         assert!(screen.contains("README.md"));
-        assert!(screen.contains("[1]"));
+        assert!(screen.contains("󰈙 Files"));
         let _ = remove_dir_all(root);
     }
 

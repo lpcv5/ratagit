@@ -1,35 +1,34 @@
 ---
 source: libs/ratagit-ui/tests/snapshots.rs
-assertion_line: 405
 expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30, },)"
 ---
-┌ [1] 󰈙 Files ───────────────────┐┌ [5]  Details ─────────────────────────────────────────────────┐
-│    README.md                  ││  * commit abc1234                                              │
-│    src/                       ││  Author: ratagit-tests <ratagit-tests@example.com>             │
-│      lib.rs                   ││                                                                │
-│      main.rs                  ││      init project on feature/mvp                               │
-│                                ││                                                                │
-│                                ││                                                                │
-│                                ││                                                                │
+╭ 1  󰈙 Files ────────────────────╮ 5   Details ───────────────────────────────────────────────────╮
+│    README.md                  │  * commit abc1234                                               │
+│    src/                       │  Author: ratagit-tests <ratagit-tests@example.com>              │
+│      lib.rs                   │                                                                 │
+│      main.rs                  │      init project on feature/mvp                                │
+│                                │                                                                 │
+│                                │                                                                 │
+│                                │                                                                 │
 │             ┌ Delete Branch ───────────────────────────────────────────────────────┐             │
 │             │ Target: feature/mvp                                                  │             │
-└─────────────│ ┌ Choice ──────────────────────────────────────────────────────────┐ │             │
-┌ [2]  Branch│ │  delete local                                                    │ │             │
+╰─────────────│ ┌ Choice ──────────────────────────────────────────────────────────┐ │             │
+╭ 2   Branche│ │  delete local                                                    │ │             │
 │ main       │ │  delete remote                                                   │ │             │
 │  feature/mvp│ └──────────────────────────────────────────────────────────────────┘ │             │
 │             │ Description                                                          │             │
 │             │ Delete the selected local branch with `git branch -d`.               │             │
 │             │                                                                      │             │
 │             │                                                                      │             │
-└─────────────│ j/k select  |  Enter delete  |  Esc cancel                           │             │
-┌ [3]  Commit└──────────────────────────────────────────────────────────────────────┘─────────────┘
-│●  abc1234  RT  init project    │┌ [6] 󰌱 Log ─────────────────────────────────────────────────────┐
-│●  def5678  RT  wire commands   ││  notice=Ready                                                  │
-│                                ││                                                                │
-│                                ││                                                                │
-│                                ││                                                                │
-└────────────────────────────────┘│                                                                │
-┌ [4]  Stash ───────────────────┐│                                                                │
-│ stash@{0} WIP on main: local t││                                                                │
-└────────────────────────────────┘└────────────────────────────────────────────────────────────────┘
-delete branch: j/k select | Enter delete | Esc cancel
+╰─────────────│ j/k select  |  Enter delete  |  Esc cancel                           │             │
+│ 3   Commits└──────────────────────────────────────────────────────────────────────┘─────────────╯
+│●  abc1234  RT  init project    │ 6  󰌱 Log                                                        │
+│●  def5678  RT  wire commands   │  notice=Ready                                                   │
+│                                │                                                                 │
+│                                │                                                                 │
+│                                │                                                                 │
+╰────────────────────────────────╯                                                                 │
+│ 4   Stash                     │                                                                 │
+│ stash@{0} WIP on main: local t│                                                                 │
+╰────────────────────────────────╯─────────────────────────────────────────────────────────────────╯
+ j/k  select   Enter  delete   Esc  cancel

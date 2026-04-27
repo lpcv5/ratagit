@@ -1,68 +1,126 @@
 use ratagit_core::{AppState, PanelFocus};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ShortcutSegment {
+    pub(crate) key: &'static str,
+    pub(crate) label: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ShortcutLine {
+    Segments(Vec<ShortcutSegment>),
+    Text(String),
+}
+
 pub(crate) fn shortcuts_for_state(state: &AppState) -> String {
+    match shortcut_line_for_state(state) {
+        ShortcutLine::Segments(segments) => segments
+            .iter()
+            .map(|segment| format!("{} {}", segment.key, segment.label))
+            .collect::<Vec<_>>()
+            .join("  "),
+        ShortcutLine::Text(text) => text,
+    }
+}
+
+pub(crate) fn shortcut_line_for_state(state: &AppState) -> ShortcutLine {
     if let Some(editor) = &state.editor.kind {
         return match editor {
-            ratagit_core::EditorKind::Commit { .. } => {
-                "commit editor: Tab field | arrows/Home/End cursor | Ctrl+J newline | Enter confirm | Esc cancel"
-                    .to_string()
-            }
-            ratagit_core::EditorKind::Stash { .. } => {
-                "stash editor: arrows/Home/End cursor | Enter confirm | Esc cancel".to_string()
-            }
+            ratagit_core::EditorKind::Commit { .. } => segments(&[
+                ("Tab", "field"),
+                ("arrows/Home/End", "cursor"),
+                ("Ctrl+J", "newline"),
+                ("Enter", "confirm"),
+                ("Esc", "cancel"),
+            ]),
+            ratagit_core::EditorKind::Stash { .. } => segments(&[
+                ("arrows/Home/End", "cursor"),
+                ("Enter", "confirm"),
+                ("Esc", "cancel"),
+            ]),
         };
     }
 
     if state.branches.create.active {
-        return "branch name: arrows/Home/End cursor | Enter create | Esc cancel".to_string();
+        return segments(&[
+            ("arrows/Home/End", "cursor"),
+            ("Enter", "create"),
+            ("Esc", "cancel"),
+        ]);
     }
 
     if state.branches.delete_menu.active {
-        return "delete branch: j/k select | Enter delete | Esc cancel".to_string();
+        return segments(&[("j/k", "select"), ("Enter", "delete"), ("Esc", "cancel")]);
     }
 
     if state.branches.force_delete_confirm.active {
-        return "force delete branch: Enter force delete | Esc cancel".to_string();
+        return segments(&[("Enter", "force delete"), ("Esc", "cancel")]);
     }
 
     if state.branches.rebase_menu.active {
-        return "rebase: j/k select | Enter rebase | Esc cancel".to_string();
+        return segments(&[("j/k", "select"), ("Enter", "rebase"), ("Esc", "cancel")]);
     }
 
     if state.branches.auto_stash_confirm.active {
-        return "auto stash: Enter confirm | Esc cancel".to_string();
+        return segments(&[("Enter", "confirm"), ("Esc", "cancel")]);
     }
 
     if state.reset_menu.active {
-        return "reset: j/k select | Enter confirm | Esc cancel".to_string();
+        return segments(&[("j/k", "select"), ("Enter", "confirm"), ("Esc", "cancel")]);
     }
 
     if state.discard_confirm.active {
-        return "discard: Enter confirm | Esc cancel".to_string();
+        return segments(&[("Enter", "confirm"), ("Esc", "cancel")]);
     }
 
     if state
         .active_search_scope()
         .is_some_and(|scope| state.search.is_input_active_for(scope))
     {
-        return format!("search: {}", state.search.query);
+        return ShortcutLine::Text(format!("search: {}", state.search.query));
     }
+
     match state.focus {
-        PanelFocus::Files => {
-            "keys(files): space stage/unstage | d discard | c commit | s stash(all|selected) | D reset | v multi | enter expand".to_string()
-        }
-        PanelFocus::Branches => {
-            "keys(branches): space checkout | n new | d delete | r rebase".to_string()
-        }
+        PanelFocus::Files => segments(&[
+            ("space", "stage/unstage"),
+            ("d", "discard"),
+            ("c", "commit"),
+            ("s", "stash"),
+            ("D", "reset"),
+            ("v", "multi"),
+            ("enter", "expand"),
+        ]),
+        PanelFocus::Branches => segments(&[
+            ("space", "checkout"),
+            ("n", "new"),
+            ("d", "delete"),
+            ("r", "rebase"),
+        ]),
         PanelFocus::Commits => {
             if state.commits.files.active {
-                "keys(commit files): Esc back".to_string()
+                segments(&[("Esc", "back")])
             } else {
-                "keys(commits): enter files | s squash | f fixup | r reword | d delete | space detach | v multi"
-                    .to_string()
+                segments(&[
+                    ("enter", "files"),
+                    ("s", "squash"),
+                    ("f", "fixup"),
+                    ("r", "reword"),
+                    ("d", "delete"),
+                    ("space", "detach"),
+                    ("v", "multi"),
+                ])
             }
         }
-        PanelFocus::Stash => "keys(stash): p stash push | O stash pop".to_string(),
-        PanelFocus::Details | PanelFocus::Log => String::new(),
+        PanelFocus::Stash => segments(&[("p", "stash push"), ("O", "stash pop")]),
+        PanelFocus::Details | PanelFocus::Log => ShortcutLine::Text(String::new()),
     }
+}
+
+fn segments(values: &[(&'static str, &'static str)]) -> ShortcutLine {
+    ShortcutLine::Segments(
+        values
+            .iter()
+            .map(|(key, label)| ShortcutSegment { key, label })
+            .collect(),
+    )
 }

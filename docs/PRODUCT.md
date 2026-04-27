@@ -43,13 +43,18 @@ Navigation rules:
 - `h` / `l` cycles only in left panels: Files -> Branches -> Commits -> Stash
 - `1..6` focuses Files/Branches/Commits/Stash/Details/Log directly
 - `Ctrl+U` / `Ctrl+D` scrolls the Details panel content by 2/5 of its content height regardless of the current focus
-- all panel titles show numbered focus hints: `[1]..[6]`
+- all panel titles show numbered focus hints: `[1]..[6]`; in the terminal UI
+  these hints render as badge-style reverse-video numbers
 - top branch/focus/status summary is hidden to prioritize panels
 - bottom keys row is unframed and shows only Git operation shortcuts for the current focused panel
+- bottom shortcut keys render as badge-style reverse-video labels, without a
+  `keys(panel):` prefix and without pipe separators
 - baseline navigation/search keys are intentionally omitted from normal bottom
   shortcuts; while search input is active, the bottom row becomes
   `search: <query>`
 - focused panels are indicated by a colored border/title accent, not by `*`
+- focused panels render a complete border; inactive panels may omit shared
+  edges to keep the panel grid compact
 - cursor rows are indicated by color only and only in the focused selectable panel
 - files selected for batch operations use a separate batch color
 - empty panels render blank content lines instead of `<empty>` / `<none>` placeholders
@@ -217,7 +222,8 @@ All features are keyboard-driven and deterministic.
 
 The visual theme is Unicode/Nerd Font first. Panel titles and file, branch, and
 status rows use a compact semantic icon set while preserving deterministic text
-layout.
+layout. Terminal panel chrome uses rounded corners and shared borders so
+adjacent panels avoid double-drawn edges.
 
 ---
 

@@ -1,35 +1,34 @@
 ---
 source: libs/ratagit-ui/tests/snapshots.rs
-assertion_line: 969
 expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30, },)"
 ---
-┌ [1] 󰈙 Files ───────────────────┐┌ [5]  Details ─────────────────────────────────────────────────┐
-│    libs/                      ││  ### unstaged                                                  │
-│      ratagit-git/             ││  diff --git a/libs/ratagit-git/tests/ b/libs/ratagit-git/tests/│
-│        tests/                 ││  @@ -1 +1 @@                                                   │
-│                                ││  -old libs/ratagit-git/tests/                                  │
-│                                ││  +new libs/ratagit-git/tests/                                  │
-│                                ││                                                                │
-│                                ││                                                                │
-│                                ││                                                                │
-│                                ││                                                                │
-└────────────────────────────────┘│                                                                │
-┌ [2]  Branches ────────────────┐│                                                                │
-│ main                          ││                                                                │
-│                                ││                                                                │
-│                                ││                                                                │
-│                                ││                                                                │
-│                                ││                                                                │
-│                                ││                                                                │
-└────────────────────────────────┘│                                                                │
-┌ [3]  Commits ─────────────────┐└────────────────────────────────────────────────────────────────┘
-│                                │┌ [6] 󰌱 Log ─────────────────────────────────────────────────────┐
-│                                ││  notice=Ready                                                  │
-│                                ││                                                                │
-│                                ││                                                                │
-│                                ││                                                                │
-└────────────────────────────────┘│                                                                │
-┌ [4]  Stash ───────────────────┐│                                                                │
-│                                ││                                                                │
-└────────────────────────────────┘└────────────────────────────────────────────────────────────────┘
-keys(files): space stage/unstage | d discard | c commit | s stash(all|selected) | D reset | v multi
+╭ 1  󰈙 Files ────────────────────╮ 5   Details ───────────────────────────────────────────────────╮
+│    libs/                      │  ### unstaged                                                   │
+│      ratagit-git/             │  diff --git a/libs/ratagit-git/tests/ b/libs/ratagit-git/tests/ │
+│        tests/                 │  @@ -1 +1 @@                                                    │
+│                                │  -old libs/ratagit-git/tests/                                   │
+│                                │  +new libs/ratagit-git/tests/                                   │
+│                                │                                                                 │
+│                                │                                                                 │
+│                                │                                                                 │
+│                                │                                                                 │
+╰────────────────────────────────╯                                                                 │
+│ 2   Branches                  │                                                                 │
+│ main                          │                                                                 │
+│                                │                                                                 │
+│                                │                                                                 │
+│                                │                                                                 │
+│                                │                                                                 │
+│                                │                                                                 │
+╰────────────────────────────────╯                                                                 │
+│ 3   Commits                   │─────────────────────────────────────────────────────────────────╯
+│                                │ 6  󰌱 Log                                                        │
+│                                │  notice=Ready                                                   │
+│                                │                                                                 │
+│                                │                                                                 │
+│                                │                                                                 │
+╰────────────────────────────────╯                                                                 │
+│ 4   Stash                     │                                                                 │
+│                                │                                                                 │
+╰────────────────────────────────╯─────────────────────────────────────────────────────────────────╯
+ space  stage/unstage   d  discard   c  commit   s  stash   D  reset   v  multi   enter  expand

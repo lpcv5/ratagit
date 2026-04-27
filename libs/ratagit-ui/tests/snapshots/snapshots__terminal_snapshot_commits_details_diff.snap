@@ -2,33 +2,33 @@
 source: libs/ratagit-ui/tests/snapshots.rs
 expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30, },)"
 ---
-┌ [1] 󰈙 Files ───────────────────┐┌ [5]  Details ─────────────────────────────────────────────────┐
-│    README.md                  ││  commit abc1234                                                │
-│    src/                       ││  Author: ratagit-tests <ratagit-tests@example.com>             │
-│      lib.rs                   ││                                                                │
-│      main.rs                  ││      selected commit                                           │
-│                                ││                                                                │
-│                                ││  diff --git a/commit.txt b/commit.txt                          │
-│                                ││  @@ -1 +1 @@                                                   │
-│                                ││  -old abc1234                                                  │
-│                                ││  +new abc1234                                                  │
-└────────────────────────────────┘│                                                                │
-┌ [2]  Branches ────────────────┐│                                                                │
-│ main                          ││                                                                │
-│  feature/mvp                   ││                                                                │
-│                                ││                                                                │
-│                                ││                                                                │
-│                                ││                                                                │
-│                                ││                                                                │
-└────────────────────────────────┘│                                                                │
-┌ [3]  Commits ─────────────────┐└────────────────────────────────────────────────────────────────┘
-│●  abc1234  RT  init project    │┌ [6] 󰌱 Log ─────────────────────────────────────────────────────┐
-│●  def5678  RT  wire commands   ││  notice=Ready                                                  │
-│                                ││                                                                │
-│                                ││                                                                │
-│                                ││                                                                │
-└────────────────────────────────┘│                                                                │
-┌ [4]  Stash ───────────────────┐│                                                                │
-│ stash@{0} WIP on main: local t││                                                                │
-└────────────────────────────────┘└────────────────────────────────────────────────────────────────┘
-keys(commits): enter files | s squash | f fixup | r reword | d delete | space detach | v multi
+╭ 1  󰈙 Files ────────────────────╮ 5   Details ───────────────────────────────────────────────────╮
+│    README.md                  │  commit abc1234                                                 │
+│    src/                       │  Author: ratagit-tests <ratagit-tests@example.com>              │
+│      lib.rs                   │                                                                 │
+│      main.rs                  │      selected commit                                            │
+│                                │                                                                 │
+│                                │  diff --git a/commit.txt b/commit.txt                           │
+│                                │  @@ -1 +1 @@                                                    │
+│                                │  -old abc1234                                                   │
+│                                │  +new abc1234                                                   │
+╰────────────────────────────────╯                                                                 │
+│ 2   Branches                  │                                                                 │
+│ main                          │                                                                 │
+│  feature/mvp                   │                                                                 │
+│                                │                                                                 │
+│                                │                                                                 │
+│                                │                                                                 │
+│                                │                                                                 │
+╰────────────────────────────────╯                                                                 │
+╭ 3   Commits ──────────────────╮─────────────────────────────────────────────────────────────────╯
+│●  abc1234  RT  init project    │ 6  󰌱 Log                                                        │
+│●  def5678  RT  wire commands   │  notice=Ready                                                   │
+│                                │                                                                 │
+│                                │                                                                 │
+│                                │                                                                 │
+╰────────────────────────────────╯                                                                 │
+│ 4   Stash                     │                                                                 │
+│ stash@{0} WIP on main: local t│                                                                 │
+╰────────────────────────────────╯─────────────────────────────────────────────────────────────────╯
+ enter  files   s  squash   f  fixup   r  reword   d  delete   space  detach   v  multi

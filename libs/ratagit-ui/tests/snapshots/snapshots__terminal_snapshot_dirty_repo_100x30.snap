@@ -1,35 +1,34 @@
 ---
 source: libs/ratagit-ui/tests/snapshots.rs
-assertion_line: 628
 expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30, },)"
 ---
-┌ [1] 󰈙 Files ───────────────────┐┌ [5]  Details ─────────────────────────────────────────────────┐
-│    README.md                  ││  ### unstaged                                                  │
-│    src/                       ││  diff --git a/README.md b/README.md                            │
-│      lib.rs                   ││  @@ -1 +1 @@                                                   │
-│      main.rs                  ││  -old README.md                                                │
-│                                ││  +new README.md                                                │
-│                                ││                                                                │
-│                                ││                                                                │
-│                                ││                                                                │
-│                                ││                                                                │
-└────────────────────────────────┘│                                                                │
-┌ [2]  Branches ────────────────┐│                                                                │
-│ main                          ││                                                                │
-│  feature/mvp                   ││                                                                │
-│                                ││                                                                │
-│                                ││                                                                │
-│                                ││                                                                │
-│                                ││                                                                │
-└────────────────────────────────┘│                                                                │
-┌ [3]  Commits ─────────────────┐└────────────────────────────────────────────────────────────────┘
-│●  abc1234  RT  init project    │┌ [6] 󰌱 Log ─────────────────────────────────────────────────────┐
-│●  def5678  RT  wire commands   ││  notice=Ready                                                  │
-│                                ││                                                                │
-│                                ││                                                                │
-│                                ││                                                                │
-└────────────────────────────────┘│                                                                │
-┌ [4]  Stash ───────────────────┐│                                                                │
-│ stash@{0} WIP on main: local t││                                                                │
-└────────────────────────────────┘└────────────────────────────────────────────────────────────────┘
-keys(files): space stage/unstage | d discard | c commit | s stash(all|selected) | D reset | v multi
+╭ 1  󰈙 Files ────────────────────╮ 5   Details ───────────────────────────────────────────────────╮
+│    README.md                  │  ### unstaged                                                   │
+│    src/                       │  diff --git a/README.md b/README.md                             │
+│      lib.rs                   │  @@ -1 +1 @@                                                    │
+│      main.rs                  │  -old README.md                                                 │
+│                                │  +new README.md                                                 │
+│                                │                                                                 │
+│                                │                                                                 │
+│                                │                                                                 │
+│                                │                                                                 │
+╰────────────────────────────────╯                                                                 │
+│ 2   Branches                  │                                                                 │
+│ main                          │                                                                 │
+│  feature/mvp                   │                                                                 │
+│                                │                                                                 │
+│                                │                                                                 │
+│                                │                                                                 │
+│                                │                                                                 │
+╰────────────────────────────────╯                                                                 │
+│ 3   Commits                   │─────────────────────────────────────────────────────────────────╯
+│●  abc1234  RT  init project    │ 6  󰌱 Log                                                        │
+│●  def5678  RT  wire commands   │  notice=Ready                                                   │
+│                                │                                                                 │
+│                                │                                                                 │
+│                                │                                                                 │
+╰────────────────────────────────╯                                                                 │
+│ 4   Stash                     │                                                                 │
+│ stash@{0} WIP on main: local t│                                                                 │
+╰────────────────────────────────╯─────────────────────────────────────────────────────────────────╯
+ space  stage/unstage   d  discard   c  commit   s  stash   D  reset   v  multi   enter  expand

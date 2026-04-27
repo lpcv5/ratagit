@@ -18,12 +18,12 @@ pub use panel_format::{
     format_branch_entry, format_commit_entry, format_file_tree_row, format_stash_entry,
 };
 pub(crate) use panel_left::{
-    left_panel_content_len, panel_title, render_branches_lines, render_commits_lines,
-    render_files_lines, render_stash_lines,
+    left_panel_content_len, panel_title, panel_title_label, render_branches_lines,
+    render_commits_lines, render_files_lines, render_stash_lines,
 };
 #[cfg(test)]
 use panel_scroll::scroll_window_start;
-pub(crate) use panel_shortcuts::shortcuts_for_state;
+pub(crate) use panel_shortcuts::{ShortcutLine, shortcut_line_for_state, shortcuts_for_state};
 pub(crate) use panel_types::PanelLine;
 #[cfg(test)]
 use ratagit_core::AppState;
@@ -661,10 +661,10 @@ mod tests {
     fn keys_panel_follows_focus_and_search_mode() {
         let mut state = state_with_dirty_repo();
         let files_shortcuts = shortcuts_for_state(&state);
-        assert!(files_shortcuts.contains("keys(files):"));
+        assert!(!files_shortcuts.contains("keys(files):"));
         assert!(files_shortcuts.contains("d discard"));
         assert!(files_shortcuts.contains("c commit"));
-        assert!(files_shortcuts.contains("s stash(all|selected)"));
+        assert!(files_shortcuts.contains("s stash"));
         assert!(files_shortcuts.contains("D reset"));
 
         update(
@@ -675,7 +675,7 @@ mod tests {
         );
         assert_eq!(
             shortcuts_for_state(&state),
-            "keys(branches): space checkout | n new | d delete | r rebase"
+            "space checkout  n new  d delete  r rebase"
         );
 
         let mut empty = AppState::default();
@@ -692,27 +692,24 @@ mod tests {
     fn keys_panel_switches_to_editor_help_when_editor_is_open() {
         let mut state = state_with_dirty_repo();
         update(&mut state, Action::Ui(UiAction::OpenCommitEditor));
-        assert!(shortcuts_for_state(&state).contains("commit editor:"));
+        assert!(!shortcuts_for_state(&state).contains("commit editor:"));
         assert!(shortcuts_for_state(&state).contains("Ctrl+J"));
 
         update(&mut state, Action::Ui(UiAction::OpenStashEditor));
         assert_eq!(
             shortcuts_for_state(&state),
-            "stash editor: arrows/Home/End cursor | Enter confirm | Esc cancel"
+            "arrows/Home/End cursor  Enter confirm  Esc cancel"
         );
 
         state.editor.kind = None;
         update(&mut state, Action::Ui(UiAction::OpenResetMenu));
         assert_eq!(
             shortcuts_for_state(&state),
-            "reset: j/k select | Enter confirm | Esc cancel"
+            "j/k select  Enter confirm  Esc cancel"
         );
 
         update(&mut state, Action::Ui(UiAction::CancelResetMenu));
         update(&mut state, Action::Ui(UiAction::OpenDiscardConfirm));
-        assert_eq!(
-            shortcuts_for_state(&state),
-            "discard: Enter confirm | Esc cancel"
-        );
+        assert_eq!(shortcuts_for_state(&state), "Enter confirm  Esc cancel");
     }
 }

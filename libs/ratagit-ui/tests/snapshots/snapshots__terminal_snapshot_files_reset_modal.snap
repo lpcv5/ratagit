@@ -1,35 +1,34 @@
 ---
 source: libs/ratagit-ui/tests/snapshots.rs
-assertion_line: 306
 expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30, },)"
 ---
-┌ [1] 󰈙 Files ───────────────────┐┌ [5]  Details ─────────────────────────────────────────────────┐
-│    README.md                  ││  ### unstaged                                                  │
-│    src/                       ││  diff --git a/README.md b/README.md                            │
-│      lib.rs                   ││  @@ -1 +1 @@                                                   │
-│      main.rs                  ││  -old README.md                                                │
-│                                ││  +new README.md                                                │
-│                                ││                                                                │
-│                                ││                                                                │
+╭ 1  󰈙 Files ────────────────────╮ 5   Details ───────────────────────────────────────────────────╮
+│    README.md                  │  ### unstaged                                                   │
+│    src/                       │  diff --git a/README.md b/README.md                             │
+│      lib.rs                   │  @@ -1 +1 @@                                                    │
+│      main.rs                  │  -old README.md                                                 │
+│                                │  +new README.md                                                 │
+│                                │                                                                 │
+│                                │                                                                 │
 │             ┌ Reset ───────────────────────────────────────────────────────────────┐             │
 │             │ Choose reset scope for the whole repo.                               │             │
-└─────────────│ ┌ Mode ────────────────────────────────────────────────────────────┐ │             │
-┌ [2]  Branch│ │  mixed                                                           │ │             │
+╰─────────────│ ┌ Mode ────────────────────────────────────────────────────────────┐ │             │
+│ 2   Branche│ │  mixed                                                           │ │             │
 │ main       │ │  soft                                                            │ │             │
 │  feature/mvp│ │  hard                                                            │ │             │
 │             │ └──────────────────────────────────────────────────────────────────┘ │             │
 │             │ Description                                                          │             │
 │             │ Mixed: reset index to HEAD; keep working tree changes.               │             │
 │             │                                                                      │             │
-└─────────────│                                                                      │             │
-┌ [3]  Commit│ j/k select  |  Enter confirm  |  Esc cancel                          │─────────────┘
-│●  abc1234  R└──────────────────────────────────────────────────────────────────────┘─────────────┐
-│●  def5678  RT  wire commands   ││  notice=Ready                                                  │
-│                                ││                                                                │
-│                                ││                                                                │
-│                                ││                                                                │
-└────────────────────────────────┘│                                                                │
-┌ [4]  Stash ───────────────────┐│                                                                │
-│ stash@{0} WIP on main: local t││                                                                │
-└────────────────────────────────┘└────────────────────────────────────────────────────────────────┘
-reset: j/k select | Enter confirm | Esc cancel
+╰─────────────│                                                                      │             │
+│ 3   Commits│ j/k select  |  Enter confirm  |  Esc cancel                          │─────────────╯
+│●  abc1234  R└──────────────────────────────────────────────────────────────────────┘             │
+│●  def5678  RT  wire commands   │  notice=Ready                                                   │
+│                                │                                                                 │
+│                                │                                                                 │
+│                                │                                                                 │
+╰────────────────────────────────╯                                                                 │
+│ 4   Stash                     │                                                                 │
+│ stash@{0} WIP on main: local t│                                                                 │
+╰────────────────────────────────╯─────────────────────────────────────────────────────────────────╯
+ j/k  select   Enter  confirm   Esc  cancel

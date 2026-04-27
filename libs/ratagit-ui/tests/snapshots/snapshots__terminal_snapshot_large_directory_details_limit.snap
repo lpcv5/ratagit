@@ -2,37 +2,37 @@
 source: libs/ratagit-ui/tests/snapshots.rs
 expression: "render_terminal_text(&state, TerminalSize { width: 120, height: 34, },)"
 ---
-┌ [1] 󰈙 Files ──────────────────────────┐┌ [5]  Details ──────────────────────────────────────────────────────────────┐
-│    src/                              ││  details(files): showing first 100 of 101 files                             │
-│                                       ││  ### unstaged                                                               │
-│                                       ││  diff --git a/src/file-000.txt b/src/file-000.txt                           │
-│                                       ││  @@ -1 +1 @@                                                                │
-│                                       ││  -old src/file-000.txt                                                      │
-│                                       ││  +new src/file-000.txt                                                      │
-│                                       ││  diff --git a/src/file-001.txt b/src/file-001.txt                           │
-│                                       ││  @@ -1 +1 @@                                                                │
-│                                       ││  -old src/file-001.txt                                                      │
-│                                       ││  +new src/file-001.txt                                                      │
-│                                       ││  diff --git a/src/file-002.txt b/src/file-002.txt                           │
-│                                       ││  @@ -1 +1 @@                                                                │
-└───────────────────────────────────────┘│  -old src/file-002.txt                                                      │
-┌ [2]  Branches ───────────────────────┐│  +new src/file-002.txt                                                      │
-│                                       ││  diff --git a/src/file-003.txt b/src/file-003.txt                           │
-│                                       ││  @@ -1 +1 @@                                                                │
-│                                       ││  -old src/file-003.txt                                                      │
-│                                       ││  +new src/file-003.txt                                                      │
-│                                       ││  diff --git a/src/file-004.txt b/src/file-004.txt                           │
-│                                       ││  @@ -1 +1 @@                                                                │
-└───────────────────────────────────────┘│  -old src/file-004.txt                                                      │
-┌ [3]  Commits ────────────────────────┐└─────────────────────────────────────────────────────────────────────────────┘
-│                                       │┌ [6] 󰌱 Log ──────────────────────────────────────────────────────────────────┐
-│                                       ││  status=large repo fast mode; untracked scan skipped                        │
-│                                       ││  tip=consider git untrackedCache/fsmonitor/splitIndex                       │
-│                                       ││  details=diff limited to first 100 of 101 files                             │
-│                                       ││  notice=Ready                                                               │
-│                                       ││  notice=details diff limited to first 100 of 101 files                      │
-└───────────────────────────────────────┘│                                                                             │
-┌ [4]  Stash ──────────────────────────┐│                                                                             │
-│                                       ││                                                                             │
-└───────────────────────────────────────┘└─────────────────────────────────────────────────────────────────────────────┘
-keys(files): space stage/unstage | d discard | c commit | s stash(all|selected) | D reset | v multi | enter expand
+╭ 1  󰈙 Files ───────────────────────────╮ 5   Details ────────────────────────────────────────────────────────────────╮
+│    src/                              │  details(files): showing first 100 of 101 files                              │
+│                                       │  ### unstaged                                                                │
+│                                       │  diff --git a/src/file-000.txt b/src/file-000.txt                            │
+│                                       │  @@ -1 +1 @@                                                                 │
+│                                       │  -old src/file-000.txt                                                       │
+│                                       │  +new src/file-000.txt                                                       │
+│                                       │  diff --git a/src/file-001.txt b/src/file-001.txt                            │
+│                                       │  @@ -1 +1 @@                                                                 │
+│                                       │  -old src/file-001.txt                                                       │
+│                                       │  +new src/file-001.txt                                                       │
+│                                       │  diff --git a/src/file-002.txt b/src/file-002.txt                            │
+│                                       │  @@ -1 +1 @@                                                                 │
+╰───────────────────────────────────────╯  -old src/file-002.txt                                                       │
+│ 2   Branches                         │  +new src/file-002.txt                                                       │
+│                                       │  diff --git a/src/file-003.txt b/src/file-003.txt                            │
+│                                       │  @@ -1 +1 @@                                                                 │
+│                                       │  -old src/file-003.txt                                                       │
+│                                       │  +new src/file-003.txt                                                       │
+│                                       │  diff --git a/src/file-004.txt b/src/file-004.txt                            │
+│                                       │  @@ -1 +1 @@                                                                 │
+╰───────────────────────────────────────╯  -old src/file-004.txt                                                       │
+│ 3   Commits                          │──────────────────────────────────────────────────────────────────────────────╯
+│                                       │ 6  󰌱 Log                                                                     │
+│                                       │  status=large repo fast mode; untracked scan skipped                         │
+│                                       │  tip=consider git untrackedCache/fsmonitor/splitIndex                        │
+│                                       │  details=diff limited to first 100 of 101 files                              │
+│                                       │  notice=Ready                                                                │
+│                                       │  notice=details diff limited to first 100 of 101 files                       │
+╰───────────────────────────────────────╯                                                                              │
+│ 4   Stash                            │                                                                              │
+│                                       │                                                                              │
+╰───────────────────────────────────────╯──────────────────────────────────────────────────────────────────────────────╯
+ space  stage/unstage   d  discard   c  commit   s  stash   D  reset   v  multi   enter  expand

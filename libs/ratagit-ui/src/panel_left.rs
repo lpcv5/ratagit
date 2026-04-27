@@ -10,11 +10,29 @@ use super::panel_format::{
 };
 use super::panel_scroll::render_indexed_entries_window_with;
 use super::panel_types::{PanelLine, PanelSpan};
-use crate::theme::{RowRole, panel_label, row_style};
+use crate::theme::{PanelLabel, RowRole, panel_label, row_style};
 
 pub(crate) fn panel_title(state: &AppState, panel: PanelFocus) -> &'static str {
     if panel == PanelFocus::Commits && state.commits.files.active {
         "[3]  Commit Files"
+    } else {
+        match panel {
+            PanelFocus::Files => "[1] 󰈙 Files",
+            PanelFocus::Branches => "[2]  Branches",
+            PanelFocus::Commits => "[3]  Commits",
+            PanelFocus::Stash => "[4]  Stash",
+            PanelFocus::Details => "[5]  Details",
+            PanelFocus::Log => "[6] 󰌱 Log",
+        }
+    }
+}
+
+pub(crate) fn panel_title_label(state: &AppState, panel: PanelFocus) -> PanelLabel {
+    if panel == PanelFocus::Commits && state.commits.files.active {
+        PanelLabel {
+            badge: "3",
+            body: " Commit Files",
+        }
     } else {
         panel_label(panel)
     }

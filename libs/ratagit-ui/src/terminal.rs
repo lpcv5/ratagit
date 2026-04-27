@@ -2,7 +2,9 @@ use ratagit_core::{AppState, PanelFocus};
 use ratatui::backend::{Backend, TestBackend};
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, HighlightSpacing, List, ListItem, ListState, Paragraph};
+use ratatui::widgets::{
+    Block, BorderType, Borders, HighlightSpacing, List, ListItem, ListState, Paragraph,
+};
 use ratatui::{Frame, Terminal};
 
 use crate::branch_modal::render_branch_modals;
@@ -11,13 +13,14 @@ use crate::editor_modal::render_editor_modal;
 use crate::frame::{TerminalBuffer, TerminalCursor, TerminalSize, buffer_to_text};
 use crate::layout::compute_left_panel_heights;
 use crate::panels::{
-    PanelLine, panel_title, render_branches_lines, render_commits_lines, render_details_lines,
-    render_files_lines, render_log_lines, render_stash_lines, shortcuts_for_state,
+    PanelLine, ShortcutLine, panel_title_label, render_branches_lines, render_commits_lines,
+    render_details_lines, render_files_lines, render_log_lines, render_stash_lines,
+    shortcut_line_for_state,
 };
 use crate::reset_modal::render_reset_modal;
 use crate::theme::{
     RowRole, batch_selected_row_style, focused_panel_style, inactive_panel_style, row_style,
-    selected_row_style,
+    selected_row_style, title_badge_style,
 };
 
 pub fn render_terminal(frame: &mut Frame<'_>, state: &AppState) {
@@ -144,7 +147,7 @@ fn render_block_panel(
     } else {
         inactive_panel_style()
     };
-    let title = Line::styled(format!(" {} ", panel_title(state, panel)), border_style);
+    let title = panel_title_line(state, panel, focused, border_style);
     let items = lines
         .iter()
         .map(|line| ListItem::new(line_to_ratatui_line(line)).style(row_style(line.role)))
@@ -169,10 +172,39 @@ fn render_block_panel(
         .block(
             Block::default()
                 .title(title)
-                .borders(Borders::ALL)
+                .borders(panel_borders(panel, focused))
+                .border_type(BorderType::Rounded)
                 .border_style(border_style),
         );
     frame.render_stateful_widget(widget, area, &mut list_state);
+}
+
+fn panel_borders(panel: PanelFocus, focused: bool) -> Borders {
+    if focused {
+        return Borders::ALL;
+    }
+
+    match panel {
+        PanelFocus::Files => Borders::ALL,
+        PanelFocus::Branches | PanelFocus::Commits | PanelFocus::Stash => {
+            Borders::LEFT | Borders::RIGHT | Borders::BOTTOM
+        }
+        PanelFocus::Details => Borders::TOP | Borders::RIGHT | Borders::BOTTOM,
+        PanelFocus::Log => Borders::RIGHT | Borders::BOTTOM,
+    }
+}
+
+fn panel_title_line(
+    state: &AppState,
+    panel: PanelFocus,
+    focused: bool,
+    title_style: ratatui::style::Style,
+) -> Line<'static> {
+    let label = panel_title_label(state, panel);
+    Line::from(vec![
+        Span::styled(format!(" {} ", label.badge), title_badge_style(focused)),
+        Span::styled(format!(" {} ", label.body), title_style),
+    ])
 }
 
 fn line_to_ratatui_line(line: &PanelLine) -> Line<'static> {
@@ -188,6 +220,28 @@ fn line_to_ratatui_line(line: &PanelLine) -> Line<'static> {
 }
 
 fn render_shortcuts(frame: &mut Frame<'_>, state: &AppState, area: Rect) {
-    let widget = Paragraph::new(shortcuts_for_state(state));
+    let widget = Paragraph::new(shortcut_line_to_ratatui_line(shortcut_line_for_state(
+        state,
+    )));
     frame.render_widget(widget, area);
+}
+
+fn shortcut_line_to_ratatui_line(line: ShortcutLine) -> Line<'static> {
+    match line {
+        ShortcutLine::Text(text) => Line::from(text),
+        ShortcutLine::Segments(segments) => {
+            let mut spans = Vec::new();
+            for (index, segment) in segments.iter().enumerate() {
+                if index > 0 {
+                    spans.push(Span::raw("  "));
+                }
+                spans.push(Span::styled(
+                    format!(" {} ", segment.key),
+                    title_badge_style(true),
+                ));
+                spans.push(Span::raw(format!(" {}", segment.label)));
+            }
+            Line::from(spans)
+        }
+    }
 }

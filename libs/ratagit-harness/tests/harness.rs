@@ -301,7 +301,7 @@ fn harness_status_refresh() {
         fixture_empty_repo(),
         &inputs,
         ScenarioExpectations {
-            screen_contains: &["Files", "Details", "keys(files):"],
+            screen_contains: &["Files", "Details", "space  stage/unstage"],
             screen_not_contains: &[],
             selected_screen_rows: &[],
             batch_selected_screen_rows: &[],
@@ -1028,7 +1028,7 @@ fn harness_files_search_jumps_and_clears() {
         fixture_dirty_repo(),
         &inputs,
         ScenarioExpectations {
-            screen_contains: &["src/lib.rs", "keys(files):"],
+            screen_contains: &["src/lib.rs", "space  stage/unstage"],
             screen_not_contains: &[],
             selected_screen_rows: &[],
             batch_selected_screen_rows: &[],
@@ -1090,7 +1090,7 @@ fn harness_stash_search_selects_match_without_git_operation() {
         fixture_dirty_repo(),
         &inputs,
         ScenarioExpectations {
-            screen_contains: &["stash@{0} WIP on main", "keys(stash):"],
+            screen_contains: &["stash@{0} WIP on main", "p  stash push"],
             screen_not_contains: &["/ search"],
             selected_screen_rows: &["stash@{0}"],
             batch_selected_screen_rows: &[],
@@ -1112,7 +1112,7 @@ fn harness_files_reset_mixed_menu() {
         fixture_dirty_repo(),
         &inputs,
         ScenarioExpectations {
-            screen_contains: &["Reset mixed to HEAD", "keys(files):", "D reset"],
+            screen_contains: &["Reset mixed to HEAD", "D  reset"],
             screen_not_contains: &[],
             selected_screen_rows: &[],
             batch_selected_screen_rows: &[],
@@ -1191,7 +1191,7 @@ fn harness_files_discard_current_target_with_confirmation() {
         fixture_dirty_repo(),
         &inputs,
         ScenarioExpectations {
-            screen_contains: &["Discarded README.md", "keys(files):"],
+            screen_contains: &["Discarded README.md", "space  stage/unstage"],
             screen_not_contains: &[" README.md"],
             selected_screen_rows: &[],
             batch_selected_screen_rows: &[],
@@ -1237,7 +1237,7 @@ fn harness_files_discard_confirmation_can_cancel() {
         fixture_dirty_repo(),
         &inputs,
         ScenarioExpectations {
-            screen_contains: &["README.md", "keys(files):"],
+            screen_contains: &["README.md", "space  stage/unstage"],
             screen_not_contains: &["Discarded README.md"],
             selected_screen_rows: &[],
             batch_selected_screen_rows: &[],
@@ -1521,16 +1521,16 @@ fn harness_commit_files_subpanel_keeps_commits_panel_height() {
     runtime.dispatch_ui(UiAction::FocusNext);
     runtime.dispatch_ui(UiAction::FocusNext);
     let parent_screen = runtime.render_terminal_text();
-    let parent_stash_title = title_line_index(&parent_screen, "[4]  Stash");
+    let parent_stash_title = title_line_index(&parent_screen, " Stash");
 
     runtime.dispatch_ui(UiAction::OpenCommitFilesPanel);
     let subpanel_screen = runtime.render_terminal_text();
-    let subpanel_stash_title = title_line_index(&subpanel_screen, "[4]  Stash");
+    let subpanel_stash_title = title_line_index(&subpanel_screen, " Stash");
     let operations = runtime.backend().operations().join("\n");
     let git_state = format!("{:#?}", runtime.backend().snapshot());
 
     assert_eq!(subpanel_stash_title, parent_stash_title);
-    assert!(subpanel_screen.contains("[3]  Commit Files"));
+    assert!(subpanel_screen.contains(" Commit Files"));
     assert!(operations.contains("commit-files:c000000"));
     assert!(git_state.contains("summary: \"commit 0\""));
 }
@@ -1862,7 +1862,7 @@ fn harness_branch_details_follow_cursor_with_log_graph() {
             screen_contains: &[
                 "* commit abc1234",
                 "init project on feature/mvp",
-                "keys(branches):",
+                "space  checkout",
             ],
             screen_not_contains: &["details(branches): pending"],
             selected_screen_rows: &[],
@@ -2108,7 +2108,7 @@ fn harness_focus_panel_shortcuts_follow_focus() {
         fixture_dirty_repo(),
         &inputs,
         ScenarioExpectations {
-            screen_contains: &["Details", "Log", "keys(branches):", "space checkout"],
+            screen_contains: &["Details", "Log", "space  checkout"],
             screen_not_contains: &[],
             selected_screen_rows: &[],
             batch_selected_screen_rows: &[],
@@ -2119,7 +2119,7 @@ fn harness_focus_panel_shortcuts_follow_focus() {
 }
 
 #[test]
-fn harness_panel_titles_are_numbered_and_empty_placeholders_hidden() {
+fn harness_panel_titles_are_badged_and_empty_placeholders_hidden() {
     let inputs = [UiAction::RefreshAll];
     assert_scenario(MockScenario::new(
         "ui_numbered_titles_no_empty_placeholders",
@@ -2127,14 +2127,24 @@ fn harness_panel_titles_are_numbered_and_empty_placeholders_hidden() {
         &inputs,
         ScenarioExpectations {
             screen_contains: &[
-                "[1] 󰈙 Files",
-                "[2]  Branches",
-                "[3]  Commits",
-                "[4]  Stash",
-                "[5]  Details",
-                "[6] 󰌱 Log",
+                "󰈙 Files",
+                " Branches",
+                " Commits",
+                " Stash",
+                " Details",
+                "󰌱 Log",
             ],
-            screen_not_contains: &["<empty>", "<none>", "error=<none>"],
+            screen_not_contains: &[
+                "[1]",
+                "[2]",
+                "[3]",
+                "[4]",
+                "[5]",
+                "[6]",
+                "<empty>",
+                "<none>",
+                "error=<none>",
+            ],
             selected_screen_rows: &[],
             batch_selected_screen_rows: &[],
             git_ops_contains: &["refresh"],

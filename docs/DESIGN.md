@@ -14,7 +14,8 @@ focused selectable panel, and inactive panels render their selected row as plain
 text. Left list panels keep deterministic selected row indexes. Right panels are
 read-only views derived from `AppState`. The app does not render a top
 branch/focus/status summary.
-Panel titles include numbered focus hints `[1]..[6]`.
+Panel titles include numbered focus hints `[1]..[6]`; the terminal UI renders
+the numbers as reverse-video badges.
 
 Focus model:
 
@@ -94,6 +95,8 @@ Search interaction:
   `Enter` confirms or `Esc` cancels.
 - Normal bottom shortcuts list only panel-specific common actions; baseline
   navigation/search keys are omitted.
+- Bottom shortcut keys render as reverse-video badges, omit the old
+  `keys(panel):` prefix, and use spaces instead of pipe separators.
 - Matches are case-insensitive and deterministic:
   - Files and Commit Files match full paths
   - Branches match branch names
@@ -287,7 +290,14 @@ Files panel interaction:
 ## Visual Theme
 
 - The UI assumes Unicode/Nerd Font support.
+- Terminal panel borders use rounded corners and omit shared left/top edges for
+  right-side or lower panels so adjacent panels read as one grid instead of
+  double-drawn boxes.
+- The focused panel renders a complete rounded border even when an inactive
+  panel in the same position would omit a shared edge.
 - Panel titles include semantic icons and never use `*` to show focus.
+- Terminal panel titles render the numbered focus hint as a reverse-video badge
+  before the semantic icon and label.
 - File rows use icons for folders, files, staged files, untracked files,
   batch membership, and search matches.
 - Visual-selected file rows use a color distinct from cursor selection.

@@ -75,6 +75,18 @@ pub(crate) fn inactive_panel_style() -> Style {
     Style::default().fg(Color::DarkGray)
 }
 
+pub(crate) fn title_badge_style(focused: bool) -> Style {
+    let background = if focused {
+        Color::Yellow
+    } else {
+        Color::DarkGray
+    };
+    Style::default()
+        .fg(Color::Black)
+        .bg(background)
+        .add_modifier(Modifier::BOLD)
+}
+
 pub(crate) fn row_style(role: RowRole) -> Style {
     match role {
         RowRole::Normal => Style::default(),
@@ -96,13 +108,37 @@ pub(crate) fn row_style(role: RowRole) -> Style {
     }
 }
 
-pub(crate) fn panel_label(panel: PanelFocus) -> &'static str {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PanelLabel {
+    pub(crate) badge: &'static str,
+    pub(crate) body: &'static str,
+}
+
+pub(crate) fn panel_label(panel: PanelFocus) -> PanelLabel {
     match panel {
-        PanelFocus::Files => "[1] 󰈙 Files",
-        PanelFocus::Branches => "[2]  Branches",
-        PanelFocus::Commits => "[3]  Commits",
-        PanelFocus::Stash => "[4]  Stash",
-        PanelFocus::Details => "[5]  Details",
-        PanelFocus::Log => "[6] 󰌱 Log",
+        PanelFocus::Files => PanelLabel {
+            badge: "1",
+            body: "󰈙 Files",
+        },
+        PanelFocus::Branches => PanelLabel {
+            badge: "2",
+            body: " Branches",
+        },
+        PanelFocus::Commits => PanelLabel {
+            badge: "3",
+            body: " Commits",
+        },
+        PanelFocus::Stash => PanelLabel {
+            badge: "4",
+            body: " Stash",
+        },
+        PanelFocus::Details => PanelLabel {
+            badge: "5",
+            body: " Details",
+        },
+        PanelFocus::Log => PanelLabel {
+            badge: "6",
+            body: "󰌱 Log",
+        },
     }
 }
