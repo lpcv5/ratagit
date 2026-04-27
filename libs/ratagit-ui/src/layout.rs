@@ -235,7 +235,7 @@ fn split_by_weights<const N: usize>(total: usize, weights: &[usize; N]) -> [usiz
 #[cfg(test)]
 mod tests {
     use ratagit_core::{Action, AppState, GitResult, PanelFocus, update};
-    use ratagit_testkit::fixture_many_files;
+    use ratagit_testkit::{fixture_commit, fixture_many_files};
 
     use super::*;
 
@@ -287,6 +287,25 @@ mod tests {
         assert!(expanded.branches <= baseline.branches);
         assert!(expanded.commits <= baseline.commits);
         assert_eq!(expanded.stash, baseline.stash);
+    }
+
+    #[test]
+    fn commit_files_subpanel_keeps_parent_commits_height() {
+        let mut state = AppState {
+            focus: PanelFocus::Commits,
+            last_left_focus: PanelFocus::Commits,
+            ..AppState::default()
+        };
+        state.commits.items = (0..30)
+            .map(|index| fixture_commit(&format!("{index:07x}"), &format!("commit {index}")))
+            .collect();
+        let parent_height = compute_left_panel_heights(&state, 24, 2).commits;
+
+        state.commits.files.active = true;
+        state.commits.files.loading = false;
+        let subpanel_height = compute_left_panel_heights(&state, 24, 2).commits;
+
+        assert_eq!(subpanel_height, parent_height);
     }
 
     #[test]

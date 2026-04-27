@@ -50,6 +50,13 @@ fn clean_many_commit_fixture(count: usize) -> RepoSnapshot {
     fixture
 }
 
+fn title_line_index(screen: &str, title: &str) -> usize {
+    screen
+        .lines()
+        .position(|line| line.contains(title))
+        .unwrap_or_else(|| panic!("screen should contain title: {title}"))
+}
+
 fn large_repo_backend(fixture: RepoSnapshot) -> MockGitBackend {
     MockGitBackend::with_status_metadata(fixture, 100_000, true, false, true)
 }
@@ -665,6 +672,38 @@ fn harness_files_details_reuses_cached_diff_when_selection_repeats() {
         runtime.state().details.files_targets,
         vec!["README.md".to_string()]
     );
+}
+
+#[test]
+fn harness_details_keeps_previous_content_while_new_diff_is_pending() {
+    let size = TerminalSize {
+        width: 100,
+        height: 30,
+    };
+    let mut runtime = Runtime::new(
+        AppState::default(),
+        MockGitBackend::new(fixture_dirty_repo()),
+        size,
+    );
+    runtime.dispatch_ui(UiAction::RefreshAll);
+    assert!(
+        runtime
+            .render_terminal_text()
+            .contains("diff --git a/README.md")
+    );
+
+    let mut pending_runtime =
+        Runtime::new(runtime.state().clone(), runtime.backend().clone(), size)
+            .with_debounce_window(Duration::from_secs(60));
+    pending_runtime.dispatch_ui(UiAction::MoveDown);
+
+    let screen = pending_runtime.render_terminal_text();
+    let operations = pending_runtime.backend().operations().join("\n");
+    let git_state = format!("{:#?}", pending_runtime.backend().snapshot());
+    assert!(screen.contains("diff --git a/README.md"));
+    assert!(!screen.contains("loading diff"));
+    assert!(!operations.contains("details-diff:src/lib.rs"));
+    assert!(git_state.contains("path: \"README.md\""));
 }
 
 #[test]
@@ -1427,6 +1466,36 @@ fn harness_commits_enter_files_subpanel_and_follow_file_cursor() {
             git_state_contains: &["summary: \"init project\""],
         },
     ));
+}
+
+#[test]
+fn harness_commit_files_subpanel_keeps_commits_panel_height() {
+    let size = TerminalSize {
+        width: 100,
+        height: 30,
+    };
+    let mut runtime = Runtime::new(
+        AppState::default(),
+        MockGitBackend::new(clean_many_commit_fixture(30)),
+        size,
+    );
+
+    runtime.dispatch_ui(UiAction::RefreshAll);
+    runtime.dispatch_ui(UiAction::FocusNext);
+    runtime.dispatch_ui(UiAction::FocusNext);
+    let parent_screen = runtime.render_terminal_text();
+    let parent_stash_title = title_line_index(&parent_screen, "[4]  Stash");
+
+    runtime.dispatch_ui(UiAction::OpenCommitFilesPanel);
+    let subpanel_screen = runtime.render_terminal_text();
+    let subpanel_stash_title = title_line_index(&subpanel_screen, "[4]  Stash");
+    let operations = runtime.backend().operations().join("\n");
+    let git_state = format!("{:#?}", runtime.backend().snapshot());
+
+    assert_eq!(subpanel_stash_title, parent_stash_title);
+    assert!(subpanel_screen.contains("[3]  Commit Files"));
+    assert!(operations.contains("commit-files:c000000"));
+    assert!(git_state.contains("summary: \"commit 0\""));
 }
 
 #[test]

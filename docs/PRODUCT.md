@@ -30,7 +30,7 @@ MVP v0 includes a left-nav workspace layout with six panels:
   - Untracked text files render as new-file patches in the `unstaged` diff section
   - Git diff/log payloads render Git's native ANSI colors in the Details panel
     instead of reparsing patch rows into semantic UI roles
-  - While a selected file diff is loading, Details shows a deterministic loading row instead of blocking input
+  - While a selected file diff is loading, Details keeps the previous content visible until new content or an error arrives
   - Branches focus projection: show the selected branch's native `git log --graph` output with Git's ASCII graph and ANSI colors preserved, limited to 50 commits
   - Commits focus projection: show the selected commit's header and a bounded patch diff preview
   - Commit Files subpanel projection: show the selected file or folder's patch within the selected commit
@@ -55,6 +55,7 @@ Navigation rules:
 - empty panels render blank content lines instead of `<empty>` / `<none>` placeholders
 - Stash panel shows one content row when unfocused and restores default height when focused
 - focused Files/Branches/Commits panels can grow dynamically when content overflows by borrowing height evenly from other left panels
+- left-panel subviews keep the same height as their parent panel view, so entering a short subview does not resize surrounding panels
 
 Files panel rules:
 
@@ -194,6 +195,7 @@ Commits panel rules:
 - `Enter` opens a Files subpanel for the selected commit
   - rows use the same tree display as the Files panel
   - file rows show changed-file status markers: `A`, `M`, `D`, `R`, `C`, or `T`
+  - the subpanel keeps the parent Commits panel height even when the selected commit has only a few changed files
   - folder rows can be expanded/collapsed with `Enter`
   - `j` / `k` move the file cursor, and Details follows with the selected file's patch in that commit
   - selecting a folder shows a combined diff for descendant files in that commit

@@ -1,7 +1,6 @@
 use ratagit_core::{
-    AppState, FileTreeRow, PanelFocus, SearchScope, commit_file_tree_rows,
-    commit_file_tree_rows_for_read, commit_is_selected_for_batch, commit_key, file_tree_rows,
-    file_tree_rows_for_read,
+    AppState, FileTreeRow, PanelFocus, SearchScope, commit_file_tree_rows_for_read,
+    commit_is_selected_for_batch, commit_key, file_tree_rows, file_tree_rows_for_read,
 };
 use ratatui::style::Style;
 
@@ -30,17 +29,7 @@ pub(crate) fn left_panel_content_len(state: &AppState, panel: PanelFocus) -> usi
                 file_tree_rows(&state.files).len()
             }
         }
-        PanelFocus::Commits if state.commits.files.active => {
-            if state.commits.files.loading && state.commits.files.items.is_empty() {
-                state.commits.items.len()
-            } else if commit_file_tree_rows(&state.commits.files).is_empty()
-                && !state.commits.files.items.is_empty()
-            {
-                commit_file_tree_rows_for_read(&state.commits.files).len()
-            } else {
-                commit_file_tree_rows(&state.commits.files).len()
-            }
-        }
+        PanelFocus::Commits if state.commits.files.active => state.commits.items.len(),
         PanelFocus::Branches => state.branches.items.len(),
         PanelFocus::Commits => state.commits.items.len(),
         PanelFocus::Stash => state.stash.items.len(),

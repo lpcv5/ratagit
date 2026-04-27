@@ -293,7 +293,6 @@ pub(crate) fn refresh_commit_file_diff(state: &mut AppState) -> Vec<Command> {
     state.details.commit_file_diff_target = Some(target.clone());
     if target_changed {
         reset_scroll(state);
-        state.details.commit_file_diff.clear();
     }
     with_pending(state, vec![Command::RefreshCommitFileDiff { target }])
 }
@@ -521,4 +520,62 @@ fn files_diff_request_for_selection(state: &AppState) -> FilesDiffRequest {
 
 fn file_diff_target_paths(targets: &[FileDiffTarget]) -> Vec<String> {
     targets.iter().map(|target| target.path.clone()).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        AppState, Command, CommitFileDiffPath, CommitFileDiffTarget, CommitFileEntry,
+        CommitFileStatus, CommitFilesPanelState, PanelFocus, initialize_commit_files_tree,
+        move_commit_file_selected,
+    };
+
+    #[test]
+    fn commit_file_details_keep_previous_diff_while_new_target_is_pending() {
+        let previous_target = CommitFileDiffTarget {
+            commit_id: "abc1234".to_string(),
+            paths: vec![CommitFileDiffPath {
+                path: "README.md".to_string(),
+                old_path: None,
+            }],
+        };
+        let mut state = AppState {
+            focus: PanelFocus::Commits,
+            last_left_focus: PanelFocus::Commits,
+            ..AppState::default()
+        };
+        state.commits.files = CommitFilesPanelState {
+            active: true,
+            commit_id: Some("abc1234".to_string()),
+            items: vec![
+                CommitFileEntry {
+                    path: "README.md".to_string(),
+                    old_path: None,
+                    status: CommitFileStatus::Modified,
+                },
+                CommitFileEntry {
+                    path: "src/lib.rs".to_string(),
+                    old_path: None,
+                    status: CommitFileStatus::Added,
+                },
+            ],
+            ..CommitFilesPanelState::default()
+        };
+        initialize_commit_files_tree(&mut state.commits.files);
+        state.details.commit_file_diff_target = Some(previous_target);
+        state.details.commit_file_diff = "diff --git a/README.md b/README.md".to_string();
+
+        move_commit_file_selected(&mut state.commits.files, false);
+        let commands = super::refresh_commit_file_diff(&mut state);
+
+        assert!(matches!(
+            commands.as_slice(),
+            [Command::RefreshCommitFileDiff { .. }]
+        ));
+        assert_eq!(
+            state.details.commit_file_diff,
+            "diff --git a/README.md b/README.md"
+        );
+        assert!(state.work.details_pending);
+    }
 }

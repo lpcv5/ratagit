@@ -89,13 +89,6 @@ fn render_files_details_lines(state: &AppState, max_lines: usize) -> Vec<PanelLi
         return vec![PanelLine::new(format!("  error={error}"), RowRole::Error)];
     }
 
-    if state.work.details_pending && state.details.files_diff.trim().is_empty() {
-        return vec![PanelLine::new(
-            "  details(files): loading diff",
-            RowRole::Muted,
-        )];
-    }
-
     if state.details.files_diff.trim().is_empty() {
         return vec![PanelLine::new(
             "  details(files): no diff for current selection",
@@ -135,13 +128,6 @@ fn render_branch_details_lines(state: &AppState, max_lines: usize) -> Vec<PanelL
         return vec![PanelLine::new(format!("  error={error}"), RowRole::Error)];
     }
 
-    if state.work.details_pending && state.details.branch_log.trim().is_empty() {
-        return vec![PanelLine::new(
-            "  details(branches): loading log graph",
-            RowRole::Muted,
-        )];
-    }
-
     if state.details.branch_log.trim().is_empty() {
         return vec![PanelLine::new(
             "  details(branches): no log graph for current selection",
@@ -175,13 +161,6 @@ fn render_commit_details_lines(state: &AppState, max_lines: usize) -> Vec<PanelL
         return vec![PanelLine::new(format!("  error={error}"), RowRole::Error)];
     }
 
-    if state.work.details_pending && state.details.commit_diff.trim().is_empty() {
-        return vec![PanelLine::new(
-            "  details(commits): loading diff",
-            RowRole::Muted,
-        )];
-    }
-
     if state.details.commit_diff.trim().is_empty() {
         return vec![PanelLine::new(
             "  details(commits): no diff for current selection",
@@ -201,14 +180,14 @@ fn render_commit_file_details_lines(state: &AppState, max_lines: usize) -> Vec<P
         return Vec::new();
     }
 
-    if state.commits.files.loading {
-        return vec![PanelLine::new(
-            "  details(commit files): loading files",
-            RowRole::Muted,
-        )];
-    }
-
     if state.details.commit_file_diff_target.is_none() {
+        if state.commits.files.loading && !state.details.commit_diff.trim().is_empty() {
+            return render_ansi_details_text(
+                &state.details.commit_diff,
+                state.details.scroll_offset,
+                max_lines,
+            );
+        }
         return vec![PanelLine::new(
             "  details(commit files): no file selected",
             RowRole::Muted,
@@ -217,13 +196,6 @@ fn render_commit_file_details_lines(state: &AppState, max_lines: usize) -> Vec<P
 
     if let Some(error) = &state.details.commit_file_diff_error {
         return vec![PanelLine::new(format!("  error={error}"), RowRole::Error)];
-    }
-
-    if state.work.details_pending && state.details.commit_file_diff.trim().is_empty() {
-        return vec![PanelLine::new(
-            "  details(commit files): loading diff",
-            RowRole::Muted,
-        )];
     }
 
     if state.details.commit_file_diff.trim().is_empty() {
@@ -447,7 +419,7 @@ mod tests {
         assert_eq!(
             render_details_lines(&state, 3),
             vec![PanelLine::new(
-                "  details(files): loading diff",
+                "  details(files): no diff for current selection",
                 RowRole::Muted
             )]
         );
@@ -490,7 +462,7 @@ mod tests {
         assert_eq!(
             render_details_lines(&state, 1),
             vec![PanelLine::new(
-                "  details(branches): loading log graph",
+                "  details(branches): no log graph for current selection",
                 RowRole::Muted
             )]
         );
@@ -510,7 +482,7 @@ mod tests {
         assert_eq!(
             render_details_lines(&state, 1),
             vec![PanelLine::new(
-                "  details(commit files): loading files",
+                "  details(commit files): no file selected",
                 RowRole::Muted
             )]
         );
@@ -529,6 +501,27 @@ mod tests {
                 "  details(commit files): no diff for current file",
                 RowRole::Muted
             )]
+        );
+    }
+
+    #[test]
+    fn commit_files_loading_keeps_parent_commit_details_visible() {
+        let mut state = AppState {
+            last_left_focus: PanelFocus::Commits,
+            ..AppState::default()
+        };
+        state.commits.files.active = true;
+        state.commits.files.loading = true;
+        state.details.commit_diff = "commit abc1234\nAuthor: ratagit-tests".to_string();
+
+        let lines = render_details_lines(&state, 2);
+
+        assert_eq!(
+            lines.into_iter().map(|line| line.text).collect::<Vec<_>>(),
+            vec![
+                "  commit abc1234".to_string(),
+                "  Author: ratagit-tests".to_string()
+            ]
         );
     }
 }

@@ -238,8 +238,9 @@ Files panel interaction:
   - stale commit-files and commit-file-diff results are ignored when the user
     has moved to another commit or file
   - `Esc` closes the subpanel and restores the selected commit diff
-  - while changed files are loading, dynamic height calculations use the parent
-    Commits list length to avoid a one-frame panel jump
+  - dynamic height calculations use the parent Commits list length so the
+    subpanel keeps the same height even when a commit has only a few changed
+    files
   - `/` searches changed-file paths and refreshes the selected file/folder diff
   - additional local commit-files shortcuts are intentionally deferred
 - Files Details projection renders merged `unstaged` and `staged` diff sections
@@ -251,7 +252,10 @@ Files panel interaction:
   patch from `GitBackend`; backend output is capped at the same 1 MiB preview
   limit used by automatic commit previews.
 - Files, Branches, and Commits Details projections apply the AppState-owned
-  `scroll_offset`; loading, empty, and error rows ignore the offset.
+  `scroll_offset`; empty and error rows ignore the offset.
+- Pending Details refreshes keep the previous Details content visible until new
+  content or an error result arrives; rendering does not replace content with a
+  transient loading row.
 - Details scroll resets when the selected details target changes or accepted
   details content refreshes.
 - Details downward scroll clamps `scroll_offset` to the last visible page
@@ -273,7 +277,8 @@ Files panel interaction:
 - Errors are stored in `AppState.status.last_error`.
 - The `Log` panel displays the latest error.
 - The `Log` panel displays pending refresh and Git operation state while work is running.
-- The Files details projection displays a loading row while its diff command is pending.
+- Details refresh progress is reflected in `AppState.work.details_pending` for
+  command tracking, not as a transient Details panel row.
 - Empty-state placeholders such as `<empty>` / `<none>` are not rendered; empty
   views remain visually blank.
 
