@@ -151,6 +151,10 @@ Files panel interaction:
 - Tree indexes sync item changes by removing, adding, or metadata-updating
   changed source paths. When the path topology is stable, status-only refreshes
   update node metadata without rebuilding child relationships.
+- Files Details target resolution is bounded during navigation: file rows resolve
+  directly from the selected tree row, and directory rows use cached tree index
+  source counts to collect only the first 100 diff targets before reporting the
+  original total.
 - Files and Commit Files compact single-child directory chains into one display
   row, such as `src/a/b/c/`, while keeping the row's real path and descendant
   mapping in `AppContext` for selection, search, Details, and Git commands.

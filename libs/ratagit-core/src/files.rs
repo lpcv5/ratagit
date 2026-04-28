@@ -19,6 +19,12 @@ pub struct FileDiffTarget {
     pub is_directory_marker: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BoundedFileDiffTargets {
+    pub targets: Vec<FileDiffTarget>,
+    pub truncated_from: Option<usize>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommitFileStatus {
     Added,
@@ -119,6 +125,7 @@ struct FileTreeNode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct FileTreeSource {
     path: String,
+    diff_path: String,
     kind: FileRowKind,
     staged: bool,
     untracked: bool,
@@ -241,6 +248,57 @@ impl FileTreeIndex {
             node.untracked = source.untracked;
             node.commit_status = source.commit_status;
             node.conflicted = source.conflicted;
+        }
+    }
+
+    fn bounded_diff_targets_for_row(
+        &self,
+        row: &FileTreeRow,
+        limit: usize,
+    ) -> Option<BoundedFileDiffTargets> {
+        let key = normalize_tree_path(&row.path);
+        let node = self.nodes.get(&key)?;
+        if row.kind == FileRowKind::File {
+            let source = self.sources.get(&key);
+            return Some(BoundedFileDiffTargets {
+                targets: vec![
+                    source.map_or_else(|| diff_target_from_row(row), diff_target_from_source),
+                ],
+                truncated_from: None,
+            });
+        }
+
+        let mut targets = Vec::new();
+        self.collect_bounded_diff_targets(&key, limit, &mut targets);
+        Some(BoundedFileDiffTargets {
+            targets,
+            truncated_from: (node.ref_count > limit).then_some(node.ref_count),
+        })
+    }
+
+    fn collect_bounded_diff_targets(
+        &self,
+        path: &str,
+        limit: usize,
+        targets: &mut Vec<FileDiffTarget>,
+    ) {
+        if targets.len() >= limit {
+            return;
+        }
+        if let Some(source) = self.sources.get(path) {
+            targets.push(diff_target_from_source(source));
+            if targets.len() >= limit {
+                return;
+            }
+        }
+        let Some(node) = self.nodes.get(path) else {
+            return;
+        };
+        for child in &node.children {
+            self.collect_bounded_diff_targets(child, limit, targets);
+            if targets.len() >= limit {
+                break;
+            }
         }
     }
 }
@@ -473,6 +531,29 @@ pub fn selected_diff_targets(items: &[FileEntry], state: &FilesUiState) -> Vec<F
             .unwrap_or_default()
     };
     resolve_row_keys_to_diff_targets(items, state, &keys)
+}
+
+pub fn selected_diff_targets_bounded(
+    items: &[FileEntry],
+    state: &FilesUiState,
+    limit: usize,
+) -> BoundedFileDiffTargets {
+    if state.mode == FileInputMode::MultiSelect && !state.selected_rows.is_empty() {
+        let all_targets = selected_diff_targets(items, state);
+        let total = all_targets.len();
+        return BoundedFileDiffTargets {
+            targets: all_targets.into_iter().take(limit).collect(),
+            truncated_from: (total > limit).then_some(total),
+        };
+    }
+
+    let Some(row) = selected_row(items, state) else {
+        return BoundedFileDiffTargets {
+            targets: Vec::new(),
+            truncated_from: None,
+        };
+    };
+    resolve_single_row_to_diff_targets_bounded(items, state, &row, limit)
 }
 
 pub fn selected_row(items: &[FileEntry], state: &FilesUiState) -> Option<FileTreeRow> {
@@ -853,7 +934,9 @@ pub fn collect_directories(items: &[FileEntry]) -> BTreeSet<String> {
 
 fn sync_file_tree_index_if_needed(items: &[FileEntry], state: &mut FilesUiState) {
     if state.lightweight_tree_projection {
-        state.tree_index.sync(file_tree_sources(items));
+        if state.tree_index.is_empty() && !items.is_empty() {
+            state.tree_index.sync(file_tree_sources(items));
+        }
     } else if !state.tree_index.is_empty() {
         state.tree_index = FileTreeIndex::default();
     }
@@ -884,6 +967,7 @@ fn file_tree_sources(items: &[FileEntry]) -> BTreeMap<String, FileTreeSource> {
                 path.clone(),
                 FileTreeSource {
                     path,
+                    diff_path: entry.path.clone(),
                     kind,
                     staged: entry.staged,
                     untracked: entry.untracked,
@@ -907,6 +991,7 @@ fn commit_file_tree_sources(items: &[CommitFileEntry]) -> BTreeMap<String, FileT
                 path.clone(),
                 FileTreeSource {
                     path,
+                    diff_path: entry.path.clone(),
                     kind: FileRowKind::File,
                     staged: false,
                     untracked: false,
@@ -1226,6 +1311,108 @@ fn resolve_row_keys_to_diff_targets(
         .collect()
 }
 
+fn resolve_single_row_to_diff_targets_bounded(
+    items: &[FileEntry],
+    state: &FilesUiState,
+    row: &FileTreeRow,
+    limit: usize,
+) -> BoundedFileDiffTargets {
+    if limit == 0 {
+        return BoundedFileDiffTargets {
+            targets: Vec::new(),
+            truncated_from: None,
+        };
+    }
+    if row.kind == FileRowKind::File {
+        return BoundedFileDiffTargets {
+            targets: vec![diff_target_from_row(row)],
+            truncated_from: None,
+        };
+    }
+    if state.lightweight_tree_projection
+        && let Some(targets) = state.tree_index.bounded_diff_targets_for_row(row, limit)
+    {
+        return targets;
+    }
+    if let Some(descendants) = state.row_descendants.get(&row.path) {
+        let total = descendants.len();
+        return BoundedFileDiffTargets {
+            targets: descendants
+                .iter()
+                .take(limit)
+                .map(|path| diff_target_from_item_path(items, path))
+                .collect(),
+            truncated_from: (total > limit).then_some(total),
+        };
+    }
+    resolve_row_key_by_scanning_bounded(items, &row.path, limit)
+}
+
+fn resolve_row_key_by_scanning_bounded(
+    items: &[FileEntry],
+    key: &str,
+    limit: usize,
+) -> BoundedFileDiffTargets {
+    let normalized_key = normalize_tree_path(key);
+    if normalized_key.is_empty() {
+        return BoundedFileDiffTargets {
+            targets: Vec::new(),
+            truncated_from: None,
+        };
+    }
+    let prefix = format!("{normalized_key}/");
+    let mut total = 0usize;
+    let mut targets = Vec::new();
+    for entry in items.iter().filter(|entry| {
+        normalize_tree_path(&entry.path) == normalized_key || entry.path.starts_with(&prefix)
+    }) {
+        total = total.saturating_add(1);
+        if targets.len() < limit {
+            targets.push(diff_target_from_entry(entry));
+        }
+    }
+    BoundedFileDiffTargets {
+        targets,
+        truncated_from: (total > limit).then_some(total),
+    }
+}
+
+fn diff_target_from_row(row: &FileTreeRow) -> FileDiffTarget {
+    FileDiffTarget {
+        path: row.path.clone(),
+        untracked: row.untracked,
+        is_directory_marker: row.kind == FileRowKind::Directory,
+    }
+}
+
+fn diff_target_from_source(source: &FileTreeSource) -> FileDiffTarget {
+    FileDiffTarget {
+        path: source.diff_path.clone(),
+        untracked: source.untracked,
+        is_directory_marker: source.kind == FileRowKind::Directory,
+    }
+}
+
+fn diff_target_from_entry(entry: &FileEntry) -> FileDiffTarget {
+    FileDiffTarget {
+        path: entry.path.clone(),
+        untracked: entry.untracked,
+        is_directory_marker: is_directory_marker(&entry.path),
+    }
+}
+
+fn diff_target_from_item_path(items: &[FileEntry], path: &str) -> FileDiffTarget {
+    items
+        .iter()
+        .find(|entry| entry.path == path)
+        .map(diff_target_from_entry)
+        .unwrap_or_else(|| FileDiffTarget {
+            path: path.to_string(),
+            untracked: false,
+            is_directory_marker: is_directory_marker(path),
+        })
+}
+
 fn is_directory_marker(path: &str) -> bool {
     path.ends_with('/')
 }
@@ -1520,6 +1707,54 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["README.md", "src", "src/lib.rs", "src/ui", "src/ui/list.rs"]
         );
+    }
+
+    #[test]
+    fn bounded_diff_targets_limit_lightweight_directory_without_descendant_map() {
+        let items = (0..150)
+            .map(|index| FileEntry {
+                path: format!("src/file-{index:03}.txt"),
+                staged: false,
+                untracked: false,
+                status: CommitFileStatus::Modified,
+                conflicted: false,
+            })
+            .collect::<Vec<_>>();
+        let mut state = FilesUiState::default();
+        initialize_tree_with_initial_expansion(&items, &mut state, false);
+
+        let bounded = selected_diff_targets_bounded(&items, &state, 100);
+
+        assert!(state.row_descendants.is_empty());
+        assert_eq!(bounded.targets.len(), 100);
+        assert_eq!(bounded.truncated_from, Some(150));
+        assert_eq!(bounded.targets[0].path, "src/file-000.txt");
+        assert_eq!(bounded.targets[99].path, "src/file-099.txt");
+    }
+
+    #[test]
+    fn bounded_diff_targets_preserve_untracked_directory_marker_path() {
+        let items = vec![FileEntry {
+            path: "vendor/".to_string(),
+            staged: false,
+            untracked: true,
+            status: CommitFileStatus::Unknown,
+            conflicted: false,
+        }];
+        let mut state = FilesUiState::default();
+        initialize_tree_with_initial_expansion(&items, &mut state, false);
+
+        let bounded = selected_diff_targets_bounded(&items, &state, 100);
+
+        assert_eq!(
+            bounded.targets,
+            vec![FileDiffTarget {
+                path: "vendor/".to_string(),
+                untracked: true,
+                is_directory_marker: true,
+            }]
+        );
+        assert_eq!(bounded.truncated_from, None);
     }
 
     #[test]

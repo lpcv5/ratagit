@@ -28,6 +28,7 @@ use ratagit_ui::{TerminalSize, render_terminal_buffer};
 const DEFAULT_ITERATIONS: usize = 3;
 const DEFAULT_WARMUP: usize = 1;
 const COMMIT_FILES_NAVIGATION_STEPS: usize = 200;
+const FILES_NAVIGATION_STEPS: usize = 200;
 const FILES_TREE_TOGGLE_STEPS: usize = 100;
 const UI_RENDER_STEPS: usize = 100;
 const DETAILS_SCROLL_RENDER_STEPS: usize = 100;
@@ -191,6 +192,7 @@ enum Operation {
     CommitDetailsDiff,
     CommitFileDiff,
     FilesDetailsDiff,
+    FilesNavigation,
     FilesTreeToggle,
     StatusRender,
     SearchRender,
@@ -198,7 +200,7 @@ enum Operation {
 }
 
 impl Operation {
-    const ALL: [Self; 14] = [
+    const ALL: [Self; 15] = [
         Self::Status,
         Self::Commits,
         Self::LoadMoreCommits,
@@ -209,6 +211,7 @@ impl Operation {
         Self::CommitDetailsDiff,
         Self::CommitFileDiff,
         Self::FilesDetailsDiff,
+        Self::FilesNavigation,
         Self::FilesTreeToggle,
         Self::StatusRender,
         Self::SearchRender,
@@ -227,6 +230,7 @@ impl Operation {
             "commit-details-diff" => Ok(Self::CommitDetailsDiff),
             "commit-file-diff" => Ok(Self::CommitFileDiff),
             "files-details-diff" => Ok(Self::FilesDetailsDiff),
+            "files-navigation" => Ok(Self::FilesNavigation),
             "files-tree-toggle" => Ok(Self::FilesTreeToggle),
             "status-render" => Ok(Self::StatusRender),
             "search-render" => Ok(Self::SearchRender),
@@ -247,6 +251,7 @@ impl Operation {
             Self::CommitDetailsDiff => "commit-details-diff",
             Self::CommitFileDiff => "commit-file-diff",
             Self::FilesDetailsDiff => "files-details-diff",
+            Self::FilesNavigation => "files-navigation",
             Self::FilesTreeToggle => "files-tree-toggle",
             Self::StatusRender => "status-render",
             Self::SearchRender => "search-render",
@@ -698,7 +703,7 @@ fn measure_git_cli_raw(
             commit_file_diff_args(&targets.commit_file_target),
         )?,
         Operation::FilesDetailsDiff => files_details_diff_cli_output(git, &config.path, targets)?,
-        Operation::FilesTreeToggle => run_git_output(
+        Operation::FilesNavigation | Operation::FilesTreeToggle => run_git_output(
             git,
             &config.path,
             status_args(status_mode_for_index_count(config.index_entry_count())),
@@ -823,6 +828,15 @@ fn measure_git_cli_parsed(
                 output_items: items,
                 output_bytes: output.len(),
             })
+        }
+        Operation::FilesNavigation => {
+            let output = run_git_output(
+                git,
+                &config.path,
+                status_args(status_mode_for_index_count(config.index_entry_count())),
+            )?;
+            let entries = parse_status_porcelain(&output)?;
+            files_navigation_payload(entries)
         }
         Operation::FilesTreeToggle => {
             let output = run_git_output(
@@ -953,6 +967,10 @@ fn measure_backend(
                 output_bytes: diff.len(),
             })
         }
+        Operation::FilesNavigation => {
+            let snapshot = backend.refresh_files().map_err(|error| error.message)?;
+            files_navigation_payload(snapshot.files)
+        }
         Operation::FilesTreeToggle => {
             let snapshot = backend.refresh_files().map_err(|error| error.message)?;
             files_tree_toggle_payload(snapshot.files)
@@ -1070,6 +1088,31 @@ fn commit_files_navigation_payload(
     };
     let mut emitted_commands = 0usize;
     for _ in 0..COMMIT_FILES_NAVIGATION_STEPS {
+        let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+        emitted_commands += commands.len();
+        let _buffer = render_terminal_buffer(&state, size);
+    }
+
+    Ok(MeasurementPayload {
+        output_items: emitted_commands,
+        output_bytes,
+    })
+}
+
+fn files_navigation_payload(files: Vec<FileEntry>) -> Result<MeasurementPayload, String> {
+    let output_bytes = files.iter().map(|entry| entry.path.len()).sum();
+    let mut state = AppContext::default();
+    state.ui.focus = PanelFocus::Files;
+    state.ui.last_left_focus = PanelFocus::Files;
+    state.repo.files.items = files;
+    initialize_tree_with_initial_expansion(&state.repo.files.items, &mut state.ui.files, false);
+
+    let size = TerminalSize {
+        width: 120,
+        height: 34,
+    };
+    let mut emitted_commands = 0usize;
+    for _ in 0..FILES_NAVIGATION_STEPS {
         let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
         emitted_commands += commands.len();
         let _buffer = render_terminal_buffer(&state, size);
@@ -1859,7 +1902,7 @@ mod tests {
             "--scales".into(),
             "smoke,huge".into(),
             "--operations".into(),
-            "status,commit-files-directory-diff,commit-files-navigation,commit-files-tree-toggle,files-tree-toggle".into(),
+            "status,commit-files-directory-diff,commit-files-navigation,commit-files-tree-toggle,files-navigation,files-tree-toggle".into(),
             "--iterations".into(),
             "2".into(),
             "--warmup".into(),
@@ -1880,6 +1923,7 @@ mod tests {
                 Operation::CommitFilesDirectoryDiff,
                 Operation::CommitFilesNavigation,
                 Operation::CommitFilesTreeToggle,
+                Operation::FilesNavigation,
                 Operation::FilesTreeToggle
             ]
         );
@@ -2038,6 +2082,7 @@ mod tests {
                 Operation::CommitFilesDirectoryDiff,
                 Operation::CommitFilesNavigation,
                 Operation::CommitFilesTreeToggle,
+                Operation::FilesNavigation,
                 Operation::FilesTreeToggle,
             ],
             iterations: 1,

@@ -35,8 +35,8 @@ pub use commits::{
 };
 pub use errors::{GitErrorKind, GitFailure};
 pub use files::{
-    CommitFileEntry, CommitFileStatus, CommitFilesUiState, FileDiffTarget, FileEntry,
-    FileInputMode, FileRowKind, FileTreeIndex, FileTreeRow, FilesUiState,
+    BoundedFileDiffTargets, CommitFileEntry, CommitFileStatus, CommitFilesUiState, FileDiffTarget,
+    FileEntry, FileInputMode, FileRowKind, FileTreeIndex, FileTreeRow, FilesUiState,
     build_commit_file_tree_rows, build_file_tree_rows, clamp_selected as clamp_file_selection,
     collect_directories, commit_file_tree_rows, commit_file_tree_rows_for_read,
     enter_commit_files_multi_select, enter_multi_select, file_tree_rows, file_tree_rows_for_read,
@@ -46,8 +46,9 @@ pub use files::{
     move_commit_file_selected_in_viewport, move_selected, move_selected_in_viewport,
     reconcile_after_items_changed, refresh_commit_files_tree_projection, refresh_tree_projection,
     select_commit_file_tree_path, select_file_tree_path, selected_commit_file,
-    selected_commit_file_targets, selected_diff_targets, selected_row, selected_target_paths,
-    toggle_commit_files_directory, toggle_current_row_selection, toggle_selected_directory,
+    selected_commit_file_targets, selected_diff_targets, selected_diff_targets_bounded,
+    selected_row, selected_target_paths, toggle_commit_files_directory,
+    toggle_current_row_selection, toggle_selected_directory,
 };
 pub use reducer::update;
 pub use scroll::scroll_offset_for_selection;

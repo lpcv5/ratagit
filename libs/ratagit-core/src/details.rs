@@ -3,7 +3,8 @@ use crate::{
     CachedFilesDiff, Command, CommitFileDiffPath, CommitFileDiffTarget, DETAILS_DIFF_CACHE_LIMIT,
     DetailsRequest, DetailsRequestId, DetailsRequestTarget, FILES_DETAILS_DIFF_TARGET_LIMIT,
     FileDiffTarget, PanelFocus, push_notice, selected_branch_commit_id,
-    selected_commit_file_targets, selected_diff_targets, selected_target_paths, with_pending,
+    selected_commit_file_targets, selected_diff_targets_bounded, selected_target_paths,
+    with_pending,
 };
 
 pub(crate) fn scroll_up(state: &mut AppContext, lines: usize) {
@@ -692,16 +693,14 @@ struct FilesDiffRequest {
 }
 
 fn files_diff_request_for_selection(state: &AppContext) -> FilesDiffRequest {
-    let all_targets = selected_diff_targets(&state.repo.files.items, &state.ui.files);
-    let total = all_targets.len();
-    let truncated_from = (total > FILES_DETAILS_DIFF_TARGET_LIMIT).then_some(total);
-    let targets = all_targets
-        .into_iter()
-        .take(FILES_DETAILS_DIFF_TARGET_LIMIT)
-        .collect();
+    let bounded = selected_diff_targets_bounded(
+        &state.repo.files.items,
+        &state.ui.files,
+        FILES_DETAILS_DIFF_TARGET_LIMIT,
+    );
     FilesDiffRequest {
-        targets,
-        truncated_from,
+        targets: bounded.targets,
+        truncated_from: bounded.truncated_from,
     }
 }
 

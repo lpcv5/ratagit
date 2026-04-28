@@ -413,6 +413,39 @@ Results:
 - `rtk cargo clippy --workspace --lib --bins -- -D warnings` passed
 - `rtk cargo test` passed, 480 tests
 
+### Phase 15: Files Tree Navigation Performance
+
+Status: completed
+
+Deliverables:
+
+- remove full-tree Details target resolution from ordinary Files panel movement
+- keep folder Details diffs bounded to the first 100 targets without collecting
+  every descendant first
+- avoid unnecessary lightweight Files tree index rebuilds during folder toggles
+- add Files navigation performance coverage comparable to Commit Files navigation
+
+Tests:
+
+- unit tests for bounded Files Details target resolution in lightweight trees
+- perf-suite coverage for Files panel navigation
+- full validation suite
+
+Results:
+
+- added bounded Files Details target resolution so ordinary Files navigation no
+  longer collects every descendant before applying the 100-target Details cap
+- reused the lightweight Files tree index for bounded directory Details targets
+  and preserved full selection behavior for stage, stash, reset, and discard
+- avoided rebuilding lightweight Files tree sources during folder toggles when
+  the cached tree index is already current
+- added unit coverage for bounded lightweight directory targets and untracked
+  directory markers
+- added `files-navigation` perf-suite coverage alongside Commit Files navigation
+- `rtk cargo fmt` passed
+- `rtk cargo clippy --workspace --lib --bins -- -D warnings` passed
+- `rtk cargo test` passed, 482 tests
+
 ## Latest Validation
 
 - Phase 0: documentation-only review complete; behavior unchanged
@@ -470,3 +503,8 @@ Results:
 - Phase 14: `rtk cargo fmt` passed
 - Phase 14: `rtk cargo clippy --workspace --lib --bins -- -D warnings` passed
 - Phase 14: `rtk cargo test` passed, 480 tests
+- Phase 15: targeted `rtk cargo test -p ratagit-core` passed, 139 tests
+- Phase 15: targeted `rtk cargo test --bin perf-suite` passed, 15 tests
+- Phase 15: `rtk cargo fmt` passed
+- Phase 15: `rtk cargo clippy --workspace --lib --bins -- -D warnings` passed
+- Phase 15: `rtk cargo test` passed, 482 tests
