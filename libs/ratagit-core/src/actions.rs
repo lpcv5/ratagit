@@ -903,6 +903,50 @@ pub(crate) fn with_pending(state: &mut AppContext, commands: Vec<Command>) -> Ve
     commands
 }
 
+fn mark_command_pending(state: &mut AppContext, command: &Command) {
+    match command {
+        Command::RefreshAll => {
+            state.work.mark_refresh_all_pending();
+        }
+        Command::RefreshFiles => {
+            mark_refresh_target_pending(state, RefreshTarget::Files);
+        }
+        Command::RefreshBranches => {
+            mark_refresh_target_pending(state, RefreshTarget::Branches);
+        }
+        Command::RefreshCommits => {
+            mark_refresh_target_pending(state, RefreshTarget::Commits);
+        }
+        Command::RefreshStash => {
+            mark_refresh_target_pending(state, RefreshTarget::Stash);
+        }
+        Command::LoadMoreCommits { .. } => {
+            state.work.pagination.commits_loading_more = true;
+        }
+        Command::RefreshFilesDetailsDiff { .. }
+        | Command::RefreshBranchDetailsLog { .. }
+        | Command::RefreshCommitDetailsDiff { .. }
+        | Command::RefreshCommitFileDiff { .. } => {
+            state.work.details.details_pending = true;
+        }
+        Command::RefreshCommitFiles { .. } | Command::RefreshBranchCommitFiles { .. } => {
+            state.work.commit_files.commit_files_loading = true;
+        }
+        Command::RefreshBranchCommits { .. } => {
+            mark_refresh_target_pending(state, RefreshTarget::Branches);
+        }
+        _ => {
+            if let Some(label) = command.pending_operation_label() {
+                state.work.mutation.operation_pending = Some(label);
+            }
+        }
+    }
+}
+
+fn mark_refresh_target_pending(state: &mut AppContext, target: RefreshTarget) {
+    state.work.mark_refresh_target_pending(target);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -946,48 +990,4 @@ mod tests {
             .is_success()
         );
     }
-}
-
-fn mark_command_pending(state: &mut AppContext, command: &Command) {
-    match command {
-        Command::RefreshAll => {
-            state.work.mark_refresh_all_pending();
-        }
-        Command::RefreshFiles => {
-            mark_refresh_target_pending(state, RefreshTarget::Files);
-        }
-        Command::RefreshBranches => {
-            mark_refresh_target_pending(state, RefreshTarget::Branches);
-        }
-        Command::RefreshCommits => {
-            mark_refresh_target_pending(state, RefreshTarget::Commits);
-        }
-        Command::RefreshStash => {
-            mark_refresh_target_pending(state, RefreshTarget::Stash);
-        }
-        Command::LoadMoreCommits { .. } => {
-            state.work.pagination.commits_loading_more = true;
-        }
-        Command::RefreshFilesDetailsDiff { .. }
-        | Command::RefreshBranchDetailsLog { .. }
-        | Command::RefreshCommitDetailsDiff { .. }
-        | Command::RefreshCommitFileDiff { .. } => {
-            state.work.details.details_pending = true;
-        }
-        Command::RefreshCommitFiles { .. } | Command::RefreshBranchCommitFiles { .. } => {
-            state.work.commit_files.commit_files_loading = true;
-        }
-        Command::RefreshBranchCommits { .. } => {
-            mark_refresh_target_pending(state, RefreshTarget::Branches);
-        }
-        _ => {
-            if let Some(label) = command.pending_operation_label() {
-                state.work.mutation.operation_pending = Some(label);
-            }
-        }
-    }
-}
-
-fn mark_refresh_target_pending(state: &mut AppContext, target: RefreshTarget) {
-    state.work.mark_refresh_target_pending(target);
 }

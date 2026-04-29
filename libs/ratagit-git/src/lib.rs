@@ -128,19 +128,22 @@ fn execute_command_inner(backend: &mut dyn GitBackend, command: Command) -> GitR
                 .commit_details_diff(&commit_id)
                 .map_err(|error| error.message),
         },
-        Command::RefreshBranchCommits { branch } => GitResult::BranchCommits {
-            branch: branch.clone(),
-            result: backend
+        Command::RefreshBranchCommits { branch } => {
+            let result = backend
                 .branch_commits(&branch)
-                .map_err(|error| error.message),
-        },
-        Command::RefreshBranchCommitFiles { branch, commit_id } => GitResult::BranchCommitFiles {
-            branch: branch.clone(),
-            commit_id: commit_id.clone(),
-            result: backend
+                .map_err(|error| error.message);
+            GitResult::BranchCommits { branch, result }
+        }
+        Command::RefreshBranchCommitFiles { branch, commit_id } => {
+            let result = backend
                 .commit_files(&commit_id)
-                .map_err(|error| error.message),
-        },
+                .map_err(|error| error.message);
+            GitResult::BranchCommitFiles {
+                branch,
+                commit_id,
+                result,
+            }
+        }
         Command::RefreshCommitFiles { commit_id } => GitResult::CommitFiles {
             commit_id: commit_id.clone(),
             result: backend

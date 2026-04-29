@@ -1042,7 +1042,7 @@ impl GitCli {
                 current_path = Some(PathBuf::from(path));
             } else if let Some(branch) = line.strip_prefix("branch ") {
                 if branch == target_ref {
-                    return Ok(current_path.clone());
+                    return Ok(current_path);
                 }
             } else if line.is_empty() {
                 current_path = None;

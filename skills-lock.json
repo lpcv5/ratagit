@@ -51,6 +51,12 @@
       "sourceType": "github",
       "computedHash": "66895917c0d6ce31b365ecfd930db3682698a0b90794b22c3b7ef4c6c13b1ba6"
     },
+    "rust-best-practices": {
+      "source": "apollographql/skills",
+      "sourceType": "github",
+      "skillPath": "skills/rust-best-practices/SKILL.md",
+      "computedHash": "3f89cd417842ca60bffefea01ee88fc28116b75a8e69329c4d6db446fbfcad02"
+    },
     "rust-refactor-helper": {
       "source": "actionbook/rust-skills",
       "sourceType": "github",

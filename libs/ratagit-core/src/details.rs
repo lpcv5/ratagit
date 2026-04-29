@@ -192,7 +192,7 @@ pub(crate) fn apply_commit_file_diff_result(
     }
     clear_details_pending(state);
     state.work.mark_command_completed("commit_file_details");
-    state.repo.details.commit_file_diff_target = Some(target.clone());
+    state.repo.details.commit_file_diff_target = Some(target);
     reset_scroll(state);
     match result {
         Ok(diff) => {
