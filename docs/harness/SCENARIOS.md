@@ -3,7 +3,7 @@
 This file is generated from `libs/ratagit-harness/tests/harness.rs`.
 Detailed assertions live in the Rust scenario definitions.
 
-Total scenarios: 75
+Total scenarios: 76
 
 ## Global (1)
 
@@ -56,7 +56,7 @@ Total scenarios: 75
 - `harness_branches_delete_current_branch_is_protected`
 - `harness_branches_rebase_simple_and_origin_main`
 
-## Commits (14)
+## Commits (15)
 
 - `harness_commits_create_and_refresh`
 - `harness_commits_visual_multiselect_marks_rows`
@@ -70,6 +70,7 @@ Total scenarios: 75
 - `harness_commits_squash_multiselect`
 - `harness_commits_fixup_selected`
 - `harness_commits_reword_selected`
+- `harness_commits_amend_staged_changes_into_selected_commit`
 - `harness_commits_delete_selected`
 - `harness_commits_detached_checkout_uses_auto_stash`
 

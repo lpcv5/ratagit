@@ -240,6 +240,10 @@ mod tests {
             map_key(&state, KeyCode::Char('v')),
             Some(UiAction::EnterFilesMultiSelect)
         );
+        assert_eq!(
+            map_key(&state, KeyCode::Char('A')),
+            Some(UiAction::AmendStagedChanges)
+        );
     }
 
     #[test]
@@ -331,6 +335,10 @@ mod tests {
         assert_eq!(
             map_key(&state, KeyCode::Char('c')),
             Some(UiAction::OpenCommitEditor)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Char('A')),
+            Some(UiAction::AmendStagedChanges)
         );
         assert_eq!(
             map_key(&state, KeyCode::Enter),

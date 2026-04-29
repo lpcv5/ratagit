@@ -255,14 +255,16 @@ Files panel interaction:
 - Branch rebase options are simple, interactive, and `origin/main`; simple and
   interactive rebase the current branch onto the selected branch.
 - Branches search selects matching branches and refreshes the branch details log.
-- Commits focus maps `s` to squash, `f` to fixup, `r` to reword, `d` to delete,
-  `space` to detached checkout, `v` to enter visual multi-select, and `Enter`
-  to open Commit Files for the selected commit.
+- Commits focus maps `A` to amend staged changes into the selected commit, `s`
+  to squash, `f` to fixup, `r` to reword, `d` to delete, `space` to detached
+  checkout, `v` to enter visual multi-select, and `Enter` to open Commit Files
+  for the selected commit.
 - Commit visual multi-select is AppContext-owned and follows the same continuous
   anchor-to-cursor model as Files visual selection; `Esc` exits the mode.
-- Commit rewrite commands require a clean working tree, reject merge commits in
-  this slice, only accept unpushed commits, and are executed only through
-  `GitBackend`.
+- Commit rewrite commands reject merge commits in this slice, only accept
+  unpushed commits, and are executed only through `GitBackend`; squash, fixup,
+  reword, and delete require a clean working tree, while amend requires staged
+  changes with no unstaged or untracked changes.
 - Squash/fixup reject root-parent targets in this slice because the replay path
   amends the selected commit into its parent.
 - Commit reword reuses the existing commit editor modal with a reword intent

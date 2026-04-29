@@ -101,6 +101,20 @@ pub(crate) fn handle_create_commit_result(
     )
 }
 
+pub(crate) fn handle_amend_staged_changes_result(
+    state: &mut AppContext,
+    commit_id: String,
+    result: Result<(), String>,
+) -> Vec<Command> {
+    handle_operation_result(
+        state,
+        result,
+        "amend",
+        format!("Amended staged changes into {commit_id}"),
+        format!("Failed to amend staged changes into {commit_id}"),
+    )
+}
+
 pub(crate) fn handle_pull_result(
     state: &mut AppContext,
     result: Result<(), String>,

@@ -49,6 +49,9 @@ Navigation rules:
 - `Ctrl+U` / `Ctrl+D` scrolls the Details panel content by 2/5 of its content height regardless of the current focus
 - `p` pulls and `P` pushes from normal mode regardless of focused panel; active
   text inputs and confirmation modals keep their own key handling
+- `A` amends staged changes into `HEAD` by default; when the main Commits panel
+  is focused, it amends staged changes into the selected commit and replays
+  newer private commits
 - confirmation modals are reserved for operations that can discard unrecoverable
   working tree data, remove remote branches, force delete local branches, or
   force push; recoverable operations such as normal pull/push, checkout, rebase,
@@ -223,11 +226,15 @@ Commits panel rules:
   - yellow when not on `main` but reachable from the current branch upstream
   - red when not reachable from the upstream or when upstream/main data is unavailable
 - `v` enters visual multi-select at the current commit; `j` / `k` updates the continuous anchor-to-cursor range, and `Esc` exits multi-select
+- `A` amends currently staged changes into the selected commit, requiring the
+  selected commit and any newer replayed commits to be red/unpushed and non-merge
 - `s` squashes the selected commit or visual-selected commits into their parent lineage
 - `f` fixups the selected commit or visual-selected commits into their parent lineage
 - `r` opens the commit message modal prefilled with the selected commit message and rewords one commit
 - `d` deletes the selected commit or visual-selected commits
-- rewrite actions require a clean working tree, only operate on red/unpushed commits, and reject merge commits in this slice
+- squash/fixup/reword/delete require a clean working tree; amend requires only
+  staged changes with no unstaged or untracked changes; these rewrite actions
+  only operate on red/unpushed commits and reject merge commits in this slice
 - squash/fixup reject commits whose parent is the root commit in this slice
 - `space` checks out the selected commit as detached HEAD; dirty worktrees use the same explicit auto-stash confirmation as branch checkout
 - `Enter` opens a Files subpanel for the selected commit

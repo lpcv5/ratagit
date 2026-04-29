@@ -120,6 +120,7 @@ pub(crate) fn shortcut_line_for_state(state: &AppContext) -> ShortcutLine {
         PanelFocus::Files => sync_segments(&[
             ("space", "stage/unstage"),
             ("d", "discard"),
+            ("A", "amend"),
             ("c", "commit"),
             ("s", "stash"),
             ("D", "reset"),
@@ -142,6 +143,7 @@ pub(crate) fn shortcut_line_for_state(state: &AppContext) -> ShortcutLine {
             } else {
                 sync_segments(&[
                     ("enter", "files"),
+                    ("A", "amend"),
                     ("s", "squash"),
                     ("f", "fixup"),
                     ("r", "reword"),
@@ -156,9 +158,8 @@ pub(crate) fn shortcut_line_for_state(state: &AppContext) -> ShortcutLine {
 }
 
 fn sync_segments(values: &[(&'static str, &'static str)]) -> ShortcutLine {
-    let mut combined = values.to_vec();
-    combined.push(("p", "pull"));
-    combined.push(("P", "push"));
+    let mut combined = vec![("p", "pull"), ("P", "push")];
+    combined.extend_from_slice(values);
     segments(&combined)
 }
 

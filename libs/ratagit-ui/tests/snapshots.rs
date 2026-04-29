@@ -337,7 +337,7 @@ fn bottom_keys_show_loading_indicator_before_shortcuts() {
     );
 
     assert!(screen.contains("- loading: refresh"));
-    assert!(screen.contains("- loading: refresh   space  stage/unstage"));
+    assert!(screen.contains("- loading: refresh   p  pull   P  push"));
 }
 
 #[test]
@@ -1313,7 +1313,7 @@ fn terminal_snapshot_focus_and_keys_follow_actions() {
         screen
             .lines()
             .last()
-            .is_some_and(|line| line.starts_with("/ loading: details   enter  files"))
+            .is_some_and(|line| line.starts_with("/ loading: details   p  pull   P  push"))
     );
 }
 

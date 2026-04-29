@@ -732,6 +732,35 @@ impl GitBackendHistoryRewrite for MockGitBackend {
         Ok(())
     }
 
+    fn amend_staged_changes(&mut self, commit_id: &str) -> Result<(), GitError> {
+        self.operations.push(format!("amend:{commit_id}"));
+        let has_staged_changes = self.snapshot.files.iter().any(|entry| entry.staged);
+        if !has_staged_changes {
+            return Err(GitError::new("no staged changes to amend"));
+        }
+        let commit = if commit_id == "HEAD" {
+            self.snapshot
+                .commits
+                .first()
+                .ok_or_else(|| GitError::new("commit not found: HEAD"))?
+        } else {
+            self.snapshot
+                .commits
+                .iter()
+                .find(|commit| commit_matches(commit, commit_id))
+                .ok_or_else(|| GitError::new(format!("commit not found: {commit_id}")))?
+        };
+        if commit.hash_status != CommitHashStatus::Unpushed {
+            return Err(GitError::new("commit is not private"));
+        }
+        if commit.is_merge {
+            return Err(GitError::new("merge commits are not supported"));
+        }
+        self.snapshot.files.retain(|entry| !entry.staged);
+        refresh_status_summary(&mut self.snapshot);
+        Ok(())
+    }
+
     fn delete_commits(&mut self, commit_ids: &[String]) -> Result<(), GitError> {
         self.operations
             .push(format!("delete-commits:{}", commit_ids.join(",")));

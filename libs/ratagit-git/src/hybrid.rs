@@ -417,6 +417,10 @@ impl GitBackendHistoryRewrite for HybridGitBackend {
         self.cli.reword_commit(commit_id, message)
     }
 
+    fn amend_staged_changes(&mut self, commit_id: &str) -> Result<(), GitError> {
+        self.cli.amend_staged_changes(commit_id)
+    }
+
     fn delete_commits(&mut self, commit_ids: &[String]) -> Result<(), GitError> {
         self.cli.delete_commits(commit_ids)
     }

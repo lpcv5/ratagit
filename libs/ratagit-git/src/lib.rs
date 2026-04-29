@@ -186,6 +186,12 @@ fn execute_command_inner(backend: &mut dyn GitBackend, command: Command) -> GitR
                 .create_commit(&message)
                 .map_err(|error| error.message),
         },
+        Command::AmendStagedChanges { commit_id } => GitResult::AmendStagedChanges {
+            commit_id: commit_id.clone(),
+            result: backend
+                .amend_staged_changes(&commit_id)
+                .map_err(|error| error.message),
+        },
         Command::Pull => GitResult::Pull {
             result: backend.pull().map_err(|error| error.message),
         },
@@ -603,6 +609,10 @@ mod tests {
             self.inner.reword_commit(commit_id, message)
         }
 
+        fn amend_staged_changes(&mut self, commit_id: &str) -> Result<(), GitError> {
+            self.inner.amend_staged_changes(commit_id)
+        }
+
         fn delete_commits(&mut self, commit_ids: &[String]) -> Result<(), GitError> {
             self.inner.delete_commits(commit_ids)
         }
@@ -798,6 +808,83 @@ mod tests {
                 "auto-stash-pop".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn mock_amend_staged_changes_consumes_staged_files() {
+        let mut snapshot = test_snapshot_with_commits(vec![
+            test_commit("aaa1111", "head"),
+            test_commit("bbb2222", "base"),
+        ]);
+        snapshot.files = vec![
+            FileEntry {
+                path: "staged.txt".to_string(),
+                staged: true,
+                untracked: false,
+                status: CommitFileStatus::Modified,
+                conflicted: false,
+            },
+            FileEntry {
+                path: "unstaged.txt".to_string(),
+                staged: false,
+                untracked: false,
+                status: CommitFileStatus::Modified,
+                conflicted: false,
+            },
+        ];
+        let mut backend = MockGitBackend::new(snapshot);
+
+        backend
+            .amend_staged_changes("bbb2222")
+            .expect("amend should consume staged files");
+
+        assert_eq!(backend.operations(), &["amend:bbb2222".to_string()]);
+        assert!(
+            !backend
+                .snapshot()
+                .files
+                .iter()
+                .any(|entry| entry.path == "staged.txt")
+        );
+        assert!(
+            backend
+                .snapshot()
+                .files
+                .iter()
+                .any(|entry| entry.path == "unstaged.txt")
+        );
+    }
+
+    #[test]
+    fn execute_command_amend_staged_changes_uses_backend_output() {
+        let mut snapshot = test_snapshot_with_commits(vec![
+            test_commit("aaa1111", "head"),
+            test_commit("bbb2222", "base"),
+        ]);
+        snapshot.files = vec![FileEntry {
+            path: "staged.txt".to_string(),
+            staged: true,
+            untracked: false,
+            status: CommitFileStatus::Modified,
+            conflicted: false,
+        }];
+        let mut backend = MockGitBackend::new(snapshot);
+
+        let result = execute_command(
+            &mut backend,
+            Command::AmendStagedChanges {
+                commit_id: "aaa1111".to_string(),
+            },
+        );
+
+        assert_eq!(
+            result,
+            GitResult::AmendStagedChanges {
+                commit_id: "aaa1111".to_string(),
+                result: Ok(()),
+            }
+        );
+        assert_eq!(backend.operations(), &["amend:aaa1111".to_string()]);
     }
 
     #[test]

@@ -2,44 +2,45 @@
 
 ## Current Slice
 
-Repository-wide maintainability and extensibility optimization.
+Shortcut A amend staged changes into commits.
 
-### Active Harness Engineering V3: Real Git Smoke Harness
+### Phase 17: Amend Staged Changes
 
 Status: completed
 
 Goal:
 
-- add a small real-Git smoke layer in `ratagit-harness` to catch drift between
-  mock harness behavior and `HybridGitBackend`
-- validate the synchronous harness path from `UiAction` through `Command`,
-  `HybridGitBackend`, `AppContext`, and real repository state
+- add `A` as an amend shortcut that folds staged changes into `HEAD` by default
+- when the main Commits panel is focused, amend staged changes into the selected
+  private commit and replay newer private commits
+- preserve unidirectional flow through `UiAction` -> `Command` -> `GitBackend`
 
 Deliverables:
 
-- create isolated temporary repositories under `tmp/git-tests/`
-- add smoke tests for stage/unstage, stash push/pop including untracked files,
-  multiline commit creation, and dirty branch checkout with auto-stash
-- keep these tests independent from the mock scenario manifest
-- update testing docs with the real-Git smoke harness role
+- core action, command, reducer, result handling, and command metadata
+- mock backend and real Git backend support through history-rewrite capability
+- input mapping and shortcut row copy
+- unit tests, UI snapshot updates, mock harness scenario, real-Git smoke coverage
+- product documentation update
 
 Validation:
 
 ```text
 cargo fmt
 cargo clippy --workspace --lib --bins -- -D warnings
-cargo test -p ratagit-harness
-cargo test -p ratagit-git
 cargo test
 ```
 
 Results:
 
-- added `ratagit-harness` real-Git smoke coverage for stage/unstage, stash
-  push/pop including untracked files, multiline commit creation, and dirty branch
-  checkout with auto-stash
-- documented the real-Git smoke harness role in `docs/TESTING.md`
-- validation passed with the commands above
+- added `A` amend routing through `UiAction`, `Command`, reducer result
+  handling, command metadata, and the history-rewrite backend capability
+- implemented mock and Hybrid Git backend support for amending staged changes
+  into `HEAD` or a selected private commit
+- updated shortcut rendering so global `p`/`P` sync actions remain visible
+  before local panel actions
+- added core, input, UI snapshot, mock harness, and real-Git smoke coverage
+- updated product/design docs and the generated harness scenario manifest
 
 ## Goal
 
@@ -577,3 +578,6 @@ Results:
 - Phase 16: `cargo test` passed
 - Phase 16: profile smoke passed for `status`, `files-navigation`, and
   `status-render`; result `perf-1777465934-980516600`
+- Phase 17: `cargo fmt` passed
+- Phase 17: `cargo clippy --workspace --lib --bins -- -D warnings` passed
+- Phase 17: `cargo test` passed

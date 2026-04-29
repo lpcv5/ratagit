@@ -219,6 +219,7 @@ impl GitBackendHistoryRewrite for RecordingBackend {
         squash_commits(commit_ids: &[String]) -> Result<(), GitError>;
         fixup_commits(commit_ids: &[String]) -> Result<(), GitError>;
         reword_commit(commit_id: &str, message: &str) -> Result<(), GitError>;
+        amend_staged_changes(commit_id: &str) -> Result<(), GitError>;
         delete_commits(commit_ids: &[String]) -> Result<(), GitError>;
     }
 }

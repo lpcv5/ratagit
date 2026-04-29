@@ -356,6 +356,12 @@ fn command_metadata_tracks_debounce_mutation_and_pending_labels() {
             },
             "commit",
         ),
+        (
+            Command::AmendStagedChanges {
+                commit_id: "HEAD".to_string(),
+            },
+            "amend",
+        ),
         (Command::Pull, "pull"),
         (Command::Push { force: false }, "push"),
         (Command::Push { force: true }, "force_push"),
@@ -2435,6 +2441,88 @@ fn commit_rewrite_blocks_pushed_or_merged_commits() {
 }
 
 #[test]
+fn amend_staged_changes_targets_head_outside_commits_panel() {
+    let mut state = context_with_focus(PanelFocus::Files);
+    state.repo.files.items = vec![file_entry("staged.txt", true, false)];
+    state.repo.commits.items = vec![commit_entry("aaa1111", "head")];
+
+    let commands = update(&mut state, Action::Ui(UiAction::AmendStagedChanges));
+
+    assert_eq!(
+        commands,
+        vec![Command::AmendStagedChanges {
+            commit_id: "HEAD".to_string(),
+        }]
+    );
+    assert_eq!(
+        state.work.mutation.operation_pending.as_deref(),
+        Some("amend")
+    );
+}
+
+#[test]
+fn amend_staged_changes_targets_selected_commit_in_commits_panel() {
+    let mut state = context_with_focus(PanelFocus::Commits);
+    state.repo.files.items = vec![file_entry("staged.txt", true, false)];
+    state.repo.commits.items = vec![
+        commit_entry("aaa1111", "head"),
+        commit_entry("bbb2222", "middle"),
+        commit_entry("ccc3333", "base"),
+    ];
+    state.ui.commits.selected = 1;
+
+    let commands = update(&mut state, Action::Ui(UiAction::AmendStagedChanges));
+
+    assert_eq!(
+        commands,
+        vec![Command::AmendStagedChanges {
+            commit_id: "bbb2222-full".to_string(),
+        }]
+    );
+}
+
+#[test]
+fn amend_staged_changes_requires_staged_private_non_merge_commits() {
+    let mut no_staged = context_with_focus(PanelFocus::Files);
+    no_staged.repo.files.items = vec![file_entry("dirty.txt", false, false)];
+    let commands = update(&mut no_staged, Action::Ui(UiAction::AmendStagedChanges));
+    assert!(commands.is_empty());
+    assert!(
+        no_staged
+            .notices
+            .iter()
+            .any(|notice| notice.contains("No staged changes"))
+    );
+
+    let mut mixed = context_with_focus(PanelFocus::Files);
+    mixed.repo.files.items = vec![
+        file_entry("staged.txt", true, false),
+        file_entry("dirty.txt", false, false),
+    ];
+    let commands = update(&mut mixed, Action::Ui(UiAction::AmendStagedChanges));
+    assert!(commands.is_empty());
+    assert!(
+        mixed
+            .notices
+            .iter()
+            .any(|notice| notice.contains("only staged changes"))
+    );
+
+    let mut pushed = context_with_focus(PanelFocus::Commits);
+    pushed.repo.files.items = vec![file_entry("staged.txt", true, false)];
+    pushed.repo.commits.items = vec![commit_entry("aaa1111", "head")];
+    pushed.repo.commits.items[0].hash_status = CommitHashStatus::Pushed;
+    let commands = update(&mut pushed, Action::Ui(UiAction::AmendStagedChanges));
+    assert!(commands.is_empty());
+    assert!(
+        pushed
+            .notices
+            .iter()
+            .any(|notice| notice.contains("only supports unpushed commits"))
+    );
+}
+
+#[test]
 fn commit_reword_reuses_commit_editor_modal_and_confirms_command() {
     let mut state = context_with_focus(PanelFocus::Commits);
     let mut commit = commit_entry("aaa1111", "feat: old");
@@ -2512,6 +2600,46 @@ fn ordinary_operation_failure_does_not_refresh_after_failure() {
             .as_ref()
             .expect("error should be stored")
             .contains("nothing staged")
+    );
+}
+
+#[test]
+fn amend_staged_changes_result_reports_success_and_failure() {
+    let mut state = AppContext::default();
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::AmendStagedChanges {
+            commit_id: "HEAD".to_string(),
+            result: Ok(()),
+        }),
+    );
+
+    assert_eq!(commands, Command::refresh_all_commands());
+    assert_eq!(state.last_operation, Some("amend".to_string()));
+    assert!(
+        state
+            .notices
+            .iter()
+            .any(|notice| notice.contains("Amended staged changes into HEAD"))
+    );
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::AmendStagedChanges {
+            commit_id: "abc1234".to_string(),
+            result: Err("blocked".to_string()),
+        }),
+    );
+
+    assert!(commands.is_empty());
+    assert_eq!(state.last_operation, Some("amend".to_string()));
+    assert!(
+        state
+            .repo
+            .status
+            .last_error
+            .as_ref()
+            .is_some_and(|error| error.contains("blocked"))
     );
 }
 

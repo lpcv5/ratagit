@@ -311,6 +311,7 @@ fn panel_action_for_key(
             KeyCode::Char('v') if state.ui.files.mode != FileInputMode::MultiSelect => {
                 return Some(UiAction::EnterFilesMultiSelect);
             }
+            KeyCode::Char('A') => return Some(UiAction::AmendStagedChanges),
             KeyCode::Char('c') => return Some(UiAction::OpenCommitEditor),
             KeyCode::Char('s') => return Some(UiAction::OpenStashEditor),
             KeyCode::Char('d') => return Some(UiAction::OpenDiscardConfirm),
@@ -399,6 +400,7 @@ fn panel_action_for_key(
             KeyCode::Enter => return Some(UiAction::OpenCommitFilesPanel),
             KeyCode::Char(' ') => return Some(UiAction::CheckoutSelectedCommitDetached),
             KeyCode::Char('c') => return Some(UiAction::OpenCommitEditor),
+            KeyCode::Char('A') => return Some(UiAction::AmendStagedChanges),
             KeyCode::Char('v') if state.ui.commits.mode != CommitInputMode::MultiSelect => {
                 return Some(UiAction::EnterCommitsMultiSelect);
             }
@@ -412,6 +414,7 @@ fn panel_action_for_key(
 
     match code {
         KeyCode::Char('r') => Some(UiAction::RefreshAll),
+        KeyCode::Char('A') => Some(UiAction::AmendStagedChanges),
         KeyCode::Char('l') => Some(UiAction::FocusNext),
         KeyCode::Char('h') => Some(UiAction::FocusPrev),
         KeyCode::Down | KeyCode::Char('j') => Some(UiAction::MoveDownInViewport {

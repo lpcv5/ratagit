@@ -224,6 +224,53 @@ fn real_git_smoke_create_multiline_commit_from_selected_file() {
 }
 
 #[test]
+fn real_git_smoke_amend_staged_changes_into_selected_commit() {
+    if !git_available() {
+        eprintln!(
+            "git is unavailable, skipping real_git_smoke_amend_staged_changes_into_selected_commit"
+        );
+        return;
+    }
+
+    let repo = seeded_repo("harness-real-amend-selected");
+    repo.run_git(&["checkout", "-b", "feature/amend"]);
+    write(repo.path().join("a.txt"), "a2\n").expect("a.txt should be writable");
+    repo.run_git(&["add", "--", "a.txt"]);
+    repo.run_git(&["commit", "-m", "middle"]);
+    write(repo.path().join("b.txt"), "b2\n").expect("b.txt should be writable");
+    repo.run_git(&["add", "--", "b.txt"]);
+    repo.run_git(&["commit", "-m", "head"]);
+    write(repo.path().join("a.txt"), "a3\n").expect("a.txt should be writable");
+    repo.run_git(&["add", "--", "a.txt"]);
+    let mut runtime = runtime_for(&repo);
+
+    dispatch_all(
+        &mut runtime,
+        &[
+            UiAction::RefreshAll,
+            UiAction::FocusPanel {
+                panel: PanelFocus::Commits,
+            },
+            UiAction::MoveDown,
+            UiAction::AmendStagedChanges,
+        ],
+    );
+
+    let subjects = repo.run_git_capture(&["log", "--format=%s"]);
+    assert_eq!(
+        subjects.lines().collect::<Vec<_>>(),
+        vec!["head", "middle", "init"]
+    );
+    assert_eq!(repo.run_git_capture(&["show", "HEAD~1:a.txt"]), "a3\n");
+    assert_eq!(
+        repo.run_git_capture(&["status", "--short", "--untracked-files=all"])
+            .trim(),
+        ""
+    );
+    assert_eq!(runtime.state().last_operation.as_deref(), Some("amend"));
+}
+
+#[test]
 fn real_git_smoke_dirty_branch_checkout_uses_auto_stash() {
     if !git_available() {
         eprintln!(

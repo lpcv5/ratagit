@@ -545,6 +545,56 @@ impl GitCli {
         self.run_git(&["commit", "-m", message]).map(|_| ())
     }
 
+    pub(crate) fn amend_staged_changes(&mut self, commit_id: &str) -> Result<(), GitError> {
+        self.ensure_only_staged_changes()?;
+        let target = self.resolve_commit(commit_id)?;
+        let original_head = self.resolve_commit("HEAD")?;
+        if target == original_head {
+            return self
+                .run_git(&["commit", "--amend", "--no-edit"])
+                .map(|_| ());
+        }
+
+        let history = self.rev_list_reverse_head()?;
+        let start = history
+            .iter()
+            .position(|commit| commit == &target)
+            .ok_or_else(|| GitError::new(format!("commit is not reachable from HEAD: {target}")))?;
+        if start == 0 {
+            return Err(GitError::new("cannot amend root commit"));
+        }
+        let replay_commits = history[start..].to_vec();
+        self.ensure_commits_are_private(&replay_commits)?;
+        for commit in &replay_commits {
+            if self.parent_count(commit)? > 1 {
+                return Err(GitError::new(
+                    "commit rewrite does not support merge commits yet",
+                ));
+            }
+        }
+
+        self.run_git(&["commit", "-m", "ratagit amend staged changes"])?;
+        let staged_commit = self.resolve_commit("HEAD")?;
+        let base = history[start - 1].clone();
+        self.run_git_owned(vec!["reset".to_string(), "--hard".to_string(), base])?;
+        let result = self.replay_with_staged_amend(&replay_commits, &target, &staged_commit);
+        if let Err(error) = result {
+            let _ = self.run_git(&["cherry-pick", "--abort"]);
+            let _ = self.run_git_owned(vec![
+                "reset".to_string(),
+                "--hard".to_string(),
+                staged_commit,
+            ]);
+            let _ = self.run_git_owned(vec![
+                "reset".to_string(),
+                "--soft".to_string(),
+                original_head,
+            ]);
+            return Err(error);
+        }
+        Ok(())
+    }
+
     pub(crate) fn create_branch(&mut self, name: &str, start_point: &str) -> Result<(), GitError> {
         self.run_git(&["branch", name, start_point]).map(|_| ())
     }
@@ -791,12 +841,60 @@ impl GitCli {
         Ok(())
     }
 
+    fn replay_with_staged_amend(
+        &self,
+        replay_commits: &[String],
+        target: &str,
+        staged_commit: &str,
+    ) -> Result<(), GitError> {
+        for commit in replay_commits {
+            self.run_git_owned(vec!["cherry-pick".to_string(), commit.clone()])?;
+            if commit == target {
+                self.run_git_owned(vec![
+                    "cherry-pick".to_string(),
+                    "--no-commit".to_string(),
+                    staged_commit.to_string(),
+                ])?;
+                self.run_git(&["commit", "--amend", "--no-edit"])?;
+            }
+        }
+        Ok(())
+    }
+
     fn ensure_clean_worktree(&self) -> Result<(), GitError> {
         let output = self.run_git(&["status", "--porcelain"])?;
         if output.trim().is_empty() {
             Ok(())
         } else {
             Err(GitError::new("working tree must be clean"))
+        }
+    }
+
+    fn ensure_only_staged_changes(&self) -> Result<(), GitError> {
+        let output = self.run_git(&["status", "--porcelain"])?;
+        let mut has_staged = false;
+        for line in output.lines() {
+            let mut chars = line.chars();
+            let index_status = chars.next().unwrap_or(' ');
+            let worktree_status = chars.next().unwrap_or(' ');
+            if index_status == '?' && worktree_status == '?' {
+                return Err(GitError::new(
+                    "amend requires only staged changes; untracked changes are present",
+                ));
+            }
+            if worktree_status != ' ' {
+                return Err(GitError::new(
+                    "amend requires only staged changes; unstaged changes are present",
+                ));
+            }
+            if index_status != ' ' {
+                has_staged = true;
+            }
+        }
+        if has_staged {
+            Ok(())
+        } else {
+            Err(GitError::new("no staged changes to amend"))
         }
     }
 

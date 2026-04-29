@@ -35,6 +35,53 @@ pub(crate) fn delete_selected_commits(state: &mut AppContext) -> Vec<Command> {
     })
 }
 
+pub(crate) fn amend_staged_changes(state: &mut AppContext) -> Vec<Command> {
+    if !state.repo.files.items.iter().any(|entry| entry.staged) {
+        push_notice(state, "No staged changes to amend");
+        return Vec::new();
+    }
+    if state.repo.files.items.iter().any(|entry| !entry.staged) {
+        push_notice(state, "Amend requires only staged changes");
+        return Vec::new();
+    }
+
+    let commit_id = if state.ui.focus == PanelFocus::Commits && !state.ui.commits.files.active {
+        let Some(commit) = selected_commit(&state.repo.commits.items, &state.ui.commits) else {
+            push_notice(state, "No commit selected");
+            return Vec::new();
+        };
+        let selected_index = state.ui.commits.selected;
+        if state
+            .repo
+            .commits
+            .items
+            .iter()
+            .take(selected_index.saturating_add(1))
+            .any(|commit| commit.hash_status != CommitHashStatus::Unpushed)
+        {
+            push_notice(state, "Amend only supports unpushed commits");
+            return Vec::new();
+        }
+        if state
+            .repo
+            .commits
+            .items
+            .iter()
+            .take(selected_index.saturating_add(1))
+            .any(|commit| commit.is_merge)
+        {
+            push_notice(state, "Amend does not support merge commits yet");
+            return Vec::new();
+        }
+        commit_key(&commit)
+    } else {
+        "HEAD".to_string()
+    };
+
+    push_notice(state, &format!("Queued amend into {commit_id}"));
+    with_pending(state, vec![Command::AmendStagedChanges { commit_id }])
+}
+
 pub(crate) fn checkout_selected_commit_detached(state: &mut AppContext) -> Vec<Command> {
     if state.ui.commits.mode == CommitInputMode::MultiSelect {
         push_notice(state, "Detached checkout supports one commit at a time");

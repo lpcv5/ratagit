@@ -292,6 +292,7 @@ fn update_ui(state: &mut AppContext, action: UiAction) -> Vec<Command> {
         UiAction::StageSelectedFile => worktree::stage_selected_file(state),
         UiAction::UnstageSelectedFile => worktree::unstage_selected_file(state),
         UiAction::StashSelectedFiles => worktree::stash_selected_files(state),
+        UiAction::AmendStagedChanges => commit_workflow::amend_staged_changes(state),
         UiAction::CreateCommit { message } => {
             state.ui.commits.draft_message = message.clone();
             with_pending(state, vec![Command::CreateCommit { message }])

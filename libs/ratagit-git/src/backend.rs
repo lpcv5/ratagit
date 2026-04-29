@@ -137,6 +137,7 @@ pub trait GitBackendHistoryRewrite {
     fn squash_commits(&mut self, commit_ids: &[String]) -> Result<(), GitError>;
     fn fixup_commits(&mut self, commit_ids: &[String]) -> Result<(), GitError>;
     fn reword_commit(&mut self, commit_id: &str, message: &str) -> Result<(), GitError>;
+    fn amend_staged_changes(&mut self, commit_id: &str) -> Result<(), GitError>;
     fn delete_commits(&mut self, commit_ids: &[String]) -> Result<(), GitError>;
 }
 
@@ -202,6 +203,7 @@ impl<T: GitBackendHistoryRewrite + ?Sized> GitBackendHistoryRewrite for Box<T> {
         squash_commits(commit_ids: &[String]) -> Result<(), GitError>;
         fixup_commits(commit_ids: &[String]) -> Result<(), GitError>;
         reword_commit(commit_id: &str, message: &str) -> Result<(), GitError>;
+        amend_staged_changes(commit_id: &str) -> Result<(), GitError>;
         delete_commits(commit_ids: &[String]) -> Result<(), GitError>;
     }
 }

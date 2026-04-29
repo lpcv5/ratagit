@@ -45,6 +45,13 @@ fn clean_three_commit_fixture() -> RepoSnapshot {
     fixture
 }
 
+fn staged_commit_fixture() -> RepoSnapshot {
+    let mut fixture = clean_commit_fixture();
+    fixture.files = vec![fixture_file("staged.txt", true, false)];
+    fixture.status_summary = "staged: 1, unstaged: 0".to_string();
+    fixture
+}
+
 fn clean_many_commit_fixture(count: usize) -> RepoSnapshot {
     let mut fixture = clean_commit_fixture();
     fixture.commits = (0..count)
@@ -338,6 +345,13 @@ impl GitBackendHistoryRewrite for BlockingBackend {
             .lock()
             .expect("mock lock")
             .reword_commit(commit_id, message)
+    }
+
+    fn amend_staged_changes(&mut self, commit_id: &str) -> Result<(), GitError> {
+        self.inner
+            .lock()
+            .expect("mock lock")
+            .amend_staged_changes(commit_id)
     }
 
     fn delete_commits(&mut self, commit_ids: &[String]) -> Result<(), GitError> {
@@ -2079,6 +2093,29 @@ fn harness_commits_reword_selected() {
             batch_selected_screen_rows: &[],
             git_ops_contains: &["reword:abc1234:init project updated", "refresh"],
             git_state_contains: &["summary: \"init project updated\""],
+        },
+    ));
+}
+
+#[test]
+fn harness_commits_amend_staged_changes_into_selected_commit() {
+    let inputs = [
+        UiAction::RefreshAll,
+        UiAction::FocusNext,
+        UiAction::FocusNext,
+        UiAction::AmendStagedChanges,
+    ];
+    assert_scenario(MockScenario::new(
+        "commits_amend_staged_changes_selected",
+        staged_commit_fixture(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &["Amended staged changes into abc1234"],
+            screen_not_contains: &["staged.txt"],
+            selected_screen_rows: &[],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["amend:abc1234", "refresh"],
+            git_state_contains: &["files: []", "summary: \"init project\""],
         },
     ));
 }

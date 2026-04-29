@@ -838,6 +838,7 @@ mod tests {
         let files_shortcuts = shortcuts_for_state(&state);
         assert!(!files_shortcuts.contains("keys(files):"));
         assert!(files_shortcuts.contains("d discard"));
+        assert!(files_shortcuts.contains("A amend"));
         assert!(files_shortcuts.contains("c commit"));
         assert!(files_shortcuts.contains("s stash"));
         assert!(files_shortcuts.contains("D reset"));
@@ -854,7 +855,7 @@ mod tests {
         state.work.details.details_pending = false;
         assert_eq!(
             shortcuts_for_state(&state),
-            "enter commits  space checkout  n new  d delete  r rebase  p pull  P push"
+            "p pull  P push  enter commits  space checkout  n new  d delete  r rebase"
         );
 
         update(
@@ -886,7 +887,7 @@ mod tests {
                 &state,
                 crate::frame::RenderContext { spinner_frame: 2 },
             ),
-            "\\ loading: refresh  space stage/unstage  d discard  c commit  s stash  D reset  enter expand  p pull  P push"
+            "\\ loading: refresh  p pull  P push  space stage/unstage  d discard  A amend  c commit  s stash  D reset  enter expand"
         );
 
         state.work.mutation.operation_pending = Some("push".to_string());
