@@ -8,6 +8,7 @@ use ratatui::widgets::{
 use ratatui::{Frame, Terminal};
 
 use crate::branch_modal::render_branch_modals;
+use crate::command_palette_modal::render_command_palette_modal;
 use crate::discard_modal::render_discard_modal;
 use crate::editor_modal::render_editor_modal;
 use crate::frame::{RenderContext, TerminalBuffer, TerminalCursor, TerminalSize, buffer_to_text};
@@ -47,6 +48,7 @@ pub fn render_terminal_with_context(
     render_discard_modal(frame, state, root[0]);
     render_sync_modal(frame, state, root[0]);
     render_stage_all_modal(frame, state, root[0]);
+    render_command_palette_modal(frame, state, root[0]);
 }
 
 pub fn render_terminal_text(state: &AppContext, size: TerminalSize) -> String {

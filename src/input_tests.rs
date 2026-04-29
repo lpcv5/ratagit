@@ -68,6 +68,12 @@ mod tests {
         state
     }
 
+    fn active_command_palette_state() -> AppContext {
+        let mut state = AppContext::default();
+        state.ui.command_palette.active = true;
+        state
+    }
+
     fn active_branch_create_state() -> AppContext {
         let mut state = AppContext::default();
         state.ui.branches.create.active = true;
@@ -136,6 +142,11 @@ mod tests {
         stage_all.ui.search.active = true;
         stage_all.ui.search.scope = stage_all.active_search_scope();
         assert_eq!(input_mode_for_state(&stage_all), InputMode::StageAllConfirm);
+
+        let mut palette = active_command_palette_state();
+        palette.ui.search.active = true;
+        palette.ui.search.scope = palette.active_search_scope();
+        assert_eq!(input_mode_for_state(&palette), InputMode::CommandPalette);
     }
 
     #[test]
@@ -267,6 +278,10 @@ mod tests {
         assert_eq!(
             map_key(&state, KeyCode::Char('/')),
             Some(UiAction::StartSearch)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Char('?')),
+            Some(UiAction::OpenCommandPalette)
         );
         assert_eq!(
             map_key(&state, KeyCode::Char('v')),
@@ -549,6 +564,58 @@ mod tests {
         state.ui.focus = PanelFocus::Details;
         assert_eq!(map_key(&state, KeyCode::Char('p')), Some(UiAction::Pull));
         assert_eq!(map_key(&state, KeyCode::Char('P')), Some(UiAction::Push));
+    }
+
+    #[test]
+    fn command_palette_maps_navigation_execute_cancel_and_quit() {
+        let mut state = active_command_palette_state();
+
+        assert_eq!(input_mode_for_state(&state), InputMode::CommandPalette);
+        assert_eq!(
+            map_key(&state, KeyCode::Down),
+            Some(UiAction::MoveCommandPaletteDown)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Char('j')),
+            Some(UiAction::MoveCommandPaletteDown)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Up),
+            Some(UiAction::MoveCommandPaletteUp)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Char('k')),
+            Some(UiAction::MoveCommandPaletteUp)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Enter),
+            Some(UiAction::ExecuteCommandPalette {
+                details_scroll_lines: TEST_DETAILS_SCROLL_LINES,
+                details_visible_lines: TEST_DETAILS_VISIBLE_LINES
+            })
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Esc),
+            Some(UiAction::CloseCommandPalette)
+        );
+        assert_eq!(map_key(&state, KeyCode::Char('d')), None);
+
+        state.ui.command_palette.selected = state
+            .command_palette_entries()
+            .iter()
+            .position(|entry| entry.command == ratagit_core::CommandPaletteCommand::Quit)
+            .expect("palette should contain quit");
+        assert_eq!(
+            key_effect_for_key(
+                &state,
+                KeyCode::Enter,
+                KeyModifiers::NONE,
+                TEST_DETAILS_SCROLL_LINES,
+                TEST_DETAILS_VISIBLE_LINES,
+                TEST_LEFT_PANEL_VISIBLE_LINES,
+            ),
+            KeyEffect::Quit
+        );
     }
 
     #[test]

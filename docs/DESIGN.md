@@ -6,7 +6,7 @@ ratagit MVP uses a left-nav workspace interface with six visible panels:
 
 1. Left column (top -> bottom): Files, Branches, Commits, Stash
 2. Right column (top -> bottom): Details, Log
-3. Bottom row: unframed current-focused-panel Git operation shortcuts only
+3. Bottom row: unframed current-focused-panel local shortcuts plus `? commands`
 
 The focused panel is highlighted with a border/title accent. Selectable rows use
 color-only cursor highlighting: the selected row is highlighted only inside the
@@ -45,6 +45,9 @@ Focus model:
   before continuing
 - `AppContext.ui.search` stores generic panel-scoped search input, query, matches,
   and current match index for searchable left panels and subpanels
+- `AppContext.ui.command_palette` stores the active executable command palette
+  state and selected command index; command entries are derived
+  deterministically from the current `AppContext`
 - `AppContext.repo.commits.items` stores commit rows while
   `AppContext.ui.commits` stores cursor selection, visual selection anchor, and
   selected visual range
@@ -85,6 +88,10 @@ Focus model:
   routing keys. Global `Ctrl+U` / `Ctrl+D` are handled first, modal/editor/search
   modes keep priority over panel shortcuts, and confirmed search queries can
   fall through to panel shortcuts only after search-specific keys are checked.
+- `?` maps to `OpenCommandPalette` from normal panel and confirmed-search-query
+  flow. While the command palette is active, `j` / `k`, arrows, `Enter`, and
+  `Esc` are handled by command-palette actions before panel shortcuts; `Enter`
+  executes the selected command and closes the palette.
 - `Ctrl+U` and `Ctrl+D` map to global Details scroll actions before
   mode-specific key handling. The input layer computes the step as
   `max(1, details_content_height * 2 / 5)` from the current terminal layout.
@@ -122,10 +129,15 @@ Search interaction:
 - Search input replaces the bottom shortcuts with `search: <query>` until
   `Enter` confirms or `Esc` cancels.
 - Normal bottom shortcuts list only panel-specific common actions; baseline
-  navigation/search keys are omitted, including the generic `v` visual-mode
-  entry key.
+  navigation/search keys and global sync keys are omitted, including the generic
+  `v` visual-mode entry key. The final normal shortcut is always `? commands`.
 - Bottom shortcut keys render as reverse-video badges, omit the old
   `keys(panel):` prefix, and use spaces instead of pipe separators.
+- The command palette renders as an executable modal with `Local commands` and
+  `Global commands` sections. Section labels are not selectable; command rows
+  are selectable, viewported around the selected command when the list is taller
+  than the modal content, and execute existing reducer actions rather than
+  introducing separate command semantics.
 - Matches are case-insensitive and deterministic:
   - Files and Commit Files match full paths
   - Branches match branch names

@@ -49,6 +49,11 @@ Navigation rules:
 - `Ctrl+U` / `Ctrl+D` scrolls the Details panel content by 2/5 of its content height regardless of the current focus
 - `p` pulls and `P` pushes from normal mode regardless of focused panel; active
   text inputs and confirmation modals keep their own key handling
+- `?` opens an executable command palette with `Local commands` and
+  `Global commands` sections; `j` / `k` or arrows select an entry, `Enter`
+  runs it, and `Esc` closes it
+- `p` and `P` are also available from the command palette's Global commands
+  section, alongside refresh, focus navigation, Details scrolling, and quit
 - `A` amends staged changes into `HEAD` by default; when the main Commits panel
   is focused, it amends staged changes into the selected commit and replays
   newer private commits
@@ -61,7 +66,9 @@ Navigation rules:
 - all panel titles show numbered focus hints: `[1]..[6]`; in the terminal UI
   these hints render as badge-style reverse-video numbers
 - top branch/focus/status summary is hidden to prioritize panels
-- bottom keys row is unframed and shows only Git operation shortcuts for the current focused panel
+- bottom keys row is unframed and shows only local shortcuts for the current
+  focused panel plus `? commands`; global sync commands remain bound but are
+  shown in the command palette instead of the bottom row
 - when background work is pending, the bottom keys row prefixes shortcuts with
   an animated `/|\\-` spinner and loading type such as `loading: refresh`;
   without pending work, the row remains unchanged

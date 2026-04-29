@@ -37,6 +37,92 @@ pub enum SearchScope {
     CommitFiles,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandPaletteSection {
+    Local,
+    Global,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandPaletteCommand {
+    Pull,
+    Push,
+    RefreshAll,
+    FocusPrev,
+    FocusNext,
+    FocusPanel(PanelFocus),
+    DetailsScrollUp,
+    DetailsScrollDown,
+    Quit,
+    ToggleSelectedDirectory,
+    ToggleSelectedFileStage,
+    EnterFilesMultiSelect,
+    OpenCommitEditor,
+    OpenStashEditor,
+    OpenResetMenu,
+    OpenDiscardConfirm,
+    AmendStagedChanges,
+    OpenBranchCommitsPanel,
+    CloseBranchCommitsPanel,
+    OpenBranchCommitFilesPanel,
+    CloseBranchCommitFilesPanel,
+    ToggleBranchCommitFilesDirectory,
+    OpenBranchCreateInput,
+    EnterBranchesMultiSelect,
+    CheckoutSelectedBranch,
+    OpenBranchDeleteMenu,
+    OpenBranchRebaseMenu,
+    OpenCommitFilesPanel,
+    CloseCommitFilesPanel,
+    ToggleCommitFilesDirectory,
+    EnterCommitFilesMultiSelect,
+    EnterCommitsMultiSelect,
+    SquashSelectedCommits,
+    FixupSelectedCommits,
+    OpenCommitRewordEditor,
+    DeleteSelectedCommits,
+    CheckoutSelectedCommitDetached,
+    StashPopSelected,
+}
+
+impl CommandPaletteCommand {
+    pub fn is_quit(self) -> bool {
+        self == Self::Quit
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CommandPaletteEntry {
+    pub section: CommandPaletteSection,
+    pub key: &'static str,
+    pub label: &'static str,
+    pub command: CommandPaletteCommand,
+}
+
+impl CommandPaletteEntry {
+    const fn local(key: &'static str, label: &'static str, command: CommandPaletteCommand) -> Self {
+        Self {
+            section: CommandPaletteSection::Local,
+            key,
+            label,
+            command,
+        }
+    }
+
+    const fn global(
+        key: &'static str,
+        label: &'static str,
+        command: CommandPaletteCommand,
+    ) -> Self {
+        Self {
+            section: CommandPaletteSection::Global,
+            key,
+            label,
+            command,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct SearchState {
     pub active: bool,
@@ -44,6 +130,12 @@ pub struct SearchState {
     pub query: String,
     pub matches: Vec<String>,
     pub current_match: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct CommandPaletteState {
+    pub active: bool,
+    pub selected: usize,
 }
 
 impl SearchState {
@@ -729,6 +821,7 @@ pub struct UiState {
     pub focus: PanelFocus,
     pub last_left_focus: PanelFocus,
     pub search: SearchState,
+    pub command_palette: CommandPaletteState,
     pub files: FilesUiState,
     pub commits: CommitsUiState,
     pub branches: BranchesUiState,
@@ -747,6 +840,7 @@ impl Default for UiState {
             focus: PanelFocus::Files,
             last_left_focus: PanelFocus::Files,
             search: SearchState::default(),
+            command_palette: CommandPaletteState::default(),
             files: FilesUiState::default(),
             commits: CommitsUiState::default(),
             branches: BranchesUiState::default(),
@@ -797,6 +891,108 @@ impl AppContext {
             PanelFocus::Details | PanelFocus::Log => None,
         }
     }
+
+    pub fn command_palette_entries(&self) -> Vec<CommandPaletteEntry> {
+        let mut entries = local_command_palette_entries(self);
+        entries.extend(global_command_palette_entries());
+        entries
+    }
+
+    pub fn selected_command_palette_entry(&self) -> Option<CommandPaletteEntry> {
+        self.command_palette_entries()
+            .get(self.ui.command_palette.selected)
+            .copied()
+    }
+}
+
+fn local_command_palette_entries(state: &AppContext) -> Vec<CommandPaletteEntry> {
+    use CommandPaletteCommand as Command;
+    use CommandPaletteEntry as Entry;
+
+    match state.ui.focus {
+        PanelFocus::Files => vec![
+            Entry::local("space", "stage/unstage", Command::ToggleSelectedFileStage),
+            Entry::local("d", "discard", Command::OpenDiscardConfirm),
+            Entry::local("A", "amend", Command::AmendStagedChanges),
+            Entry::local("c", "commit", Command::OpenCommitEditor),
+            Entry::local("s", "stash", Command::OpenStashEditor),
+            Entry::local("D", "reset", Command::OpenResetMenu),
+            Entry::local("enter", "expand", Command::ToggleSelectedDirectory),
+            Entry::local("v", "visual select", Command::EnterFilesMultiSelect),
+        ],
+        PanelFocus::Branches => match state.ui.branches.subview {
+            BranchesSubview::List => vec![
+                Entry::local("enter", "commits", Command::OpenBranchCommitsPanel),
+                Entry::local("space", "checkout", Command::CheckoutSelectedBranch),
+                Entry::local("n", "new branch", Command::OpenBranchCreateInput),
+                Entry::local("d", "delete branch", Command::OpenBranchDeleteMenu),
+                Entry::local("r", "rebase", Command::OpenBranchRebaseMenu),
+                Entry::local("v", "visual select", Command::EnterBranchesMultiSelect),
+            ],
+            BranchesSubview::Commits => vec![
+                Entry::local("enter", "files", Command::OpenBranchCommitFilesPanel),
+                Entry::local("Esc", "back", Command::CloseBranchCommitsPanel),
+                Entry::local("v", "visual select", Command::EnterCommitsMultiSelect),
+            ],
+            BranchesSubview::CommitFiles => vec![
+                Entry::local("enter", "expand", Command::ToggleBranchCommitFilesDirectory),
+                Entry::local("Esc", "back", Command::CloseBranchCommitFilesPanel),
+                Entry::local("v", "visual select", Command::EnterCommitFilesMultiSelect),
+            ],
+        },
+        PanelFocus::Commits if state.ui.commits.files.active => vec![
+            Entry::local("Esc", "back", Command::CloseCommitFilesPanel),
+            Entry::local("enter", "expand", Command::ToggleCommitFilesDirectory),
+            Entry::local("v", "visual select", Command::EnterCommitFilesMultiSelect),
+        ],
+        PanelFocus::Commits => vec![
+            Entry::local("enter", "files", Command::OpenCommitFilesPanel),
+            Entry::local("A", "amend", Command::AmendStagedChanges),
+            Entry::local("s", "squash", Command::SquashSelectedCommits),
+            Entry::local("f", "fixup", Command::FixupSelectedCommits),
+            Entry::local("r", "reword", Command::OpenCommitRewordEditor),
+            Entry::local("d", "delete", Command::DeleteSelectedCommits),
+            Entry::local("space", "detach", Command::CheckoutSelectedCommitDetached),
+            Entry::local("c", "commit", Command::OpenCommitEditor),
+            Entry::local("v", "visual select", Command::EnterCommitsMultiSelect),
+        ],
+        PanelFocus::Stash => vec![Entry::local("O", "stash pop", Command::StashPopSelected)],
+        PanelFocus::Details | PanelFocus::Log => Vec::new(),
+    }
+}
+
+fn global_command_palette_entries() -> Vec<CommandPaletteEntry> {
+    use CommandPaletteCommand as Command;
+    use CommandPaletteEntry as Entry;
+
+    vec![
+        Entry::global("p", "pull", Command::Pull),
+        Entry::global("P", "push", Command::Push),
+        Entry::global("r", "refresh", Command::RefreshAll),
+        Entry::global("h", "focus previous", Command::FocusPrev),
+        Entry::global("l", "focus next", Command::FocusNext),
+        Entry::global("1", "focus files", Command::FocusPanel(PanelFocus::Files)),
+        Entry::global(
+            "2",
+            "focus branches",
+            Command::FocusPanel(PanelFocus::Branches),
+        ),
+        Entry::global(
+            "3",
+            "focus commits",
+            Command::FocusPanel(PanelFocus::Commits),
+        ),
+        Entry::global("4", "focus stash", Command::FocusPanel(PanelFocus::Stash)),
+        Entry::global(
+            "5",
+            "focus details",
+            Command::FocusPanel(PanelFocus::Details),
+        ),
+        Entry::global("6", "focus log", Command::FocusPanel(PanelFocus::Log)),
+        Entry::global("Ctrl+U", "details scroll up", Command::DetailsScrollUp),
+        Entry::global("Ctrl+D", "details scroll down", Command::DetailsScrollDown),
+        Entry::global("q", "quit", Command::Quit),
+    ]
 }
 
 #[cfg(test)]
@@ -817,6 +1013,8 @@ mod tests {
         assert_eq!(state.ui.focus, PanelFocus::Files);
         assert_eq!(state.ui.last_left_focus, PanelFocus::Files);
         assert!(!state.ui.search.active);
+        assert!(!state.ui.command_palette.active);
+        assert_eq!(state.ui.command_palette.selected, 0);
         assert_eq!(state.ui.details.scroll_offset, 0);
 
         assert!(!state.work.refresh.refresh_pending);

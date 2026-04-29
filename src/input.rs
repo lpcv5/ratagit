@@ -25,6 +25,7 @@ pub(crate) enum InputMode {
     DiscardConfirm,
     ForcePushConfirm,
     StageAllConfirm,
+    CommandPalette,
     SearchInput,
     SearchQuery,
     Panel,
@@ -55,6 +56,8 @@ pub(crate) fn input_mode_for_state(state: &AppContext) -> InputMode {
         InputMode::ForcePushConfirm
     } else if state.ui.stage_all_confirm.active {
         InputMode::StageAllConfirm
+    } else if state.ui.command_palette.active {
+        InputMode::CommandPalette
     } else if search_input_is_current(state) {
         InputMode::SearchInput
     } else if search_query_is_current(state) {
@@ -73,6 +76,10 @@ pub(crate) fn key_effect_for_key(
     left_panel_visible_lines: usize,
 ) -> KeyEffect {
     if code == KeyCode::Char('c') && modifiers.contains(KeyModifiers::CONTROL) {
+        return KeyEffect::Quit;
+    }
+
+    if command_palette_selection_quits(state, code, modifiers) {
         return KeyEffect::Quit;
     }
 
@@ -121,6 +128,13 @@ fn ui_action_for_key(
         InputMode::DiscardConfirm => return discard_confirm_action_for_key(code),
         InputMode::ForcePushConfirm => return force_push_action_for_key(code),
         InputMode::StageAllConfirm => return stage_all_action_for_key(code),
+        InputMode::CommandPalette => {
+            return command_palette_action_for_key(
+                code,
+                details_scroll_lines,
+                details_visible_lines,
+            );
+        }
         InputMode::SearchInput => return search_input_action_for_key(code),
         InputMode::SearchQuery => {
             if let Some(action) = search_query_action_for_key(code) {
@@ -278,6 +292,23 @@ fn stage_all_action_for_key(code: KeyCode) -> Option<UiAction> {
     }
 }
 
+fn command_palette_action_for_key(
+    code: KeyCode,
+    details_scroll_lines: usize,
+    details_visible_lines: usize,
+) -> Option<UiAction> {
+    match code {
+        KeyCode::Enter => Some(UiAction::ExecuteCommandPalette {
+            details_scroll_lines,
+            details_visible_lines,
+        }),
+        KeyCode::Esc => Some(UiAction::CloseCommandPalette),
+        KeyCode::Up | KeyCode::Char('k') => Some(UiAction::MoveCommandPaletteUp),
+        KeyCode::Down | KeyCode::Char('j') => Some(UiAction::MoveCommandPaletteDown),
+        _ => None,
+    }
+}
+
 fn search_input_action_for_key(code: KeyCode) -> Option<UiAction> {
     match code {
         KeyCode::Enter => Some(UiAction::ConfirmSearch),
@@ -304,6 +335,10 @@ fn panel_action_for_key(
 ) -> Option<UiAction> {
     if state.active_search_scope().is_some() && code == KeyCode::Char('/') {
         return Some(UiAction::StartSearch);
+    }
+
+    if code == KeyCode::Char('?') {
+        return Some(UiAction::OpenCommandPalette);
     }
 
     match code {
@@ -460,6 +495,19 @@ fn panel_action_for_key(
         KeyCode::Tab | KeyCode::BackTab => None,
         _ => None,
     }
+}
+
+fn command_palette_selection_quits(
+    state: &AppContext,
+    code: KeyCode,
+    modifiers: KeyModifiers,
+) -> bool {
+    code == KeyCode::Enter
+        && modifiers == KeyModifiers::NONE
+        && input_mode_for_state(state) == InputMode::CommandPalette
+        && state
+            .selected_command_palette_entry()
+            .is_some_and(|entry| entry.command.is_quit())
 }
 
 fn search_input_is_current(state: &AppContext) -> bool {

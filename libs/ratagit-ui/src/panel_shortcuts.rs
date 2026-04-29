@@ -121,7 +121,7 @@ pub(crate) fn shortcut_line_for_state(state: &AppContext) -> ShortcutLine {
     }
 
     match state.ui.focus {
-        PanelFocus::Files => sync_segments(&[
+        PanelFocus::Files => local_segments(&[
             ("space", "stage/unstage"),
             ("d", "discard"),
             ("A", "amend"),
@@ -131,21 +131,21 @@ pub(crate) fn shortcut_line_for_state(state: &AppContext) -> ShortcutLine {
             ("enter", "expand"),
         ]),
         PanelFocus::Branches => match state.ui.branches.subview {
-            BranchesSubview::List => sync_segments(&[
+            BranchesSubview::List => local_segments(&[
                 ("enter", "commits"),
                 ("space", "checkout"),
                 ("n", "new"),
                 ("d", "delete"),
                 ("r", "rebase"),
             ]),
-            BranchesSubview::Commits => sync_segments(&[("enter", "files"), ("Esc", "back")]),
-            BranchesSubview::CommitFiles => sync_segments(&[("enter", "expand"), ("Esc", "back")]),
+            BranchesSubview::Commits => local_segments(&[("enter", "files"), ("Esc", "back")]),
+            BranchesSubview::CommitFiles => local_segments(&[("enter", "expand"), ("Esc", "back")]),
         },
         PanelFocus::Commits => {
             if state.ui.commits.files.active {
-                sync_segments(&[("Esc", "back")])
+                local_segments(&[("Esc", "back")])
             } else {
-                sync_segments(&[
+                local_segments(&[
                     ("enter", "files"),
                     ("A", "amend"),
                     ("s", "squash"),
@@ -156,14 +156,14 @@ pub(crate) fn shortcut_line_for_state(state: &AppContext) -> ShortcutLine {
                 ])
             }
         }
-        PanelFocus::Stash => sync_segments(&[("O", "stash pop")]),
-        PanelFocus::Details | PanelFocus::Log => sync_segments(&[]),
+        PanelFocus::Stash => local_segments(&[("O", "stash pop")]),
+        PanelFocus::Details | PanelFocus::Log => local_segments(&[]),
     }
 }
 
-fn sync_segments(values: &[(&'static str, &'static str)]) -> ShortcutLine {
-    let mut combined = vec![("p", "pull"), ("P", "push")];
-    combined.extend_from_slice(values);
+fn local_segments(values: &[(&'static str, &'static str)]) -> ShortcutLine {
+    let mut combined = values.to_vec();
+    combined.push(("?", "commands"));
     segments(&combined)
 }
 

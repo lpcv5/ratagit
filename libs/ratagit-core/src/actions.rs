@@ -13,15 +13,34 @@ pub enum UiAction {
     CancelForcePush,
     ConfirmStageAll,
     CancelStageAll,
+    OpenCommandPalette,
+    CloseCommandPalette,
+    MoveCommandPaletteUp,
+    MoveCommandPaletteDown,
+    ExecuteCommandPalette {
+        details_scroll_lines: usize,
+        details_visible_lines: usize,
+    },
     FocusNext,
     FocusPrev,
-    FocusPanel { panel: crate::PanelFocus },
+    FocusPanel {
+        panel: crate::PanelFocus,
+    },
     MoveUp,
     MoveDown,
-    MoveUpInViewport { visible_lines: usize },
-    MoveDownInViewport { visible_lines: usize },
-    DetailsScrollUp { lines: usize },
-    DetailsScrollDown { lines: usize, visible_lines: usize },
+    MoveUpInViewport {
+        visible_lines: usize,
+    },
+    MoveDownInViewport {
+        visible_lines: usize,
+    },
+    DetailsScrollUp {
+        lines: usize,
+    },
+    DetailsScrollDown {
+        lines: usize,
+        visible_lines: usize,
+    },
     ToggleSelectedDirectory,
     ToggleSelectedFileStage,
     EnterFilesMultiSelect,
@@ -61,7 +80,9 @@ pub enum UiAction {
     EditorInsertNewline,
     EditorConfirm,
     EditorCancel,
-    CreateCommit { message: String },
+    CreateCommit {
+        message: String,
+    },
     OpenBranchCommitsPanel,
     CloseBranchCommitsPanel,
     OpenBranchCommitFilesPanel,
@@ -90,7 +111,10 @@ pub enum UiAction {
     BranchCreateMoveCursorEnd,
     ConfirmBranchCreate,
     CancelBranchCreate,
-    CreateBranch { name: String, start_point: String },
+    CreateBranch {
+        name: String,
+        start_point: String,
+    },
     CheckoutSelectedBranch,
     OpenBranchDeleteMenu,
     MoveBranchDeleteMenuUp,
@@ -108,7 +132,9 @@ pub enum UiAction {
     CancelBranchRebaseMenu,
     ConfirmAutoStash,
     CancelAutoStash,
-    StashPush { message: String },
+    StashPush {
+        message: String,
+    },
     StashPopSelected,
 }
 

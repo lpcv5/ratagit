@@ -5,8 +5,9 @@ use crate::search::{
 };
 use crate::text_edit::CursorMove;
 use crate::{
-    Action, AppContext, BranchesSubview, Command, GitResult, PanelFocus, UiAction, branches,
-    commit_workflow, details, editor, navigation, results, toggle_commit_files_directory, worktree,
+    Action, AppContext, BranchesSubview, Command, CommandPaletteCommand, GitResult, PanelFocus,
+    UiAction, branches, commit_workflow, details, editor, navigation, results,
+    toggle_commit_files_directory, worktree,
 };
 
 pub fn update(state: &mut AppContext, action: Action) -> Vec<Command> {
@@ -31,6 +32,28 @@ fn update_ui(state: &mut AppContext, action: UiAction) -> Vec<Command> {
             state.ui.push_force_confirm.reason.clear();
             Vec::new()
         }
+        UiAction::OpenCommandPalette => {
+            state.ui.command_palette.active = true;
+            clamp_command_palette_selection(state);
+            Vec::new()
+        }
+        UiAction::CloseCommandPalette => {
+            state.ui.command_palette.active = false;
+            Vec::new()
+        }
+        UiAction::MoveCommandPaletteUp => {
+            state.ui.command_palette.selected = state.ui.command_palette.selected.saturating_sub(1);
+            Vec::new()
+        }
+        UiAction::MoveCommandPaletteDown => {
+            let max = state.command_palette_entries().len().saturating_sub(1);
+            state.ui.command_palette.selected = (state.ui.command_palette.selected + 1).min(max);
+            Vec::new()
+        }
+        UiAction::ExecuteCommandPalette {
+            details_scroll_lines,
+            details_visible_lines,
+        } => execute_command_palette_selection(state, details_scroll_lines, details_visible_lines),
         UiAction::OpenCommitEditor => {
             editor::open_commit_editor(state);
             Vec::new()
@@ -439,6 +462,91 @@ fn move_selection_in_viewport_and_refresh_details(
     let mut commands = navigation::move_selection_in_viewport(state, move_up, visible_lines);
     commands.extend(details::refresh_on_navigation(state));
     commands
+}
+
+fn clamp_command_palette_selection(state: &mut AppContext) {
+    let max = state.command_palette_entries().len().saturating_sub(1);
+    state.ui.command_palette.selected = state.ui.command_palette.selected.min(max);
+}
+
+fn execute_command_palette_selection(
+    state: &mut AppContext,
+    details_scroll_lines: usize,
+    details_visible_lines: usize,
+) -> Vec<Command> {
+    let action = state.selected_command_palette_entry().and_then(|entry| {
+        command_palette_action(entry.command, details_scroll_lines, details_visible_lines)
+    });
+    state.ui.command_palette.active = false;
+    if let Some(action) = action {
+        update_ui(state, action)
+    } else {
+        Vec::new()
+    }
+}
+
+fn command_palette_action(
+    command: CommandPaletteCommand,
+    details_scroll_lines: usize,
+    details_visible_lines: usize,
+) -> Option<UiAction> {
+    match command {
+        CommandPaletteCommand::Pull => Some(UiAction::Pull),
+        CommandPaletteCommand::Push => Some(UiAction::Push),
+        CommandPaletteCommand::RefreshAll => Some(UiAction::RefreshAll),
+        CommandPaletteCommand::FocusPrev => Some(UiAction::FocusPrev),
+        CommandPaletteCommand::FocusNext => Some(UiAction::FocusNext),
+        CommandPaletteCommand::FocusPanel(panel) => Some(UiAction::FocusPanel { panel }),
+        CommandPaletteCommand::DetailsScrollUp => Some(UiAction::DetailsScrollUp {
+            lines: details_scroll_lines,
+        }),
+        CommandPaletteCommand::DetailsScrollDown => Some(UiAction::DetailsScrollDown {
+            lines: details_scroll_lines,
+            visible_lines: details_visible_lines,
+        }),
+        CommandPaletteCommand::Quit => None,
+        CommandPaletteCommand::ToggleSelectedDirectory => Some(UiAction::ToggleSelectedDirectory),
+        CommandPaletteCommand::ToggleSelectedFileStage => Some(UiAction::ToggleSelectedFileStage),
+        CommandPaletteCommand::EnterFilesMultiSelect => Some(UiAction::EnterFilesMultiSelect),
+        CommandPaletteCommand::OpenCommitEditor => Some(UiAction::OpenCommitEditor),
+        CommandPaletteCommand::OpenStashEditor => Some(UiAction::OpenStashEditor),
+        CommandPaletteCommand::OpenResetMenu => Some(UiAction::OpenResetMenu),
+        CommandPaletteCommand::OpenDiscardConfirm => Some(UiAction::OpenDiscardConfirm),
+        CommandPaletteCommand::AmendStagedChanges => Some(UiAction::AmendStagedChanges),
+        CommandPaletteCommand::OpenBranchCommitsPanel => Some(UiAction::OpenBranchCommitsPanel),
+        CommandPaletteCommand::CloseBranchCommitsPanel => Some(UiAction::CloseBranchCommitsPanel),
+        CommandPaletteCommand::OpenBranchCommitFilesPanel => {
+            Some(UiAction::OpenBranchCommitFilesPanel)
+        }
+        CommandPaletteCommand::CloseBranchCommitFilesPanel => {
+            Some(UiAction::CloseBranchCommitFilesPanel)
+        }
+        CommandPaletteCommand::ToggleBranchCommitFilesDirectory => {
+            Some(UiAction::ToggleBranchCommitFilesDirectory)
+        }
+        CommandPaletteCommand::OpenBranchCreateInput => Some(UiAction::OpenBranchCreateInput),
+        CommandPaletteCommand::EnterBranchesMultiSelect => Some(UiAction::EnterBranchesMultiSelect),
+        CommandPaletteCommand::CheckoutSelectedBranch => Some(UiAction::CheckoutSelectedBranch),
+        CommandPaletteCommand::OpenBranchDeleteMenu => Some(UiAction::OpenBranchDeleteMenu),
+        CommandPaletteCommand::OpenBranchRebaseMenu => Some(UiAction::OpenBranchRebaseMenu),
+        CommandPaletteCommand::OpenCommitFilesPanel => Some(UiAction::OpenCommitFilesPanel),
+        CommandPaletteCommand::CloseCommitFilesPanel => Some(UiAction::CloseCommitFilesPanel),
+        CommandPaletteCommand::ToggleCommitFilesDirectory => {
+            Some(UiAction::ToggleCommitFilesDirectory)
+        }
+        CommandPaletteCommand::EnterCommitFilesMultiSelect => {
+            Some(UiAction::EnterCommitFilesMultiSelect)
+        }
+        CommandPaletteCommand::EnterCommitsMultiSelect => Some(UiAction::EnterCommitsMultiSelect),
+        CommandPaletteCommand::SquashSelectedCommits => Some(UiAction::SquashSelectedCommits),
+        CommandPaletteCommand::FixupSelectedCommits => Some(UiAction::FixupSelectedCommits),
+        CommandPaletteCommand::OpenCommitRewordEditor => Some(UiAction::OpenCommitRewordEditor),
+        CommandPaletteCommand::DeleteSelectedCommits => Some(UiAction::DeleteSelectedCommits),
+        CommandPaletteCommand::CheckoutSelectedCommitDetached => {
+            Some(UiAction::CheckoutSelectedCommitDetached)
+        }
+        CommandPaletteCommand::StashPopSelected => Some(UiAction::StashPopSelected),
+    }
 }
 
 pub(crate) fn push_notice(state: &mut AppContext, message: &str) {

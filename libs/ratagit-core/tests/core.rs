@@ -1,14 +1,14 @@
 use ratagit_core::{
     Action, AppContext, AutoStashOperation, BranchDeleteChoice, BranchDeleteMode, BranchEntry,
     BranchInputMode, BranchRebaseChoice, BranchesSubview, COMMITS_PAGE_SIZE,
-    COMMITS_PREFETCH_THRESHOLD, Command, CommandRefreshKey, CommitEditorIntent, CommitEntry,
-    CommitField, CommitFileDiffPath, CommitFileDiffTarget, CommitFileEntry, CommitFileStatus,
-    CommitHashStatus, CommitInputMode, DetailsRequest, DetailsRequestId, DetailsRequestTarget,
-    EditorKind, FileDiffTarget, FileEntry, FileInputMode, FilesSnapshot, GitErrorKind, GitFailure,
-    GitResult, PanelFocus, RefreshTarget, RepoSnapshot, ResetChoice, ResetMode, SearchScope,
-    StageAllOperation, StashEntry, StashScope, UiAction, debounce_key_for_command,
-    refresh_key_for_command, refresh_tree_projection, selected_commit_file_targets, selected_row,
-    update,
+    COMMITS_PREFETCH_THRESHOLD, Command, CommandPaletteCommand, CommandRefreshKey,
+    CommitEditorIntent, CommitEntry, CommitField, CommitFileDiffPath, CommitFileDiffTarget,
+    CommitFileEntry, CommitFileStatus, CommitHashStatus, CommitInputMode, DetailsRequest,
+    DetailsRequestId, DetailsRequestTarget, EditorKind, FileDiffTarget, FileEntry, FileInputMode,
+    FilesSnapshot, GitErrorKind, GitFailure, GitResult, PanelFocus, RefreshTarget, RepoSnapshot,
+    ResetChoice, ResetMode, SearchScope, StageAllOperation, StashEntry, StashScope, UiAction,
+    debounce_key_for_command, refresh_key_for_command, refresh_tree_projection,
+    selected_commit_file_targets, selected_row, update,
 };
 
 fn commit_entry(id: &str, summary: &str) -> CommitEntry {
@@ -71,6 +71,14 @@ fn context_with_focus(focus: PanelFocus) -> AppContext {
     state.ui.focus = focus;
     state.ui.last_left_focus = focus;
     state
+}
+
+fn select_palette_command(state: &mut AppContext, command: CommandPaletteCommand) {
+    state.ui.command_palette.selected = state
+        .command_palette_entries()
+        .iter()
+        .position(|entry| entry.command == command)
+        .unwrap_or_else(|| panic!("palette should contain command: {command:?}"));
 }
 
 #[test]
@@ -181,6 +189,83 @@ fn mutation_work_transitions_without_touching_read_work_states() {
         state.work.mutation.last_completed_command.as_deref(),
         Some("pull")
     );
+}
+
+#[test]
+fn command_palette_opens_moves_clamps_and_closes() {
+    let mut state = AppContext::default();
+
+    assert!(!state.ui.command_palette.active);
+    assert_eq!(state.ui.command_palette.selected, 0);
+
+    assert!(update(&mut state, Action::Ui(UiAction::OpenCommandPalette)).is_empty());
+    assert!(state.ui.command_palette.active);
+    assert_eq!(
+        state
+            .selected_command_palette_entry()
+            .map(|entry| entry.command),
+        Some(CommandPaletteCommand::ToggleSelectedFileStage)
+    );
+
+    assert!(update(&mut state, Action::Ui(UiAction::MoveCommandPaletteUp)).is_empty());
+    assert_eq!(state.ui.command_palette.selected, 0);
+
+    let last = state.command_palette_entries().len() - 1;
+    for _ in 0..state.command_palette_entries().len() + 3 {
+        update(&mut state, Action::Ui(UiAction::MoveCommandPaletteDown));
+    }
+    assert_eq!(state.ui.command_palette.selected, last);
+
+    assert!(update(&mut state, Action::Ui(UiAction::CloseCommandPalette)).is_empty());
+    assert!(!state.ui.command_palette.active);
+}
+
+#[test]
+fn command_palette_executes_global_commands_and_closes() {
+    let mut state = AppContext::default();
+    update(&mut state, Action::Ui(UiAction::OpenCommandPalette));
+    select_palette_command(&mut state, CommandPaletteCommand::Pull);
+
+    let commands = update(
+        &mut state,
+        Action::Ui(UiAction::ExecuteCommandPalette {
+            details_scroll_lines: 4,
+            details_visible_lines: 10,
+        }),
+    );
+
+    assert_eq!(commands, vec![Command::Pull]);
+    assert!(!state.ui.command_palette.active);
+
+    update(&mut state, Action::Ui(UiAction::OpenCommandPalette));
+    select_palette_command(&mut state, CommandPaletteCommand::RefreshAll);
+    let commands = update(
+        &mut state,
+        Action::Ui(UiAction::ExecuteCommandPalette {
+            details_scroll_lines: 4,
+            details_visible_lines: 10,
+        }),
+    );
+    assert_eq!(commands, Command::refresh_all_commands());
+}
+
+#[test]
+fn command_palette_executes_local_commands() {
+    let mut state = AppContext::default();
+    update(&mut state, Action::Ui(UiAction::OpenCommandPalette));
+    select_palette_command(&mut state, CommandPaletteCommand::OpenResetMenu);
+
+    let commands = update(
+        &mut state,
+        Action::Ui(UiAction::ExecuteCommandPalette {
+            details_scroll_lines: 4,
+            details_visible_lines: 10,
+        }),
+    );
+
+    assert!(commands.is_empty());
+    assert!(!state.ui.command_palette.active);
+    assert!(state.ui.reset_menu.active);
 }
 
 #[test]

@@ -1,4 +1,5 @@
 mod branch_modal;
+mod command_palette_modal;
 mod discard_modal;
 mod editor_modal;
 mod frame;

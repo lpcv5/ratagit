@@ -1,6 +1,6 @@
 ---
 source: libs/ratagit-ui/tests/snapshots.rs
-assertion_line: 515
+assertion_line: 546
 expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30, },)"
 ---
 ╭ 1  󰈙 Files ────────────────────╮ 5   Details ───────────────────────────────────────────────────╮
@@ -32,4 +32,4 @@ expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30,
 │ 4   Stash                     │                                                                 │
 │ stash@{0} WIP on main: local t│                                                                 │
 ╰────────────────────────────────╯─────────────────────────────────────────────────────────────────╯
-/ loading: details   p  pull   P  push   space  stage/unstage   d  discard   A  amend   c  commit
+/ loading: details   space  stage/unstage   d  discard   A  amend   c  commit   s  stash   D  reset

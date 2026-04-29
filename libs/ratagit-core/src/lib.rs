@@ -57,6 +57,7 @@ pub use state::{
     BranchDeleteConfirmState, BranchDeleteMenuState, BranchDeleteMode, BranchEntry,
     BranchForceDeleteConfirmState, BranchInputMode, BranchRebaseChoice, BranchRebaseMenuState,
     BranchesSubview, BranchesUiState, CachedBranchLog, CachedCommitDiff, CachedFilesDiff,
+    CommandPaletteCommand, CommandPaletteEntry, CommandPaletteSection, CommandPaletteState,
     CommitEditorIntent, CommitEntry, CommitField, CommitFileDiffPath, CommitFileDiffTarget,
     CommitHashStatus, CommitInputMode, CommitsUiState, DetailsRepoState, DetailsRequest,
     DetailsRequestId, DetailsRequestTarget, DiscardConfirmState, EditorKind, EditorState,

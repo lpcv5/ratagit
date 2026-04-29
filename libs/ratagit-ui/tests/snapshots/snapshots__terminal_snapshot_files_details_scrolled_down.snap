@@ -1,6 +1,6 @@
 ---
 source: libs/ratagit-ui/tests/snapshots.rs
-assertion_line: 542
+assertion_line: 573
 expression: "render_terminal_text(&state, size)"
 ---
 ╭ 1  󰈙 Files ─────────────╮ 5   Details ──────────────────────────────────────╮
@@ -16,4 +16,4 @@ expression: "render_terminal_text(&state, size)"
 │ 4   Stash              │  notice=Ready                                      │
 │ stash@{0} WIP on main: │                                                    │
 ╰─────────────────────────╯────────────────────────────────────────────────────╯
- p  pull   P  push   space  stage/unstage   d  discard   A  amend   c  commit
+ space  stage/unstage   d  discard   A  amend   c  commit   s  stash   D  reset

@@ -323,6 +323,8 @@ fn snapshots_empty_repo_80x24() {
     assert!(!text.contains("<none>"));
     assert!(text.contains("space stage/unstage"));
     assert!(!text.contains("keys(files):"));
+    assert!(!text.contains("p pull"));
+    assert!(!text.contains("P push"));
     assert_no_cursor_marker(&text);
     assert!(!text.contains("tab/shift+tab"));
     assert!(!text.contains("1-6 focus panel"));
@@ -344,7 +346,9 @@ fn bottom_keys_show_loading_indicator_before_shortcuts() {
     );
 
     assert!(screen.contains("- loading: refresh"));
-    assert!(screen.contains("- loading: refresh   p  pull   P  push"));
+    assert!(screen.contains("- loading: refresh   space  stage/unstage"));
+    assert!(!screen.contains("p  pull"));
+    assert!(!screen.contains("P  push"));
 }
 
 #[test]
@@ -490,6 +494,24 @@ fn snapshots_files_shortcuts_include_reset_menu_key() {
     )
     .as_text();
     assert!(text.contains("D reset"));
+    assert!(text.contains("? commands"));
+    assert!(!text.contains("p pull"));
+    assert!(!text.contains("P push"));
+}
+
+#[test]
+fn terminal_snapshot_command_palette_modal() {
+    let mut state = AppContext::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+    update(&mut state, Action::Ui(UiAction::OpenCommandPalette));
+
+    insta::assert_snapshot!(render_terminal_text(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    ));
 }
 
 #[test]
@@ -1360,7 +1382,7 @@ fn terminal_snapshot_focus_and_keys_follow_actions() {
         screen
             .lines()
             .last()
-            .is_some_and(|line| line.starts_with("/ loading: details   p  pull   P  push"))
+            .is_some_and(|line| line.starts_with("/ loading: details   enter  files"))
     );
 }
 

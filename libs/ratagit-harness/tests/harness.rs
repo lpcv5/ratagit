@@ -395,11 +395,38 @@ fn harness_global_pull_and_push_sync_repo() {
         fixture_empty_repo(),
         &inputs,
         ScenarioExpectations {
-            screen_contains: &["p  pull"],
-            screen_not_contains: &[],
+            screen_contains: &["space  stage/unstage"],
+            screen_not_contains: &["p  pull", "P  push"],
             selected_screen_rows: &[],
             batch_selected_screen_rows: &[],
             git_ops_contains: &["pull", "push"],
+            git_state_contains: &["current_branch: \"main\""],
+        },
+    ));
+}
+
+#[test]
+fn harness_command_palette_executes_global_pull() {
+    let inputs = [
+        UiAction::FocusPanel {
+            panel: PanelFocus::Details,
+        },
+        UiAction::OpenCommandPalette,
+        UiAction::ExecuteCommandPalette {
+            details_scroll_lines: 4,
+            details_visible_lines: 10,
+        },
+    ];
+    assert_scenario(MockScenario::new(
+        "command_palette_executes_global_pull",
+        fixture_empty_repo(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &["?  commands"],
+            screen_not_contains: &["p  pull", "P  push", "Local commands"],
+            selected_screen_rows: &[],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["pull"],
             git_state_contains: &["current_branch: \"main\""],
         },
     ));
@@ -1265,8 +1292,8 @@ fn harness_stash_search_selects_match_without_git_operation() {
         fixture_dirty_repo(),
         &inputs,
         ScenarioExpectations {
-            screen_contains: &["stash@{0} WIP on main", "p  pull"],
-            screen_not_contains: &["/ search"],
+            screen_contains: &["stash@{0} WIP on main", "?  commands"],
+            screen_not_contains: &["/ search", "p  pull", "P  push"],
             selected_screen_rows: &["stash@{0}"],
             batch_selected_screen_rows: &[],
             git_ops_contains: &["refresh"],
