@@ -73,6 +73,23 @@ All UI tests must use fixtures:
 
 ---
 
+## Real Git Smoke Harness
+
+`ratagit-harness` includes a small real-Git smoke layer that drives the
+synchronous harness runtime with `HybridGitBackend`. These tests verify the path
+from `UiAction` to `Command`, real backend mutation, refreshed `AppContext`, and
+final repository state.
+
+- Keep real-Git smoke tests small and focused on high-risk drift between the
+  mock backend and `HybridGitBackend`.
+- Use isolated repositories under `tmp/git-tests/` and clean them up with RAII.
+- Skip gracefully when `git` is unavailable.
+- Assert both harness state and real Git state.
+- Do not include these tests in `docs/harness/SCENARIOS.md`; that manifest
+  indexes mock `fn harness_*` scenarios only.
+
+---
+
 ## Core And Runtime Testing
 
 - Command metadata tests must cover every `Command` variant for log labels,

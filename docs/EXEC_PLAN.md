@@ -4,6 +4,43 @@
 
 Repository-wide maintainability and extensibility optimization.
 
+### Active Harness Engineering V3: Real Git Smoke Harness
+
+Status: completed
+
+Goal:
+
+- add a small real-Git smoke layer in `ratagit-harness` to catch drift between
+  mock harness behavior and `HybridGitBackend`
+- validate the synchronous harness path from `UiAction` through `Command`,
+  `HybridGitBackend`, `AppContext`, and real repository state
+
+Deliverables:
+
+- create isolated temporary repositories under `tmp/git-tests/`
+- add smoke tests for stage/unstage, stash push/pop including untracked files,
+  multiline commit creation, and dirty branch checkout with auto-stash
+- keep these tests independent from the mock scenario manifest
+- update testing docs with the real-Git smoke harness role
+
+Validation:
+
+```text
+cargo fmt
+cargo clippy --workspace --lib --bins -- -D warnings
+cargo test -p ratagit-harness
+cargo test -p ratagit-git
+cargo test
+```
+
+Results:
+
+- added `ratagit-harness` real-Git smoke coverage for stage/unstage, stash
+  push/pop including untracked files, multiline commit creation, and dirty branch
+  checkout with auto-stash
+- documented the real-Git smoke harness role in `docs/TESTING.md`
+- validation passed with the commands above
+
 ## Goal
 
 - keep the existing unidirectional data flow working while reducing long-term
