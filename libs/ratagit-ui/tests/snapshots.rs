@@ -18,14 +18,13 @@ use ratagit_ui::{
 };
 use ratatui::style::{Color, Modifier, Style};
 
-const MODAL_ACTIVE: Color = Color::Rgb(0x7a, 0xa2, 0xf7);
-const MODAL_TEXT: Color = Color::Rgb(0xc0, 0xca, 0xf5);
-const MODAL_DIM: Color = Color::Rgb(0x56, 0x5f, 0x89);
-const MODAL_BORDER: Color = Color::Rgb(0x3b, 0x42, 0x61);
-const MODAL_SURFACE: Color = Color::Rgb(0x24, 0x28, 0x3b);
-const MODAL_DANGER: Color = Color::Rgb(0xf7, 0x76, 0x8e);
-const MODAL_WARNING: Color = Color::Rgb(0xe0, 0xaf, 0x68);
-const MODAL_SCRIM: Color = Color::Rgb(0x16, 0x1b, 0x2d);
+const MODAL_ACTIVE: Color = Color::Cyan;
+const MODAL_TEXT: Color = Color::White;
+const MODAL_DIM: Color = Color::DarkGray;
+const MODAL_BORDER: Color = Color::DarkGray;
+const MODAL_SURFACE: Color = Color::Blue;
+const MODAL_DANGER: Color = Color::Red;
+const MODAL_WARNING: Color = Color::Yellow;
 
 fn render_snapshot(snapshot: ratagit_core::RepoSnapshot, size: TerminalSize) -> String {
     let mut state = AppContext::default();
@@ -165,6 +164,14 @@ fn loading_text_cells<'a>(
     buffer: &'a ratagit_ui::TerminalBuffer,
     needle: &str,
 ) -> Vec<&'a ratatui::buffer::Cell> {
+    text_cells(buffer, needle, "loading text")
+}
+
+fn text_cells<'a>(
+    buffer: &'a ratagit_ui::TerminalBuffer,
+    needle: &str,
+    label: &str,
+) -> Vec<&'a ratatui::buffer::Cell> {
     let width = buffer.area.width as usize;
     assert!(width > 0);
     let Some(cells) = buffer.content().chunks(width).find(|cells| {
@@ -174,7 +181,7 @@ fn loading_text_cells<'a>(
             .collect::<String>()
             .contains(needle)
     }) else {
-        panic!("loading text not found: {needle}");
+        panic!("{label} not found: {needle}");
     };
     let line = cells.iter().map(|cell| cell.symbol()).collect::<String>();
     let byte_start = line.find(needle).expect("needle should be present");
@@ -2009,7 +2016,7 @@ fn terminal_buffer_styles_modal_titles_by_tone() {
         .fg(MODAL_TEXT)
         .bg(MODAL_SURFACE)
         .add_modifier(Modifier::BOLD);
-    let scrim_style = Style::default().fg(MODAL_DIM).bg(MODAL_SCRIM);
+    let scrim_style = Style::default().fg(MODAL_DIM);
 
     let mut commit_state = AppContext::default();
     apply_refreshed_with_mock_details(&mut commit_state, fixture_dirty_repo());
@@ -2092,4 +2099,70 @@ fn terminal_buffer_styles_modal_titles_by_tone() {
         "Discard selected file changes?",
         danger_style
     ));
+}
+
+#[test]
+fn terminal_buffer_styles_editor_inputs_with_border_focus_only() {
+    let input_text_style = Style::default();
+    let active_input_title_style = Style::default()
+        .fg(MODAL_ACTIVE)
+        .add_modifier(Modifier::BOLD);
+
+    let mut commit_state = AppContext::default();
+    apply_refreshed_with_mock_details(&mut commit_state, fixture_dirty_repo());
+    update(&mut commit_state, Action::Ui(UiAction::OpenCommitEditor));
+    for ch in "feat".chars() {
+        update(&mut commit_state, Action::Ui(UiAction::EditorInputChar(ch)));
+    }
+    let commit_buffer = render_terminal_buffer(
+        &commit_state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    );
+    assert!(buffer_contains_text_with_exact_style(
+        &commit_buffer,
+        "Subject",
+        active_input_title_style
+    ));
+    assert!(buffer_contains_text_with_exact_style(
+        &commit_buffer,
+        "feat",
+        input_text_style
+    ));
+    assert!(
+        text_cells(&commit_buffer, "feat", "commit subject")
+            .iter()
+            .all(|cell| cell.bg == Color::Reset)
+    );
+
+    let mut stash_state = AppContext::default();
+    apply_refreshed_with_mock_details(&mut stash_state, fixture_dirty_repo());
+    update(&mut stash_state, Action::Ui(UiAction::OpenStashEditor));
+    for ch in "pick".chars() {
+        update(&mut stash_state, Action::Ui(UiAction::EditorInputChar(ch)));
+    }
+    let stash_buffer = render_terminal_buffer(
+        &stash_state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    );
+    assert!(buffer_contains_text_with_exact_style(
+        &stash_buffer,
+        "Title",
+        active_input_title_style
+    ));
+    assert!(buffer_contains_text_with_exact_style(
+        &stash_buffer,
+        "pick",
+        input_text_style
+    ));
+    assert!(
+        text_cells(&stash_buffer, "pick", "stash title")
+            .iter()
+            .all(|cell| cell.bg == Color::Reset)
+    );
 }

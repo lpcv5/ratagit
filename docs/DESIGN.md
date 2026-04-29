@@ -402,13 +402,21 @@ Panel projection and row source:
   the terminal width up to the shared modal maximum. Modal outer frames target
   three fifths of the terminal height while preserving small-terminal minimum
   and maximum clamps.
-- `ratagit-ui` exposes modal colors through a default theme palette with
-  semantic roles for active accent, text, dim text, background, selected
-  surface, border, warning, danger, and success so additional palettes can be
-  added without rewriting modal renderers.
+- `ratagit-ui` uses a shared semantic theme for panels, rows, loading text, and
+  modals. The current default follows the main terminal UI palette: terminal
+  default foreground/background, yellow focus and cursor selection, blue batch
+  selection, dark-gray muted chrome, and standard warning/danger/success/info
+  colors. Modal overlays use the same default palette instead of a separate
+  Tokyo Night background.
+- Additional built-in palettes, including Tokyo Night, are kept as theme
+  candidates. Configuration-file theme selection is a future TODO and is not
+  active in the current runtime.
 - Modal tones are semantic and text-backed: editor modals use an info accent,
   repository reset uses a warning accent, and discard confirmation uses a danger
   accent while still rendering explicit warning text.
+- Input modal focus is border-only: the active input field uses the modal tone
+  for its border and title, while input text keeps the normal terminal
+  foreground/background.
 - Confirmation modals share the `Confirm` title with the tone icon, center a
   primary question plus secondary consequence text, and render compact
   AppContext-derived details below the message.

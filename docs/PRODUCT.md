@@ -117,6 +117,8 @@ Files panel rules:
 - `c` opens a commit editor modal from Files focus
   - `message` and `body` fields are editable
   - the active field shows a real terminal cursor
+  - the active field is highlighted by its border, not by changing the text
+    background
   - `Left` / `Right` / `Home` / `End` moves the cursor within the active field
   - `Tab` / `Shift+Tab` switches active field
   - `Ctrl+J` inserts a newline in body
@@ -128,6 +130,8 @@ Files panel rules:
   - normal mode stashes all current changes, including untracked files
   - visual multi-select mode stashes only selected target paths
   - the title field shows a real terminal cursor
+  - the title field is highlighted by its border, not by changing the text
+    background
   - `Left` / `Right` / `Home` / `End` moves the cursor within the title
   - `Enter` confirms, `Esc` cancels
 - `D` opens a repository reset menu from Files focus

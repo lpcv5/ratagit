@@ -7,9 +7,9 @@ use ratatui::widgets::{
 };
 
 use crate::theme::{
-    modal_active_input_style, modal_background_style, modal_border_style, modal_danger_style,
-    modal_footer_style, modal_info_style, modal_muted_style, modal_scrim_style,
-    modal_selected_row_style, modal_text_style, modal_warning_style,
+    modal_background_style, modal_border_style, modal_danger_style, modal_footer_style,
+    modal_info_style, modal_muted_style, modal_scrim_style, modal_selected_row_style,
+    modal_text_style, modal_warning_style,
 };
 
 pub(crate) type ModalAction = (&'static str, &'static str);
@@ -392,11 +392,6 @@ pub(crate) fn render_input_block(
     } else {
         modal_border_style()
     };
-    let content_style = if active {
-        modal_active_input_style()
-    } else {
-        modal_text_style()
-    };
     let content = if lines.is_empty() {
         vec![Line::from(" ")]
     } else {
@@ -404,7 +399,7 @@ pub(crate) fn render_input_block(
     };
     frame.render_widget(
         Paragraph::new(content)
-            .style(content_style)
+            .style(modal_text_style())
             .wrap(Wrap { trim: false })
             .block(
                 Block::default()

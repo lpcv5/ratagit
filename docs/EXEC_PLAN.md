@@ -2,53 +2,50 @@
 
 ## Active Slice
 
-Name: Modal Height Three Fifths
+Name: Modal Input Border Focus
 
 Status: completed
 
 ## Problem
 
-After widening and centering modals, fullscreen modal height still needs to feel
-more substantial. The shared modal shell should make the modal outer frame use
-three fifths of the terminal height instead of content-driven heights.
+Commit and stash editor modals highlight the active input field by applying a
+background color to the input content. Input focus should be communicated by the
+field border only, so typed text keeps the same background as inactive inputs.
 
 ## Smallest Slice
 
-- update shared modal geometry so modal outer height targets 3/5 of the
-  terminal area
-- preserve minimum-height and small-terminal clamping behavior
-- keep the existing centered placement so the taller modal remains centered
-- refresh deterministic UI snapshots and cursor assertions affected by the
-  taller modal
-- update design documentation for modal height behavior
+- remove active-input content background styling from the shared modal input
+  block
+- preserve active border/title highlighting for commit, stash, and branch-name
+  input modals
+- add focused buffer-style coverage for active editor input content and borders
+- update product/design docs for the border-only input focus behavior
 
 ## Non-Goals
 
-- no AppContext, reducer, command, runtime, or Git behavior changes
-- no business-modal API changes
-- no changes to modal width behavior
+- no AppContext, reducer, input-routing, command, runtime, or Git changes
+- no modal geometry, cursor positioning, text wrapping, or footer changes
+- no changes to selectable choice-list highlighting
 
 ## Expected Files
 
 - `docs/EXEC_PLAN.md`
 - `docs/DESIGN.md`
-- `libs/ratagit-ui/src/modal.rs`
+- `docs/PRODUCT.md`
+- `libs/ratagit-ui/src/theme.rs`
 - `libs/ratagit-ui/tests/snapshots.rs`
-- `libs/ratagit-ui/tests/snapshots/*.snap`
-- `libs/ratagit-harness/tests/harness.rs`
 
 ## Tests
 
-- update focused modal geometry unit tests to assert 3/5 height at normal and
-  fullscreen terminal sizes
-- refresh affected modal snapshots
-- update cursor/harness assertions that depend on modal vertical geometry
+- assert active commit editor field text has no focus background
+- assert active stash editor field text has no focus background
+- assert active input field borders/titles still use the modal tone style
 
 ## Harness Decision
 
-No new harness scenario is needed. The existing fullscreen discard confirmation
-scenario covers user-visible modal rendering at wide/fullscreen size, and this
-slice changes only shared modal geometry.
+No new harness scenario is needed. Existing editor modal harness scenarios cover
+opening and cursor behavior; this slice changes only buffer styles, which are
+covered by focused UI tests.
 
 ## Validation
 
@@ -60,13 +57,11 @@ cargo test
 
 ## Completion Evidence
 
-- updated shared modal geometry so modal outer frames target three fifths of
-  the terminal height
-- preserved centered placement, width behavior, and small-terminal clamps
-- updated focused modal geometry tests for the new 3/5 height behavior
-- refreshed affected modal snapshots, including the fullscreen modal snapshot
-- updated UI and harness cursor assertions affected by the taller shared modal
-- updated design documentation for three-fifths modal height
+- removed the active input content background from the shared modal input block
+- preserved modal tone highlighting on active input borders and titles
+- added buffer-style coverage for commit subject and stash title text keeping
+  reset backgrounds while active
+- updated product and design docs for border-only input focus
 - validation passed: `cargo fmt`
 - validation passed: `cargo clippy --workspace --lib --bins -- -D warnings`
 - validation passed: `cargo test`
