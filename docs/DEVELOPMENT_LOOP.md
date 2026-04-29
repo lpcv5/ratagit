@@ -4,7 +4,7 @@
 
 Each iteration must follow:
 
-1. Define goal (exec plan)
+1. Define goal (active exec plan before implementation edits)
 2. Implement minimal change
 3. Add tests
 4. Run:
@@ -17,6 +17,11 @@ Each iteration must follow:
 ---
 
 ## Exec Plan Sizing
+
+The active plan lives in `docs/EXEC_PLAN.md`. It is the current slice contract:
+what will change, what will not change, how tests/harness are decided, and what
+validation proves completion. Keep historical notes outside this file so agents
+can read the active work without scanning old phases.
 
 Tiny changes do not require a standalone exec plan. Use a short goal, change
 summary, and validation note for typo fixes, comments, fixture polish, and
@@ -32,6 +37,19 @@ runtime behavior, or needs multiple slices.
 Do not expand a tiny task into a full harness workflow unless risk is discovered
 while working. User-visible behavior changes still require harness coverage;
 harness infrastructure changes require targeted harness/unit tests.
+
+Before the first code edit, fill in:
+
+- problem
+- smallest slice
+- non-goals
+- expected files
+- tests
+- harness decision
+- validation commands
+
+When marking a slice completed, add completion evidence that names the actual
+changes and validation commands that passed.
 
 ---
 

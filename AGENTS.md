@@ -10,13 +10,23 @@ The system is spec-driven and harness-validated.
 
 For every feature:
 
-1. Create or update an exec plan
+1. Create or update the active exec plan before the first implementation edit
 2. Implement smallest vertical slice
 3. Add unit tests
 4. Add snapshot tests (if UI changes)
 5. Add or update harness scenario
 6. Run all checks
 7. Fix failures before continuing
+
+The active plan lives in `docs/EXEC_PLAN.md`. It is a scope contract for the
+current slice, not a completion log. Cross-layer changes, user-visible behavior,
+Git state semantics, UI rendering, runtime behavior, harness infrastructure, and
+multi-step refactors must fill in the active-slice fields before code changes.
+
+Tiny/internal changes can use a short active plan and may explicitly say why no
+new harness scenario is needed. Do not expand a typo, comment, fixture cleanup,
+or narrow test-only change into a broad feature workflow unless new risk is
+discovered.
 
 ---
 
@@ -56,6 +66,9 @@ For every feature:
   - UI
   - Git state
 - Failures must produce artifacts
+- Harness infrastructure changes require focused harness/unit tests, not broad
+  product-flow scenarios unless rendered behavior, input handling, or Git state
+  semantics change
 
 ---
 
