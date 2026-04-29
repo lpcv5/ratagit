@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use ratagit_core::{
     AppContext, BranchDeleteMode, BranchEntry, Command, CommitEntry, CommitFileDiffTarget,
@@ -82,7 +82,7 @@ impl RecordingBackend {
         self.record(format!("{label}-start:{}", self.id));
         let active = self.mutation_active.fetch_add(1, Ordering::SeqCst) + 1;
         self.max_mutation_active.fetch_max(active, Ordering::SeqCst);
-        std::thread::sleep(Duration::from_millis(20));
+        std::thread::yield_now();
     }
 
     fn finish_mutation(&self, label: &str) {
@@ -285,7 +285,7 @@ fn split_refresh_results_apply_while_files_refresh_is_blocked() {
         .recv_timeout(Duration::from_secs(2))
         .expect("files refresh should start");
 
-    wait_for_state(&mut runtime, |runtime| {
+    wait_for_state(&mut runtime, "split refresh partial results", |runtime| {
         !runtime.state.repo.branches.items.is_empty()
             && !runtime.state.repo.commits.items.is_empty()
             && !runtime.state.repo.stash.items.is_empty()
@@ -295,7 +295,7 @@ fn split_refresh_results_apply_while_files_refresh_is_blocked() {
     assert_eq!(runtime.state.repo.status.refresh_count, 0);
     assert!(runtime.state.work.refresh.refresh_pending);
     release_tx.send(()).expect("files refresh should release");
-    wait_for_quiet_tick(&mut runtime);
+    spin_runtime_ticks(&mut runtime, "files refresh release", 10);
 }
 
 #[test]
@@ -381,13 +381,15 @@ fn stale_read_results_are_dropped_after_a_queued_mutation() {
     runtime.process_commands(vec![Command::StageFiles {
         paths: vec!["missing.txt".to_string()],
     }]);
-    wait_for_state(&mut runtime, |runtime| {
-        runtime.state.repo.status.last_error.is_some()
-    });
+    wait_for_state(
+        &mut runtime,
+        "stage failure after queued mutation",
+        |runtime| runtime.state.repo.status.last_error.is_some(),
+    );
 
     assert_eq!(runtime.state.repo.status.refresh_count, 0);
     release_tx.send(()).expect("refresh should release");
-    wait_for_quiet_tick(&mut runtime);
+    spin_runtime_ticks(&mut runtime, "stale read result after release", 10);
 
     assert_eq!(runtime.state.repo.status.refresh_count, 0);
     assert!(
@@ -427,8 +429,7 @@ fn debounce_window_defers_and_coalesces_async_read_commands() {
     ]);
 
     assert!(log.lock().expect("recording log lock").is_empty());
-    std::thread::sleep(Duration::from_millis(70));
-    runtime.tick();
+    runtime.flush_all_debounced_for_test();
 
     let entries = wait_for_log_count(&log, 1);
     assert_eq!(entries, vec!["details-diff:0:latest.txt".to_string()]);
@@ -491,33 +492,49 @@ fn wait_for_entries(
     log: &Arc<Mutex<Vec<String>>>,
     done: impl Fn(&[String]) -> bool,
 ) -> Vec<String> {
-    for _ in 0..100 {
+    let started_at = Instant::now();
+    let mut attempts = 0;
+    while started_at.elapsed() <= Duration::from_secs(2) {
         let entries = log.lock().expect("recording log lock").clone();
         if done(&entries) {
             return entries;
         }
-        std::thread::sleep(Duration::from_millis(10));
+        attempts += 1;
+        std::thread::yield_now();
     }
-    panic!("timed out waiting for log entries");
+    let entries = log.lock().expect("recording log lock").clone();
+    panic!("timed out waiting for log entries after {attempts} attempts; entries={entries:#?}");
 }
 
 fn wait_for_state(
     runtime: &mut AsyncRuntime<RecordingBackend>,
+    label: &str,
     done: impl Fn(&AsyncRuntime<RecordingBackend>) -> bool,
 ) {
-    for _ in 0..100 {
+    let started_at = Instant::now();
+    let mut attempts = 0;
+    while started_at.elapsed() <= Duration::from_secs(2) {
         runtime.tick();
         if done(runtime) {
             return;
         }
-        std::thread::sleep(Duration::from_millis(10));
+        attempts += 1;
+        std::thread::yield_now();
     }
-    panic!("timed out waiting for runtime state");
+    panic!(
+        "timed out waiting for {label} after {attempts} attempts\nstate={:#?}\nscreen=\n{}",
+        runtime.state,
+        runtime.render_terminal_text()
+    );
 }
 
-fn wait_for_quiet_tick(runtime: &mut AsyncRuntime<RecordingBackend>) {
-    for _ in 0..10 {
+fn spin_runtime_ticks(runtime: &mut AsyncRuntime<RecordingBackend>, label: &str, count: usize) {
+    for _ in 0..count {
         runtime.tick();
-        std::thread::sleep(Duration::from_millis(10));
+        std::thread::yield_now();
     }
+    assert!(
+        !runtime.render_terminal_text().is_empty(),
+        "runtime screen should stay renderable after {label}"
+    );
 }

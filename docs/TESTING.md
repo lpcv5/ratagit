@@ -86,6 +86,9 @@ All UI tests must use fixtures:
 - Scheduler tests use injected `Instant` values and must not sleep. They cover
   debounce, latest-details wins, refresh coalescing, and preservation of mutation
   boundaries.
+- Async runtime and harness tests must use explicit wait helpers or channel
+  barriers instead of bare sleeps. Wait helpers must include the waited label,
+  current `AppContext`, and rendered screen text in timeout failures.
 - Git backend capability tests cover read, write, history-rewrite, shared mock,
   boxed dispatch, and root `GitBackend` compatibility.
 - Split-refresh tests must verify that full refresh preserves `FilesSnapshot`
@@ -158,4 +161,4 @@ On failure, store:
 - giant scenarios
 - implicit assertions
 - relying on timing
-- sleeping in scheduler tests
+- bare sleeps in scheduler, async runtime, or harness tests

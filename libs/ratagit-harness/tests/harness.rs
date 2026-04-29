@@ -2,14 +2,14 @@ use std::collections::BTreeMap;
 use std::io;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use ratagit_core::{
     Action, AppContext, BranchDeleteMode, BranchEntry, CommitEntry, FileDiffTarget, FilesSnapshot,
     GitResult, PanelFocus, RepoSnapshot, ResetMode, StashEntry, UiAction, update,
 };
 use ratagit_git::{
-    GitBackendHistoryRewrite, GitBackendRead, GitBackendWrite, GitError, MockGitBackend,
+    GitBackend, GitBackendHistoryRewrite, GitBackendRead, GitBackendWrite, GitError, MockGitBackend,
 };
 use ratagit_harness::{
     AsyncRuntime, MockScenario, Runtime, ScenarioExpectations, run_mock_scenario,
@@ -76,6 +76,43 @@ fn huge_repo_backend(mut fixture: RepoSnapshot) -> MockGitBackend {
     fixture.files.clear();
     fixture.status_summary = "status scan skipped: 1000000 indexed files".to_string();
     MockGitBackend::with_huge_repo_status_metadata(fixture, 1_000_000)
+}
+
+fn wait_for_runtime_state<B: GitBackend + Send + 'static>(
+    runtime: &mut AsyncRuntime<B>,
+    label: &str,
+    done: impl Fn(&AsyncRuntime<B>) -> bool,
+) {
+    let started_at = Instant::now();
+    let mut attempts = 0;
+    while started_at.elapsed() <= Duration::from_secs(2) {
+        runtime.tick();
+        if done(runtime) {
+            return;
+        }
+        attempts += 1;
+        std::thread::yield_now();
+    }
+    panic!(
+        "timed out waiting for {label} after {attempts} attempts\nstate={:#?}\nscreen=\n{}",
+        runtime.state(),
+        runtime.render_terminal_text()
+    );
+}
+
+fn spin_runtime_ticks<B: GitBackend + Send + 'static>(
+    runtime: &mut AsyncRuntime<B>,
+    label: &str,
+    count: usize,
+) {
+    for _ in 0..count {
+        runtime.tick();
+        std::thread::yield_now();
+    }
+    assert!(
+        !runtime.render_terminal_text().is_empty(),
+        "runtime screen should stay renderable after {label}"
+    );
 }
 
 #[derive(Debug, Clone)]
@@ -562,16 +599,11 @@ fn async_runtime_renders_loading_before_refresh_finishes() {
         .recv_timeout(Duration::from_secs(2))
         .expect("refresh should start on worker thread");
 
-    for _ in 0..100 {
-        runtime.tick();
-        if !runtime.state().repo.branches.items.is_empty()
+    wait_for_runtime_state(&mut runtime, "split refresh partial results", |runtime| {
+        !runtime.state().repo.branches.items.is_empty()
             && !runtime.state().repo.commits.items.is_empty()
             && !runtime.state().repo.stash.items.is_empty()
-        {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
+    });
 
     let loading_screen = runtime.render_terminal_text();
     assert!(loading_screen.contains("work=refreshing repository"));
@@ -583,13 +615,9 @@ fn async_runtime_renders_loading_before_refresh_finishes() {
     assert_eq!(runtime.state().repo.status.refresh_count, 0);
 
     release_tx.send(()).expect("refresh should be releasable");
-    for _ in 0..100 {
-        runtime.tick();
-        if runtime.state().repo.status.refresh_count == 1 {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
+    wait_for_runtime_state(&mut runtime, "files refresh completion", |runtime| {
+        runtime.state().repo.status.refresh_count == 1
+    });
 
     assert_eq!(runtime.state().repo.status.refresh_count, 1);
     assert!(runtime.render_terminal_text().contains("README.md"));
@@ -633,20 +661,15 @@ fn async_runtime_drops_blocked_read_result_after_queued_mutation() {
     runtime.dispatch_ui(UiAction::CreateCommit {
         message: String::new(),
     });
-    for _ in 0..100 {
-        runtime.tick();
-        if runtime
+    wait_for_runtime_state(&mut runtime, "create commit failure", |runtime| {
+        runtime
             .state()
             .repo
             .status
             .last_error
             .as_deref()
             .is_some_and(|error| error.contains("Failed to create commit"))
-        {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
+    });
     assert!(
         runtime
             .state()
@@ -658,10 +681,7 @@ fn async_runtime_drops_blocked_read_result_after_queued_mutation() {
     );
 
     release_tx.send(()).expect("refresh should be releasable");
-    for _ in 0..10 {
-        runtime.tick();
-        std::thread::sleep(Duration::from_millis(10));
-    }
+    spin_runtime_ticks(&mut runtime, "stale read result after release", 10);
 
     assert_eq!(
         runtime.state().repo.status.refresh_count,

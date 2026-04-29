@@ -97,6 +97,12 @@ impl<B: GitBackend> Runtime<B> {
         let queue = self.scheduler.flush_due_at(Instant::now());
         self.process_immediate_queue(queue);
     }
+
+    #[cfg(test)]
+    fn flush_all_debounced_for_test(&mut self) {
+        let queue = self.scheduler.flush_all_for_test();
+        self.process_immediate_queue(queue);
+    }
 }
 
 #[derive(Debug)]
@@ -593,8 +599,7 @@ mod tests {
                 .any(|op| op.starts_with("details-diff:"))
         );
 
-        std::thread::sleep(Duration::from_millis(80));
-        runtime.tick();
+        runtime.flush_all_debounced_for_test();
 
         let diff_operations = runtime
             .backend()

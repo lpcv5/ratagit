@@ -63,6 +63,20 @@ impl CommandScheduler {
         }
         queue
     }
+
+    #[cfg(test)]
+    pub(crate) fn flush_all_for_test(&mut self) -> VecDeque<Command> {
+        let mut pending = std::mem::take(&mut self.debounced)
+            .into_values()
+            .collect::<Vec<_>>();
+        pending.sort_by_key(|pending| pending.due_at);
+
+        let mut queue = VecDeque::new();
+        for pending in pending {
+            enqueue_coalesced_command(&mut queue, pending.command);
+        }
+        queue
+    }
 }
 
 pub(crate) fn enqueue_coalesced_command(queue: &mut VecDeque<Command>, command: Command) {

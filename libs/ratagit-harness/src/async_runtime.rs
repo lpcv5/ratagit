@@ -198,6 +198,12 @@ impl<B: GitBackend + Send + 'static> AsyncRuntime<B> {
         self.dispatch_queue(queue);
     }
 
+    #[cfg(test)]
+    fn flush_all_debounced_for_test(&mut self) {
+        let queue = self.scheduler.flush_all_for_test();
+        self.dispatch_queue(queue);
+    }
+
     fn drain_results(&mut self) {
         loop {
             match self.result_rx.try_recv() {
