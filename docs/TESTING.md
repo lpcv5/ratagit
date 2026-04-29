@@ -114,6 +114,16 @@ Every user-visible behavior change needs a harness scenario. Internal-only
 architecture changes can be covered by unit/integration tests when rendered UI
 and Git state are intentionally unchanged.
 
+Harness infrastructure changes, such as artifact/reporting improvements or
+scenario manifest tooling, should use focused harness/unit tests. They do not
+need broad product-flow scenarios unless rendered behavior, user input handling,
+or Git state changes.
+
+The scenario index is stored in `docs/harness/SCENARIOS.md`. It is generated
+from `libs/ratagit-harness/tests/harness.rs` by scanning `fn harness_*`
+definitions and is checked by tests. Update it whenever harness scenario names
+are added, removed, or renamed.
+
 ---
 
 ## Failure Artifacts
@@ -126,6 +136,9 @@ On failure, store:
 - Git operation trace
 - final mock Git state
 - input sequence
+- structured `failure_report.json` with schema version, expectations, typed
+  assertion failures, Git operation lines, debug dumps, and sibling artifact
+  filenames
 
 ---
 
@@ -135,6 +148,8 @@ On failure, store:
 - one behavior per scenario
 - scenarios must be composable
 - fixtures must be reusable
+- failure artifacts must stay agent-readable
+- scenario manifest changes must be reviewed with harness changes
 
 ---
 

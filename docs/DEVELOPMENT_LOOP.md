@@ -16,6 +16,25 @@ Each iteration must follow:
 
 ---
 
+## Exec Plan Sizing
+
+Tiny changes do not require a standalone exec plan. Use a short goal, change
+summary, and validation note for typo fixes, comments, fixture polish, and
+internal-only test cleanup.
+
+Use a lightweight plan for one-module or one-behavior changes. Include the goal,
+acceptance criteria, test impact, harness impact, and validation commands.
+
+Use a full exec plan when the change crosses layers, changes user-visible
+behavior, changes architecture, changes Git state semantics, changes async or
+runtime behavior, or needs multiple slices.
+
+Do not expand a tiny task into a full harness workflow unless risk is discovered
+while working. User-visible behavior changes still require harness coverage;
+harness infrastructure changes require targeted harness/unit tests.
+
+---
+
 ## Exit Conditions
 
 You CANNOT proceed if:

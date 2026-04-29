@@ -433,6 +433,9 @@ Panel projection and row source:
   - selected-row style when needed
   - backend operation trace
   - final mock Git state
+- `docs/harness/SCENARIOS.md` indexes harness scenarios by scanning
+  `fn harness_*` definitions. The manifest is checked by tests so added or
+  renamed scenarios remain discoverable.
 - On failure, harness writes artifacts:
   - compatibility text buffer
   - real terminal screen
@@ -440,6 +443,7 @@ Panel projection and row source:
   - git operation trace
   - final mock Git state
   - input sequence
+  - structured `failure_report.json` for agent-readable triage
 - The manual performance suite includes pure UI operations for status rendering,
   search rendering, and Details scroll rendering in addition to backend and tree
   operations.
