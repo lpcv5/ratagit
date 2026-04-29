@@ -446,6 +446,32 @@ Results:
 - `rtk cargo clippy --workspace --lib --bins -- -D warnings` passed
 - `rtk cargo test` passed, 482 tests
 
+### Phase 16: Large Repository Profile Analysis
+
+Status: completed
+
+Deliverables:
+
+- add optional built-in profile mode to the manual performance suite
+- record stage timings for Git commands, backend calls, parsing, tree
+  initialization, reducer/update loops, target selection, and render loops
+- report profile bottlenecks in JSON and Markdown without changing default TUI
+  behavior
+
+Tests:
+
+- unit coverage for profile option parsing and bottleneck summary selection
+- smoke perf-suite coverage for profile rows and report output
+- full validation suite
+
+Results:
+
+- added `--profile` to `perf-suite` and upgraded reports to
+  `ratagit.perf-suite.v2`
+- added `profiles` JSON rows and a Markdown `Profile Bottlenecks` section
+- kept large and huge profile runs manual; normal tests still use smoke-sized
+  repositories only
+
 ## Latest Validation
 
 - Phase 0: documentation-only review complete; behavior unchanged
@@ -508,3 +534,9 @@ Results:
 - Phase 15: `rtk cargo fmt` passed
 - Phase 15: `rtk cargo clippy --workspace --lib --bins -- -D warnings` passed
 - Phase 15: `rtk cargo test` passed, 482 tests
+- Phase 16: targeted `cargo test --bin perf-suite` passed, 16 tests
+- Phase 16: `cargo fmt` passed
+- Phase 16: `cargo clippy --workspace --lib --bins -- -D warnings` passed
+- Phase 16: `cargo test` passed
+- Phase 16: profile smoke passed for `status`, `files-navigation`, and
+  `status-render`; result `perf-1777465934-980516600`

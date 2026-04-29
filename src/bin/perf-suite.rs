@@ -64,6 +64,7 @@ struct PerfConfig {
     warmup: usize,
     git: String,
     regenerate: bool,
+    profile: bool,
     help: bool,
 }
 
@@ -78,6 +79,7 @@ impl PerfConfig {
             warmup: DEFAULT_WARMUP,
             git: "git".to_string(),
             regenerate: false,
+            profile: false,
             help: false,
         };
 
@@ -121,6 +123,10 @@ impl PerfConfig {
                 }
                 "--regenerate" => {
                     config.regenerate = true;
+                    index += 1;
+                }
+                "--profile" => {
+                    config.profile = true;
                     index += 1;
                 }
                 other => return Err(PerfConfigError::UnknownArgument(other.to_string())),
@@ -279,12 +285,48 @@ impl Runner {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum ProfileStage {
+    GitCommand,
+    BackendCall,
+    Parse,
+    SelectTarget,
+    InitializeTree,
+    UpdateLoop,
+    RenderLoop,
+}
+
+impl ProfileStage {
+    const ALL: [Self; 7] = [
+        Self::GitCommand,
+        Self::BackendCall,
+        Self::Parse,
+        Self::SelectTarget,
+        Self::InitializeTree,
+        Self::UpdateLoop,
+        Self::RenderLoop,
+    ];
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::GitCommand => "git-command",
+            Self::BackendCall => "backend-call",
+            Self::Parse => "parse",
+            Self::SelectTarget => "select-target",
+            Self::InitializeTree => "initialize-tree",
+            Self::UpdateLoop => "update-loop",
+            Self::RenderLoop => "render-loop",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct SuiteReport {
     run_id: String,
     git_version: String,
     repos: Vec<RepoReport>,
     records: Vec<PerfRecord>,
+    profiles: Vec<ProfileRecord>,
     json_path: PathBuf,
     markdown_path: PathBuf,
 }
@@ -303,6 +345,20 @@ struct PerfRecord {
     operation: Operation,
     runner: Runner,
     iteration: usize,
+    elapsed_ms: u128,
+    output_items: usize,
+    output_bytes: usize,
+    success: bool,
+    error: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct ProfileRecord {
+    scale: Scale,
+    operation: Operation,
+    runner: Runner,
+    iteration: usize,
+    stage: ProfileStage,
     elapsed_ms: u128,
     output_items: usize,
     output_bytes: usize,
@@ -345,6 +401,7 @@ fn run_suite(config: &PerfConfig) -> Result<SuiteReport, Box<dyn Error>> {
     let git_version = git_version(&config.git)?;
     let mut repos = Vec::new();
     let mut records = Vec::new();
+    let mut profiles = Vec::new();
 
     for scale in &config.scales {
         let mut repo_config = LargeRepoConfig::for_scale(*scale, config.root.join(scale.as_str()));
@@ -381,6 +438,15 @@ fn run_suite(config: &PerfConfig) -> Result<SuiteReport, Box<dyn Error>> {
                     let record =
                         measure_record(*scale, *operation, runner, iteration, &mut context);
                     records.push(record);
+                    if config.profile {
+                        profiles.extend(profile_records(
+                            *scale,
+                            *operation,
+                            runner,
+                            iteration,
+                            &mut context,
+                        ));
+                    }
                 }
             }
         }
@@ -393,6 +459,7 @@ fn run_suite(config: &PerfConfig) -> Result<SuiteReport, Box<dyn Error>> {
         git_version,
         repos,
         records,
+        profiles,
         json_path,
         markdown_path,
     };
@@ -631,6 +698,392 @@ fn measure_record(
     }
 }
 
+fn profile_records(
+    scale: Scale,
+    operation: Operation,
+    runner: Runner,
+    iteration: usize,
+    context: &mut MeasureContext<'_>,
+) -> Vec<ProfileRecord> {
+    let mut records = Vec::new();
+    let result = match runner {
+        Runner::GitCliRaw => profile_git_cli_raw(&mut records, context, operation),
+        Runner::GitCliParsed => profile_git_cli_parsed(&mut records, context, operation),
+        Runner::Backend => profile_backend(&mut records, context, operation),
+    };
+    for record in &mut records {
+        record.scale = scale;
+        record.operation = operation;
+        record.runner = runner;
+        record.iteration = iteration;
+    }
+    if records.is_empty()
+        && let Err(error) = result
+    {
+        records.push(ProfileRecord {
+            scale,
+            operation,
+            runner,
+            iteration,
+            stage: match runner {
+                Runner::GitCliRaw | Runner::GitCliParsed => ProfileStage::GitCommand,
+                Runner::Backend => ProfileStage::BackendCall,
+            },
+            elapsed_ms: 0,
+            output_items: 0,
+            output_bytes: 0,
+            success: false,
+            error: Some(error),
+        });
+    }
+    records
+}
+
+fn profile_stage<T>(
+    records: &mut Vec<ProfileRecord>,
+    stage: ProfileStage,
+    operation: impl FnOnce() -> Result<(T, MeasurementPayload), String>,
+) -> Result<T, String> {
+    let (elapsed, result) = time_result(operation);
+    let (success, output_items, output_bytes, error) = match &result {
+        Ok((_value, payload)) => (true, payload.output_items, payload.output_bytes, None),
+        Err(error) => (false, 0, 0, Some(error.clone())),
+    };
+    records.push(ProfileRecord {
+        scale: Scale::Smoke,
+        operation: Operation::Status,
+        runner: Runner::Backend,
+        iteration: 0,
+        stage,
+        elapsed_ms: elapsed.as_millis(),
+        output_items,
+        output_bytes,
+        success,
+        error,
+    });
+    result.map(|(value, _payload)| value)
+}
+
+fn profile_git_cli_raw(
+    records: &mut Vec<ProfileRecord>,
+    context: &MeasureContext<'_>,
+    operation: Operation,
+) -> Result<(), String> {
+    match operation {
+        Operation::CommitFilesDirectoryDiff => {
+            let output = profile_git_output(
+                records,
+                context.git,
+                &context.config.path,
+                commit_files_args(&context.targets.head_commit),
+            )?;
+            let entries = parse_commit_files(&String::from_utf8_lossy(&output))?;
+            let target = commit_files_directory_diff_target(
+                &context.targets.head_commit,
+                entries,
+                context.targets,
+            )?;
+            profile_git_output(
+                records,
+                context.git,
+                &context.config.path,
+                commit_file_diff_args(&target),
+            )?;
+        }
+        Operation::FilesDetailsDiff => {
+            for args in files_details_diff_args(context.targets) {
+                profile_git_output(records, context.git, &context.config.path, args)?;
+            }
+        }
+        _ => {
+            profile_git_output(
+                records,
+                context.git,
+                &context.config.path,
+                raw_args_for_operation(context.config, context.targets, operation)?,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn profile_git_cli_parsed(
+    records: &mut Vec<ProfileRecord>,
+    context: &MeasureContext<'_>,
+    operation: Operation,
+) -> Result<(), String> {
+    match operation {
+        Operation::Status => {
+            let output = profile_status_git_command(records, context)?;
+            profile_parse_status(records, output)?;
+        }
+        Operation::Commits | Operation::LoadMoreCommits => {
+            let output = profile_git_output(
+                records,
+                context.git,
+                &context.config.path,
+                raw_args_for_operation(context.config, context.targets, operation)?,
+            )?;
+            profile_stage(records, ProfileStage::Parse, || {
+                let items = String::from_utf8_lossy(&output).lines().count();
+                Ok((
+                    (),
+                    MeasurementPayload {
+                        output_items: items,
+                        output_bytes: output.len(),
+                    },
+                ))
+            })?;
+        }
+        Operation::CommitFiles => {
+            let output = profile_commit_files_git_command(records, context)?;
+            profile_parse_commit_files(records, output)?;
+        }
+        Operation::CommitFilesDirectoryDiff => {
+            let output = profile_commit_files_git_command(records, context)?;
+            let entries = profile_parse_commit_files(records, output)?;
+            let target = profile_stage(records, ProfileStage::SelectTarget, || {
+                let target = commit_files_directory_diff_target(
+                    &context.targets.head_commit,
+                    entries,
+                    context.targets,
+                )?;
+                Ok((
+                    target,
+                    MeasurementPayload {
+                        output_items: 1,
+                        output_bytes: context.targets.commit_files_directory_path.len(),
+                    },
+                ))
+            })?;
+            let diff = profile_git_output(
+                records,
+                context.git,
+                &context.config.path,
+                commit_file_diff_args(&target),
+            )?;
+            profile_count_lines(records, diff)?;
+        }
+        Operation::CommitFilesNavigation => {
+            let output = profile_commit_files_git_command(records, context)?;
+            let entries = profile_parse_commit_files(records, output)?;
+            profile_commit_files_navigation_payload(
+                records,
+                &context.targets.head_commit,
+                entries,
+            )?;
+        }
+        Operation::CommitFilesTreeToggle => {
+            let output = profile_commit_files_git_command(records, context)?;
+            let entries = profile_parse_commit_files(records, output)?;
+            profile_commit_files_tree_toggle_payload(
+                records,
+                &context.targets.head_commit,
+                entries,
+            )?;
+        }
+        Operation::CommitDetailsDiff | Operation::CommitFileDiff => {
+            let output = profile_git_output(
+                records,
+                context.git,
+                &context.config.path,
+                raw_args_for_operation(context.config, context.targets, operation)?,
+            )?;
+            profile_count_lines(records, output)?;
+        }
+        Operation::FilesDetailsDiff => {
+            let mut output = Vec::new();
+            for args in files_details_diff_args(context.targets) {
+                output.extend(profile_git_output(
+                    records,
+                    context.git,
+                    &context.config.path,
+                    args,
+                )?);
+            }
+            profile_count_lines(records, output)?;
+        }
+        Operation::FilesNavigation => {
+            let output = profile_status_git_command(records, context)?;
+            let entries = profile_parse_status(records, output)?;
+            profile_files_navigation_payload(records, entries)?;
+        }
+        Operation::FilesTreeToggle => {
+            let output = profile_status_git_command(records, context)?;
+            let entries = profile_parse_status(records, output)?;
+            profile_files_tree_toggle_payload(records, entries)?;
+        }
+        Operation::StatusRender => {
+            let output = profile_status_git_command(records, context)?;
+            let entries = profile_parse_status(records, output)?;
+            profile_files_status_render_payload(records, entries)?;
+        }
+        Operation::SearchRender => {
+            let output = profile_status_git_command(records, context)?;
+            let entries = profile_parse_status(records, output)?;
+            profile_files_search_render_payload(records, entries)?;
+        }
+        Operation::DetailsScrollRender => {
+            let output = profile_git_output(
+                records,
+                context.git,
+                &context.config.path,
+                commit_details_diff_args(&context.targets.head_commit),
+            )?;
+            let diff = profile_stage(records, ProfileStage::Parse, || {
+                let diff = String::from_utf8_lossy(&output).to_string();
+                Ok((
+                    diff,
+                    MeasurementPayload {
+                        output_items: 1,
+                        output_bytes: output.len(),
+                    },
+                ))
+            })?;
+            profile_details_scroll_render_payload(records, diff)?;
+        }
+    }
+    Ok(())
+}
+
+fn profile_backend(
+    records: &mut Vec<ProfileRecord>,
+    context: &mut MeasureContext<'_>,
+    operation: Operation,
+) -> Result<(), String> {
+    match operation {
+        Operation::CommitFilesNavigation => {
+            let files = profile_backend_commit_files(records, context)?;
+            profile_commit_files_navigation_payload(records, &context.targets.head_commit, files)?;
+        }
+        Operation::CommitFilesTreeToggle => {
+            let files = profile_backend_commit_files(records, context)?;
+            profile_commit_files_tree_toggle_payload(records, &context.targets.head_commit, files)?;
+        }
+        Operation::FilesNavigation => {
+            let files = profile_backend_refresh_files(records, context)?;
+            profile_files_navigation_payload(records, files)?;
+        }
+        Operation::FilesTreeToggle => {
+            let files = profile_backend_refresh_files(records, context)?;
+            profile_files_tree_toggle_payload(records, files)?;
+        }
+        Operation::StatusRender => {
+            let files = profile_backend_refresh_files(records, context)?;
+            profile_files_status_render_payload(records, files)?;
+        }
+        Operation::SearchRender => {
+            let files = profile_backend_refresh_files(records, context)?;
+            profile_files_search_render_payload(records, files)?;
+        }
+        Operation::DetailsScrollRender => {
+            let diff = profile_stage(records, ProfileStage::BackendCall, || {
+                let diff = context
+                    .backend
+                    .commit_details_diff(&context.targets.head_commit)
+                    .map_err(|error| error.message)?;
+                let payload = MeasurementPayload {
+                    output_items: diff.lines().count(),
+                    output_bytes: diff.len(),
+                };
+                Ok((diff, payload))
+            })?;
+            profile_details_scroll_render_payload(records, diff)?;
+        }
+        _ => {
+            profile_stage(records, ProfileStage::BackendCall, || {
+                measure_backend(context.backend, context.targets, operation)
+                    .map(|payload| ((), payload))
+            })?;
+        }
+    }
+    Ok(())
+}
+
+fn profile_git_output(
+    records: &mut Vec<ProfileRecord>,
+    git: &str,
+    repo: &Path,
+    args: Vec<String>,
+) -> Result<Vec<u8>, String> {
+    profile_stage(records, ProfileStage::GitCommand, || {
+        let output = run_git_output(git, repo, args)?;
+        let payload = MeasurementPayload {
+            output_items: 0,
+            output_bytes: output.len(),
+        };
+        Ok((output, payload))
+    })
+}
+
+fn profile_status_git_command(
+    records: &mut Vec<ProfileRecord>,
+    context: &MeasureContext<'_>,
+) -> Result<Vec<u8>, String> {
+    profile_git_output(
+        records,
+        context.git,
+        &context.config.path,
+        status_args(status_mode_for_index_count(
+            context.config.index_entry_count(),
+        )),
+    )
+}
+
+fn profile_commit_files_git_command(
+    records: &mut Vec<ProfileRecord>,
+    context: &MeasureContext<'_>,
+) -> Result<String, String> {
+    let output = profile_git_output(
+        records,
+        context.git,
+        &context.config.path,
+        commit_files_args(&context.targets.head_commit),
+    )?;
+    Ok(String::from_utf8_lossy(&output).to_string())
+}
+
+fn profile_parse_status(
+    records: &mut Vec<ProfileRecord>,
+    output: Vec<u8>,
+) -> Result<Vec<FileEntry>, String> {
+    profile_stage(records, ProfileStage::Parse, || {
+        let files = parse_status_porcelain(&output)?;
+        let payload = MeasurementPayload {
+            output_items: files.len(),
+            output_bytes: output.len(),
+        };
+        Ok((files, payload))
+    })
+}
+
+fn profile_parse_commit_files(
+    records: &mut Vec<ProfileRecord>,
+    output: String,
+) -> Result<Vec<CommitFileEntry>, String> {
+    profile_stage(records, ProfileStage::Parse, || {
+        let entries = parse_commit_files(&output)?;
+        let payload = MeasurementPayload {
+            output_items: entries.len(),
+            output_bytes: output.len(),
+        };
+        Ok((entries, payload))
+    })
+}
+
+fn profile_count_lines(records: &mut Vec<ProfileRecord>, output: Vec<u8>) -> Result<(), String> {
+    profile_stage(records, ProfileStage::Parse, || {
+        let items = String::from_utf8_lossy(&output).lines().count();
+        Ok((
+            (),
+            MeasurementPayload {
+                output_items: items,
+                output_bytes: output.len(),
+            },
+        ))
+    })
+}
+
 fn measure_runner(
     context: &mut MeasureContext<'_>,
     operation: Operation,
@@ -644,6 +1097,39 @@ fn measure_runner(
             measure_git_cli_parsed(context.git, context.config, context.targets, operation)
         }
         Runner::Backend => measure_backend(context.backend, context.targets, operation),
+    }
+}
+
+fn raw_args_for_operation(
+    config: &LargeRepoConfig,
+    targets: &BenchTargets,
+    operation: Operation,
+) -> Result<Vec<String>, String> {
+    match operation {
+        Operation::Status
+        | Operation::FilesNavigation
+        | Operation::FilesTreeToggle
+        | Operation::StatusRender
+        | Operation::SearchRender => Ok(status_args(status_mode_for_index_count(
+            config.index_entry_count(),
+        ))),
+        Operation::Commits => Ok(commit_log_args(0, COMMITS_PAGE_SIZE)),
+        Operation::LoadMoreCommits => Ok(commit_log_args(COMMITS_PAGE_SIZE, COMMITS_PAGE_SIZE)),
+        Operation::CommitFiles
+        | Operation::CommitFilesNavigation
+        | Operation::CommitFilesTreeToggle => Ok(commit_files_args(&targets.head_commit)),
+        Operation::CommitDetailsDiff | Operation::DetailsScrollRender => {
+            Ok(commit_details_diff_args(&targets.head_commit))
+        }
+        Operation::CommitFileDiff => Ok(commit_file_diff_args(&targets.commit_file_target)),
+        Operation::CommitFilesDirectoryDiff => Err(
+            "commit-files-directory-diff uses multiple git commands and has no single raw command"
+                .to_string(),
+        ),
+        Operation::FilesDetailsDiff => Err(
+            "files-details-diff uses multiple git commands and has no single raw command"
+                .to_string(),
+        ),
     }
 }
 
@@ -1066,6 +1552,408 @@ fn commit_log_args(skip: usize, limit: usize) -> Vec<String> {
     ]
 }
 
+fn profile_backend_refresh_files(
+    records: &mut Vec<ProfileRecord>,
+    context: &mut MeasureContext<'_>,
+) -> Result<Vec<FileEntry>, String> {
+    profile_stage(records, ProfileStage::BackendCall, || {
+        let snapshot = context
+            .backend
+            .refresh_files()
+            .map_err(|error| error.message)?;
+        let payload = MeasurementPayload {
+            output_items: snapshot.files.len(),
+            output_bytes: snapshot.files.iter().map(|entry| entry.path.len()).sum(),
+        };
+        Ok((snapshot.files, payload))
+    })
+}
+
+fn profile_backend_commit_files(
+    records: &mut Vec<ProfileRecord>,
+    context: &mut MeasureContext<'_>,
+) -> Result<Vec<CommitFileEntry>, String> {
+    profile_stage(records, ProfileStage::BackendCall, || {
+        let files = context
+            .backend
+            .commit_files(&context.targets.head_commit)
+            .map_err(|error| error.message)?;
+        let payload = MeasurementPayload {
+            output_items: files.len(),
+            output_bytes: files.iter().map(|entry| entry.path.len()).sum(),
+        };
+        Ok((files, payload))
+    })
+}
+
+fn profile_commit_files_navigation_payload(
+    records: &mut Vec<ProfileRecord>,
+    commit_id: &str,
+    files: Vec<CommitFileEntry>,
+) -> Result<(), String> {
+    let output_bytes = files.iter().map(|entry| entry.path.len()).sum();
+    let mut state = AppContext::default();
+    state.ui.focus = PanelFocus::Commits;
+    state.ui.last_left_focus = PanelFocus::Commits;
+    state.repo.commits.files.items = files;
+    state.ui.commits.files = CommitFilesUiState {
+        active: true,
+        commit_id: Some(commit_id.to_string()),
+        ..CommitFilesUiState::default()
+    };
+    profile_stage(records, ProfileStage::InitializeTree, || {
+        initialize_commit_files_tree(&state.repo.commits.files.items, &mut state.ui.commits.files);
+        Ok((
+            (),
+            MeasurementPayload {
+                output_items: state.ui.commits.files.tree_rows.len(),
+                output_bytes,
+            },
+        ))
+    })?;
+
+    let size = TerminalSize {
+        width: 120,
+        height: 34,
+    };
+    let mut emitted_commands = 0usize;
+    profile_stage(records, ProfileStage::UpdateLoop, || {
+        for _ in 0..COMMIT_FILES_NAVIGATION_STEPS {
+            let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+            emitted_commands += commands.len();
+        }
+        Ok((
+            (),
+            MeasurementPayload {
+                output_items: emitted_commands,
+                output_bytes,
+            },
+        ))
+    })?;
+    profile_stage(records, ProfileStage::RenderLoop, || {
+        for _ in 0..COMMIT_FILES_NAVIGATION_STEPS {
+            let _buffer = render_terminal_buffer(&state, size);
+        }
+        Ok((
+            (),
+            MeasurementPayload {
+                output_items: state.ui.commits.files.tree_rows.len(),
+                output_bytes,
+            },
+        ))
+    })?;
+    Ok(())
+}
+
+fn profile_files_navigation_payload(
+    records: &mut Vec<ProfileRecord>,
+    files: Vec<FileEntry>,
+) -> Result<(), String> {
+    let output_bytes = files.iter().map(|entry| entry.path.len()).sum();
+    let mut state = AppContext::default();
+    state.ui.focus = PanelFocus::Files;
+    state.ui.last_left_focus = PanelFocus::Files;
+    state.repo.files.items = files;
+    profile_stage(records, ProfileStage::InitializeTree, || {
+        initialize_tree_with_initial_expansion(&state.repo.files.items, &mut state.ui.files, false);
+        Ok((
+            (),
+            MeasurementPayload {
+                output_items: state.ui.files.tree_rows.len(),
+                output_bytes,
+            },
+        ))
+    })?;
+
+    let size = TerminalSize {
+        width: 120,
+        height: 34,
+    };
+    let mut emitted_commands = 0usize;
+    profile_stage(records, ProfileStage::UpdateLoop, || {
+        for _ in 0..FILES_NAVIGATION_STEPS {
+            let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+            emitted_commands += commands.len();
+        }
+        Ok((
+            (),
+            MeasurementPayload {
+                output_items: emitted_commands,
+                output_bytes,
+            },
+        ))
+    })?;
+    profile_stage(records, ProfileStage::RenderLoop, || {
+        for _ in 0..FILES_NAVIGATION_STEPS {
+            let _buffer = render_terminal_buffer(&state, size);
+        }
+        Ok((
+            (),
+            MeasurementPayload {
+                output_items: state.ui.files.tree_rows.len(),
+                output_bytes,
+            },
+        ))
+    })?;
+    Ok(())
+}
+
+fn profile_commit_files_tree_toggle_payload(
+    records: &mut Vec<ProfileRecord>,
+    commit_id: &str,
+    files: Vec<CommitFileEntry>,
+) -> Result<(), String> {
+    let output_bytes = files.iter().map(|entry| entry.path.len()).sum();
+    let target = profile_stage(records, ProfileStage::SelectTarget, || {
+        let target =
+            select_commit_files_directory_path(&files).map_err(|error| error.to_string())?;
+        Ok((
+            target,
+            MeasurementPayload {
+                output_items: 1,
+                output_bytes,
+            },
+        ))
+    })?;
+    let mut state = AppContext::default();
+    state.ui.focus = PanelFocus::Commits;
+    state.ui.last_left_focus = PanelFocus::Commits;
+    state.repo.commits.files.items = files;
+    state.ui.commits.files = CommitFilesUiState {
+        active: true,
+        commit_id: Some(commit_id.to_string()),
+        ..CommitFilesUiState::default()
+    };
+    profile_stage(records, ProfileStage::InitializeTree, || {
+        initialize_commit_files_tree(&state.repo.commits.files.items, &mut state.ui.commits.files);
+        if !select_commit_file_tree_path(
+            &state.repo.commits.files.items,
+            &mut state.ui.commits.files,
+            &target,
+        ) {
+            return Err(format!("commit files directory path not found: {target}"));
+        }
+        Ok((
+            (),
+            MeasurementPayload {
+                output_items: state.ui.commits.files.tree_rows.len(),
+                output_bytes,
+            },
+        ))
+    })?;
+
+    let size = TerminalSize {
+        width: 120,
+        height: 34,
+    };
+    let mut emitted_commands = 0usize;
+    profile_stage(records, ProfileStage::UpdateLoop, || {
+        for _ in 0..FILES_TREE_TOGGLE_STEPS {
+            let commands = update(&mut state, Action::Ui(UiAction::ToggleCommitFilesDirectory));
+            emitted_commands += commands.len();
+        }
+        Ok((
+            (),
+            MeasurementPayload {
+                output_items: emitted_commands,
+                output_bytes,
+            },
+        ))
+    })?;
+    profile_stage(records, ProfileStage::RenderLoop, || {
+        for _ in 0..FILES_TREE_TOGGLE_STEPS {
+            let _buffer = render_terminal_buffer(&state, size);
+        }
+        Ok((
+            (),
+            MeasurementPayload {
+                output_items: state.ui.commits.files.tree_rows.len(),
+                output_bytes,
+            },
+        ))
+    })?;
+    Ok(())
+}
+
+fn profile_files_tree_toggle_payload(
+    records: &mut Vec<ProfileRecord>,
+    files: Vec<FileEntry>,
+) -> Result<(), String> {
+    let output_bytes = files.iter().map(|entry| entry.path.len()).sum();
+    let target = profile_stage(records, ProfileStage::SelectTarget, || {
+        let target = select_files_directory_path(&files).map_err(|error| error.to_string())?;
+        Ok((
+            target,
+            MeasurementPayload {
+                output_items: 1,
+                output_bytes,
+            },
+        ))
+    })?;
+    let mut state = AppContext::default();
+    state.repo.files.items = files;
+    profile_stage(records, ProfileStage::InitializeTree, || {
+        initialize_tree_with_initial_expansion(&state.repo.files.items, &mut state.ui.files, false);
+        if !select_file_tree_path(&state.repo.files.items, &mut state.ui.files, &target) {
+            return Err(format!("files directory path not found: {target}"));
+        }
+        Ok((
+            (),
+            MeasurementPayload {
+                output_items: state.ui.files.tree_rows.len(),
+                output_bytes,
+            },
+        ))
+    })?;
+
+    let size = TerminalSize {
+        width: 120,
+        height: 34,
+    };
+    let mut emitted_commands = 0usize;
+    profile_stage(records, ProfileStage::UpdateLoop, || {
+        for _ in 0..FILES_TREE_TOGGLE_STEPS {
+            let commands = update(&mut state, Action::Ui(UiAction::ToggleSelectedDirectory));
+            emitted_commands += commands.len();
+        }
+        Ok((
+            (),
+            MeasurementPayload {
+                output_items: emitted_commands,
+                output_bytes,
+            },
+        ))
+    })?;
+    profile_stage(records, ProfileStage::RenderLoop, || {
+        for _ in 0..FILES_TREE_TOGGLE_STEPS {
+            let _buffer = render_terminal_buffer(&state, size);
+        }
+        Ok((
+            (),
+            MeasurementPayload {
+                output_items: state.ui.files.tree_rows.len(),
+                output_bytes,
+            },
+        ))
+    })?;
+    Ok(())
+}
+
+fn profile_files_status_render_payload(
+    records: &mut Vec<ProfileRecord>,
+    files: Vec<FileEntry>,
+) -> Result<(), String> {
+    let output_bytes = files.iter().map(|entry| entry.path.len()).sum();
+    let mut state = AppContext::default();
+    state.ui.focus = PanelFocus::Files;
+    state.ui.last_left_focus = PanelFocus::Files;
+    state.repo.files.items = files;
+    profile_stage(records, ProfileStage::InitializeTree, || {
+        initialize_tree_with_initial_expansion(&state.repo.files.items, &mut state.ui.files, false);
+        Ok((
+            (),
+            MeasurementPayload {
+                output_items: state.ui.files.tree_rows.len(),
+                output_bytes,
+            },
+        ))
+    })?;
+
+    let size = perf_terminal_size();
+    profile_stage(records, ProfileStage::RenderLoop, || {
+        for _ in 0..UI_RENDER_STEPS {
+            let _buffer = render_terminal_buffer(&state, size);
+        }
+        Ok((
+            (),
+            MeasurementPayload {
+                output_items: state.ui.files.tree_rows.len(),
+                output_bytes,
+            },
+        ))
+    })?;
+    Ok(())
+}
+
+fn profile_files_search_render_payload(
+    records: &mut Vec<ProfileRecord>,
+    files: Vec<FileEntry>,
+) -> Result<(), String> {
+    let output_bytes = files.iter().map(|entry| entry.path.len()).sum();
+    let mut state = AppContext::default();
+    state.ui.focus = PanelFocus::Files;
+    state.ui.last_left_focus = PanelFocus::Files;
+    state.repo.files.items = files;
+    profile_stage(records, ProfileStage::InitializeTree, || {
+        initialize_tree_with_initial_expansion(&state.repo.files.items, &mut state.ui.files, false);
+        Ok((
+            (),
+            MeasurementPayload {
+                output_items: state.ui.files.tree_rows.len(),
+                output_bytes,
+            },
+        ))
+    })?;
+    profile_stage(records, ProfileStage::UpdateLoop, || {
+        update(&mut state, Action::Ui(UiAction::StartSearch));
+        for ch in "txt".chars() {
+            update(&mut state, Action::Ui(UiAction::InputSearchChar(ch)));
+        }
+        update(&mut state, Action::Ui(UiAction::ConfirmSearch));
+        Ok((
+            (),
+            MeasurementPayload {
+                output_items: state.ui.search.matches.len(),
+                output_bytes,
+            },
+        ))
+    })?;
+
+    let size = perf_terminal_size();
+    profile_stage(records, ProfileStage::RenderLoop, || {
+        for _ in 0..UI_RENDER_STEPS {
+            let _buffer = render_terminal_buffer(&state, size);
+        }
+        Ok((
+            (),
+            MeasurementPayload {
+                output_items: state.ui.search.matches.len(),
+                output_bytes,
+            },
+        ))
+    })?;
+    Ok(())
+}
+
+fn profile_details_scroll_render_payload(
+    records: &mut Vec<ProfileRecord>,
+    diff: String,
+) -> Result<(), String> {
+    let output_bytes = diff.len();
+    let line_count = diff.lines().count();
+    let mut state = AppContext::default();
+    state.ui.focus = PanelFocus::Details;
+    state.ui.last_left_focus = PanelFocus::Commits;
+    state.repo.details.commit_diff_target = Some("perf-suite".to_string());
+    state.repo.details.commit_diff = diff;
+
+    let size = perf_terminal_size();
+    profile_stage(records, ProfileStage::RenderLoop, || {
+        for offset in 0usize..DETAILS_SCROLL_RENDER_STEPS {
+            state.ui.details.scroll_offset = offset.saturating_mul(3);
+            let _buffer = render_terminal_buffer(&state, size);
+        }
+        Ok((
+            (),
+            MeasurementPayload {
+                output_items: line_count,
+                output_bytes,
+            },
+        ))
+    })?;
+    Ok(())
+}
+
 fn commit_files_navigation_payload(
     commit_id: &str,
     files: Vec<CommitFileEntry>,
@@ -1317,6 +2205,13 @@ fn files_details_diff_cli_output(
     repo: &Path,
     targets: &BenchTargets,
 ) -> Result<Vec<u8>, String> {
+    let args = files_details_diff_args(targets);
+    let mut output = run_git_output(git, repo, args[0].clone())?;
+    output.extend(run_git_output(git, repo, args[1].clone())?);
+    Ok(output)
+}
+
+fn files_details_diff_args(targets: &BenchTargets) -> [Vec<String>; 2] {
     let mut unstaged_args = vec![
         "diff".to_string(),
         "--color=always".to_string(),
@@ -1325,7 +2220,6 @@ fn files_details_diff_cli_output(
         "--".to_string(),
     ];
     unstaged_args.extend(targets.files_diff_paths.iter().cloned());
-    let mut output = run_git_output(git, repo, unstaged_args)?;
 
     let mut staged_args = vec![
         "diff".to_string(),
@@ -1336,8 +2230,7 @@ fn files_details_diff_cli_output(
         "--".to_string(),
     ];
     staged_args.extend(targets.files_diff_paths.iter().cloned());
-    output.extend(run_git_output(git, repo, staged_args)?);
-    Ok(output)
+    [unstaged_args, staged_args]
 }
 
 fn parse_status_porcelain(output: &[u8]) -> Result<Vec<FileEntry>, String> {
@@ -1511,7 +2404,7 @@ fn run_id() -> String {
 fn write_json_report(report: &SuiteReport) -> Result<(), Box<dyn Error>> {
     let mut file = File::create(&report.json_path)?;
     writeln!(file, "{{")?;
-    writeln!(file, "  \"schema\": \"ratagit.perf-suite.v1\",")?;
+    writeln!(file, "  \"schema\": \"ratagit.perf-suite.v2\",")?;
     writeln!(file, "  \"run_id\": {},", json_string(&report.run_id))?;
     writeln!(
         file,
@@ -1589,6 +2482,48 @@ fn write_json_report(report: &SuiteReport) -> Result<(), Box<dyn Error>> {
         }
     }
     writeln!(file, "  ],")?;
+    writeln!(file, "  \"profiles\": [")?;
+    for (index, record) in report.profiles.iter().enumerate() {
+        writeln!(file, "    {{")?;
+        writeln!(
+            file,
+            "      \"scale\": {},",
+            json_string(record.scale.as_str())
+        )?;
+        writeln!(
+            file,
+            "      \"operation\": {},",
+            json_string(record.operation.as_str())
+        )?;
+        writeln!(
+            file,
+            "      \"runner\": {},",
+            json_string(record.runner.as_str())
+        )?;
+        writeln!(file, "      \"iteration\": {},", record.iteration)?;
+        writeln!(
+            file,
+            "      \"stage\": {},",
+            json_string(record.stage.as_str())
+        )?;
+        writeln!(file, "      \"elapsed_ms\": {},", record.elapsed_ms)?;
+        writeln!(file, "      \"output_items\": {},", record.output_items)?;
+        writeln!(file, "      \"output_bytes\": {},", record.output_bytes)?;
+        writeln!(file, "      \"success\": {},", record.success)?;
+        write!(file, "      \"error\": ")?;
+        if let Some(error) = &record.error {
+            writeln!(file, "{}", json_string(error))?;
+        } else {
+            writeln!(file, "null")?;
+        }
+        write!(file, "    }}")?;
+        if index + 1 != report.profiles.len() {
+            writeln!(file, ",")?;
+        } else {
+            writeln!(file)?;
+        }
+    }
+    writeln!(file, "  ],")?;
     writeln!(file, "  \"records\": [")?;
     for (index, record) in report.records.iter().enumerate() {
         writeln!(file, "    {{")?;
@@ -1659,6 +2594,31 @@ fn write_markdown_report(report: &SuiteReport) -> Result<(), Box<dyn Error>> {
         )?;
     }
 
+    let profile_bottlenecks = profile_bottleneck_rows(report);
+    if !profile_bottlenecks.is_empty() {
+        writeln!(file)?;
+        writeln!(file, "## Profile Bottlenecks")?;
+        writeln!(file)?;
+        writeln!(
+            file,
+            "| scale | operation | runner | slowest stage | stage median ms | total median ms | stage share |"
+        )?;
+        writeln!(file, "| --- | --- | --- | --- | ---: | ---: | ---: |")?;
+        for row in profile_bottlenecks {
+            writeln!(
+                file,
+                "| {} | {} | {} | {} | {} | {} | {} |",
+                row.scale.as_str(),
+                row.operation.as_str(),
+                row.runner.as_str(),
+                row.stage.as_str(),
+                row.stage_median_ms,
+                row.total_median_ms,
+                format_ratio(Some(row.stage_share)),
+            )?;
+        }
+    }
+
     let failures = report
         .records
         .iter()
@@ -1705,6 +2665,17 @@ struct SummaryRow {
     backend: Option<Stats>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ProfileBottleneckRow {
+    scale: Scale,
+    operation: Operation,
+    runner: Runner,
+    stage: ProfileStage,
+    stage_median_ms: u128,
+    total_median_ms: u128,
+    stage_share: f64,
+}
+
 fn summary_rows(report: &SuiteReport) -> Vec<SummaryRow> {
     let mut rows = Vec::new();
     for scale in report.repos.iter().map(|repo| repo.scale) {
@@ -1726,6 +2697,80 @@ fn summary_rows(report: &SuiteReport) -> Vec<SummaryRow> {
     rows
 }
 
+fn profile_bottleneck_rows(report: &SuiteReport) -> Vec<ProfileBottleneckRow> {
+    let mut rows = Vec::new();
+    for scale in report.repos.iter().map(|repo| repo.scale) {
+        for operation in Operation::ALL {
+            for runner in Runner::ALL {
+                if let Some(row) = profile_bottleneck_row(report, scale, operation, runner) {
+                    rows.push(row);
+                }
+            }
+        }
+    }
+    rows
+}
+
+fn profile_bottleneck_row(
+    report: &SuiteReport,
+    scale: Scale,
+    operation: Operation,
+    runner: Runner,
+) -> Option<ProfileBottleneckRow> {
+    let total_stats = profile_total_stats_for(report, scale, operation, runner)?;
+    let mut slowest = None::<(ProfileStage, Stats)>;
+    for stage in ProfileStage::ALL {
+        if let Some(stats) = profile_stats_for(report, scale, operation, runner, stage) {
+            match slowest {
+                Some((_stage, current)) if current.median_ms >= stats.median_ms => {}
+                _ => slowest = Some((stage, stats)),
+            }
+        }
+    }
+    let (stage, stats) = slowest?;
+    let stage_share = if total_stats.median_ms == 0 {
+        if stats.median_ms == 0 { 1.0 } else { 0.0 }
+    } else {
+        stats.median_ms as f64 / total_stats.median_ms as f64
+    };
+    Some(ProfileBottleneckRow {
+        scale,
+        operation,
+        runner,
+        stage,
+        stage_median_ms: stats.median_ms,
+        total_median_ms: total_stats.median_ms,
+        stage_share,
+    })
+}
+
+fn profile_total_stats_for(
+    report: &SuiteReport,
+    scale: Scale,
+    operation: Operation,
+    runner: Runner,
+) -> Option<Stats> {
+    let mut iteration_totals = BTreeMap::<usize, u128>::new();
+    for record in report.profiles.iter().filter(|record| {
+        record.scale == scale
+            && record.operation == operation
+            && record.runner == runner
+            && record.success
+    }) {
+        *iteration_totals.entry(record.iteration).or_default() += record.elapsed_ms;
+    }
+    let mut values = iteration_totals.into_values().collect::<Vec<_>>();
+    if values.is_empty() {
+        return None;
+    }
+    values.sort_unstable();
+    Some(Stats {
+        min_ms: values[0],
+        median_ms: values[values.len() / 2],
+        max_ms: values[values.len() - 1],
+    })
+}
+
 fn stats_for(
     report: &SuiteReport,
     scale: Scale,
@@ -1739,6 +2784,36 @@ fn stats_for(
             record.scale == scale
                 && record.operation == operation
                 && record.runner == runner
+                && record.success
+        })
+        .map(|record| record.elapsed_ms)
+        .collect::<Vec<_>>();
+    if values.is_empty() {
+        return None;
+    }
+    values.sort_unstable();
+    Some(Stats {
+        min_ms: values[0],
+        median_ms: values[values.len() / 2],
+        max_ms: values[values.len() - 1],
+    })
+}
+
+fn profile_stats_for(
+    report: &SuiteReport,
+    scale: Scale,
+    operation: Operation,
+    runner: Runner,
+    stage: ProfileStage,
+) -> Option<Stats> {
+    let mut values = report
+        .profiles
+        .iter()
+        .filter(|record| {
+            record.scale == scale
+                && record.operation == operation
+                && record.runner == runner
+                && record.stage == stage
                 && record.success
         })
         .map(|record| record.elapsed_ms)
@@ -1870,6 +2945,7 @@ Options:\n\
   --warmup <count>       Warmup iterations per runner (default: 1)\n\
   --git <path>           Git executable (default: git)\n\
   --regenerate           Rebuild synthetic repos that already exist\n\
+  --profile              Record built-in stage timings for bottleneck analysis\n\
   -h, --help             Print this help text"
 }
 
@@ -1890,6 +2966,7 @@ mod tests {
         assert_eq!(config.iterations, 3);
         assert_eq!(config.warmup, 1);
         assert!(!config.regenerate);
+        assert!(!config.profile);
     }
 
     #[test]
@@ -1910,6 +2987,7 @@ mod tests {
             "--git".into(),
             "custom-git".into(),
             "--regenerate".into(),
+            "--profile".into(),
         ])
         .expect("explicit config should parse");
 
@@ -1931,6 +3009,7 @@ mod tests {
         assert_eq!(config.warmup, 0);
         assert_eq!(config.git, "custom-git");
         assert!(config.regenerate);
+        assert!(config.profile);
     }
 
     #[test]
@@ -2028,6 +3107,7 @@ mod tests {
                 test_record(Runner::Backend, 30),
                 test_record(Runner::Backend, 40),
             ],
+            profiles: Vec::new(),
             json_path: PathBuf::new(),
             markdown_path: PathBuf::new(),
         };
@@ -2054,6 +3134,37 @@ mod tests {
                 })
             )),
             "2.00"
+        );
+    }
+
+    #[test]
+    fn profile_bottleneck_rows_select_slowest_stage_by_median() {
+        let report = SuiteReport {
+            run_id: "test".to_string(),
+            git_version: "git version test".to_string(),
+            repos: vec![test_repo_report()],
+            records: vec![test_record(Runner::Backend, 100)],
+            profiles: vec![
+                test_profile_record(Runner::Backend, ProfileStage::BackendCall, 0, 30),
+                test_profile_record(Runner::Backend, ProfileStage::RenderLoop, 0, 70),
+                test_profile_record(Runner::Backend, ProfileStage::BackendCall, 1, 40),
+                test_profile_record(Runner::Backend, ProfileStage::RenderLoop, 1, 80),
+            ],
+            json_path: PathBuf::new(),
+            markdown_path: PathBuf::new(),
+        };
+
+        assert_eq!(
+            profile_bottleneck_row(&report, Scale::Smoke, Operation::Status, Runner::Backend),
+            Some(ProfileBottleneckRow {
+                scale: Scale::Smoke,
+                operation: Operation::Status,
+                runner: Runner::Backend,
+                stage: ProfileStage::RenderLoop,
+                stage_median_ms: 80,
+                total_median_ms: 120,
+                stage_share: 80.0 / 120.0,
+            })
         );
     }
 
@@ -2089,6 +3200,7 @@ mod tests {
             warmup: 0,
             git: "git".to_string(),
             regenerate: false,
+            profile: true,
             help: false,
         };
 
@@ -2096,6 +3208,23 @@ mod tests {
 
         assert!(report.json_path.is_file());
         assert!(report.markdown_path.is_file());
+        assert!(!report.profiles.is_empty());
+        assert!(report.profiles.iter().any(|record| {
+            record.runner == Runner::Backend
+                && record.stage == ProfileStage::BackendCall
+                && record.success
+        }));
+        assert!(report.profiles.iter().any(|record| {
+            record.runner == Runner::GitCliParsed
+                && record.stage == ProfileStage::Parse
+                && record.success
+        }));
+        let json = fs::read_to_string(&report.json_path).expect("json report should be readable");
+        assert!(json.contains("\"schema\": \"ratagit.perf-suite.v2\""));
+        assert!(json.contains("\"profiles\""));
+        let markdown =
+            fs::read_to_string(&report.markdown_path).expect("markdown report should be readable");
+        assert!(markdown.contains("## Profile Bottlenecks"));
         for runner in Runner::ALL {
             assert!(
                 report
@@ -2104,6 +3233,13 @@ mod tests {
                     .any(|record| record.runner == runner && record.success)
             );
         }
+
+        let mut no_profile_config = config;
+        no_profile_config.profile = false;
+        no_profile_config.operations = vec![Operation::Status];
+        let no_profile_report =
+            run_suite(&no_profile_config).expect("non-profile smoke suite should run");
+        assert!(no_profile_report.profiles.is_empty());
 
         let _ = remove_dir_all(root);
         let _ = remove_dir_all(output);
@@ -2115,6 +3251,45 @@ mod tests {
             operation: Operation::Status,
             runner,
             iteration: 0,
+            elapsed_ms,
+            output_items: 0,
+            output_bytes: 0,
+            success: true,
+            error: None,
+        }
+    }
+
+    fn test_repo_report() -> RepoReport {
+        RepoReport {
+            scale: Scale::Smoke,
+            path: PathBuf::from("tmp/test"),
+            reused: false,
+            manifest: LargeRepoManifest {
+                scale: Scale::Smoke,
+                files: 1,
+                text_files: 1,
+                binary_files: 0,
+                fanout: 1,
+                file_bytes: 1,
+                binary_bytes: 0,
+                commits: 1,
+                committed: true,
+            },
+        }
+    }
+
+    fn test_profile_record(
+        runner: Runner,
+        stage: ProfileStage,
+        iteration: usize,
+        elapsed_ms: u128,
+    ) -> ProfileRecord {
+        ProfileRecord {
+            scale: Scale::Smoke,
+            operation: Operation::Status,
+            runner,
+            iteration,
+            stage,
             elapsed_ms,
             output_items: 0,
             output_bytes: 0,
