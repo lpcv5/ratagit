@@ -61,8 +61,8 @@ pub use state::{
     CommitHashStatus, CommitInputMode, CommitsUiState, DetailsRepoState, DetailsRequest,
     DetailsRequestId, DetailsRequestTarget, DiscardConfirmState, EditorKind, EditorState,
     FilesSnapshot, PanelFocus, RefreshTarget, RepoSnapshot, ResetChoice, ResetMenuState, ResetMode,
-    SearchScope, SearchState, StashEntry, StashScope, StashUiState, StatusMode, StatusPanelState,
-    WorkStatusState,
+    SearchScope, SearchState, StageAllConfirmState, StageAllOperation, StashEntry, StashScope,
+    StashUiState, StatusMode, StatusPanelState, WorkStatusState,
 };
 
 pub(crate) use actions::with_pending;

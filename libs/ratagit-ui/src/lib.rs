@@ -8,6 +8,7 @@ mod modal;
 mod panel_projection;
 mod panels;
 mod reset_modal;
+mod stage_all_modal;
 mod sync_modal;
 mod terminal;
 mod text;

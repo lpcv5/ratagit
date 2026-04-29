@@ -193,6 +193,12 @@ pub enum AutoStashOperation {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StageAllOperation {
+    CreateCommit { message: String },
+    AmendStagedChanges { commit_id: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StashEntry {
     pub id: String,
     pub summary: String,
@@ -504,6 +510,13 @@ pub struct PushForceConfirmState {
     pub reason: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct StageAllConfirmState {
+    pub active: bool,
+    pub operation: Option<StageAllOperation>,
+    pub paths: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EditorKind {
     Commit {
@@ -725,6 +738,7 @@ pub struct UiState {
     pub reset_menu: ResetMenuState,
     pub discard_confirm: DiscardConfirmState,
     pub push_force_confirm: PushForceConfirmState,
+    pub stage_all_confirm: StageAllConfirmState,
 }
 
 impl Default for UiState {
@@ -742,6 +756,7 @@ impl Default for UiState {
             reset_menu: ResetMenuState::default(),
             discard_confirm: DiscardConfirmState::default(),
             push_force_confirm: PushForceConfirmState::default(),
+            stage_all_confirm: StageAllConfirmState::default(),
         }
     }
 }

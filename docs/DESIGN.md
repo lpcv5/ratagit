@@ -40,6 +40,9 @@ Focus model:
 - `AppContext.ui.editor` stores active commit/stash editor modal state (type + fields + cursor indexes + scope)
 - `AppContext.ui.reset_menu` stores whether the Files reset menu is active and which reset choice is selected
 - `AppContext.ui.discard_confirm` stores whether the discard confirmation modal is active and the resolved target paths
+- `AppContext.ui.stage_all_confirm` stores the active staged-required fallback:
+  the original operation intent and deterministic file paths that will be staged
+  before continuing
 - `AppContext.ui.search` stores generic panel-scoped search input, query, matches,
   and current match index for searchable left panels and subpanels
 - `AppContext.repo.commits.items` stores commit rows while
@@ -99,6 +102,10 @@ Focus model:
   drops stale read results that were started before a queued mutation.
 - Runtimes coalesce redundant queued repository refresh and files-detail diff
   commands after the most recent mutation command.
+- Staged-required operations share one fallback model: if no files are staged
+  and current file rows exist, `update()` opens an AppContext-owned stage-all
+  confirmation; confirming emits a compound mutating command that stages those
+  paths through `GitBackend` and then runs the original operation.
 - Sync and async runtimes share the same scheduler implementation. The scheduler
   uses `Command` metadata for mutating barriers, debounce keys, and refresh
   coalescing keys instead of duplicating command matches in each runtime.
@@ -264,7 +271,8 @@ Files panel interaction:
 - Commit rewrite commands reject merge commits in this slice, only accept
   unpushed commits, and are executed only through `GitBackend`; squash, fixup,
   reword, and delete require a clean working tree, while amend requires staged
-  changes with no unstaged or untracked changes.
+  changes with no unstaged or untracked changes unless the shared stage-all
+  fallback is confirming an operation that started with no staged files.
 - Squash/fixup reject root-parent targets in this slice because the replay path
   amends the selected commit into its parent.
 - Commit reword reuses the existing commit editor modal with a reword intent

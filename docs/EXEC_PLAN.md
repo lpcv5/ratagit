@@ -2,26 +2,27 @@
 
 ## Current Slice
 
-Shortcut A amend staged changes into commits.
+Shared staged-required operation fallback.
 
-### Phase 17: Amend Staged Changes
+### Phase 18: Stage-All Confirmation For Staged-Required Operations
 
 Status: completed
 
 Goal:
 
-- add `A` as an amend shortcut that folds staged changes into `HEAD` by default
-- when the main Commits panel is focused, amend staged changes into the selected
-  private commit and replay newer private commits
-- preserve unidirectional flow through `UiAction` -> `Command` -> `GitBackend`
+- use one model for Git operations that require staged changes
+- when no staged files exist but file changes exist, ask whether to stage all
+  Files rows and continue the requested operation
+- support commit creation and amend staged changes through the shared fallback
 
 Deliverables:
 
-- core action, command, reducer, result handling, and command metadata
-- mock backend and real Git backend support through history-rewrite capability
-- input mapping and shortcut row copy
-- unit tests, UI snapshot updates, mock harness scenario, real-Git smoke coverage
-- product documentation update
+- AppContext-owned confirmation state carrying operation intent and file paths
+- confirmation/cancel actions and keyboard routing
+- compound Git commands that stage all paths then run the original operation
+- shared UI confirmation modal and snapshots
+- core, input, Git execution, harness, and snapshot coverage
+- product/design documentation updates
 
 Validation:
 
@@ -33,14 +34,15 @@ cargo test
 
 Results:
 
-- added `A` amend routing through `UiAction`, `Command`, reducer result
-  handling, command metadata, and the history-rewrite backend capability
-- implemented mock and Hybrid Git backend support for amending staged changes
-  into `HEAD` or a selected private commit
-- updated shortcut rendering so global `p`/`P` sync actions remain visible
-  before local panel actions
-- added core, input, UI snapshot, mock harness, and real-Git smoke coverage
-- updated product/design docs and the generated harness scenario manifest
+- added shared stage-all fallback state/actions for staged-required commit/amend
+  operations
+- added compound Git commands that stage deterministic file paths before commit
+  or amend
+- added the stage-all confirmation modal, input routing, shortcut text, and UI
+  snapshot
+- added core, input, Git execution, and harness coverage for no-staged commit
+  and amend flows
+- validation passed: `cargo fmt`, `cargo clippy --workspace --lib --bins -- -D warnings`, `cargo test`
 
 ## Goal
 

@@ -16,6 +16,7 @@ use crate::loading_indicator::loading_indicator_for_state;
 use crate::panel_projection::{PanelProjection, project_panel};
 use crate::panels::{PanelLine, ShortcutLine, shortcut_line_for_state};
 use crate::reset_modal::render_reset_modal;
+use crate::stage_all_modal::render_stage_all_modal;
 use crate::sync_modal::render_sync_modal;
 use crate::theme::{
     LoadingSpotlightTone, RowRole, batch_selected_row_style, focused_panel_style,
@@ -45,6 +46,7 @@ pub fn render_terminal_with_context(
     render_reset_modal(frame, state, root[0]);
     render_discard_modal(frame, state, root[0]);
     render_sync_modal(frame, state, root[0]);
+    render_stage_all_modal(frame, state, root[0]);
 }
 
 pub fn render_terminal_text(state: &AppContext, size: TerminalSize) -> String {

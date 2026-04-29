@@ -6,8 +6,9 @@ use ratagit_core::{
     CommitHashStatus, CommitInputMode, DetailsRequest, DetailsRequestId, DetailsRequestTarget,
     EditorKind, FileDiffTarget, FileEntry, FileInputMode, FilesSnapshot, GitErrorKind, GitFailure,
     GitResult, PanelFocus, RefreshTarget, RepoSnapshot, ResetChoice, ResetMode, SearchScope,
-    StashEntry, StashScope, UiAction, debounce_key_for_command, refresh_key_for_command,
-    refresh_tree_projection, selected_commit_file_targets, selected_row, update,
+    StageAllOperation, StashEntry, StashScope, UiAction, debounce_key_for_command,
+    refresh_key_for_command, refresh_tree_projection, selected_commit_file_targets, selected_row,
+    update,
 };
 
 fn commit_entry(id: &str, summary: &str) -> CommitEntry {
@@ -357,8 +358,22 @@ fn command_metadata_tracks_debounce_mutation_and_pending_labels() {
             "commit",
         ),
         (
+            Command::StageAllThenCreateCommit {
+                message: "feat: ship".to_string(),
+                paths: vec!["a.txt".to_string()],
+            },
+            "commit",
+        ),
+        (
             Command::AmendStagedChanges {
                 commit_id: "HEAD".to_string(),
+            },
+            "amend",
+        ),
+        (
+            Command::StageAllThenAmendStagedChanges {
+                commit_id: "HEAD".to_string(),
+                paths: vec!["a.txt".to_string()],
             },
             "amend",
         ),
@@ -2482,17 +2497,76 @@ fn amend_staged_changes_targets_selected_commit_in_commits_panel() {
 }
 
 #[test]
+fn staged_required_commit_opens_stage_all_confirm_when_nothing_is_staged() {
+    let mut state = context_with_focus(PanelFocus::Files);
+    state.repo.files.items = vec![
+        file_entry("b.txt", false, false),
+        file_entry("a.txt", false, false),
+    ];
+
+    let commands = update(
+        &mut state,
+        Action::Ui(UiAction::CreateCommit {
+            message: "feat: ship".to_string(),
+        }),
+    );
+
+    assert!(commands.is_empty());
+    assert!(state.ui.stage_all_confirm.active);
+    assert_eq!(
+        state.ui.stage_all_confirm.operation,
+        Some(StageAllOperation::CreateCommit {
+            message: "feat: ship".to_string()
+        })
+    );
+    assert_eq!(state.ui.stage_all_confirm.paths, vec!["a.txt", "b.txt"]);
+
+    let commands = update(&mut state, Action::Ui(UiAction::CancelStageAll));
+    assert!(commands.is_empty());
+    assert!(!state.ui.stage_all_confirm.active);
+    assert!(state.ui.stage_all_confirm.paths.is_empty());
+}
+
+#[test]
+fn staged_required_operation_without_any_file_changes_shows_notice() {
+    let mut state = context_with_focus(PanelFocus::Files);
+
+    let commands = update(&mut state, Action::Ui(UiAction::AmendStagedChanges));
+
+    assert!(commands.is_empty());
+    assert!(!state.ui.stage_all_confirm.active);
+    assert!(
+        state
+            .notices
+            .iter()
+            .any(|notice| notice.contains("No file changes to stage"))
+    );
+}
+
+#[test]
 fn amend_staged_changes_requires_staged_private_non_merge_commits() {
     let mut no_staged = context_with_focus(PanelFocus::Files);
     no_staged.repo.files.items = vec![file_entry("dirty.txt", false, false)];
     let commands = update(&mut no_staged, Action::Ui(UiAction::AmendStagedChanges));
     assert!(commands.is_empty());
-    assert!(
-        no_staged
-            .notices
-            .iter()
-            .any(|notice| notice.contains("No staged changes"))
+    assert!(no_staged.ui.stage_all_confirm.active);
+    assert_eq!(
+        no_staged.ui.stage_all_confirm.operation,
+        Some(StageAllOperation::AmendStagedChanges {
+            commit_id: "HEAD".to_string()
+        })
     );
+    assert_eq!(no_staged.ui.stage_all_confirm.paths, vec!["dirty.txt"]);
+
+    let commands = update(&mut no_staged, Action::Ui(UiAction::ConfirmStageAll));
+    assert_eq!(
+        commands,
+        vec![Command::StageAllThenAmendStagedChanges {
+            commit_id: "HEAD".to_string(),
+            paths: vec!["dirty.txt".to_string()],
+        }]
+    );
+    assert!(!no_staged.ui.stage_all_confirm.active);
 
     let mut mixed = context_with_focus(PanelFocus::Files);
     mixed.repo.files.items = vec![
@@ -3482,6 +3556,7 @@ fn move_selection_does_not_change_left_indexes_when_focus_is_right_panel() {
 #[test]
 fn commit_editor_confirms_subject_and_multiline_body() {
     let mut state = AppContext::default();
+    state.repo.files.items = vec![file_entry("staged.txt", true, false)];
     assert!(update(&mut state, Action::Ui(UiAction::OpenCommitEditor)).is_empty());
     assert_eq!(
         state.ui.editor.kind,

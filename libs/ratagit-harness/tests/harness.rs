@@ -52,6 +52,13 @@ fn staged_commit_fixture() -> RepoSnapshot {
     fixture
 }
 
+fn unstaged_commit_fixture() -> RepoSnapshot {
+    let mut fixture = clean_commit_fixture();
+    fixture.files = vec![fixture_file("dirty.txt", false, false)];
+    fixture.status_summary = "staged: 0, unstaged: 1".to_string();
+    fixture
+}
+
 fn clean_many_commit_fixture(count: usize) -> RepoSnapshot {
     let mut fixture = clean_commit_fixture();
     fixture.commits = (0..count)
@@ -1646,6 +1653,30 @@ fn harness_commits_create_and_refresh() {
 }
 
 #[test]
+fn harness_commits_create_without_staged_changes_prompts_stage_all() {
+    let inputs = [
+        UiAction::RefreshAll,
+        UiAction::CreateCommit {
+            message: "mvp commit".to_string(),
+        },
+        UiAction::ConfirmStageAll,
+    ];
+    assert_scenario(MockScenario::new(
+        "commits_create_no_staged_stage_all",
+        unstaged_commit_fixture(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &["mvp commit", "Commit created"],
+            screen_not_contains: &["dirty.txt"],
+            selected_screen_rows: &[],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["stage-files:dirty.txt", "commit:mvp commit", "refresh"],
+            git_state_contains: &["summary: \"mvp commit\"", "files: []"],
+        },
+    ));
+}
+
+#[test]
 fn harness_branches_visual_multiselect_marks_rows() {
     let inputs = [
         UiAction::RefreshAll,
@@ -2115,6 +2146,30 @@ fn harness_commits_amend_staged_changes_into_selected_commit() {
             selected_screen_rows: &[],
             batch_selected_screen_rows: &[],
             git_ops_contains: &["amend:abc1234", "refresh"],
+            git_state_contains: &["files: []", "summary: \"init project\""],
+        },
+    ));
+}
+
+#[test]
+fn harness_commits_amend_without_staged_changes_prompts_stage_all() {
+    let inputs = [
+        UiAction::RefreshAll,
+        UiAction::FocusNext,
+        UiAction::FocusNext,
+        UiAction::AmendStagedChanges,
+        UiAction::ConfirmStageAll,
+    ];
+    assert_scenario(MockScenario::new(
+        "commits_amend_no_staged_stage_all",
+        unstaged_commit_fixture(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &["Amended staged changes into abc1234"],
+            screen_not_contains: &["dirty.txt"],
+            selected_screen_rows: &[],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["stage-files:dirty.txt", "amend:abc1234", "refresh"],
             git_state_contains: &["files: []", "summary: \"init project\""],
         },
     ));

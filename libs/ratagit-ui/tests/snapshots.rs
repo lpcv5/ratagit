@@ -970,6 +970,31 @@ fn terminal_snapshot_force_push_confirm_modal() {
 }
 
 #[test]
+fn terminal_snapshot_stage_all_confirm_modal() {
+    let mut state = AppContext::default();
+    let mut snapshot = fixture_dirty_repo();
+    for file in &mut snapshot.files {
+        file.staged = false;
+    }
+    snapshot.status_summary = "staged: 0, unstaged: 2".to_string();
+    apply_refreshed_with_mock_details(&mut state, snapshot);
+    update(
+        &mut state,
+        Action::Ui(UiAction::CreateCommit {
+            message: "feat: ship".to_string(),
+        }),
+    );
+
+    insta::assert_snapshot!(render_terminal_text(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    ));
+}
+
+#[test]
 fn terminal_snapshot_branches_rebase_modal() {
     let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());

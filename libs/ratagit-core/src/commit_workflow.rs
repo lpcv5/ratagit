@@ -3,12 +3,13 @@ use crate::search::{clear_search_if_incompatible, recompute_search_matches};
 use crate::selectors::{repository_has_uncommitted_changes, selected_commit_id};
 use crate::{
     AppContext, AutoStashOperation, Command, CommitEntry, CommitFilesUiState, CommitHashStatus,
-    CommitInputMode, PanelFocus, SearchScope, branches, commit_key, details,
+    CommitInputMode, PanelFocus, SearchScope, StageAllOperation, branches, commit_key, details,
     initialize_commit_files_tree, leave_commit_multi_select, mark_commit_file_items_changed,
     move_commit_file_selected, move_commit_file_selected_in_viewport, move_commit_selected,
     move_commit_selected_in_viewport, operations, push_notice,
     reconcile_commits_after_items_appended, selected_commit, selected_commit_ids, selected_commits,
 };
+use std::collections::BTreeSet;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CommitRewriteKind {
@@ -35,12 +36,17 @@ pub(crate) fn delete_selected_commits(state: &mut AppContext) -> Vec<Command> {
     })
 }
 
-pub(crate) fn amend_staged_changes(state: &mut AppContext) -> Vec<Command> {
-    if !state.repo.files.items.iter().any(|entry| entry.staged) {
-        push_notice(state, "No staged changes to amend");
-        return Vec::new();
+pub(crate) fn create_commit(state: &mut AppContext, message: String) -> Vec<Command> {
+    if repository_has_staged_changes(state) {
+        return with_pending(state, vec![Command::CreateCommit { message }]);
     }
-    if state.repo.files.items.iter().any(|entry| !entry.staged) {
+    open_stage_all_confirm(state, StageAllOperation::CreateCommit { message })
+}
+
+pub(crate) fn amend_staged_changes(state: &mut AppContext) -> Vec<Command> {
+    if repository_has_staged_changes(state)
+        && state.repo.files.items.iter().any(|entry| !entry.staged)
+    {
         push_notice(state, "Amend requires only staged changes");
         return Vec::new();
     }
@@ -78,8 +84,42 @@ pub(crate) fn amend_staged_changes(state: &mut AppContext) -> Vec<Command> {
         "HEAD".to_string()
     };
 
+    if !repository_has_staged_changes(state) {
+        return open_stage_all_confirm(state, StageAllOperation::AmendStagedChanges { commit_id });
+    }
+
     push_notice(state, &format!("Queued amend into {commit_id}"));
     with_pending(state, vec![Command::AmendStagedChanges { commit_id }])
+}
+
+pub(crate) fn confirm_stage_all(state: &mut AppContext) -> Vec<Command> {
+    if !state.ui.stage_all_confirm.active {
+        return Vec::new();
+    }
+    let operation = state.ui.stage_all_confirm.operation.clone();
+    let paths = state.ui.stage_all_confirm.paths.clone();
+    close_stage_all_confirm(state);
+    if paths.is_empty() {
+        push_notice(state, "No file changes to stage");
+        return Vec::new();
+    }
+    match operation {
+        Some(StageAllOperation::CreateCommit { message }) => with_pending(
+            state,
+            vec![Command::StageAllThenCreateCommit { message, paths }],
+        ),
+        Some(StageAllOperation::AmendStagedChanges { commit_id }) => with_pending(
+            state,
+            vec![Command::StageAllThenAmendStagedChanges { commit_id, paths }],
+        ),
+        None => Vec::new(),
+    }
+}
+
+pub(crate) fn close_stage_all_confirm(state: &mut AppContext) {
+    state.ui.stage_all_confirm.active = false;
+    state.ui.stage_all_confirm.operation = None;
+    state.ui.stage_all_confirm.paths.clear();
 }
 
 pub(crate) fn checkout_selected_commit_detached(state: &mut AppContext) -> Vec<Command> {
@@ -351,4 +391,37 @@ fn should_prefetch_commits(state: &AppContext, move_up: bool) -> bool {
             .saturating_sub(1)
             .saturating_sub(state.ui.commits.selected)
             <= crate::COMMITS_PREFETCH_THRESHOLD
+}
+
+fn open_stage_all_confirm(state: &mut AppContext, operation: StageAllOperation) -> Vec<Command> {
+    let paths = all_file_paths(state);
+    if paths.is_empty() {
+        push_notice(state, "No file changes to stage");
+        return Vec::new();
+    }
+    state.ui.reset_menu.active = false;
+    state.ui.reset_menu.danger_confirm = None;
+    state.ui.discard_confirm.active = false;
+    state.ui.discard_confirm.paths.clear();
+    branches::close_popovers(state);
+    state.ui.stage_all_confirm.active = true;
+    state.ui.stage_all_confirm.operation = Some(operation);
+    state.ui.stage_all_confirm.paths = paths;
+    Vec::new()
+}
+
+fn repository_has_staged_changes(state: &AppContext) -> bool {
+    state.repo.files.items.iter().any(|entry| entry.staged)
+}
+
+fn all_file_paths(state: &AppContext) -> Vec<String> {
+    state
+        .repo
+        .files
+        .items
+        .iter()
+        .map(|entry| entry.path.clone())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
 }

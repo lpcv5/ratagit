@@ -6,7 +6,7 @@ use crate::text_edit::{
 use crate::worktree::{close_discard_confirm, stash_scope_for_current_files_selection};
 use crate::{
     AppContext, Command, CommitEditorIntent, CommitField, CommitHashStatus, CommitInputMode,
-    EditorKind, StashScope, branches, commit_key, push_notice, selected_commit,
+    EditorKind, StashScope, branches, commit_key, commit_workflow, push_notice, selected_commit,
 };
 
 pub(crate) fn open_commit_editor(state: &mut AppContext) {
@@ -200,12 +200,7 @@ pub(crate) fn confirm(state: &mut AppContext) -> Vec<Command> {
             state.ui.commits.draft_message = message.trim().to_string();
             state.ui.editor.kind = None;
             match intent {
-                CommitEditorIntent::Create => with_pending(
-                    state,
-                    vec![Command::CreateCommit {
-                        message: commit_message,
-                    }],
-                ),
+                CommitEditorIntent::Create => commit_workflow::create_commit(state, commit_message),
                 CommitEditorIntent::Reword { commit_id } => with_pending(
                     state,
                     vec![Command::RewordCommit {

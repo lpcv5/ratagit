@@ -52,10 +52,12 @@ Navigation rules:
 - `A` amends staged changes into `HEAD` by default; when the main Commits panel
   is focused, it amends staged changes into the selected commit and replays
   newer private commits
-- confirmation modals are reserved for operations that can discard unrecoverable
-  working tree data, remove remote branches, force delete local branches, or
-  force push; recoverable operations such as normal pull/push, checkout, rebase,
-  and private commit rewrites do not add extra confirmations
+- if a commit/amend operation needs staged changes and there are none, but file
+  changes exist, a stage-all confirmation modal asks whether to stage every
+  current file row and continue the original operation
+- confirmation modals are used for operations that can discard unrecoverable
+  working tree data, remove remote branches, force delete local branches, force
+  push, or run a staged-required operation when nothing is staged
 - all panel titles show numbered focus hints: `[1]..[6]`; in the terminal UI
   these hints render as badge-style reverse-video numbers
 - top branch/focus/status summary is hidden to prioritize panels
@@ -119,6 +121,9 @@ Files panel rules:
   - `Tab` / `Shift+Tab` switches active field
   - `Ctrl+J` inserts a newline in body
   - `Enter` confirms, `Esc` cancels
+  - if no files are staged but file changes exist, confirming the commit opens a
+    stage-all confirmation modal; `Enter` stages all current file rows and then
+    creates the commit, while `Esc` cancels the fallback
 - `s` opens a stash editor modal from Files focus
   - normal mode stashes all current changes, including untracked files
   - visual multi-select mode stashes only selected target paths
@@ -232,9 +237,11 @@ Commits panel rules:
 - `f` fixups the selected commit or visual-selected commits into their parent lineage
 - `r` opens the commit message modal prefilled with the selected commit message and rewords one commit
 - `d` deletes the selected commit or visual-selected commits
-- squash/fixup/reword/delete require a clean working tree; amend requires only
-  staged changes with no unstaged or untracked changes; these rewrite actions
-  only operate on red/unpushed commits and reject merge commits in this slice
+- squash/fixup/reword/delete require a clean working tree; amend normally
+  requires only staged changes with no unstaged or untracked changes, but when
+  nothing is staged it can ask to stage all current file rows and continue; these
+  rewrite actions only operate on red/unpushed commits and reject merge commits
+  in this slice
 - squash/fixup reject commits whose parent is the root commit in this slice
 - `space` checks out the selected commit as detached HEAD; dirty worktrees use the same explicit auto-stash confirmation as branch checkout
 - `Enter` opens a Files subpanel for the selected commit

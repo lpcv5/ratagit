@@ -11,6 +11,8 @@ pub enum UiAction {
     Push,
     ConfirmForcePush,
     CancelForcePush,
+    ConfirmStageAll,
+    CancelStageAll,
     FocusNext,
     FocusPrev,
     FocusPanel { panel: crate::PanelFocus },
@@ -195,8 +197,18 @@ pub enum GitResult {
         message: String,
         result: Result<(), String>,
     },
+    StageAllThenCreateCommit {
+        message: String,
+        paths: Vec<String>,
+        result: Result<(), String>,
+    },
     AmendStagedChanges {
         commit_id: String,
+        result: Result<(), String>,
+    },
+    StageAllThenAmendStagedChanges {
+        commit_id: String,
+        paths: Vec<String>,
         result: Result<(), String>,
     },
     CreateBranch {
@@ -326,8 +338,16 @@ pub enum Command {
     CreateCommit {
         message: String,
     },
+    StageAllThenCreateCommit {
+        message: String,
+        paths: Vec<String>,
+    },
     AmendStagedChanges {
         commit_id: String,
+    },
+    StageAllThenAmendStagedChanges {
+        commit_id: String,
+        paths: Vec<String>,
     },
     CreateBranch {
         name: String,
@@ -575,8 +595,22 @@ impl Command {
                 refresh_key: None,
                 pending_label: PendingOperationLabel::Static("commit"),
             },
+            Command::StageAllThenCreateCommit { .. } => CommandMetadata {
+                log_label: CommandLogLabel::Static("stage_all_then_create_commit"),
+                mutating: true,
+                debounce_key: None,
+                refresh_key: None,
+                pending_label: PendingOperationLabel::Static("commit"),
+            },
             Command::AmendStagedChanges { .. } => CommandMetadata {
                 log_label: CommandLogLabel::Static("amend_staged_changes"),
+                mutating: true,
+                debounce_key: None,
+                refresh_key: None,
+                pending_label: PendingOperationLabel::Static("amend"),
+            },
+            Command::StageAllThenAmendStagedChanges { .. } => CommandMetadata {
+                log_label: CommandLogLabel::Static("stage_all_then_amend_staged_changes"),
                 mutating: true,
                 debounce_key: None,
                 refresh_key: None,
@@ -764,7 +798,11 @@ impl GitResult {
             GitResult::Nuke { .. } => "nuke",
             GitResult::DiscardFiles { .. } => "discard_files",
             GitResult::CreateCommit { .. } => "create_commit",
+            GitResult::StageAllThenCreateCommit { .. } => "stage_all_then_create_commit",
             GitResult::AmendStagedChanges { .. } => "amend_staged_changes",
+            GitResult::StageAllThenAmendStagedChanges { .. } => {
+                "stage_all_then_amend_staged_changes"
+            }
             GitResult::CreateBranch { .. } => "create_branch",
             GitResult::CheckoutBranch { .. } => "checkout_branch",
             GitResult::DeleteBranch { .. } => "delete_branch",
@@ -803,7 +841,9 @@ impl GitResult {
             | GitResult::Nuke { result }
             | GitResult::DiscardFiles { result, .. }
             | GitResult::CreateCommit { result, .. }
+            | GitResult::StageAllThenCreateCommit { result, .. }
             | GitResult::AmendStagedChanges { result, .. }
+            | GitResult::StageAllThenAmendStagedChanges { result, .. }
             | GitResult::CreateBranch { result, .. }
             | GitResult::CheckoutBranch { result, .. }
             | GitResult::RebaseBranch { result, .. }

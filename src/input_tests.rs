@@ -57,6 +57,17 @@ mod tests {
         state
     }
 
+    fn active_stage_all_confirm_state() -> AppContext {
+        let mut state = AppContext::default();
+        state.ui.stage_all_confirm.active = true;
+        state.ui.stage_all_confirm.operation =
+            Some(ratagit_core::StageAllOperation::CreateCommit {
+                message: "feat: ship".to_string(),
+            });
+        state.ui.stage_all_confirm.paths = vec!["a.txt".to_string()];
+        state
+    }
+
     fn active_branch_create_state() -> AppContext {
         let mut state = AppContext::default();
         state.ui.branches.create.active = true;
@@ -120,6 +131,11 @@ mod tests {
 
         state.ui.editor = active_commit_editor_state().ui.editor;
         assert_eq!(input_mode_for_state(&state), InputMode::Editor);
+
+        let mut stage_all = active_stage_all_confirm_state();
+        stage_all.ui.search.active = true;
+        stage_all.ui.search.scope = stage_all.active_search_scope();
+        assert_eq!(input_mode_for_state(&stage_all), InputMode::StageAllConfirm);
     }
 
     #[test]
@@ -152,6 +168,22 @@ mod tests {
             Some(UiAction::MoveResetMenuDown)
         );
         assert_eq!(map_key(&state, KeyCode::Char('r')), None);
+    }
+
+    #[test]
+    fn stage_all_confirm_maps_enter_and_escape() {
+        let state = active_stage_all_confirm_state();
+
+        assert_eq!(input_mode_for_state(&state), InputMode::StageAllConfirm);
+        assert_eq!(
+            map_key(&state, KeyCode::Enter),
+            Some(UiAction::ConfirmStageAll)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Esc),
+            Some(UiAction::CancelStageAll)
+        );
+        assert_eq!(map_key(&state, KeyCode::Char('c')), None);
     }
 
     #[test]

@@ -24,6 +24,7 @@ pub(crate) enum InputMode {
     ResetDangerConfirm,
     DiscardConfirm,
     ForcePushConfirm,
+    StageAllConfirm,
     SearchInput,
     SearchQuery,
     Panel,
@@ -52,6 +53,8 @@ pub(crate) fn input_mode_for_state(state: &AppContext) -> InputMode {
         InputMode::DiscardConfirm
     } else if state.ui.push_force_confirm.active {
         InputMode::ForcePushConfirm
+    } else if state.ui.stage_all_confirm.active {
+        InputMode::StageAllConfirm
     } else if search_input_is_current(state) {
         InputMode::SearchInput
     } else if search_query_is_current(state) {
@@ -117,6 +120,7 @@ fn ui_action_for_key(
         InputMode::ResetDangerConfirm => return reset_danger_action_for_key(code),
         InputMode::DiscardConfirm => return discard_confirm_action_for_key(code),
         InputMode::ForcePushConfirm => return force_push_action_for_key(code),
+        InputMode::StageAllConfirm => return stage_all_action_for_key(code),
         InputMode::SearchInput => return search_input_action_for_key(code),
         InputMode::SearchQuery => {
             if let Some(action) = search_query_action_for_key(code) {
@@ -262,6 +266,14 @@ fn force_push_action_for_key(code: KeyCode) -> Option<UiAction> {
     match code {
         KeyCode::Enter => Some(UiAction::ConfirmForcePush),
         KeyCode::Esc => Some(UiAction::CancelForcePush),
+        _ => None,
+    }
+}
+
+fn stage_all_action_for_key(code: KeyCode) -> Option<UiAction> {
+    match code {
+        KeyCode::Enter => Some(UiAction::ConfirmStageAll),
+        KeyCode::Esc => Some(UiAction::CancelStageAll),
         _ => None,
     }
 }

@@ -186,12 +186,32 @@ fn execute_command_inner(backend: &mut dyn GitBackend, command: Command) -> GitR
                 .create_commit(&message)
                 .map_err(|error| error.message),
         },
+        Command::StageAllThenCreateCommit { message, paths } => {
+            GitResult::StageAllThenCreateCommit {
+                message: message.clone(),
+                paths: paths.clone(),
+                result: backend
+                    .stage_files(&paths)
+                    .and_then(|()| backend.create_commit(&message))
+                    .map_err(|error| error.message),
+            }
+        }
         Command::AmendStagedChanges { commit_id } => GitResult::AmendStagedChanges {
             commit_id: commit_id.clone(),
             result: backend
                 .amend_staged_changes(&commit_id)
                 .map_err(|error| error.message),
         },
+        Command::StageAllThenAmendStagedChanges { commit_id, paths } => {
+            GitResult::StageAllThenAmendStagedChanges {
+                commit_id: commit_id.clone(),
+                paths: paths.clone(),
+                result: backend
+                    .stage_files(&paths)
+                    .and_then(|()| backend.amend_staged_changes(&commit_id))
+                    .map_err(|error| error.message),
+            }
+        }
         Command::Pull => GitResult::Pull {
             result: backend.pull().map_err(|error| error.message),
         },
@@ -885,6 +905,77 @@ mod tests {
             }
         );
         assert_eq!(backend.operations(), &["amend:aaa1111".to_string()]);
+    }
+
+    #[test]
+    fn execute_command_stages_all_then_runs_requested_operation() {
+        let mut commit_snapshot = test_snapshot_with_commits(vec![test_commit("aaa1111", "head")]);
+        commit_snapshot.files = vec![FileEntry {
+            path: "dirty.txt".to_string(),
+            staged: false,
+            untracked: false,
+            status: CommitFileStatus::Modified,
+            conflicted: false,
+        }];
+        let mut commit_backend = MockGitBackend::new(commit_snapshot);
+
+        let commit_result = execute_command(
+            &mut commit_backend,
+            Command::StageAllThenCreateCommit {
+                message: "feat: ship".to_string(),
+                paths: vec!["dirty.txt".to_string()],
+            },
+        );
+
+        assert_eq!(
+            commit_result,
+            GitResult::StageAllThenCreateCommit {
+                message: "feat: ship".to_string(),
+                paths: vec!["dirty.txt".to_string()],
+                result: Ok(()),
+            }
+        );
+        assert_eq!(
+            commit_backend.operations(),
+            &[
+                "stage-files:dirty.txt".to_string(),
+                "commit:feat: ship".to_string()
+            ]
+        );
+
+        let mut amend_snapshot = test_snapshot_with_commits(vec![test_commit("aaa1111", "head")]);
+        amend_snapshot.files = vec![FileEntry {
+            path: "dirty.txt".to_string(),
+            staged: false,
+            untracked: false,
+            status: CommitFileStatus::Modified,
+            conflicted: false,
+        }];
+        let mut amend_backend = MockGitBackend::new(amend_snapshot);
+
+        let amend_result = execute_command(
+            &mut amend_backend,
+            Command::StageAllThenAmendStagedChanges {
+                commit_id: "aaa1111".to_string(),
+                paths: vec!["dirty.txt".to_string()],
+            },
+        );
+
+        assert_eq!(
+            amend_result,
+            GitResult::StageAllThenAmendStagedChanges {
+                commit_id: "aaa1111".to_string(),
+                paths: vec!["dirty.txt".to_string()],
+                result: Ok(()),
+            }
+        );
+        assert_eq!(
+            amend_backend.operations(),
+            &[
+                "stage-files:dirty.txt".to_string(),
+                "amend:aaa1111".to_string()
+            ]
+        );
     }
 
     #[test]

@@ -292,10 +292,15 @@ fn update_ui(state: &mut AppContext, action: UiAction) -> Vec<Command> {
         UiAction::StageSelectedFile => worktree::stage_selected_file(state),
         UiAction::UnstageSelectedFile => worktree::unstage_selected_file(state),
         UiAction::StashSelectedFiles => worktree::stash_selected_files(state),
+        UiAction::ConfirmStageAll => commit_workflow::confirm_stage_all(state),
+        UiAction::CancelStageAll => {
+            commit_workflow::close_stage_all_confirm(state);
+            Vec::new()
+        }
         UiAction::AmendStagedChanges => commit_workflow::amend_staged_changes(state),
         UiAction::CreateCommit { message } => {
             state.ui.commits.draft_message = message.clone();
-            with_pending(state, vec![Command::CreateCommit { message }])
+            commit_workflow::create_commit(state, message)
         }
         UiAction::OpenBranchCommitsPanel => branches::open_commits_panel(state),
         UiAction::CloseBranchCommitsPanel => branches::close_commits_panel(state),

@@ -109,6 +109,10 @@ pub(crate) fn shortcut_line_for_state(state: &AppContext) -> ShortcutLine {
         return segments(&[("Enter", "force push"), ("Esc", "cancel")]);
     }
 
+    if state.ui.stage_all_confirm.active {
+        return segments(&[("Enter", "stage all"), ("Esc", "cancel")]);
+    }
+
     if state
         .active_search_scope()
         .is_some_and(|scope| state.ui.search.is_input_active_for(scope))
