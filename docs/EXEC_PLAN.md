@@ -2,72 +2,71 @@
 
 ## Active Slice
 
-Name: Exec Plan V2 Discipline
+Name: Modal Height Three Fifths
 
 Status: completed
 
 ## Problem
 
-`EXEC_PLAN.md` has been used too often as a completion log instead of a
-pre-change scope contract. The current file also mixes the active slice with a
-long historical phase tracker, which makes it easy for agents to update results
-after implementation without using the plan to control scope.
+After widening and centering modals, fullscreen modal height still needs to feel
+more substantial. The shared modal shell should make the modal outer frame use
+three fifths of the terminal height instead of content-driven heights.
 
 ## Smallest Slice
 
-- make this file the active-slice entry point only
-- add a required, agent-readable template for future work
-- add a lightweight repository test that fails when the active slice is missing
-  required fields
-- update agent/development-loop docs so plan updates happen before the first
-  code edit for non-trivial work
+- update shared modal geometry so modal outer height targets 3/5 of the
+  terminal area
+- preserve minimum-height and small-terminal clamping behavior
+- keep the existing centered placement so the taller modal remains centered
+- refresh deterministic UI snapshots and cursor assertions affected by the
+  taller modal
+- update design documentation for modal height behavior
 
 ## Non-Goals
 
-- no product behavior changes
-- no UI, Git, runtime, or harness behavior changes
-- no new harness scenario, because this is repository-process infrastructure
-- no broad rewrite of historical phase notes
+- no AppContext, reducer, command, runtime, or Git behavior changes
+- no business-modal API changes
+- no changes to modal width behavior
 
 ## Expected Files
 
-- `AGENTS.md`
-- `docs/DEVELOPMENT_LOOP.md`
 - `docs/EXEC_PLAN.md`
-- `docs/exec-plans/README.md`
-- `tests/exec_plan.rs`
+- `docs/DESIGN.md`
+- `libs/ratagit-ui/src/modal.rs`
+- `libs/ratagit-ui/tests/snapshots.rs`
+- `libs/ratagit-ui/tests/snapshots/*.snap`
+- `libs/ratagit-harness/tests/harness.rs`
 
 ## Tests
 
-- add a repository-level test that reads `docs/EXEC_PLAN.md`
-- require the active slice fields used by agents before implementation
-- require completed slices to include completion evidence and validation notes
-- require dirty worktree changes to include an active exec plan update
+- update focused modal geometry unit tests to assert 3/5 height at normal and
+  fullscreen terminal sizes
+- refresh affected modal snapshots
+- update cursor/harness assertions that depend on modal vertical geometry
 
 ## Harness Decision
 
-No harness scenario is needed. This slice changes process documentation and a
-repository-level guard test only; it does not change rendered UI, user input,
-Git state semantics, or runtime behavior.
+No new harness scenario is needed. The existing fullscreen discard confirmation
+scenario covers user-visible modal rendering at wide/fullscreen size, and this
+slice changes only shared modal geometry.
 
 ## Validation
 
 ```text
 cargo fmt
-cargo test --test exec_plan
 cargo clippy --workspace --lib --bins -- -D warnings
 cargo test
 ```
 
 ## Completion Evidence
 
-- replaced `docs/EXEC_PLAN.md` with an active-slice-only template
-- documented historical planning notes under `docs/exec-plans/README.md`
-- updated `AGENTS.md` and `docs/DEVELOPMENT_LOOP.md` so non-trivial work must
-  update the active plan before implementation edits
-- added `tests/exec_plan.rs` to require agent-readable plan fields, completed
-  slice evidence, and active-plan updates alongside dirty worktree changes
+- updated shared modal geometry so modal outer frames target three fifths of
+  the terminal height
+- preserved centered placement, width behavior, and small-terminal clamps
+- updated focused modal geometry tests for the new 3/5 height behavior
+- refreshed affected modal snapshots, including the fullscreen modal snapshot
+- updated UI and harness cursor assertions affected by the taller shared modal
+- updated design documentation for three-fifths modal height
 - validation passed: `cargo fmt`
-- validation passed: `cargo test --test exec_plan`
 - validation passed: `cargo clippy --workspace --lib --bins -- -D warnings`
 - validation passed: `cargo test`

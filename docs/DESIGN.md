@@ -397,8 +397,11 @@ Panel projection and row source:
   action rows, and an AppContext-derived content renderer; the shell owns the
   title, scrim, content area, footer separator, and action row rendering.
 - Modal overlays render above a deterministic scrim, use rounded borders,
-  top-biased placement, a shared footer separator, and width clamping near
-  50-60% of the terminal with bounded minimum and maximum widths.
+  centered placement, a shared footer separator, and responsive width clamping.
+  Standard terminals keep compact 60% sizing; wide terminals use roughly 70% of
+  the terminal width up to the shared modal maximum. Modal outer frames target
+  three fifths of the terminal height while preserving small-terminal minimum
+  and maximum clamps.
 - `ratagit-ui` exposes modal colors through a default theme palette with
   semantic roles for active accent, text, dim text, background, selected
   surface, border, warning, danger, and success so additional palettes can be

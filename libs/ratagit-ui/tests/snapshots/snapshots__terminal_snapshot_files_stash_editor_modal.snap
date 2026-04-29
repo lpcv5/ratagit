@@ -7,24 +7,24 @@ expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30,
 │✓   src/                       │  diff --git a/README.md b/README.md                             │
 │     M lib.rs                   │  @@ -1 +1 @@                                                    │
 │     M main.rs                  │  -old README.md                                                 │
+│                                │  +new README.md                                                 │
 │                   ╭ ✎ Stash Message ─────────────────────────────────────────╮                   │
 │                   │ Name the stash before saving                             │                   │
 │                   │ ╭ Title ───────────────────────────────────────────────╮ │                   │
 │                   │ │pick files                                            │ │                   │
-│                   │ ╰──────────────────────────────────────────────────────╯ │                   │
-╰───────────────────│ Scope: selected files (3)                                │                   │
-│ 2   Branches     │                                                          │                   │
-│ main             │ ──────────────────────────────────────────────────────── │                   │
-│  feature/mvp      │ Left/Right/Home/End cursor                               │                   │
-│                   │ Enter confirm  Esc cancel                                │                   │
+╰───────────────────│ ╰──────────────────────────────────────────────────────╯ │                   │
+│ 2   Branches     │ Scope: selected files (3)                                │                   │
+│ main             │                                                          │                   │
+│  feature/mvp      │                                                          │                   │
+│                   │                                                          │                   │
+│                   │                                                          │                   │
+│                   │                                                          │                   │
+│                   │                                                          │                   │
+╰───────────────────│                                                          │                   │
+│ 3   Commits      │ ──────────────────────────────────────────────────────── │───────────────────╯
+│●  abc1234  RT  ini│ Left/Right/Home/End cursor                               │                   │
+│●  def5678  RT  wir│ Enter confirm  Esc cancel                                │                   │
 │                   ╰──────────────────────────────────────────────────────────╯                   │
-│                                │                                                                 │
-│                                │                                                                 │
-╰────────────────────────────────╯                                                                 │
-│ 3   Commits                   │─────────────────────────────────────────────────────────────────╯
-│●  abc1234  RT  init project    │ 6  󰌱 Log                                                        │
-│●  def5678  RT  wire commands   │  notice=Ready                                                   │
-│                                │                                                                 │
 │                                │                                                                 │
 │                                │                                                                 │
 ╰────────────────────────────────╯                                                                 │

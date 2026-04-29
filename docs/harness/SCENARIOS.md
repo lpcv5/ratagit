@@ -3,13 +3,13 @@
 This file is generated from `libs/ratagit-harness/tests/harness.rs`.
 Detailed assertions live in the Rust scenario definitions.
 
-Total scenarios: 78
+Total scenarios: 79
 
 ## Global (1)
 
 - `harness_global_pull_and_push_sync_repo`
 
-## Files (29)
+## Files (30)
 
 - `harness_files_stage_and_unstage`
 - `harness_files_details_follow_cursor_with_combined_diff_sections`
@@ -34,6 +34,7 @@ Total scenarios: 78
 - `harness_files_reset_hard_requires_confirmation`
 - `harness_files_reset_hard_confirmation_can_cancel`
 - `harness_files_discard_confirmation_modal_renders`
+- `harness_files_discard_confirmation_modal_renders_fullscreen`
 - `harness_files_discard_current_target_with_confirmation`
 - `harness_files_discard_visual_targets_with_confirmation`
 - `harness_files_discard_confirmation_can_cancel`

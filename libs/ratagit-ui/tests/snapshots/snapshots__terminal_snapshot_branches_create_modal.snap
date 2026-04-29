@@ -7,24 +7,24 @@ expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30,
 │    src/                       │  Author: ratagit-tests <ratagit-tests@example.com>              │
 │     M lib.rs                   │                                                                 │
 │     M main.rs                  │      init project on feature/mvp                                │
+│                                │                                                                 │
 │                   ╭  Create Branch ─────────────────────────────────────────╮                   │
 │                   │ Create branch from selected branch                       │                   │
 │                   │ Start point: feature/mvp                                 │                   │
 │                   │ ╭ Branch name ─────────────────────────────────────────╮ │                   │
-│                   │ │feature/new                                           │ │                   │
-╰───────────────────│ ╰──────────────────────────────────────────────────────╯ │                   │
-╭ 2   Branches ────│                                                          │                   │
-│ main             │ ──────────────────────────────────────────────────────── │                   │
-│  feature/mvp      │ Enter create  Esc cancel                                 │                   │
+╰───────────────────│ │feature/new                                           │ │                   │
+╭ 2   Branches ────│ ╰──────────────────────────────────────────────────────╯ │                   │
+│ main             │                                                          │                   │
+│  feature/mvp      │                                                          │                   │
+│                   │                                                          │                   │
+│                   │                                                          │                   │
+│                   │                                                          │                   │
+│                   │                                                          │                   │
+╰───────────────────│                                                          │                   │
+│ 3   Commits      │                                                          │───────────────────╯
+│●  abc1234  RT  ini│ ──────────────────────────────────────────────────────── │                   │
+│●  def5678  RT  wir│ Enter create  Esc cancel                                 │                   │
 │                   ╰──────────────────────────────────────────────────────────╯                   │
-│                                │                                                                 │
-│                                │                                                                 │
-│                                │                                                                 │
-╰────────────────────────────────╯                                                                 │
-│ 3   Commits                   │─────────────────────────────────────────────────────────────────╯
-│●  abc1234  RT  init project    │ 6  󰌱 Log                                                        │
-│●  def5678  RT  wire commands   │  notice=Ready                                                   │
-│                                │                                                                 │
 │                                │                                                                 │
 │                                │                                                                 │
 ╰────────────────────────────────╯                                                                 │

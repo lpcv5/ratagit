@@ -6,25 +6,25 @@ expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30,
 │   ? README.md                  │  ### unstaged                                                   │
 │    src/                       │  diff --git a/README.md b/README.md                             │
 │     M lib.rs                   │  @@ -1 +1 @@                                                    │
-│     M main.rs     ╭ ✎ Commit Message ────────────────────────────────────────╮                   │
+│     M main.rs                  │  -old README.md                                                 │
+│                                │  +new README.md                                                 │
+│                   ╭ ✎ Commit Message ────────────────────────────────────────╮                   │
 │                   │ Edit commit subject and optional body                    │                   │
 │                   │ ╭ Subject ─────────────────────────────────────────────╮ │                   │
 │                   │ │feat: add modal                                       │ │                   │
-│                   │ ╰──────────────────────────────────────────────────────╯ │                   │
-│                   │ ╭ Body ────────────────────────────────────────────────╮ │                   │
-╰───────────────────│ │body line 1                                           │ │                   │
-│ 2   Branches     │ │body line 2                                           │ │                   │
-│ main             │ │                                                      │ │                   │
-│  feature/mvp      │ │                                                      │ │                   │
-│                   │ ╰──────────────────────────────────────────────────────╯ │                   │
-│                   │ ──────────────────────────────────────────────────────── │                   │
-│                   │ Tab/Shift+Tab field  Left/Right/Home/End cursor          │                   │
-│                   │ Ctrl+J newline  Enter confirm  Esc cancel                │                   │
-╰───────────────────╰──────────────────────────────────────────────────────────╯                   │
-│ 3   Commits                   │─────────────────────────────────────────────────────────────────╯
-│●  abc1234  RT  init project    │ 6  󰌱 Log                                                        │
-│●  def5678  RT  wire commands   │  notice=Ready                                                   │
-│                                │                                                                 │
+╰───────────────────│ ╰──────────────────────────────────────────────────────╯ │                   │
+│ 2   Branches     │ ╭ Body ────────────────────────────────────────────────╮ │                   │
+│ main             │ │body line 1                                           │ │                   │
+│  feature/mvp      │ │body line 2                                           │ │                   │
+│                   │ │                                                      │ │                   │
+│                   │ │                                                      │ │                   │
+│                   │ │                                                      │ │                   │
+│                   │ │                                                      │ │                   │
+╰───────────────────│ ╰──────────────────────────────────────────────────────╯ │                   │
+│ 3   Commits      │ ──────────────────────────────────────────────────────── │───────────────────╯
+│●  abc1234  RT  ini│ Tab/Shift+Tab field  Left/Right/Home/End cursor          │                   │
+│●  def5678  RT  wir│ Ctrl+J newline  Enter confirm  Esc cancel                │                   │
+│                   ╰──────────────────────────────────────────────────────────╯                   │
 │                                │                                                                 │
 │                                │                                                                 │
 ╰────────────────────────────────╯                                                                 │

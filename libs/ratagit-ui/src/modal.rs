@@ -17,7 +17,11 @@ pub(crate) type ModalAction = (&'static str, &'static str);
 const DESIGN_MIN_WIDTH: u16 = 40;
 const DESIGN_MAX_WIDTH: u16 = 72;
 const DESIGN_TARGET_WIDTH_PERCENT: u16 = 60;
-const TOP_BIAS_PERCENT: u16 = 30;
+const DESIGN_TARGET_HEIGHT_NUMERATOR: u16 = 3;
+const DESIGN_TARGET_HEIGHT_DENOMINATOR: u16 = 5;
+const WIDE_TERMINAL_MIN_WIDTH: u16 = 120;
+const WIDE_DESIGN_MAX_WIDTH: u16 = 112;
+const WIDE_DESIGN_TARGET_WIDTH_PERCENT: u16 = 70;
 const SELECT_LIST_MAX_ITEMS: u16 = 10;
 const SELECT_LIST_BORDER_ROWS: u16 = 2;
 const CHOICE_MENU_DESCRIPTION_MIN_ROWS: u16 = 2;
@@ -458,23 +462,25 @@ fn modal_rect(area: Rect, spec: ModalSpec) -> Option<Rect> {
     let max_width = area.width.saturating_sub(2).max(1);
     let max_height = area.height.saturating_sub(2).max(1);
     let min_width = spec.min_width.max(DESIGN_MIN_WIDTH).min(max_width);
-    let percent_width =
-        ((area.width as u32).saturating_mul(DESIGN_TARGET_WIDTH_PERCENT as u32) / 100) as u16;
-    let width = spec
-        .target_width
-        .min(DESIGN_MAX_WIDTH)
-        .min(percent_width.max(1))
-        .min(max_width)
-        .max(min_width);
-    let height = spec
-        .target_height
+    let percent_width = if area.width >= WIDE_TERMINAL_MIN_WIDTH {
+        ((area.width as u32).saturating_mul(WIDE_DESIGN_TARGET_WIDTH_PERCENT as u32) / 100) as u16
+    } else {
+        ((area.width as u32).saturating_mul(DESIGN_TARGET_WIDTH_PERCENT as u32) / 100) as u16
+    };
+    let target_width = if area.width >= WIDE_TERMINAL_MIN_WIDTH {
+        percent_width.clamp(1, WIDE_DESIGN_MAX_WIDTH)
+    } else {
+        spec.target_width
+            .min(DESIGN_MAX_WIDTH)
+            .min(percent_width.max(1))
+    };
+    let width = target_width.min(max_width).max(min_width);
+    let target_height = ((area.height as u32).saturating_mul(DESIGN_TARGET_HEIGHT_NUMERATOR as u32)
+        / DESIGN_TARGET_HEIGHT_DENOMINATOR as u32) as u16;
+    let height = target_height
         .min(max_height)
         .max(spec.min_height.min(area.height));
-    let top_offset = area
-        .height
-        .saturating_sub(height)
-        .saturating_mul(TOP_BIAS_PERCENT)
-        / 100;
+    let top_offset = area.height.saturating_sub(height) / 2;
     let rect = Rect::new(
         area.x + area.width.saturating_sub(width) / 2,
         area.y + top_offset,
@@ -552,5 +558,38 @@ mod tests {
     fn choice_menu_modal_height_allows_ten_visible_items() {
         assert_eq!(choice_menu_modal_height(4, 1), 14);
         assert_eq!(choice_menu_modal_height(42, 1), 20);
+    }
+
+    #[test]
+    fn modal_rect_uses_wide_responsive_width_and_centering() {
+        let rect = modal_rect(
+            Rect::new(0, 0, 160, 50),
+            ModalSpec::new("Confirm", ModalTone::Danger, 76, 12, 20, 8, 1),
+        )
+        .expect("wide terminal should fit modal");
+
+        assert_eq!(rect, Rect::new(24, 10, 112, 30));
+    }
+
+    #[test]
+    fn modal_rect_preserves_normal_terminal_clamping() {
+        let rect = modal_rect(
+            Rect::new(0, 0, 100, 30),
+            ModalSpec::new("Confirm", ModalTone::Danger, 76, 12, 20, 8, 1),
+        )
+        .expect("normal terminal should fit modal");
+
+        assert_eq!(rect, Rect::new(20, 6, 60, 18));
+    }
+
+    #[test]
+    fn modal_rect_centers_odd_remaining_rows_with_floor_division() {
+        let rect = modal_rect(
+            Rect::new(0, 0, 100, 31),
+            ModalSpec::new("Confirm", ModalTone::Danger, 76, 12, 20, 8, 1),
+        )
+        .expect("terminal should fit modal");
+
+        assert_eq!(rect.y, 6);
     }
 }

@@ -799,6 +799,21 @@ fn terminal_snapshot_files_discard_confirm_modal() {
 }
 
 #[test]
+fn terminal_snapshot_files_discard_confirm_modal_fullscreen() {
+    let mut state = AppContext::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+    update(&mut state, Action::Ui(UiAction::OpenDiscardConfirm));
+
+    insta::assert_snapshot!(render_terminal_text(
+        &state,
+        TerminalSize {
+            width: 160,
+            height: 50,
+        },
+    ));
+}
+
+#[test]
 fn terminal_snapshot_files_discard_confirm_multiselect_modal() {
     let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
@@ -1488,7 +1503,7 @@ fn terminal_commit_editor_cursor_follows_active_body_field() {
         },
     );
 
-    assert_eq!(cursor.expect("editor cursor should render").y, 11);
+    assert_eq!(cursor.expect("editor cursor should render").y, 13);
 }
 
 #[test]
@@ -1510,7 +1525,7 @@ fn terminal_commit_editor_cursor_wraps_long_body_line() {
     );
     let cursor = cursor.expect("editor cursor should render");
 
-    assert_eq!((cursor.x, cursor.y), (44, 11));
+    assert_eq!((cursor.x, cursor.y), (44, 13));
 }
 
 #[test]
@@ -1530,7 +1545,7 @@ fn terminal_commit_editor_cursor_follows_subject_field() {
         },
     );
 
-    assert_eq!(cursor.expect("editor cursor should render").y, 7);
+    assert_eq!(cursor.expect("editor cursor should render").y, 9);
 }
 
 #[test]
@@ -1551,7 +1566,7 @@ fn terminal_commit_editor_cursor_wraps_long_subject() {
     );
     let cursor = cursor.expect("editor cursor should render");
 
-    assert_eq!((cursor.x, cursor.y), (44, 8));
+    assert_eq!((cursor.x, cursor.y), (44, 10));
 }
 
 #[test]
@@ -1591,7 +1606,7 @@ fn terminal_stash_editor_cursor_follows_title() {
         },
     );
 
-    assert_eq!(cursor.expect("editor cursor should render").y, 8);
+    assert_eq!(cursor.expect("editor cursor should render").y, 9);
 }
 
 #[test]
@@ -1612,7 +1627,7 @@ fn terminal_stash_editor_cursor_wraps_long_title() {
     );
     let cursor = cursor.expect("editor cursor should render");
 
-    assert_eq!((cursor.x, cursor.y), (44, 9));
+    assert_eq!((cursor.x, cursor.y), (44, 10));
 }
 
 #[test]
