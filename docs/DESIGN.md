@@ -281,13 +281,13 @@ Files panel interaction:
 - Commit visual multi-select is AppContext-owned and follows the same continuous
   anchor-to-cursor model as Files visual selection; `Esc` exits the mode.
 - Commit rewrite commands can operate on linear pushed or unpushed history and
-  are executed only through `GitBackend`; squash, fixup, reword, and delete
-  require a clean working tree, while amend requires staged changes with no
-  unstaged or untracked changes unless the shared stage-all fallback is
-  confirming an operation that started with no staged files. Merge commits are
-  rejected in this slice.
-- Squash/fixup reject root-parent targets in this slice because the replay path
-  amends the selected commit into its parent.
+  are executed only through `GitBackend`; squash, fixup, reword, and delete run
+  scripted Git interactive rebase and require a clean working tree, while amend
+  requires staged changes with no unstaged or untracked changes unless the
+  shared stage-all fallback is confirming an operation that started with no
+  staged files. Merge commits are rejected in this slice.
+- Squash/fixup reject root-parent targets in this slice because the interactive
+  rebase path does not use `git rebase --root`.
 - Commit reword reuses the existing commit editor modal with a reword intent
   stored in `AppContext.ui.editor`; confirming emits `Command::RewordCommit`.
 - Commits search selects matching loaded commits and refreshes the commit diff;

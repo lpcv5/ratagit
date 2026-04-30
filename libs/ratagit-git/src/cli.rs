@@ -1,8 +1,9 @@
 use std::collections::BTreeSet;
+use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command as ProcessCommand, ExitStatus, Stdio};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use ratagit_core::{
     BranchDeleteMode, CommitFileDiffTarget, CommitFileEntry, CommitFileStatus, FileEntry,
@@ -49,6 +50,7 @@ struct GitCommandOptions {
     stdout_limit: Option<usize>,
     capture_stderr: bool,
     timeout: Option<Duration>,
+    env: Vec<(String, String)>,
 }
 
 impl GitCommandOptions {
@@ -58,11 +60,17 @@ impl GitCommandOptions {
             stdout_limit: None,
             capture_stderr: true,
             timeout: None,
+            env: Vec::new(),
         }
     }
 
     fn with_stdout_limit(mut self, stdout_limit: usize) -> Self {
         self.stdout_limit = Some(stdout_limit);
+        self
+    }
+
+    fn with_env(mut self, env: Vec<(String, String)>) -> Self {
+        self.env = env;
         self
     }
 }
@@ -207,6 +215,9 @@ impl<'repo> GitCommandRunner<'repo> {
         if options.optional_locks_disabled {
             command.env("GIT_OPTIONAL_LOCKS", "0");
         }
+        for (key, value) in &options.env {
+            command.env(key, value);
+        }
         let _timeout_ready = options.timeout;
         command
     }
@@ -280,6 +291,15 @@ impl GitCli {
         self.run_git_text(args)
     }
 
+    fn run_git_owned_with_env(
+        &self,
+        args: Vec<String>,
+        env: Vec<(String, String)>,
+    ) -> Result<String, GitError> {
+        self.run_git_output_with_env(args, false, env)
+            .map(|stdout| String::from_utf8_lossy(&stdout).to_string())
+    }
+
     fn run_git_read_owned(&self, args: Vec<String>) -> Result<String, GitError> {
         self.run_git_read_text(args)
     }
@@ -321,6 +341,24 @@ impl GitCli {
     {
         GitCommandRunner::new(&self.repo_path)
             .run(args, GitCommandOptions::new(optional_locks_disabled))
+            .map(|output| output.stdout)
+    }
+
+    fn run_git_output_with_env<I, S>(
+        &self,
+        args: I,
+        optional_locks_disabled: bool,
+        env: Vec<(String, String)>,
+    ) -> Result<Vec<u8>, GitError>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        GitCommandRunner::new(&self.repo_path)
+            .run(
+                args,
+                GitCommandOptions::new(optional_locks_disabled).with_env(env),
+            )
             .map(|output| output.stdout)
     }
 
@@ -710,22 +748,22 @@ impl GitCli {
     }
 
     pub(crate) fn squash_commits(&mut self, commit_ids: &[String]) -> Result<(), GitError> {
-        self.replay_commits(commit_ids, ReplayMode::Squash)
+        self.rebase_commits(commit_ids, RewriteMode::Squash)
     }
 
     pub(crate) fn fixup_commits(&mut self, commit_ids: &[String]) -> Result<(), GitError> {
-        self.replay_commits(commit_ids, ReplayMode::Fixup)
+        self.rebase_commits(commit_ids, RewriteMode::Fixup)
     }
 
     pub(crate) fn reword_commit(&mut self, commit_id: &str, message: &str) -> Result<(), GitError> {
-        self.replay_commits(
+        self.rebase_commits(
             &[commit_id.to_string()],
-            ReplayMode::Reword(message.to_string()),
+            RewriteMode::Reword(message.to_string()),
         )
     }
 
     pub(crate) fn delete_commits(&mut self, commit_ids: &[String]) -> Result<(), GitError> {
-        self.replay_commits(commit_ids, ReplayMode::Delete)
+        self.rebase_commits(commit_ids, RewriteMode::Delete)
     }
 
     pub(crate) fn checkout_commit_detached(
@@ -743,7 +781,7 @@ impl GitCli {
             .map(|_| ())
     }
 
-    fn replay_commits(&mut self, commit_ids: &[String], mode: ReplayMode) -> Result<(), GitError> {
+    fn rebase_commits(&mut self, commit_ids: &[String], mode: RewriteMode) -> Result<(), GitError> {
         if commit_ids.is_empty() {
             return Err(GitError::new("no commits selected"));
         }
@@ -764,77 +802,22 @@ impl GitCli {
                     })
             })
             .collect::<Result<Vec<_>, GitError>>()?;
-        let start = *target_positions
-            .iter()
-            .min()
-            .ok_or_else(|| GitError::new("no commits selected"))?;
-        if start == 0 {
-            return Err(GitError::new("cannot rewrite root commit"));
-        }
-        if start == 1 && matches!(mode, ReplayMode::Squash | ReplayMode::Fixup) {
-            return Err(GitError::new("cannot squash or fixup into root commit"));
-        }
-        let replay_commits = history[start..].to_vec();
-        for commit in &replay_commits {
-            if self.parent_count(commit)? > 1 {
-                return Err(GitError::new(
-                    "commit rewrite does not support merge commits yet",
-                ));
-            }
-        }
-        let base = history[start - 1].clone();
+        let plan = plan_interactive_rebase(&history, &targets, &target_positions, mode)?;
+        ensure_linear_rebase_plan(&plan, |commit| self.parent_count(commit))?;
         let original_head = self.resolve_commit("HEAD")?;
-        self.run_git_owned(vec!["reset".to_string(), "--hard".to_string(), base])?;
-        let result = self.replay_from_targets(&replay_commits, &targets, &mode);
+        let scripts = RebaseScripts::write(&self.repo_path, &plan)?;
+        let result = self.run_git_owned_with_env(
+            vec!["rebase".to_string(), "-i".to_string(), plan.upstream],
+            scripts.env(),
+        );
         if let Err(error) = result {
-            let _ = self.run_git(&["cherry-pick", "--abort"]);
+            let _ = self.run_git(&["rebase", "--abort"]);
             let _ = self.run_git_owned(vec![
                 "reset".to_string(),
                 "--hard".to_string(),
                 original_head,
             ]);
             return Err(error);
-        }
-        Ok(())
-    }
-
-    fn replay_from_targets(
-        &self,
-        replay_commits: &[String],
-        targets: &[String],
-        mode: &ReplayMode,
-    ) -> Result<(), GitError> {
-        for commit in replay_commits {
-            let targeted = targets.iter().any(|target| target == commit);
-            match (targeted, mode) {
-                (true, ReplayMode::Delete) => {}
-                (true, ReplayMode::Fixup) => {
-                    self.run_git_owned(vec![
-                        "cherry-pick".to_string(),
-                        "--no-commit".to_string(),
-                        commit.clone(),
-                    ])?;
-                    self.run_git(&["commit", "--amend", "--no-edit"])?;
-                }
-                (true, ReplayMode::Squash) => {
-                    let current_message = self.commit_message("HEAD")?;
-                    let target_message = self.commit_message(commit)?;
-                    let message = combine_squash_messages(&current_message, &target_message);
-                    self.run_git_owned(vec![
-                        "cherry-pick".to_string(),
-                        "--no-commit".to_string(),
-                        commit.clone(),
-                    ])?;
-                    self.amend_message(&message)?;
-                }
-                (true, ReplayMode::Reword(message)) => {
-                    self.run_git_owned(vec!["cherry-pick".to_string(), commit.clone()])?;
-                    self.amend_message(message)?;
-                }
-                (false, _) => {
-                    self.run_git_owned(vec!["cherry-pick".to_string(), commit.clone()])?;
-                }
-            }
         }
         Ok(())
     }
@@ -921,25 +904,6 @@ impl GitCli {
             commit_id.to_string(),
         ])?;
         Ok(output.split_whitespace().count().saturating_sub(1))
-    }
-
-    fn commit_message(&self, commit_id: &str) -> Result<String, GitError> {
-        self.run_git_owned(vec![
-            "log".to_string(),
-            "-1".to_string(),
-            "--format=%B".to_string(),
-            commit_id.to_string(),
-        ])
-    }
-
-    fn amend_message(&self, message: &str) -> Result<(), GitError> {
-        self.run_git_owned(vec![
-            "commit".to_string(),
-            "--amend".to_string(),
-            "-m".to_string(),
-            message.to_string(),
-        ])
-        .map(|_| ())
     }
 
     fn delete_local_branch(&mut self, name: &str, force: bool) -> Result<(), GitError> {
@@ -1088,22 +1052,268 @@ fn parse_commit_file_line(line: &str) -> Result<CommitFileEntry, GitError> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum ReplayMode {
+enum RewriteMode {
     Squash,
     Fixup,
     Reword(String),
     Delete,
 }
 
-fn combine_squash_messages(current: &str, target: &str) -> String {
-    let current = current.trim_end();
-    let target = target.trim_end();
-    if target.is_empty() {
-        current.to_string()
-    } else if current.is_empty() {
-        target.to_string()
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum RebaseMessageEditor {
+    None,
+    Noop,
+    Message(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct InteractiveRebasePlan {
+    upstream: String,
+    todo: String,
+    todo_commits: Vec<String>,
+    message_editor: RebaseMessageEditor,
+}
+
+struct RebaseScripts {
+    dir: PathBuf,
+    env: Vec<(String, String)>,
+}
+
+impl RebaseScripts {
+    fn write(repo_path: &Path, plan: &InteractiveRebasePlan) -> Result<Self, GitError> {
+        let dir = unique_rebase_script_dir(repo_path)?;
+        fs::create_dir_all(&dir).map_err(|err| {
+            GitError::io(format!(
+                "failed to create rebase script directory {}: {err}",
+                dir.display()
+            ))
+        })?;
+
+        let todo_path = dir.join("todo");
+        fs::write(&todo_path, &plan.todo).map_err(|err| {
+            GitError::io(format!(
+                "failed to write rebase todo {}: {err}",
+                todo_path.display()
+            ))
+        })?;
+
+        let sequence_editor = dir.join(script_file_name("sequence-editor"));
+        write_editor_script(
+            &sequence_editor,
+            EditorScriptKind::CopyFromEnv("RATAGIT_REBASE_TODO"),
+        )?;
+
+        let mut env = vec![
+            (
+                "RATAGIT_REBASE_TODO".to_string(),
+                path_to_env_value(&todo_path)?,
+            ),
+            (
+                "GIT_SEQUENCE_EDITOR".to_string(),
+                editor_command_value(&sequence_editor)?,
+            ),
+        ];
+
+        match &plan.message_editor {
+            RebaseMessageEditor::None => {}
+            RebaseMessageEditor::Noop => {
+                let editor = dir.join(script_file_name("message-editor"));
+                write_editor_script(&editor, EditorScriptKind::Noop)?;
+                env.push(("GIT_EDITOR".to_string(), editor_command_value(&editor)?));
+            }
+            RebaseMessageEditor::Message(message) => {
+                let message_path = dir.join("message");
+                fs::write(&message_path, message).map_err(|err| {
+                    GitError::io(format!(
+                        "failed to write rebase message {}: {err}",
+                        message_path.display()
+                    ))
+                })?;
+                let editor = dir.join(script_file_name("message-editor"));
+                write_editor_script(
+                    &editor,
+                    EditorScriptKind::CopyFromEnv("RATAGIT_REBASE_MESSAGE"),
+                )?;
+                env.push((
+                    "RATAGIT_REBASE_MESSAGE".to_string(),
+                    path_to_env_value(&message_path)?,
+                ));
+                env.push(("GIT_EDITOR".to_string(), editor_command_value(&editor)?));
+            }
+        }
+
+        Ok(Self { dir, env })
+    }
+
+    fn env(&self) -> Vec<(String, String)> {
+        self.env.clone()
+    }
+}
+
+impl Drop for RebaseScripts {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.dir);
+    }
+}
+
+enum EditorScriptKind<'a> {
+    CopyFromEnv(&'a str),
+    Noop,
+}
+
+fn plan_interactive_rebase(
+    history: &[String],
+    targets: &[String],
+    target_positions: &[usize],
+    mode: RewriteMode,
+) -> Result<InteractiveRebasePlan, GitError> {
+    if target_positions.is_empty() {
+        return Err(GitError::new("no commits selected"));
+    }
+    let start = *target_positions
+        .iter()
+        .min()
+        .ok_or_else(|| GitError::new("no commits selected"))?;
+    if start == 0 {
+        return Err(GitError::new("cannot rewrite root commit"));
+    }
+
+    let (todo_start, message_editor) = match &mode {
+        RewriteMode::Squash => {
+            if start == 1 {
+                return Err(GitError::new("cannot squash or fixup into root commit"));
+            }
+            (start - 1, RebaseMessageEditor::Noop)
+        }
+        RewriteMode::Fixup => {
+            if start == 1 {
+                return Err(GitError::new("cannot squash or fixup into root commit"));
+            }
+            (start - 1, RebaseMessageEditor::None)
+        }
+        RewriteMode::Reword(message) => (start, RebaseMessageEditor::Message(message.clone())),
+        RewriteMode::Delete => (start, RebaseMessageEditor::None),
+    };
+
+    let upstream = history
+        .get(todo_start.saturating_sub(1))
+        .ok_or_else(|| GitError::new("cannot rewrite root commit"))?
+        .clone();
+    let target_set = targets.iter().collect::<BTreeSet<_>>();
+    let todo_commits = history[todo_start..].to_vec();
+    let mut todo = String::new();
+    for commit in &todo_commits {
+        let command = if target_set.contains(commit) {
+            todo_command_for_mode(&mode)
+        } else {
+            "pick"
+        };
+        todo.push_str(command);
+        todo.push(' ');
+        todo.push_str(commit);
+        todo.push('\n');
+    }
+    Ok(InteractiveRebasePlan {
+        upstream,
+        todo,
+        todo_commits,
+        message_editor,
+    })
+}
+
+fn todo_command_for_mode(mode: &RewriteMode) -> &'static str {
+    match mode {
+        RewriteMode::Squash => "squash",
+        RewriteMode::Fixup => "fixup",
+        RewriteMode::Reword(_) => "reword",
+        RewriteMode::Delete => "drop",
+    }
+}
+
+fn ensure_linear_rebase_plan(
+    plan: &InteractiveRebasePlan,
+    mut parent_count: impl FnMut(&str) -> Result<usize, GitError>,
+) -> Result<(), GitError> {
+    for commit in &plan.todo_commits {
+        if parent_count(commit)? > 1 {
+            return Err(GitError::new(
+                "commit rewrite does not support merge commits yet",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn unique_rebase_script_dir(repo_path: &Path) -> Result<PathBuf, GitError> {
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|err| GitError::io(format!("failed to read system time: {err}")))?
+        .as_nanos();
+    let repo_name = repo_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("repo");
+    let repo_name = repo_name
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>();
+    Ok(std::env::temp_dir().join(format!(
+        "ratagit-rebase-{repo_name}-{}-{nonce}",
+        std::process::id()
+    )))
+}
+
+fn script_file_name(name: &str) -> String {
+    format!("{name}.sh")
+}
+
+fn write_editor_script(path: &Path, kind: EditorScriptKind<'_>) -> Result<(), GitError> {
+    let content = match kind {
+        EditorScriptKind::CopyFromEnv(env_name) => {
+            format!("#!/bin/sh\ncp \"${env_name}\" \"$1\"\n")
+        }
+        EditorScriptKind::Noop => "#!/bin/sh\nexit 0\n".to_string(),
+    };
+    fs::write(path, content)
+        .map_err(|err| GitError::io(format!("failed to write editor script: {err}")))?;
+    make_script_executable(path)
+}
+
+#[cfg(unix)]
+fn make_script_executable(path: &Path) -> Result<(), GitError> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let mut permissions = fs::metadata(path)
+        .map_err(|err| GitError::io(format!("failed to read script permissions: {err}")))?
+        .permissions();
+    permissions.set_mode(0o700);
+    fs::set_permissions(path, permissions)
+        .map_err(|err| GitError::io(format!("failed to set script permissions: {err}")))
+}
+
+#[cfg(not(unix))]
+fn make_script_executable(_path: &Path) -> Result<(), GitError> {
+    Ok(())
+}
+
+fn path_to_env_value(path: &Path) -> Result<String, GitError> {
+    path.to_str()
+        .map(|path| path.replace('\\', "/"))
+        .ok_or_else(|| GitError::io(format!("path is not valid UTF-8: {}", path.display())))
+}
+
+fn editor_command_value(path: &Path) -> Result<String, GitError> {
+    let path = path_to_env_value(path)?;
+    if cfg!(windows) {
+        Ok(format!("sh \"{path}\""))
     } else {
-        format!("{current}\n\n{target}")
+        Ok(path)
     }
 }
 
@@ -1162,6 +1372,89 @@ mod tests {
         assert_eq!(options.stdout_limit, Some(1024));
         assert!(options.capture_stderr);
         assert_eq!(options.timeout, None);
+    }
+
+    #[test]
+    fn rebase_plan_deletes_selected_commits_from_parent_base() {
+        let plan = test_rebase_plan(&["a", "b", "c", "d"], &["c"], RewriteMode::Delete)
+            .expect("delete plan should be built");
+
+        assert_eq!(plan.upstream, "b");
+        assert_eq!(plan.todo, "drop c\npick d\n");
+        assert_eq!(plan.todo_commits, vec!["c".to_string(), "d".to_string()]);
+        assert_eq!(plan.message_editor, RebaseMessageEditor::None);
+    }
+
+    #[test]
+    fn rebase_plan_squashes_non_contiguous_targets_after_including_parent() {
+        let plan = test_rebase_plan(&["a", "b", "c", "d", "e"], &["e", "c"], RewriteMode::Squash)
+            .expect("squash plan should be built");
+
+        assert_eq!(plan.upstream, "a");
+        assert_eq!(plan.todo, "pick b\nsquash c\npick d\nsquash e\n");
+        assert_eq!(plan.message_editor, RebaseMessageEditor::Noop);
+    }
+
+    #[test]
+    fn rebase_plan_fixups_selected_commits_after_parent_pick() {
+        let plan = test_rebase_plan(&["a", "b", "c", "d"], &["d"], RewriteMode::Fixup)
+            .expect("fixup plan should be built");
+
+        assert_eq!(plan.upstream, "b");
+        assert_eq!(plan.todo, "pick c\nfixup d\n");
+        assert_eq!(plan.message_editor, RebaseMessageEditor::None);
+    }
+
+    #[test]
+    fn rebase_plan_rewords_one_commit_with_message_editor() {
+        let plan = test_rebase_plan(
+            &["a", "b", "c", "d"],
+            &["c"],
+            RewriteMode::Reword("new subject\n\nnew body".to_string()),
+        )
+        .expect("reword plan should be built");
+
+        assert_eq!(plan.upstream, "b");
+        assert_eq!(plan.todo, "reword c\npick d\n");
+        assert_eq!(
+            plan.message_editor,
+            RebaseMessageEditor::Message("new subject\n\nnew body".to_string())
+        );
+    }
+
+    #[test]
+    fn rebase_plan_rejects_root_rewrites_and_root_parent_squash_fixup() {
+        let root_error = test_rebase_plan(&["a", "b"], &["a"], RewriteMode::Delete)
+            .expect_err("root delete should be rejected");
+        assert!(root_error.message.contains("cannot rewrite root commit"));
+
+        let squash_error = test_rebase_plan(&["a", "b"], &["b"], RewriteMode::Squash)
+            .expect_err("root-parent squash should be rejected");
+        assert!(
+            squash_error
+                .message
+                .contains("cannot squash or fixup into root")
+        );
+
+        let fixup_error = test_rebase_plan(&["a", "b"], &["b"], RewriteMode::Fixup)
+            .expect_err("root-parent fixup should be rejected");
+        assert!(
+            fixup_error
+                .message
+                .contains("cannot squash or fixup into root")
+        );
+    }
+
+    #[test]
+    fn rebase_plan_validation_rejects_merge_commits_in_rewritten_range() {
+        let plan = test_rebase_plan(&["a", "b", "c", "d"], &["c"], RewriteMode::Delete)
+            .expect("delete plan should be built");
+
+        let error =
+            ensure_linear_rebase_plan(&plan, |commit| Ok(if commit == "d" { 2 } else { 1 }))
+                .expect_err("merge commits should be rejected");
+
+        assert!(error.message.contains("does not support merge commits"));
     }
 
     #[test]
@@ -1272,5 +1565,30 @@ mod tests {
             .arg("--version")
             .output()
             .is_ok_and(|output| output.status.success())
+    }
+
+    fn test_rebase_plan(
+        history: &[&str],
+        targets: &[&str],
+        mode: RewriteMode,
+    ) -> Result<InteractiveRebasePlan, GitError> {
+        let history = history
+            .iter()
+            .map(|commit| commit.to_string())
+            .collect::<Vec<_>>();
+        let targets = targets
+            .iter()
+            .map(|commit| commit.to_string())
+            .collect::<Vec<_>>();
+        let positions = targets
+            .iter()
+            .map(|target| {
+                history
+                    .iter()
+                    .position(|commit| commit == target)
+                    .ok_or_else(|| GitError::new(format!("commit is not reachable: {target}")))
+            })
+            .collect::<Result<Vec<_>, GitError>>()?;
+        plan_interactive_rebase(&history, &targets, &positions, mode)
     }
 }

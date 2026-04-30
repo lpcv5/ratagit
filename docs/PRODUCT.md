@@ -248,7 +248,8 @@ Commits panel rules:
 - `f` fixups the selected commit or visual-selected commits into their parent lineage
 - `r` opens the commit message modal prefilled with the selected commit message and rewords one commit
 - `d` deletes the selected commit or visual-selected commits
-- squash/fixup/reword/delete require a clean working tree; amend normally
+- squash/fixup/reword/delete run through Git interactive rebase and require a
+  clean working tree; amend normally
   requires only staged changes with no unstaged or untracked changes, but when
   nothing is staged it can ask to stage all current file rows and continue; these
   rewrite actions can modify pushed or unpushed linear history and reject merge

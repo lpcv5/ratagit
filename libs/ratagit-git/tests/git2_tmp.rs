@@ -121,6 +121,17 @@ fn feature_repo_with_three_commits(case_name: &str) -> TmpGitRepo {
     repo
 }
 
+fn feature_repo_with_five_commits(case_name: &str) -> TmpGitRepo {
+    let repo = seeded_repo_with_two_files(case_name);
+    repo.run_git(&["checkout", "-b", "feature/rewrite"]);
+    for message in ["second", "third", "fourth", "fifth"] {
+        write(repo.path().join("a.txt"), format!("{message}\n")).expect("a.txt should be writable");
+        repo.run_git(&["add", "--", "a.txt"]);
+        repo.run_git(&["commit", "-m", message]);
+    }
+    repo
+}
+
 fn commit_id(repo: &TmpGitRepo, rev: &str) -> String {
     repo.run_git_capture(&["rev-parse", rev]).trim().to_string()
 }
@@ -381,6 +392,34 @@ fn hybrid_backend_replays_linear_commit_rewrites() {
         reword_repo
             .run_git_capture(&["log", "-1", "--format=%B"])
             .contains("new body")
+    );
+}
+
+#[test]
+fn hybrid_backend_squashes_non_contiguous_commits_with_rebase() {
+    if !git_available() {
+        eprintln!(
+            "git is unavailable, skipping hybrid_backend_squashes_non_contiguous_commits_with_rebase"
+        );
+        return;
+    }
+
+    let repo = feature_repo_with_five_commits("squash-non-contiguous");
+    let third = commit_id(&repo, "HEAD~2");
+    let fifth = commit_id(&repo, "HEAD");
+    HybridGitBackend::open(repo.path())
+        .expect("hybrid backend should open")
+        .squash_commits(&[fifth, third])
+        .expect("non-contiguous squash should use rebase");
+
+    assert_eq!(log_subjects(&repo), vec!["fourth", "second", "init"]);
+    assert!(
+        repo.run_git_capture(&["log", "-1", "--format=%B"])
+            .contains("fifth")
+    );
+    assert!(
+        repo.run_git_capture(&["log", "-1", "--format=%B", "HEAD~1"])
+            .contains("third")
     );
 }
 
