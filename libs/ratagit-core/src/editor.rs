@@ -10,7 +10,7 @@ use crate::{
 };
 
 pub(crate) fn open_commit_editor(state: &mut AppContext) {
-    state.ui.reset_menu.active = false;
+    state.ui.reset_menu.menu.active = false;
     state.ui.reset_menu.danger_confirm = None;
     close_discard_confirm(state);
     branches::close_popovers(state);
@@ -25,7 +25,7 @@ pub(crate) fn open_commit_editor(state: &mut AppContext) {
 }
 
 pub(crate) fn open_stash_editor(state: &mut AppContext) {
-    state.ui.reset_menu.active = false;
+    state.ui.reset_menu.menu.active = false;
     state.ui.reset_menu.danger_confirm = None;
     close_discard_confirm(state);
     branches::close_popovers(state);
@@ -57,7 +57,7 @@ pub(crate) fn open_commit_reword_editor(state: &mut AppContext) {
         push_notice(state, "Commit rewrite only supports unpushed commits");
         return;
     }
-    state.ui.reset_menu.active = false;
+    state.ui.reset_menu.menu.active = false;
     state.ui.reset_menu.danger_confirm = None;
     close_discard_confirm(state);
     branches::close_popovers(state);

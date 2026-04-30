@@ -5,10 +5,10 @@ use ratagit_core::{
     CommitEditorIntent, CommitEntry, CommitField, CommitFileDiffPath, CommitFileDiffTarget,
     CommitFileEntry, CommitFileStatus, CommitHashStatus, CommitInputMode, DetailsRequest,
     DetailsRequestId, DetailsRequestTarget, EditorKind, FileDiffTarget, FileEntry, FileInputMode,
-    FilesSnapshot, GitErrorKind, GitFailure, GitResult, PanelFocus, RefreshTarget, RepoSnapshot,
-    ResetChoice, ResetMode, SearchScope, StageAllOperation, StashEntry, StashScope, UiAction,
-    debounce_key_for_command, refresh_key_for_command, refresh_tree_projection,
-    selected_commit_file_targets, selected_row, update,
+    FilesSnapshot, GitErrorKind, GitFailure, GitResult, MenuDirection, MenuKind, PanelFocus,
+    RefreshTarget, RepoSnapshot, ResetChoice, ResetMode, SearchScope, StageAllOperation,
+    StashEntry, StashScope, UiAction, debounce_key_for_command, refresh_key_for_command,
+    refresh_tree_projection, selected_commit_file_targets, selected_row, update,
 };
 
 fn commit_entry(id: &str, summary: &str) -> CommitEntry {
@@ -265,7 +265,7 @@ fn command_palette_executes_local_commands() {
 
     assert!(commands.is_empty());
     assert!(!state.ui.command_palette.active);
-    assert!(state.ui.reset_menu.active);
+    assert!(state.ui.reset_menu.menu.active);
 }
 
 #[test]
@@ -874,7 +874,7 @@ fn dirty_checkout_opens_auto_stash_confirm_then_confirms_command() {
     let commands = update(&mut state, Action::Ui(UiAction::CheckoutSelectedBranch));
     assert!(commands.is_empty());
     assert_eq!(
-        state.ui.branches.auto_stash_confirm.operation,
+        state.ui.branches.auto_stash_confirm.context,
         Some(AutoStashOperation::Checkout {
             branch: "feature/mvp".to_string()
         })
@@ -942,9 +942,15 @@ fn branch_remote_delete_requires_confirmation() {
     state.ui.branches.selected = 1;
 
     update(&mut state, Action::Ui(UiAction::OpenBranchDeleteMenu));
-    update(&mut state, Action::Ui(UiAction::MoveBranchDeleteMenuDown));
+    update(
+        &mut state,
+        Action::Ui(UiAction::MoveMenuSelection {
+            menu: MenuKind::BranchDelete,
+            direction: MenuDirection::Down,
+        }),
+    );
     assert_eq!(
-        state.ui.branches.delete_menu.selected,
+        state.ui.branches.delete_menu.menu.selected,
         BranchDeleteChoice::Remote
     );
     let commands = update(&mut state, Action::Ui(UiAction::ConfirmBranchDeleteMenu));
@@ -952,7 +958,7 @@ fn branch_remote_delete_requires_confirmation() {
     assert!(commands.is_empty());
     assert!(state.ui.branches.delete_confirm.active);
     assert_eq!(
-        state.ui.branches.delete_confirm.mode,
+        state.ui.branches.delete_confirm.context.mode,
         Some(BranchDeleteMode::Remote)
     );
 
@@ -974,10 +980,22 @@ fn branch_both_delete_requires_confirmation_and_can_cancel() {
     state.ui.branches.selected = 1;
 
     update(&mut state, Action::Ui(UiAction::OpenBranchDeleteMenu));
-    update(&mut state, Action::Ui(UiAction::MoveBranchDeleteMenuDown));
-    update(&mut state, Action::Ui(UiAction::MoveBranchDeleteMenuDown));
+    update(
+        &mut state,
+        Action::Ui(UiAction::MoveMenuSelection {
+            menu: MenuKind::BranchDelete,
+            direction: MenuDirection::Down,
+        }),
+    );
+    update(
+        &mut state,
+        Action::Ui(UiAction::MoveMenuSelection {
+            menu: MenuKind::BranchDelete,
+            direction: MenuDirection::Down,
+        }),
+    );
     assert_eq!(
-        state.ui.branches.delete_menu.selected,
+        state.ui.branches.delete_menu.menu.selected,
         BranchDeleteChoice::Both
     );
     let commands = update(&mut state, Action::Ui(UiAction::ConfirmBranchDeleteMenu));
@@ -985,7 +1003,7 @@ fn branch_both_delete_requires_confirmation_and_can_cancel() {
     assert!(commands.is_empty());
     assert!(state.ui.branches.delete_confirm.active);
     assert_eq!(
-        state.ui.branches.delete_confirm.mode,
+        state.ui.branches.delete_confirm.context.mode,
         Some(BranchDeleteMode::Both)
     );
 
@@ -1016,7 +1034,7 @@ fn unmerged_branch_delete_opens_force_confirm_and_can_force_delete() {
     assert!(state.ui.branches.force_delete_confirm.active);
     assert_eq!(state.work.mutation.operation_pending, None);
     assert_eq!(
-        state.ui.branches.force_delete_confirm.target_branch,
+        state.ui.branches.force_delete_confirm.context.target_branch,
         "feature/mvp"
     );
 
@@ -1096,7 +1114,7 @@ fn divergent_push_opens_force_confirm_then_confirms_force_push() {
 
     assert!(commands.is_empty());
     assert!(state.ui.push_force_confirm.active);
-    assert!(state.ui.push_force_confirm.reason.contains("fetch first"));
+    assert!(state.ui.push_force_confirm.context.contains("fetch first"));
     assert_eq!(state.work.mutation.operation_pending, None);
 
     let commands = update(&mut state, Action::Ui(UiAction::ConfirmForcePush));
@@ -1126,7 +1144,7 @@ fn force_push_confirm_can_cancel() {
 
     assert!(commands.is_empty());
     assert!(!state.ui.push_force_confirm.active);
-    assert!(state.ui.push_force_confirm.reason.is_empty());
+    assert!(state.ui.push_force_confirm.context.is_empty());
 }
 
 #[test]
@@ -1135,16 +1153,22 @@ fn branch_rebase_menu_selects_mode_and_dirty_rebase_confirms_auto_stash() {
     state.ui.branches.selected = 1;
 
     update(&mut state, Action::Ui(UiAction::OpenBranchRebaseMenu));
-    update(&mut state, Action::Ui(UiAction::MoveBranchRebaseMenuDown));
+    update(
+        &mut state,
+        Action::Ui(UiAction::MoveMenuSelection {
+            menu: MenuKind::BranchRebase,
+            direction: MenuDirection::Down,
+        }),
+    );
     assert_eq!(
-        state.ui.branches.rebase_menu.selected,
+        state.ui.branches.rebase_menu.menu.selected,
         BranchRebaseChoice::Interactive
     );
     let commands = update(&mut state, Action::Ui(UiAction::ConfirmBranchRebaseMenu));
 
     assert!(commands.is_empty());
     assert_eq!(
-        state.ui.branches.auto_stash_confirm.operation,
+        state.ui.branches.auto_stash_confirm.context,
         Some(AutoStashOperation::Rebase {
             target: "feature/mvp".to_string(),
             interactive: true,
@@ -1168,8 +1192,20 @@ fn branch_rebase_origin_main_emits_fixed_target() {
     state.ui.branches.selected = 1;
 
     update(&mut state, Action::Ui(UiAction::OpenBranchRebaseMenu));
-    update(&mut state, Action::Ui(UiAction::MoveBranchRebaseMenuDown));
-    update(&mut state, Action::Ui(UiAction::MoveBranchRebaseMenuDown));
+    update(
+        &mut state,
+        Action::Ui(UiAction::MoveMenuSelection {
+            menu: MenuKind::BranchRebase,
+            direction: MenuDirection::Down,
+        }),
+    );
+    update(
+        &mut state,
+        Action::Ui(UiAction::MoveMenuSelection {
+            menu: MenuKind::BranchRebase,
+            direction: MenuDirection::Down,
+        }),
+    );
     let commands = update(&mut state, Action::Ui(UiAction::ConfirmBranchRebaseMenu));
 
     assert_eq!(
@@ -2599,17 +2635,20 @@ fn staged_required_commit_opens_stage_all_confirm_when_nothing_is_staged() {
     assert!(commands.is_empty());
     assert!(state.ui.stage_all_confirm.active);
     assert_eq!(
-        state.ui.stage_all_confirm.operation,
+        state.ui.stage_all_confirm.context.operation,
         Some(StageAllOperation::CreateCommit {
             message: "feat: ship".to_string()
         })
     );
-    assert_eq!(state.ui.stage_all_confirm.paths, vec!["a.txt", "b.txt"]);
+    assert_eq!(
+        state.ui.stage_all_confirm.context.paths,
+        vec!["a.txt", "b.txt"]
+    );
 
     let commands = update(&mut state, Action::Ui(UiAction::CancelStageAll));
     assert!(commands.is_empty());
     assert!(!state.ui.stage_all_confirm.active);
-    assert!(state.ui.stage_all_confirm.paths.is_empty());
+    assert!(state.ui.stage_all_confirm.context.paths.is_empty());
 }
 
 #[test]
@@ -2636,12 +2675,15 @@ fn amend_staged_changes_requires_staged_private_non_merge_commits() {
     assert!(commands.is_empty());
     assert!(no_staged.ui.stage_all_confirm.active);
     assert_eq!(
-        no_staged.ui.stage_all_confirm.operation,
+        no_staged.ui.stage_all_confirm.context.operation,
         Some(StageAllOperation::AmendStagedChanges {
             commit_id: "HEAD".to_string()
         })
     );
-    assert_eq!(no_staged.ui.stage_all_confirm.paths, vec!["dirty.txt"]);
+    assert_eq!(
+        no_staged.ui.stage_all_confirm.context.paths,
+        vec!["dirty.txt"]
+    );
 
     let commands = update(&mut no_staged, Action::Ui(UiAction::ConfirmStageAll));
     assert_eq!(
@@ -2814,7 +2856,7 @@ fn detached_checkout_with_dirty_worktree_uses_auto_stash_confirmation() {
     );
     assert!(commands.is_empty());
     assert!(matches!(
-        state.ui.branches.auto_stash_confirm.operation,
+        state.ui.branches.auto_stash_confirm.context,
         Some(AutoStashOperation::CheckoutCommitDetached { ref commit_id })
             if commit_id == "aaa1111-full"
     ));
@@ -3765,22 +3807,52 @@ fn stash_editor_confirms_selected_paths_scope_in_multiselect_mode() {
 fn reset_menu_opens_moves_and_cancels() {
     let mut state = AppContext::default();
     assert!(update(&mut state, Action::Ui(UiAction::OpenResetMenu)).is_empty());
-    assert!(state.ui.reset_menu.active);
-    assert_eq!(state.ui.reset_menu.selected, ResetChoice::Mixed);
+    assert!(state.ui.reset_menu.menu.active);
+    assert_eq!(state.ui.reset_menu.menu.selected, ResetChoice::Mixed);
 
-    update(&mut state, Action::Ui(UiAction::MoveResetMenuDown));
-    assert_eq!(state.ui.reset_menu.selected, ResetChoice::Soft);
-    update(&mut state, Action::Ui(UiAction::MoveResetMenuDown));
-    assert_eq!(state.ui.reset_menu.selected, ResetChoice::Hard);
-    update(&mut state, Action::Ui(UiAction::MoveResetMenuDown));
-    assert_eq!(state.ui.reset_menu.selected, ResetChoice::Nuke);
-    update(&mut state, Action::Ui(UiAction::MoveResetMenuDown));
-    assert_eq!(state.ui.reset_menu.selected, ResetChoice::Nuke);
-    update(&mut state, Action::Ui(UiAction::MoveResetMenuUp));
-    assert_eq!(state.ui.reset_menu.selected, ResetChoice::Hard);
+    update(
+        &mut state,
+        Action::Ui(UiAction::MoveMenuSelection {
+            menu: MenuKind::Reset,
+            direction: MenuDirection::Down,
+        }),
+    );
+    assert_eq!(state.ui.reset_menu.menu.selected, ResetChoice::Soft);
+    update(
+        &mut state,
+        Action::Ui(UiAction::MoveMenuSelection {
+            menu: MenuKind::Reset,
+            direction: MenuDirection::Down,
+        }),
+    );
+    assert_eq!(state.ui.reset_menu.menu.selected, ResetChoice::Hard);
+    update(
+        &mut state,
+        Action::Ui(UiAction::MoveMenuSelection {
+            menu: MenuKind::Reset,
+            direction: MenuDirection::Down,
+        }),
+    );
+    assert_eq!(state.ui.reset_menu.menu.selected, ResetChoice::Nuke);
+    update(
+        &mut state,
+        Action::Ui(UiAction::MoveMenuSelection {
+            menu: MenuKind::Reset,
+            direction: MenuDirection::Down,
+        }),
+    );
+    assert_eq!(state.ui.reset_menu.menu.selected, ResetChoice::Nuke);
+    update(
+        &mut state,
+        Action::Ui(UiAction::MoveMenuSelection {
+            menu: MenuKind::Reset,
+            direction: MenuDirection::Up,
+        }),
+    );
+    assert_eq!(state.ui.reset_menu.menu.selected, ResetChoice::Hard);
 
     assert!(update(&mut state, Action::Ui(UiAction::CancelResetMenu)).is_empty());
-    assert!(!state.ui.reset_menu.active);
+    assert!(!state.ui.reset_menu.menu.active);
 }
 
 #[test]
@@ -3803,12 +3875,12 @@ fn reset_menu_confirm_emits_recoverable_reset_commands() {
     for (choice, expected_command) in cases {
         let mut state = AppContext::default();
         update(&mut state, Action::Ui(UiAction::OpenResetMenu));
-        state.ui.reset_menu.selected = choice;
+        state.ui.reset_menu.menu.selected = choice;
 
         let commands = update(&mut state, Action::Ui(UiAction::ConfirmResetMenu));
 
         assert_eq!(commands, vec![expected_command]);
-        assert!(!state.ui.reset_menu.active);
+        assert!(!state.ui.reset_menu.menu.active);
     }
 }
 
@@ -3827,12 +3899,12 @@ fn reset_menu_hard_and_nuke_require_confirmation() {
     for (choice, expected_command) in cases {
         let mut state = AppContext::default();
         update(&mut state, Action::Ui(UiAction::OpenResetMenu));
-        state.ui.reset_menu.selected = choice;
+        state.ui.reset_menu.menu.selected = choice;
 
         let commands = update(&mut state, Action::Ui(UiAction::ConfirmResetMenu));
 
         assert!(commands.is_empty());
-        assert!(!state.ui.reset_menu.active);
+        assert!(!state.ui.reset_menu.menu.active);
         assert_eq!(state.ui.reset_menu.danger_confirm, Some(choice));
 
         let commands = update(&mut state, Action::Ui(UiAction::ConfirmResetDanger));
@@ -3846,7 +3918,7 @@ fn reset_menu_hard_and_nuke_require_confirmation() {
 fn reset_danger_confirmation_can_cancel() {
     let mut state = AppContext::default();
     update(&mut state, Action::Ui(UiAction::OpenResetMenu));
-    state.ui.reset_menu.selected = ResetChoice::Hard;
+    state.ui.reset_menu.menu.selected = ResetChoice::Hard;
     update(&mut state, Action::Ui(UiAction::ConfirmResetMenu));
 
     let commands = update(&mut state, Action::Ui(UiAction::CancelResetDanger));
@@ -3899,7 +3971,7 @@ fn discard_confirm_opens_for_current_file_and_confirms_command() {
 
     assert!(update(&mut state, Action::Ui(UiAction::OpenDiscardConfirm)).is_empty());
     assert!(state.ui.discard_confirm.active);
-    assert_eq!(state.ui.discard_confirm.paths, vec!["a.txt".to_string()]);
+    assert_eq!(state.ui.discard_confirm.context, vec!["a.txt".to_string()]);
 
     let commands = update(&mut state, Action::Ui(UiAction::ConfirmDiscard));
 
@@ -3910,7 +3982,7 @@ fn discard_confirm_opens_for_current_file_and_confirms_command() {
         }]
     );
     assert!(!state.ui.discard_confirm.active);
-    assert!(state.ui.discard_confirm.paths.is_empty());
+    assert!(state.ui.discard_confirm.context.is_empty());
 }
 
 #[test]
@@ -3926,13 +3998,13 @@ fn discard_confirm_uses_visual_selected_targets_and_can_cancel() {
 
     update(&mut state, Action::Ui(UiAction::OpenDiscardConfirm));
     assert_eq!(
-        state.ui.discard_confirm.paths,
+        state.ui.discard_confirm.context,
         vec!["a.txt".to_string(), "b.txt".to_string()]
     );
 
     assert!(update(&mut state, Action::Ui(UiAction::CancelDiscard)).is_empty());
     assert!(!state.ui.discard_confirm.active);
-    assert!(state.ui.discard_confirm.paths.is_empty());
+    assert!(state.ui.discard_confirm.context.is_empty());
 }
 
 #[test]

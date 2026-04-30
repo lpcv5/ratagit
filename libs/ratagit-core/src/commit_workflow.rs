@@ -96,8 +96,8 @@ pub(crate) fn confirm_stage_all(state: &mut AppContext) -> Vec<Command> {
     if !state.ui.stage_all_confirm.active {
         return Vec::new();
     }
-    let operation = state.ui.stage_all_confirm.operation.clone();
-    let paths = state.ui.stage_all_confirm.paths.clone();
+    let operation = state.ui.stage_all_confirm.context.operation.clone();
+    let paths = state.ui.stage_all_confirm.context.paths.clone();
     close_stage_all_confirm(state);
     if paths.is_empty() {
         push_notice(state, "No file changes to stage");
@@ -118,8 +118,8 @@ pub(crate) fn confirm_stage_all(state: &mut AppContext) -> Vec<Command> {
 
 pub(crate) fn close_stage_all_confirm(state: &mut AppContext) {
     state.ui.stage_all_confirm.active = false;
-    state.ui.stage_all_confirm.operation = None;
-    state.ui.stage_all_confirm.paths.clear();
+    state.ui.stage_all_confirm.context.operation = None;
+    state.ui.stage_all_confirm.context.paths.clear();
 }
 
 pub(crate) fn checkout_selected_commit_detached(state: &mut AppContext) -> Vec<Command> {
@@ -399,14 +399,14 @@ fn open_stage_all_confirm(state: &mut AppContext, operation: StageAllOperation) 
         push_notice(state, "No file changes to stage");
         return Vec::new();
     }
-    state.ui.reset_menu.active = false;
+    state.ui.reset_menu.menu.active = false;
     state.ui.reset_menu.danger_confirm = None;
     state.ui.discard_confirm.active = false;
-    state.ui.discard_confirm.paths.clear();
+    state.ui.discard_confirm.context.clear();
     branches::close_popovers(state);
     state.ui.stage_all_confirm.active = true;
-    state.ui.stage_all_confirm.operation = Some(operation);
-    state.ui.stage_all_confirm.paths = paths;
+    state.ui.stage_all_confirm.context.operation = Some(operation);
+    state.ui.stage_all_confirm.context.paths = paths;
     Vec::new()
 }
 

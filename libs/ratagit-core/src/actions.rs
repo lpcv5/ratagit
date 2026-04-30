@@ -4,6 +4,19 @@ use crate::{
     ResetMode, StashEntry, operations,
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MenuKind {
+    Reset,
+    BranchDelete,
+    BranchRebase,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MenuDirection {
+    Up,
+    Down,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UiAction {
     RefreshAll,
@@ -60,8 +73,10 @@ pub enum UiAction {
     OpenCommitEditor,
     OpenStashEditor,
     OpenResetMenu,
-    MoveResetMenuUp,
-    MoveResetMenuDown,
+    MoveMenuSelection {
+        menu: MenuKind,
+        direction: MenuDirection,
+    },
     ConfirmResetMenu,
     CancelResetMenu,
     ConfirmResetDanger,
@@ -117,8 +132,6 @@ pub enum UiAction {
     },
     CheckoutSelectedBranch,
     OpenBranchDeleteMenu,
-    MoveBranchDeleteMenuUp,
-    MoveBranchDeleteMenuDown,
     ConfirmBranchDeleteMenu,
     CancelBranchDeleteMenu,
     ConfirmBranchDeleteDanger,
@@ -126,8 +139,6 @@ pub enum UiAction {
     ConfirmBranchForceDelete,
     CancelBranchForceDelete,
     OpenBranchRebaseMenu,
-    MoveBranchRebaseMenuUp,
-    MoveBranchRebaseMenuDown,
     ConfirmBranchRebaseMenu,
     CancelBranchRebaseMenu,
     ConfirmAutoStash,

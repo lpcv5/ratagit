@@ -6,7 +6,8 @@ use std::time::{Duration, Instant};
 
 use ratagit_core::{
     Action, AppContext, BranchDeleteMode, BranchEntry, CommitEntry, FileDiffTarget, FilesSnapshot,
-    GitResult, PanelFocus, RepoSnapshot, ResetMode, StashEntry, UiAction, update,
+    GitResult, MenuDirection, MenuKind, PanelFocus, RepoSnapshot, ResetMode, StashEntry, UiAction,
+    update,
 };
 use ratagit_git::{
     GitBackend, GitBackendHistoryRewrite, GitBackendRead, GitBackendWrite, GitError, MockGitBackend,
@@ -1351,8 +1352,14 @@ fn harness_files_reset_hard_menu() {
     let inputs = [
         UiAction::RefreshAll,
         UiAction::OpenResetMenu,
-        UiAction::MoveResetMenuDown,
-        UiAction::MoveResetMenuDown,
+        UiAction::MoveMenuSelection {
+            menu: MenuKind::Reset,
+            direction: MenuDirection::Down,
+        },
+        UiAction::MoveMenuSelection {
+            menu: MenuKind::Reset,
+            direction: MenuDirection::Down,
+        },
         UiAction::ConfirmResetMenu,
         UiAction::ConfirmResetDanger,
     ];
@@ -1380,9 +1387,18 @@ fn harness_files_reset_nuke_menu() {
     let inputs = [
         UiAction::RefreshAll,
         UiAction::OpenResetMenu,
-        UiAction::MoveResetMenuDown,
-        UiAction::MoveResetMenuDown,
-        UiAction::MoveResetMenuDown,
+        UiAction::MoveMenuSelection {
+            menu: MenuKind::Reset,
+            direction: MenuDirection::Down,
+        },
+        UiAction::MoveMenuSelection {
+            menu: MenuKind::Reset,
+            direction: MenuDirection::Down,
+        },
+        UiAction::MoveMenuSelection {
+            menu: MenuKind::Reset,
+            direction: MenuDirection::Down,
+        },
         UiAction::ConfirmResetMenu,
         UiAction::ConfirmResetDanger,
     ];
@@ -1406,8 +1422,14 @@ fn harness_files_reset_hard_requires_confirmation() {
     let inputs = [
         UiAction::RefreshAll,
         UiAction::OpenResetMenu,
-        UiAction::MoveResetMenuDown,
-        UiAction::MoveResetMenuDown,
+        UiAction::MoveMenuSelection {
+            menu: MenuKind::Reset,
+            direction: MenuDirection::Down,
+        },
+        UiAction::MoveMenuSelection {
+            menu: MenuKind::Reset,
+            direction: MenuDirection::Down,
+        },
         UiAction::ConfirmResetMenu,
     ];
     assert_scenario(MockScenario::new(
@@ -1430,8 +1452,14 @@ fn harness_files_reset_hard_confirmation_can_cancel() {
     let inputs = [
         UiAction::RefreshAll,
         UiAction::OpenResetMenu,
-        UiAction::MoveResetMenuDown,
-        UiAction::MoveResetMenuDown,
+        UiAction::MoveMenuSelection {
+            menu: MenuKind::Reset,
+            direction: MenuDirection::Down,
+        },
+        UiAction::MoveMenuSelection {
+            menu: MenuKind::Reset,
+            direction: MenuDirection::Down,
+        },
         UiAction::ConfirmResetMenu,
         UiAction::CancelResetDanger,
     ];
@@ -2472,7 +2500,10 @@ fn harness_branches_delete_remote_requires_confirmation() {
         UiAction::FocusNext,
         UiAction::MoveDown,
         UiAction::OpenBranchDeleteMenu,
-        UiAction::MoveBranchDeleteMenuDown,
+        UiAction::MoveMenuSelection {
+            menu: MenuKind::BranchDelete,
+            direction: MenuDirection::Down,
+        },
         UiAction::ConfirmBranchDeleteMenu,
     ];
     assert_scenario(MockScenario::new(
@@ -2497,7 +2528,10 @@ fn harness_branches_delete_remote_after_confirmation() {
         UiAction::FocusNext,
         UiAction::MoveDown,
         UiAction::OpenBranchDeleteMenu,
-        UiAction::MoveBranchDeleteMenuDown,
+        UiAction::MoveMenuSelection {
+            menu: MenuKind::BranchDelete,
+            direction: MenuDirection::Down,
+        },
         UiAction::ConfirmBranchDeleteMenu,
         UiAction::ConfirmBranchDeleteDanger,
     ];
@@ -2571,8 +2605,14 @@ fn harness_branches_rebase_simple_and_origin_main() {
         UiAction::FocusNext,
         UiAction::MoveDown,
         UiAction::OpenBranchRebaseMenu,
-        UiAction::MoveBranchRebaseMenuDown,
-        UiAction::MoveBranchRebaseMenuDown,
+        UiAction::MoveMenuSelection {
+            menu: MenuKind::BranchRebase,
+            direction: MenuDirection::Down,
+        },
+        UiAction::MoveMenuSelection {
+            menu: MenuKind::BranchRebase,
+            direction: MenuDirection::Down,
+        },
         UiAction::ConfirmBranchRebaseMenu,
     ];
     assert_scenario(MockScenario::new(

@@ -1,7 +1,7 @@
 use ratagit_core::{
     Action, AppContext, Command, CommitFileEntry, CommitFileStatus, CommitHashStatus,
-    FileDiffTarget, FilesSnapshot, GitErrorKind, GitFailure, GitResult, PanelFocus, ResetChoice,
-    UiAction, update,
+    FileDiffTarget, FilesSnapshot, GitErrorKind, GitFailure, GitResult, MenuDirection, MenuKind,
+    PanelFocus, ResetChoice, UiAction, update,
 };
 use ratagit_testkit::{
     fixture_commit, fixture_conflict, fixture_dirty_repo, fixture_empty_repo, fixture_file,
@@ -767,7 +767,7 @@ fn terminal_snapshot_files_reset_modal_nuke_description() {
     let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     update(&mut state, Action::Ui(UiAction::OpenResetMenu));
-    state.ui.reset_menu.selected = ResetChoice::Nuke;
+    state.ui.reset_menu.menu.selected = ResetChoice::Nuke;
 
     insta::assert_snapshot!(render_terminal_text(
         &state,
@@ -783,7 +783,7 @@ fn terminal_snapshot_files_reset_hard_confirm_modal() {
     let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     update(&mut state, Action::Ui(UiAction::OpenResetMenu));
-    state.ui.reset_menu.selected = ResetChoice::Hard;
+    state.ui.reset_menu.menu.selected = ResetChoice::Hard;
     update(&mut state, Action::Ui(UiAction::ConfirmResetMenu));
 
     insta::assert_snapshot!(render_terminal_text(
@@ -800,7 +800,7 @@ fn terminal_snapshot_files_reset_nuke_confirm_modal() {
     let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     update(&mut state, Action::Ui(UiAction::OpenResetMenu));
-    state.ui.reset_menu.selected = ResetChoice::Nuke;
+    state.ui.reset_menu.menu.selected = ResetChoice::Nuke;
     update(&mut state, Action::Ui(UiAction::ConfirmResetMenu));
 
     insta::assert_snapshot!(render_terminal_text(
@@ -924,7 +924,13 @@ fn terminal_snapshot_branches_remote_delete_confirm_modal() {
     let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
     apply_mock_details_commands(&mut state, commands);
     update(&mut state, Action::Ui(UiAction::OpenBranchDeleteMenu));
-    update(&mut state, Action::Ui(UiAction::MoveBranchDeleteMenuDown));
+    update(
+        &mut state,
+        Action::Ui(UiAction::MoveMenuSelection {
+            menu: MenuKind::BranchDelete,
+            direction: MenuDirection::Down,
+        }),
+    );
     update(&mut state, Action::Ui(UiAction::ConfirmBranchDeleteMenu));
 
     insta::assert_snapshot!(render_terminal_text(
@@ -950,8 +956,20 @@ fn terminal_snapshot_branches_both_delete_confirm_modal() {
     let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
     apply_mock_details_commands(&mut state, commands);
     update(&mut state, Action::Ui(UiAction::OpenBranchDeleteMenu));
-    update(&mut state, Action::Ui(UiAction::MoveBranchDeleteMenuDown));
-    update(&mut state, Action::Ui(UiAction::MoveBranchDeleteMenuDown));
+    update(
+        &mut state,
+        Action::Ui(UiAction::MoveMenuSelection {
+            menu: MenuKind::BranchDelete,
+            direction: MenuDirection::Down,
+        }),
+    );
+    update(
+        &mut state,
+        Action::Ui(UiAction::MoveMenuSelection {
+            menu: MenuKind::BranchDelete,
+            direction: MenuDirection::Down,
+        }),
+    );
     update(&mut state, Action::Ui(UiAction::ConfirmBranchDeleteMenu));
 
     insta::assert_snapshot!(render_terminal_text(
@@ -1052,7 +1070,13 @@ fn terminal_snapshot_branches_rebase_modal() {
     let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
     apply_mock_details_commands(&mut state, commands);
     update(&mut state, Action::Ui(UiAction::OpenBranchRebaseMenu));
-    update(&mut state, Action::Ui(UiAction::MoveBranchRebaseMenuDown));
+    update(
+        &mut state,
+        Action::Ui(UiAction::MoveMenuSelection {
+            menu: MenuKind::BranchRebase,
+            direction: MenuDirection::Down,
+        }),
+    );
 
     insta::assert_snapshot!(render_terminal_text(
         &state,

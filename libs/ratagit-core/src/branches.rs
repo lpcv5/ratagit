@@ -1,3 +1,8 @@
+use crate::state::{
+    ensure_linear_selection_anchor, enter_linear_range_select, leave_linear_range_select,
+    linear_key_at_selection, linear_key_is_selected, move_linear_selection,
+    move_linear_selection_in_viewport, refresh_linear_range,
+};
 use crate::text_edit::{
     CursorMove, backspace_at_cursor, insert_char_at_cursor, move_cursor_in_text,
 };
@@ -13,7 +18,7 @@ pub(crate) fn move_selected_branch(
     state: &mut BranchesUiState,
     move_up: bool,
 ) {
-    crate::scroll::move_selected_index(&mut state.selected, items.len(), move_up);
+    move_linear_selection(&mut state.selection, items.len(), move_up);
     if state.mode == BranchInputMode::MultiSelect {
         refresh_branch_multi_select_range(items, state);
     }
@@ -240,13 +245,7 @@ pub(crate) fn move_selected_branch_in_viewport(
     move_up: bool,
     visible_lines: usize,
 ) {
-    crate::scroll::move_selected_index_with_scroll_offset(
-        &mut state.selected,
-        &mut state.scroll_offset,
-        items.len(),
-        move_up,
-        visible_lines,
-    );
+    move_linear_selection_in_viewport(&mut state.selection, items.len(), move_up, visible_lines);
     if state.mode == BranchInputMode::MultiSelect {
         refresh_branch_multi_select_range(items, state);
     }
@@ -256,23 +255,22 @@ pub(crate) fn enter_multi_select(items: &[BranchEntry], state: &mut BranchesUiSt
     if items.is_empty() {
         return;
     }
-    let Some(key) = selected_branch_key(items, state) else {
+    let keys = branch_keys(items);
+    let Some(key) = linear_key_at_selection(&state.selection, &keys) else {
         return;
     };
     state.mode = BranchInputMode::MultiSelect;
-    state.selection_anchor = Some(key.clone());
-    state.selected_rows.clear();
-    state.selected_rows.insert(key);
+    enter_linear_range_select(&mut state.selection, Some(key));
 }
 
 pub(crate) fn leave_multi_select(state: &mut BranchesUiState) {
     state.mode = BranchInputMode::Normal;
-    state.selection_anchor = None;
-    state.selected_rows.clear();
+    leave_linear_range_select(&mut state.selection);
 }
 
 pub fn branch_is_selected_for_batch(state: &BranchesUiState, branch_name: &str) -> bool {
-    state.mode == BranchInputMode::MultiSelect && state.selected_rows.contains(branch_name)
+    state.mode == BranchInputMode::MultiSelect
+        && linear_key_is_selected(&state.selection, branch_name)
 }
 
 fn refresh_branch_multi_select_range(items: &[BranchEntry], state: &mut BranchesUiState) {
@@ -280,47 +278,13 @@ fn refresh_branch_multi_select_range(items: &[BranchEntry], state: &mut Branches
         leave_multi_select(state);
         return;
     }
-    ensure_valid_branch_selection_anchor(items, state);
-    let Some(anchor) = state.selection_anchor.clone() else {
-        return;
-    };
-    let Some(current) = selected_branch_key(items, state) else {
-        return;
-    };
-    let Some(anchor_index) = branch_index_for_key(items, &anchor) else {
-        return;
-    };
-    let Some(current_index) = branch_index_for_key(items, &current) else {
-        return;
-    };
-    let (start, end) = if anchor_index <= current_index {
-        (anchor_index, current_index)
-    } else {
-        (current_index, anchor_index)
-    };
-    state.selected_rows.clear();
-    for branch in &items[start..=end] {
-        state.selected_rows.insert(branch.name.clone());
-    }
+    let keys = branch_keys(items);
+    ensure_linear_selection_anchor(&mut state.selection, &keys);
+    refresh_linear_range(&mut state.selection, &keys);
 }
 
-fn ensure_valid_branch_selection_anchor(items: &[BranchEntry], state: &mut BranchesUiState) {
-    if state
-        .selection_anchor
-        .as_ref()
-        .is_some_and(|anchor| branch_index_for_key(items, anchor).is_some())
-    {
-        return;
-    }
-    state.selection_anchor = selected_branch_key(items, state);
-}
-
-fn selected_branch_key(items: &[BranchEntry], state: &BranchesUiState) -> Option<String> {
-    items.get(state.selected).map(|branch| branch.name.clone())
-}
-
-fn branch_index_for_key(items: &[BranchEntry], key: &str) -> Option<usize> {
-    items.iter().position(|branch| branch.name == key)
+fn branch_keys(items: &[BranchEntry]) -> Vec<String> {
+    items.iter().map(|branch| branch.name.clone()).collect()
 }
 
 pub(crate) fn open_create_input(state: &mut AppContext) {
@@ -329,7 +293,7 @@ pub(crate) fn open_create_input(state: &mut AppContext) {
         return;
     };
     state.ui.editor.kind = None;
-    state.ui.reset_menu.active = false;
+    state.ui.reset_menu.menu.active = false;
     close_discard_confirm(state);
     close_popovers(state);
     state.ui.branches.create.active = true;
@@ -402,20 +366,20 @@ pub(crate) fn open_delete_menu(state: &mut AppContext) {
         return;
     };
     state.ui.editor.kind = None;
-    state.ui.reset_menu.active = false;
+    state.ui.reset_menu.menu.active = false;
     close_discard_confirm(state);
     close_popovers(state);
-    state.ui.branches.delete_menu.active = true;
-    state.ui.branches.delete_menu.selected = crate::BranchDeleteChoice::Local;
+    state.ui.branches.delete_menu.menu.active = true;
+    state.ui.branches.delete_menu.menu.selected = crate::BranchDeleteChoice::Local;
     state.ui.branches.delete_menu.target_branch = branch;
 }
 
 pub(crate) fn confirm_delete_menu(state: &mut AppContext) -> Vec<Command> {
-    if !state.ui.branches.delete_menu.active {
+    if !state.ui.branches.delete_menu.menu.active {
         return Vec::new();
     }
     let name = state.ui.branches.delete_menu.target_branch.clone();
-    let mode = state.ui.branches.delete_menu.selected.delete_mode();
+    let mode = state.ui.branches.delete_menu.menu.selected.delete_mode();
     if delete_mode_includes_local(mode) && branch_is_current(state, &name) {
         close_delete_menu(state);
         push_notice(
@@ -442,19 +406,26 @@ pub(crate) fn confirm_delete_menu(state: &mut AppContext) -> Vec<Command> {
 pub(crate) fn open_delete_confirm(state: &mut AppContext, name: String, mode: BranchDeleteMode) {
     close_popovers(state);
     state.ui.branches.delete_confirm.active = true;
-    state.ui.branches.delete_confirm.target_branch = name;
-    state.ui.branches.delete_confirm.mode = Some(mode);
+    state.ui.branches.delete_confirm.context.target_branch = name;
+    state.ui.branches.delete_confirm.context.mode = Some(mode);
 }
 
 pub(crate) fn confirm_delete_danger(state: &mut AppContext) -> Vec<Command> {
     if !state.ui.branches.delete_confirm.active {
         return Vec::new();
     }
-    let name = state.ui.branches.delete_confirm.target_branch.clone();
+    let name = state
+        .ui
+        .branches
+        .delete_confirm
+        .context
+        .target_branch
+        .clone();
     let mode = state
         .ui
         .branches
         .delete_confirm
+        .context
         .mode
         .unwrap_or(BranchDeleteMode::Remote);
     close_delete_confirm(state);
@@ -470,13 +441,19 @@ pub(crate) fn confirm_delete_danger(state: &mut AppContext) -> Vec<Command> {
 
 pub(crate) fn close_delete_confirm(state: &mut AppContext) {
     state.ui.branches.delete_confirm.active = false;
-    state.ui.branches.delete_confirm.target_branch.clear();
-    state.ui.branches.delete_confirm.mode = None;
+    state
+        .ui
+        .branches
+        .delete_confirm
+        .context
+        .target_branch
+        .clear();
+    state.ui.branches.delete_confirm.context.mode = None;
 }
 
 pub(crate) fn close_delete_menu(state: &mut AppContext) {
-    state.ui.branches.delete_menu.active = false;
-    state.ui.branches.delete_menu.selected = crate::BranchDeleteChoice::Local;
+    state.ui.branches.delete_menu.menu.active = false;
+    state.ui.branches.delete_menu.menu.selected = crate::BranchDeleteChoice::Local;
     state.ui.branches.delete_menu.target_branch.clear();
 }
 
@@ -488,20 +465,27 @@ pub(crate) fn open_force_delete_confirm(
 ) {
     close_popovers(state);
     state.ui.branches.force_delete_confirm.active = true;
-    state.ui.branches.force_delete_confirm.target_branch = name;
-    state.ui.branches.force_delete_confirm.mode = Some(mode);
-    state.ui.branches.force_delete_confirm.reason = reason;
+    state.ui.branches.force_delete_confirm.context.target_branch = name;
+    state.ui.branches.force_delete_confirm.context.mode = Some(mode);
+    state.ui.branches.force_delete_confirm.context.reason = reason;
 }
 
 pub(crate) fn confirm_force_delete(state: &mut AppContext) -> Vec<Command> {
     if !state.ui.branches.force_delete_confirm.active {
         return Vec::new();
     }
-    let name = state.ui.branches.force_delete_confirm.target_branch.clone();
+    let name = state
+        .ui
+        .branches
+        .force_delete_confirm
+        .context
+        .target_branch
+        .clone();
     let mode = state
         .ui
         .branches
         .force_delete_confirm
+        .context
         .mode
         .unwrap_or(BranchDeleteMode::Local);
     close_force_delete_confirm(state);
@@ -517,9 +501,21 @@ pub(crate) fn confirm_force_delete(state: &mut AppContext) -> Vec<Command> {
 
 pub(crate) fn close_force_delete_confirm(state: &mut AppContext) {
     state.ui.branches.force_delete_confirm.active = false;
-    state.ui.branches.force_delete_confirm.target_branch.clear();
-    state.ui.branches.force_delete_confirm.mode = None;
-    state.ui.branches.force_delete_confirm.reason.clear();
+    state
+        .ui
+        .branches
+        .force_delete_confirm
+        .context
+        .target_branch
+        .clear();
+    state.ui.branches.force_delete_confirm.context.mode = None;
+    state
+        .ui
+        .branches
+        .force_delete_confirm
+        .context
+        .reason
+        .clear();
 }
 
 pub(crate) fn open_rebase_menu(state: &mut AppContext) {
@@ -528,19 +524,19 @@ pub(crate) fn open_rebase_menu(state: &mut AppContext) {
         return;
     };
     state.ui.editor.kind = None;
-    state.ui.reset_menu.active = false;
+    state.ui.reset_menu.menu.active = false;
     close_discard_confirm(state);
     close_popovers(state);
-    state.ui.branches.rebase_menu.active = true;
-    state.ui.branches.rebase_menu.selected = BranchRebaseChoice::Simple;
+    state.ui.branches.rebase_menu.menu.active = true;
+    state.ui.branches.rebase_menu.menu.selected = BranchRebaseChoice::Simple;
     state.ui.branches.rebase_menu.target_branch = branch;
 }
 
 pub(crate) fn confirm_rebase_menu(state: &mut AppContext) -> Vec<Command> {
-    if !state.ui.branches.rebase_menu.active {
+    if !state.ui.branches.rebase_menu.menu.active {
         return Vec::new();
     }
-    let choice = state.ui.branches.rebase_menu.selected;
+    let choice = state.ui.branches.rebase_menu.menu.selected;
     let selected_target = state.ui.branches.rebase_menu.target_branch.clone();
     close_rebase_menu(state);
     let (target, interactive) = match choice {
@@ -552,8 +548,8 @@ pub(crate) fn confirm_rebase_menu(state: &mut AppContext) -> Vec<Command> {
 }
 
 pub(crate) fn close_rebase_menu(state: &mut AppContext) {
-    state.ui.branches.rebase_menu.active = false;
-    state.ui.branches.rebase_menu.selected = BranchRebaseChoice::Simple;
+    state.ui.branches.rebase_menu.menu.active = false;
+    state.ui.branches.rebase_menu.menu.selected = BranchRebaseChoice::Simple;
     state.ui.branches.rebase_menu.target_branch.clear();
 }
 
@@ -570,7 +566,7 @@ pub(crate) fn confirm_auto_stash(state: &mut AppContext) -> Vec<Command> {
     if !state.ui.branches.auto_stash_confirm.active {
         return Vec::new();
     }
-    let operation = state.ui.branches.auto_stash_confirm.operation.clone();
+    let operation = state.ui.branches.auto_stash_confirm.context.clone();
     close_auto_stash_confirm(state);
     match operation {
         Some(AutoStashOperation::Checkout { branch }) => with_pending(
@@ -604,7 +600,7 @@ pub(crate) fn confirm_auto_stash(state: &mut AppContext) -> Vec<Command> {
 
 pub(crate) fn close_auto_stash_confirm(state: &mut AppContext) {
     state.ui.branches.auto_stash_confirm.active = false;
-    state.ui.branches.auto_stash_confirm.operation = None;
+    state.ui.branches.auto_stash_confirm.context = None;
 }
 
 pub(crate) fn close_popovers(state: &mut AppContext) {
@@ -673,18 +669,18 @@ fn rebase_or_confirm_stash(
 
 pub(crate) fn open_auto_stash_confirm(state: &mut AppContext, operation: AutoStashOperation) {
     state.ui.editor.kind = None;
-    state.ui.reset_menu.active = false;
+    state.ui.reset_menu.menu.active = false;
     close_discard_confirm(state);
     close_create_input(state);
     close_delete_menu(state);
     close_rebase_menu(state);
     state.ui.branches.auto_stash_confirm.active = true;
-    state.ui.branches.auto_stash_confirm.operation = Some(operation);
+    state.ui.branches.auto_stash_confirm.context = Some(operation);
 }
 
 fn close_discard_confirm(state: &mut AppContext) {
     state.ui.discard_confirm.active = false;
-    state.ui.discard_confirm.paths.clear();
+    state.ui.discard_confirm.context.clear();
 }
 
 fn branch_is_current(state: &AppContext, name: &str) -> bool {

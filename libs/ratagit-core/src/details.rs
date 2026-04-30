@@ -1,10 +1,10 @@
 use crate::{
-    AppContext, BRANCH_DETAILS_LOG_MAX_COUNT, BranchesSubview, CachedBranchLog, CachedCommitDiff,
-    CachedFilesDiff, Command, CommitFileDiffPath, CommitFileDiffTarget, DETAILS_DIFF_CACHE_LIMIT,
-    DetailsRequest, DetailsRequestId, DetailsRequestTarget, FILES_DETAILS_DIFF_TARGET_LIMIT,
-    FileDiffTarget, PanelFocus, push_notice, selected_branch_commit_id,
-    selected_commit_file_targets, selected_diff_targets_bounded, selected_target_paths,
-    with_pending,
+    ActiveLeftView, AppContext, BRANCH_DETAILS_LOG_MAX_COUNT, CachedBranchLog, CachedCommitDiff,
+    CachedFilesDiff, Command, CommitFileDiffPath, CommitFileDiffTarget, CommitFilesTarget,
+    CommitListTarget, DETAILS_DIFF_CACHE_LIMIT, DetailsRequest, DetailsRequestId,
+    DetailsRequestTarget, FILES_DETAILS_DIFF_TARGET_LIMIT, FileDiffTarget, push_notice,
+    selected_branch_commit_id, selected_commit_file_targets, selected_diff_targets_bounded,
+    selected_target_paths, with_pending,
 };
 
 pub(crate) fn scroll_up(state: &mut AppContext, lines: usize) {
@@ -54,7 +54,7 @@ pub(crate) fn apply_files_diff_result(
     if !details_request_matches(state, request_id, &request_target) {
         return Vec::new();
     }
-    if state.ui.last_left_focus != PanelFocus::Files {
+    if state.details_left_view() != Some(ActiveLeftView::Files) {
         clear_details_pending(state);
         return Vec::new();
     }
@@ -98,7 +98,7 @@ pub(crate) fn apply_branch_log_result(
     if !details_request_matches(state, request_id, &request_target) {
         return Vec::new();
     }
-    if state.ui.last_left_focus != PanelFocus::Branches {
+    if state.details_left_view() != Some(ActiveLeftView::BranchesList) {
         clear_details_pending(state);
         return Vec::new();
     }
@@ -139,9 +139,7 @@ pub(crate) fn apply_commit_diff_result(
     if !details_request_matches(state, request_id, &request_target) {
         return Vec::new();
     }
-    if state.ui.last_left_focus != PanelFocus::Commits
-        && state.ui.last_left_focus != PanelFocus::Branches
-    {
+    if state.details_commit_list_target().is_none() {
         clear_details_pending(state);
         return Vec::new();
     }
@@ -211,25 +209,15 @@ pub(crate) fn apply_commit_file_diff_result(
 }
 
 pub(crate) fn refresh_for_focus(state: &mut AppContext) -> Vec<Command> {
-    if state.ui.focus == PanelFocus::Files {
-        return refresh_files_details(state);
-    }
-    if state.ui.focus == PanelFocus::Branches {
-        if state.ui.branches.subview == BranchesSubview::CommitFiles {
-            return refresh_commit_file_diff(state);
+    match state.active_left_view() {
+        Some(ActiveLeftView::Files) => refresh_files_details(state),
+        Some(ActiveLeftView::BranchesList) => refresh_branch_log(state),
+        Some(ActiveLeftView::BranchCommits | ActiveLeftView::Commits) => refresh_commit_diff(state),
+        Some(ActiveLeftView::BranchCommitFiles | ActiveLeftView::CommitFiles) => {
+            refresh_commit_file_diff(state)
         }
-        if state.ui.branches.subview == BranchesSubview::Commits {
-            return refresh_commit_diff(state);
-        }
-        return refresh_branch_log(state);
+        Some(ActiveLeftView::Stash) | None => Vec::new(),
     }
-    if state.ui.focus == PanelFocus::Commits {
-        if state.ui.commits.files.active {
-            return refresh_commit_file_diff(state);
-        }
-        return refresh_commit_diff(state);
-    }
-    Vec::new()
 }
 
 pub(crate) fn refresh_on_focus(state: &mut AppContext) -> Vec<Command> {
@@ -505,40 +493,40 @@ fn commit_file_diff_target_matches_selection(
 }
 
 fn selected_detail_commit_id(state: &AppContext) -> Option<String> {
-    if state.ui.last_left_focus == PanelFocus::Branches
-        && state.ui.branches.subview == BranchesSubview::Commits
-    {
-        return selected_branch_commit_id(state);
+    match state.details_commit_list_target() {
+        Some(CommitListTarget::Branch) => selected_branch_commit_id(state),
+        Some(CommitListTarget::Main) => crate::selected_commit_id(state),
+        None => None,
     }
-    crate::selected_commit_id(state)
 }
 
 fn detail_commit_files_active(state: &AppContext) -> bool {
-    (state.ui.last_left_focus == PanelFocus::Commits && state.ui.commits.files.active)
-        || (state.ui.last_left_focus == PanelFocus::Branches
-            && state.ui.branches.subview == BranchesSubview::CommitFiles
-            && state.ui.branches.commit_files.active)
+    match state.details_commit_files_target() {
+        Some(CommitFilesTarget::Branch) => state.ui.branches.commit_files.active,
+        Some(CommitFilesTarget::Main) => state.ui.commits.files.active,
+        None => false,
+    }
 }
 
 fn detail_commit_files_commit_id(state: &AppContext) -> Option<String> {
-    if state.ui.last_left_focus == PanelFocus::Branches
-        && state.ui.branches.subview == BranchesSubview::CommitFiles
-    {
-        return state.ui.branches.commit_files.commit_id.clone();
+    match state.details_commit_files_target() {
+        Some(CommitFilesTarget::Branch) => state.ui.branches.commit_files.commit_id.clone(),
+        Some(CommitFilesTarget::Main) => state.ui.commits.files.commit_id.clone(),
+        None => None,
     }
-    state.ui.commits.files.commit_id.clone()
 }
 
 fn selected_detail_commit_file_targets(state: &AppContext) -> Vec<crate::CommitFileEntry> {
-    if state.ui.last_left_focus == PanelFocus::Branches
-        && state.ui.branches.subview == BranchesSubview::CommitFiles
-    {
-        return selected_commit_file_targets(
+    match state.details_commit_files_target() {
+        Some(CommitFilesTarget::Branch) => selected_commit_file_targets(
             &state.repo.branches.commit_files.items,
             &state.ui.branches.commit_files,
-        );
+        ),
+        Some(CommitFilesTarget::Main) => {
+            selected_commit_file_targets(&state.repo.commits.files.items, &state.ui.commits.files)
+        }
+        None => Vec::new(),
     }
-    selected_commit_file_targets(&state.repo.commits.files.items, &state.ui.commits.files)
 }
 
 fn cached_files_diff(state: &AppContext, paths: &[String]) -> Option<String> {
@@ -632,57 +620,36 @@ fn cache_entry<K: ?Sized, E>(
 }
 
 fn scroll_max_offset(state: &AppContext, visible_lines: usize) -> usize {
-    match state.ui.last_left_focus {
-        PanelFocus::Files => state
+    match state.details_left_view() {
+        Some(ActiveLeftView::Files) => state
             .repo
             .details
             .files_diff
             .lines()
             .count()
             .saturating_sub(visible_lines),
-        PanelFocus::Branches => match state.ui.branches.subview {
-            BranchesSubview::List => state
-                .repo
-                .details
-                .branch_log
-                .lines()
-                .count()
-                .saturating_sub(visible_lines),
-            BranchesSubview::Commits => state
-                .repo
-                .details
-                .commit_diff
-                .lines()
-                .count()
-                .saturating_sub(visible_lines),
-            BranchesSubview::CommitFiles => state
-                .repo
-                .details
-                .commit_file_diff
-                .lines()
-                .count()
-                .saturating_sub(visible_lines),
-        },
-        PanelFocus::Commits => {
-            if state.ui.commits.files.active {
-                state
-                    .repo
-                    .details
-                    .commit_file_diff
-                    .lines()
-                    .count()
-                    .saturating_sub(visible_lines)
-            } else {
-                state
-                    .repo
-                    .details
-                    .commit_diff
-                    .lines()
-                    .count()
-                    .saturating_sub(visible_lines)
-            }
-        }
-        PanelFocus::Stash | PanelFocus::Details | PanelFocus::Log => 0,
+        Some(ActiveLeftView::BranchesList) => state
+            .repo
+            .details
+            .branch_log
+            .lines()
+            .count()
+            .saturating_sub(visible_lines),
+        Some(ActiveLeftView::BranchCommits | ActiveLeftView::Commits) => state
+            .repo
+            .details
+            .commit_diff
+            .lines()
+            .count()
+            .saturating_sub(visible_lines),
+        Some(ActiveLeftView::BranchCommitFiles | ActiveLeftView::CommitFiles) => state
+            .repo
+            .details
+            .commit_file_diff
+            .lines()
+            .count()
+            .saturating_sub(visible_lines),
+        Some(ActiveLeftView::Stash) | None => 0,
     }
 }
 

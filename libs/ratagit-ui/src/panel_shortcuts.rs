@@ -1,4 +1,4 @@
-use ratagit_core::{AppContext, BranchesSubview, PanelFocus};
+use ratagit_core::{ActiveLeftView, AppContext};
 
 use crate::frame::RenderContext;
 use crate::loading_indicator::loading_indicator_for_state;
@@ -73,7 +73,7 @@ pub(crate) fn shortcut_line_for_state(state: &AppContext) -> ShortcutLine {
         ]);
     }
 
-    if state.ui.branches.delete_menu.active {
+    if state.ui.branches.delete_menu.menu.active {
         return segments(&[("j/k", "select"), ("Enter", "delete"), ("Esc", "cancel")]);
     }
 
@@ -85,7 +85,7 @@ pub(crate) fn shortcut_line_for_state(state: &AppContext) -> ShortcutLine {
         return segments(&[("Enter", "force delete"), ("Esc", "cancel")]);
     }
 
-    if state.ui.branches.rebase_menu.active {
+    if state.ui.branches.rebase_menu.menu.active {
         return segments(&[("j/k", "select"), ("Enter", "rebase"), ("Esc", "cancel")]);
     }
 
@@ -93,7 +93,7 @@ pub(crate) fn shortcut_line_for_state(state: &AppContext) -> ShortcutLine {
         return segments(&[("Enter", "confirm"), ("Esc", "cancel")]);
     }
 
-    if state.ui.reset_menu.active {
+    if state.ui.reset_menu.menu.active {
         return segments(&[("j/k", "select"), ("Enter", "confirm"), ("Esc", "cancel")]);
     }
 
@@ -120,8 +120,8 @@ pub(crate) fn shortcut_line_for_state(state: &AppContext) -> ShortcutLine {
         return ShortcutLine::Text(format!("search: {}", state.ui.search.query));
     }
 
-    match state.ui.focus {
-        PanelFocus::Files => local_segments(&[
+    match state.active_left_view() {
+        Some(ActiveLeftView::Files) => local_segments(&[
             ("space", "stage/unstage"),
             ("d", "discard"),
             ("A", "amend"),
@@ -130,34 +130,33 @@ pub(crate) fn shortcut_line_for_state(state: &AppContext) -> ShortcutLine {
             ("D", "reset"),
             ("enter", "expand"),
         ]),
-        PanelFocus::Branches => match state.ui.branches.subview {
-            BranchesSubview::List => local_segments(&[
-                ("enter", "commits"),
-                ("space", "checkout"),
-                ("n", "new"),
-                ("d", "delete"),
-                ("r", "rebase"),
-            ]),
-            BranchesSubview::Commits => local_segments(&[("enter", "files"), ("Esc", "back")]),
-            BranchesSubview::CommitFiles => local_segments(&[("enter", "expand"), ("Esc", "back")]),
-        },
-        PanelFocus::Commits => {
-            if state.ui.commits.files.active {
-                local_segments(&[("Esc", "back")])
-            } else {
-                local_segments(&[
-                    ("enter", "files"),
-                    ("A", "amend"),
-                    ("s", "squash"),
-                    ("f", "fixup"),
-                    ("r", "reword"),
-                    ("d", "delete"),
-                    ("space", "detach"),
-                ])
-            }
+        Some(ActiveLeftView::BranchesList) => local_segments(&[
+            ("enter", "commits"),
+            ("space", "checkout"),
+            ("n", "new"),
+            ("d", "delete"),
+            ("r", "rebase"),
+        ]),
+        Some(ActiveLeftView::BranchCommits) => {
+            local_segments(&[("enter", "files"), ("Esc", "back")])
         }
-        PanelFocus::Stash => local_segments(&[("O", "stash pop")]),
-        PanelFocus::Details | PanelFocus::Log => local_segments(&[]),
+        Some(ActiveLeftView::BranchCommitFiles) => {
+            local_segments(&[("enter", "expand"), ("v", "visual"), ("Esc", "back")])
+        }
+        Some(ActiveLeftView::Commits) => local_segments(&[
+            ("enter", "files"),
+            ("A", "amend"),
+            ("s", "squash"),
+            ("f", "fixup"),
+            ("r", "reword"),
+            ("d", "delete"),
+            ("space", "detach"),
+        ]),
+        Some(ActiveLeftView::CommitFiles) => {
+            local_segments(&[("enter", "expand"), ("v", "visual"), ("Esc", "back")])
+        }
+        Some(ActiveLeftView::Stash) => local_segments(&[("O", "stash pop")]),
+        None => local_segments(&[]),
     }
 }
 

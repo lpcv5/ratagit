@@ -96,16 +96,16 @@ pub(crate) fn open_reset_menu(state: &mut AppContext) {
     close_discard_confirm(state);
     close_reset_danger_confirm(state);
     branches::close_popovers(state);
-    state.ui.reset_menu.active = true;
-    state.ui.reset_menu.selected = ResetChoice::Mixed;
+    state.ui.reset_menu.menu.active = true;
+    state.ui.reset_menu.menu.selected = ResetChoice::Mixed;
 }
 
 pub(crate) fn confirm_reset_menu(state: &mut AppContext) -> Vec<Command> {
-    if !state.ui.reset_menu.active {
+    if !state.ui.reset_menu.menu.active {
         return Vec::new();
     }
-    let choice = state.ui.reset_menu.selected;
-    state.ui.reset_menu.active = false;
+    let choice = state.ui.reset_menu.menu.selected;
+    state.ui.reset_menu.menu.active = false;
     if matches!(choice, ResetChoice::Hard | ResetChoice::Nuke) {
         state.ui.reset_menu.danger_confirm = Some(choice);
         Vec::new()
@@ -142,18 +142,18 @@ pub(crate) fn open_discard_confirm(state: &mut AppContext) {
     }
 
     state.ui.editor.kind = None;
-    state.ui.reset_menu.active = false;
+    state.ui.reset_menu.menu.active = false;
     close_reset_danger_confirm(state);
     branches::close_popovers(state);
     state.ui.discard_confirm.active = true;
-    state.ui.discard_confirm.paths = paths;
+    state.ui.discard_confirm.context = paths;
 }
 
 pub(crate) fn confirm_discard(state: &mut AppContext) -> Vec<Command> {
     if !state.ui.discard_confirm.active {
         return Vec::new();
     }
-    let paths = state.ui.discard_confirm.paths.clone();
+    let paths = state.ui.discard_confirm.context.clone();
     close_discard_confirm(state);
     if paths.is_empty() {
         push_notice(state, "No file selected");
@@ -165,5 +165,5 @@ pub(crate) fn confirm_discard(state: &mut AppContext) -> Vec<Command> {
 
 pub(crate) fn close_discard_confirm(state: &mut AppContext) {
     state.ui.discard_confirm.active = false;
-    state.ui.discard_confirm.paths.clear();
+    state.ui.discard_confirm.context.clear();
 }

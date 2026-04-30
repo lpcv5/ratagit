@@ -142,7 +142,7 @@ pub(crate) fn handle_push_result(
         state.repo.status.last_error = Some(full_error.clone());
         push_notice(state, &full_error);
         state.ui.push_force_confirm.active = true;
-        state.ui.push_force_confirm.reason = error.message.clone();
+        state.ui.push_force_confirm.context = error.message.clone();
         return Vec::new();
     }
 

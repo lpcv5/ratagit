@@ -1,7 +1,7 @@
 use crossterm::event::{KeyCode, KeyModifiers};
 use ratagit_core::{
-    AppContext, BranchInputMode, BranchesSubview, CommitInputMode, FileInputMode, PanelFocus,
-    UiAction,
+    AppContext, BranchInputMode, BranchesSubview, CommitInputMode, FileInputMode, MenuDirection,
+    MenuKind, PanelFocus, UiAction,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -36,17 +36,17 @@ pub(crate) fn input_mode_for_state(state: &AppContext) -> InputMode {
         InputMode::Editor
     } else if state.ui.branches.create.active {
         InputMode::BranchCreate
-    } else if state.ui.branches.delete_menu.active {
+    } else if state.ui.branches.delete_menu.menu.active {
         InputMode::BranchDeleteMenu
     } else if state.ui.branches.delete_confirm.active {
         InputMode::BranchDeleteConfirm
     } else if state.ui.branches.force_delete_confirm.active {
         InputMode::BranchForceDeleteConfirm
-    } else if state.ui.branches.rebase_menu.active {
+    } else if state.ui.branches.rebase_menu.menu.active {
         InputMode::BranchRebaseMenu
     } else if state.ui.branches.auto_stash_confirm.active {
         InputMode::AutoStashConfirm
-    } else if state.ui.reset_menu.active {
+    } else if state.ui.reset_menu.menu.active {
         InputMode::ResetMenu
     } else if state.ui.reset_menu.danger_confirm.is_some() {
         InputMode::ResetDangerConfirm
@@ -207,89 +207,97 @@ fn branch_create_action_for_key(code: KeyCode, modifiers: KeyModifiers) -> Optio
 }
 
 fn branch_delete_menu_action_for_key(code: KeyCode) -> Option<UiAction> {
-    match code {
-        KeyCode::Enter => Some(UiAction::ConfirmBranchDeleteMenu),
-        KeyCode::Esc => Some(UiAction::CancelBranchDeleteMenu),
-        KeyCode::Up | KeyCode::Char('k') => Some(UiAction::MoveBranchDeleteMenuUp),
-        KeyCode::Down | KeyCode::Char('j') => Some(UiAction::MoveBranchDeleteMenuDown),
-        _ => None,
-    }
+    menu_keys(
+        code,
+        MenuKind::BranchDelete,
+        UiAction::ConfirmBranchDeleteMenu,
+        UiAction::CancelBranchDeleteMenu,
+    )
 }
 
 fn branch_delete_confirm_action_for_key(code: KeyCode) -> Option<UiAction> {
-    match code {
-        KeyCode::Enter => Some(UiAction::ConfirmBranchDeleteDanger),
-        KeyCode::Esc => Some(UiAction::CancelBranchDeleteDanger),
-        _ => None,
-    }
+    confirm_keys(
+        code,
+        UiAction::ConfirmBranchDeleteDanger,
+        UiAction::CancelBranchDeleteDanger,
+    )
 }
 
 fn branch_force_delete_action_for_key(code: KeyCode) -> Option<UiAction> {
-    match code {
-        KeyCode::Enter => Some(UiAction::ConfirmBranchForceDelete),
-        KeyCode::Esc => Some(UiAction::CancelBranchForceDelete),
-        _ => None,
-    }
+    confirm_keys(
+        code,
+        UiAction::ConfirmBranchForceDelete,
+        UiAction::CancelBranchForceDelete,
+    )
 }
 
 fn branch_rebase_menu_action_for_key(code: KeyCode) -> Option<UiAction> {
-    match code {
-        KeyCode::Enter => Some(UiAction::ConfirmBranchRebaseMenu),
-        KeyCode::Esc => Some(UiAction::CancelBranchRebaseMenu),
-        KeyCode::Up | KeyCode::Char('k') => Some(UiAction::MoveBranchRebaseMenuUp),
-        KeyCode::Down | KeyCode::Char('j') => Some(UiAction::MoveBranchRebaseMenuDown),
-        _ => None,
-    }
+    menu_keys(
+        code,
+        MenuKind::BranchRebase,
+        UiAction::ConfirmBranchRebaseMenu,
+        UiAction::CancelBranchRebaseMenu,
+    )
 }
 
 fn auto_stash_action_for_key(code: KeyCode) -> Option<UiAction> {
-    match code {
-        KeyCode::Enter => Some(UiAction::ConfirmAutoStash),
-        KeyCode::Esc => Some(UiAction::CancelAutoStash),
-        _ => None,
-    }
+    confirm_keys(code, UiAction::ConfirmAutoStash, UiAction::CancelAutoStash)
 }
 
 fn reset_menu_action_for_key(code: KeyCode) -> Option<UiAction> {
+    menu_keys(
+        code,
+        MenuKind::Reset,
+        UiAction::ConfirmResetMenu,
+        UiAction::CancelResetMenu,
+    )
+}
+
+fn reset_danger_action_for_key(code: KeyCode) -> Option<UiAction> {
+    confirm_keys(
+        code,
+        UiAction::ConfirmResetDanger,
+        UiAction::CancelResetDanger,
+    )
+}
+
+fn move_menu_action(menu: MenuKind, direction: MenuDirection) -> UiAction {
+    UiAction::MoveMenuSelection { menu, direction }
+}
+
+fn confirm_keys(code: KeyCode, confirm: UiAction, cancel: UiAction) -> Option<UiAction> {
     match code {
-        KeyCode::Enter => Some(UiAction::ConfirmResetMenu),
-        KeyCode::Esc => Some(UiAction::CancelResetMenu),
-        KeyCode::Up | KeyCode::Char('k') => Some(UiAction::MoveResetMenuUp),
-        KeyCode::Down | KeyCode::Char('j') => Some(UiAction::MoveResetMenuDown),
+        KeyCode::Enter => Some(confirm),
+        KeyCode::Esc => Some(cancel),
         _ => None,
     }
 }
 
-fn reset_danger_action_for_key(code: KeyCode) -> Option<UiAction> {
+fn menu_keys(
+    code: KeyCode,
+    menu: MenuKind,
+    confirm: UiAction,
+    cancel: UiAction,
+) -> Option<UiAction> {
     match code {
-        KeyCode::Enter => Some(UiAction::ConfirmResetDanger),
-        KeyCode::Esc => Some(UiAction::CancelResetDanger),
+        KeyCode::Enter => Some(confirm),
+        KeyCode::Esc => Some(cancel),
+        KeyCode::Up | KeyCode::Char('k') => Some(move_menu_action(menu, MenuDirection::Up)),
+        KeyCode::Down | KeyCode::Char('j') => Some(move_menu_action(menu, MenuDirection::Down)),
         _ => None,
     }
 }
 
 fn discard_confirm_action_for_key(code: KeyCode) -> Option<UiAction> {
-    match code {
-        KeyCode::Enter => Some(UiAction::ConfirmDiscard),
-        KeyCode::Esc => Some(UiAction::CancelDiscard),
-        _ => None,
-    }
+    confirm_keys(code, UiAction::ConfirmDiscard, UiAction::CancelDiscard)
 }
 
 fn force_push_action_for_key(code: KeyCode) -> Option<UiAction> {
-    match code {
-        KeyCode::Enter => Some(UiAction::ConfirmForcePush),
-        KeyCode::Esc => Some(UiAction::CancelForcePush),
-        _ => None,
-    }
+    confirm_keys(code, UiAction::ConfirmForcePush, UiAction::CancelForcePush)
 }
 
 fn stage_all_action_for_key(code: KeyCode) -> Option<UiAction> {
-    match code {
-        KeyCode::Enter => Some(UiAction::ConfirmStageAll),
-        KeyCode::Esc => Some(UiAction::CancelStageAll),
-        _ => None,
-    }
+    confirm_keys(code, UiAction::ConfirmStageAll, UiAction::CancelStageAll)
 }
 
 fn command_palette_action_for_key(

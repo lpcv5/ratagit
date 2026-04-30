@@ -21,7 +21,7 @@ pub(crate) fn render_discard_modal(frame: &mut Frame<'_>, state: &AppContext, ar
                 ModalTone::Danger,
                 ConfirmBody::new("Discard selected file changes?")
                     .secondary("This action cannot be undone.")
-                    .details(format_discard_details(&state.ui.discard_confirm.paths)),
+                    .details(format_discard_details(&state.ui.discard_confirm.context)),
             );
         },
     );

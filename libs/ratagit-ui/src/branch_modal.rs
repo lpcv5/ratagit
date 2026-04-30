@@ -10,7 +10,7 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::frame::TerminalCursor;
 use crate::modal::{
-    ChoiceMenuBody, ConfirmBody, ModalSpec, ModalTone, choice_menu_modal_height,
+    ChoiceMenuBody, ConfirmBody, ModalSpec, ModalTone, choice_menu_modal_height, choice_menu_rows,
     modal_content_rect, render_choice_menu_body, render_confirm_body, render_input_block,
     render_modal, render_section_label, render_text,
 };
@@ -20,7 +20,7 @@ pub(crate) fn render_branch_modals(frame: &mut Frame<'_>, state: &AppContext, ar
     if state.ui.branches.create.active {
         render_branch_create_modal(frame, state, area);
     }
-    if state.ui.branches.delete_menu.active {
+    if state.ui.branches.delete_menu.menu.active {
         render_branch_delete_modal(frame, state, area);
     }
     if state.ui.branches.delete_confirm.active {
@@ -29,7 +29,7 @@ pub(crate) fn render_branch_modals(frame: &mut Frame<'_>, state: &AppContext, ar
     if state.ui.branches.force_delete_confirm.active {
         render_force_delete_modal(frame, state, area);
     }
-    if state.ui.branches.rebase_menu.active {
+    if state.ui.branches.rebase_menu.menu.active {
         render_branch_rebase_modal(frame, state, area);
     }
     if state.ui.branches.auto_stash_confirm.active {
@@ -42,9 +42,10 @@ fn render_branch_delete_confirm_modal(frame: &mut Frame<'_>, state: &AppContext,
         .ui
         .branches
         .delete_confirm
+        .context
         .mode
         .unwrap_or(BranchDeleteMode::Remote);
-    let branch = &state.ui.branches.delete_confirm.target_branch;
+    let branch = &state.ui.branches.delete_confirm.context.target_branch;
     render_modal(
         frame,
         area,
@@ -140,10 +141,12 @@ fn render_branch_delete_modal(frame: &mut Frame<'_>, state: &AppContext, area: R
                     intro: format!("Target: {}", state.ui.branches.delete_menu.target_branch),
                     list_title: "Choice",
                     choices: &choices,
-                    selected: state.ui.branches.delete_menu.selected,
+                    selected: state.ui.branches.delete_menu.menu.selected,
                     list_height: 4,
-                    description: branch_delete_description(state.ui.branches.delete_menu.selected)
-                        .to_string(),
+                    description: branch_delete_description(
+                        state.ui.branches.delete_menu.menu.selected,
+                    )
+                    .to_string(),
                 },
             );
         },
@@ -177,10 +180,10 @@ fn render_branch_rebase_modal(frame: &mut Frame<'_>, state: &AppContext, area: R
                     ),
                     list_title: "Choice",
                     choices: &choices,
-                    selected: state.ui.branches.rebase_menu.selected,
+                    selected: state.ui.branches.rebase_menu.menu.selected,
                     list_height: 4,
                     description: branch_rebase_description(
-                        state.ui.branches.rebase_menu.selected,
+                        state.ui.branches.rebase_menu.menu.selected,
                         &state.ui.branches.rebase_menu.target_branch,
                     ),
                 },
@@ -202,12 +205,12 @@ fn render_force_delete_modal(frame: &mut Frame<'_>, state: &AppContext, area: Re
                 ModalTone::Danger,
                 ConfirmBody::new(format!(
                     "Force delete branch: {}?",
-                    state.ui.branches.force_delete_confirm.target_branch
+                    state.ui.branches.force_delete_confirm.context.target_branch
                 ))
                 .secondary("This action cannot be undone.")
                 .details(format!(
                     "Git refused safe deletion:\n{}",
-                    state.ui.branches.force_delete_confirm.reason
+                    state.ui.branches.force_delete_confirm.context.reason
                 )),
             );
         },
@@ -221,7 +224,7 @@ fn render_auto_stash_modal(frame: &mut Frame<'_>, state: &AppContext, area: Rect
         ModalSpec::new("Confirm", ModalTone::Warning, 72, 10, 20, 7, 1),
         &[&[("Enter", "auto stash"), ("Esc", "cancel")]],
         |frame, content| {
-            let operation = state.ui.branches.auto_stash_confirm.operation.as_ref();
+            let operation = state.ui.branches.auto_stash_confirm.context.as_ref();
             render_confirm_body(
                 frame,
                 content,
@@ -254,10 +257,9 @@ fn branch_create_rows(area: Rect) -> std::rc::Rc<[Rect]> {
 }
 
 fn branch_delete_choices() -> Vec<(BranchDeleteChoice, &'static str, Style)> {
-    BranchDeleteChoice::ALL
-        .iter()
-        .map(|choice| (*choice, branch_delete_label(*choice), modal_muted_style()))
-        .collect()
+    choice_menu_rows(&BranchDeleteChoice::ALL, branch_delete_label, |_| {
+        modal_muted_style()
+    })
 }
 
 fn branch_delete_label(choice: BranchDeleteChoice) -> &'static str {
@@ -301,10 +303,9 @@ fn branch_delete_confirm_details(mode: BranchDeleteMode, branch: &str) -> String
 }
 
 fn branch_rebase_choices() -> Vec<(BranchRebaseChoice, &'static str, Style)> {
-    BranchRebaseChoice::ALL
-        .iter()
-        .map(|choice| (*choice, branch_rebase_label(*choice), modal_muted_style()))
-        .collect()
+    choice_menu_rows(&BranchRebaseChoice::ALL, branch_rebase_label, |_| {
+        modal_muted_style()
+    })
 }
 
 fn branch_rebase_label(choice: BranchRebaseChoice) -> &'static str {

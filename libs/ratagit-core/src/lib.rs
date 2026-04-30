@@ -19,8 +19,8 @@ mod text_edit;
 mod worktree;
 
 pub use actions::{
-    Action, Command, CommandRefreshKey, GitResult, UiAction, debounce_key_for_command,
-    refresh_key_for_command,
+    Action, Command, CommandRefreshKey, GitResult, MenuDirection, MenuKind, UiAction,
+    debounce_key_for_command, refresh_key_for_command,
 };
 pub use branches::branch_is_selected_for_batch;
 pub use commits::{
@@ -36,7 +36,7 @@ pub use commits::{
 pub use errors::{GitErrorKind, GitFailure};
 pub use files::{
     BoundedFileDiffTargets, CommitFileEntry, CommitFileStatus, CommitFilesUiState, FileDiffTarget,
-    FileEntry, FileInputMode, FileRowKind, FileTreeIndex, FileTreeRow, FilesUiState,
+    FileEntry, FileInputMode, FileRowKind, FileTreeIndex, FileTreeRow, FilesUiState, TreeNavState,
     build_commit_file_tree_rows, build_file_tree_rows, clamp_selected as clamp_file_selection,
     collect_directories, commit_file_tree_rows, commit_file_tree_rows_for_read,
     enter_commit_files_multi_select, enter_multi_select, file_tree_rows, file_tree_rows_for_read,
@@ -53,17 +53,20 @@ pub use files::{
 pub use reducer::update;
 pub use scroll::scroll_offset_for_selection;
 pub use state::{
-    AppContext, AutoStashConfirmState, AutoStashOperation, BranchCreateState, BranchDeleteChoice,
-    BranchDeleteConfirmState, BranchDeleteMenuState, BranchDeleteMode, BranchEntry,
+    ActiveLeftView, AppContext, AutoStashConfirmState, AutoStashOperation, BranchCreateState,
+    BranchDeleteChoice, BranchDeleteConfirmContext, BranchDeleteConfirmState,
+    BranchDeleteMenuState, BranchDeleteMode, BranchEntry, BranchForceDeleteConfirmContext,
     BranchForceDeleteConfirmState, BranchInputMode, BranchRebaseChoice, BranchRebaseMenuState,
     BranchesSubview, BranchesUiState, CachedBranchLog, CachedCommitDiff, CachedFilesDiff,
     CommandPaletteCommand, CommandPaletteEntry, CommandPaletteSection, CommandPaletteState,
     CommitEditorIntent, CommitEntry, CommitField, CommitFileDiffPath, CommitFileDiffTarget,
-    CommitHashStatus, CommitInputMode, CommitsUiState, DetailsRepoState, DetailsRequest,
-    DetailsRequestId, DetailsRequestTarget, DiscardConfirmState, EditorKind, EditorState,
-    FilesSnapshot, PanelFocus, RefreshTarget, RepoSnapshot, ResetChoice, ResetMenuState, ResetMode,
-    SearchScope, SearchState, StageAllConfirmState, StageAllOperation, StashEntry, StashScope,
-    StashUiState, StatusMode, StatusPanelState, WorkStatusState,
+    CommitFilesTarget, CommitHashStatus, CommitInputMode, CommitListTarget, CommitsUiState,
+    ConfirmDialog, DetailsRepoState, DetailsRequest, DetailsRequestId, DetailsRequestTarget,
+    DiscardConfirmState, EditorKind, EditorState, FilesSnapshot, Menu, MenuChoice, PanelFocus,
+    PushForceConfirmState, RefreshTarget, RepoSnapshot, ResetChoice, ResetMenuState, ResetMode,
+    SearchScope, SearchState, StageAllConfirmContext, StageAllConfirmState, StageAllOperation,
+    StashEntry, StashScope, StashUiState, StatusMode, StatusPanelState, TargetBranchMenu,
+    WorkStatusState,
 };
 
 pub(crate) use actions::with_pending;

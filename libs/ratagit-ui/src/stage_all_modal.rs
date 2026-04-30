@@ -12,11 +12,12 @@ pub(crate) fn render_stage_all_modal(frame: &mut Frame<'_>, state: &AppContext, 
     let operation = state
         .ui
         .stage_all_confirm
+        .context
         .operation
         .as_ref()
         .map(operation_description)
         .unwrap_or_else(|| "Continue the operation".to_string());
-    let file_count = state.ui.stage_all_confirm.paths.len();
+    let file_count = state.ui.stage_all_confirm.context.paths.len();
     let details = format!(
         "{} will be staged.",
         if file_count == 1 {

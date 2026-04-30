@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
+use std::ops::{Deref, DerefMut};
 
 use crate::scroll::{move_selected_index, move_selected_index_with_scroll_offset};
 
@@ -71,8 +72,8 @@ pub enum FileInputMode {
     MultiSelect,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FilesUiState {
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct TreeNavState {
     pub selected: usize,
     pub scroll_offset: usize,
     pub expanded_dirs: BTreeSet<String>,
@@ -83,25 +84,22 @@ pub struct FilesUiState {
     pub tree_rows: Vec<FileTreeRow>,
     pub row_descendants: BTreeMap<String, Vec<String>>,
     pub row_index_by_path: BTreeMap<String, usize>,
-    pub lightweight_tree_projection: bool,
     pub tree_index: FileTreeIndex,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct FilesUiState {
+    pub nav: TreeNavState,
+    pub tree_initialized: bool,
+    pub lightweight_tree_projection: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct CommitFilesUiState {
     pub active: bool,
     pub commit_id: Option<String>,
-    pub selected: usize,
-    pub scroll_offset: usize,
-    pub expanded_dirs: BTreeSet<String>,
-    pub selected_rows: BTreeSet<String>,
-    pub selection_anchor: Option<String>,
-    pub mode: FileInputMode,
-    pub tree_rows: Vec<FileTreeRow>,
-    pub row_descendants: BTreeMap<String, Vec<String>>,
-    pub row_index_by_path: BTreeMap<String, usize>,
+    pub nav: TreeNavState,
     pub item_index_by_path: BTreeMap<String, usize>,
-    pub tree_index: FileTreeIndex,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -303,22 +301,31 @@ impl FileTreeIndex {
     }
 }
 
-impl Default for FilesUiState {
-    fn default() -> Self {
-        Self {
-            selected: 0,
-            scroll_offset: 0,
-            expanded_dirs: BTreeSet::new(),
-            selected_rows: BTreeSet::new(),
-            selection_anchor: None,
-            mode: FileInputMode::Normal,
-            tree_initialized: false,
-            tree_rows: Vec::new(),
-            row_descendants: BTreeMap::new(),
-            row_index_by_path: BTreeMap::new(),
-            lightweight_tree_projection: false,
-            tree_index: FileTreeIndex::default(),
-        }
+impl Deref for FilesUiState {
+    type Target = TreeNavState;
+
+    fn deref(&self) -> &Self::Target {
+        &self.nav
+    }
+}
+
+impl DerefMut for FilesUiState {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.nav
+    }
+}
+
+impl Deref for CommitFilesUiState {
+    type Target = TreeNavState;
+
+    fn deref(&self) -> &Self::Target {
+        &self.nav
+    }
+}
+
+impl DerefMut for CommitFilesUiState {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.nav
     }
 }
 
@@ -389,30 +396,21 @@ pub fn clamp_selected(items: &[FileEntry], state: &mut FilesUiState) {
 }
 
 pub fn move_selected(state: &mut FilesUiState, move_up: bool) {
-    let len = state.tree_rows.len();
-    move_selected_index(&mut state.selected, len, move_up);
+    move_tree_selected(&mut state.nav, move_up);
     if state.mode == FileInputMode::MultiSelect {
         refresh_multi_select_range_from_rows(state);
     }
 }
 
 pub fn move_selected_in_viewport(state: &mut FilesUiState, move_up: bool, visible_lines: usize) {
-    let len = state.tree_rows.len();
-    move_selected_index_with_scroll_offset(
-        &mut state.selected,
-        &mut state.scroll_offset,
-        len,
-        move_up,
-        visible_lines,
-    );
+    move_tree_selected_in_viewport(&mut state.nav, move_up, visible_lines);
     if state.mode == FileInputMode::MultiSelect {
         refresh_multi_select_range_from_rows(state);
     }
 }
 
 pub fn move_commit_file_selected(state: &mut CommitFilesUiState, move_up: bool) {
-    let len = state.tree_rows.len();
-    move_selected_index(&mut state.selected, len, move_up);
+    move_tree_selected(&mut state.nav, move_up);
     if state.mode == FileInputMode::MultiSelect {
         refresh_commit_files_multi_select_range_from_rows(state);
     }
@@ -423,6 +421,18 @@ pub fn move_commit_file_selected_in_viewport(
     move_up: bool,
     visible_lines: usize,
 ) {
+    move_tree_selected_in_viewport(&mut state.nav, move_up, visible_lines);
+    if state.mode == FileInputMode::MultiSelect {
+        refresh_commit_files_multi_select_range_from_rows(state);
+    }
+}
+
+fn move_tree_selected(state: &mut TreeNavState, move_up: bool) {
+    let len = state.tree_rows.len();
+    move_selected_index(&mut state.selected, len, move_up);
+}
+
+fn move_tree_selected_in_viewport(state: &mut TreeNavState, move_up: bool, visible_lines: usize) {
     let len = state.tree_rows.len();
     move_selected_index_with_scroll_offset(
         &mut state.selected,
@@ -431,9 +441,6 @@ pub fn move_commit_file_selected_in_viewport(
         move_up,
         visible_lines,
     );
-    if state.mode == FileInputMode::MultiSelect {
-        refresh_commit_files_multi_select_range_from_rows(state);
-    }
 }
 
 pub fn toggle_selected_directory(items: &[FileEntry], state: &mut FilesUiState) -> bool {
@@ -1096,53 +1103,14 @@ fn ensure_valid_selection_anchor(items: &[FileEntry], state: &mut FilesUiState) 
 
 fn refresh_multi_select_range(items: &[FileEntry], state: &mut FilesUiState) {
     let rows = build_file_tree_rows(items, state);
+    let paths = selected_range_paths(&rows, state.selection_anchor.as_deref(), state.selected);
     state.selected_rows.clear();
-    let Some(anchor_path) = state.selection_anchor.clone() else {
-        refresh_tree_projection(items, state);
-        return;
-    };
-    let Some(anchor_index) = rows.iter().position(|row| row.path == anchor_path) else {
-        refresh_tree_projection(items, state);
-        return;
-    };
-    if rows.is_empty() {
-        refresh_tree_projection(items, state);
-        return;
-    }
-    let selected_index = state.selected.min(rows.len() - 1);
-    let start = anchor_index.min(selected_index);
-    let end = anchor_index.max(selected_index);
-    for row in &rows[start..=end] {
-        state.selected_rows.insert(row.path.clone());
-    }
+    state.selected_rows.extend(paths);
     refresh_tree_projection(items, state);
 }
 
 fn refresh_multi_select_range_from_rows(state: &mut FilesUiState) {
-    state.selected_rows.clear();
-    let Some(anchor_path) = state.selection_anchor.clone() else {
-        sync_file_tree_batch_marks(state);
-        return;
-    };
-    let Some(anchor_index) = state
-        .tree_rows
-        .iter()
-        .position(|row| row.path == anchor_path)
-    else {
-        sync_file_tree_batch_marks(state);
-        return;
-    };
-    if state.tree_rows.is_empty() {
-        sync_file_tree_batch_marks(state);
-        return;
-    }
-    let selected_index = state.selected.min(state.tree_rows.len() - 1);
-    let start = anchor_index.min(selected_index);
-    let end = anchor_index.max(selected_index);
-    for row in &state.tree_rows[start..=end] {
-        state.selected_rows.insert(row.path.clone());
-    }
-    sync_file_tree_batch_marks(state);
+    refresh_tree_multi_select_range_from_rows(&mut state.nav);
 }
 
 fn ensure_valid_commit_files_selection_anchor(
@@ -1164,64 +1132,54 @@ fn refresh_commit_files_multi_select_range(
     state: &mut CommitFilesUiState,
 ) {
     let rows = build_commit_file_tree_rows(items, state);
+    let paths = selected_range_paths(&rows, state.selection_anchor.as_deref(), state.selected);
     state.selected_rows.clear();
-    let Some(anchor_path) = state.selection_anchor.clone() else {
-        refresh_commit_files_tree_projection(items, state);
-        return;
-    };
-    let Some(anchor_index) = rows.iter().position(|row| row.path == anchor_path) else {
-        refresh_commit_files_tree_projection(items, state);
-        return;
-    };
-    if rows.is_empty() {
-        refresh_commit_files_tree_projection(items, state);
-        return;
-    }
-    let selected_index = state.selected.min(rows.len() - 1);
-    let start = anchor_index.min(selected_index);
-    let end = anchor_index.max(selected_index);
-    for row in &rows[start..=end] {
-        state.selected_rows.insert(row.path.clone());
-    }
+    state.selected_rows.extend(paths);
     refresh_commit_files_tree_projection(items, state);
 }
 
 fn refresh_commit_files_multi_select_range_from_rows(state: &mut CommitFilesUiState) {
+    refresh_tree_multi_select_range_from_rows(&mut state.nav);
+}
+
+fn refresh_tree_multi_select_range_from_rows(state: &mut TreeNavState) {
+    let paths = selected_range_paths(
+        &state.tree_rows,
+        state.selection_anchor.as_deref(),
+        state.selected,
+    );
     state.selected_rows.clear();
-    let Some(anchor_path) = state.selection_anchor.clone() else {
-        sync_commit_file_tree_batch_marks(state);
-        return;
+    state.selected_rows.extend(paths);
+    sync_tree_batch_marks(state);
+}
+
+fn selected_range_paths(
+    rows: &[FileTreeRow],
+    anchor_path: Option<&str>,
+    selected: usize,
+) -> Vec<String> {
+    let Some(anchor_path) = anchor_path else {
+        return Vec::new();
     };
-    let Some(anchor_index) = state
-        .tree_rows
-        .iter()
-        .position(|row| row.path == anchor_path)
-    else {
-        sync_commit_file_tree_batch_marks(state);
-        return;
+    let Some(anchor_index) = rows.iter().position(|row| row.path == anchor_path) else {
+        return Vec::new();
     };
-    if state.tree_rows.is_empty() {
-        sync_commit_file_tree_batch_marks(state);
-        return;
+    if rows.is_empty() {
+        return Vec::new();
     }
-    let selected_index = state.selected.min(state.tree_rows.len() - 1);
+    let selected_index = selected.min(rows.len() - 1);
     let start = anchor_index.min(selected_index);
     let end = anchor_index.max(selected_index);
-    for row in &state.tree_rows[start..=end] {
-        state.selected_rows.insert(row.path.clone());
-    }
-    sync_commit_file_tree_batch_marks(state);
+    rows[start..=end]
+        .iter()
+        .map(|row| row.path.clone())
+        .collect()
 }
 
-fn sync_file_tree_batch_marks(state: &mut FilesUiState) {
+fn sync_tree_batch_marks(state: &mut TreeNavState) {
+    let selected_rows = state.selected_rows.clone();
     for row in &mut state.tree_rows {
-        row.selected_for_batch = state.selected_rows.contains(&row.path);
-    }
-}
-
-fn sync_commit_file_tree_batch_marks(state: &mut CommitFilesUiState) {
-    for row in &mut state.tree_rows {
-        row.selected_for_batch = state.selected_rows.contains(&row.path);
+        row.selected_for_batch = selected_rows.contains(&row.path);
     }
 }
 

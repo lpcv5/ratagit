@@ -1,8 +1,8 @@
 use crate::{
-    AppContext, BranchInputMode, BranchesSubview, CommitEntry, CommitInputMode, FileInputMode,
-    SearchScope, branches, commit_file_tree_rows_for_read, commit_key, file_tree_rows_for_read,
-    leave_commit_files_multi_select, leave_commit_multi_select, leave_multi_select,
-    select_commit_file_tree_path, select_file_tree_path,
+    AppContext, BranchInputMode, CommitEntry, CommitFilesTarget, CommitInputMode, CommitListTarget,
+    FileInputMode, SearchScope, branches, commit_file_tree_rows_for_read, commit_key,
+    file_tree_rows_for_read, leave_commit_files_multi_select, leave_commit_multi_select,
+    leave_multi_select, select_commit_file_tree_path, select_file_tree_path,
 };
 
 pub(crate) fn start_search(state: &mut AppContext) {
@@ -15,30 +15,41 @@ pub(crate) fn start_search(state: &mut AppContext) {
     if scope == SearchScope::Branches && state.ui.branches.mode == BranchInputMode::MultiSelect {
         branches::leave_multi_select(&mut state.ui.branches);
     }
-    if scope == SearchScope::Commits
-        && state.ui.branches.subview == BranchesSubview::Commits
-        && state.ui.branches.commits.mode == CommitInputMode::MultiSelect
-    {
-        leave_commit_multi_select(&mut state.ui.branches.commits);
-    } else if scope == SearchScope::Commits && state.ui.commits.mode == CommitInputMode::MultiSelect
-    {
-        leave_commit_multi_select(&mut state.ui.commits);
+    if scope == SearchScope::Commits {
+        match state.active_commit_list_target() {
+            Some(CommitListTarget::Branch)
+                if state.ui.branches.commits.mode == CommitInputMode::MultiSelect =>
+            {
+                leave_commit_multi_select(&mut state.ui.branches.commits);
+            }
+            Some(CommitListTarget::Main)
+                if state.ui.commits.mode == CommitInputMode::MultiSelect =>
+            {
+                leave_commit_multi_select(&mut state.ui.commits);
+            }
+            _ => {}
+        }
     }
-    if scope == SearchScope::CommitFiles
-        && state.ui.branches.subview == BranchesSubview::CommitFiles
-        && state.ui.branches.commit_files.mode == FileInputMode::MultiSelect
-    {
-        leave_commit_files_multi_select(
-            &state.repo.branches.commit_files.items,
-            &mut state.ui.branches.commit_files,
-        );
-    } else if scope == SearchScope::CommitFiles
-        && state.ui.commits.files.mode == FileInputMode::MultiSelect
-    {
-        leave_commit_files_multi_select(
-            &state.repo.commits.files.items,
-            &mut state.ui.commits.files,
-        );
+    if scope == SearchScope::CommitFiles {
+        match state.active_commit_files_target() {
+            Some(CommitFilesTarget::Branch)
+                if state.ui.branches.commit_files.mode == FileInputMode::MultiSelect =>
+            {
+                leave_commit_files_multi_select(
+                    &state.repo.branches.commit_files.items,
+                    &mut state.ui.branches.commit_files,
+                );
+            }
+            Some(CommitFilesTarget::Main)
+                if state.ui.commits.files.mode == FileInputMode::MultiSelect =>
+            {
+                leave_commit_files_multi_select(
+                    &state.repo.commits.files.items,
+                    &mut state.ui.commits.files,
+                );
+            }
+            _ => {}
+        }
     }
     state.ui.search.active = true;
     state.ui.search.scope = Some(scope);
@@ -136,23 +147,20 @@ pub(crate) fn recompute_search_matches(state: &mut AppContext) {
             |branch| branch.name.clone(),
             |branch| branch.name.clone(),
         ),
-        SearchScope::Commits => {
-            if state.ui.branches.subview == BranchesSubview::Commits {
-                collect_matches(
-                    state.repo.branches.commits.iter(),
-                    &query,
-                    commit_key,
-                    commit_search_text,
-                )
-            } else {
-                collect_matches(
-                    state.repo.commits.items.iter(),
-                    &query,
-                    commit_key,
-                    commit_search_text,
-                )
-            }
-        }
+        SearchScope::Commits => match state.active_commit_list_target() {
+            Some(CommitListTarget::Branch) => collect_matches(
+                state.repo.branches.commits.iter(),
+                &query,
+                commit_key,
+                commit_search_text,
+            ),
+            Some(CommitListTarget::Main) | None => collect_matches(
+                state.repo.commits.items.iter(),
+                &query,
+                commit_key,
+                commit_search_text,
+            ),
+        },
         SearchScope::Stash => collect_matches(
             state.repo.stash.items.iter(),
             &query,
@@ -160,16 +168,15 @@ pub(crate) fn recompute_search_matches(state: &mut AppContext) {
             |stash| format!("{} {}", stash.id, stash.summary),
         ),
         SearchScope::CommitFiles => {
-            let rows = if state.ui.branches.subview == BranchesSubview::CommitFiles {
-                commit_file_tree_rows_for_read(
+            let rows = match state.active_commit_files_target() {
+                Some(CommitFilesTarget::Branch) => commit_file_tree_rows_for_read(
                     &state.repo.branches.commit_files.items,
                     &state.ui.branches.commit_files,
-                )
-            } else {
-                commit_file_tree_rows_for_read(
+                ),
+                Some(CommitFilesTarget::Main) | None => commit_file_tree_rows_for_read(
                     &state.repo.commits.files.items,
                     &state.ui.commits.files,
-                )
+                ),
             };
             collect_matches(
                 rows.iter(),
@@ -233,41 +240,35 @@ fn select_current_search_match(state: &mut AppContext) -> bool {
                 .map(|branch| branch.name.clone()),
             &key,
         ),
-        SearchScope::Commits => {
-            if state.ui.branches.subview == BranchesSubview::Commits {
-                select_index_by_key(
-                    &mut state.ui.branches.commits.selected,
-                    state.repo.branches.commits.iter().map(commit_key),
-                    &key,
-                )
-            } else {
-                select_index_by_key(
-                    &mut state.ui.commits.selected,
-                    state.repo.commits.items.iter().map(commit_key),
-                    &key,
-                )
-            }
-        }
+        SearchScope::Commits => match state.active_commit_list_target() {
+            Some(CommitListTarget::Branch) => select_index_by_key(
+                &mut state.ui.branches.commits.selected,
+                state.repo.branches.commits.iter().map(commit_key),
+                &key,
+            ),
+            Some(CommitListTarget::Main) | None => select_index_by_key(
+                &mut state.ui.commits.selected,
+                state.repo.commits.items.iter().map(commit_key),
+                &key,
+            ),
+        },
         SearchScope::Stash => select_index_by_key(
             &mut state.ui.stash.selected,
             state.repo.stash.items.iter().map(|stash| stash.id.clone()),
             &key,
         ),
-        SearchScope::CommitFiles => {
-            if state.ui.branches.subview == BranchesSubview::CommitFiles {
-                select_commit_file_tree_path(
-                    &state.repo.branches.commit_files.items,
-                    &mut state.ui.branches.commit_files,
-                    &key,
-                )
-            } else {
-                select_commit_file_tree_path(
-                    &state.repo.commits.files.items,
-                    &mut state.ui.commits.files,
-                    &key,
-                )
-            }
-        }
+        SearchScope::CommitFiles => match state.active_commit_files_target() {
+            Some(CommitFilesTarget::Branch) => select_commit_file_tree_path(
+                &state.repo.branches.commit_files.items,
+                &mut state.ui.branches.commit_files,
+                &key,
+            ),
+            Some(CommitFilesTarget::Main) | None => select_commit_file_tree_path(
+                &state.repo.commits.files.items,
+                &mut state.ui.commits.files,
+                &key,
+            ),
+        },
     }
 }
 

@@ -117,6 +117,23 @@ pub(crate) struct ChoiceMenuBody<'a, T: Copy + PartialEq> {
     pub(crate) description: String,
 }
 
+pub(crate) fn choice_menu_rows<T: Copy>(
+    choices: &[T],
+    label_for_choice: impl Fn(T) -> &'static str,
+    style_for_choice: impl Fn(T) -> Style,
+) -> Vec<(T, &'static str, Style)> {
+    choices
+        .iter()
+        .map(|choice| {
+            (
+                *choice,
+                label_for_choice(*choice),
+                style_for_choice(*choice),
+            )
+        })
+        .collect()
+}
+
 pub(crate) fn render_modal(
     frame: &mut Frame<'_>,
     area: Rect,

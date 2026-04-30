@@ -23,7 +23,7 @@ pub(crate) fn render_sync_modal(frame: &mut Frame<'_>, state: &AppContext, area:
                     .secondary("This can overwrite remote commits.")
                     .details(format!(
                         "Git refused normal push:\n{}",
-                        state.ui.push_force_confirm.reason
+                        state.ui.push_force_confirm.context
                     )),
             );
         },

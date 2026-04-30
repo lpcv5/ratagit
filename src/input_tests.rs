@@ -33,7 +33,7 @@ mod tests {
 
     fn active_reset_menu_state() -> AppContext {
         let mut state = AppContext::default();
-        state.ui.reset_menu.active = true;
+        state.ui.reset_menu.menu.active = true;
         state
     }
 
@@ -46,25 +46,25 @@ mod tests {
     fn active_discard_confirm_state() -> AppContext {
         let mut state = AppContext::default();
         state.ui.discard_confirm.active = true;
-        state.ui.discard_confirm.paths = vec!["a.txt".to_string()];
+        state.ui.discard_confirm.context = vec!["a.txt".to_string()];
         state
     }
 
     fn active_push_force_confirm_state() -> AppContext {
         let mut state = AppContext::default();
         state.ui.push_force_confirm.active = true;
-        state.ui.push_force_confirm.reason = "non-fast-forward".to_string();
+        state.ui.push_force_confirm.context = "non-fast-forward".to_string();
         state
     }
 
     fn active_stage_all_confirm_state() -> AppContext {
         let mut state = AppContext::default();
         state.ui.stage_all_confirm.active = true;
-        state.ui.stage_all_confirm.operation =
+        state.ui.stage_all_confirm.context.operation =
             Some(ratagit_core::StageAllOperation::CreateCommit {
                 message: "feat: ship".to_string(),
             });
-        state.ui.stage_all_confirm.paths = vec!["a.txt".to_string()];
+        state.ui.stage_all_confirm.context.paths = vec!["a.txt".to_string()];
         state
     }
 
@@ -82,34 +82,39 @@ mod tests {
 
     fn active_branch_delete_menu_state() -> AppContext {
         let mut state = AppContext::default();
-        state.ui.branches.delete_menu.active = true;
+        state.ui.branches.delete_menu.menu.active = true;
         state
     }
 
     fn active_branch_force_delete_state() -> AppContext {
         let mut state = AppContext::default();
         state.ui.branches.force_delete_confirm.active = true;
+        state.ui.branches.force_delete_confirm.context.target_branch = "feature/mvp".to_string();
+        state.ui.branches.force_delete_confirm.context.mode =
+            Some(ratagit_core::BranchDeleteMode::Local);
+        state.ui.branches.force_delete_confirm.context.reason = "not fully merged".to_string();
         state
     }
 
     fn active_branch_delete_confirm_state() -> AppContext {
         let mut state = AppContext::default();
         state.ui.branches.delete_confirm.active = true;
-        state.ui.branches.delete_confirm.target_branch = "feature/mvp".to_string();
-        state.ui.branches.delete_confirm.mode = Some(ratagit_core::BranchDeleteMode::Remote);
+        state.ui.branches.delete_confirm.context.target_branch = "feature/mvp".to_string();
+        state.ui.branches.delete_confirm.context.mode =
+            Some(ratagit_core::BranchDeleteMode::Remote);
         state
     }
 
     fn active_branch_rebase_menu_state() -> AppContext {
         let mut state = AppContext::default();
-        state.ui.branches.rebase_menu.active = true;
+        state.ui.branches.rebase_menu.menu.active = true;
         state
     }
 
     fn active_auto_stash_confirm_state() -> AppContext {
         let mut state = AppContext::default();
         state.ui.branches.auto_stash_confirm.active = true;
-        state.ui.branches.auto_stash_confirm.operation =
+        state.ui.branches.auto_stash_confirm.context =
             Some(ratagit_core::AutoStashOperation::Rebase {
                 target: "main".to_string(),
                 interactive: false,
@@ -129,7 +134,7 @@ mod tests {
         state.ui.search.scope = state.active_search_scope();
         assert_eq!(input_mode_for_state(&state), InputMode::SearchInput);
 
-        state.ui.reset_menu.active = true;
+        state.ui.reset_menu.menu.active = true;
         assert_eq!(input_mode_for_state(&state), InputMode::ResetMenu);
 
         state.ui.branches.create.active = true;
@@ -176,7 +181,10 @@ mod tests {
         assert_eq!(input_mode_for_state(&state), InputMode::ResetMenu);
         assert_eq!(
             map_key(&state, KeyCode::Char('j')),
-            Some(UiAction::MoveResetMenuDown)
+            Some(UiAction::MoveMenuSelection {
+                menu: MenuKind::Reset,
+                direction: MenuDirection::Down
+            })
         );
         assert_eq!(map_key(&state, KeyCode::Char('r')), None);
     }
@@ -644,19 +652,31 @@ mod tests {
 
         assert_eq!(
             map_key(&state, KeyCode::Down),
-            Some(UiAction::MoveResetMenuDown)
+            Some(UiAction::MoveMenuSelection {
+                menu: MenuKind::Reset,
+                direction: MenuDirection::Down
+            })
         );
         assert_eq!(
             map_key(&state, KeyCode::Char('j')),
-            Some(UiAction::MoveResetMenuDown)
+            Some(UiAction::MoveMenuSelection {
+                menu: MenuKind::Reset,
+                direction: MenuDirection::Down
+            })
         );
         assert_eq!(
             map_key(&state, KeyCode::Up),
-            Some(UiAction::MoveResetMenuUp)
+            Some(UiAction::MoveMenuSelection {
+                menu: MenuKind::Reset,
+                direction: MenuDirection::Up
+            })
         );
         assert_eq!(
             map_key(&state, KeyCode::Char('k')),
-            Some(UiAction::MoveResetMenuUp)
+            Some(UiAction::MoveMenuSelection {
+                menu: MenuKind::Reset,
+                direction: MenuDirection::Up
+            })
         );
         assert_eq!(
             map_key(&state, KeyCode::Enter),
@@ -750,19 +770,31 @@ mod tests {
         );
         assert_eq!(
             map_key(&state, KeyCode::Up),
-            Some(UiAction::MoveBranchDeleteMenuUp)
+            Some(UiAction::MoveMenuSelection {
+                menu: MenuKind::BranchDelete,
+                direction: MenuDirection::Up
+            })
         );
         assert_eq!(
             map_key(&state, KeyCode::Char('k')),
-            Some(UiAction::MoveBranchDeleteMenuUp)
+            Some(UiAction::MoveMenuSelection {
+                menu: MenuKind::BranchDelete,
+                direction: MenuDirection::Up
+            })
         );
         assert_eq!(
             map_key(&state, KeyCode::Down),
-            Some(UiAction::MoveBranchDeleteMenuDown)
+            Some(UiAction::MoveMenuSelection {
+                menu: MenuKind::BranchDelete,
+                direction: MenuDirection::Down
+            })
         );
         assert_eq!(
             map_key(&state, KeyCode::Char('j')),
-            Some(UiAction::MoveBranchDeleteMenuDown)
+            Some(UiAction::MoveMenuSelection {
+                menu: MenuKind::BranchDelete,
+                direction: MenuDirection::Down
+            })
         );
         assert_eq!(map_key(&state, KeyCode::Char('d')), None);
 
@@ -799,19 +831,31 @@ mod tests {
         );
         assert_eq!(
             map_key(&state, KeyCode::Up),
-            Some(UiAction::MoveBranchRebaseMenuUp)
+            Some(UiAction::MoveMenuSelection {
+                menu: MenuKind::BranchRebase,
+                direction: MenuDirection::Up
+            })
         );
         assert_eq!(
             map_key(&state, KeyCode::Char('k')),
-            Some(UiAction::MoveBranchRebaseMenuUp)
+            Some(UiAction::MoveMenuSelection {
+                menu: MenuKind::BranchRebase,
+                direction: MenuDirection::Up
+            })
         );
         assert_eq!(
             map_key(&state, KeyCode::Down),
-            Some(UiAction::MoveBranchRebaseMenuDown)
+            Some(UiAction::MoveMenuSelection {
+                menu: MenuKind::BranchRebase,
+                direction: MenuDirection::Down
+            })
         );
         assert_eq!(
             map_key(&state, KeyCode::Char('j')),
-            Some(UiAction::MoveBranchRebaseMenuDown)
+            Some(UiAction::MoveMenuSelection {
+                menu: MenuKind::BranchRebase,
+                direction: MenuDirection::Down
+            })
         );
         assert_eq!(map_key(&state, KeyCode::Char('r')), None);
 

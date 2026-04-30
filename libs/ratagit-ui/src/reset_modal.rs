@@ -4,7 +4,7 @@ use ratatui::layout::Rect;
 use ratatui::style::Style;
 
 use crate::modal::{
-    ChoiceMenuBody, ConfirmBody, ModalSpec, ModalTone, choice_menu_modal_height,
+    ChoiceMenuBody, ConfirmBody, ModalSpec, ModalTone, choice_menu_modal_height, choice_menu_rows,
     render_choice_menu_body, render_confirm_body, render_modal,
 };
 use crate::theme::{modal_danger_style, modal_muted_style};
@@ -15,7 +15,7 @@ pub(crate) fn render_reset_modal(frame: &mut Frame<'_>, state: &AppContext, area
         return;
     }
 
-    if !state.ui.reset_menu.active {
+    if !state.ui.reset_menu.menu.active {
         return;
     }
 
@@ -42,9 +42,10 @@ pub(crate) fn render_reset_modal(frame: &mut Frame<'_>, state: &AppContext, area
                     intro: "Choose reset scope for the whole repo.".to_string(),
                     list_title: "Mode",
                     choices: &choices,
-                    selected: state.ui.reset_menu.selected,
+                    selected: state.ui.reset_menu.menu.selected,
                     list_height: 5,
-                    description: reset_choice_description(state.ui.reset_menu.selected).to_string(),
+                    description: reset_choice_description(state.ui.reset_menu.menu.selected)
+                        .to_string(),
                 },
             );
         },
@@ -76,16 +77,7 @@ fn render_reset_danger_modal(frame: &mut Frame<'_>, state: &AppContext, area: Re
 }
 
 fn reset_choices() -> Vec<(ResetChoice, &'static str, Style)> {
-    ResetChoice::ALL
-        .iter()
-        .map(|choice| {
-            (
-                *choice,
-                reset_choice_label(*choice),
-                reset_choice_style(*choice),
-            )
-        })
-        .collect()
+    choice_menu_rows(&ResetChoice::ALL, reset_choice_label, reset_choice_style)
 }
 
 fn reset_choice_label(choice: ResetChoice) -> &'static str {

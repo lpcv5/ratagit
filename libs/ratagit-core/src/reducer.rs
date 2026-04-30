@@ -5,9 +5,9 @@ use crate::search::{
 };
 use crate::text_edit::CursorMove;
 use crate::{
-    Action, AppContext, BranchesSubview, Command, CommandPaletteCommand, GitResult, PanelFocus,
-    UiAction, branches, commit_workflow, details, editor, navigation, results,
-    toggle_commit_files_directory, worktree,
+    Action, AppContext, Command, CommandPaletteCommand, CommitFilesTarget, CommitListTarget,
+    GitResult, MenuDirection, MenuKind, UiAction, branches, commit_workflow, details, editor,
+    navigation, results, toggle_commit_files_directory, worktree,
 };
 
 pub fn update(state: &mut AppContext, action: Action) -> Vec<Command> {
@@ -24,12 +24,12 @@ fn update_ui(state: &mut AppContext, action: UiAction) -> Vec<Command> {
         UiAction::Push => with_pending(state, vec![Command::Push { force: false }]),
         UiAction::ConfirmForcePush => {
             state.ui.push_force_confirm.active = false;
-            state.ui.push_force_confirm.reason.clear();
+            state.ui.push_force_confirm.context.clear();
             with_pending(state, vec![Command::Push { force: true }])
         }
         UiAction::CancelForcePush => {
             state.ui.push_force_confirm.active = false;
-            state.ui.push_force_confirm.reason.clear();
+            state.ui.push_force_confirm.context.clear();
             Vec::new()
         }
         UiAction::OpenCommandPalette => {
@@ -99,13 +99,8 @@ fn update_ui(state: &mut AppContext, action: UiAction) -> Vec<Command> {
             branches::open_delete_menu(state);
             Vec::new()
         }
-        UiAction::MoveBranchDeleteMenuUp => {
-            state.ui.branches.delete_menu.selected = state.ui.branches.delete_menu.selected.prev();
-            Vec::new()
-        }
-        UiAction::MoveBranchDeleteMenuDown => {
-            state.ui.branches.delete_menu.selected = state.ui.branches.delete_menu.selected.next();
-            Vec::new()
+        UiAction::MoveMenuSelection { menu, direction } => {
+            move_menu_selection(state, menu, direction)
         }
         UiAction::ConfirmBranchDeleteMenu => branches::confirm_delete_menu(state),
         UiAction::CancelBranchDeleteMenu => {
@@ -126,14 +121,6 @@ fn update_ui(state: &mut AppContext, action: UiAction) -> Vec<Command> {
             branches::open_rebase_menu(state);
             Vec::new()
         }
-        UiAction::MoveBranchRebaseMenuUp => {
-            state.ui.branches.rebase_menu.selected = state.ui.branches.rebase_menu.selected.prev();
-            Vec::new()
-        }
-        UiAction::MoveBranchRebaseMenuDown => {
-            state.ui.branches.rebase_menu.selected = state.ui.branches.rebase_menu.selected.next();
-            Vec::new()
-        }
         UiAction::ConfirmBranchRebaseMenu => branches::confirm_rebase_menu(state),
         UiAction::CancelBranchRebaseMenu => {
             branches::close_rebase_menu(state);
@@ -148,17 +135,9 @@ fn update_ui(state: &mut AppContext, action: UiAction) -> Vec<Command> {
             worktree::open_reset_menu(state);
             Vec::new()
         }
-        UiAction::MoveResetMenuUp => {
-            state.ui.reset_menu.selected = state.ui.reset_menu.selected.prev();
-            Vec::new()
-        }
-        UiAction::MoveResetMenuDown => {
-            state.ui.reset_menu.selected = state.ui.reset_menu.selected.next();
-            Vec::new()
-        }
         UiAction::ConfirmResetMenu => worktree::confirm_reset_menu(state),
         UiAction::CancelResetMenu => {
-            state.ui.reset_menu.active = false;
+            state.ui.reset_menu.menu.active = false;
             Vec::new()
         }
         UiAction::ConfirmResetDanger => worktree::confirm_reset_danger(state),
@@ -354,57 +333,54 @@ fn update_ui(state: &mut AppContext, action: UiAction) -> Vec<Command> {
             }
         }
         UiAction::EnterCommitFilesMultiSelect => {
-            if state.ui.focus == PanelFocus::Branches
-                && state.ui.branches.subview == BranchesSubview::CommitFiles
-            {
-                crate::enter_commit_files_multi_select(
+            match state.active_commit_files_target() {
+                Some(CommitFilesTarget::Branch) => crate::enter_commit_files_multi_select(
                     &state.repo.branches.commit_files.items,
                     &mut state.ui.branches.commit_files,
-                );
-            } else {
-                crate::enter_commit_files_multi_select(
+                ),
+                Some(CommitFilesTarget::Main) | None => crate::enter_commit_files_multi_select(
                     &state.repo.commits.files.items,
                     &mut state.ui.commits.files,
-                );
+                ),
             }
             Vec::new()
         }
         UiAction::ExitCommitFilesMultiSelect => {
-            if state.ui.focus == PanelFocus::Branches
-                && state.ui.branches.subview == BranchesSubview::CommitFiles
-            {
-                crate::leave_commit_files_multi_select(
+            match state.active_commit_files_target() {
+                Some(CommitFilesTarget::Branch) => crate::leave_commit_files_multi_select(
                     &state.repo.branches.commit_files.items,
                     &mut state.ui.branches.commit_files,
-                );
-            } else {
-                crate::leave_commit_files_multi_select(
+                ),
+                Some(CommitFilesTarget::Main) | None => crate::leave_commit_files_multi_select(
                     &state.repo.commits.files.items,
                     &mut state.ui.commits.files,
-                );
+                ),
             }
             Vec::new()
         }
         UiAction::EnterCommitsMultiSelect => {
-            if state.ui.focus == PanelFocus::Branches
-                && state.ui.branches.subview == BranchesSubview::Commits
-            {
-                crate::enter_commit_multi_select(
+            match state.active_commit_list_target() {
+                Some(CommitListTarget::Branch) => crate::enter_commit_multi_select(
                     &state.repo.branches.commits,
                     &mut state.ui.branches.commits,
-                );
-            } else {
-                crate::enter_commit_multi_select(&state.repo.commits.items, &mut state.ui.commits);
+                ),
+                Some(CommitListTarget::Main) | None => {
+                    crate::enter_commit_multi_select(
+                        &state.repo.commits.items,
+                        &mut state.ui.commits,
+                    );
+                }
             }
             Vec::new()
         }
         UiAction::ExitCommitsMultiSelect => {
-            if state.ui.focus == PanelFocus::Branches
-                && state.ui.branches.subview == BranchesSubview::Commits
-            {
-                crate::leave_commit_multi_select(&mut state.ui.branches.commits);
-            } else {
-                crate::leave_commit_multi_select(&mut state.ui.commits);
+            match state.active_commit_list_target() {
+                Some(CommitListTarget::Branch) => {
+                    crate::leave_commit_multi_select(&mut state.ui.branches.commits);
+                }
+                Some(CommitListTarget::Main) | None => {
+                    crate::leave_commit_multi_select(&mut state.ui.commits);
+                }
             }
             Vec::new()
         }
@@ -441,6 +417,35 @@ fn update_ui(state: &mut AppContext, action: UiAction) -> Vec<Command> {
                 Vec::new()
             }
         }
+    }
+}
+
+fn move_menu_selection(
+    state: &mut AppContext,
+    menu: MenuKind,
+    direction: MenuDirection,
+) -> Vec<Command> {
+    match menu {
+        MenuKind::Reset => {
+            state.ui.reset_menu.menu.selected =
+                move_menu_choice(state.ui.reset_menu.menu.selected, direction);
+        }
+        MenuKind::BranchDelete => {
+            state.ui.branches.delete_menu.menu.selected =
+                move_menu_choice(state.ui.branches.delete_menu.menu.selected, direction);
+        }
+        MenuKind::BranchRebase => {
+            state.ui.branches.rebase_menu.menu.selected =
+                move_menu_choice(state.ui.branches.rebase_menu.menu.selected, direction);
+        }
+    }
+    Vec::new()
+}
+
+fn move_menu_choice<T: crate::MenuChoice>(selected: T, direction: MenuDirection) -> T {
+    match direction {
+        MenuDirection::Up => selected.prev(),
+        MenuDirection::Down => selected.next(),
     }
 }
 

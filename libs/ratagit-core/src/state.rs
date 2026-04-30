@@ -1,21 +1,56 @@
 use std::collections::BTreeSet;
+use std::ops::{Deref, DerefMut};
 
 use crate::{CommitFilesUiState, FilesUiState};
 
-fn next_choice<T: Copy + PartialEq, const N: usize>(choices: [T; N], selected: T) -> T {
-    let index = choices
-        .iter()
-        .position(|choice| *choice == selected)
-        .unwrap_or(0);
-    choices[(index + 1).min(N - 1)]
+pub trait MenuChoice: Copy + PartialEq + 'static {
+    const ALL: &'static [Self];
+
+    fn next(self) -> Self {
+        let Some(index) = Self::ALL.iter().position(|choice| *choice == self) else {
+            return self;
+        };
+
+        Self::ALL[(index + 1).min(Self::ALL.len() - 1)]
+    }
+
+    fn prev(self) -> Self {
+        let Some(index) = Self::ALL.iter().position(|choice| *choice == self) else {
+            return self;
+        };
+
+        Self::ALL[index.saturating_sub(1)]
+    }
 }
 
-fn prev_choice<T: Copy + PartialEq, const N: usize>(choices: [T; N], selected: T) -> T {
-    let index = choices
-        .iter()
-        .position(|choice| *choice == selected)
-        .unwrap_or(0);
-    choices[index.saturating_sub(1)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Menu<T> {
+    pub active: bool,
+    pub selected: T,
+}
+
+impl<T: Default> Default for Menu<T> {
+    fn default() -> Self {
+        Self {
+            active: false,
+            selected: T::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TargetBranchMenu<T> {
+    pub menu: Menu<T>,
+    pub target_branch: String,
+}
+
+impl<T: Default> Default for TargetBranchMenu<T> {
+    fn default() -> Self {
+        Self {
+            menu: Menu::default(),
+            target_branch: String::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,6 +70,57 @@ pub enum SearchScope {
     Commits,
     Stash,
     CommitFiles,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActiveLeftView {
+    Files,
+    BranchesList,
+    BranchCommits,
+    BranchCommitFiles,
+    Commits,
+    CommitFiles,
+    Stash,
+}
+
+impl ActiveLeftView {
+    pub fn search_scope(self) -> SearchScope {
+        match self {
+            Self::Files => SearchScope::Files,
+            Self::BranchesList => SearchScope::Branches,
+            Self::BranchCommits | Self::Commits => SearchScope::Commits,
+            Self::BranchCommitFiles | Self::CommitFiles => SearchScope::CommitFiles,
+            Self::Stash => SearchScope::Stash,
+        }
+    }
+
+    pub fn commit_list_target(self) -> Option<CommitListTarget> {
+        match self {
+            Self::BranchCommits => Some(CommitListTarget::Branch),
+            Self::Commits => Some(CommitListTarget::Main),
+            _ => None,
+        }
+    }
+
+    pub fn commit_files_target(self) -> Option<CommitFilesTarget> {
+        match self {
+            Self::BranchCommitFiles => Some(CommitFilesTarget::Branch),
+            Self::CommitFiles => Some(CommitFilesTarget::Main),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommitListTarget {
+    Main,
+    Branch,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommitFilesTarget {
+    Main,
+    Branch,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -138,6 +224,107 @@ pub struct CommandPaletteState {
     pub selected: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct LinearListSelection {
+    pub selected: usize,
+    pub scroll_offset: usize,
+    pub selected_rows: BTreeSet<String>,
+    pub selection_anchor: Option<String>,
+}
+
+pub(crate) fn move_linear_selection(state: &mut LinearListSelection, len: usize, move_up: bool) {
+    crate::scroll::move_selected_index(&mut state.selected, len, move_up);
+}
+
+pub(crate) fn move_linear_selection_in_viewport(
+    state: &mut LinearListSelection,
+    len: usize,
+    move_up: bool,
+    visible_lines: usize,
+) {
+    crate::scroll::move_selected_index_with_scroll_offset(
+        &mut state.selected,
+        &mut state.scroll_offset,
+        len,
+        move_up,
+        visible_lines,
+    );
+}
+
+pub(crate) fn clamp_linear_selection(state: &mut LinearListSelection, len: usize) {
+    state.selected = if len == 0 {
+        0
+    } else {
+        state.selected.min(len - 1)
+    };
+    state.scroll_offset = 0;
+}
+
+pub(crate) fn enter_linear_range_select(
+    state: &mut LinearListSelection,
+    selected_key: Option<String>,
+) {
+    state.selection_anchor = selected_key.clone();
+    state.selected_rows.clear();
+    if let Some(key) = selected_key {
+        state.selected_rows.insert(key);
+    }
+}
+
+pub(crate) fn leave_linear_range_select(state: &mut LinearListSelection) {
+    state.selection_anchor = None;
+    state.selected_rows.clear();
+}
+
+pub(crate) fn refresh_linear_range(state: &mut LinearListSelection, keys: &[String]) {
+    state.selected_rows.clear();
+    let Some(anchor) = state.selection_anchor.as_deref() else {
+        return;
+    };
+    let Some(anchor_index) = keys.iter().position(|key| key == anchor) else {
+        return;
+    };
+    if keys.is_empty() {
+        return;
+    }
+    let selected = state.selected.min(keys.len() - 1);
+    let (start, end) = if anchor_index <= selected {
+        (anchor_index, selected)
+    } else {
+        (selected, anchor_index)
+    };
+    state
+        .selected_rows
+        .extend(keys[start..=end].iter().cloned());
+}
+
+pub(crate) fn reconcile_linear_valid_keys(state: &mut LinearListSelection, keys: &[String]) {
+    let valid_rows = keys.iter().cloned().collect::<BTreeSet<_>>();
+    state.selected_rows.retain(|key| valid_rows.contains(key));
+}
+
+pub(crate) fn ensure_linear_selection_anchor(state: &mut LinearListSelection, keys: &[String]) {
+    if state
+        .selection_anchor
+        .as_ref()
+        .is_some_and(|anchor| keys.iter().any(|key| key == anchor))
+    {
+        return;
+    }
+    state.selection_anchor = keys.get(state.selected).cloned();
+}
+
+pub(crate) fn linear_key_at_selection(
+    state: &LinearListSelection,
+    keys: &[String],
+) -> Option<String> {
+    keys.get(state.selected).cloned()
+}
+
+pub(crate) fn linear_key_is_selected(state: &LinearListSelection, key: &str) -> bool {
+    state.selected_rows.contains(key)
+}
+
 impl SearchState {
     pub fn is_input_active_for(&self, scope: SearchScope) -> bool {
         self.active && self.scope == Some(scope)
@@ -231,8 +418,9 @@ pub enum BranchDeleteMode {
     Both,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum BranchDeleteChoice {
+    #[default]
     Local,
     Remote,
     Both,
@@ -240,14 +428,6 @@ pub enum BranchDeleteChoice {
 
 impl BranchDeleteChoice {
     pub const ALL: [Self; 3] = [Self::Local, Self::Remote, Self::Both];
-
-    pub fn next(self) -> Self {
-        next_choice(Self::ALL, self)
-    }
-
-    pub fn prev(self) -> Self {
-        prev_choice(Self::ALL, self)
-    }
 
     pub fn delete_mode(self) -> BranchDeleteMode {
         match self {
@@ -258,8 +438,13 @@ impl BranchDeleteChoice {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+impl MenuChoice for BranchDeleteChoice {
+    const ALL: &'static [Self] = &BranchDeleteChoice::ALL;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum BranchRebaseChoice {
+    #[default]
     Simple,
     Interactive,
     OriginMain,
@@ -267,14 +452,10 @@ pub enum BranchRebaseChoice {
 
 impl BranchRebaseChoice {
     pub const ALL: [Self; 3] = [Self::Simple, Self::Interactive, Self::OriginMain];
+}
 
-    pub fn next(self) -> Self {
-        next_choice(Self::ALL, self)
-    }
-
-    pub fn prev(self) -> Self {
-        prev_choice(Self::ALL, self)
-    }
+impl MenuChoice for BranchRebaseChoice {
+    const ALL: &'static [Self] = &BranchRebaseChoice::ALL;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -288,6 +469,12 @@ pub enum AutoStashOperation {
 pub enum StageAllOperation {
     CreateCommit { message: String },
     AmendStagedChanges { commit_id: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct StageAllConfirmContext {
+    pub operation: Option<StageAllOperation>,
+    pub paths: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -491,13 +678,24 @@ pub struct StashRepoState {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct CommitsUiState {
-    pub selected: usize,
-    pub scroll_offset: usize,
+    pub selection: LinearListSelection,
     pub files: CommitFilesUiState,
-    pub selected_rows: BTreeSet<String>,
-    pub selection_anchor: Option<String>,
     pub mode: CommitInputMode,
     pub draft_message: String,
+}
+
+impl Deref for CommitsUiState {
+    type Target = LinearListSelection;
+
+    fn deref(&self) -> &Self::Target {
+        &self.selection
+    }
+}
+
+impl DerefMut for CommitsUiState {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.selection
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -544,8 +742,9 @@ pub enum ResetMode {
     Hard,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ResetChoice {
+    #[default]
     Mixed,
     Soft,
     Hard,
@@ -554,14 +753,6 @@ pub enum ResetChoice {
 
 impl ResetChoice {
     pub const ALL: [Self; 4] = [Self::Mixed, Self::Soft, Self::Hard, Self::Nuke];
-
-    pub fn next(self) -> Self {
-        next_choice(Self::ALL, self)
-    }
-
-    pub fn prev(self) -> Self {
-        prev_choice(Self::ALL, self)
-    }
 
     pub fn reset_mode(self) -> Option<ResetMode> {
         match self {
@@ -573,41 +764,25 @@ impl ResetChoice {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+impl MenuChoice for ResetChoice {
+    const ALL: &'static [Self] = &ResetChoice::ALL;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ResetMenuState {
-    pub active: bool,
-    pub selected: ResetChoice,
+    pub menu: Menu<ResetChoice>,
     pub danger_confirm: Option<ResetChoice>,
 }
 
-impl Default for ResetMenuState {
-    fn default() -> Self {
-        Self {
-            active: false,
-            selected: ResetChoice::Mixed,
-            danger_confirm: None,
-        }
-    }
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ConfirmDialog<T> {
+    pub active: bool,
+    pub context: T,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct DiscardConfirmState {
-    pub active: bool,
-    pub paths: Vec<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct PushForceConfirmState {
-    pub active: bool,
-    pub reason: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct StageAllConfirmState {
-    pub active: bool,
-    pub operation: Option<StageAllOperation>,
-    pub paths: Vec<String>,
-}
+pub type DiscardConfirmState = ConfirmDialog<Vec<String>>;
+pub type PushForceConfirmState = ConfirmDialog<String>;
+pub type StageAllConfirmState = ConfirmDialog<StageAllConfirmContext>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EditorKind {
@@ -645,14 +820,11 @@ impl EditorState {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct BranchesUiState {
-    pub selected: usize,
-    pub scroll_offset: usize,
+    pub selection: LinearListSelection,
     pub subview: BranchesSubview,
     pub subview_branch: Option<String>,
     pub commits: CommitsUiState,
     pub commit_files: CommitFilesUiState,
-    pub selected_rows: BTreeSet<String>,
-    pub selection_anchor: Option<String>,
     pub mode: BranchInputMode,
     pub create: BranchCreateState,
     pub delete_menu: BranchDeleteMenuState,
@@ -660,6 +832,20 @@ pub struct BranchesUiState {
     pub force_delete_confirm: BranchForceDeleteConfirmState,
     pub rebase_menu: BranchRebaseMenuState,
     pub auto_stash_confirm: AutoStashConfirmState,
+}
+
+impl Deref for BranchesUiState {
+    type Target = LinearListSelection;
+
+    fn deref(&self) -> &Self::Target {
+        &self.selection
+    }
+}
+
+impl DerefMut for BranchesUiState {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.selection
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -678,60 +864,27 @@ pub struct BranchCreateState {
     pub start_point: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BranchDeleteMenuState {
-    pub active: bool,
-    pub selected: BranchDeleteChoice,
-    pub target_branch: String,
-}
-
-impl Default for BranchDeleteMenuState {
-    fn default() -> Self {
-        Self {
-            active: false,
-            selected: BranchDeleteChoice::Local,
-            target_branch: String::new(),
-        }
-    }
-}
+pub type BranchDeleteMenuState = TargetBranchMenu<BranchDeleteChoice>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct BranchDeleteConfirmState {
-    pub active: bool,
+pub struct BranchDeleteConfirmContext {
     pub target_branch: String,
     pub mode: Option<BranchDeleteMode>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct BranchForceDeleteConfirmState {
-    pub active: bool,
+pub struct BranchForceDeleteConfirmContext {
     pub target_branch: String,
     pub mode: Option<BranchDeleteMode>,
     pub reason: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BranchRebaseMenuState {
-    pub active: bool,
-    pub selected: BranchRebaseChoice,
-    pub target_branch: String,
-}
+pub type BranchDeleteConfirmState = ConfirmDialog<BranchDeleteConfirmContext>;
+pub type BranchForceDeleteConfirmState = ConfirmDialog<BranchForceDeleteConfirmContext>;
 
-impl Default for BranchRebaseMenuState {
-    fn default() -> Self {
-        Self {
-            active: false,
-            selected: BranchRebaseChoice::Simple,
-            target_branch: String::new(),
-        }
-    }
-}
+pub type BranchRebaseMenuState = TargetBranchMenu<BranchRebaseChoice>;
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct AutoStashConfirmState {
-    pub active: bool,
-    pub operation: Option<AutoStashOperation>,
-}
+pub type AutoStashConfirmState = ConfirmDialog<Option<AutoStashOperation>>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct StashUiState {
@@ -877,19 +1030,40 @@ impl Default for AppContext {
 }
 
 impl AppContext {
+    pub fn active_left_view(&self) -> Option<ActiveLeftView> {
+        left_view_for_focus(
+            self.ui.focus,
+            self.ui.branches.subview,
+            self.ui.commits.files.active,
+        )
+    }
+
+    pub fn details_left_view(&self) -> Option<ActiveLeftView> {
+        left_view_for_focus(
+            self.ui.last_left_focus,
+            self.ui.branches.subview,
+            self.ui.commits.files.active,
+        )
+    }
+
+    pub fn active_commit_list_target(&self) -> Option<CommitListTarget> {
+        self.active_left_view()?.commit_list_target()
+    }
+
+    pub fn active_commit_files_target(&self) -> Option<CommitFilesTarget> {
+        self.active_left_view()?.commit_files_target()
+    }
+
+    pub fn details_commit_list_target(&self) -> Option<CommitListTarget> {
+        self.details_left_view()?.commit_list_target()
+    }
+
+    pub fn details_commit_files_target(&self) -> Option<CommitFilesTarget> {
+        self.details_left_view()?.commit_files_target()
+    }
+
     pub fn active_search_scope(&self) -> Option<SearchScope> {
-        match self.ui.focus {
-            PanelFocus::Files => Some(SearchScope::Files),
-            PanelFocus::Branches => match self.ui.branches.subview {
-                BranchesSubview::List => Some(SearchScope::Branches),
-                BranchesSubview::Commits => Some(SearchScope::Commits),
-                BranchesSubview::CommitFiles => Some(SearchScope::CommitFiles),
-            },
-            PanelFocus::Commits if self.ui.commits.files.active => Some(SearchScope::CommitFiles),
-            PanelFocus::Commits => Some(SearchScope::Commits),
-            PanelFocus::Stash => Some(SearchScope::Stash),
-            PanelFocus::Details | PanelFocus::Log => None,
-        }
+        self.active_left_view().map(ActiveLeftView::search_scope)
     }
 
     pub fn command_palette_entries(&self) -> Vec<CommandPaletteEntry> {
@@ -905,12 +1079,31 @@ impl AppContext {
     }
 }
 
+fn left_view_for_focus(
+    focus: PanelFocus,
+    branches_subview: BranchesSubview,
+    commit_files_active: bool,
+) -> Option<ActiveLeftView> {
+    match focus {
+        PanelFocus::Files => Some(ActiveLeftView::Files),
+        PanelFocus::Branches => Some(match branches_subview {
+            BranchesSubview::List => ActiveLeftView::BranchesList,
+            BranchesSubview::Commits => ActiveLeftView::BranchCommits,
+            BranchesSubview::CommitFiles => ActiveLeftView::BranchCommitFiles,
+        }),
+        PanelFocus::Commits if commit_files_active => Some(ActiveLeftView::CommitFiles),
+        PanelFocus::Commits => Some(ActiveLeftView::Commits),
+        PanelFocus::Stash => Some(ActiveLeftView::Stash),
+        PanelFocus::Details | PanelFocus::Log => None,
+    }
+}
+
 fn local_command_palette_entries(state: &AppContext) -> Vec<CommandPaletteEntry> {
     use CommandPaletteCommand as Command;
     use CommandPaletteEntry as Entry;
 
-    match state.ui.focus {
-        PanelFocus::Files => vec![
+    match state.active_left_view() {
+        Some(ActiveLeftView::Files) => vec![
             Entry::local("space", "stage/unstage", Command::ToggleSelectedFileStage),
             Entry::local("d", "discard", Command::OpenDiscardConfirm),
             Entry::local("A", "amend", Command::AmendStagedChanges),
@@ -920,32 +1113,30 @@ fn local_command_palette_entries(state: &AppContext) -> Vec<CommandPaletteEntry>
             Entry::local("enter", "expand", Command::ToggleSelectedDirectory),
             Entry::local("v", "visual select", Command::EnterFilesMultiSelect),
         ],
-        PanelFocus::Branches => match state.ui.branches.subview {
-            BranchesSubview::List => vec![
-                Entry::local("enter", "commits", Command::OpenBranchCommitsPanel),
-                Entry::local("space", "checkout", Command::CheckoutSelectedBranch),
-                Entry::local("n", "new branch", Command::OpenBranchCreateInput),
-                Entry::local("d", "delete branch", Command::OpenBranchDeleteMenu),
-                Entry::local("r", "rebase", Command::OpenBranchRebaseMenu),
-                Entry::local("v", "visual select", Command::EnterBranchesMultiSelect),
-            ],
-            BranchesSubview::Commits => vec![
-                Entry::local("enter", "files", Command::OpenBranchCommitFilesPanel),
-                Entry::local("Esc", "back", Command::CloseBranchCommitsPanel),
-                Entry::local("v", "visual select", Command::EnterCommitsMultiSelect),
-            ],
-            BranchesSubview::CommitFiles => vec![
-                Entry::local("enter", "expand", Command::ToggleBranchCommitFilesDirectory),
-                Entry::local("Esc", "back", Command::CloseBranchCommitFilesPanel),
-                Entry::local("v", "visual select", Command::EnterCommitFilesMultiSelect),
-            ],
-        },
-        PanelFocus::Commits if state.ui.commits.files.active => vec![
+        Some(ActiveLeftView::BranchesList) => vec![
+            Entry::local("enter", "commits", Command::OpenBranchCommitsPanel),
+            Entry::local("space", "checkout", Command::CheckoutSelectedBranch),
+            Entry::local("n", "new branch", Command::OpenBranchCreateInput),
+            Entry::local("d", "delete branch", Command::OpenBranchDeleteMenu),
+            Entry::local("r", "rebase", Command::OpenBranchRebaseMenu),
+            Entry::local("v", "visual select", Command::EnterBranchesMultiSelect),
+        ],
+        Some(ActiveLeftView::BranchCommits) => vec![
+            Entry::local("enter", "files", Command::OpenBranchCommitFilesPanel),
+            Entry::local("Esc", "back", Command::CloseBranchCommitsPanel),
+            Entry::local("v", "visual select", Command::EnterCommitsMultiSelect),
+        ],
+        Some(ActiveLeftView::BranchCommitFiles) => vec![
+            Entry::local("enter", "expand", Command::ToggleBranchCommitFilesDirectory),
+            Entry::local("Esc", "back", Command::CloseBranchCommitFilesPanel),
+            Entry::local("v", "visual select", Command::EnterCommitFilesMultiSelect),
+        ],
+        Some(ActiveLeftView::CommitFiles) => vec![
             Entry::local("Esc", "back", Command::CloseCommitFilesPanel),
             Entry::local("enter", "expand", Command::ToggleCommitFilesDirectory),
             Entry::local("v", "visual select", Command::EnterCommitFilesMultiSelect),
         ],
-        PanelFocus::Commits => vec![
+        Some(ActiveLeftView::Commits) => vec![
             Entry::local("enter", "files", Command::OpenCommitFilesPanel),
             Entry::local("A", "amend", Command::AmendStagedChanges),
             Entry::local("s", "squash", Command::SquashSelectedCommits),
@@ -956,8 +1147,10 @@ fn local_command_palette_entries(state: &AppContext) -> Vec<CommandPaletteEntry>
             Entry::local("c", "commit", Command::OpenCommitEditor),
             Entry::local("v", "visual select", Command::EnterCommitsMultiSelect),
         ],
-        PanelFocus::Stash => vec![Entry::local("O", "stash pop", Command::StashPopSelected)],
-        PanelFocus::Details | PanelFocus::Log => Vec::new(),
+        Some(ActiveLeftView::Stash) => {
+            vec![Entry::local("O", "stash pop", Command::StashPopSelected)]
+        }
+        None => Vec::new(),
     }
 }
 
@@ -1045,5 +1238,117 @@ mod tests {
         assert_eq!(ResetChoice::Mixed.prev(), ResetChoice::Mixed);
         assert_eq!(ResetChoice::Soft.next(), ResetChoice::Hard);
         assert_eq!(ResetChoice::Nuke.next(), ResetChoice::Nuke);
+    }
+
+    #[test]
+    fn menu_choice_trait_moves_to_edges_without_wrapping() {
+        fn assert_bounded<T>(first: T, middle: T, last: T)
+        where
+            T: MenuChoice + std::fmt::Debug,
+        {
+            assert_eq!(<T as MenuChoice>::prev(first), first);
+            assert_eq!(<T as MenuChoice>::next(middle), last);
+            assert_eq!(<T as MenuChoice>::next(last), last);
+        }
+
+        assert_bounded(
+            BranchDeleteChoice::Local,
+            BranchDeleteChoice::Remote,
+            BranchDeleteChoice::Both,
+        );
+        assert_bounded(
+            BranchRebaseChoice::Simple,
+            BranchRebaseChoice::Interactive,
+            BranchRebaseChoice::OriginMain,
+        );
+        assert_bounded(ResetChoice::Mixed, ResetChoice::Hard, ResetChoice::Nuke);
+    }
+
+    #[test]
+    fn confirm_dialog_default_starts_inactive_with_default_context() {
+        let discard_confirm = DiscardConfirmState::default();
+        let push_confirm = PushForceConfirmState::default();
+        let stage_all_confirm = StageAllConfirmState::default();
+        let branch_delete_confirm = BranchDeleteConfirmState::default();
+        let branch_force_delete_confirm = BranchForceDeleteConfirmState::default();
+        let auto_stash_confirm = AutoStashConfirmState::default();
+
+        assert!(!discard_confirm.active);
+        assert!(discard_confirm.context.is_empty());
+        assert!(!push_confirm.active);
+        assert!(push_confirm.context.is_empty());
+        assert!(!stage_all_confirm.active);
+        assert_eq!(stage_all_confirm.context.operation, None);
+        assert!(stage_all_confirm.context.paths.is_empty());
+        assert!(!branch_delete_confirm.active);
+        assert!(branch_delete_confirm.context.target_branch.is_empty());
+        assert_eq!(branch_delete_confirm.context.mode, None);
+        assert!(!branch_force_delete_confirm.active);
+        assert!(branch_force_delete_confirm.context.target_branch.is_empty());
+        assert_eq!(branch_force_delete_confirm.context.mode, None);
+        assert!(branch_force_delete_confirm.context.reason.is_empty());
+        assert!(!auto_stash_confirm.active);
+        assert_eq!(auto_stash_confirm.context, None);
+    }
+
+    #[test]
+    fn active_left_view_routes_branch_and_main_subviews() {
+        let mut state = AppContext::default();
+        assert_eq!(state.active_left_view(), Some(ActiveLeftView::Files));
+
+        state.ui.focus = PanelFocus::Branches;
+        assert_eq!(state.active_left_view(), Some(ActiveLeftView::BranchesList));
+
+        state.ui.branches.subview = BranchesSubview::Commits;
+        assert_eq!(
+            state.active_left_view(),
+            Some(ActiveLeftView::BranchCommits)
+        );
+        assert_eq!(
+            state.active_commit_list_target(),
+            Some(CommitListTarget::Branch)
+        );
+
+        state.ui.branches.subview = BranchesSubview::CommitFiles;
+        assert_eq!(
+            state.active_left_view(),
+            Some(ActiveLeftView::BranchCommitFiles)
+        );
+        assert_eq!(
+            state.active_commit_files_target(),
+            Some(CommitFilesTarget::Branch)
+        );
+
+        state.ui.focus = PanelFocus::Commits;
+        assert_eq!(state.active_left_view(), Some(ActiveLeftView::Commits));
+        assert_eq!(
+            state.active_commit_list_target(),
+            Some(CommitListTarget::Main)
+        );
+
+        state.ui.commits.files.active = true;
+        assert_eq!(state.active_left_view(), Some(ActiveLeftView::CommitFiles));
+        assert_eq!(
+            state.active_commit_files_target(),
+            Some(CommitFilesTarget::Main)
+        );
+    }
+
+    #[test]
+    fn details_left_view_uses_last_left_focus() {
+        let mut state = AppContext::default();
+        state.ui.focus = PanelFocus::Details;
+        state.ui.last_left_focus = PanelFocus::Branches;
+        state.ui.branches.subview = BranchesSubview::CommitFiles;
+
+        assert_eq!(state.active_left_view(), None);
+        assert_eq!(
+            state.details_left_view(),
+            Some(ActiveLeftView::BranchCommitFiles)
+        );
+        assert_eq!(
+            state.details_commit_files_target(),
+            Some(CommitFilesTarget::Branch)
+        );
     }
 }
