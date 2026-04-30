@@ -2559,20 +2559,34 @@ fn commit_rewrite_requires_clean_worktree() {
 }
 
 #[test]
-fn commit_rewrite_blocks_pushed_or_merged_commits() {
-    let mut state = context_with_focus(PanelFocus::Commits);
+fn commit_rewrite_allows_pushed_commits_and_blocks_merge_commits() {
+    let mut pushed = context_with_focus(PanelFocus::Commits);
     let mut commit = commit_entry("aaa1111", "already public");
     commit.hash_status = CommitHashStatus::Pushed;
-    state.repo.commits.items = vec![commit];
+    pushed.repo.commits.items = vec![commit];
 
-    let commands = update(&mut state, Action::Ui(UiAction::SquashSelectedCommits));
+    let commands = update(&mut pushed, Action::Ui(UiAction::SquashSelectedCommits));
+
+    assert_eq!(
+        commands,
+        vec![Command::SquashCommits {
+            commit_ids: vec!["aaa1111-full".to_string()],
+        }]
+    );
+
+    let mut merged = context_with_focus(PanelFocus::Commits);
+    let mut commit = commit_entry("bbb2222", "merge");
+    commit.is_merge = true;
+    merged.repo.commits.items = vec![commit];
+
+    let commands = update(&mut merged, Action::Ui(UiAction::SquashSelectedCommits));
 
     assert!(commands.is_empty());
     assert!(
-        state
+        merged
             .notices
             .iter()
-            .any(|notice| notice.contains("only supports unpushed commits"))
+            .any(|notice| notice.contains("does not support merge commits"))
     );
 }
 
@@ -2668,7 +2682,7 @@ fn staged_required_operation_without_any_file_changes_shows_notice() {
 }
 
 #[test]
-fn amend_staged_changes_requires_staged_private_non_merge_commits() {
+fn amend_staged_changes_requires_staged_linear_commits() {
     let mut no_staged = context_with_focus(PanelFocus::Files);
     no_staged.repo.files.items = vec![file_entry("dirty.txt", false, false)];
     let commands = update(&mut no_staged, Action::Ui(UiAction::AmendStagedChanges));
@@ -2714,12 +2728,11 @@ fn amend_staged_changes_requires_staged_private_non_merge_commits() {
     pushed.repo.commits.items = vec![commit_entry("aaa1111", "head")];
     pushed.repo.commits.items[0].hash_status = CommitHashStatus::Pushed;
     let commands = update(&mut pushed, Action::Ui(UiAction::AmendStagedChanges));
-    assert!(commands.is_empty());
-    assert!(
-        pushed
-            .notices
-            .iter()
-            .any(|notice| notice.contains("only supports unpushed commits"))
+    assert_eq!(
+        commands,
+        vec![Command::AmendStagedChanges {
+            commit_id: "aaa1111-full".to_string(),
+        }]
     );
 }
 
@@ -2727,6 +2740,7 @@ fn amend_staged_changes_requires_staged_private_non_merge_commits() {
 fn commit_reword_reuses_commit_editor_modal_and_confirms_command() {
     let mut state = context_with_focus(PanelFocus::Commits);
     let mut commit = commit_entry("aaa1111", "feat: old");
+    commit.hash_status = CommitHashStatus::Pushed;
     commit.message = "feat: old\n\nbody line".to_string();
     state.repo.commits.items = vec![commit];
 

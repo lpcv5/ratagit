@@ -118,12 +118,6 @@ impl MockGitBackend {
         {
             return Err(GitError::new("merge commits are not supported"));
         }
-        if self.snapshot.commits.iter().any(|commit| {
-            commit_ids.iter().any(|id| commit_matches(commit, id))
-                && commit.hash_status != CommitHashStatus::Unpushed
-        }) {
-            return Err(GitError::new("commit is not private"));
-        }
         let target_indexes = self
             .snapshot
             .commits
@@ -721,9 +715,6 @@ impl GitBackendHistoryRewrite for MockGitBackend {
             .iter_mut()
             .find(|commit| commit_matches(commit, commit_id))
             .ok_or_else(|| GitError::new(format!("commit not found: {commit_id}")))?;
-        if commit.hash_status != CommitHashStatus::Unpushed {
-            return Err(GitError::new("commit is not private"));
-        }
         if commit.is_merge {
             return Err(GitError::new("merge commits are not supported"));
         }
@@ -750,9 +741,6 @@ impl GitBackendHistoryRewrite for MockGitBackend {
                 .find(|commit| commit_matches(commit, commit_id))
                 .ok_or_else(|| GitError::new(format!("commit not found: {commit_id}")))?
         };
-        if commit.hash_status != CommitHashStatus::Unpushed {
-            return Err(GitError::new("commit is not private"));
-        }
         if commit.is_merge {
             return Err(GitError::new("merge commits are not supported"));
         }
@@ -764,12 +752,6 @@ impl GitBackendHistoryRewrite for MockGitBackend {
     fn delete_commits(&mut self, commit_ids: &[String]) -> Result<(), GitError> {
         self.operations
             .push(format!("delete-commits:{}", commit_ids.join(",")));
-        if self.snapshot.commits.iter().any(|commit| {
-            commit_ids.iter().any(|id| commit_matches(commit, id))
-                && commit.hash_status != CommitHashStatus::Unpushed
-        }) {
-            return Err(GitError::new("commit is not private"));
-        }
         if self
             .snapshot
             .commits

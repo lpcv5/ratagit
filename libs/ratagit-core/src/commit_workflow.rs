@@ -2,8 +2,8 @@ use crate::actions::with_pending;
 use crate::search::{clear_search_if_incompatible, recompute_search_matches};
 use crate::selectors::{repository_has_uncommitted_changes, selected_commit_id};
 use crate::{
-    AppContext, AutoStashOperation, Command, CommitEntry, CommitFilesUiState, CommitHashStatus,
-    CommitInputMode, PanelFocus, SearchScope, StageAllOperation, branches, commit_key, details,
+    AppContext, AutoStashOperation, Command, CommitEntry, CommitFilesUiState, CommitInputMode,
+    PanelFocus, SearchScope, StageAllOperation, branches, commit_key, details,
     initialize_commit_files_tree, leave_commit_multi_select, mark_commit_file_items_changed,
     move_commit_file_selected, move_commit_file_selected_in_viewport, move_commit_selected,
     move_commit_selected_in_viewport, operations, push_notice,
@@ -57,17 +57,6 @@ pub(crate) fn amend_staged_changes(state: &mut AppContext) -> Vec<Command> {
             return Vec::new();
         };
         let selected_index = state.ui.commits.selected;
-        if state
-            .repo
-            .commits
-            .items
-            .iter()
-            .take(selected_index.saturating_add(1))
-            .any(|commit| commit.hash_status != CommitHashStatus::Unpushed)
-        {
-            push_notice(state, "Amend only supports unpushed commits");
-            return Vec::new();
-        }
         if state
             .repo
             .commits
@@ -347,13 +336,6 @@ fn rewrite_selected_commits(
     let commits = selected_commits(&state.repo.commits.items, &state.ui.commits);
     if commits.is_empty() {
         push_notice(state, "No commit selected");
-        return Vec::new();
-    }
-    if commits
-        .iter()
-        .any(|commit| commit.hash_status != CommitHashStatus::Unpushed)
-    {
-        push_notice(state, "Commit rewrite only supports unpushed commits");
         return Vec::new();
     }
     if commits.iter().any(|commit| commit.is_merge) {

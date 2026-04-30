@@ -280,11 +280,12 @@ Files panel interaction:
   for the selected commit.
 - Commit visual multi-select is AppContext-owned and follows the same continuous
   anchor-to-cursor model as Files visual selection; `Esc` exits the mode.
-- Commit rewrite commands reject merge commits in this slice, only accept
-  unpushed commits, and are executed only through `GitBackend`; squash, fixup,
-  reword, and delete require a clean working tree, while amend requires staged
-  changes with no unstaged or untracked changes unless the shared stage-all
-  fallback is confirming an operation that started with no staged files.
+- Commit rewrite commands can operate on linear pushed or unpushed history and
+  are executed only through `GitBackend`; squash, fixup, reword, and delete
+  require a clean working tree, while amend requires staged changes with no
+  unstaged or untracked changes unless the shared stage-all fallback is
+  confirming an operation that started with no staged files. Merge commits are
+  rejected in this slice.
 - Squash/fixup reject root-parent targets in this slice because the replay path
   amends the selected commit into its parent.
 - Commit reword reuses the existing commit editor modal with a reword intent

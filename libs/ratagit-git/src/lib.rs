@@ -1066,7 +1066,7 @@ mod tests {
     }
 
     #[test]
-    fn mock_commit_rewrites_reject_public_merge_and_root_parent_cases() {
+    fn mock_commit_rewrites_allow_public_and_reject_merge_and_root_parent_cases() {
         let mut public = test_commit("aaa1111", "public");
         public.hash_status = CommitHashStatus::Pushed;
         let mut backend = MockGitBackend::new(test_snapshot_with_commits(vec![
@@ -1075,10 +1075,10 @@ mod tests {
             test_commit("ccc3333", "root"),
         ]));
 
-        let error = backend
+        backend
             .delete_commits(&["aaa1111".to_string()])
-            .expect_err("public commits should not be rewritten");
-        assert!(error.message.contains("not private"));
+            .expect("public commits should be rewritten");
+        assert_eq!(backend.snapshot().commits[0].summary, "base");
 
         let mut merge = test_commit("ddd4444", "merge");
         merge.is_merge = true;

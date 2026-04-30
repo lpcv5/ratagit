@@ -564,7 +564,6 @@ impl GitCli {
             return Err(GitError::new("cannot amend root commit"));
         }
         let replay_commits = history[start..].to_vec();
-        self.ensure_commits_are_private(&replay_commits)?;
         for commit in &replay_commits {
             if self.parent_count(commit)? > 1 {
                 return Err(GitError::new(
@@ -753,7 +752,6 @@ impl GitCli {
             .iter()
             .map(|id| self.resolve_commit(id))
             .collect::<Result<Vec<_>, GitError>>()?;
-        self.ensure_commits_are_private(&targets)?;
         let history = self.rev_list_reverse_head()?;
         let target_positions = targets
             .iter()
@@ -898,54 +896,12 @@ impl GitCli {
         }
     }
 
-    fn ensure_commits_are_private(&self, commit_ids: &[String]) -> Result<(), GitError> {
-        let main = self.try_resolve_commit("refs/heads/main");
-        let upstream = self.try_resolve_commit("@{upstream}");
-        for commit_id in commit_ids {
-            if let Some(main) = &main
-                && self.commit_is_ancestor_of(commit_id, main)?
-            {
-                return Err(GitError::new(format!(
-                    "commit is already merged to main: {commit_id}"
-                )));
-            }
-            if let Some(upstream) = &upstream
-                && self.commit_is_ancestor_of(commit_id, upstream)?
-            {
-                return Err(GitError::new(format!(
-                    "commit is already pushed upstream: {commit_id}"
-                )));
-            }
-        }
-        Ok(())
-    }
-
     fn resolve_commit(&self, commit_id: &str) -> Result<String, GitError> {
         let spec = format!("{commit_id}^{{commit}}");
         Ok(self
             .run_git_owned(vec!["rev-parse".to_string(), "--verify".to_string(), spec])?
             .trim()
             .to_string())
-    }
-
-    fn try_resolve_commit(&self, commit_id: &str) -> Option<String> {
-        self.resolve_commit(commit_id).ok()
-    }
-
-    fn commit_is_ancestor_of(&self, commit_id: &str, tip: &str) -> Result<bool, GitError> {
-        let output = ProcessCommand::new("git")
-            .args(["merge-base", "--is-ancestor", commit_id, tip])
-            .current_dir(&self.repo_path)
-            .output()
-            .map_err(|err| GitError::new(format!("failed to start git merge-base: {err}")))?;
-        if output.status.success() {
-            return Ok(true);
-        }
-        if output.status.code() == Some(1) {
-            return Ok(false);
-        }
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        Err(GitError::new(format!("git merge-base failed: {stderr}")))
     }
 
     fn rev_list_reverse_head(&self) -> Result<Vec<String>, GitError> {

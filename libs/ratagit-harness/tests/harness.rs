@@ -5,9 +5,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use ratagit_core::{
-    Action, AppContext, BranchDeleteMode, BranchEntry, CommitEntry, FileDiffTarget, FilesSnapshot,
-    GitResult, MenuDirection, MenuKind, PanelFocus, RepoSnapshot, ResetMode, StashEntry, UiAction,
-    update,
+    Action, AppContext, BranchDeleteMode, BranchEntry, CommitEntry, CommitHashStatus,
+    FileDiffTarget, FilesSnapshot, GitResult, MenuDirection, MenuKind, PanelFocus, RepoSnapshot,
+    ResetMode, StashEntry, UiAction, update,
 };
 use ratagit_git::{
     GitBackend, GitBackendHistoryRewrite, GitBackendRead, GitBackendWrite, GitError, MockGitBackend,
@@ -34,6 +34,12 @@ fn clean_commit_fixture() -> RepoSnapshot {
     let mut fixture = fixture_dirty_repo();
     fixture.status_summary = "clean".to_string();
     fixture.files.clear();
+    fixture
+}
+
+fn pushed_commit_fixture() -> RepoSnapshot {
+    let mut fixture = clean_commit_fixture();
+    fixture.commits[0].hash_status = CommitHashStatus::Pushed;
     fixture
 }
 
@@ -2202,6 +2208,38 @@ fn harness_commits_reword_selected() {
             batch_selected_screen_rows: &[],
             git_ops_contains: &["reword:abc1234:init project updated", "refresh"],
             git_state_contains: &["summary: \"init project updated\""],
+        },
+    ));
+}
+
+#[test]
+fn harness_commits_reword_pushed_commit() {
+    let inputs = [
+        UiAction::RefreshAll,
+        UiAction::FocusNext,
+        UiAction::FocusNext,
+        UiAction::OpenCommitRewordEditor,
+        UiAction::EditorMoveCursorEnd,
+        UiAction::EditorInputChar(' '),
+        UiAction::EditorInputChar('p'),
+        UiAction::EditorInputChar('u'),
+        UiAction::EditorInputChar('b'),
+        UiAction::EditorInputChar('l'),
+        UiAction::EditorInputChar('i'),
+        UiAction::EditorInputChar('c'),
+        UiAction::EditorConfirm,
+    ];
+    assert_scenario(MockScenario::new(
+        "commits_reword_pushed_commit",
+        pushed_commit_fixture(),
+        &inputs,
+        ScenarioExpectations {
+            screen_contains: &["Reworded abc1234", "init project public"],
+            screen_not_contains: &["only supports unpushed"],
+            selected_screen_rows: &[],
+            batch_selected_screen_rows: &[],
+            git_ops_contains: &["reword:abc1234:init project public", "refresh"],
+            git_state_contains: &["summary: \"init project public\""],
         },
     ));
 }

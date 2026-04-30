@@ -385,21 +385,21 @@ fn hybrid_backend_replays_linear_commit_rewrites() {
 }
 
 #[test]
-fn hybrid_backend_rejects_public_and_root_parent_rewrites() {
+fn hybrid_backend_rewrites_public_history_and_rejects_root_parent_rewrites() {
     if !git_available() {
         eprintln!(
-            "git is unavailable, skipping hybrid_backend_rejects_public_and_root_parent_rewrites"
+            "git is unavailable, skipping hybrid_backend_rewrites_public_history_and_rejects_root_parent_rewrites"
         );
         return;
     }
 
     let public_repo = repo_with_three_commits("rewrite-public-history");
     let public_target = commit_id(&public_repo, "HEAD");
-    let error = HybridGitBackend::open(public_repo.path())
+    HybridGitBackend::open(public_repo.path())
         .expect("hybrid backend should open")
         .delete_commits(&[public_target])
-        .expect_err("main-reachable commits should not be rewritten");
-    assert!(error.message.contains("merged to main"));
+        .expect("main-reachable commits should be rewritten");
+    assert_eq!(log_subjects(&public_repo), vec!["second", "init"]);
 
     let root_parent_repo = seeded_repo_with_two_files("rewrite-root-parent");
     root_parent_repo.run_git(&["checkout", "-b", "feature/root-parent"]);

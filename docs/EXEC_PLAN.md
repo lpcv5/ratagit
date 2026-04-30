@@ -2,48 +2,65 @@
 
 ## Active Slice
 
-Name: Phase 4 Refactor Review And Validation
+Name: Commit History Rewrite For Pushed Commits
 
 Status: completed
 
 ## Problem
 
-The multi-phase redundancy refactor has modified shared selection state,
-left-view routing, input key helpers, and modal choice rendering. Before final
-validation, the codebase needs a read-only review for remaining stale patterns,
-unhelpful abstractions, clippy-exposed redundancy, and line-count impact.
+Commit rewrite actions currently reject commits that are already pushed or
+reachable from main/upstream, so users cannot intentionally rewrite existing
+commit history from ratagit. The rewrite flows should support editing linear
+history regardless of commit hash status while preserving the existing safety
+checks for dirty worktrees, merge commits, root-parent edge cases, and backend
+execution through `GitBackend`.
 
 ## Smallest Slice
 
-- run a targeted duplicate/stale-pattern search
-- review the new `LinearListSelection`, `ActiveLeftView`, input key helpers,
-  and choice menu helper for clarity and net value
-- apply only mechanical fixes if clippy or review finds dead code or obvious
-  redundancy
-- run final full validation
+- remove the AppContext-level unpushed/private precheck for commit rewrite
+  actions
+- remove the Git backend private/main/upstream rejection for replay-based
+  history rewrites
+- keep clean-worktree, staged-only amend, merge-commit, root-commit, and
+  root-parent squash/fixup protections unchanged
+- update docs to describe the new pushed-history behavior
+- cover pushed commit rewrite in unit/backend/harness tests
 
 ## Non-Goals
 
-- no public behavior changes
-- no UI rendering changes
-- no new abstraction families
-- no broad code movement
-- no optional behavior or UX changes
+- no automatic force push after rewriting public history
+- no new confirmation modal in this slice
+- no support for rewriting merge commits
+- no UI layout or rendering changes
+- no broader Git replay algorithm refactor
 
 ## Expected Files
 
 - `docs/EXEC_PLAN.md`
-- source files only if review finds mechanical cleanup
-- `docs/REFACTORING_TODO.md` if completion notes need updating
+- `docs/PRODUCT.md`
+- `docs/DESIGN.md`
+- `docs/harness/SCENARIOS.md`
+- `libs/ratagit-core/src/commit_workflow.rs`
+- `libs/ratagit-core/src/editor.rs`
+- `libs/ratagit-core/tests/core.rs`
+- `libs/ratagit-git/src/cli.rs`
+- `libs/ratagit-git/src/mock.rs`
+- `libs/ratagit-git/src/lib.rs`
+- `libs/ratagit-git/tests/git2_tmp.rs`
+- `libs/ratagit-harness/tests/harness.rs`
 
 ## Tests
 
-- full formatting, clippy, tests, and exec plan validation pass
+- unit tests for reducers allowing pushed rewrite targets while still rejecting
+  merge commits
+- backend tests for mock and hybrid replay of pushed/main-reachable commits
+- harness scenario asserting pushed commit rewrite updates UI and Git state
 
 ## Harness Decision
 
-No new harness scenario expected unless review finds an uncovered user-visible
-routing change. This phase is review and final validation.
+Required because this changes user-visible commit rewrite behavior and Git
+state semantics. Add a focused scenario that rewords a pushed commit and asserts
+the screen notice, backend operation, and rewritten Git state.
 
 ## Validation
 
@@ -56,12 +73,18 @@ cargo test -p ratagit --test exec_plan
 
 ## Completion Evidence
 
-- Worker D reviewed stale menu actions, confirm state access, selection helper
-  duplication, branch/main commit-files routing, and modal key mappings
-- fixed a stale commit-files shortcut footer discovered during review
-- updated affected terminal snapshots for commit-files shortcut footer changes
+- removed unpushed/private prechecks from core commit rewrite and commit reword
+  entry points while keeping clean-worktree and merge-commit guards
+- removed backend main/upstream/private rejection from replay-based history
+  rewrite commands while keeping root and merge protections
+- added reducer, mock backend, hybrid Git backend, and harness coverage for
+  rewriting pushed/main-reachable commits
+- no UI rendering changes; no snapshot updates required
 - validation passed:
-  `cargo test -p ratagit-ui --test snapshots terminal_snapshot_commit_files`
-- validation passed: `cargo fmt`
-- validation passed: `cargo clippy --workspace --lib --bins -- -D warnings`
-- validation passed: `cargo test`
+  `cargo fmt`
+- validation passed:
+  `cargo clippy --workspace --lib --bins -- -D warnings`
+- validation passed:
+  `cargo test`
+- validation passed:
+  `cargo test -p ratagit --test exec_plan`

@@ -5,8 +5,8 @@ use crate::text_edit::{
 };
 use crate::worktree::{close_discard_confirm, stash_scope_for_current_files_selection};
 use crate::{
-    AppContext, Command, CommitEditorIntent, CommitField, CommitHashStatus, CommitInputMode,
-    EditorKind, StashScope, branches, commit_key, commit_workflow, push_notice, selected_commit,
+    AppContext, Command, CommitEditorIntent, CommitField, CommitInputMode, EditorKind, StashScope,
+    branches, commit_key, commit_workflow, push_notice, selected_commit,
 };
 
 pub(crate) fn open_commit_editor(state: &mut AppContext) {
@@ -51,10 +51,6 @@ pub(crate) fn open_commit_reword_editor(state: &mut AppContext) {
     };
     if commit.is_merge {
         push_notice(state, "Commit rewrite does not support merge commits yet");
-        return;
-    }
-    if commit.hash_status != CommitHashStatus::Unpushed {
-        push_notice(state, "Commit rewrite only supports unpushed commits");
         return;
     }
     state.ui.reset_menu.menu.active = false;
