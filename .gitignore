@@ -48,6 +48,7 @@ Thumbs.db
 # Project specific
 logs/
 .agents/
+.claude/
 .codex/*
 !.codex/agents/
 !.codex/agents/**
