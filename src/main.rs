@@ -10,12 +10,11 @@ use color_eyre::Result;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyEventKind},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use flux::action::{Action, SystemAction};
 use flux::runtime::EffectExecutor;
 use flux::snapshot::AppStateSnapshotOwned;
-use ratatui::{backend::CrosstermBackend, Terminal};
+use ratatui::DefaultTerminal;
 use std::fs::{File, OpenOptions};
 use std::io;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -202,32 +201,41 @@ async fn main() -> Result<()> {
         git::enable_git_job_log("ratagit-git-jobs.log");
     }
 
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-
     let app = App::new()?;
-    let res = run_app(&mut terminal, app).await;
+    let mut terminal = ratatui::try_init().inspect_err(|_| ratatui::restore())?;
+    // Ratatui restores raw mode and the alternate screen before color-eyre's hook.
+    // Mouse capture is application-specific and must also end before diagnostics.
+    let hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let _ = execute!(io::stdout(), DisableMouseCapture);
+        hook(info);
+    }));
+    let res = async {
+        execute!(io::stdout(), EnableMouseCapture)?;
+        run_app(&mut terminal, app).await
+    }
+    .await;
 
-    disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
-    terminal.show_cursor()?;
+    // Attempt both cleanup steps, even if one fails. Preserve the app's error.
+    let mouse_result = execute!(io::stdout(), DisableMouseCapture);
+    let restore_result = ratatui::try_restore();
+    drop(terminal);
 
-    if let Err(err) = res {
+    if let Err(err) = &res {
         error!("app_error err={:?}", err);
     }
 
-    info!("app_exit ok=true");
+    info!(
+        "app_exit ok={}",
+        res.is_ok() && mouse_result.is_ok() && restore_result.is_ok()
+    );
+    res?;
+    mouse_result?;
+    restore_result?;
     Ok(())
 }
 
-async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: App) -> Result<()> {
+async fn run_app(terminal: &mut DefaultTerminal, app: App) -> Result<()> {
     let local = tokio::task::LocalSet::new();
     local
         .run_until(async move {
@@ -281,7 +289,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: App
 }
 
 async fn ui_loop(
-    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    terminal: &mut DefaultTerminal,
     perf: Arc<PerfCounters>,
     action_tx: mpsc::UnboundedSender<Action>,
     state_version_rx: &mut watch::Receiver<u64>,
