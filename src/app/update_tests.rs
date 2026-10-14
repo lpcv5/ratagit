@@ -5,7 +5,7 @@ use crate::flux::effects::EffectRequest;
 use crate::flux::test_runtime::run_inline_effect;
 use crate::git::{
     BranchInfo, CommitInfo, CommitSyncState, DiffLine, DiffLineKind, FileEntry, FileStatus,
-    GitError, GitRepository, GitStatus, StashInfo,
+    GitError, GitStatus, StashInfo,
 };
 use crate::ui::widgets::file_tree::{FileTreeNode, FileTreeNodeStatus};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -19,7 +19,7 @@ use std::sync::{
 
 struct MockRepo;
 
-impl GitRepository for MockRepo {
+impl crate::git::WorktreeRepository for MockRepo {
     fn status(&self) -> Result<GitStatus, GitError> {
         Ok(GitStatus::default())
     }
@@ -43,7 +43,9 @@ impl GitRepository for MockRepo {
     fn discard_paths(&self, _paths: &[PathBuf]) -> Result<(), GitError> {
         Ok(())
     }
+}
 
+impl crate::git::PatchRepository for MockRepo {
     fn diff_unstaged(&self, _path: &Path) -> Result<Vec<DiffLine>, GitError> {
         Ok(vec![])
     }
@@ -56,10 +58,22 @@ impl GitRepository for MockRepo {
         Ok(vec![])
     }
 
-    fn branches(&self) -> Result<Vec<BranchInfo>, GitError> {
-        Ok(vec![])
+    fn commit_diff_scoped(
+        &self,
+        _oid: &str,
+        path: Option<&Path>,
+    ) -> Result<Vec<DiffLine>, GitError> {
+        let scoped = path
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| "<none>".to_string());
+        Ok(vec![DiffLine {
+            kind: DiffLineKind::Header,
+            content: format!("commit diff {}", scoped),
+        }])
     }
+}
 
+impl crate::git::HistoryRepository for MockRepo {
     fn commits(&self, _limit: usize) -> Result<Vec<CommitInfo>, GitError> {
         Ok(vec![
             CommitInfo {
@@ -101,7 +115,33 @@ impl GitRepository for MockRepo {
             status: FileStatus::Modified,
         }])
     }
+}
 
+impl crate::git::ReferenceRepository for MockRepo {
+    fn branches(&self) -> Result<Vec<BranchInfo>, GitError> {
+        Ok(vec![])
+    }
+
+    fn create_branch(&self, _name: &str) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn checkout_branch(&self, _name: &str) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn delete_branch(&self, _name: &str) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn fetch_default_async(&self) -> Result<Receiver<Result<String, GitError>>, GitError> {
+        let (tx, rx) = mpsc::channel();
+        let _ = tx.send(Ok("origin".to_string()));
+        Ok(rx)
+    }
+}
+
+impl crate::git::StashRepository for MockRepo {
     fn stashes(&self) -> Result<Vec<StashInfo>, GitError> {
         Ok(vec![
             StashInfo {
@@ -147,50 +187,23 @@ impl GitRepository for MockRepo {
     fn stash_drop(&self, _index: usize) -> Result<(), GitError> {
         Ok(())
     }
+}
 
-    fn commit_diff_scoped(
-        &self,
-        _oid: &str,
-        path: Option<&Path>,
-    ) -> Result<Vec<DiffLine>, GitError> {
-        let scoped = path
-            .map(|p| p.display().to_string())
-            .unwrap_or_else(|| "<none>".to_string());
-        Ok(vec![DiffLine {
-            kind: DiffLineKind::Header,
-            content: format!("commit diff {}", scoped),
-        }])
-    }
-
+impl crate::git::CommitRepository for MockRepo {
     fn commit(&self, _message: &str) -> Result<String, GitError> {
         Ok("oid".to_string())
     }
-
-    fn create_branch(&self, _name: &str) -> Result<(), GitError> {
-        Ok(())
-    }
-
-    fn checkout_branch(&self, _name: &str) -> Result<(), GitError> {
-        Ok(())
-    }
-
-    fn delete_branch(&self, _name: &str) -> Result<(), GitError> {
-        Ok(())
-    }
-
-    fn fetch_default_async(&self) -> Result<Receiver<Result<String, GitError>>, GitError> {
-        let (tx, rx) = mpsc::channel();
-        let _ = tx.send(Ok("origin".to_string()));
-        Ok(rx)
-    }
 }
+
+impl crate::git::OperationRepository for MockRepo {}
 
 fn mock_app() -> App {
     App::from_repo(Box::new(MockRepo)).expect("app from mock repo")
 }
 
 fn first_diff_content(app: &App) -> &str {
-    app.git.current_diff
+    app.git
+        .current_diff
         .first()
         .map(|line| line.content.as_str())
         .expect("diff should contain at least one line")
@@ -222,7 +235,7 @@ impl CountingRepo {
     }
 }
 
-impl GitRepository for CountingRepo {
+impl crate::git::WorktreeRepository for CountingRepo {
     fn status(&self) -> Result<GitStatus, GitError> {
         Ok(GitStatus::default())
     }
@@ -246,7 +259,9 @@ impl GitRepository for CountingRepo {
     fn discard_paths(&self, _paths: &[PathBuf]) -> Result<(), GitError> {
         Ok(())
     }
+}
 
+impl crate::git::PatchRepository for CountingRepo {
     fn diff_unstaged(&self, _path: &Path) -> Result<Vec<DiffLine>, GitError> {
         Ok(vec![])
     }
@@ -259,10 +274,16 @@ impl GitRepository for CountingRepo {
         Ok(vec![])
     }
 
-    fn branches(&self) -> Result<Vec<BranchInfo>, GitError> {
+    fn commit_diff_scoped(
+        &self,
+        _oid: &str,
+        _path: Option<&Path>,
+    ) -> Result<Vec<DiffLine>, GitError> {
         Ok(vec![])
     }
+}
 
+impl crate::git::HistoryRepository for CountingRepo {
     fn commits(&self, _limit: usize) -> Result<Vec<CommitInfo>, GitError> {
         let calls = self.commits_calls.fetch_add(1, Ordering::SeqCst) + 1;
         Ok(vec![CommitInfo {
@@ -285,7 +306,33 @@ impl GitRepository for CountingRepo {
     fn commit_files(&self, _oid: &str) -> Result<Vec<FileEntry>, GitError> {
         Ok(vec![])
     }
+}
 
+impl crate::git::ReferenceRepository for CountingRepo {
+    fn branches(&self) -> Result<Vec<BranchInfo>, GitError> {
+        Ok(vec![])
+    }
+
+    fn create_branch(&self, _name: &str) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn checkout_branch(&self, _name: &str) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn delete_branch(&self, _name: &str) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn fetch_default_async(&self) -> Result<Receiver<Result<String, GitError>>, GitError> {
+        let (tx, rx) = mpsc::channel();
+        let _ = tx.send(Ok("origin".to_string()));
+        Ok(rx)
+    }
+}
+
+impl crate::git::StashRepository for CountingRepo {
     fn stashes(&self) -> Result<Vec<StashInfo>, GitError> {
         Ok(vec![])
     }
@@ -313,37 +360,15 @@ impl GitRepository for CountingRepo {
     fn stash_drop(&self, _index: usize) -> Result<(), GitError> {
         Ok(())
     }
+}
 
-    fn commit_diff_scoped(
-        &self,
-        _oid: &str,
-        _path: Option<&Path>,
-    ) -> Result<Vec<DiffLine>, GitError> {
-        Ok(vec![])
-    }
-
+impl crate::git::CommitRepository for CountingRepo {
     fn commit(&self, _message: &str) -> Result<String, GitError> {
         Ok("oid".to_string())
     }
-
-    fn create_branch(&self, _name: &str) -> Result<(), GitError> {
-        Ok(())
-    }
-
-    fn checkout_branch(&self, _name: &str) -> Result<(), GitError> {
-        Ok(())
-    }
-
-    fn delete_branch(&self, _name: &str) -> Result<(), GitError> {
-        Ok(())
-    }
-
-    fn fetch_default_async(&self) -> Result<Receiver<Result<String, GitError>>, GitError> {
-        let (tx, rx) = mpsc::channel();
-        let _ = tx.send(Ok("origin".to_string()));
-        Ok(rx)
-    }
 }
+
+impl crate::git::OperationRepository for CountingRepo {}
 
 struct RefreshCountingRepo {
     status_calls: Arc<AtomicUsize>,
@@ -354,7 +379,7 @@ struct RefreshCountingRepo {
 
 struct DuplicateStatusRepo;
 
-impl GitRepository for DuplicateStatusRepo {
+impl crate::git::WorktreeRepository for DuplicateStatusRepo {
     fn status(&self) -> Result<GitStatus, GitError> {
         Ok(GitStatus {
             unstaged: vec![FileEntry {
@@ -388,7 +413,9 @@ impl GitRepository for DuplicateStatusRepo {
     fn discard_paths(&self, _paths: &[PathBuf]) -> Result<(), GitError> {
         Ok(())
     }
+}
 
+impl crate::git::PatchRepository for DuplicateStatusRepo {
     fn diff_unstaged(&self, _path: &Path) -> Result<Vec<DiffLine>, GitError> {
         Ok(vec![DiffLine {
             kind: DiffLineKind::Header,
@@ -410,10 +437,16 @@ impl GitRepository for DuplicateStatusRepo {
         }])
     }
 
-    fn branches(&self) -> Result<Vec<BranchInfo>, GitError> {
+    fn commit_diff_scoped(
+        &self,
+        _oid: &str,
+        _path: Option<&Path>,
+    ) -> Result<Vec<DiffLine>, GitError> {
         Ok(vec![])
     }
+}
 
+impl crate::git::HistoryRepository for DuplicateStatusRepo {
     fn commits(&self, _limit: usize) -> Result<Vec<CommitInfo>, GitError> {
         Ok(vec![])
     }
@@ -421,7 +454,33 @@ impl GitRepository for DuplicateStatusRepo {
     fn commit_files(&self, _oid: &str) -> Result<Vec<FileEntry>, GitError> {
         Ok(vec![])
     }
+}
 
+impl crate::git::ReferenceRepository for DuplicateStatusRepo {
+    fn branches(&self) -> Result<Vec<BranchInfo>, GitError> {
+        Ok(vec![])
+    }
+
+    fn create_branch(&self, _name: &str) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn checkout_branch(&self, _name: &str) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn delete_branch(&self, _name: &str) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn fetch_default_async(&self) -> Result<Receiver<Result<String, GitError>>, GitError> {
+        let (tx, rx) = mpsc::channel();
+        let _ = tx.send(Ok("origin".to_string()));
+        Ok(rx)
+    }
+}
+
+impl crate::git::StashRepository for DuplicateStatusRepo {
     fn stashes(&self) -> Result<Vec<StashInfo>, GitError> {
         Ok(vec![])
     }
@@ -449,41 +508,19 @@ impl GitRepository for DuplicateStatusRepo {
     fn stash_drop(&self, _index: usize) -> Result<(), GitError> {
         Ok(())
     }
+}
 
-    fn commit_diff_scoped(
-        &self,
-        _oid: &str,
-        _path: Option<&Path>,
-    ) -> Result<Vec<DiffLine>, GitError> {
-        Ok(vec![])
-    }
-
+impl crate::git::CommitRepository for DuplicateStatusRepo {
     fn commit(&self, _message: &str) -> Result<String, GitError> {
         Ok("oid".to_string())
     }
-
-    fn create_branch(&self, _name: &str) -> Result<(), GitError> {
-        Ok(())
-    }
-
-    fn checkout_branch(&self, _name: &str) -> Result<(), GitError> {
-        Ok(())
-    }
-
-    fn delete_branch(&self, _name: &str) -> Result<(), GitError> {
-        Ok(())
-    }
-
-    fn fetch_default_async(&self) -> Result<Receiver<Result<String, GitError>>, GitError> {
-        let (tx, rx) = mpsc::channel();
-        let _ = tx.send(Ok("origin".to_string()));
-        Ok(rx)
-    }
 }
+
+impl crate::git::OperationRepository for DuplicateStatusRepo {}
 
 struct NavigationDiffRepo;
 
-impl GitRepository for NavigationDiffRepo {
+impl crate::git::WorktreeRepository for NavigationDiffRepo {
     fn status(&self) -> Result<GitStatus, GitError> {
         Ok(GitStatus {
             unstaged: vec![
@@ -520,7 +557,9 @@ impl GitRepository for NavigationDiffRepo {
     fn discard_paths(&self, _paths: &[PathBuf]) -> Result<(), GitError> {
         Ok(())
     }
+}
 
+impl crate::git::PatchRepository for NavigationDiffRepo {
     fn diff_unstaged(&self, path: &Path) -> Result<Vec<DiffLine>, GitError> {
         Ok(vec![DiffLine {
             kind: DiffLineKind::Header,
@@ -536,19 +575,19 @@ impl GitRepository for NavigationDiffRepo {
         Ok(vec![])
     }
 
-    fn branches(&self) -> Result<Vec<BranchInfo>, GitError> {
-        Ok(vec![
-            BranchInfo {
-                name: "main".to_string(),
-                is_current: true,
-            },
-            BranchInfo {
-                name: "feature/x".to_string(),
-                is_current: false,
-            },
-        ])
+    fn commit_diff_scoped(
+        &self,
+        oid: &str,
+        _path: Option<&Path>,
+    ) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![DiffLine {
+            kind: DiffLineKind::Header,
+            content: format!("commit {}", oid),
+        }])
     }
+}
 
+impl crate::git::HistoryRepository for NavigationDiffRepo {
     fn branch_log(&self, name: &str, _limit: usize) -> Result<Vec<DiffLine>, GitError> {
         Ok(vec![DiffLine {
             kind: DiffLineKind::Context,
@@ -594,7 +633,42 @@ impl GitRepository for NavigationDiffRepo {
     fn commit_files(&self, _oid: &str) -> Result<Vec<FileEntry>, GitError> {
         Ok(vec![])
     }
+}
 
+impl crate::git::ReferenceRepository for NavigationDiffRepo {
+    fn branches(&self) -> Result<Vec<BranchInfo>, GitError> {
+        Ok(vec![
+            BranchInfo {
+                name: "main".to_string(),
+                is_current: true,
+            },
+            BranchInfo {
+                name: "feature/x".to_string(),
+                is_current: false,
+            },
+        ])
+    }
+
+    fn create_branch(&self, _name: &str) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn checkout_branch(&self, _name: &str) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn delete_branch(&self, _name: &str) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn fetch_default_async(&self) -> Result<Receiver<Result<String, GitError>>, GitError> {
+        let (tx, rx) = mpsc::channel();
+        let _ = tx.send(Ok("origin".to_string()));
+        Ok(rx)
+    }
+}
+
+impl crate::git::StashRepository for NavigationDiffRepo {
     fn stashes(&self) -> Result<Vec<StashInfo>, GitError> {
         Ok(vec![])
     }
@@ -622,40 +696,15 @@ impl GitRepository for NavigationDiffRepo {
     fn stash_drop(&self, _index: usize) -> Result<(), GitError> {
         Ok(())
     }
+}
 
-    fn commit_diff_scoped(
-        &self,
-        oid: &str,
-        _path: Option<&Path>,
-    ) -> Result<Vec<DiffLine>, GitError> {
-        Ok(vec![DiffLine {
-            kind: DiffLineKind::Header,
-            content: format!("commit {}", oid),
-        }])
-    }
-
+impl crate::git::CommitRepository for NavigationDiffRepo {
     fn commit(&self, _message: &str) -> Result<String, GitError> {
         Ok("oid".to_string())
     }
-
-    fn create_branch(&self, _name: &str) -> Result<(), GitError> {
-        Ok(())
-    }
-
-    fn checkout_branch(&self, _name: &str) -> Result<(), GitError> {
-        Ok(())
-    }
-
-    fn delete_branch(&self, _name: &str) -> Result<(), GitError> {
-        Ok(())
-    }
-
-    fn fetch_default_async(&self) -> Result<Receiver<Result<String, GitError>>, GitError> {
-        let (tx, rx) = mpsc::channel();
-        let _ = tx.send(Ok("origin".to_string()));
-        Ok(rx)
-    }
 }
+
+impl crate::git::OperationRepository for NavigationDiffRepo {}
 
 struct BranchSwitchRepo {
     checkout_calls: Arc<AtomicUsize>,
@@ -671,7 +720,7 @@ impl BranchSwitchRepo {
     }
 }
 
-impl GitRepository for BranchSwitchRepo {
+impl crate::git::WorktreeRepository for BranchSwitchRepo {
     fn status(&self) -> Result<GitStatus, GitError> {
         Ok(GitStatus {
             unstaged: vec![FileEntry {
@@ -702,7 +751,9 @@ impl GitRepository for BranchSwitchRepo {
     fn discard_paths(&self, _paths: &[PathBuf]) -> Result<(), GitError> {
         Ok(())
     }
+}
 
+impl crate::git::PatchRepository for BranchSwitchRepo {
     fn diff_unstaged(&self, _path: &Path) -> Result<Vec<DiffLine>, GitError> {
         Ok(vec![])
     }
@@ -715,6 +766,26 @@ impl GitRepository for BranchSwitchRepo {
         Ok(vec![])
     }
 
+    fn commit_diff_scoped(
+        &self,
+        _oid: &str,
+        _path: Option<&Path>,
+    ) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![])
+    }
+}
+
+impl crate::git::HistoryRepository for BranchSwitchRepo {
+    fn commits(&self, _limit: usize) -> Result<Vec<CommitInfo>, GitError> {
+        Ok(vec![])
+    }
+
+    fn commit_files(&self, _oid: &str) -> Result<Vec<FileEntry>, GitError> {
+        Ok(vec![])
+    }
+}
+
+impl crate::git::ReferenceRepository for BranchSwitchRepo {
     fn branches(&self) -> Result<Vec<BranchInfo>, GitError> {
         Ok(vec![
             BranchInfo {
@@ -726,54 +797,6 @@ impl GitRepository for BranchSwitchRepo {
                 is_current: false,
             },
         ])
-    }
-
-    fn commits(&self, _limit: usize) -> Result<Vec<CommitInfo>, GitError> {
-        Ok(vec![])
-    }
-
-    fn commit_files(&self, _oid: &str) -> Result<Vec<FileEntry>, GitError> {
-        Ok(vec![])
-    }
-
-    fn stashes(&self) -> Result<Vec<StashInfo>, GitError> {
-        Ok(vec![])
-    }
-
-    fn stash_files(&self, _index: usize) -> Result<Vec<FileEntry>, GitError> {
-        Ok(vec![])
-    }
-
-    fn stash_diff(&self, _index: usize, _path: Option<&Path>) -> Result<Vec<DiffLine>, GitError> {
-        Ok(vec![])
-    }
-
-    fn stash_push_paths(&self, _paths: &[PathBuf], _message: &str) -> Result<usize, GitError> {
-        Ok(0)
-    }
-
-    fn stash_apply(&self, _index: usize) -> Result<(), GitError> {
-        Ok(())
-    }
-
-    fn stash_pop(&self, _index: usize) -> Result<(), GitError> {
-        Ok(())
-    }
-
-    fn stash_drop(&self, _index: usize) -> Result<(), GitError> {
-        Ok(())
-    }
-
-    fn commit_diff_scoped(
-        &self,
-        _oid: &str,
-        _path: Option<&Path>,
-    ) -> Result<Vec<DiffLine>, GitError> {
-        Ok(vec![])
-    }
-
-    fn commit(&self, _message: &str) -> Result<String, GitError> {
-        Ok("oid".to_string())
     }
 
     fn create_branch(&self, _name: &str) -> Result<(), GitError> {
@@ -801,6 +824,44 @@ impl GitRepository for BranchSwitchRepo {
     }
 }
 
+impl crate::git::StashRepository for BranchSwitchRepo {
+    fn stashes(&self) -> Result<Vec<StashInfo>, GitError> {
+        Ok(vec![])
+    }
+
+    fn stash_files(&self, _index: usize) -> Result<Vec<FileEntry>, GitError> {
+        Ok(vec![])
+    }
+
+    fn stash_diff(&self, _index: usize, _path: Option<&Path>) -> Result<Vec<DiffLine>, GitError> {
+        Ok(vec![])
+    }
+
+    fn stash_push_paths(&self, _paths: &[PathBuf], _message: &str) -> Result<usize, GitError> {
+        Ok(0)
+    }
+
+    fn stash_apply(&self, _index: usize) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn stash_pop(&self, _index: usize) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn stash_drop(&self, _index: usize) -> Result<(), GitError> {
+        Ok(())
+    }
+}
+
+impl crate::git::CommitRepository for BranchSwitchRepo {
+    fn commit(&self, _message: &str) -> Result<String, GitError> {
+        Ok("oid".to_string())
+    }
+}
+
+impl crate::git::OperationRepository for BranchSwitchRepo {}
+
 impl RefreshCountingRepo {
     fn new(
         status_calls: Arc<AtomicUsize>,
@@ -817,7 +878,7 @@ impl RefreshCountingRepo {
     }
 }
 
-impl GitRepository for RefreshCountingRepo {
+impl crate::git::WorktreeRepository for RefreshCountingRepo {
     fn status(&self) -> Result<GitStatus, GitError> {
         self.status_calls.fetch_add(1, Ordering::SeqCst);
         Ok(GitStatus::default())
@@ -842,7 +903,9 @@ impl GitRepository for RefreshCountingRepo {
     fn discard_paths(&self, _paths: &[PathBuf]) -> Result<(), GitError> {
         Ok(())
     }
+}
 
+impl crate::git::PatchRepository for RefreshCountingRepo {
     fn diff_unstaged(&self, _path: &Path) -> Result<Vec<DiffLine>, GitError> {
         Ok(vec![])
     }
@@ -855,11 +918,16 @@ impl GitRepository for RefreshCountingRepo {
         Ok(vec![])
     }
 
-    fn branches(&self) -> Result<Vec<BranchInfo>, GitError> {
-        self.branches_calls.fetch_add(1, Ordering::SeqCst);
+    fn commit_diff_scoped(
+        &self,
+        _oid: &str,
+        _path: Option<&Path>,
+    ) -> Result<Vec<DiffLine>, GitError> {
         Ok(vec![])
     }
+}
 
+impl crate::git::HistoryRepository for RefreshCountingRepo {
     fn commits(&self, _limit: usize) -> Result<Vec<CommitInfo>, GitError> {
         self.commits_calls.fetch_add(1, Ordering::SeqCst);
         Ok(vec![])
@@ -868,7 +936,34 @@ impl GitRepository for RefreshCountingRepo {
     fn commit_files(&self, _oid: &str) -> Result<Vec<FileEntry>, GitError> {
         Ok(vec![])
     }
+}
 
+impl crate::git::ReferenceRepository for RefreshCountingRepo {
+    fn branches(&self) -> Result<Vec<BranchInfo>, GitError> {
+        self.branches_calls.fetch_add(1, Ordering::SeqCst);
+        Ok(vec![])
+    }
+
+    fn create_branch(&self, _name: &str) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn checkout_branch(&self, _name: &str) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn delete_branch(&self, _name: &str) -> Result<(), GitError> {
+        Ok(())
+    }
+
+    fn fetch_default_async(&self) -> Result<Receiver<Result<String, GitError>>, GitError> {
+        let (tx, rx) = mpsc::channel();
+        let _ = tx.send(Ok("origin".to_string()));
+        Ok(rx)
+    }
+}
+
+impl crate::git::StashRepository for RefreshCountingRepo {
     fn stashes(&self) -> Result<Vec<StashInfo>, GitError> {
         self.stashes_calls.fetch_add(1, Ordering::SeqCst);
         Ok(vec![])
@@ -897,37 +992,15 @@ impl GitRepository for RefreshCountingRepo {
     fn stash_drop(&self, _index: usize) -> Result<(), GitError> {
         Ok(())
     }
+}
 
-    fn commit_diff_scoped(
-        &self,
-        _oid: &str,
-        _path: Option<&Path>,
-    ) -> Result<Vec<DiffLine>, GitError> {
-        Ok(vec![])
-    }
-
+impl crate::git::CommitRepository for RefreshCountingRepo {
     fn commit(&self, _message: &str) -> Result<String, GitError> {
         Ok("oid".to_string())
     }
-
-    fn create_branch(&self, _name: &str) -> Result<(), GitError> {
-        Ok(())
-    }
-
-    fn checkout_branch(&self, _name: &str) -> Result<(), GitError> {
-        Ok(())
-    }
-
-    fn delete_branch(&self, _name: &str) -> Result<(), GitError> {
-        Ok(())
-    }
-
-    fn fetch_default_async(&self) -> Result<Receiver<Result<String, GitError>>, GitError> {
-        let (tx, rx) = mpsc::channel();
-        let _ = tx.send(Ok("origin".to_string()));
-        Ok(rx)
-    }
 }
+
+impl crate::git::OperationRepository for RefreshCountingRepo {}
 
 #[test]
 fn revision_tree_toggle_in_commits_panel_opens_then_closes() {
@@ -971,10 +1044,12 @@ fn commit_diff_in_tree_mode_scopes_to_selected_path() {
     app.ui.commits.panel.list_state.select(Some(0));
 
     app.reload_diff_now();
+    crate::flux::test_runtime::finish_background(&mut app);
     assert!(first_diff_content(&app).contains("<none>"));
 
     dispatch_test_action(&mut app, DomainAction::RevisionOpenTreeOrToggleDir);
     app.reload_diff_now();
+    crate::flux::test_runtime::finish_background(&mut app);
     assert!(!first_diff_content(&app).contains("<none>"));
 }
 
@@ -985,10 +1060,12 @@ fn stash_diff_in_tree_mode_scopes_to_selected_path() {
     app.ui.stash.panel.list_state.select(Some(0));
 
     app.reload_diff_now();
+    crate::flux::test_runtime::finish_background(&mut app);
     assert!(first_diff_content(&app).contains("<none>"));
 
     dispatch_test_action(&mut app, DomainAction::RevisionOpenTreeOrToggleDir);
     app.reload_diff_now();
+    crate::flux::test_runtime::finish_background(&mut app);
     assert!(!first_diff_content(&app).contains("<none>"));
 }
 
@@ -1341,7 +1418,11 @@ fn flush_pending_refresh_without_log_success_marks_ui_dirty() {
         EffectRequest::FlushPendingRefresh { log_success: false },
     );
 
-    assert!(matches!(result, Some(actions) if actions.is_empty()));
+    let actions = result.expect("state event");
+    assert!(app.pending_refresh_kind().is_some());
+    crate::flux::test_runtime::drive_actions(&mut app, actions);
+    app.process_background_refresh_tick();
+    crate::flux::test_runtime::finish_background(&mut app);
     assert_eq!(app.pending_refresh_kind(), None);
     assert!(app.ui.dirty.is_dirty());
 }
@@ -1407,6 +1488,7 @@ fn status_refresh_preserves_duplicate_entry_selection_and_diff_sync() {
 
     app.ui.files.panel.list_state.select(Some(2));
     app.reload_diff_now();
+    crate::flux::test_runtime::finish_background(&mut app);
     assert_eq!(first_diff_content(&app), "staged");
 
     app.request_refresh(RefreshKind::StatusOnly);
@@ -1422,6 +1504,7 @@ fn files_panel_list_navigation_keeps_diff_until_pending_reload_is_flushed() {
     app.ui.active_panel = SidePanel::Files;
     app.ui.files.panel.list_state.select(Some(0));
     app.reload_diff_now();
+    crate::flux::test_runtime::finish_background(&mut app);
     assert_eq!(first_diff_content(&app), "file a.txt");
 
     dispatch_test_action(&mut app, DomainAction::ListDown);
@@ -1431,6 +1514,7 @@ fn files_panel_list_navigation_keeps_diff_until_pending_reload_is_flushed() {
     assert_eq!(first_diff_content(&app), "file a.txt");
 
     app.flush_pending_diff_reload();
+    crate::flux::test_runtime::finish_background(&mut app);
     assert_eq!(first_diff_content(&app), "file b.txt");
     assert!(!app.has_pending_diff_reload());
 }
@@ -1441,6 +1525,7 @@ fn commits_panel_list_navigation_keeps_diff_until_pending_reload_is_flushed() {
     app.ui.active_panel = SidePanel::Commits;
     app.ui.commits.panel.list_state.select(Some(0));
     app.reload_diff_now();
+    crate::flux::test_runtime::finish_background(&mut app);
     assert_eq!(first_diff_content(&app), "commit oid1");
 
     dispatch_test_action(&mut app, DomainAction::ListDown);
@@ -1450,6 +1535,7 @@ fn commits_panel_list_navigation_keeps_diff_until_pending_reload_is_flushed() {
     assert_eq!(first_diff_content(&app), "commit oid1");
 
     app.flush_pending_diff_reload();
+    crate::flux::test_runtime::finish_background(&mut app);
     assert_eq!(first_diff_content(&app), "commit oid2");
     assert!(!app.has_pending_diff_reload());
 }
@@ -1460,6 +1546,7 @@ fn branches_panel_list_navigation_keeps_diff_until_pending_reload_is_flushed() {
     app.ui.active_panel = SidePanel::LocalBranches;
     app.ui.branches.panel.list_state.select(Some(0));
     app.reload_diff_now();
+    crate::flux::test_runtime::finish_background(&mut app);
     assert_eq!(first_diff_content(&app), "branch main");
 
     dispatch_test_action(&mut app, DomainAction::ListDown);
@@ -1469,6 +1556,7 @@ fn branches_panel_list_navigation_keeps_diff_until_pending_reload_is_flushed() {
     assert_eq!(first_diff_content(&app), "branch main");
 
     app.flush_pending_diff_reload();
+    crate::flux::test_runtime::finish_background(&mut app);
     assert_eq!(first_diff_content(&app), "branch feature/x");
     assert!(!app.has_pending_diff_reload());
 }

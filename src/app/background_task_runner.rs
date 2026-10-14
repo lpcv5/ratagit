@@ -1,10 +1,9 @@
-use super::background_poll::PendingBackgroundTask;
-use crate::flux::task_manager::{TaskGeneration, TaskManager};
+use crate::flux::task_manager::{TaskGeneration, TaskManager, TaskRequest};
 use std::collections::HashMap;
 
 pub(super) struct BackgroundTaskRunner {
     pub(super) task_manager: TaskManager,
-    pub(super) pending_background_tasks: HashMap<TaskGeneration, PendingBackgroundTask>,
+    pub(super) pending_background_tasks: HashMap<TaskGeneration, TaskRequest>,
     pub(super) commits_requested_limit: usize,
 }
 

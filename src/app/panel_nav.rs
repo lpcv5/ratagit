@@ -1,19 +1,16 @@
 use super::states::PanelState;
+#[cfg(test)]
 use crate::app::{App, SidePanel};
+use crate::app::{AppState, ViewContext};
 
-impl App {
+impl AppState {
     pub fn active_panel_state_mut(&mut self) -> &mut PanelState {
-        match self.ui.active_panel {
-            SidePanel::Files => &mut self.ui.files.panel,
-            SidePanel::LocalBranches => {
-                if self.ui.branches.commits_subview_active {
-                    &mut self.ui.branches.commits_subview.panel
-                } else {
-                    &mut self.ui.branches.panel
-                }
-            }
-            SidePanel::Commits => &mut self.ui.commits.panel,
-            SidePanel::Stash => &mut self.ui.stash.panel,
+        match self.view_context() {
+            ViewContext::Files => &mut self.ui.files.panel,
+            ViewContext::Branches => &mut self.ui.branches.panel,
+            ViewContext::BranchCommits { .. } => &mut self.ui.branches.commits_subview.panel,
+            ViewContext::Commits | ViewContext::CommitFiles { .. } => &mut self.ui.commits.panel,
+            ViewContext::Stashes | ViewContext::StashFiles { .. } => &mut self.ui.stash.panel,
         }
     }
 
@@ -46,39 +43,12 @@ impl App {
     }
 
     pub(super) fn active_panel_count(&self) -> usize {
-        match self.ui.active_panel {
-            SidePanel::Files => self.ui.files.tree_nodes.len(),
-            SidePanel::LocalBranches => {
-                if self.ui.branches.commits_subview_active {
-                    self.ui.branches.commits_subview.items.len()
-                } else {
-                    self.ui.branches.items.len()
-                }
-            }
-            SidePanel::Commits => {
-                if self.ui.commits.tree_mode.active {
-                    self.ui.commits.tree_mode.nodes.len()
-                } else {
-                    self.ui.commits.items.len()
-                }
-            }
-            SidePanel::Stash => {
-                if self.ui.stash.tree_mode.active {
-                    self.ui.stash.tree_mode.nodes.len()
-                } else {
-                    self.ui.stash.items.len()
-                }
-            }
-        }
+        self.selection().visible_count()
     }
 
+    #[cfg(test)]
     pub(super) fn active_panel_name(&self) -> &'static str {
-        match self.ui.active_panel {
-            SidePanel::Files => "files",
-            SidePanel::LocalBranches => "branches",
-            SidePanel::Commits => "commits",
-            SidePanel::Stash => "stash",
-        }
+        self.view_context().panel().keymap_name()
     }
 }
 

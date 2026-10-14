@@ -1,4 +1,4 @@
-use crate::app::{CommitFieldFocus, InputMode, SearchScopeKey, SidePanel};
+use crate::app::{CommitFieldFocus, InputMode, SearchScopeKey, ViewContext};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -32,11 +32,7 @@ impl Default for InputState {
             branch_switch_target: None,
             search_query: String::new(),
             search_matches: Vec::new(),
-            search_scope: SearchScopeKey {
-                panel: SidePanel::Files,
-                commit_tree_mode: false,
-                stash_tree_mode: false,
-            },
+            search_scope: ViewContext::Files,
             search_queries: HashMap::new(),
         }
     }

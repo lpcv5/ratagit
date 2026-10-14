@@ -1,7 +1,9 @@
-use crate::app::{App, SearchScopeKey, SidePanel};
+#[cfg(test)]
+use crate::app::App;
+use crate::app::{AppState, SearchScopeKey, SidePanel, ViewContext};
 use crate::ui::widgets::file_tree::FileTreeNode;
 
-impl App {
+impl AppState {
     pub fn start_search_input(&mut self) {
         self.input.mode = Some(crate::app::InputMode::Search);
         self.input.buffer = self.input.search_query.clone();
@@ -17,7 +19,9 @@ impl App {
             self.input.search_queries.remove(&scope);
             return 0;
         }
-        self.input.search_queries.insert(scope, self.input.search_query.clone());
+        self.input
+            .search_queries
+            .insert(scope, self.input.search_query.clone());
         self.input.search_matches = self
             .searchable_items_for_scope()
             .into_iter()
@@ -53,7 +57,12 @@ impl App {
     pub fn restore_search_for_active_scope(&mut self) {
         self.capture_search_scope();
         let scope = self.current_search_scope_key();
-        let query = self.input.search_queries.get(&scope).cloned().unwrap_or_default();
+        let query = self
+            .input
+            .search_queries
+            .get(&scope)
+            .cloned()
+            .unwrap_or_default();
         self.input.search_query = query;
         if self.input.search_query.is_empty() {
             self.input.search_matches.clear();
@@ -99,11 +108,7 @@ impl App {
         if self.input.search_query.is_empty() {
             return None;
         }
-        let scope = SearchScopeKey {
-            panel,
-            commit_tree_mode: Self::normalize_commit_scope(panel, commit_tree_mode),
-            stash_tree_mode: Self::normalize_stash_scope(panel, stash_tree_mode),
-        };
+        let scope = self.scope_for(panel, commit_tree_mode, stash_tree_mode);
         if scope != self.input.search_scope {
             return None;
         }
@@ -131,11 +136,7 @@ impl App {
         if self.input.search_query.is_empty() {
             return None;
         }
-        let scope = SearchScopeKey {
-            panel,
-            commit_tree_mode: Self::normalize_commit_scope(panel, commit_tree_mode),
-            stash_tree_mode: Self::normalize_stash_scope(panel, stash_tree_mode),
-        };
+        let scope = self.scope_for(panel, commit_tree_mode, stash_tree_mode);
         if scope != self.input.search_scope {
             return None;
         }
@@ -175,13 +176,15 @@ impl App {
         }
         let selected = self.active_panel_state_selected().unwrap_or(0);
         let next = if forward {
-            self.input.search_matches
+            self.input
+                .search_matches
                 .iter()
                 .copied()
                 .find(|idx| *idx > selected)
                 .or_else(|| self.input.search_matches.first().copied())
         } else {
-            self.input.search_matches
+            self.input
+                .search_matches
                 .iter()
                 .rev()
                 .copied()
@@ -200,126 +203,99 @@ impl App {
     }
 
     fn current_search_scope_key(&self) -> SearchScopeKey {
-        SearchScopeKey {
-            panel: self.ui.active_panel,
-            commit_tree_mode: Self::normalize_commit_scope(
-                self.ui.active_panel,
-                self.ui.commits.tree_mode.active,
-            ),
-            stash_tree_mode: Self::normalize_stash_scope(
-                self.ui.active_panel,
-                self.ui.stash.tree_mode.active,
-            ),
+        self.view_context()
+    }
+
+    fn scope_for(&self, panel: SidePanel, commit_tree: bool, stash_tree: bool) -> ViewContext {
+        match panel {
+            SidePanel::Commits if commit_tree => ViewContext::CommitFiles {
+                oid: self
+                    .ui
+                    .commits
+                    .tree_mode
+                    .selected_source
+                    .clone()
+                    .unwrap_or_default(),
+            },
+            SidePanel::Commits => ViewContext::Commits,
+            SidePanel::Stash if stash_tree => ViewContext::StashFiles {
+                index: self.ui.stash.tree_mode.selected_source,
+            },
+            SidePanel::Stash => ViewContext::Stashes,
+            _ => {
+                ViewContext::from_panels(panel, &self.ui.branches, &self.ui.commits, &self.ui.stash)
+            }
         }
     }
 
     fn search_scope_matches_active(&self) -> bool {
-        self.input.search_scope == self.current_search_scope_key() && !self.input.search_matches.is_empty()
+        self.input.search_scope == self.current_search_scope_key()
+            && !self.input.search_matches.is_empty()
     }
 
     fn searchable_items_for_scope(&self) -> Vec<String> {
-        match self.ui.active_panel {
-            SidePanel::Files => self
-                .ui.files
+        let commits = |items: &[crate::git::CommitInfo]| {
+            items
+                .iter()
+                .map(|c| {
+                    format!(
+                        "{} {} {}",
+                        &c.oid[..7.min(c.oid.len())],
+                        c.author,
+                        c.message
+                    )
+                })
+                .collect()
+        };
+        match self.view_context() {
+            ViewContext::Files => self
+                .ui
+                .files
                 .tree_nodes
                 .iter()
                 .map(Self::tree_node_display_name)
                 .collect(),
-            SidePanel::LocalBranches => {
-                if self.ui.branches.commits_subview_active {
-                    self.ui.branches
-                        .commits_subview
-                        .items
-                        .iter()
-                        .map(|c| format!("{} {} {}", &c.oid[..7.min(c.oid.len())], c.author, c.message))
-                        .collect()
-                } else {
-                    self.ui.branches.items.iter().map(|b| b.name.clone()).collect()
-                }
-            }
-            SidePanel::Commits => {
-                if self.ui.commits.tree_mode.active {
-                    return self
-                        .ui.commits
-                        .tree_mode
-                        .nodes
-                        .iter()
-                        .map(Self::tree_node_display_name)
-                        .collect();
-                }
-                self.ui.commits
-                    .items
-                    .iter()
-                    .map(|c| format!("{} {} {}", &c.oid[..7.min(c.oid.len())], c.author, c.message))
-                    .collect()
-            }
-            SidePanel::Stash => {
-                if self.ui.stash.tree_mode.active {
-                    return self
-                        .ui.stash
-                        .tree_mode
-                        .nodes
-                        .iter()
-                        .map(Self::tree_node_display_name)
-                        .collect();
-                }
-                self.ui.stash
-                    .items
-                    .iter()
-                    .map(|s| format!("stash@{{{}}} {}", s.index, s.message))
-                    .collect()
-            }
+            ViewContext::Branches => self
+                .ui
+                .branches
+                .items
+                .iter()
+                .map(|b| b.name.clone())
+                .collect(),
+            ViewContext::BranchCommits { .. } => commits(&self.ui.branches.commits_subview.items),
+            ViewContext::Commits => commits(&self.ui.commits.items),
+            ViewContext::CommitFiles { .. } => self
+                .ui
+                .commits
+                .tree_mode
+                .nodes
+                .iter()
+                .map(Self::tree_node_display_name)
+                .collect(),
+            ViewContext::Stashes => self
+                .ui
+                .stash
+                .items
+                .iter()
+                .map(|s| format!("stash@{{{}}} {}", s.index, s.message))
+                .collect(),
+            ViewContext::StashFiles { .. } => self
+                .ui
+                .stash
+                .tree_mode
+                .nodes
+                .iter()
+                .map(Self::tree_node_display_name)
+                .collect(),
         }
     }
 
     fn active_panel_state_selected(&self) -> Option<usize> {
-        match self.ui.active_panel {
-            SidePanel::Files => self.ui.files.panel.list_state.selected(),
-            SidePanel::LocalBranches => {
-                if self.ui.branches.commits_subview_active {
-                    self.ui.branches.commits_subview.panel.list_state.selected()
-                } else {
-                    self.ui.branches.panel.list_state.selected()
-                }
-            }
-            SidePanel::Commits => self.ui.commits.panel.list_state.selected(),
-            SidePanel::Stash => self.ui.stash.panel.list_state.selected(),
-        }
+        self.selection().selected_index()
     }
 
     fn select_active_panel_index(&mut self, idx: usize) {
-        match self.ui.active_panel {
-            SidePanel::Files => self.ui.files.panel.list_state.select(Some(idx)),
-            SidePanel::LocalBranches => {
-                if self.ui.branches.commits_subview_active {
-                    self.ui.branches
-                        .commits_subview
-                        .panel
-                        .list_state
-                        .select(Some(idx));
-                } else {
-                    self.ui.branches.panel.list_state.select(Some(idx));
-                }
-            }
-            SidePanel::Commits => self.ui.commits.panel.list_state.select(Some(idx)),
-            SidePanel::Stash => self.ui.stash.panel.list_state.select(Some(idx)),
-        }
-    }
-
-    fn normalize_commit_scope(panel: SidePanel, value: bool) -> bool {
-        if panel == SidePanel::Commits {
-            value
-        } else {
-            false
-        }
-    }
-
-    fn normalize_stash_scope(panel: SidePanel, value: bool) -> bool {
-        if panel == SidePanel::Stash {
-            value
-        } else {
-            false
-        }
+        self.active_panel_state_mut().list_state.select(Some(idx));
     }
 
     fn tree_node_display_name(node: &FileTreeNode) -> String {
@@ -373,7 +349,7 @@ mod tests {
         app.apply_search_query(String::new());
 
         assert_eq!(app.input.search_query, "");
-        assert_eq!(app.input.search_matches, Vec::new());
+        assert!(app.input.search_matches.is_empty());
         assert_eq!(app.has_search_query_for_active_scope(), false);
     }
 
@@ -385,7 +361,7 @@ mod tests {
         app.clear_search();
 
         assert_eq!(app.input.search_query, "");
-        assert_eq!(app.input.search_matches, Vec::new());
+        assert!(app.input.search_matches.is_empty());
         assert_eq!(app.has_search_query_for_active_scope(), false);
     }
 
@@ -431,7 +407,7 @@ mod tests {
         app.restore_search_for_active_scope();
 
         assert_eq!(app.input.search_query, "");
-        assert_eq!(app.input.search_matches, Vec::new());
+        assert!(app.input.search_matches.is_empty());
     }
 
     #[test]

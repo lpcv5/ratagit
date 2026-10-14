@@ -1,9 +1,9 @@
-use crate::app::{App, Command};
+use crate::app::{AppState, Command};
 use crate::flux::action::{Action, ActionEnvelope};
 use crate::flux::stores::{
     BranchStore, CommitStore, DiffStore, FilesStore, InputStore, NavigationStore, OpsStore,
-    OverlayStore, QuitStore, ReduceCtx, RevisionStore, SearchStore, SelectionStore, StashStore,
-    Store, UiInvalidation,
+    OverlayStore, QuitStore, ReduceCtx, RevisionStore, RuntimeStore, SearchStore, SelectionStore,
+    StashStore, Store, UiInvalidation,
 };
 
 pub struct DispatchResult {
@@ -25,6 +25,7 @@ impl Dispatcher {
             state_version: 0,
             last_sequence: None,
             stores: vec![
+                Box::new(RuntimeStore),
                 Box::new(InputStore::new()),
                 Box::new(QuitStore::new()),
                 Box::new(OpsStore::new()),
@@ -58,7 +59,7 @@ impl Dispatcher {
         }
     }
 
-    pub fn dispatch(&mut self, app: &mut App, action: ActionEnvelope) -> DispatchResult {
+    pub fn dispatch(&mut self, app: &mut AppState, action: ActionEnvelope) -> DispatchResult {
         if let Some(last_sequence) = self.last_sequence {
             debug_assert!(
                 action.sequence > last_sequence,
@@ -77,6 +78,7 @@ impl Dispatcher {
             invalidation.merge(output.invalidation);
         }
         invalidation.apply(ctx.state);
+        commands.extend(app.take_effects().into_iter().map(Command::Effect));
 
         self.last_sequence = Some(action.sequence);
         self.state_version += 1;

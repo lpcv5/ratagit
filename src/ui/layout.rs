@@ -138,6 +138,7 @@ pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
     };
 
     let files_ctx = PanelRenderContext {
+        diff_focused: snapshot.context.diff_focused,
         active_panel: snapshot.active_panel,
         panel_title_override: None,
         search_query: snapshot.files_search_query,
@@ -147,6 +148,7 @@ pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
     };
     draw_files_panel(frame, left_panels[0], snapshot.files, &files_ctx);
     let branches_ctx = PanelRenderContext {
+        diff_focused: snapshot.context.diff_focused,
         active_panel: snapshot.active_panel,
         panel_title_override: None,
         search_query: snapshot.branches_search_query,
@@ -157,6 +159,7 @@ pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
     draw_branches_panel(frame, left_panels[1], snapshot.branches, &branches_ctx);
 
     let commits_ctx = PanelRenderContext {
+        diff_focused: snapshot.context.diff_focused,
         active_panel: snapshot.active_panel,
         panel_title_override: None,
         search_query: snapshot.commits_search_query,
@@ -167,6 +170,7 @@ pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
     draw_commits_panel(frame, left_panels[2], snapshot.commits, &commits_ctx);
 
     let stash_ctx = PanelRenderContext {
+        diff_focused: snapshot.context.diff_focused,
         active_panel: snapshot.active_panel,
         panel_title_override: None,
         search_query: snapshot.stash_search_query,
@@ -196,6 +200,7 @@ pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
         frame,
         diff_area,
         DiffViewProps {
+            hunks: snapshot.command_env().diff,
             lines: snapshot.current_diff,
             scroll: snapshot.diff_scroll,
             active_panel: snapshot.active_panel,

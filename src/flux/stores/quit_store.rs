@@ -32,7 +32,9 @@ mod tests {
         let mut app = mock_app();
         assert!(app.running);
         let env = make_envelope(Action::Domain(DomainAction::Quit));
-        let mut ctx = ReduceCtx { state: &mut app };
+        let mut ctx = ReduceCtx {
+            state: &mut app.state,
+        };
         store.reduce(&env, &mut ctx);
         assert!(!app.running);
     }
@@ -42,7 +44,9 @@ mod tests {
         let mut store = QuitStore::new();
         let mut app = mock_app();
         let env = make_envelope(Action::Domain(DomainAction::PanelNext));
-        let mut ctx = ReduceCtx { state: &mut app };
+        let mut ctx = ReduceCtx {
+            state: &mut app.state,
+        };
         store.reduce(&env, &mut ctx);
         assert!(app.running);
     }

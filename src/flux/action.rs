@@ -2,6 +2,35 @@ use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
 pub enum DomainAction {
+    ToggleDiffFocus,
+    SwitchDiffSide,
+    HunkNext,
+    HunkPrevious,
+    ToggleHunkSelection,
+    ClearHunkSelection,
+    ApplySelectedHunks(crate::git::patch::PatchDirection),
+    ApplyHunksFinished {
+        id: u64,
+        direction: crate::git::patch::PatchDirection,
+        result: Result<(), String>,
+    },
+    #[cfg_attr(not(test), allow(dead_code))]
+    StageHunks {
+        patch: std::sync::Arc<crate::git::patch::Patch>,
+        file: usize,
+        hunks: Vec<usize>,
+    },
+    StageHunksFinished {
+        result: Result<(), String>,
+    },
+    #[cfg_attr(not(test), allow(dead_code))]
+    ControlRepositoryOperation(crate::git::operation::OperationControl),
+    RepositoryOperationFinished {
+        id: u64,
+        result: Result<(), String>,
+        observed: Option<crate::git::operation::RepositoryOperation>,
+    },
+    Runtime(crate::flux::effects::RuntimeEvent),
     PanelNext,
     PanelPrev,
     PanelGoto(usize),
@@ -13,6 +42,7 @@ pub enum DomainAction {
     CollapseAll,
     ExpandAll,
     Quit,
+    Refresh,
     StartCommitInput,
     StartCommandPalette,
     StartSearchInput,
@@ -110,13 +140,17 @@ pub enum DomainAction {
 
 #[derive(Debug, Clone)]
 pub enum SystemAction {
+    BackgroundCompleted(Box<crate::app::BackgroundCompleted>),
     Tick,
     AutoRefresh,
     /// Terminal resize event. The `width` and `height` are forwarded for completeness;
     /// stores trigger a full UI invalidation without reading the dimensions (ratatui
     /// handles the actual resize internally).
     #[allow(dead_code)]
-    Resize { width: u16, height: u16 },
+    Resize {
+        width: u16,
+        height: u16,
+    },
 }
 
 #[derive(Debug, Clone)]

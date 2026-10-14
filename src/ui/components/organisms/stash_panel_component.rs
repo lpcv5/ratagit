@@ -17,7 +17,7 @@ pub fn draw_stash_panel(
     state: &StashPanelState,
     ctx: &PanelRenderContext<'_>,
 ) {
-    let is_active = ctx.active_panel == SidePanel::Stash;
+    let is_active = !ctx.diff_focused && ctx.active_panel == SidePanel::Stash;
     let items: Vec<ListItem> = if state.items.is_empty() {
         empty_list_item("No stashes")
     } else {
@@ -26,11 +26,8 @@ pub fn draw_stash_panel(
             .iter()
             .map(|s| {
                 let text = format!("stash@{{{}}} {}", s.index, s.message);
-                let spans = highlighted_spans(
-                    &text,
-                    ctx.search_query,
-                    Style::default().fg(Color::Yellow),
-                );
+                let spans =
+                    highlighted_spans(&text, ctx.search_query, Style::default().fg(Color::Yellow));
                 ListItem::new(Line::from(spans))
             })
             .collect()

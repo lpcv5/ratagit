@@ -22,6 +22,9 @@ impl DirtyHint {
 
 /// Core app lifecycle: logging, running state, dirty marking.
 pub trait CoreAccess {
+    fn apply_repository_action(&mut self, action: &DomainAction);
+    fn apply_runtime_event(&mut self, event: &crate::flux::effects::RuntimeEvent);
+    fn apply_background_completed(&mut self, completed: &crate::app::BackgroundCompleted);
     fn push_log(&mut self, msg: String, success: bool);
     fn set_running(&mut self, running: bool);
     fn mark_all_dirty(&mut self);
@@ -97,6 +100,8 @@ pub trait SearchAccess {
 
 /// Visual selection mode in the files panel.
 pub trait SelectionAccess {
+    fn stage_selection_targets(&self) -> (Vec<PathBuf>, Vec<PathBuf>);
+    fn commit_selection_targets(&self) -> Vec<PathBuf>;
     fn toggle_visual_select_mode(&mut self);
     fn prepare_stash_targets_from_selection(&self) -> Vec<PathBuf>;
     fn prepare_discard_targets_from_selection(&self) -> Vec<PathBuf>;
@@ -138,7 +143,7 @@ pub trait RevisionAccess {
 // ReduceCtx still uses `&mut dyn StateAccess`; stores don't need to change.
 // ---------------------------------------------------------------------------
 
-/// Composite abstraction layer between Stores and App.
+/// Composite abstraction layer between stores and reducer-owned AppState.
 ///
 /// Composed of focused sub-traits so that future stores (or tests) can depend
 /// on only the capabilities they actually need.  All existing code that uses

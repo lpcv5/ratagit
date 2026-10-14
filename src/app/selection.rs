@@ -1,6 +1,8 @@
-use crate::app::{App, RefreshKind, SidePanel};
+use crate::app::states::FilesPanelState;
+#[cfg(test)]
+use crate::app::App;
+use crate::app::{AppState, SidePanel};
 use crate::ui::widgets::file_tree::FileTreeNodeStatus;
-use color_eyre::Result;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
@@ -10,16 +12,55 @@ struct SelectionTarget {
     all_staged: bool,
 }
 
-impl App {
+pub struct FileSelection<'a> {
+    files: &'a FilesPanelState,
+    active: bool,
+}
+
+impl<'a> FileSelection<'a> {
+    pub fn is_visual_mode(&self) -> bool {
+        self.active && self.files.visual_mode
+    }
+    pub fn new(files: &'a FilesPanelState, active: bool) -> Self {
+        Self { files, active }
+    }
+
+    pub fn selected_tree_node(&self) -> Option<&'a crate::ui::widgets::file_tree::FileTreeNode> {
+        if !self.active {
+            return None;
+        }
+        self.files
+            .tree_nodes
+            .get(self.files.panel.list_state.selected()?)
+    }
+
+    pub fn toggle_stage_action(&self) -> Option<crate::flux::action::DomainAction> {
+        use crate::flux::action::DomainAction;
+        let node = self.selected_tree_node()?;
+        let staged = if node.is_dir {
+            let index = self.files.panel.list_state.selected()?;
+            let end = self.subtree_end_index(index);
+            let selected = (index..=end).collect();
+            self.selected_files_are_all_staged(&selected, &node.path)
+        } else {
+            matches!(node.status, FileTreeNodeStatus::Staged(_))
+        };
+        Some(if staged {
+            DomainAction::UnstageFile(node.path.clone())
+        } else {
+            DomainAction::StageFile(node.path.clone())
+        })
+    }
+
     pub fn visual_selected_indices(&self) -> HashSet<usize> {
         let mut set = HashSet::new();
-        if self.ui.active_panel != SidePanel::Files || !self.ui.files.visual_mode {
+        if !self.active || !self.files.visual_mode {
             return set;
         }
-        let Some(current) = self.ui.files.panel.list_state.selected() else {
+        let Some(current) = self.files.panel.list_state.selected() else {
             return set;
         };
-        let anchor = self.ui.files.visual_anchor.unwrap_or(current);
+        let anchor = self.files.visual_anchor.unwrap_or(current);
         let (start, end) = if anchor <= current {
             (anchor, current)
         } else {
@@ -31,43 +72,12 @@ impl App {
         set
     }
 
-    pub fn toggle_stage_visual_selection(&mut self) -> Result<(usize, usize)> {
-        let selected = self.visual_selected_indices();
-        if selected.is_empty() {
-            return Ok((0, 0));
-        }
-
-        let (stage_paths, unstage_paths) = self.partition_toggle_targets(&selected);
-        if !stage_paths.is_empty() {
-            self.stage_paths_internal(&stage_paths)?;
-        }
-        if !unstage_paths.is_empty() {
-            self.unstage_paths_internal(&unstage_paths)?;
-        }
-        self.request_refresh(RefreshKind::StatusOnly);
-        Ok((stage_paths.len(), unstage_paths.len()))
-    }
-
-    pub fn prepare_commit_from_visual_selection(&mut self) -> Result<usize> {
-        let selected = self.visual_selected_indices();
-        let targets = self.collect_commit_targets(&selected);
-        if targets.is_empty() {
-            return Ok(0);
-        }
-
-        self.stage_paths_internal(&targets)?;
-        self.request_refresh(RefreshKind::StatusOnly);
-        self.ui.files.visual_mode = false;
-        self.ui.files.visual_anchor = None;
-        Ok(targets.len())
-    }
-
     pub fn prepare_stash_targets_from_selection(&self) -> Vec<PathBuf> {
-        if self.ui.active_panel != SidePanel::Files {
+        if !self.active {
             return Vec::new();
         }
 
-        if self.ui.files.visual_mode {
+        if self.files.visual_mode {
             let selected = self.visual_selected_indices();
             return self.collect_commit_targets(&selected);
         }
@@ -79,22 +89,25 @@ impl App {
     }
 
     pub fn prepare_discard_targets_from_selection(&self) -> Vec<PathBuf> {
-        if self.ui.active_panel != SidePanel::Files {
+        if !self.active {
             return Vec::new();
         }
 
-        if self.ui.files.visual_mode {
+        if self.files.visual_mode {
             let selected = self.visual_selected_indices();
             return self.collect_discard_targets(&selected);
         }
 
-        let Some(index) = self.ui.files.panel.list_state.selected() else {
+        let Some(index) = self.files.panel.list_state.selected() else {
             return Vec::new();
         };
         self.collect_discard_targets_for_index(index)
     }
 
-    fn partition_toggle_targets(&self, selected: &HashSet<usize>) -> (Vec<PathBuf>, Vec<PathBuf>) {
+    pub(super) fn partition_toggle_targets(
+        &self,
+        selected: &HashSet<usize>,
+    ) -> (Vec<PathBuf>, Vec<PathBuf>) {
         let mut stage_paths = Vec::new();
         let mut unstage_paths = Vec::new();
 
@@ -109,7 +122,7 @@ impl App {
         (stage_paths, unstage_paths)
     }
 
-    fn collect_commit_targets(&self, selected: &HashSet<usize>) -> Vec<PathBuf> {
+    pub(super) fn collect_commit_targets(&self, selected: &HashSet<usize>) -> Vec<PathBuf> {
         self.collect_selection_targets(selected)
             .into_iter()
             .map(|t| t.path)
@@ -126,7 +139,7 @@ impl App {
             if covered.contains(&idx) {
                 continue;
             }
-            let Some(node) = self.ui.files.tree_nodes.get(idx) else {
+            let Some(node) = self.files.tree_nodes.get(idx) else {
                 continue;
             };
 
@@ -152,7 +165,7 @@ impl App {
     }
 
     fn collect_discard_targets_for_index(&self, index: usize) -> Vec<PathBuf> {
-        let Some(node) = self.ui.files.tree_nodes.get(index) else {
+        let Some(node) = self.files.tree_nodes.get(index) else {
             return Vec::new();
         };
         if node.is_dir {
@@ -168,7 +181,7 @@ impl App {
     fn collect_discard_targets_in_range(&self, start: usize, end: usize) -> Vec<PathBuf> {
         let mut targets = Vec::new();
         for i in start..=end {
-            let Some(node) = self.ui.files.tree_nodes.get(i) else {
+            let Some(node) = self.files.tree_nodes.get(i) else {
                 continue;
             };
             if node.is_dir {
@@ -191,7 +204,7 @@ impl App {
             if covered.contains(&idx) {
                 continue;
             }
-            let Some(node) = self.ui.files.tree_nodes.get(idx) else {
+            let Some(node) = self.files.tree_nodes.get(idx) else {
                 continue;
             };
 
@@ -225,7 +238,7 @@ impl App {
     fn selected_files_are_all_staged(&self, selected: &HashSet<usize>, dir_path: &Path) -> bool {
         let mut has_file = false;
         for idx in selected {
-            let Some(node) = self.ui.files.tree_nodes.get(*idx) else {
+            let Some(node) = self.files.tree_nodes.get(*idx) else {
                 continue;
             };
             if node.is_dir || !node.path.starts_with(dir_path) {
@@ -240,7 +253,7 @@ impl App {
     }
 
     fn subtree_end_index(&self, index: usize) -> usize {
-        let Some(node) = self.ui.files.tree_nodes.get(index) else {
+        let Some(node) = self.files.tree_nodes.get(index) else {
             return index;
         };
         if !node.is_dir {
@@ -249,8 +262,8 @@ impl App {
 
         let base_depth = node.depth;
         let mut end = index;
-        for i in index + 1..self.ui.files.tree_nodes.len() {
-            let n = &self.ui.files.tree_nodes[i];
+        for i in index + 1..self.files.tree_nodes.len() {
+            let n = &self.files.tree_nodes[i];
             if n.depth <= base_depth {
                 break;
             }
@@ -277,6 +290,36 @@ fn is_discardable_status(status: &FileTreeNodeStatus) -> bool {
         status,
         FileTreeNodeStatus::Staged(_) | FileTreeNodeStatus::Unstaged(_)
     )
+}
+
+impl AppState {
+    pub fn file_selection(&self) -> FileSelection<'_> {
+        FileSelection::new(&self.ui.files, self.ui.active_panel == SidePanel::Files)
+    }
+
+    pub fn visual_selected_indices(&self) -> HashSet<usize> {
+        self.file_selection().visual_selected_indices()
+    }
+
+    pub fn prepare_stash_targets_from_selection(&self) -> Vec<PathBuf> {
+        self.file_selection().prepare_stash_targets_from_selection()
+    }
+
+    pub fn prepare_discard_targets_from_selection(&self) -> Vec<PathBuf> {
+        self.file_selection()
+            .prepare_discard_targets_from_selection()
+    }
+
+    pub(super) fn partition_toggle_targets(
+        &self,
+        selected: &HashSet<usize>,
+    ) -> (Vec<PathBuf>, Vec<PathBuf>) {
+        self.file_selection().partition_toggle_targets(selected)
+    }
+
+    pub(super) fn collect_commit_targets(&self, selected: &HashSet<usize>) -> Vec<PathBuf> {
+        self.file_selection().collect_commit_targets(selected)
+    }
 }
 
 #[cfg(test)]

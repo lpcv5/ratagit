@@ -14,6 +14,12 @@ impl OpsStore {
 impl Store for OpsStore {
     fn reduce(&mut self, action: &ActionEnvelope, ctx: &mut ReduceCtx<'_>) -> ReduceOutput {
         match &action.action {
+            Action::Domain(crate::flux::action::DomainAction::Refresh) => {
+                ctx.state.request_refresh(RefreshKind::Full);
+                return ReduceOutput::from_command(Command::Effect(
+                    EffectRequest::ProcessBackgroundLoads,
+                ));
+            }
             Action::System(SystemAction::Tick) => {
                 return ReduceOutput::from_command(Command::Effect(
                     EffectRequest::ProcessBackgroundLoads,

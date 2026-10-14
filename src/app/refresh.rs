@@ -90,6 +90,13 @@ pub(super) fn rebuild_tree(
                     .iter()
                     .position(|node| tree_selection_key(node) == *selected)
             })
+            .or_else(|| {
+                selected_node.as_ref().and_then(|selected| {
+                    file_tree_nodes.iter().position(|node| {
+                        node.path == selected.path && node.is_dir == selected.is_dir
+                    })
+                })
+            })
             .unwrap_or_else(|| selected_idx.unwrap_or(0).min(count - 1));
         files_panel.list_state.select(Some(new_idx));
         if let Some(anchor) = *files_visual_anchor {

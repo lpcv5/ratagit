@@ -14,6 +14,7 @@ fn empty_highlighted_oids() -> &'static HashSet<String> {
 }
 
 pub struct PanelRenderContext<'a> {
+    pub diff_focused: bool,
     pub active_panel: SidePanel,
     pub panel_title_override: Option<&'a str>,
     pub search_query: Option<&'a str>,
@@ -45,4 +46,3 @@ pub fn empty_list_item(text: &str) -> Vec<ListItem<'static>> {
     let theme = UiTheme::default();
     vec![ListItem::new(text.to_string()).style(Style::default().fg(theme.text_muted))]
 }
-

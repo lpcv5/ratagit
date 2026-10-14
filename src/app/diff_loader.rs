@@ -43,7 +43,7 @@ pub fn load_diff(repo: &dyn GitRepository, target: DiffTarget) -> Vec<DiffLine> 
 
 #[allow(dead_code)]
 fn load_file_diff(
-    repo: &dyn GitRepository,
+    repo: &dyn crate::git::PatchRepository,
     path: &std::path::Path,
     status: &FileTreeNodeStatus,
 ) -> Vec<DiffLine> {
@@ -57,13 +57,13 @@ fn load_file_diff(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::git::{DiffLine, DiffLineKind, GitError, GitRepository};
+    use crate::git::{DiffLine, DiffLineKind, GitError};
     use pretty_assertions::assert_eq;
     use std::path::Path;
 
     struct TestRepo;
 
-    impl GitRepository for TestRepo {
+    impl crate::git::WorktreeRepository for TestRepo {
         fn status(&self) -> Result<crate::git::GitStatus, GitError> {
             Ok(crate::git::GitStatus::default())
         }
@@ -87,7 +87,9 @@ mod tests {
         fn discard_paths(&self, _: &[PathBuf]) -> Result<(), GitError> {
             Ok(())
         }
+    }
 
+    impl crate::git::PatchRepository for TestRepo {
         fn diff_unstaged(&self, _: &Path) -> Result<Vec<DiffLine>, GitError> {
             Ok(vec![diff_line("unstaged")])
         }
@@ -100,6 +102,22 @@ mod tests {
             Ok(vec![diff_line("untracked")])
         }
 
+        fn commit_diff_scoped(&self, _: &str, _: Option<&Path>) -> Result<Vec<DiffLine>, GitError> {
+            Ok(vec![diff_line("commit")])
+        }
+    }
+
+    impl crate::git::HistoryRepository for TestRepo {
+        fn commits(&self, _: usize) -> Result<Vec<crate::git::CommitInfo>, GitError> {
+            Ok(vec![])
+        }
+
+        fn commit_files(&self, _: &str) -> Result<Vec<crate::git::FileEntry>, GitError> {
+            Ok(vec![])
+        }
+    }
+
+    impl crate::git::ReferenceRepository for TestRepo {
         fn branches(&self) -> Result<Vec<crate::git::BranchInfo>, GitError> {
             Ok(vec![])
         }
@@ -116,22 +134,16 @@ mod tests {
             Ok(())
         }
 
-        fn commits(&self, _: usize) -> Result<Vec<crate::git::CommitInfo>, GitError> {
-            Ok(vec![])
+        fn fetch_default_async(
+            &self,
+        ) -> Result<std::sync::mpsc::Receiver<Result<String, GitError>>, GitError> {
+            let (tx, rx) = std::sync::mpsc::channel();
+            drop(tx);
+            Ok(rx)
         }
+    }
 
-        fn commit_files(&self, _: &str) -> Result<Vec<crate::git::FileEntry>, GitError> {
-            Ok(vec![])
-        }
-
-        fn commit_diff_scoped(&self, _: &str, _: Option<&Path>) -> Result<Vec<DiffLine>, GitError> {
-            Ok(vec![diff_line("commit")])
-        }
-
-        fn commit(&self, _: &str) -> Result<String, GitError> {
-            Ok(String::new())
-        }
-
+    impl crate::git::StashRepository for TestRepo {
         fn stashes(&self) -> Result<Vec<crate::git::StashInfo>, GitError> {
             Ok(vec![])
         }
@@ -159,15 +171,14 @@ mod tests {
         fn stash_drop(&self, _: usize) -> Result<(), GitError> {
             Ok(())
         }
+    }
 
-        fn fetch_default_async(
-            &self,
-        ) -> Result<std::sync::mpsc::Receiver<Result<String, GitError>>, GitError> {
-            let (tx, rx) = std::sync::mpsc::channel();
-            drop(tx);
-            Ok(rx)
+    impl crate::git::CommitRepository for TestRepo {
+        fn commit(&self, _: &str) -> Result<String, GitError> {
+            Ok(String::new())
         }
     }
+    impl crate::git::OperationRepository for TestRepo {}
 
     fn diff_line(content: &str) -> DiffLine {
         DiffLine {

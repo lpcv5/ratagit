@@ -17,28 +17,53 @@ pub enum TaskPriority {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TaskKey {
+    CommitFiles,
+    StashFiles,
     Status,
     Branches,
     Stashes,
     Commits,
-    BranchCommits { branch: String },
-    Diff { target: String },
+    BranchCommits {
+        branch: String,
+    },
+    Diff {
+        target: String,
+    },
     /// Reserved for future write operations; only exercised in task ordering tests.
     #[allow(dead_code)]
-    Write { op: String, scope: String },
+    Write {
+        op: String,
+        scope: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TaskRequestKind {
+    LoadCommitFiles {
+        oid: String,
+    },
+    LoadStashFiles {
+        index: usize,
+    },
     LoadStatus,
     LoadBranches,
     LoadStashes,
-    LoadCommits { limit: usize },
-    LoadBranchCommits { branch: String, limit: usize },
-    LoadDiff { target: String },
+    LoadCommits {
+        limit: usize,
+    },
+    LoadBranchCommits {
+        branch: String,
+        limit: usize,
+    },
+    LoadDiff {
+        target: String,
+    },
     /// Reserved for future write operations; only exercised in task ordering tests.
     #[allow(dead_code)]
-    Write { op: String, scope: String },
+    Write {
+        op: String,
+        scope: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -174,6 +199,10 @@ impl TaskManager {
     }
 
     pub fn mark_started(&mut self, key: &TaskKey, generation: TaskGeneration) {
+        let before = self.pending.len();
+        self.pending
+            .retain(|request| &request.key != key || request.generation != generation);
+        self.metrics.dequeued_total += (before - self.pending.len()) as u64;
         let entry = self
             .registry
             .entry(key.clone())

@@ -28,7 +28,14 @@ impl Store for SelectionStore {
             _ => return ReduceOutput::none(),
         }
 
-        if ctx.state.active_panel() != SidePanel::Files {
+        if ctx.state.active_panel() != SidePanel::Files
+            && !matches!(
+                domain,
+                DomainAction::ToggleStageSelectionFinished { .. }
+                    | DomainAction::PrepareCommitFromSelectionFinished { .. }
+                    | DomainAction::DiscardPathsFinished { .. }
+            )
+        {
             return ReduceOutput::none();
         }
 
@@ -39,35 +46,36 @@ impl Store for SelectionStore {
                     .with_invalidation(UiInvalidation::all());
             }
             DomainAction::ToggleStageSelection => {
+                let (stage, unstage) = ctx.state.stage_selection_targets();
                 return ReduceOutput::from_command(Command::Effect(
-                    EffectRequest::ToggleStageSelection,
+                    EffectRequest::ToggleStageSelection { stage, unstage },
                 ));
             }
-            DomainAction::ToggleStageSelectionFinished { result } => {
-                match result {
-                    Ok((staged, unstaged)) => {
-                        ctx.state.push_log(
-                            format!(
-                                "selection toggled: staged {}, unstaged {}",
-                                staged, unstaged
-                            ),
-                            true,
-                        );
-                        ctx.state.request_refresh(RefreshKind::StatusOnly);
-                        return ReduceOutput::none().with_invalidation(UiInvalidation::all());
-                    }
-                    Err(e) => {
-                        ctx.state
-                            .push_log(format!("selection toggle failed: {}", e), false);
-                        return ReduceOutput::none();
-                    }
+            DomainAction::ToggleStageSelectionFinished { result } => match result {
+                Ok((staged, unstaged)) => {
+                    ctx.state.push_log(
+                        format!(
+                            "selection toggled: staged {}, unstaged {}",
+                            staged, unstaged
+                        ),
+                        true,
+                    );
+                    ctx.state.request_refresh(RefreshKind::StatusOnly);
+                    return ReduceOutput::none().with_invalidation(UiInvalidation::all());
                 }
-            }
+                Err(e) => {
+                    ctx.state
+                        .push_log(format!("selection toggle failed: {}", e), false);
+                    return ReduceOutput::none();
+                }
+            },
             DomainAction::DiscardSelection => {
                 let paths = ctx.state.prepare_discard_targets_from_selection();
                 if paths.is_empty() {
-                    ctx.state
-                        .push_log("discard blocked: no discardable selected items".to_string(), false);
+                    ctx.state.push_log(
+                        "discard blocked: no discardable selected items".to_string(),
+                        false,
+                    );
                     return ReduceOutput::none();
                 }
                 return ReduceOutput::from_command(Command::Effect(EffectRequest::DiscardPaths(
@@ -82,36 +90,36 @@ impl Store for SelectionStore {
             }
             DomainAction::PrepareCommitFromSelection => {
                 return ReduceOutput::from_command(Command::Effect(
-                    EffectRequest::PrepareCommitFromVisualSelection,
+                    EffectRequest::PrepareCommitFromVisualSelection {
+                        paths: ctx.state.commit_selection_targets(),
+                    },
                 ));
             }
-            DomainAction::PrepareCommitFromSelectionFinished { result } => {
-                match result {
-                    Ok(count) if *count == 0 => {
-                        ctx.state
-                            .push_log("commit blocked: no selected items".to_string(), false);
-                        return ReduceOutput::none();
-                    }
-                    Ok(count) => {
-                        if ctx.state.start_commit_editor_guarded() {
-                            ctx.state.push_log(
-                                format!(
-                                    "commit: {} selected target(s) staged; edit message/description",
-                                    count
-                                ),
-                                true,
-                            );
-                            return ReduceOutput::none().with_invalidation(UiInvalidation::all());
-                        }
-                        return ReduceOutput::none();
-                    }
-                    Err(e) => {
-                        ctx.state
-                            .push_log(format!("prepare commit failed: {}", e), false);
-                        return ReduceOutput::none();
-                    }
+            DomainAction::PrepareCommitFromSelectionFinished { result } => match result {
+                Ok(count) if *count == 0 => {
+                    ctx.state
+                        .push_log("commit blocked: no selected items".to_string(), false);
+                    return ReduceOutput::none();
                 }
-            }
+                Ok(count) => {
+                    ctx.state.clear_files_visual_selection();
+                    ctx.state.request_refresh(RefreshKind::StatusOnly);
+                    ctx.state.start_commit_editor();
+                    ctx.state.push_log(
+                        format!(
+                            "commit: {} selected target(s) staged; edit message/description",
+                            count
+                        ),
+                        true,
+                    );
+                    return ReduceOutput::none().with_invalidation(UiInvalidation::all());
+                }
+                Err(e) => {
+                    ctx.state
+                        .push_log(format!("prepare commit failed: {}", e), false);
+                    return ReduceOutput::none();
+                }
+            },
             _ => return ReduceOutput::none(),
         }
         ReduceOutput::none()
