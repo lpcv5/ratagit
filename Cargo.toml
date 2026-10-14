@@ -11,7 +11,7 @@ categories = ["command-line-interface", "development-tools"]
 
 [dependencies]
 # UI framework
-ratatui = "0.30"
+ratatui = { version = "0.30.2", default-features = false, features = ["crossterm_0_29", "layout-cache", "underline-color"] }
 crossterm = "0.29"
 
 # Git operations

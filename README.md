@@ -79,6 +79,41 @@ Read more in:
 - `tokio` for async runtime and task orchestration
 - `thiserror` and `color-eyre` for robust error handling
 
+### Ratatui version and practices
+
+Ratagit requires Ratatui **0.30.2 or newer within 0.30.x**. Ratatui 0.30.2
+requires Rust 1.88 or newer; use the stable toolchain for this project and its
+other dependencies.
+
+- Enable only `crossterm_0_29`, `layout-cache`, and `underline-color`. This keeps
+  the backend aligned with the direct Crossterm 0.29 dependency and retains
+  layout caching without pulling in unused calendar widgets or macros.
+- Keep the main `ratatui` crate for this application. The split `ratatui-core`
+  crate is primarily useful for reusable widget libraries.
+- Initialize application state before entering terminal mode. The async runtime
+  uses `try_init` / `try_restore` and `DefaultTerminal`; synchronous applications
+  can use `ratatui::run`. Install color-eyre before Ratatui so panic diagnostics
+  appear after terminal restoration. Clean up mouse capture separately.
+- Render complete frames from immutable snapshots when state changes, use
+  `Frame::area()` for layout, and keep Git I/O outside rendering. Continue using
+  `TestBackend` and golden buffers for layout, Unicode, styles, and cursor tests.
+
+Features worth considering for future UI work:
+
+- **0.30.1:** `Block::shadow` for modal overlays, multi-column table cells, and
+  `Fill` for styled regions. Shadows would require updating overlay geometry
+  and golden tests before enabling them.
+- **0.30.2:** fixes wide-character cell cleanup, restores widgets' conditional
+  `Send` / `Sync` guarantees, and fixes scrollbar thumbs at the end of a track.
+  The new optional Termina backend is available, while this app uses Crossterm.
+- `serde` can support saved themes if theme configuration is added. Enable
+  optional or unstable features only when a concrete use case needs them.
+
+References: [0.30.2 release highlights](https://ratatui.rs/highlights/v0302/),
+[0.30.1 release highlights](https://ratatui.rs/highlights/v0301/),
+[initialization APIs](https://docs.rs/ratatui/0.30.2/ratatui/init/index.html),
+[feature definitions](https://github.com/ratatui/ratatui/blob/ratatui-v0.30.2/ratatui/Cargo.toml).
+
 ## Project Status
 
 Ratagit is under active development.
