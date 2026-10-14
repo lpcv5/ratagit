@@ -1,0 +1,34 @@
+UI buffer v1
+area: Rect { x: 0, y: 0, width: 24, height: 10 }
+cursor: None
+
+text:
+00: "⠋ git status            "
+01: "⠙ git status            "
+02: "⠹ git status            "
+03: "⠸ git status            "
+04: "⠼ git status            "
+05: "⠴ git status            "
+06: "⠦ git status            "
+07: "⠧ git status            "
+08: "⠇ git status            "
+09: "⠏ git status            "
+
+symbol boundaries: []
+
+styles:
+0: Style::new().fg(Color::Rgb(82, 196, 208)).bg(Color::Reset).underline_color(Color::Reset); diff=None; skip=false
+1: Style::new().fg(Color::Reset).bg(Color::Reset).underline_color(Color::Reset); diff=None; skip=false
+2: Style::new().white().bg(Color::Reset).underline_color(Color::Reset); diff=None; skip=false
+
+style runs (x start..end exclusive = style):
+00: 0..1=0 1..2=1 2..12=2 12..24=1
+01: 0..1=0 1..2=1 2..12=2 12..24=1
+02: 0..1=0 1..2=1 2..12=2 12..24=1
+03: 0..1=0 1..2=1 2..12=2 12..24=1
+04: 0..1=0 1..2=1 2..12=2 12..24=1
+05: 0..1=0 1..2=1 2..12=2 12..24=1
+06: 0..1=0 1..2=1 2..12=2 12..24=1
+07: 0..1=0 1..2=1 2..12=2 12..24=1
+08: 0..1=0 1..2=1 2..12=2 12..24=1
+09: 0..1=0 1..2=1 2..12=2 12..24=1

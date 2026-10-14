@@ -99,6 +99,10 @@ cargo test
 cargo clippy --all-targets --all-features -- -D warnings
 ```
 
+UI regression tests use Ratatui's in-memory backend and checked-in golden
+buffers. Run `cargo test ui::` to compare layouts, cell styles, and input cursors.
+See [UI golden buffers](src/ui/goldens/README.md) for coverage and baseline updates.
+
 ## License
 
 MIT
