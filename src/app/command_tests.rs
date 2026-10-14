@@ -22,7 +22,7 @@ fn node(path: &str, status: FileTreeNodeStatus, depth: usize) -> FileTreeNode {
 fn fixture_with_keymap(mut keymap: Keymap) -> App {
     keymap.rebuild_indexes();
     let mut app = App::from_repo_with_keymap(Box::new(MockRepo), keymap).unwrap();
-    app.ui.files.tree_nodes = vec![
+    app.files.test_view_mut().tree_nodes = vec![
         node("src", FileTreeNodeStatus::Directory, 0),
         node("src/a", FileTreeNodeStatus::Staged(FileStatus::Modified), 1),
         node(
@@ -32,11 +32,11 @@ fn fixture_with_keymap(mut keymap: Keymap) -> App {
         ),
         node("loose", FileTreeNodeStatus::Untracked, 0),
     ];
-    app.git.status.staged = vec![FileEntry {
+    app.files.test_status_mut().staged = vec![FileEntry {
         path: "src/a".into(),
         status: FileStatus::Modified,
     }];
-    app.git.status.unstaged = vec![FileEntry {
+    app.files.test_status_mut().unstaged = vec![FileEntry {
         path: "src/b".into(),
         status: FileStatus::Modified,
     }];
@@ -139,9 +139,9 @@ fn test_palette_and_key_execute_same_contextual_commands() {
 #[test]
 fn test_visual_commit_from_palette_keeps_selection_scope() {
     let mut app = fixture();
-    app.ui.files.visual_mode = true;
-    app.ui.files.visual_anchor = Some(2);
-    app.ui.files.panel.list_state.select(Some(2));
+    app.files.test_view_mut().visual_mode = true;
+    app.files.test_view_mut().visual_anchor = Some(2);
+    app.files.test_view_mut().panel.list_state.select(Some(2));
     assert!(matches!(
         super::map_test_key(&app, key("c")),
         Some(DomainAction::PrepareCommitFromSelection)
@@ -165,15 +165,15 @@ fn test_visual_commit_key_and_palette_open_same_editor() {
     let mut by_key = fixture();
     let mut by_palette = fixture();
     for app in [&mut by_key, &mut by_palette] {
-        app.ui.files.visual_mode = true;
-        app.ui.files.visual_anchor = Some(2);
-        app.ui.files.panel.list_state.select(Some(2));
+        app.files.test_view_mut().visual_mode = true;
+        app.files.test_view_mut().visual_anchor = Some(2);
+        app.files.test_view_mut().panel.list_state.select(Some(2));
     }
     super::dispatch_test_key(&mut by_key, key("c"));
     palette(&mut by_palette, "commit");
     assert_eq!(by_key.input.mode, Some(InputMode::CommitEditor));
     assert_eq!(by_palette.input.mode, by_key.input.mode);
-    assert!(!by_palette.ui.files.visual_mode);
+    assert!(!by_palette.files.view().visual_mode);
 }
 
 #[test]
@@ -326,17 +326,17 @@ fn test_branch_subview_has_its_own_commands_and_return_context() {
 #[test]
 fn test_escape_clears_search_before_leaving_visual_or_revision_view() {
     let mut app = fixture();
-    app.ui.files.visual_mode = true;
-    app.ui.files.visual_anchor = Some(0);
+    app.files.test_view_mut().visual_mode = true;
+    app.files.test_view_mut().visual_anchor = Some(0);
     super::dispatch_test_action(&mut app, DomainAction::SearchSetQuery("src".into()));
     assert!(app
         .shortcut_hints()
         .contains(&("Esc".into(), "ClearSearch".into())));
     super::dispatch_test_key(&mut app, key("Esc"));
-    assert!(app.ui.files.visual_mode);
+    assert!(app.files.view().visual_mode);
     assert!(app.input.search_query.is_empty());
     super::dispatch_test_key(&mut app, key("Esc"));
-    assert!(!app.ui.files.visual_mode);
+    assert!(!app.files.view().visual_mode);
     app.ui.active_panel = SidePanel::Commits;
     super::dispatch_test_key(&mut app, key("Enter"));
     super::dispatch_test_action(&mut app, DomainAction::SearchSetQuery("path".into()));
@@ -397,7 +397,7 @@ fn test_editor_hint_tracks_enter_behavior_and_focus() {
 #[test]
 fn test_shared_discard_selector_deduplicates_and_excludes_untracked_files() {
     let mut app = fixture();
-    app.ui.files.tree_nodes = vec![
+    app.files.test_view_mut().tree_nodes = vec![
         node("src", FileTreeNodeStatus::Directory, 0),
         node("src/a", FileTreeNodeStatus::Staged(FileStatus::Modified), 1),
         node(
@@ -430,9 +430,9 @@ fn test_shared_discard_selector_deduplicates_and_excludes_untracked_files() {
 #[test]
 fn test_partial_visual_directory_selection_does_not_expand_scope() {
     let mut app = fixture();
-    app.ui.files.visual_mode = true;
-    app.ui.files.visual_anchor = Some(0);
-    app.ui.files.panel.list_state.select(Some(1));
+    app.files.test_view_mut().visual_mode = true;
+    app.files.test_view_mut().visual_anchor = Some(0);
+    app.files.test_view_mut().panel.list_state.select(Some(1));
     let selected = app.visual_selected_indices();
     let (stage, unstage) = app.partition_toggle_targets(&selected);
     assert!(stage.is_empty());
@@ -456,7 +456,8 @@ fn test_partial_visual_directory_selection_does_not_expand_scope() {
 #[test]
 fn test_directory_stage_selector_stops_at_next_sibling() {
     let mut app = fixture();
-    app.ui.files.tree_nodes[2].status = FileTreeNodeStatus::Staged(FileStatus::Modified);
+    app.files.test_view_mut().tree_nodes[2].status =
+        FileTreeNodeStatus::Staged(FileStatus::Modified);
     assert!(
         matches!(super::map_test_key(&app, key("Space")), Some(DomainAction::UnstageFile(path)) if path == std::path::Path::new("src"))
     );
@@ -667,7 +668,7 @@ fn test_background_refresh_recomputes_search_command_availability() {
     super::dispatch_test_action(&mut app, DomainAction::SearchSetQuery("src".into()));
     assert!(app.has_search_for_active_scope());
     super::dispatch_test_action(&mut app, DomainAction::Refresh);
-    assert!(app.ui.files.tree_nodes.is_empty());
+    assert!(app.files.view().tree_nodes.is_empty());
     assert_eq!(app.input.search_query, "src");
     assert!(!app.has_search_for_active_scope());
     assert!(!app

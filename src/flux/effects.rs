@@ -281,7 +281,7 @@ fn load_background(
     load: BackgroundLoad,
     repo: &dyn GitRepository,
 ) -> Result<BackgroundPayload, GitError> {
-    use crate::app::diff_loader::DiffTarget;
+    use crate::app::diff::DiffTarget;
     Ok(match load {
         BackgroundLoad::Status {
             fast,

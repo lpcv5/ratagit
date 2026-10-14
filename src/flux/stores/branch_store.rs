@@ -5,6 +5,8 @@ use crate::flux::stores::{
     log_result, tick_background_loads, ReduceCtx, ReduceOutput, Store, UiInvalidation,
 };
 
+use super::state_access::{BranchAccess, InputAccess, LogAccess, OverlayAccess, RefreshAccess};
+
 pub struct BranchStore;
 
 impl BranchStore {
@@ -13,8 +15,10 @@ impl BranchStore {
     }
 }
 
-impl Store for BranchStore {
-    fn reduce(&mut self, action: &ActionEnvelope, ctx: &mut ReduceCtx<'_>) -> ReduceOutput {
+impl<S: BranchAccess + InputAccess + LogAccess + OverlayAccess + RefreshAccess + ?Sized> Store<S>
+    for BranchStore
+{
+    fn reduce(&mut self, action: &ActionEnvelope, ctx: &mut ReduceCtx<'_, S>) -> ReduceOutput {
         let Action::Domain(domain) = &action.action else {
             return ReduceOutput::none();
         };

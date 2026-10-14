@@ -1,7 +1,8 @@
-use crate::app::Command;
+use super::files_output::finish_files_update;
+use super::state_access::{FilesAccess, LogAccess};
+use crate::app::files::FilesAction;
 use crate::flux::action::{Action, ActionEnvelope, DomainAction};
-use crate::flux::effects::EffectRequest;
-use crate::flux::stores::{log_result, ReduceCtx, ReduceOutput, Store, UiInvalidation};
+use crate::flux::stores::{ReduceCtx, ReduceOutput, Store};
 
 pub struct FilesStore;
 
@@ -11,63 +12,28 @@ impl FilesStore {
     }
 }
 
-impl Store for FilesStore {
-    fn reduce(&mut self, action: &ActionEnvelope, ctx: &mut ReduceCtx<'_>) -> ReduceOutput {
+impl<S: FilesAccess + LogAccess + ?Sized> Store<S> for FilesStore {
+    fn reduce(&mut self, action: &ActionEnvelope, ctx: &mut ReduceCtx<'_, S>) -> ReduceOutput {
         let Action::Domain(domain) = &action.action else {
             return ReduceOutput::none();
         };
-        match domain {
-            DomainAction::StageFile(path) => {
-                ReduceOutput::from_command(Command::Effect(EffectRequest::StageFile(path.clone())))
-            }
-            DomainAction::UnstageFile(path) => ReduceOutput::from_command(Command::Effect(
-                EffectRequest::UnstageFile(path.clone()),
-            )),
-            DomainAction::DiscardPaths(paths) => {
-                if paths.is_empty() {
-                    ctx.state.push_log(
-                        "discard blocked: no discardable selected items".to_string(),
-                        false,
-                    );
-                    return ReduceOutput::none();
-                }
-                ReduceOutput::from_command(Command::Effect(EffectRequest::DiscardPaths(
-                    paths.clone(),
-                )))
-            }
+        let action = match domain {
+            DomainAction::StageFile(path) => FilesAction::StagePath(path),
+            DomainAction::UnstageFile(path) => FilesAction::UnstagePath(path),
+            DomainAction::DiscardPaths(paths) => FilesAction::DiscardPaths(paths),
             DomainAction::StageFileFinished { path, result } => {
-                let display = path.display().to_string();
-                log_result(ctx, result, format!("staged {}", display), |e| {
-                    format!("stage failed {}: {}", display, e)
-                })
+                FilesAction::StageFinished { path, result }
             }
             DomainAction::UnstageFileFinished { path, result } => {
-                let display = path.display().to_string();
-                log_result(ctx, result, format!("unstaged {}", display), |e| {
-                    format!("unstage failed {}: {}", display, e)
-                })
+                FilesAction::UnstageFinished { path, result }
             }
             DomainAction::DiscardPathsFinished { paths, result } => {
-                match result {
-                    Ok(()) => {
-                        if paths.len() == 1 {
-                            ctx.state
-                                .push_log(format!("discarded {}", paths[0].display()), true);
-                        } else {
-                            ctx.state
-                                .push_log(format!("discarded {} path(s)", paths.len()), true);
-                        }
-                        return ReduceOutput::none().with_invalidation(UiInvalidation::all());
-                    }
-                    Err(err) => {
-                        ctx.state
-                            .push_log(format!("discard failed: {}", err), false);
-                    }
-                }
-                ReduceOutput::none()
+                FilesAction::DiscardPathsFinished { paths, result }
             }
-            _ => ReduceOutput::none(),
-        }
+            _ => return ReduceOutput::none(),
+        };
+        let update = ctx.state.reduce_files(action);
+        finish_files_update(ctx.state, update)
     }
 }
 

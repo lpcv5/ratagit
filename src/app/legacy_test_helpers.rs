@@ -175,8 +175,8 @@ impl App {
 
         self.stage_paths_internal(&targets)?;
         self.request_refresh(RefreshKind::StatusOnly);
-        self.state.ui.files.visual_mode = false;
-        self.state.ui.files.visual_anchor = None;
+        self.state
+            .reduce_files(super::files::FilesAction::ClearVisual);
         Ok(targets.len())
     }
 }

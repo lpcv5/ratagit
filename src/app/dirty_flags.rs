@@ -2,7 +2,7 @@ use crate::flux::stores::DirtyHint;
 
 /// Tracks which UI regions need redrawing.
 ///
-/// Uses the same bit layout as `DirtyHint` so that `StateAccess::mark_dirty()`
+/// Uses the same bit layout as `DirtyHint` so that `InvalidationAccess::mark_dirty()`
 /// can be implemented as a trivial bitwise OR instead of translating between
 /// two separate representations.
 #[derive(Debug, Default, Clone, Copy)]

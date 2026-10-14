@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 /// Dirty-region flags passed from stores to the App after reducing an action.
-/// Mirrors the bit positions in `UiInvalidation` without requiring a concrete `App` reference.
+/// Shared bit definitions for `UiInvalidation` and application dirty tracking.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct DirtyHint(pub u8);
 
@@ -20,25 +20,62 @@ impl DirtyHint {
 // Focused sub-traits
 // ---------------------------------------------------------------------------
 
-/// Core app lifecycle: logging, running state, dirty marking.
-pub trait CoreAccess {
+/// Apply completion events to reducer-owned state; never execute I/O here.
+pub trait RuntimeAccess {
     fn apply_repository_action(&mut self, action: &DomainAction);
     fn apply_runtime_event(&mut self, event: &crate::flux::effects::RuntimeEvent);
     fn apply_background_completed(&mut self, completed: &crate::app::BackgroundCompleted);
+}
+
+/// Append user-visible operation results.
+pub trait LogAccess {
+    /// Append the entry and invalidate the command log for the next snapshot.
     fn push_log(&mut self, msg: String, success: bool);
+}
+
+/// Reduce typed file-feature input without exposing its mutable state.
+pub trait FilesAccess {
+    fn reduce_files(
+        &mut self,
+        action: crate::app::files::FilesAction<'_>,
+    ) -> crate::app::files::FilesUpdate;
+}
+
+/// Control the application lifetime.
+pub trait LifecycleAccess {
     fn set_running(&mut self, running: bool);
+}
+
+/// Mark render regions after reducing an action.
+pub trait InvalidationAccess {
     fn mark_all_dirty(&mut self);
     /// Granular dirty-region marking — prefer over `mark_all_dirty` when possible.
     fn mark_dirty(&mut self, hint: DirtyHint);
+}
+
+/// Resolve palette input through the shared command registry.
+pub trait CommandAccess {
     fn resolve_command_palette_command(&self, cmd: &str) -> Option<DomainAction>;
+}
+
+/// Branch selection, checkout preconditions and fetch progress.
+pub trait BranchAccess {
     fn selected_branch_name(&self) -> Option<String>;
-    fn selected_stash_index(&self) -> Option<usize>;
     fn take_branch_switch_target(&mut self) -> Option<String>;
     fn is_fetching_remote(&self) -> bool;
     fn set_fetching_remote(&mut self, fetching: bool);
+    fn has_uncommitted_changes(&self) -> bool;
+}
+
+/// Resolve the current stash without exposing unrelated revision state.
+pub trait StashAccess {
+    fn selected_stash_index(&self) -> Option<usize>;
+}
+
+/// Read and change panel focus independently of list navigation.
+pub trait PanelAccess {
     fn active_panel(&self) -> SidePanel;
     fn set_active_panel(&mut self, panel: SidePanel);
-    fn has_uncommitted_changes(&self) -> bool;
 }
 
 /// Text input buffers: commit message, stash message, generic input buffer.
@@ -100,12 +137,7 @@ pub trait SearchAccess {
 
 /// Visual selection mode in the files panel.
 pub trait SelectionAccess {
-    fn stage_selection_targets(&self) -> (Vec<PathBuf>, Vec<PathBuf>);
-    fn commit_selection_targets(&self) -> Vec<PathBuf>;
-    fn toggle_visual_select_mode(&mut self);
     fn prepare_stash_targets_from_selection(&self) -> Vec<PathBuf>;
-    fn prepare_discard_targets_from_selection(&self) -> Vec<PathBuf>;
-    fn clear_files_visual_selection(&mut self);
     /// Returns paths of all files (staged + unstaged + untracked).
     fn all_file_paths(&self) -> Vec<PathBuf>;
 }
@@ -139,17 +171,21 @@ pub trait RevisionAccess {
 }
 
 // ---------------------------------------------------------------------------
-// Composite supertrait — keeps all existing code compiling unchanged.
-// ReduceCtx still uses `&mut dyn StateAccess`; stores don't need to change.
+// Composition boundary used only to register heterogeneous stores.
 // ---------------------------------------------------------------------------
 
-/// Composite abstraction layer between stores and reducer-owned AppState.
-///
-/// Composed of focused sub-traits so that future stores (or tests) can depend
-/// on only the capabilities they actually need.  All existing code that uses
-/// `&mut dyn StateAccess` continues to compile without modification.
+/// The dispatcher combines state capabilities here. Individual stores implement
+/// `Store<S>` with focused bounds instead of depending on this entire interface.
 pub trait StateAccess:
-    CoreAccess
+    RuntimeAccess
+    + LogAccess
+    + FilesAccess
+    + LifecycleAccess
+    + InvalidationAccess
+    + CommandAccess
+    + BranchAccess
+    + StashAccess
+    + PanelAccess
     + InputAccess
     + NavigationAccess
     + SearchAccess
@@ -162,8 +198,16 @@ pub trait StateAccess:
 
 /// Blanket impl: any type that implements all sub-traits automatically
 /// implements `StateAccess`.
-impl<T> StateAccess for T where
-    T: CoreAccess
+impl<T: ?Sized> StateAccess for T where
+    T: RuntimeAccess
+        + LogAccess
+        + FilesAccess
+        + LifecycleAccess
+        + InvalidationAccess
+        + CommandAccess
+        + BranchAccess
+        + StashAccess
+        + PanelAccess
         + InputAccess
         + NavigationAccess
         + SearchAccess

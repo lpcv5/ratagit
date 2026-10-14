@@ -3,6 +3,8 @@ use crate::flux::action::{Action, ActionEnvelope, DomainAction};
 use crate::flux::effects::EffectRequest;
 use crate::flux::stores::{ReduceCtx, ReduceOutput, Store, UiInvalidation};
 
+use super::state_access::{InputAccess, LogAccess, SearchAccess};
+
 pub struct SearchStore;
 
 impl SearchStore {
@@ -11,8 +13,8 @@ impl SearchStore {
     }
 }
 
-impl Store for SearchStore {
-    fn reduce(&mut self, action: &ActionEnvelope, ctx: &mut ReduceCtx<'_>) -> ReduceOutput {
+impl<S: InputAccess + LogAccess + SearchAccess + ?Sized> Store<S> for SearchStore {
+    fn reduce(&mut self, action: &ActionEnvelope, ctx: &mut ReduceCtx<'_, S>) -> ReduceOutput {
         let Action::Domain(domain) = &action.action else {
             return ReduceOutput::none();
         };

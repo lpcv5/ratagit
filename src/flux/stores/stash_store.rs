@@ -3,6 +3,8 @@ use crate::flux::action::{Action, ActionEnvelope, DomainAction};
 use crate::flux::effects::EffectRequest;
 use crate::flux::stores::{log_result, ReduceCtx, ReduceOutput, Store, UiInvalidation};
 
+use super::state_access::{LogAccess, StashAccess};
+
 pub struct StashStore;
 
 impl StashStore {
@@ -11,8 +13,8 @@ impl StashStore {
     }
 }
 
-fn stash_op_selected(
-    ctx: &mut ReduceCtx<'_>,
+fn stash_op_selected<S: LogAccess + StashAccess + ?Sized>(
+    ctx: &mut ReduceCtx<'_, S>,
     make_effect: fn(usize) -> EffectRequest,
 ) -> ReduceOutput {
     if let Some(index) = ctx.state.selected_stash_index() {
@@ -22,8 +24,8 @@ fn stash_op_selected(
     ReduceOutput::none()
 }
 
-impl Store for StashStore {
-    fn reduce(&mut self, action: &ActionEnvelope, ctx: &mut ReduceCtx<'_>) -> ReduceOutput {
+impl<S: LogAccess + StashAccess + ?Sized> Store<S> for StashStore {
+    fn reduce(&mut self, action: &ActionEnvelope, ctx: &mut ReduceCtx<'_, S>) -> ReduceOutput {
         let Action::Domain(domain) = &action.action else {
             return ReduceOutput::none();
         };

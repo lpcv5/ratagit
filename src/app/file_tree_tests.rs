@@ -1,6 +1,6 @@
 use super::*;
 use crate::file_tree::FileTreeNodeStatus;
-use crate::flux::action::Action;
+use crate::flux::action::{Action, DomainAction};
 use crate::flux::dispatcher::Dispatcher;
 use crate::flux::effects::{self, EffectRequest};
 use std::path::Path;
@@ -35,13 +35,17 @@ fn fixture() -> (tempfile::TempDir, App) {
 
 fn select(app: &mut App, path: &str) {
     let index = app
-        .ui
         .files
+        .view()
         .tree_nodes
         .iter()
         .position(|node| node.path == Path::new(path))
         .unwrap();
-    app.ui.files.panel.list_state.select(Some(index));
+    app.files
+        .test_view_mut()
+        .panel
+        .list_state
+        .select(Some(index));
 }
 
 fn assert_selected(app: &App, path: &str) {
@@ -100,11 +104,15 @@ async fn refresh(app: &mut App, selected: &str) {
 }
 
 async fn toggle(app: &mut App) {
-    let action = app
+    let target = app
         .selection()
         .file_selection()
-        .toggle_stage_action()
+        .toggle_stage_target()
         .unwrap();
+    let action = match target {
+        super::files::StageTarget::Stage(path) => DomainAction::StageFile(path),
+        super::files::StageTarget::Unstage(path) => DomainAction::UnstageFile(path),
+    };
     let command = dispatch_test_action(app, action).unwrap();
     let Command::Effect(request) = command else {
         panic!("expected Git effect")
@@ -158,15 +166,15 @@ fn test_file_tree_refresh_preserves_visual_anchor_path_when_rows_are_inserted() 
     let (_dir, mut app) = fixture();
     select(&mut app, "z.txt");
     let anchor = app
-        .ui
         .files
+        .view()
         .tree_nodes
         .iter()
         .position(|node| node.path == Path::new("new"))
         .unwrap();
-    app.ui.files.visual_mode = true;
-    app.ui.files.visual_anchor = Some(anchor);
-    let mut status = app.git.status.clone();
+    app.files.test_view_mut().visual_mode = true;
+    app.files.test_view_mut().visual_anchor = Some(anchor);
+    let mut status = app.files.status().clone();
     status.untracked.push(crate::git::FileEntry {
         path: "b/file.txt".into(),
         status: crate::git::FileStatus::New,
@@ -174,7 +182,7 @@ fn test_file_tree_refresh_preserves_visual_anchor_path_when_rows_are_inserted() 
     app.apply_status_refresh(status);
     assert_selected(&app, "z.txt");
     assert_eq!(
-        app.ui.files.tree_nodes[app.ui.files.visual_anchor.unwrap()].path,
+        app.files.view().tree_nodes[app.files.view().visual_anchor.unwrap()].path,
         Path::new("new")
     );
 }
@@ -182,7 +190,7 @@ fn test_file_tree_refresh_preserves_visual_anchor_path_when_rows_are_inserted() 
 #[test]
 fn test_file_tree_refresh_keeps_existing_directories_collapsed() {
     let (_dir, mut app) = fixture();
-    let mut status = app.git.status.clone();
+    let mut status = app.files.status().clone();
     status.untracked.push(crate::git::FileEntry {
         path: "b/file.txt".into(),
         status: crate::git::FileStatus::New,
@@ -194,8 +202,8 @@ fn test_file_tree_refresh_keeps_existing_directories_collapsed() {
     assert_selected(&app, "b");
     assert!(!app.selected_tree_node().unwrap().is_expanded);
     assert!(!app
-        .ui
         .files
+        .view()
         .tree_nodes
         .iter()
         .any(|node| node.path == Path::new("b/file.txt")));
@@ -216,7 +224,7 @@ async fn test_file_tree_stage_unstage_tracked_file_keeps_cursor_and_diff_target(
             staged
         );
         assert!(
-            matches!(app.selection().diff_target(), super::diff_loader::DiffTarget::File { path, .. } if path == Path::new("z.txt"))
+            matches!(app.selection().diff_target(), super::diff::DiffTarget::File { path, .. } if path == Path::new("z.txt"))
         );
     }
 }

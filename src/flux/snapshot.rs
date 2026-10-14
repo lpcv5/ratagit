@@ -83,25 +83,26 @@ impl<'a> AppStateSnapshot<'a> {
 
     #[cfg(test)]
     pub fn from_app(app: &'a AppState) -> Self {
+        let diff = app.diff.view();
         Self {
-            diff_interaction: &app.ui.diff,
-            diff_ready: !app.is_diff_loading(),
+            diff_interaction: diff.interaction,
+            diff_ready: !diff.loading,
             context: app.ui_context(),
             available_commands: app.available_commands(),
             keymap: app.keymap(),
             active_panel: app.ui.active_panel,
             input_mode: app.input.mode,
             input_buffer: app.input.buffer.as_str(),
-            files: &app.ui.files,
+            files: app.files.view(),
             branches: &app.ui.branches,
             commits: &app.ui.commits,
             stash: &app.ui.stash,
             render_cache: &app.ui.render_cache,
             operation: app.git.operation.clone(),
-            current_patch: app.git.current_patch.clone(),
-            current_diff: &app.git.current_diff,
-            diff_scroll: app.ui.diff_scroll,
-            diff_loading: app.is_diff_loading() && app.git.current_diff.is_empty(),
+            current_patch: diff.document.patch.clone(),
+            current_diff: &diff.document.lines,
+            diff_scroll: diff.scroll,
+            diff_loading: diff.show_loading(),
             command_log: app
                 .command_log
                 .iter()
@@ -122,9 +123,7 @@ impl<'a> AppStateSnapshot<'a> {
                 .map(|p| p.display().to_string())
                 .collect(),
             branch_switch_target: app.pending_branch_switch_target(),
-            uncommitted_change_count: app.git.status.staged.len()
-                + app.git.status.unstaged.len()
-                + app.git.status.untracked.len(),
+            uncommitted_change_count: app.files.change_count(),
             files_search_query: app.search_query_for_scope(SidePanel::Files, false, false),
             branches_search_query: app.search_query_for_scope(
                 SidePanel::LocalBranches,
@@ -206,25 +205,26 @@ pub struct AppStateSnapshotOwned {
 
 impl AppStateSnapshotOwned {
     pub fn from_app(app: &AppState) -> Self {
+        let diff = app.diff.view();
         Self {
-            diff_interaction: app.ui.diff.clone(),
-            diff_ready: !app.is_diff_loading(),
+            diff_interaction: diff.interaction.clone(),
+            diff_ready: !diff.loading,
             context: app.ui_context(),
             available_commands: app.available_commands(),
             keymap: app.keymap().clone(),
             active_panel: app.ui.active_panel,
             input_mode: app.input.mode,
             input_buffer: app.input.buffer.clone(),
-            files: app.ui.files.clone(),
+            files: app.files.view().clone(),
             branches: app.ui.branches.clone(),
             commits: app.ui.commits.clone(),
             stash: app.ui.stash.clone(),
             render_cache: app.ui.render_cache.clone(),
             operation: app.git.operation.clone(),
-            current_patch: app.git.current_patch.clone(),
-            current_diff: app.git.current_diff.clone(),
-            diff_scroll: app.ui.diff_scroll,
-            diff_loading: app.is_diff_loading() && app.git.current_diff.is_empty(),
+            current_patch: diff.document.patch.clone(),
+            current_diff: diff.document.lines.clone(),
+            diff_scroll: diff.scroll,
+            diff_loading: diff.show_loading(),
             command_log: app
                 .command_log
                 .iter()
@@ -245,9 +245,7 @@ impl AppStateSnapshotOwned {
                 .map(|p| p.display().to_string())
                 .collect(),
             branch_switch_target: app.pending_branch_switch_target().map(str::to_owned),
-            uncommitted_change_count: app.git.status.staged.len()
-                + app.git.status.unstaged.len()
-                + app.git.status.untracked.len(),
+            uncommitted_change_count: app.files.change_count(),
             files_search_query: app
                 .search_query_for_scope(SidePanel::Files, false, false)
                 .map(str::to_owned),

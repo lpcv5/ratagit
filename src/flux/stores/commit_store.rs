@@ -3,6 +3,8 @@ use crate::flux::action::{Action, ActionEnvelope, DomainAction};
 use crate::flux::effects::EffectRequest;
 use crate::flux::stores::{tick_background_loads, ReduceCtx, ReduceOutput, Store, UiInvalidation};
 
+use super::state_access::LogAccess;
+
 pub struct CommitStore;
 
 impl CommitStore {
@@ -11,8 +13,8 @@ impl CommitStore {
     }
 }
 
-impl Store for CommitStore {
-    fn reduce(&mut self, action: &ActionEnvelope, ctx: &mut ReduceCtx<'_>) -> ReduceOutput {
+impl<S: LogAccess + ?Sized> Store<S> for CommitStore {
+    fn reduce(&mut self, action: &ActionEnvelope, ctx: &mut ReduceCtx<'_, S>) -> ReduceOutput {
         let Action::Domain(domain) = &action.action else {
             return ReduceOutput::none();
         };

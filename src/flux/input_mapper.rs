@@ -284,9 +284,9 @@ mod more_tests {
         let mut app = mock_app();
         app.ui.active_panel = crate::app::SidePanel::Files;
         // With visual mode, Space maps to ToggleStageSelection
-        app.ui.files.visual_mode = true;
-        app.ui.files.panel.list_state.select(Some(0));
-        app.ui.files.visual_anchor = Some(0);
+        app.files.test_view_mut().visual_mode = true;
+        app.files.test_view_mut().panel.list_state.select(Some(0));
+        app.files.test_view_mut().visual_anchor = Some(0);
         let actions = map(&app, key(KeyCode::Char(' ')));
         assert!(actions
             .iter()

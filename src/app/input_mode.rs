@@ -12,13 +12,14 @@ impl AppState {
     }
 
     pub fn start_commit_editor_guarded(&mut self) -> bool {
-        if self.git.status.staged.is_empty() {
+        if self.files.status().staged.is_empty() {
             if self.pending_refresh_kind().is_some() {
                 self.request_refresh(RefreshKind::StatusOnly);
             }
-            if self.git.status.staged.is_empty() {
+            if self.files.status().staged.is_empty() {
                 // Check if there are any files to commit
-                let total_files = self.git.status.unstaged.len() + self.git.status.untracked.len();
+                let total_files =
+                    self.files.status().unstaged.len() + self.files.status().untracked.len();
                 if total_files == 0 {
                     self.push_log("nothing to commit", false);
                     return false;
@@ -92,10 +93,13 @@ mod tests {
     #[test]
     fn test_start_commit_editor_guarded_with_staged_files() {
         let mut app = mock_app();
-        app.git.status.staged.push(crate::git::FileEntry {
-            path: "foo.txt".into(),
-            status: crate::git::FileStatus::Modified,
-        });
+        app.files
+            .test_status_mut()
+            .staged
+            .push(crate::git::FileEntry {
+                path: "foo.txt".into(),
+                status: crate::git::FileStatus::Modified,
+            });
         let result = app.start_commit_editor_guarded();
         assert!(result);
         assert_eq!(app.input.mode, Some(InputMode::CommitEditor));

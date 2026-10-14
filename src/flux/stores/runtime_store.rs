@@ -1,10 +1,12 @@
 use super::{ReduceCtx, ReduceOutput, Store};
 use crate::flux::action::{Action, ActionEnvelope, DomainAction, SystemAction};
 
+use super::state_access::{RefreshAccess, RuntimeAccess};
+
 pub struct RuntimeStore;
 
-impl Store for RuntimeStore {
-    fn reduce(&mut self, action: &ActionEnvelope, ctx: &mut ReduceCtx<'_>) -> ReduceOutput {
+impl<S: RuntimeAccess + RefreshAccess + ?Sized> Store<S> for RuntimeStore {
+    fn reduce(&mut self, action: &ActionEnvelope, ctx: &mut ReduceCtx<'_, S>) -> ReduceOutput {
         if let Action::Domain(domain) = &action.action {
             ctx.state.apply_repository_action(domain);
         }

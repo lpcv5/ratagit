@@ -1,5 +1,5 @@
-use super::diff_cache::DiffCacheKey;
-use super::diff_loader::DiffTarget;
+use super::diff::DiffCacheKey;
+use super::diff::DiffTarget;
 use crate::flux::task_manager::TaskRequest;
 use crate::git::{BranchInfo, CommitInfo, FileEntry, GitStatus, StashInfo};
 

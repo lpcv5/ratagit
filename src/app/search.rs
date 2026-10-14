@@ -249,8 +249,8 @@ impl AppState {
         };
         match self.view_context() {
             ViewContext::Files => self
-                .ui
                 .files
+                .view()
                 .tree_nodes
                 .iter()
                 .map(Self::tree_node_display_name)
@@ -294,8 +294,24 @@ impl AppState {
         self.selection().selected_index()
     }
 
-    fn select_active_panel_index(&mut self, idx: usize) {
-        self.active_panel_state_mut().list_state.select(Some(idx));
+    pub(super) fn select_active_panel_index(&mut self, idx: usize) {
+        match self.view_context() {
+            ViewContext::Files => self.files.select_index(idx),
+            ViewContext::Branches => self.ui.branches.panel.list_state.select(Some(idx)),
+            ViewContext::BranchCommits { .. } => self
+                .ui
+                .branches
+                .commits_subview
+                .panel
+                .list_state
+                .select(Some(idx)),
+            ViewContext::Commits | ViewContext::CommitFiles { .. } => {
+                self.ui.commits.panel.list_state.select(Some(idx))
+            }
+            ViewContext::Stashes | ViewContext::StashFiles { .. } => {
+                self.ui.stash.panel.list_state.select(Some(idx))
+            }
+        }
     }
 
     fn tree_node_display_name(node: &FileTreeNode) -> String {

@@ -1,6 +1,6 @@
-use super::diff_loader::DiffTarget;
-use super::states::{BranchesPanelState, CommitsPanelState, FilesPanelState, StashPanelState};
-use super::{AppState, FileSelection, SidePanel, UiContext, ViewContext};
+use super::diff::DiffTarget;
+use super::states::{BranchesPanelState, CommitsPanelState, StashPanelState};
+use super::{AppState, FileSelection, FilesPanelState, SidePanel, UiContext, ViewContext};
 use crate::file_tree::FileTreeNode;
 
 /// Shared, immutable selectors over state or a render snapshot.
@@ -173,7 +173,7 @@ impl AppState {
 
     pub fn ui_context(&self) -> UiContext {
         UiContext {
-            diff_focused: self.ui.diff.focused,
+            diff_focused: self.diff.interaction().focused,
             view: self.view_context(),
             input: self.input.mode,
         }
@@ -182,13 +182,14 @@ impl AppState {
     pub fn selection(&self) -> SelectionView<'_> {
         SelectionView::new(
             self.view_context(),
-            &self.ui.files,
+            self.files.view(),
             &self.ui.branches,
             &self.ui.commits,
             &self.ui.stash,
         )
     }
 
+    #[cfg(test)]
     pub fn selected_tree_node(&self) -> Option<&FileTreeNode> {
         self.file_selection().selected_tree_node()
     }
@@ -207,28 +208,6 @@ impl AppState {
 
     pub fn selected_stash_index(&self) -> Option<usize> {
         self.selection().selected_stash_index()
-    }
-
-    pub(super) fn selected_diff_target(&self) -> DiffTarget {
-        match (self.selection().diff_target(), self.ui.diff.side) {
-            (
-                DiffTarget::File {
-                    path,
-                    status:
-                        crate::file_tree::FileTreeNodeStatus::Staged(status)
-                        | crate::file_tree::FileTreeNodeStatus::Unstaged(status),
-                },
-                Some(side),
-            ) => DiffTarget::File {
-                path,
-                status: if side == super::diff_interaction::DiffSide::Staged {
-                    crate::file_tree::FileTreeNodeStatus::Staged(status)
-                } else {
-                    crate::file_tree::FileTreeNodeStatus::Unstaged(status)
-                },
-            },
-            (target, _) => target,
-        }
     }
 
     pub(super) fn selected_commit_tree_node(&self) -> Option<&FileTreeNode> {

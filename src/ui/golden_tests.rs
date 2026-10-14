@@ -43,20 +43,20 @@ impl Fixture {
             path: path.into(),
             status,
         };
-        app.git.status.unstaged = vec![
+        app.files.test_status_mut().unstaged = vec![
             file("src/main.rs", FileStatus::Modified),
             file("src/old.rs", FileStatus::Deleted),
         ];
-        app.git.status.staged = vec![file("README.md", FileStatus::Modified)];
-        app.git.status.untracked = vec![file("notes.txt", FileStatus::New)];
-        app.ui.files.expanded_dirs.insert("src".into());
-        app.ui.files.tree_nodes = build_file_tree(
-            &app.git.status.unstaged,
-            &app.git.status.untracked,
-            &app.git.status.staged,
-            &app.ui.files.expanded_dirs,
+        app.files.test_status_mut().staged = vec![file("README.md", FileStatus::Modified)];
+        app.files.test_status_mut().untracked = vec![file("notes.txt", FileStatus::New)];
+        app.files.test_view_mut().expanded_dirs.insert("src".into());
+        app.files.test_view_mut().tree_nodes = build_file_tree(
+            &app.files.status().unstaged,
+            &app.files.status().untracked,
+            &app.files.status().staged,
+            &app.files.view().expanded_dirs,
         );
-        app.ui.files.panel.list_state.select(Some(1));
+        app.files.test_view_mut().panel.list_state.select(Some(1));
         app.ui.branches.items = vec![
             BranchInfo {
                 name: "main".into(),
@@ -83,8 +83,10 @@ impl Fixture {
             },
         ];
         let patch = patch();
-        app.git.current_diff = patch.display_lines();
-        app.git.current_patch = Some(Arc::new(patch));
+        app.diff.set_test_document(crate::git::patch::DiffDocument {
+            lines: patch.display_lines(),
+            patch: Some(Arc::new(patch)),
+        });
         app.push_log("git status", true);
         app.push_log("git fetch: offline", false);
         app.refresh_render_cache();
@@ -207,7 +209,7 @@ fn test_populated_layout_panel_focus_goldens() {
 #[test]
 fn test_overflow_expansion_and_scrolling_goldens() {
     let mut fixture = Fixture::populated();
-    fixture.app.ui.files.tree_nodes = (0..30)
+    fixture.app.files.test_view_mut().tree_nodes = (0..30)
         .map(|index| FileTreeNode {
             path: format!("file_{index:02}.rs").into(),
             status: FileTreeNodeStatus::Unstaged(FileStatus::Modified),
@@ -223,7 +225,13 @@ fn test_overflow_expansion_and_scrolling_goldens() {
         })
         .collect();
     fixture.app.ui.commits.items = commits(30);
-    fixture.app.ui.files.panel.list_state.select(Some(29));
+    fixture
+        .app
+        .files
+        .test_view_mut()
+        .panel
+        .list_state
+        .select(Some(29));
     fixture.app.ui.branches.panel.list_state.select(Some(29));
     fixture.app.ui.commits.panel.list_state.select(Some(29));
     for (panel, name) in [
@@ -239,7 +247,7 @@ fn test_overflow_expansion_and_scrolling_goldens() {
 #[test]
 fn test_narrow_layout_and_unicode_golden() {
     let mut fixture = Fixture::populated();
-    fixture.app.ui.files.tree_nodes[1].path = "src/界面.rs".into();
+    fixture.app.files.test_view_mut().tree_nodes[1].path = "src/界面.rs".into();
     fixture.app.ui.commits.items[0].message = "修复界面 e\u{301}".into();
     assert_golden(
         "layout_narrow_unicode",
@@ -259,7 +267,7 @@ fn test_search_and_visual_selection_from_actions_golden() {
     ] {
         dispatch_test_action(&mut fixture.app, action);
     }
-    assert!(fixture.app.ui.files.visual_mode);
+    assert!(fixture.app.files.view().visual_mode);
     assert_eq!(fixture.app.input.mode, Some(InputMode::Search));
     assert_golden("files_visual_search", &layout(&fixture.snapshot(), 120, 32));
 }
@@ -281,7 +289,7 @@ fn test_search_highlights_all_panel_types_goldens() {
 #[test]
 fn test_revision_subviews_and_graph_highlight_goldens() {
     let mut fixture = Fixture::populated();
-    let nodes = fixture.app.ui.files.tree_nodes.clone();
+    let nodes = fixture.app.files.view().tree_nodes.clone();
     fixture.app.ui.active_panel = SidePanel::Commits;
     let highlighted_oid = fixture.app.ui.commits.items[0].oid.clone();
     fixture
@@ -362,11 +370,11 @@ fn test_diff_hunk_focus_and_selection_from_actions_golden() {
     let mut fixture = Fixture::populated();
     dispatch_test_action(&mut fixture.app, DomainAction::ToggleDiffFocus);
     dispatch_test_action(&mut fixture.app, DomainAction::ToggleHunkSelection);
-    assert!(fixture.app.ui.diff.focused);
+    assert!(fixture.app.diff.interaction().focused);
     assert!(fixture
         .app
-        .ui
         .diff
+        .interaction()
         .selected
         .contains(&HunkId { file: 0, hunk: 0 }));
     assert_golden("diff_hunk_selected", &layout(&fixture.snapshot(), 120, 32));
