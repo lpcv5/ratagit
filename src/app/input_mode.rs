@@ -1,7 +1,9 @@
-use crate::app::{App, CommitFieldFocus, InputMode, RefreshKind};
+#[cfg(test)]
+use crate::app::App;
+use crate::app::{AppState, CommitFieldFocus, InputMode, RefreshKind};
 use std::path::PathBuf;
 
-impl App {
+impl AppState {
     pub fn start_commit_editor(&mut self) {
         self.input.mode = Some(InputMode::CommitEditor);
         self.input.commit_message_buffer.clear();
@@ -62,21 +64,9 @@ impl App {
         &self,
         input: &str,
     ) -> Option<crate::flux::action::DomainAction> {
-        use crate::flux::action::DomainAction;
-        let normalized = input.trim().to_lowercase();
-        match normalized.as_str() {
-            "q" | "quit" | "exit" => Some(DomainAction::Quit),
-            "c" | "commit" => Some(DomainAction::StartCommitInput),
-            "/" | "search" => Some(DomainAction::StartSearchInput),
-            "stash" | "stash push" => Some(DomainAction::StartStashInput),
-            "branch" | "branch create" | "branch new" => Some(DomainAction::StartBranchCreateInput),
-            "fetch" | "fetch remote" => Some(DomainAction::FetchRemote),
-            "panel 1" | "panel files" | "files" => Some(DomainAction::PanelGoto(1)),
-            "panel 2" | "panel branches" | "branches" => Some(DomainAction::PanelGoto(2)),
-            "panel 3" | "panel commits" | "commits" => Some(DomainAction::PanelGoto(3)),
-            "panel 4" | "panel stash" | "stash panel" => Some(DomainAction::PanelGoto(4)),
-            _ => None,
-        }
+        let mut env = self.command_env();
+        env.input = None;
+        super::commands::resolve_palette(input, &env)
     }
 }
 

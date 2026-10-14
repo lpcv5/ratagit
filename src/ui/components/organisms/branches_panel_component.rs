@@ -34,6 +34,7 @@ pub fn draw_branches_panel(
             })
             .unwrap_or_else(|| "Branch Commits [Esc Back]".to_string());
         let commits_ctx = PanelRenderContext {
+            diff_focused: ctx.diff_focused,
             active_panel: SidePanel::Commits,
             panel_title_override: Some(title.as_str()),
             search_query: ctx.search_query,
@@ -46,7 +47,7 @@ pub fn draw_branches_panel(
     }
 
     let theme = UiTheme::default();
-    let is_active = ctx.active_panel == SidePanel::LocalBranches;
+    let is_active = !ctx.diff_focused && ctx.active_panel == SidePanel::LocalBranches;
 
     let items: Vec<ListItem> = if state.items.is_empty() {
         empty_list_item("No branches")
@@ -61,8 +62,7 @@ pub fn draw_branches_panel(
                     ("  ", theme.text_primary)
                 };
                 let text = format!("{}{}", prefix, b.name);
-                let spans =
-                    highlighted_spans(&text, ctx.search_query, Style::default().fg(color));
+                let spans = highlighted_spans(&text, ctx.search_query, Style::default().fg(color));
                 ListItem::new(Line::from(spans))
             })
             .collect()

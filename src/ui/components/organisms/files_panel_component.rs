@@ -12,7 +12,7 @@ pub fn draw_files_panel(
     ctx: &PanelRenderContext<'_>,
 ) {
     let theme = UiTheme::default();
-    let is_active = ctx.active_panel == SidePanel::Files;
+    let is_active = !ctx.diff_focused && ctx.active_panel == SidePanel::Files;
 
     let base = if state.visual_mode {
         "Files [VISUAL]"

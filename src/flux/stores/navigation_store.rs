@@ -46,33 +46,30 @@ impl Store for NavigationStore {
         };
         match domain {
             DomainAction::PanelNext => {
-                let next = match ctx.state.active_panel() {
-                    SidePanel::Files => SidePanel::LocalBranches,
-                    SidePanel::LocalBranches => SidePanel::Commits,
-                    SidePanel::Commits => SidePanel::Stash,
-                    SidePanel::Stash => SidePanel::Files,
-                };
+                let index = SidePanel::ALL
+                    .iter()
+                    .position(|panel| *panel == ctx.state.active_panel())
+                    .unwrap();
+                let next = SidePanel::ALL[(index + 1) % SidePanel::ALL.len()];
                 ctx.state.set_active_panel(next);
                 Self::after_panel_switch(ctx)
             }
             DomainAction::PanelPrev => {
-                let prev = match ctx.state.active_panel() {
-                    SidePanel::Files => SidePanel::Stash,
-                    SidePanel::LocalBranches => SidePanel::Files,
-                    SidePanel::Commits => SidePanel::LocalBranches,
-                    SidePanel::Stash => SidePanel::Commits,
-                };
+                let index = SidePanel::ALL
+                    .iter()
+                    .position(|panel| *panel == ctx.state.active_panel())
+                    .unwrap();
+                let prev =
+                    SidePanel::ALL[(index + SidePanel::ALL.len() - 1) % SidePanel::ALL.len()];
                 ctx.state.set_active_panel(prev);
                 Self::after_panel_switch(ctx)
             }
             DomainAction::PanelGoto(n) => {
-                let panel = match n {
-                    1 => SidePanel::Files,
-                    2 => SidePanel::LocalBranches,
-                    3 => SidePanel::Commits,
-                    4 => SidePanel::Stash,
-                    _ => ctx.state.active_panel(),
-                };
+                let panel = n
+                    .checked_sub(1)
+                    .and_then(|index| SidePanel::ALL.get(index))
+                    .copied()
+                    .unwrap_or(ctx.state.active_panel());
                 ctx.state.set_active_panel(panel);
                 Self::after_panel_switch(ctx)
             }
@@ -164,7 +161,9 @@ mod tests {
             &mut app,
             Action::Domain(DomainAction::DiffScrollDown),
         );
-        assert!(app.ui.diff_scroll > initial_scroll || output.invalidation != UiInvalidation::none());
+        assert!(
+            app.ui.diff_scroll > initial_scroll || output.invalidation != UiInvalidation::none()
+        );
     }
 
     #[test]

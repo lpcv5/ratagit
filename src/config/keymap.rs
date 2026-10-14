@@ -42,59 +42,24 @@ pub struct Keymap {
 
 impl Default for GlobalKeymap {
     fn default() -> Self {
-        let mut b = HashMap::new();
-        b.insert("quit".into(), vec!["q".into()]);
-        b.insert("panel_next".into(), vec!["l".into(), "Right".into()]);
-        b.insert("panel_prev".into(), vec!["h".into(), "Left".into()]);
-        b.insert("panel_1".into(), vec!["1".into()]);
-        b.insert("panel_2".into(), vec!["2".into()]);
-        b.insert("panel_3".into(), vec!["3".into()]);
-        b.insert("panel_4".into(), vec!["4".into()]);
-        b.insert("list_up".into(), vec!["k".into(), "Up".into()]);
-        b.insert("list_down".into(), vec!["j".into(), "Down".into()]);
-        b.insert("diff_scroll_up".into(), vec!["C-u".into()]);
-        b.insert("diff_scroll_down".into(), vec!["C-d".into()]);
-        b.insert("commit".into(), vec!["c".into()]);
-        b.insert("search_start".into(), vec!["/".into()]);
-        b.insert("command_palette".into(), vec![":".into()]);
-        b.insert("search_next".into(), vec!["n".into()]);
-        b.insert("search_prev".into(), vec!["N".into()]);
-        Self { bindings: b }
+        Self {
+            bindings: crate::app::commands::default_bindings(None),
+        }
     }
 }
 
 impl Default for Keymap {
     fn default() -> Self {
-        let mut files = HashMap::new();
-        files.insert("toggle_stage".into(), vec!["Space".into()]);
-        files.insert("toggle_visual_select".into(), vec!["v".into()]);
-        files.insert("toggle_dir".into(), vec!["Enter".into()]);
-        files.insert("discard".into(), vec!["d".into()]);
-        files.insert("collapse_all".into(), vec!["-".into()]);
-        files.insert("expand_all".into(), vec!["=".into()]);
-        files.insert("stash_push".into(), vec!["s".into()]);
-
-        let mut branches = HashMap::new();
-        branches.insert("checkout_branch".into(), vec!["Space".into()]);
-        branches.insert("open_tree".into(), vec!["Enter".into()]);
-        branches.insert("create_branch".into(), vec!["n".into()]);
-        branches.insert("delete_branch".into(), vec!["d".into()]);
-        branches.insert("fetch_remote".into(), vec!["f".into()]);
-
-        let mut stash = HashMap::new();
-        stash.insert("open_tree".into(), vec!["Enter".into()]);
-        stash.insert("stash_apply".into(), vec!["a".into()]);
-        stash.insert("stash_pop".into(), vec!["p".into()]);
-        stash.insert("stash_drop".into(), vec!["d".into()]);
-        let mut commits = HashMap::new();
-        commits.insert("open_tree".into(), vec!["Enter".into()]);
-
+        use crate::app::SidePanel;
+        let panel = |panel| PanelKeymap {
+            bindings: crate::app::commands::default_bindings(Some(panel)),
+        };
         let mut keymap = Self {
             global: GlobalKeymap::default(),
-            files: PanelKeymap { bindings: files },
-            branches: PanelKeymap { bindings: branches },
-            commits: PanelKeymap { bindings: commits },
-            stash: PanelKeymap { bindings: stash },
+            files: panel(SidePanel::Files),
+            branches: panel(SidePanel::LocalBranches),
+            commits: panel(SidePanel::Commits),
+            stash: panel(SidePanel::Stash),
             global_key_index: HashMap::new(),
             files_key_index: HashMap::new(),
             branches_key_index: HashMap::new(),
@@ -156,24 +121,29 @@ impl Keymap {
             .join("keymap.toml")
     }
 
-    pub fn first_global_key(&self, action: &str) -> Option<String> {
+    pub fn global_keys(&self, action: &str) -> Vec<&str> {
         self.global
             .bindings
             .get(action)
-            .and_then(|keys| keys.first())
-            .cloned()
+            .into_iter()
+            .flatten()
+            .map(String::as_str)
+            .collect()
     }
 
-    pub fn first_panel_key(&self, panel: &str, action: &str) -> Option<String> {
+    pub fn panel_keys(&self, panel: &str, action: &str) -> Vec<&str> {
         let map = match panel {
             "files" => &self.files.bindings,
             "branches" => &self.branches.bindings,
             "commits" => &self.commits.bindings,
             "stash" => &self.stash.bindings,
-            _ => return None,
+            _ => return Vec::new(),
         };
-
-        map.get(action).and_then(|keys| keys.first()).cloned()
+        map.get(action)
+            .into_iter()
+            .flatten()
+            .map(String::as_str)
+            .collect()
     }
 
     pub fn global_actions(&self, key_str: &str) -> &[String] {
@@ -195,7 +165,7 @@ impl Keymap {
         index.get(key_str).map(Vec::as_slice).unwrap_or(&[])
     }
 
-    fn rebuild_indexes(&mut self) {
+    pub(crate) fn rebuild_indexes(&mut self) {
         self.global_key_index = build_key_index(&self.global.bindings);
         self.files_key_index = build_key_index(&self.files.bindings);
         self.branches_key_index = build_key_index(&self.branches.bindings);

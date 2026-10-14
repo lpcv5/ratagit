@@ -1,12 +1,12 @@
 use super::panel_state::{
-    BranchesPanelState, CommitsPanelState, FilesPanelState, RenderCache, SidePanel,
-    StashPanelState,
+    BranchesPanelState, CommitsPanelState, FilesPanelState, RenderCache, SidePanel, StashPanelState,
 };
 use crate::app::dirty_flags::DirtyFlags;
 
 /// UI state — panel navigation, selection, visual modes, dirty tracking.
 #[derive(Clone)]
 pub struct UiState {
+    pub diff: crate::app::DiffInteraction,
     pub active_panel: SidePanel,
     pub files: FilesPanelState,
     pub branches: BranchesPanelState,
@@ -20,6 +20,7 @@ pub struct UiState {
 impl Default for UiState {
     fn default() -> Self {
         Self {
+            diff: Default::default(),
             active_panel: SidePanel::Files,
             files: FilesPanelState::default(),
             branches: BranchesPanelState::default(),

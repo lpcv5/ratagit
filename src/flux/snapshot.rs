@@ -1,7 +1,9 @@
+use crate::app::commands::{CommandEnv, CommandHelp};
 use crate::app::{
-    App, BranchesPanelState, CommitFieldFocus, CommitsPanelState, FilesPanelState, InputMode,
+    AppState, BranchesPanelState, CommitFieldFocus, CommitsPanelState, FilesPanelState, InputMode,
     RenderCache, SidePanel, StashPanelState,
 };
+use crate::app::{SelectionView, UiContext};
 use crate::config::keymap::Keymap;
 use crate::git::DiffLine;
 
@@ -11,6 +13,10 @@ pub struct CommandLogSnapshotEntry<'a> {
 }
 
 pub struct AppStateSnapshot<'a> {
+    pub diff_interaction: &'a crate::app::DiffInteraction,
+    pub diff_ready: bool,
+    pub context: UiContext,
+    pub available_commands: Vec<CommandHelp>,
     pub keymap: &'a Keymap,
     pub active_panel: SidePanel,
     pub input_mode: Option<InputMode>,
@@ -22,6 +28,10 @@ pub struct AppStateSnapshot<'a> {
     pub stash: &'a StashPanelState,
     pub render_cache: &'a RenderCache,
 
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub operation: crate::git::operation::OperationMachine,
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub current_patch: Option<std::sync::Arc<crate::git::patch::Patch>>,
     pub current_diff: &'a [DiffLine],
     pub diff_scroll: usize,
     pub diff_loading: bool,
@@ -49,9 +59,35 @@ pub struct AppStateSnapshot<'a> {
 }
 
 impl<'a> AppStateSnapshot<'a> {
+    pub fn command_env(&self) -> CommandEnv<'_> {
+        CommandEnv {
+            diff: crate::app::HunkView {
+                patch: self.current_patch.as_deref(),
+                interaction: self.diff_interaction,
+                ready: self.diff_ready,
+                files_context: self.active_panel == SidePanel::Files,
+            },
+            selection: SelectionView::new(
+                self.context.view.clone(),
+                self.files,
+                self.branches,
+                self.commits,
+                self.stash,
+            ),
+            input: self.context.input,
+            commit_focus: self.commit_focus,
+            has_search: self.has_search_for_active_scope,
+            has_search_query: self.has_search_query_for_active_scope,
+        }
+    }
+
     #[cfg(test)]
-    pub fn from_app(app: &'a App) -> Self {
+    pub fn from_app(app: &'a AppState) -> Self {
         Self {
+            diff_interaction: &app.ui.diff,
+            diff_ready: !app.is_diff_loading(),
+            context: app.ui_context(),
+            available_commands: app.available_commands(),
             keymap: app.keymap(),
             active_panel: app.ui.active_panel,
             input_mode: app.input.mode,
@@ -61,9 +97,11 @@ impl<'a> AppStateSnapshot<'a> {
             commits: &app.ui.commits,
             stash: &app.ui.stash,
             render_cache: &app.ui.render_cache,
+            operation: app.git.operation.clone(),
+            current_patch: app.git.current_patch.clone(),
             current_diff: &app.git.current_diff,
             diff_scroll: app.ui.diff_scroll,
-            diff_loading: app.has_pending_diff_reload() && app.git.current_diff.is_empty(),
+            diff_loading: app.is_diff_loading() && app.git.current_diff.is_empty(),
             command_log: app
                 .command_log
                 .iter()
@@ -119,6 +157,10 @@ pub struct CommandLogSnapshotEntryOwned {
 /// Owned version of AppStateSnapshot that can be sent through channels
 /// without holding the App lock. All fields are cloned/owned.
 pub struct AppStateSnapshotOwned {
+    pub diff_interaction: crate::app::DiffInteraction,
+    pub diff_ready: bool,
+    pub context: UiContext,
+    pub available_commands: Vec<CommandHelp>,
     pub keymap: Keymap,
     pub active_panel: SidePanel,
     pub input_mode: Option<InputMode>,
@@ -130,6 +172,8 @@ pub struct AppStateSnapshotOwned {
     pub stash: StashPanelState,
     pub render_cache: RenderCache,
 
+    pub operation: crate::git::operation::OperationMachine,
+    pub current_patch: Option<std::sync::Arc<crate::git::patch::Patch>>,
     pub current_diff: Vec<DiffLine>,
     pub diff_scroll: usize,
     pub diff_loading: bool,
@@ -161,8 +205,12 @@ pub struct AppStateSnapshotOwned {
 }
 
 impl AppStateSnapshotOwned {
-    pub fn from_app(app: &App) -> Self {
+    pub fn from_app(app: &AppState) -> Self {
         Self {
+            diff_interaction: app.ui.diff.clone(),
+            diff_ready: !app.is_diff_loading(),
+            context: app.ui_context(),
+            available_commands: app.available_commands(),
             keymap: app.keymap().clone(),
             active_panel: app.ui.active_panel,
             input_mode: app.input.mode,
@@ -172,9 +220,11 @@ impl AppStateSnapshotOwned {
             commits: app.ui.commits.clone(),
             stash: app.ui.stash.clone(),
             render_cache: app.ui.render_cache.clone(),
+            operation: app.git.operation.clone(),
+            current_patch: app.git.current_patch.clone(),
             current_diff: app.git.current_diff.clone(),
             diff_scroll: app.ui.diff_scroll,
-            diff_loading: app.has_pending_diff_reload() && app.git.current_diff.is_empty(),
+            diff_loading: app.is_diff_loading() && app.git.current_diff.is_empty(),
             command_log: app
                 .command_log
                 .iter()
@@ -231,6 +281,10 @@ impl AppStateSnapshotOwned {
     /// Borrow-based view of this owned snapshot, compatible with all existing render functions.
     pub fn as_snapshot(&self) -> AppStateSnapshot<'_> {
         AppStateSnapshot {
+            diff_interaction: &self.diff_interaction,
+            diff_ready: self.diff_ready,
+            context: self.context.clone(),
+            available_commands: self.available_commands.clone(),
             keymap: &self.keymap,
             active_panel: self.active_panel,
             input_mode: self.input_mode,
@@ -240,6 +294,8 @@ impl AppStateSnapshotOwned {
             commits: &self.commits,
             stash: &self.stash,
             render_cache: &self.render_cache,
+            operation: self.operation.clone(),
+            current_patch: self.current_patch.clone(),
             current_diff: &self.current_diff,
             diff_scroll: self.diff_scroll,
             diff_loading: self.diff_loading,

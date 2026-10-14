@@ -1,14 +1,39 @@
-use crate::app::{AppEffects, RefreshKind, SidePanel};
-use crate::flux::action::{Action, DomainAction};
-use crate::flux::stores::UiInvalidation;
+use crate::app::{AppRuntime, BackgroundCompleted, BackgroundLoad, BackgroundPayload};
+use crate::flux::action::{Action, DomainAction, SystemAction};
+use crate::flux::task_manager::TaskRequest;
+use crate::git::{GitError, GitRepository};
+use crate::ui::widgets::file_tree::FileTreeNodeStatus;
 use std::path::PathBuf;
-use std::rc::Rc;
-use tokio::sync::Mutex;
+
+/// State-only work is expressed as an event and applied by a store.
+#[derive(Debug, Clone)]
+pub enum RuntimeEvent {
+    ProcessBackgroundLoads,
+    FlushPendingRefresh { log_success: bool },
+    FlushPendingDiffReload,
+    EnsureCommitsLoadedForActivePanel,
+    ReloadDiffNow,
+    RevisionOpenTreeOrToggleDir,
+}
 
 #[derive(Debug, Clone)]
 pub enum EffectRequest {
+    ApplyHunks {
+        id: u64,
+        patch: std::sync::Arc<crate::git::patch::Patch>,
+        ids: Vec<crate::git::patch::HunkId>,
+        direction: crate::git::patch::PatchDirection,
+    },
+    StageHunks {
+        patch: std::sync::Arc<crate::git::patch::Patch>,
+        file: usize,
+        hunks: Vec<usize>,
+    },
+    ControlRepositoryOperation {
+        id: u64,
+        control: crate::git::operation::OperationControl,
+    },
     ProcessBackgroundLoads,
-    /// Used in tests via `test_runtime::run_inline_effect` to force a refresh cycle.
     #[cfg_attr(not(test), allow(dead_code))]
     FlushPendingRefresh {
         log_success: bool,
@@ -17,8 +42,17 @@ pub enum EffectRequest {
     EnsureCommitsLoadedForActivePanel,
     ReloadDiffNow,
     RevisionOpenTreeOrToggleDir,
-    ToggleStageSelection,
-    PrepareCommitFromVisualSelection,
+    LoadBackground {
+        request: TaskRequest,
+        load: BackgroundLoad,
+    },
+    ToggleStageSelection {
+        stage: Vec<PathBuf>,
+        unstage: Vec<PathBuf>,
+    },
+    PrepareCommitFromVisualSelection {
+        paths: Vec<PathBuf>,
+    },
     FetchRemote,
     StageFile(PathBuf),
     StagePaths(Vec<PathBuf>),
@@ -40,641 +74,383 @@ pub enum EffectRequest {
     StashDrop(usize),
 }
 
-pub struct EffectCtx {
-    pub app: Rc<Mutex<dyn AppEffects>>,
+impl EffectRequest {
+    pub fn state_event(&self) -> Option<RuntimeEvent> {
+        Some(match self {
+            Self::ProcessBackgroundLoads => RuntimeEvent::ProcessBackgroundLoads,
+            Self::FlushPendingRefresh { log_success } => RuntimeEvent::FlushPendingRefresh {
+                log_success: *log_success,
+            },
+            Self::FlushPendingDiffReload => RuntimeEvent::FlushPendingDiffReload,
+            Self::EnsureCommitsLoadedForActivePanel => {
+                RuntimeEvent::EnsureCommitsLoadedForActivePanel
+            }
+            Self::ReloadDiffNow => RuntimeEvent::ReloadDiffNow,
+            Self::RevisionOpenTreeOrToggleDir => RuntimeEvent::RevisionOpenTreeOrToggleDir,
+            _ => return None,
+        })
+    }
+
+    pub fn is_write(&self) -> bool {
+        self.state_event().is_none()
+            && !matches!(self, Self::LoadBackground { .. } | Self::FetchRemote)
+    }
 }
 
-pub async fn run(request: EffectRequest, ctx: &mut EffectCtx) -> Vec<Action> {
+fn receive<T>(
+    request: Result<std::sync::mpsc::Receiver<Result<T, GitError>>, GitError>,
+) -> Result<T, GitError> {
+    request?.recv().map_err(|e| GitError::Git2(e.to_string()))?
+}
+
+fn domain(action: DomainAction) -> Vec<Action> {
+    vec![Action::Domain(action)]
+}
+
+/// Effects can access execution dependencies, never mutable application state.
+pub async fn run(request: EffectRequest, runtime: &AppRuntime) -> Vec<Action> {
+    if let Some(event) = request.state_event() {
+        return domain(DomainAction::Runtime(event));
+    }
+    let repo = runtime.repo.clone();
+    let fallback = request.clone();
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    // Git jobs may be uncancellable (e.g. libgit2 network I/O). Their completion
+    // wait must not keep Tokio's shutdown blocked after the TUI has exited.
+    let launched = std::thread::Builder::new()
+        .name("ratagit-effect".into())
+        .spawn(move || {
+            let result =
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| execute(request, &*repo)))
+                    .map_err(|_| "effect worker panicked".to_string());
+            let _ = tx.send(result);
+        });
+    if let Err(err) = launched {
+        return failed(fallback, format!("effect worker failed to start: {err}"));
+    }
+    match rx.await {
+        Ok(Ok(actions)) => actions,
+        Ok(Err(err)) => failed(fallback, err),
+        Err(err) => failed(fallback, format!("effect worker disconnected: {err}")),
+    }
+}
+
+/// Shared by production execution and deterministic test drivers.
+pub(crate) fn execute(request: EffectRequest, repo: &dyn GitRepository) -> Vec<Action> {
+    if let Some(event) = request.state_event() {
+        return domain(DomainAction::Runtime(event));
+    }
     match request {
-        EffectRequest::ProcessBackgroundLoads => {
-            let mut app = ctx.app.lock().await;
-            app.process_background_refresh_tick();
-            vec![]
+        EffectRequest::ApplyHunks {
+            id,
+            patch,
+            ids,
+            direction,
+        } => domain(DomainAction::ApplyHunksFinished {
+            id,
+            direction,
+            result: repo
+                .apply_hunks(&patch, &ids, direction)
+                .map_err(|e| e.to_string()),
+        }),
+        EffectRequest::StageHunks { patch, file, hunks } => {
+            domain(DomainAction::StageHunksFinished {
+                result: repo
+                    .stage_hunks(&patch, file, &hunks)
+                    .map_err(|e| e.to_string()),
+            })
         }
-        EffectRequest::FlushPendingRefresh { log_success } => {
-            let mut app = ctx.app.lock().await;
-            match app.flush_pending_refresh() {
-                Ok(_) => {
-                    if log_success {
-                        app.push_log("refresh".to_string(), true);
+        EffectRequest::ControlRepositoryOperation { id, control } => {
+            let mut result = repo.control_operation(control).map_err(|e| e.to_string());
+            let observed = match repo.operation_snapshot() {
+                Ok(snapshot) => Some(snapshot),
+                Err(error) => {
+                    if result.is_ok() {
+                        result = Err(format!(
+                            "operation completed, but state reload failed: {error}"
+                        ));
                     }
+                    None
                 }
-                Err(err) => app.push_log(format!("refresh failed: {}", err), false),
-            }
-            vec![]
-        }
-        EffectRequest::FlushPendingDiffReload => {
-            let mut app = ctx.app.lock().await;
-            app.flush_pending_diff_reload();
-            vec![]
-        }
-        EffectRequest::EnsureCommitsLoadedForActivePanel => {
-            let mut app = ctx.app.lock().await;
-            app.ensure_commits_loaded_for_active_panel();
-            vec![]
-        }
-        EffectRequest::ReloadDiffNow => {
-            let mut app = ctx.app.lock().await;
-            app.reload_diff_now();
-            vec![]
-        }
-        EffectRequest::RevisionOpenTreeOrToggleDir => {
-            let mut app = ctx.app.lock().await;
-            let result = match app.active_panel() {
-                SidePanel::Stash => app.stash_open_tree_or_toggle_dir(),
-                SidePanel::Commits => app.commit_open_tree_or_toggle_dir(),
-                SidePanel::LocalBranches => app.open_selected_branch_commits(100),
-                _ => Ok(()),
             };
-            match result {
-                Ok(()) => {
-                    app.restore_search_for_active_scope();
-                    app.reload_diff_now();
-                    UiInvalidation::all().apply(&mut *app);
-                }
-                Err(err) => app.push_log(format!("revision files failed: {}", err), false),
-            }
-            vec![]
-        }
-        EffectRequest::ToggleStageSelection => {
-            let mut app = ctx.app.lock().await;
-            let result = app
-                .toggle_stage_visual_selection()
-                .map_err(|e| e.to_string());
-            vec![Action::Domain(DomainAction::ToggleStageSelectionFinished {
+            domain(DomainAction::RepositoryOperationFinished {
+                id,
                 result,
-            })]
+                observed,
+            })
         }
-        EffectRequest::PrepareCommitFromVisualSelection => {
-            let mut app = ctx.app.lock().await;
-            let result = app
-                .prepare_commit_from_visual_selection()
-                .map_err(|e| e.to_string());
-            vec![Action::Domain(
-                DomainAction::PrepareCommitFromSelectionFinished { result },
-            )]
-        }
-        EffectRequest::FetchRemote => {
-            let repo_rx = {
-                let app = ctx.app.lock().await;
-                match app.fetch_remote_request() {
-                    Ok(rx) => rx,
-                    Err(err) => {
-                        return vec![Action::Domain(DomainAction::FetchRemoteFinished(Err(
-                            err.to_string()
-                        )))];
-                    }
-                }
-            };
-
-            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
-                Ok(Ok(Ok(remote))) => Ok(remote),
-                Ok(Ok(Err(err))) => Err(err.to_string()),
-                Ok(Err(err)) => Err(err.to_string()),
-                Err(err) => Err(err.to_string()),
-            };
-
-            vec![Action::Domain(DomainAction::FetchRemoteFinished(result))]
-        }
-        EffectRequest::StagePaths(paths) => {
-            let repo_rx = {
-                let app = ctx.app.lock().await;
-                match app.stage_paths_request(paths) {
-                    Ok(rx) => rx,
-                    Err(err) => {
-                        return vec![Action::Domain(DomainAction::StagePathsFinished {
-                            result: Err(err.to_string()),
-                        })];
-                    }
-                }
-            };
-            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
-                Ok(Ok(Ok(()))) => Ok(()),
-                Ok(Ok(Err(err))) => Err(err.to_string()),
-                Ok(Err(err)) => Err(err.to_string()),
-                Err(err) => Err(err.to_string()),
-            };
-            vec![Action::Domain(DomainAction::StagePathsFinished { result })]
-        }
+        EffectRequest::LoadBackground { request, load } => vec![Action::System(
+            SystemAction::BackgroundCompleted(Box::new(BackgroundCompleted {
+                request,
+                result: load_background(load, repo).map_err(|e| e.to_string()),
+            })),
+        )],
         EffectRequest::StageFile(path) => {
-            let repo_rx = {
-                let app = ctx.app.lock().await;
-                match app.stage_file_request(path.clone()) {
-                    Ok(rx) => rx,
-                    Err(err) => {
-                        return vec![Action::Domain(DomainAction::StageFileFinished {
-                            path,
-                            result: Err(err.to_string()),
-                        })];
-                    }
-                }
-            };
-            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
-                Ok(Ok(Ok(()))) => {
-                    let mut app = ctx.app.lock().await;
-                    app.request_refresh(RefreshKind::StatusOnly);
-                    Ok(())
-                }
-                Ok(Ok(Err(err))) => Err(err.to_string()),
-                Ok(Err(err)) => Err(err.to_string()),
-                Err(err) => Err(err.to_string()),
-            };
-            vec![Action::Domain(DomainAction::StageFileFinished {
-                path,
-                result,
-            })]
+            let result = receive(repo.stage_async(path.clone())).map_err(|e| e.to_string());
+            domain(DomainAction::StageFileFinished { path, result })
         }
+        EffectRequest::StagePaths(paths) => domain(DomainAction::StagePathsFinished {
+            result: receive(repo.stage_paths_async(paths.clone())).map_err(|e| e.to_string()),
+        }),
         EffectRequest::UnstageFile(path) => {
-            let repo_rx = {
-                let app = ctx.app.lock().await;
-                match app.unstage_file_request(path.clone()) {
-                    Ok(rx) => rx,
-                    Err(err) => {
-                        return vec![Action::Domain(DomainAction::UnstageFileFinished {
-                            path,
-                            result: Err(err.to_string()),
-                        })];
-                    }
-                }
-            };
-            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
-                Ok(Ok(Ok(()))) => {
-                    let mut app = ctx.app.lock().await;
-                    app.request_refresh(RefreshKind::StatusOnly);
-                    Ok(())
-                }
-                Ok(Ok(Err(err))) => Err(err.to_string()),
-                Ok(Err(err)) => Err(err.to_string()),
-                Err(err) => Err(err.to_string()),
-            };
-            vec![Action::Domain(DomainAction::UnstageFileFinished {
-                path,
-                result,
-            })]
+            let result = receive(repo.unstage_async(path.clone())).map_err(|e| e.to_string());
+            domain(DomainAction::UnstageFileFinished { path, result })
         }
         EffectRequest::DiscardPaths(paths) => {
-            let repo_rx = {
-                let app = ctx.app.lock().await;
-                match app.discard_paths_request(paths.clone()) {
-                    Ok(rx) => rx,
-                    Err(err) => {
-                        return vec![Action::Domain(DomainAction::DiscardPathsFinished {
-                            paths,
-                            result: Err(err.to_string()),
-                        })];
-                    }
+            let result =
+                receive(repo.discard_paths_async(paths.clone())).map_err(|e| e.to_string());
+            domain(DomainAction::DiscardPathsFinished { paths, result })
+        }
+        EffectRequest::ToggleStageSelection { stage, unstage } => {
+            let result = (|| {
+                if !stage.is_empty() {
+                    receive(repo.stage_paths_async(stage.clone()))?;
                 }
-            };
-            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
-                Ok(Ok(Ok(()))) => {
-                    let mut app = ctx.app.lock().await;
-                    app.request_refresh(RefreshKind::StatusOnly);
-                    Ok(())
+                if !unstage.is_empty() {
+                    repo.unstage_paths(&unstage)?;
                 }
-                Ok(Ok(Err(err))) => Err(err.to_string()),
-                Ok(Err(err)) => Err(err.to_string()),
-                Err(err) => Err(err.to_string()),
+                Ok::<_, GitError>((stage.len(), unstage.len()))
+            })()
+            .map_err(|e| e.to_string());
+            domain(DomainAction::ToggleStageSelectionFinished { result })
+        }
+        EffectRequest::PrepareCommitFromVisualSelection { paths } => {
+            let result = if paths.is_empty() {
+                Ok(0)
+            } else {
+                receive(repo.stage_paths_async(paths.clone()))
+                    .map(|()| paths.len())
+                    .map_err(|e| e.to_string())
             };
-            vec![Action::Domain(DomainAction::DiscardPathsFinished {
-                paths,
-                result,
-            })]
+            domain(DomainAction::PrepareCommitFromSelectionFinished { result })
+        }
+        EffectRequest::FetchRemote => {
+            let result = repo
+                .fetch_default_async()
+                .and_then(|rx| rx.recv().map_err(|e| GitError::Git2(e.to_string()))?)
+                .map_err(|e| e.to_string());
+            domain(DomainAction::FetchRemoteFinished(result))
         }
         EffectRequest::CreateBranch(name) => {
-            let repo_rx = {
-                let app = ctx.app.lock().await;
-                match app.create_branch_request(name.clone()) {
-                    Ok(rx) => rx,
-                    Err(err) => {
-                        return vec![Action::Domain(DomainAction::CreateBranchFinished {
-                            name,
-                            result: Err(err.to_string()),
-                        })];
-                    }
-                }
-            };
-            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
-                Ok(Ok(Ok(()))) => {
-                    let mut app = ctx.app.lock().await;
-                    app.request_refresh(RefreshKind::StatusAndRefs);
-                    Ok(())
-                }
-                Ok(Ok(Err(err))) => Err(err.to_string()),
-                Ok(Err(err)) => Err(err.to_string()),
-                Err(err) => Err(err.to_string()),
-            };
-            vec![Action::Domain(DomainAction::CreateBranchFinished {
-                name,
-                result,
-            })]
+            let result = receive(repo.create_branch_async(name.clone())).map_err(|e| e.to_string());
+            domain(DomainAction::CreateBranchFinished { name, result })
         }
         EffectRequest::CheckoutBranch { name, auto_stash } => {
-            let repo_rx = {
-                let app = ctx.app.lock().await;
-                match app.checkout_branch_request(name.clone(), auto_stash) {
-                    Ok(rx) => rx,
-                    Err(err) => {
-                        return vec![Action::Domain(DomainAction::CheckoutBranchFinished {
-                            name,
-                            auto_stash,
-                            result: Err(err.to_string()),
-                        })];
-                    }
-                }
-            };
-            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
-                Ok(Ok(Ok(()))) => {
-                    let mut app = ctx.app.lock().await;
-                    app.request_refresh(RefreshKind::Full);
-                    Ok(())
-                }
-                Ok(Ok(Err(err))) => Err(err.to_string()),
-                Ok(Err(err)) => Err(err.to_string()),
-                Err(err) => Err(err.to_string()),
-            };
-            vec![Action::Domain(DomainAction::CheckoutBranchFinished {
+            let result = if auto_stash {
+                receive(repo.checkout_branch_with_auto_stash_async(name.clone()))
+            } else {
+                receive(repo.checkout_branch_async(name.clone()))
+            }
+            .map_err(|e| e.to_string());
+            domain(DomainAction::CheckoutBranchFinished {
                 name,
                 auto_stash,
                 result,
-            })]
+            })
         }
         EffectRequest::DeleteBranch(name) => {
-            let repo_rx = {
-                let app = ctx.app.lock().await;
-                match app.delete_branch_request(name.clone()) {
-                    Ok(rx) => rx,
-                    Err(err) => {
-                        return vec![Action::Domain(DomainAction::DeleteBranchFinished {
-                            name,
-                            result: Err(err.to_string()),
-                        })];
-                    }
-                }
-            };
-            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
-                Ok(Ok(Ok(()))) => {
-                    let mut app = ctx.app.lock().await;
-                    app.request_refresh(RefreshKind::StatusAndRefs);
-                    Ok(())
-                }
-                Ok(Ok(Err(err))) => Err(err.to_string()),
-                Ok(Err(err)) => Err(err.to_string()),
-                Err(err) => Err(err.to_string()),
-            };
-            vec![Action::Domain(DomainAction::DeleteBranchFinished {
-                name,
-                result,
-            })]
+            let result = receive(repo.delete_branch_async(name.clone())).map_err(|e| e.to_string());
+            domain(DomainAction::DeleteBranchFinished { name, result })
         }
         EffectRequest::Commit(message) => {
-            let repo_rx = {
-                let app = ctx.app.lock().await;
-                match app.commit_request(message.clone()) {
-                    Ok(rx) => rx,
-                    Err(err) => {
-                        return vec![Action::Domain(DomainAction::CommitFinished {
-                            message,
-                            result: Err(err.to_string()),
-                        })];
-                    }
-                }
-            };
-            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
-                Ok(Ok(Ok(oid))) => {
-                    let mut app = ctx.app.lock().await;
-                    app.request_refresh(RefreshKind::Full);
-                    Ok(oid)
-                }
-                Ok(Ok(Err(err))) => Err(err.to_string()),
-                Ok(Err(err)) => Err(err.to_string()),
-                Err(err) => Err(err.to_string()),
-            };
-            vec![Action::Domain(DomainAction::CommitFinished {
-                message,
-                result,
-            })]
+            let result = receive(repo.commit_async(message.clone())).map_err(|e| e.to_string());
+            domain(DomainAction::CommitFinished { message, result })
         }
         EffectRequest::StashPush { message, paths } => {
-            let repo_rx = {
-                let app = ctx.app.lock().await;
-                match app.stash_push_request(paths.clone(), message.clone()) {
-                    Ok(rx) => rx,
-                    Err(err) => {
-                        return vec![Action::Domain(DomainAction::StashPushFinished {
-                            message,
-                            result: Err(err.to_string()),
-                        })];
-                    }
-                }
-            };
-            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
-                Ok(Ok(Ok(index))) => {
-                    let mut app = ctx.app.lock().await;
-                    app.request_refresh(RefreshKind::StatusAndRefs);
-                    Ok(index)
-                }
-                Ok(Ok(Err(err))) => Err(err.to_string()),
-                Ok(Err(err)) => Err(err.to_string()),
-                Err(err) => Err(err.to_string()),
-            };
-            vec![Action::Domain(DomainAction::StashPushFinished {
-                message,
-                result,
-            })]
+            let result = receive(repo.stash_push_paths_async(paths.clone(), message.clone()))
+                .map_err(|e| e.to_string());
+            domain(DomainAction::StashPushFinished { message, result })
         }
-        EffectRequest::StashApply(index) => {
-            let repo_rx = {
-                let app = ctx.app.lock().await;
-                match app.stash_apply_request(index) {
-                    Ok(rx) => rx,
-                    Err(err) => {
-                        return vec![Action::Domain(DomainAction::StashApplyFinished {
-                            index,
-                            result: Err(err.to_string()),
-                        })];
-                    }
-                }
-            };
-            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
-                Ok(Ok(Ok(()))) => {
-                    let mut app = ctx.app.lock().await;
-                    app.request_refresh(RefreshKind::StatusAndRefs);
-                    Ok(())
-                }
-                Ok(Ok(Err(err))) => Err(err.to_string()),
-                Ok(Err(err)) => Err(err.to_string()),
-                Err(err) => Err(err.to_string()),
-            };
-            vec![Action::Domain(DomainAction::StashApplyFinished {
-                index,
-                result,
-            })]
-        }
-        EffectRequest::StashPop(index) => {
-            let repo_rx = {
-                let app = ctx.app.lock().await;
-                match app.stash_pop_request(index) {
-                    Ok(rx) => rx,
-                    Err(err) => {
-                        return vec![Action::Domain(DomainAction::StashPopFinished {
-                            index,
-                            result: Err(err.to_string()),
-                        })];
-                    }
-                }
-            };
-            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
-                Ok(Ok(Ok(()))) => {
-                    let mut app = ctx.app.lock().await;
-                    app.request_refresh(RefreshKind::StatusAndRefs);
-                    Ok(())
-                }
-                Ok(Ok(Err(err))) => Err(err.to_string()),
-                Ok(Err(err)) => Err(err.to_string()),
-                Err(err) => Err(err.to_string()),
-            };
-            vec![Action::Domain(DomainAction::StashPopFinished {
-                index,
-                result,
-            })]
-        }
-        EffectRequest::StashDrop(index) => {
-            let repo_rx = {
-                let app = ctx.app.lock().await;
-                match app.stash_drop_request(index) {
-                    Ok(rx) => rx,
-                    Err(err) => {
-                        return vec![Action::Domain(DomainAction::StashDropFinished {
-                            index,
-                            result: Err(err.to_string()),
-                        })];
-                    }
-                }
-            };
-            let result = match tokio::task::spawn_blocking(move || repo_rx.recv()).await {
-                Ok(Ok(Ok(()))) => {
-                    let mut app = ctx.app.lock().await;
-                    app.request_refresh(RefreshKind::StatusAndRefs);
-                    Ok(())
-                }
-                Ok(Ok(Err(err))) => Err(err.to_string()),
-                Ok(Err(err)) => Err(err.to_string()),
-                Err(err) => Err(err.to_string()),
-            };
-            vec![Action::Domain(DomainAction::StashDropFinished {
-                index,
-                result,
-            })]
-        }
+        EffectRequest::StashApply(index) => domain(DomainAction::StashApplyFinished {
+            index,
+            result: receive(repo.stash_apply_async(index)).map_err(|e| e.to_string()),
+        }),
+        EffectRequest::StashPop(index) => domain(DomainAction::StashPopFinished {
+            index,
+            result: receive(repo.stash_pop_async(index)).map_err(|e| e.to_string()),
+        }),
+        EffectRequest::StashDrop(index) => domain(DomainAction::StashDropFinished {
+            index,
+            result: receive(repo.stash_drop_async(index)).map_err(|e| e.to_string()),
+        }),
+        _ => unreachable!("state events are handled before I/O"),
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::app::App;
-    use crate::flux::stores::test_support::MockRepo;
-    use pretty_assertions::assert_eq;
-    use std::rc::Rc;
-    use tokio::sync::Mutex;
-
-    fn make_ctx() -> EffectCtx {
-        let app = App::from_repo(Box::new(MockRepo)).expect("app");
-        EffectCtx {
-            app: Rc::new(Mutex::new(app)),
+fn load_background(
+    load: BackgroundLoad,
+    repo: &dyn GitRepository,
+) -> Result<BackgroundPayload, GitError> {
+    use crate::app::diff_loader::DiffTarget;
+    Ok(match load {
+        BackgroundLoad::Status {
+            fast,
+            operation_epoch,
+        } => BackgroundPayload::Status {
+            status: if fast {
+                receive(repo.status_fast_async())?
+            } else {
+                receive(repo.status_async())?
+            },
+            fast,
+            operation_epoch,
+            operation: repo.operation_snapshot()?,
+        },
+        BackgroundLoad::Branches => BackgroundPayload::Branches(receive(repo.branches_async())?),
+        BackgroundLoad::Stashes => BackgroundPayload::Stashes(receive(repo.stashes_async())?),
+        BackgroundLoad::Commits { limit, fast } => {
+            if fast {
+                BackgroundPayload::CommitsFast(receive(repo.commits_fast_async(limit))?)
+            } else {
+                BackgroundPayload::Commits(receive(repo.commits_async(limit))?)
+            }
         }
-    }
-
-    async fn run_effect(request: EffectRequest) -> Vec<Action> {
-        let mut ctx = make_ctx();
-        run(request, &mut ctx).await
-    }
-
-    fn assert_single_domain_action(actions: Vec<Action>) -> DomainAction {
-        assert_eq!(actions.len(), 1);
-        match actions.into_iter().next().expect("single action") {
-            Action::Domain(action) => action,
-            other => panic!("expected domain action, got: {other:?}"),
+        BackgroundLoad::BranchCommits { branch, limit } => {
+            let items = receive(repo.commits_for_branch_async(&branch, limit))?;
+            BackgroundPayload::BranchCommits { branch, items }
         }
-    }
-
-    fn assert_no_actions(actions: Vec<Action>) {
-        assert!(actions.is_empty());
-    }
-
-    #[tokio::test]
-    async fn stage_file_effect_returns_stage_file_finished_action() {
-        let action = assert_single_domain_action(
-            run_effect(EffectRequest::StageFile("foo.txt".into())).await,
-        );
-        assert!(matches!(action, DomainAction::StageFileFinished { .. }));
-    }
-
-    #[tokio::test]
-    async fn unstage_file_effect_returns_unstage_file_finished_action() {
-        let action = assert_single_domain_action(
-            run_effect(EffectRequest::UnstageFile("foo.txt".into())).await,
-        );
-        assert!(matches!(action, DomainAction::UnstageFileFinished { .. }));
-    }
-
-    #[tokio::test]
-    async fn discard_paths_effect_returns_discard_paths_finished_action() {
-        let action = assert_single_domain_action(
-            run_effect(EffectRequest::DiscardPaths(vec!["foo.txt".into()])).await,
-        );
-        assert!(matches!(action, DomainAction::DiscardPathsFinished { .. }));
-    }
-
-    #[tokio::test]
-    async fn create_branch_effect_returns_create_branch_finished_action() {
-        let action = assert_single_domain_action(
-            run_effect(EffectRequest::CreateBranch("new-branch".to_string())).await,
-        );
-        assert!(matches!(action, DomainAction::CreateBranchFinished { .. }));
-    }
-
-    #[tokio::test]
-    async fn checkout_branch_effect_returns_checkout_branch_finished_action() {
-        let action = assert_single_domain_action(
-            run_effect(EffectRequest::CheckoutBranch {
-                name: "main".to_string(),
-                auto_stash: false,
-            })
-            .await,
-        );
-        assert!(matches!(
-            action,
-            DomainAction::CheckoutBranchFinished { .. }
-        ));
-    }
-
-    #[tokio::test]
-    async fn delete_branch_effect_returns_delete_branch_finished_action() {
-        let action = assert_single_domain_action(
-            run_effect(EffectRequest::DeleteBranch("old-branch".to_string())).await,
-        );
-        assert!(matches!(action, DomainAction::DeleteBranchFinished { .. }));
-    }
-
-    #[tokio::test]
-    async fn commit_effect_returns_commit_finished_action() {
-        let action = assert_single_domain_action(
-            run_effect(EffectRequest::Commit("test commit".to_string())).await,
-        );
-        assert!(matches!(action, DomainAction::CommitFinished { .. }));
-    }
-
-    #[tokio::test]
-    async fn stash_push_effect_returns_stash_push_finished_action() {
-        let action = assert_single_domain_action(
-            run_effect(EffectRequest::StashPush {
-                message: "wip".to_string(),
-                paths: vec!["foo.txt".into()],
-            })
-            .await,
-        );
-        assert!(matches!(action, DomainAction::StashPushFinished { .. }));
-    }
-
-    #[tokio::test]
-    async fn stash_apply_effect_returns_stash_apply_finished_action() {
-        let action = assert_single_domain_action(run_effect(EffectRequest::StashApply(0)).await);
-        assert!(matches!(action, DomainAction::StashApplyFinished { .. }));
-    }
-
-    #[tokio::test]
-    async fn stash_pop_effect_returns_stash_pop_finished_action() {
-        let action = assert_single_domain_action(run_effect(EffectRequest::StashPop(0)).await);
-        assert!(matches!(action, DomainAction::StashPopFinished { .. }));
-    }
-
-    #[tokio::test]
-    async fn stash_drop_effect_returns_stash_drop_finished_action() {
-        let action = assert_single_domain_action(run_effect(EffectRequest::StashDrop(0)).await);
-        assert!(matches!(action, DomainAction::StashDropFinished { .. }));
-    }
-
-    #[tokio::test]
-    async fn flush_pending_refresh_without_log_success_returns_no_actions() {
-        assert_no_actions(
-            run_effect(EffectRequest::FlushPendingRefresh { log_success: false }).await,
-        );
-    }
-
-    #[tokio::test]
-    async fn reload_diff_now_effect_returns_no_actions() {
-        assert_no_actions(run_effect(EffectRequest::ReloadDiffNow).await);
-    }
-
-    #[tokio::test]
-    async fn flush_pending_diff_reload_effect_returns_no_actions() {
-        assert_no_actions(run_effect(EffectRequest::FlushPendingDiffReload).await);
-    }
-
-    #[tokio::test]
-    async fn ensure_commits_loaded_effect_returns_no_actions() {
-        assert_no_actions(run_effect(EffectRequest::EnsureCommitsLoadedForActivePanel).await);
-    }
-
-    #[tokio::test]
-    async fn toggle_stage_selection_effect_returns_toggle_stage_selection_finished_action() {
-        let action = assert_single_domain_action(run_effect(EffectRequest::ToggleStageSelection).await);
-        assert!(matches!(action, DomainAction::ToggleStageSelectionFinished { .. }));
-    }
-
-    #[tokio::test]
-    async fn revision_open_from_branches_opens_commits_subview_in_branches_panel() {
-        let mut ctx = make_ctx();
-        {
-            let mut app_guard = ctx.app.lock().await;
-            let app: &mut App = (&mut *app_guard).as_any_mut().downcast_mut().unwrap();
-            app.ui.active_panel = crate::app::SidePanel::LocalBranches;
-            app.ui.branches.items = vec![crate::git::BranchInfo {
-                name: "main".to_string(),
-                is_current: true,
-            }];
-            app.ui.branches.panel.list_state.select(Some(0));
+        BackgroundLoad::Diff { cache_key, target } => {
+            use crate::git::patch::PatchRequest;
+            let patch_request = match &target {
+                DiffTarget::None | DiffTarget::Branch { .. } => None,
+                DiffTarget::File { path, status } => Some(match status {
+                    FileTreeNodeStatus::Staged(_) => PatchRequest::Index(path.clone()),
+                    FileTreeNodeStatus::Untracked => PatchRequest::Untracked(path.clone()),
+                    FileTreeNodeStatus::Unstaged(_) => PatchRequest::Worktree(path.clone()),
+                    FileTreeNodeStatus::Directory => PatchRequest::Directory(path.clone()),
+                }),
+                DiffTarget::Directory { path } => Some(PatchRequest::Directory(path.clone())),
+                DiffTarget::Commit { oid, path } => Some(PatchRequest::Commit {
+                    oid: oid.clone(),
+                    path: path.clone(),
+                }),
+                DiffTarget::Stash { index, path } => Some(PatchRequest::Stash {
+                    index: *index,
+                    path: path.clone(),
+                }),
+            };
+            let structured = patch_request
+                .map(|r| crate::git::patch::document(repo, r))
+                .transpose()?
+                .flatten();
+            let diff = if let Some(document) = structured {
+                document
+            } else {
+                let diff = match target.clone() {
+                    DiffTarget::None => Vec::new(),
+                    DiffTarget::Branch { name } => receive(repo.branch_log_async(name, 20))?,
+                    DiffTarget::File { path, status } => match status {
+                        FileTreeNodeStatus::Staged(_) => receive(repo.diff_staged_async(path))?,
+                        FileTreeNodeStatus::Untracked => receive(repo.diff_untracked_async(path))?,
+                        FileTreeNodeStatus::Unstaged(_) => receive(repo.diff_unstaged_async(path))?,
+                        FileTreeNodeStatus::Directory => receive(repo.diff_directory_async(path))?,
+                    },
+                    DiffTarget::Directory { path } => receive(repo.diff_directory_async(path))?,
+                    DiffTarget::Commit { oid, path } => {
+                        receive(repo.commit_diff_scoped_async(oid, path))?
+                    }
+                    DiffTarget::Stash { index, path } => {
+                        receive(repo.stash_diff_async(index, path))?
+                    }
+                };
+                diff.into()
+            };
+            BackgroundPayload::Diff { cache_key, diff }
         }
+        BackgroundLoad::CommitFiles { oid } => {
+            let files = repo.commit_files(&oid)?;
+            BackgroundPayload::CommitFiles { oid, files }
+        }
+        BackgroundLoad::StashFiles { index } => BackgroundPayload::StashFiles {
+            index,
+            files: repo.stash_files(index)?,
+        },
+    })
+}
 
-        assert_no_actions(run(EffectRequest::RevisionOpenTreeOrToggleDir, &mut ctx).await);
-        assert_no_actions(run(EffectRequest::ProcessBackgroundLoads, &mut ctx).await);
-        let app_guard = ctx.app.lock().await;
-        let app: &App = (&*app_guard).as_any().downcast_ref().unwrap();
-        assert_eq!(app.ui.active_panel, crate::app::SidePanel::LocalBranches);
-        assert!(app.ui.branches.commits_subview_active);
-        assert!(!app.ui.branches.commits_subview.items.is_empty());
-        assert_eq!(
-            app.ui.branches.commits_subview.panel.list_state.selected(),
-            Some(0)
-        );
-    }
-
-    #[tokio::test]
-    async fn prepare_commit_from_visual_selection_effect_returns_prepare_commit_finished_action() {
-        let action = assert_single_domain_action(run_effect(EffectRequest::PrepareCommitFromVisualSelection).await);
-        assert!(matches!(action, DomainAction::PrepareCommitFromSelectionFinished { .. }));
-    }
-
-    #[tokio::test]
-    async fn checkout_branch_with_auto_stash_effect_returns_checkout_branch_finished_action() {
-        let action = assert_single_domain_action(
-            run_effect(EffectRequest::CheckoutBranch {
-                name: "feature".to_string(),
-                auto_stash: true,
+/// Preserve operation identity when a blocking task panics.
+fn failed(request: EffectRequest, error: String) -> Vec<Action> {
+    match request {
+        EffectRequest::ApplyHunks { id, direction, .. } => {
+            domain(DomainAction::ApplyHunksFinished {
+                id,
+                direction,
+                result: Err(error),
             })
-            .await,
-        );
-        assert!(matches!(
-            action,
-            DomainAction::CheckoutBranchFinished { .. }
-        ));
-    }
-
-    #[tokio::test]
-    async fn flush_pending_refresh_with_log_success_returns_no_actions() {
-        assert_no_actions(
-            run_effect(EffectRequest::FlushPendingRefresh { log_success: true }).await,
-        );
+        }
+        EffectRequest::StageHunks { .. } => {
+            domain(DomainAction::StageHunksFinished { result: Err(error) })
+        }
+        EffectRequest::ControlRepositoryOperation { id, .. } => {
+            domain(DomainAction::RepositoryOperationFinished {
+                id,
+                result: Err(error),
+                observed: None,
+            })
+        }
+        EffectRequest::LoadBackground { request, .. } => vec![Action::System(
+            SystemAction::BackgroundCompleted(Box::new(BackgroundCompleted {
+                request,
+                result: Err(error),
+            })),
+        )],
+        EffectRequest::StageFile(path) => domain(DomainAction::StageFileFinished {
+            path,
+            result: Err(error),
+        }),
+        EffectRequest::StagePaths(_) => {
+            domain(DomainAction::StagePathsFinished { result: Err(error) })
+        }
+        EffectRequest::UnstageFile(path) => domain(DomainAction::UnstageFileFinished {
+            path,
+            result: Err(error),
+        }),
+        EffectRequest::DiscardPaths(paths) => domain(DomainAction::DiscardPathsFinished {
+            paths,
+            result: Err(error),
+        }),
+        EffectRequest::ToggleStageSelection { .. } => {
+            domain(DomainAction::ToggleStageSelectionFinished { result: Err(error) })
+        }
+        EffectRequest::PrepareCommitFromVisualSelection { .. } => {
+            domain(DomainAction::PrepareCommitFromSelectionFinished { result: Err(error) })
+        }
+        EffectRequest::FetchRemote => domain(DomainAction::FetchRemoteFinished(Err(error))),
+        EffectRequest::CreateBranch(name) => domain(DomainAction::CreateBranchFinished {
+            name,
+            result: Err(error),
+        }),
+        EffectRequest::CheckoutBranch { name, auto_stash } => {
+            domain(DomainAction::CheckoutBranchFinished {
+                name,
+                auto_stash,
+                result: Err(error),
+            })
+        }
+        EffectRequest::DeleteBranch(name) => domain(DomainAction::DeleteBranchFinished {
+            name,
+            result: Err(error),
+        }),
+        EffectRequest::Commit(message) => domain(DomainAction::CommitFinished {
+            message,
+            result: Err(error),
+        }),
+        EffectRequest::StashPush { message, .. } => domain(DomainAction::StashPushFinished {
+            message,
+            result: Err(error),
+        }),
+        EffectRequest::StashApply(index) => domain(DomainAction::StashApplyFinished {
+            index,
+            result: Err(error),
+        }),
+        EffectRequest::StashPop(index) => domain(DomainAction::StashPopFinished {
+            index,
+            result: Err(error),
+        }),
+        EffectRequest::StashDrop(index) => domain(DomainAction::StashDropFinished {
+            index,
+            result: Err(error),
+        }),
+        _ => unreachable!("state events never spawn blocking tasks"),
     }
 }

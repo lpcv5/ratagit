@@ -12,17 +12,16 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use flux::action::{Action, SystemAction};
-use flux::effects::EffectCtx;
+use flux::runtime::EffectExecutor;
 use flux::snapshot::AppStateSnapshotOwned;
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::fs::{File, OpenOptions};
 use std::io;
-use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
-use tokio::sync::{broadcast, mpsc, watch, Mutex};
+use tokio::sync::{broadcast, mpsc, watch};
 use tracing::{error, info};
 
 const ENABLE_DEBUG_LOG: bool = cfg!(debug_assertions);
@@ -231,20 +230,17 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: App
     let local = tokio::task::LocalSet::new();
     local
         .run_until(async move {
-            let shared_app = Rc::new(Mutex::new(app));
+            let App { state, runtime } = app;
             let perf = Arc::new(PerfCounters::default());
             let (action_tx, action_rx) = mpsc::unbounded_channel::<Action>();
             let (command_tx, command_rx) = mpsc::unbounded_channel::<app::Command>();
             let (state_version_tx, mut state_version_rx) = watch::channel(0u64);
-            let initial_snapshot = Arc::new({
-                let app = shared_app.try_lock().expect("app not locked at startup");
-                AppStateSnapshotOwned::from_app(&app)
-            });
+            let initial_snapshot = Arc::new(AppStateSnapshotOwned::from_app(&state));
             let (snapshot_tx, snapshot_rx) = watch::channel(initial_snapshot);
             let (shutdown_tx, _) = broadcast::channel::<()>(1);
 
             let dispatch_handle = tokio::task::spawn_local(dispatch_loop(
-                shared_app.clone(),
+                state,
                 perf.clone(),
                 action_rx,
                 command_tx,
@@ -253,7 +249,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: App
                 shutdown_tx.subscribe(),
             ));
             let effect_handle = tokio::task::spawn_local(effect_loop(
-                shared_app.clone() as Rc<Mutex<dyn app::AppEffects>>,
+                runtime,
                 perf.clone(),
                 command_rx,
                 action_tx.clone(),
@@ -347,8 +343,7 @@ async fn ui_loop(
                             let key_started = Instant::now();
                             let snapshot = snapshot_rx.borrow();
                             let view = snapshot.as_snapshot();
-                            let mapped_actions =
-                                flux::input_mapper::map_key_to_actions(key, &view);
+                            let mapped_actions = flux::input_mapper::map_key_to_actions(key, &view);
                             for action in mapped_actions {
                                 let _ = action_tx.send(action);
                                 perf.ui_messages.fetch_add(1, Ordering::Relaxed);
@@ -436,41 +431,31 @@ async fn ui_loop(
                     ui_draw_max_us: now.ui_draw_max_us,
                     dispatch_max_us: now.dispatch_max_us,
                 };
-                let avg_draw_us = if delta.ui_draws > 0 {
-                    delta.ui_draw_us / delta.ui_draws
-                } else {
-                    0
-                };
-                let avg_ui_lock_wait_us = if delta.ui_events > 0 {
-                    delta.ui_lock_wait_us / delta.ui_events
-                } else {
-                    0
-                };
-                let avg_ui_key_us = if delta.ui_messages > 0 {
-                    delta.ui_key_handle_us / delta.ui_messages
-                } else {
-                    0
-                };
-                let avg_dispatch_us = if delta.dispatch_actions > 0 {
-                    delta.dispatch_us / delta.dispatch_actions
-                } else {
-                    0
-                };
-                let avg_dispatch_lock_wait_us = if delta.dispatch_actions > 0 {
-                    delta.dispatch_lock_wait_us / delta.dispatch_actions
-                } else {
-                    0
-                };
-                let avg_dispatch_reduce_us = if delta.dispatch_actions > 0 {
-                    delta.dispatch_reduce_us / delta.dispatch_actions
-                } else {
-                    0
-                };
-                let avg_effect_us = if delta.effect_commands > 0 {
-                    delta.effect_us / delta.effect_commands
-                } else {
-                    0
-                };
+                let avg_draw_us = delta.ui_draw_us.checked_div(delta.ui_draws).unwrap_or(0);
+                let avg_ui_lock_wait_us = delta
+                    .ui_lock_wait_us
+                    .checked_div(delta.ui_events)
+                    .unwrap_or(0);
+                let avg_ui_key_us = delta
+                    .ui_key_handle_us
+                    .checked_div(delta.ui_messages)
+                    .unwrap_or(0);
+                let avg_dispatch_us = delta
+                    .dispatch_us
+                    .checked_div(delta.dispatch_actions)
+                    .unwrap_or(0);
+                let avg_dispatch_lock_wait_us = delta
+                    .dispatch_lock_wait_us
+                    .checked_div(delta.dispatch_actions)
+                    .unwrap_or(0);
+                let avg_dispatch_reduce_us = delta
+                    .dispatch_reduce_us
+                    .checked_div(delta.dispatch_actions)
+                    .unwrap_or(0);
+                let avg_effect_us = delta
+                    .effect_us
+                    .checked_div(delta.effect_commands)
+                    .unwrap_or(0);
                 let pending_tasks = 0usize;
                 let task_metrics = crate::flux::task_manager::TaskMetrics::default();
                 log.write_line(&format!(
@@ -539,7 +524,7 @@ async fn auto_refresh_loop(
 }
 
 async fn dispatch_loop(
-    app: Rc<Mutex<App>>,
+    mut app: app::AppState,
     perf: Arc<PerfCounters>,
     mut action_rx: mpsc::UnboundedReceiver<Action>,
     command_tx: mpsc::UnboundedSender<app::Command>,
@@ -560,11 +545,6 @@ async fn dispatch_loop(
                     &perf.action_backlog_max,
                 );
                 let started = Instant::now();
-                let lock_wait_started = Instant::now();
-                let mut app = app.lock().await;
-                let lock_wait_us = lock_wait_started.elapsed().as_micros() as u64;
-                perf.dispatch_lock_wait_us
-                    .fetch_add(lock_wait_us, Ordering::Relaxed);
                 let reduce_started = Instant::now();
                 let envelope = dispatcher.next_envelope(action);
                 let result = dispatcher.dispatch(&mut app, envelope);
@@ -579,7 +559,6 @@ async fn dispatch_loop(
                     let _ = snapshot_tx.send(snapshot);
                 }
 
-                drop(app);
                 let elapsed_us = started.elapsed().as_micros() as u64;
                 perf.dispatch_actions.fetch_add(1, Ordering::Relaxed);
                 perf.dispatch_us.fetch_add(elapsed_us, Ordering::Relaxed);
@@ -604,56 +583,42 @@ async fn dispatch_loop(
 }
 
 async fn effect_loop(
-    app: Rc<Mutex<dyn app::AppEffects>>,
+    runtime: app::AppRuntime,
     perf: Arc<PerfCounters>,
     mut command_rx: mpsc::UnboundedReceiver<app::Command>,
     action_tx: mpsc::UnboundedSender<Action>,
     mut shutdown_rx: broadcast::Receiver<()>,
 ) {
+    let mut executor = EffectExecutor::new(runtime);
     loop {
-        tokio::select! {
+        let actions = tokio::select! {
             _ = shutdown_rx.recv() => break,
+            completion = executor.next_completed(), if executor.has_jobs() => {
+                perf.effect_us.fetch_add(completion.elapsed_us, Ordering::Relaxed);
+                completion.actions
+            }
             maybe_command = command_rx.recv() => {
                 let Some(command) = maybe_command else { break; };
                 perf.command_dequeued.fetch_add(1, Ordering::Relaxed);
-                update_backlog(
-                    &perf.command_enqueued,
-                    &perf.command_dequeued,
-                    &perf.command_backlog_max,
-                );
+                update_backlog(&perf.command_enqueued, &perf.command_dequeued, &perf.command_backlog_max);
                 perf.effect_commands.fetch_add(1, Ordering::Relaxed);
                 match command {
-                    app::Command::None => {}
-                    app::Command::Sync(action) => {
-                        let _ = action_tx.send(Action::Domain(action));
-                        perf.effect_actions_emitted.fetch_add(1, Ordering::Relaxed);
-                        perf.action_enqueued.fetch_add(1, Ordering::Relaxed);
-                        update_backlog(
-                            &perf.action_enqueued,
-                            &perf.action_dequeued,
-                            &perf.action_backlog_max,
-                        );
-                    }
-                    app::Command::Effect(request) => {
-                        let started = Instant::now();
-                        let mut ctx = EffectCtx { app: app.clone() };
-                        let actions = flux::effects::run(request, &mut ctx).await;
-                        let elapsed_us = started.elapsed().as_micros() as u64;
-                        perf.effect_us.fetch_add(elapsed_us, Ordering::Relaxed);
-                        perf.effect_actions_emitted
-                            .fetch_add(actions.len() as u64, Ordering::Relaxed);
-                        for action in actions {
-                            let _ = action_tx.send(action);
-                            perf.action_enqueued.fetch_add(1, Ordering::Relaxed);
-                            update_backlog(
-                                &perf.action_enqueued,
-                                &perf.action_dequeued,
-                                &perf.action_backlog_max,
-                            );
-                        }
-                    }
+                    app::Command::None => Vec::new(),
+                    app::Command::Sync(action) => vec![Action::Domain(action)],
+                    app::Command::Effect(request) => executor.enqueue(request),
                 }
             }
+        };
+        perf.effect_actions_emitted
+            .fetch_add(actions.len() as u64, Ordering::Relaxed);
+        for action in actions {
+            let _ = action_tx.send(action);
+            perf.action_enqueued.fetch_add(1, Ordering::Relaxed);
+            update_backlog(
+                &perf.action_enqueued,
+                &perf.action_dequeued,
+                &perf.action_backlog_max,
+            );
         }
     }
 }

@@ -33,17 +33,45 @@ pub fn render_command_palette(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>
         .style(Style::default().fg(theme.text_primary));
     frame.render_widget(input, sections[0]);
 
-    let commands = Paragraph::new(vec![
-        Line::from("refresh | quit | commit | search"),
-        Line::from("stash | branch new | fetch"),
-        Line::from("panel files|branches|commits|stash"),
-    ])
-    .style(Style::default().fg(theme.text_muted))
-    .block(theme.panel_block("Examples", false));
+    let query = crate::app::commands::normalize_input(snapshot.input_buffer);
+    let available: Vec<_> = snapshot
+        .available_commands
+        .iter()
+        .filter(|command| {
+            command.aliases.iter().any(|alias| alias.contains(&query))
+                || command.label.to_lowercase().contains(&query)
+        })
+        .collect();
+    let rows: Vec<_> = if available.is_empty() {
+        vec![Line::from("No matching commands")]
+    } else {
+        available
+            .iter()
+            .map(|command| {
+                let keys = if command.keys.is_empty() {
+                    "--".into()
+                } else {
+                    command.keys.join("/")
+                };
+                Line::from(format!("{}  {}  ({})", keys, command.name, command.label))
+            })
+            .collect()
+    };
+    let commands_title = format!("Commands ({})", available.len());
+    let commands = Paragraph::new(rows)
+        .style(Style::default().fg(theme.text_muted))
+        .block(theme.panel_block(&commands_title, false));
     frame.render_widget(commands, sections[1]);
 
-    let help = Paragraph::new(Line::from("Enter run | Esc cancel"))
-        .style(Style::default().fg(theme.accent));
+    let help = Paragraph::new(Line::from(
+        snapshot
+            .shortcut_hints
+            .iter()
+            .map(|(key, label)| format!("{key} {label}"))
+            .collect::<Vec<_>>()
+            .join(" | "),
+    ))
+    .style(Style::default().fg(theme.accent));
     frame.render_widget(help, sections[2]);
 
     let width = sections[0].width.saturating_sub(2).max(1);

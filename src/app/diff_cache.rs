@@ -1,4 +1,4 @@
-use crate::git::DiffLine;
+use crate::git::patch::DiffDocument;
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 
@@ -6,15 +6,30 @@ use std::path::PathBuf;
 pub enum DiffCacheKey {
     /// Represents a missing or empty diff target (no selection).
     None,
-    File { path: PathBuf, is_staged: bool },
-    Branch { name: String, limit: usize },
-    Directory { path: PathBuf, files_hash: u64 },
-    Commit { oid: String, path: Option<PathBuf> },
-    Stash { index: usize, path: Option<PathBuf> },
+    File {
+        path: PathBuf,
+        is_staged: bool,
+    },
+    Branch {
+        name: String,
+        limit: usize,
+    },
+    Directory {
+        path: PathBuf,
+        files_hash: u64,
+    },
+    Commit {
+        oid: String,
+        path: Option<PathBuf>,
+    },
+    Stash {
+        index: usize,
+        path: Option<PathBuf>,
+    },
 }
 
 pub struct DiffCache {
-    cache: HashMap<DiffCacheKey, Vec<DiffLine>>,
+    cache: HashMap<DiffCacheKey, DiffDocument>,
     usage_order: VecDeque<DiffCacheKey>,
     max_entries: usize,
 }
@@ -28,13 +43,14 @@ impl DiffCache {
         }
     }
 
-    pub fn get_cloned(&mut self, key: &DiffCacheKey) -> Option<Vec<DiffLine>> {
+    pub fn get_cloned(&mut self, key: &DiffCacheKey) -> Option<DiffDocument> {
         let diff = self.cache.get(key)?.clone();
         self.touch(key);
         Some(diff)
     }
 
-    pub fn insert(&mut self, key: DiffCacheKey, diff: Vec<DiffLine>) {
+    pub fn insert(&mut self, key: DiffCacheKey, diff: impl Into<DiffDocument>) {
+        let diff = diff.into();
         if self.cache.contains_key(&key) {
             self.cache.insert(key.clone(), diff);
             self.touch(&key);
@@ -59,6 +75,12 @@ impl DiffCache {
                     | DiffCacheKey::Branch { .. }
             )
         });
+        self.usage_order.retain(|k| self.cache.contains_key(k));
+    }
+
+    pub fn invalidate_refs(&mut self) {
+        self.cache
+            .retain(|k, _| !matches!(k, DiffCacheKey::Branch { .. } | DiffCacheKey::Stash { .. }));
         self.usage_order.retain(|k| self.cache.contains_key(k));
     }
 
@@ -198,5 +220,28 @@ mod tests {
         };
         cache.insert(key.clone(), make_diff(4));
         assert_eq!(cache.get_cloned(&key).unwrap().len(), 4);
+    }
+    #[test]
+    fn test_ref_refresh_invalidates_stash_indices_but_keeps_commit_patches() {
+        let mut cache = DiffCache::new();
+        let stash = DiffCacheKey::Stash {
+            index: 0,
+            path: None,
+        };
+        let branch = DiffCacheKey::Branch {
+            name: "feature".into(),
+            limit: 20,
+        };
+        let commit = DiffCacheKey::Commit {
+            oid: "immutable".into(),
+            path: None,
+        };
+        for key in [&stash, &branch, &commit] {
+            cache.insert(key.clone(), Vec::<DiffLine>::new());
+        }
+        cache.invalidate_refs();
+        assert!(cache.get_cloned(&stash).is_none());
+        assert!(cache.get_cloned(&branch).is_none());
+        assert!(cache.get_cloned(&commit).is_some());
     }
 }

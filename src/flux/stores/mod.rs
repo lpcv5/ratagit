@@ -1,4 +1,6 @@
 mod branch_store;
+mod runtime_store;
+pub use runtime_store::RuntimeStore;
 mod commit_store;
 mod diff_store;
 mod files_store;
@@ -150,53 +152,61 @@ pub mod test_support {
     use crate::flux::action::{Action, ActionEnvelope};
     use crate::git::{
         BranchInfo, CommitInfo, CommitSyncState, DiffLine, DiffLineKind, FileEntry, GitError,
-        GitRepository, GitStatus, StashInfo,
+        GitStatus, StashInfo,
     };
     use std::path::{Path, PathBuf};
     use std::sync::mpsc::{self, Receiver};
 
     pub struct MockRepo;
 
-    impl GitRepository for MockRepo {
+    impl crate::git::WorktreeRepository for MockRepo {
         fn status(&self) -> Result<GitStatus, GitError> {
             Ok(GitStatus::default())
         }
+
         fn stage(&self, _: &Path) -> Result<(), GitError> {
             Ok(())
         }
+
         fn stage_paths(&self, _: &[PathBuf]) -> Result<(), GitError> {
             Ok(())
         }
+
         fn unstage(&self, _: &Path) -> Result<(), GitError> {
             Ok(())
         }
+
         fn unstage_paths(&self, _: &[PathBuf]) -> Result<(), GitError> {
             Ok(())
         }
+
         fn discard_paths(&self, _: &[PathBuf]) -> Result<(), GitError> {
             Ok(())
         }
+    }
+
+    impl crate::git::PatchRepository for MockRepo {
         fn diff_unstaged(&self, _: &Path) -> Result<Vec<DiffLine>, GitError> {
             Ok(vec![])
         }
+
         fn diff_staged(&self, _: &Path) -> Result<Vec<DiffLine>, GitError> {
             Ok(vec![])
         }
+
         fn diff_untracked(&self, _: &Path) -> Result<Vec<DiffLine>, GitError> {
             Ok(vec![])
         }
-        fn branches(&self) -> Result<Vec<BranchInfo>, GitError> {
-            Ok(vec![])
+
+        fn commit_diff_scoped(&self, _: &str, _: Option<&Path>) -> Result<Vec<DiffLine>, GitError> {
+            Ok(vec![DiffLine {
+                kind: DiffLineKind::Header,
+                content: "diff".to_string(),
+            }])
         }
-        fn create_branch(&self, _: &str) -> Result<(), GitError> {
-            Ok(())
-        }
-        fn checkout_branch(&self, _: &str) -> Result<(), GitError> {
-            Ok(())
-        }
-        fn delete_branch(&self, _: &str) -> Result<(), GitError> {
-            Ok(())
-        }
+    }
+
+    impl crate::git::HistoryRepository for MockRepo {
         fn commits(&self, _: usize) -> Result<Vec<CommitInfo>, GitError> {
             Ok(vec![CommitInfo {
                 oid: "abc1234567890".to_string(),
@@ -214,45 +224,72 @@ pub mod test_support {
                 parent_oids: vec![],
             }])
         }
+
         fn commit_files(&self, _: &str) -> Result<Vec<FileEntry>, GitError> {
             Ok(vec![])
         }
-        fn commit_diff_scoped(&self, _: &str, _: Option<&Path>) -> Result<Vec<DiffLine>, GitError> {
-            Ok(vec![DiffLine {
-                kind: DiffLineKind::Header,
-                content: "diff".to_string(),
-            }])
-        }
-        fn commit(&self, _: &str) -> Result<String, GitError> {
-            Ok("oid".to_string())
-        }
-        fn stashes(&self) -> Result<Vec<StashInfo>, GitError> {
+    }
+
+    impl crate::git::ReferenceRepository for MockRepo {
+        fn branches(&self) -> Result<Vec<BranchInfo>, GitError> {
             Ok(vec![])
         }
-        fn stash_files(&self, _: usize) -> Result<Vec<FileEntry>, GitError> {
-            Ok(vec![])
-        }
-        fn stash_diff(&self, _: usize, _: Option<&Path>) -> Result<Vec<DiffLine>, GitError> {
-            Ok(vec![])
-        }
-        fn stash_push_paths(&self, _: &[PathBuf], _: &str) -> Result<usize, GitError> {
-            Ok(0)
-        }
-        fn stash_apply(&self, _: usize) -> Result<(), GitError> {
+
+        fn create_branch(&self, _: &str) -> Result<(), GitError> {
             Ok(())
         }
-        fn stash_pop(&self, _: usize) -> Result<(), GitError> {
+
+        fn checkout_branch(&self, _: &str) -> Result<(), GitError> {
             Ok(())
         }
-        fn stash_drop(&self, _: usize) -> Result<(), GitError> {
+
+        fn delete_branch(&self, _: &str) -> Result<(), GitError> {
             Ok(())
         }
+
         fn fetch_default_async(&self) -> Result<Receiver<Result<String, GitError>>, GitError> {
             let (tx, rx) = mpsc::channel();
             drop(tx);
             Ok(rx)
         }
     }
+
+    impl crate::git::StashRepository for MockRepo {
+        fn stashes(&self) -> Result<Vec<StashInfo>, GitError> {
+            Ok(vec![])
+        }
+
+        fn stash_files(&self, _: usize) -> Result<Vec<FileEntry>, GitError> {
+            Ok(vec![])
+        }
+
+        fn stash_diff(&self, _: usize, _: Option<&Path>) -> Result<Vec<DiffLine>, GitError> {
+            Ok(vec![])
+        }
+
+        fn stash_push_paths(&self, _: &[PathBuf], _: &str) -> Result<usize, GitError> {
+            Ok(0)
+        }
+
+        fn stash_apply(&self, _: usize) -> Result<(), GitError> {
+            Ok(())
+        }
+
+        fn stash_pop(&self, _: usize) -> Result<(), GitError> {
+            Ok(())
+        }
+
+        fn stash_drop(&self, _: usize) -> Result<(), GitError> {
+            Ok(())
+        }
+    }
+
+    impl crate::git::CommitRepository for MockRepo {
+        fn commit(&self, _: &str) -> Result<String, GitError> {
+            Ok("oid".to_string())
+        }
+    }
+    impl crate::git::OperationRepository for MockRepo {}
 
     pub fn mock_app() -> App {
         App::from_repo(Box::new(MockRepo)).expect("mock app")
@@ -271,7 +308,9 @@ pub mod test_support {
         action: Action,
     ) -> super::ReduceOutput {
         let env = make_envelope(action);
-        let mut ctx = super::ReduceCtx { state: app };
+        let mut ctx = super::ReduceCtx {
+            state: &mut app.state,
+        };
         store.reduce(&env, &mut ctx)
     }
 }

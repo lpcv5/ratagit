@@ -55,11 +55,7 @@ pub fn compute_highlight_set(commits: &[CommitInfo], selected_oid: &str) -> Hash
     // use a stable tie-break: same lane first, then nearest lane distance, then nearest row.
     let mut cur_oid = selected_oid.to_string();
     let mut cur_idx = selected_idx;
-    loop {
-        let Some(children) = fp_children.get(cur_oid.as_str()) else {
-            break;
-        };
-
+    while let Some(children) = fp_children.get(cur_oid.as_str()) {
         let cur_lane = lane_by_oid.get(cur_oid.as_str()).copied();
         let mut candidates: Vec<(&str, usize)> = children
             .iter()

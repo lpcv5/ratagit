@@ -1,4 +1,4 @@
-use crate::app::{App, CommitFieldFocus, InputMode, RefreshKind, SidePanel};
+use crate::app::{AppState, CommitFieldFocus, InputMode, RefreshKind, SidePanel};
 use crate::flux::action::DomainAction;
 use crate::flux::stores::state_access::{
     CoreAccess, DirtyHint, InputAccess, NavigationAccess, OverlayAccess, RefreshAccess,
@@ -11,9 +11,19 @@ use std::time::Duration;
 // CoreAccess
 // ---------------------------------------------------------------------------
 
-impl CoreAccess for App {
+impl CoreAccess for AppState {
+    fn apply_repository_action(&mut self, action: &DomainAction) {
+        AppState::apply_repository_action(self, action);
+    }
+    fn apply_runtime_event(&mut self, event: &crate::flux::effects::RuntimeEvent) {
+        AppState::apply_runtime_event(self, event);
+    }
+
+    fn apply_background_completed(&mut self, completed: &crate::app::BackgroundCompleted) {
+        AppState::apply_background_completed(self, completed.clone());
+    }
     fn push_log(&mut self, msg: String, success: bool) {
-        App::push_log(self, msg, success);
+        AppState::push_log(self, msg, success);
     }
 
     fn set_running(&mut self, running: bool) {
@@ -29,19 +39,19 @@ impl CoreAccess for App {
     }
 
     fn resolve_command_palette_command(&self, cmd: &str) -> Option<DomainAction> {
-        App::resolve_command_palette_command(self, cmd)
+        AppState::resolve_command_palette_command(self, cmd)
     }
 
     fn selected_branch_name(&self) -> Option<String> {
-        App::selected_branch_name(self)
+        AppState::selected_branch_name(self)
     }
 
     fn selected_stash_index(&self) -> Option<usize> {
-        App::selected_stash_index(self)
+        AppState::selected_stash_index(self)
     }
 
     fn take_branch_switch_target(&mut self) -> Option<String> {
-        App::take_branch_switch_target(self)
+        AppState::take_branch_switch_target(self)
     }
 
     fn is_fetching_remote(&self) -> bool {
@@ -61,7 +71,7 @@ impl CoreAccess for App {
     }
 
     fn has_uncommitted_changes(&self) -> bool {
-        App::has_uncommitted_changes(self)
+        AppState::has_uncommitted_changes(self)
     }
 }
 
@@ -69,9 +79,9 @@ impl CoreAccess for App {
 // InputAccess
 // ---------------------------------------------------------------------------
 
-impl InputAccess for App {
+impl InputAccess for AppState {
     fn cancel_input(&mut self) {
-        App::cancel_input(self);
+        AppState::cancel_input(self);
     }
 
     fn input_mode(&self) -> Option<InputMode> {
@@ -170,37 +180,37 @@ impl InputAccess for App {
 // NavigationAccess
 // ---------------------------------------------------------------------------
 
-impl NavigationAccess for App {
+impl NavigationAccess for AppState {
     fn list_down(&mut self) {
-        App::list_down(self);
+        AppState::list_down(self);
     }
 
     fn list_up(&mut self) {
-        App::list_up(self);
+        AppState::list_up(self);
     }
 
     fn toggle_selected_dir(&mut self) {
-        App::toggle_selected_dir(self);
+        AppState::toggle_selected_dir(self);
     }
 
     fn collapse_all(&mut self) {
-        App::collapse_all(self);
+        AppState::collapse_all(self);
     }
 
     fn expand_all(&mut self) {
-        App::expand_all(self);
+        AppState::expand_all(self);
     }
 
     fn diff_scroll_up(&mut self) {
-        App::diff_scroll_up(self);
+        AppState::diff_scroll_up(self);
     }
 
     fn diff_scroll_down(&mut self) {
-        App::diff_scroll_down(self);
+        AppState::diff_scroll_down(self);
     }
 
     fn recompute_commit_highlight(&mut self) {
-        App::recompute_commit_highlight(self);
+        AppState::recompute_commit_highlight(self);
     }
 }
 
@@ -208,33 +218,33 @@ impl NavigationAccess for App {
 // SearchAccess
 // ---------------------------------------------------------------------------
 
-impl SearchAccess for App {
+impl SearchAccess for AppState {
     fn clear_search(&mut self) {
-        App::clear_search(self);
+        AppState::clear_search(self);
     }
 
     fn confirm_search_input(&mut self) {
-        App::confirm_search_input(self);
+        AppState::confirm_search_input(self);
     }
 
     fn apply_search_query(&mut self, query: String) -> usize {
-        App::apply_search_query(self, query)
+        AppState::apply_search_query(self, query)
     }
 
     fn search_select_initial_match(&mut self) -> bool {
-        App::search_select_initial_match(self)
+        AppState::search_select_initial_match(self)
     }
 
     fn search_jump_next(&mut self) -> bool {
-        App::search_jump_next(self)
+        AppState::search_jump_next(self)
     }
 
     fn search_jump_prev(&mut self) -> bool {
-        App::search_jump_prev(self)
+        AppState::search_jump_prev(self)
     }
 
     fn restore_search_for_active_scope(&mut self) {
-        App::restore_search_for_active_scope(self);
+        AppState::restore_search_for_active_scope(self);
     }
 
     fn search_query_clone(&self) -> String {
@@ -246,17 +256,24 @@ impl SearchAccess for App {
 // SelectionAccess
 // ---------------------------------------------------------------------------
 
-impl SelectionAccess for App {
+impl SelectionAccess for AppState {
+    fn stage_selection_targets(&self) -> (Vec<PathBuf>, Vec<PathBuf>) {
+        self.partition_toggle_targets(&self.visual_selected_indices())
+    }
+
+    fn commit_selection_targets(&self) -> Vec<PathBuf> {
+        self.collect_commit_targets(&self.visual_selected_indices())
+    }
     fn toggle_visual_select_mode(&mut self) {
-        App::toggle_visual_select_mode(self);
+        AppState::toggle_visual_select_mode(self);
     }
 
     fn prepare_stash_targets_from_selection(&self) -> Vec<PathBuf> {
-        App::prepare_stash_targets_from_selection(self)
+        AppState::prepare_stash_targets_from_selection(self)
     }
 
     fn prepare_discard_targets_from_selection(&self) -> Vec<PathBuf> {
-        App::prepare_discard_targets_from_selection(self)
+        AppState::prepare_discard_targets_from_selection(self)
     }
 
     fn clear_files_visual_selection(&mut self) {
@@ -280,21 +297,21 @@ impl SelectionAccess for App {
 // RefreshAccess
 // ---------------------------------------------------------------------------
 
-impl RefreshAccess for App {
+impl RefreshAccess for AppState {
     fn request_refresh(&mut self, kind: RefreshKind) {
-        App::request_refresh(self, kind);
+        AppState::request_refresh(self, kind);
     }
 
     fn has_pending_diff_reload(&self) -> bool {
-        App::has_pending_diff_reload(self)
+        AppState::has_pending_diff_reload(self)
     }
 
     fn diff_reload_debounce_elapsed(&self, debounce: Duration) -> bool {
-        App::diff_reload_debounce_elapsed(self, debounce)
+        AppState::diff_reload_debounce_elapsed(self, debounce)
     }
 
     fn schedule_diff_reload(&mut self) {
-        App::schedule_diff_reload(self);
+        AppState::schedule_diff_reload(self);
     }
 }
 
@@ -302,33 +319,33 @@ impl RefreshAccess for App {
 // OverlayAccess
 // ---------------------------------------------------------------------------
 
-impl OverlayAccess for App {
+impl OverlayAccess for AppState {
     fn start_command_palette(&mut self) {
-        App::start_command_palette(self);
+        AppState::start_command_palette(self);
     }
 
     fn start_branch_create_input(&mut self) {
-        App::start_branch_create_input(self);
+        AppState::start_branch_create_input(self);
     }
 
     fn start_search_input(&mut self) {
-        App::start_search_input(self);
+        AppState::start_search_input(self);
     }
 
     fn start_stash_editor(&mut self, targets: Vec<PathBuf>) {
-        App::start_stash_editor(self, targets);
+        AppState::start_stash_editor(self, targets);
     }
 
     fn start_commit_editor_guarded(&mut self) -> bool {
-        App::start_commit_editor_guarded(self)
+        AppState::start_commit_editor_guarded(self)
     }
 
     fn start_branch_switch_confirm(&mut self, target: String) {
-        App::start_branch_switch_confirm(self, target);
+        AppState::start_branch_switch_confirm(self, target);
     }
 
     fn start_commit_editor(&mut self) {
-        App::start_commit_editor(self);
+        AppState::start_commit_editor(self);
     }
 }
 
@@ -336,16 +353,16 @@ impl OverlayAccess for App {
 // RevisionAccess
 // ---------------------------------------------------------------------------
 
-impl RevisionAccess for App {
+impl RevisionAccess for AppState {
     fn stash_close_tree(&mut self) {
-        App::stash_close_tree(self);
+        AppState::stash_close_tree(self);
     }
 
     fn commit_close_tree(&mut self) {
-        App::commit_close_tree(self);
+        AppState::commit_close_tree(self);
     }
 
     fn close_branch_commits_subview(&mut self) {
-        App::close_branch_commits_subview(self);
+        AppState::close_branch_commits_subview(self);
     }
 }

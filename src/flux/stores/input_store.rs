@@ -66,8 +66,7 @@ impl InputStore {
                 ctx.state.set_input_mode(None);
                 ctx.state.clear_input_buffer();
                 if value.is_empty() {
-                    ctx.state
-                        .push_log("Empty input ignored".to_string(), false);
+                    ctx.state.push_log("Empty input ignored".to_string(), false);
                     return ReduceOutput::none()
                         .with_invalidation(UiInvalidation::log_and_overlay());
                 }
