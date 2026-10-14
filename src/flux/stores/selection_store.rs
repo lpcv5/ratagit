@@ -1,7 +1,11 @@
-use crate::app::{Command, RefreshKind, SidePanel};
+use super::files_output::finish_files_update;
+use super::state_access::{FilesAccess, LogAccess, OverlayAccess, RefreshAccess};
+use crate::app::files::FilesAction;
+use crate::app::RefreshKind;
+#[cfg(test)]
+use crate::app::SidePanel;
 use crate::flux::action::{Action, ActionEnvelope, DomainAction};
-use crate::flux::effects::EffectRequest;
-use crate::flux::stores::{ReduceCtx, ReduceOutput, Store, UiInvalidation};
+use crate::flux::stores::{ReduceCtx, ReduceOutput, Store};
 
 pub struct SelectionStore;
 
@@ -11,118 +15,37 @@ impl SelectionStore {
     }
 }
 
-impl Store for SelectionStore {
-    fn reduce(&mut self, action: &ActionEnvelope, ctx: &mut ReduceCtx<'_>) -> ReduceOutput {
+impl<S: FilesAccess + LogAccess + OverlayAccess + RefreshAccess + ?Sized> Store<S>
+    for SelectionStore
+{
+    fn reduce(&mut self, action: &ActionEnvelope, ctx: &mut ReduceCtx<'_, S>) -> ReduceOutput {
         let Action::Domain(domain) = &action.action else {
             return ReduceOutput::none();
         };
-
-        match domain {
-            DomainAction::ToggleVisualSelectMode
-            | DomainAction::ToggleStageSelection
-            | DomainAction::ToggleStageSelectionFinished { .. }
-            | DomainAction::DiscardSelection
-            | DomainAction::DiscardPathsFinished { .. }
-            | DomainAction::PrepareCommitFromSelection
-            | DomainAction::PrepareCommitFromSelectionFinished { .. } => {}
-            _ => return ReduceOutput::none(),
-        }
-
-        if ctx.state.active_panel() != SidePanel::Files
-            && !matches!(
-                domain,
-                DomainAction::ToggleStageSelectionFinished { .. }
-                    | DomainAction::PrepareCommitFromSelectionFinished { .. }
-                    | DomainAction::DiscardPathsFinished { .. }
-            )
-        {
-            return ReduceOutput::none();
-        }
-
-        match domain {
-            DomainAction::ToggleVisualSelectMode => {
-                ctx.state.toggle_visual_select_mode();
-                return ReduceOutput::from_command(Command::Effect(EffectRequest::ReloadDiffNow))
-                    .with_invalidation(UiInvalidation::all());
+        let action = match domain {
+            DomainAction::ToggleVisualSelectMode => FilesAction::ToggleVisual,
+            DomainAction::ToggleStageSelection => FilesAction::ToggleStageSelection,
+            DomainAction::ToggleStageSelectionFinished { result } => {
+                FilesAction::ToggleStageSelectionFinished(result)
             }
-            DomainAction::ToggleStageSelection => {
-                let (stage, unstage) = ctx.state.stage_selection_targets();
-                return ReduceOutput::from_command(Command::Effect(
-                    EffectRequest::ToggleStageSelection { stage, unstage },
-                ));
-            }
-            DomainAction::ToggleStageSelectionFinished { result } => match result {
-                Ok((staged, unstaged)) => {
-                    ctx.state.push_log(
-                        format!(
-                            "selection toggled: staged {}, unstaged {}",
-                            staged, unstaged
-                        ),
-                        true,
-                    );
-                    ctx.state.request_refresh(RefreshKind::StatusOnly);
-                    return ReduceOutput::none().with_invalidation(UiInvalidation::all());
-                }
-                Err(e) => {
-                    ctx.state
-                        .push_log(format!("selection toggle failed: {}", e), false);
-                    return ReduceOutput::none();
-                }
-            },
-            DomainAction::DiscardSelection => {
-                let paths = ctx.state.prepare_discard_targets_from_selection();
-                if paths.is_empty() {
-                    ctx.state.push_log(
-                        "discard blocked: no discardable selected items".to_string(),
-                        false,
-                    );
-                    return ReduceOutput::none();
-                }
-                return ReduceOutput::from_command(Command::Effect(EffectRequest::DiscardPaths(
-                    paths,
-                )));
-            }
+            DomainAction::DiscardSelection => FilesAction::DiscardSelection,
             DomainAction::DiscardPathsFinished { result, .. } => {
-                if result.is_ok() {
-                    ctx.state.clear_files_visual_selection();
-                    return ReduceOutput::none().with_invalidation(UiInvalidation::all());
-                }
+                FilesAction::DiscardSelectionFinished(result)
             }
-            DomainAction::PrepareCommitFromSelection => {
-                return ReduceOutput::from_command(Command::Effect(
-                    EffectRequest::PrepareCommitFromVisualSelection {
-                        paths: ctx.state.commit_selection_targets(),
-                    },
-                ));
+            DomainAction::PrepareCommitFromSelection => FilesAction::PrepareCommitSelection,
+            DomainAction::PrepareCommitFromSelectionFinished { result } => {
+                FilesAction::PrepareCommitFinished(result)
             }
-            DomainAction::PrepareCommitFromSelectionFinished { result } => match result {
-                Ok(count) if *count == 0 => {
-                    ctx.state
-                        .push_log("commit blocked: no selected items".to_string(), false);
-                    return ReduceOutput::none();
-                }
-                Ok(count) => {
-                    ctx.state.clear_files_visual_selection();
-                    ctx.state.request_refresh(RefreshKind::StatusOnly);
-                    ctx.state.start_commit_editor();
-                    ctx.state.push_log(
-                        format!(
-                            "commit: {} selected target(s) staged; edit message/description",
-                            count
-                        ),
-                        true,
-                    );
-                    return ReduceOutput::none().with_invalidation(UiInvalidation::all());
-                }
-                Err(e) => {
-                    ctx.state
-                        .push_log(format!("prepare commit failed: {}", e), false);
-                    return ReduceOutput::none();
-                }
-            },
             _ => return ReduceOutput::none(),
+        };
+        let update = ctx.state.reduce_files(action);
+        if update.refresh_status {
+            ctx.state.request_refresh(RefreshKind::StatusOnly);
         }
-        ReduceOutput::none()
+        if update.open_commit_editor {
+            ctx.state.start_commit_editor();
+        }
+        finish_files_update(ctx.state, update)
     }
 }
 
@@ -137,13 +60,13 @@ mod tests {
         let mut store = SelectionStore::new();
         let mut app = mock_app();
         app.ui.active_panel = SidePanel::Files;
-        assert!(!app.ui.files.visual_mode);
+        assert!(!app.files.view().visual_mode);
         reduce(
             &mut store,
             &mut app,
             Action::Domain(DomainAction::ToggleVisualSelectMode),
         );
-        assert!(app.ui.files.visual_mode);
+        assert!(app.files.view().visual_mode);
     }
 
     #[test]
@@ -156,7 +79,7 @@ mod tests {
             &mut app,
             Action::Domain(DomainAction::ToggleVisualSelectMode),
         );
-        assert!(!app.ui.files.visual_mode);
+        assert!(!app.files.view().visual_mode);
     }
 
     #[test]
@@ -177,8 +100,8 @@ mod tests {
         let mut store = SelectionStore::new();
         let mut app = mock_app();
         app.ui.active_panel = SidePanel::Files;
-        app.ui.files.visual_mode = true;
-        app.ui.files.visual_anchor = Some(0);
+        app.files.test_view_mut().visual_mode = true;
+        app.files.test_view_mut().visual_anchor = Some(0);
         reduce(
             &mut store,
             &mut app,
@@ -187,8 +110,8 @@ mod tests {
                 result: Ok(()),
             }),
         );
-        assert!(!app.ui.files.visual_mode);
-        assert!(app.ui.files.visual_anchor.is_none());
+        assert!(!app.files.view().visual_mode);
+        assert!(app.files.view().visual_anchor.is_none());
     }
 
     #[test]

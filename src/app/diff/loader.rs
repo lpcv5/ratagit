@@ -1,29 +1,7 @@
+use super::DiffTarget;
 use crate::file_tree::FileTreeNodeStatus;
 use crate::git::{DiffLine, GitRepository};
 use std::path::PathBuf;
-
-#[derive(Debug, Clone)]
-pub enum DiffTarget {
-    None,
-    Branch {
-        name: String,
-    },
-    File {
-        path: PathBuf,
-        status: FileTreeNodeStatus,
-    },
-    Directory {
-        path: PathBuf,
-    },
-    Commit {
-        oid: String,
-        path: Option<PathBuf>,
-    },
-    Stash {
-        index: usize,
-        path: Option<PathBuf>,
-    },
-}
 
 #[allow(dead_code)]
 pub fn load_diff(repo: &dyn GitRepository, target: DiffTarget) -> Vec<DiffLine> {

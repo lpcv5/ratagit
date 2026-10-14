@@ -4,6 +4,8 @@ use crate::flux::action::{Action, ActionEnvelope, DomainAction};
 use crate::flux::effects::EffectRequest;
 use crate::flux::stores::{ReduceCtx, ReduceOutput, Store, UiInvalidation};
 
+use super::state_access::{NavigationAccess, PanelAccess, RefreshAccess, SearchAccess};
+
 pub struct NavigationStore;
 
 impl NavigationStore {
@@ -11,12 +13,14 @@ impl NavigationStore {
         Self
     }
 
-    fn recompute_commit_highlight(ctx: &mut ReduceCtx<'_>) {
+    fn recompute_commit_highlight<S: NavigationAccess + ?Sized>(ctx: &mut ReduceCtx<'_, S>) {
         ctx.state.recompute_commit_highlight();
     }
 
     /// Common post-processing after panel switch operations.
-    fn after_panel_switch(ctx: &mut ReduceCtx<'_>) -> ReduceOutput {
+    fn after_panel_switch<S: SearchAccess + RefreshAccess + ?Sized>(
+        ctx: &mut ReduceCtx<'_, S>,
+    ) -> ReduceOutput {
         ctx.state.restore_search_for_active_scope();
         ctx.state.schedule_diff_reload();
         ReduceOutput::from_command(Command::Effect(
@@ -26,21 +30,25 @@ impl NavigationStore {
     }
 
     /// Common post-processing after list navigation operations.
-    fn after_list_nav(ctx: &mut ReduceCtx<'_>) -> ReduceOutput {
+    fn after_list_nav<S: NavigationAccess + RefreshAccess + ?Sized>(
+        ctx: &mut ReduceCtx<'_, S>,
+    ) -> ReduceOutput {
         Self::recompute_commit_highlight(ctx);
         ctx.state.schedule_diff_reload();
         ReduceOutput::none().with_invalidation(UiInvalidation::all())
     }
 
     /// Common post-processing after directory operations.
-    fn after_dir_op(ctx: &mut ReduceCtx<'_>) -> ReduceOutput {
+    fn after_dir_op<S: RefreshAccess + ?Sized>(ctx: &mut ReduceCtx<'_, S>) -> ReduceOutput {
         ctx.state.schedule_diff_reload();
         ReduceOutput::none().with_invalidation(UiInvalidation::all())
     }
 }
 
-impl Store for NavigationStore {
-    fn reduce(&mut self, action: &ActionEnvelope, ctx: &mut ReduceCtx<'_>) -> ReduceOutput {
+impl<S: NavigationAccess + PanelAccess + RefreshAccess + SearchAccess + ?Sized> Store<S>
+    for NavigationStore
+{
+    fn reduce(&mut self, action: &ActionEnvelope, ctx: &mut ReduceCtx<'_, S>) -> ReduceOutput {
         let Action::Domain(domain) = &action.action else {
             return ReduceOutput::none();
         };
@@ -155,14 +163,14 @@ mod tests {
     fn test_diff_scroll_down_invalidates_diff() {
         let mut store = NavigationStore::new();
         let mut app = mock_app();
-        let initial_scroll = app.ui.diff_scroll;
+        let initial_scroll = app.diff.scroll();
         let output = reduce(
             &mut store,
             &mut app,
             Action::Domain(DomainAction::DiffScrollDown),
         );
         assert!(
-            app.ui.diff_scroll > initial_scroll || output.invalidation != UiInvalidation::none()
+            app.diff.scroll() > initial_scroll || output.invalidation != UiInvalidation::none()
         );
     }
 

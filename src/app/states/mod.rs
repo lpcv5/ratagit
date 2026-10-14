@@ -6,7 +6,7 @@ mod ui_state;
 pub use git_state::GitState;
 pub use input_state::InputState;
 pub use panel_state::{
-    BranchesPanelState, CommandLogEntry, CommitsPanelState, FilesPanelState, PanelState,
-    RenderCache, SidePanel, StashPanelState, TreeModeState,
+    BranchesPanelState, CommandLogEntry, CommitsPanelState, PanelState, RenderCache, SidePanel,
+    StashPanelState, TreeModeState,
 };
 pub use ui_state::UiState;

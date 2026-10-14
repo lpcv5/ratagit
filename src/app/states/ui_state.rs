@@ -1,18 +1,16 @@
 use super::panel_state::{
-    BranchesPanelState, CommitsPanelState, FilesPanelState, RenderCache, SidePanel, StashPanelState,
+    BranchesPanelState, CommitsPanelState, RenderCache, SidePanel, StashPanelState,
 };
 use crate::app::dirty_flags::DirtyFlags;
 
-/// UI state — panel navigation, selection, visual modes, dirty tracking.
+/// Shared UI state: panel navigation, visual modes and dirty tracking.
+/// Diff focus, hunk selection and scrolling belong to DiffState.
 #[derive(Clone)]
 pub struct UiState {
-    pub diff: crate::app::DiffInteraction,
     pub active_panel: SidePanel,
-    pub files: FilesPanelState,
     pub branches: BranchesPanelState,
     pub commits: CommitsPanelState,
     pub stash: StashPanelState,
-    pub diff_scroll: usize,
     pub dirty: DirtyFlags,
     pub render_cache: RenderCache,
 }
@@ -20,13 +18,10 @@ pub struct UiState {
 impl Default for UiState {
     fn default() -> Self {
         Self {
-            diff: Default::default(),
             active_panel: SidePanel::Files,
-            files: FilesPanelState::default(),
             branches: BranchesPanelState::default(),
             commits: CommitsPanelState::default(),
             stash: StashPanelState::default(),
-            diff_scroll: 0,
             dirty: DirtyFlags::default(),
             render_cache: RenderCache::default(),
         }

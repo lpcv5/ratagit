@@ -9,14 +9,14 @@ mod command;
 mod command_tests;
 pub mod commands;
 mod context;
-mod diff_cache;
-mod diff_interaction;
-pub use diff_interaction::{DiffInteraction, DiffSide, HunkView};
-mod diff_cache_manager;
-pub(crate) mod diff_loader;
+pub(crate) mod diff;
+mod diff_coordinator;
+pub use diff::{DiffInteraction, DiffSide, DiffState, HunkView};
 mod dirty_flags;
 #[cfg(test)]
 mod file_tree_tests;
+pub(crate) mod files;
+mod files_coordinator;
 pub mod graph_highlight;
 mod hints;
 #[cfg(test)]
@@ -25,13 +25,13 @@ mod input_mode;
 #[cfg(test)]
 mod legacy_test_helpers;
 mod panel_nav;
-mod refresh;
 mod refresh_scheduler;
 mod repository_operation;
 mod revision_tree;
 mod runtime;
 mod search;
-mod selection;
+#[cfg(test)]
+mod selection_tests;
 mod selectors;
 mod state_access_impl;
 mod states;
@@ -49,12 +49,10 @@ pub use app::SearchScopeKey;
 pub use background::{BackgroundCompleted, BackgroundLoad, BackgroundPayload};
 pub use command::Command;
 pub use context::{UiContext, ViewContext};
+pub use files::{FileSelection, FilesPanelState, FilesState};
 pub use runtime::AppRuntime;
-pub use selection::FileSelection;
 pub use selectors::SelectionView;
-pub use states::{
-    BranchesPanelState, CommitsPanelState, FilesPanelState, RenderCache, SidePanel, StashPanelState,
-};
+pub use states::{BranchesPanelState, CommitsPanelState, RenderCache, SidePanel, StashPanelState};
 #[cfg(test)]
 pub use test_dispatch::{dispatch_test_action, dispatch_test_key, map_test_key};
 

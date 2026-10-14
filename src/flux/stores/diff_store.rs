@@ -4,6 +4,8 @@ use crate::flux::effects::EffectRequest;
 use crate::flux::stores::{ReduceCtx, ReduceOutput, Store};
 use std::time::Duration;
 
+use super::state_access::RefreshAccess;
+
 pub struct DiffStore;
 
 impl DiffStore {
@@ -12,8 +14,8 @@ impl DiffStore {
     }
 }
 
-impl Store for DiffStore {
-    fn reduce(&mut self, action: &ActionEnvelope, ctx: &mut ReduceCtx<'_>) -> ReduceOutput {
+impl<S: RefreshAccess + ?Sized> Store<S> for DiffStore {
+    fn reduce(&mut self, action: &ActionEnvelope, ctx: &mut ReduceCtx<'_, S>) -> ReduceOutput {
         if !matches!(action.action, Action::System(SystemAction::Tick)) {
             return ReduceOutput::none();
         }

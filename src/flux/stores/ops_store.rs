@@ -3,6 +3,8 @@ use crate::flux::action::{Action, ActionEnvelope, SystemAction};
 use crate::flux::effects::EffectRequest;
 use crate::flux::stores::{ReduceCtx, ReduceOutput, Store, UiInvalidation};
 
+use super::state_access::RefreshAccess;
+
 pub struct OpsStore;
 
 impl OpsStore {
@@ -11,8 +13,8 @@ impl OpsStore {
     }
 }
 
-impl Store for OpsStore {
-    fn reduce(&mut self, action: &ActionEnvelope, ctx: &mut ReduceCtx<'_>) -> ReduceOutput {
+impl<S: RefreshAccess + ?Sized> Store<S> for OpsStore {
+    fn reduce(&mut self, action: &ActionEnvelope, ctx: &mut ReduceCtx<'_, S>) -> ReduceOutput {
         match &action.action {
             Action::Domain(crate::flux::action::DomainAction::Refresh) => {
                 ctx.state.request_refresh(RefreshKind::Full);

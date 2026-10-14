@@ -106,7 +106,7 @@ impl crate::git::OperationRepository for ControlledRepo {}
 
 fn fixture(repo: ControlledRepo) -> App {
     let mut app = App::from_repo(Box::new(repo)).unwrap();
-    app.state.ui.files.tree_nodes = ["a.txt", "b.txt"]
+    app.state.files.test_view_mut().tree_nodes = ["a.txt", "b.txt"]
         .into_iter()
         .map(|path| FileTreeNode {
             path: path.into(),
@@ -116,7 +116,12 @@ fn fixture(repo: ControlledRepo) -> App {
             is_expanded: false,
         })
         .collect();
-    app.state.ui.files.panel.list_state.select(Some(0));
+    app.state
+        .files
+        .test_view_mut()
+        .panel
+        .list_state
+        .select(Some(0));
     app.state.ui.dirty.clear();
     app
 }
@@ -192,7 +197,7 @@ async fn test_background_diff_changes_snapshot_only_after_completion_event() {
     let mut dispatcher = Dispatcher::with_default_stores();
     let request = diff_request(&mut app);
     let actions = effects::run(request, &app.runtime).await;
-    assert!(app.state.git.current_diff.is_empty());
+    assert!(app.state.diff.document().lines.is_empty());
     assert!(app.state.has_pending_refresh_work());
     app.state.ui.dirty.clear();
     for action in actions {
@@ -233,7 +238,7 @@ async fn test_slow_fetch_does_not_block_navigation_diff_or_file_write() {
         &mut app.state,
         Action::Domain(DomainAction::ListDown),
     );
-    assert_eq!(app.state.ui.files.panel.list_state.selected(), Some(1));
+    assert_eq!(app.state.files.view().panel.list_state.selected(), Some(1));
     executor.enqueue(diff_request(&mut app));
     executor.enqueue(EffectRequest::StageFile("a.txt".into()));
     let mut got_diff = false;
@@ -313,7 +318,7 @@ async fn test_old_diff_completion_cannot_overwrite_new_selection() {
     for action in old {
         dispatch(&mut dispatcher, &mut app.state, action);
     }
-    assert_eq!(app.state.git.current_diff[0].content, "b.txt:2");
+    assert_eq!(app.state.diff.document().lines[0].content, "b.txt:2");
     assert!(!app.state.has_pending_refresh_work());
 }
 
@@ -330,7 +335,7 @@ async fn test_refresh_rejects_old_diff_even_when_path_is_unchanged() {
     for action in old {
         dispatch(&mut dispatcher, &mut app.state, action);
     }
-    assert_eq!(app.state.git.current_diff[0].content, "a.txt:2");
+    assert_eq!(app.state.diff.document().lines[0].content, "a.txt:2");
 }
 
 #[tokio::test]
@@ -346,7 +351,7 @@ async fn test_cancelled_diff_is_rejected_without_replacement_request() {
     for action in old {
         dispatch(&mut dispatcher, &mut app.state, action);
     }
-    assert!(app.state.git.current_diff.is_empty());
+    assert!(app.state.diff.document().lines.is_empty());
     assert!(app.state.has_pending_diff_reload());
 }
 
@@ -498,13 +503,13 @@ async fn test_git_stage_unstage_roundtrip_through_completion_events() {
         crate::git::Git2Repository::open(dir.path()).unwrap(),
     ))
     .unwrap();
-    assert_eq!(app.state.git.status.unstaged.len(), 1);
+    assert_eq!(app.state.files.status().unstaged.len(), 1);
     for (request, staged) in [
         (EffectRequest::StageFile("file.txt".into()), true),
         (EffectRequest::UnstageFile("file.txt".into()), false),
     ] {
         let actions = effects::run(request, &app.runtime).await;
-        assert_eq!(app.state.git.status.staged.is_empty(), staged);
+        assert_eq!(app.state.files.status().staged.is_empty(), staged);
         super::test_runtime::drive_actions(&mut app, actions);
         super::test_runtime::drive_actions(
             &mut app,
@@ -512,7 +517,7 @@ async fn test_git_stage_unstage_roundtrip_through_completion_events() {
                 RuntimeEvent::ProcessBackgroundLoads,
             ))],
         );
-        assert_eq!(!app.state.git.status.staged.is_empty(), staged);
-        assert_eq!(app.state.git.status.unstaged.is_empty(), staged);
+        assert_eq!(!app.state.files.status().staged.is_empty(), staged);
+        assert_eq!(app.state.files.status().unstaged.is_empty(), staged);
     }
 }

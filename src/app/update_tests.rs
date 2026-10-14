@@ -202,8 +202,9 @@ fn mock_app() -> App {
 }
 
 fn first_diff_content(app: &App) -> &str {
-    app.git
-        .current_diff
+    app.diff
+        .document()
+        .lines
         .first()
         .map(|line| line.content.as_str())
         .expect("diff should contain at least one line")
@@ -214,7 +215,7 @@ fn assert_commits_selected(app: &App, expected: Option<usize>) {
 }
 
 fn assert_files_selected(app: &App, expected: Option<usize>) {
-    assert_eq!(app.ui.files.panel.list_state.selected(), expected);
+    assert_eq!(app.files.view().panel.list_state.selected(), expected);
 }
 
 fn assert_branches_selected(app: &App, expected: Option<usize>) {
@@ -1167,14 +1168,14 @@ fn commit_search_keybindings_map_slash_n_shift_n_to_search_actions() {
 fn files_search_matches_display_name_not_full_path() {
     let mut app = mock_app();
     app.ui.active_panel = SidePanel::Files;
-    app.ui.files.tree_nodes = vec![FileTreeNode {
+    app.files.test_view_mut().tree_nodes = vec![FileTreeNode {
         path: PathBuf::from("src/main.rs"),
         status: FileTreeNodeStatus::Unstaged(FileStatus::Modified),
         depth: 0,
         is_dir: false,
         is_expanded: false,
     }];
-    app.ui.files.panel.list_state.select(Some(0));
+    app.files.test_view_mut().panel.list_state.select(Some(0));
 
     dispatch_test_action(&mut app, DomainAction::StartSearchInput);
     dispatch_test_action(&mut app, DomainAction::SearchSetQuery("src".to_string()));
@@ -1193,7 +1194,7 @@ fn files_search_matches_display_name_not_full_path() {
 fn files_panel_space_on_unstaged_directory_emits_stage_action() {
     let mut app = mock_app();
     app.ui.active_panel = SidePanel::Files;
-    app.ui.files.tree_nodes = vec![
+    app.files.test_view_mut().tree_nodes = vec![
         FileTreeNode {
             path: PathBuf::from("src"),
             status: FileTreeNodeStatus::Directory,
@@ -1209,7 +1210,7 @@ fn files_panel_space_on_unstaged_directory_emits_stage_action() {
             is_expanded: false,
         },
     ];
-    app.ui.files.panel.list_state.select(Some(0));
+    app.files.test_view_mut().panel.list_state.select(Some(0));
 
     let msg = map_test_key(&app, KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
     assert!(matches!(
@@ -1222,7 +1223,7 @@ fn files_panel_space_on_unstaged_directory_emits_stage_action() {
 fn files_panel_space_on_staged_directory_emits_unstage_action() {
     let mut app = mock_app();
     app.ui.active_panel = SidePanel::Files;
-    app.ui.files.tree_nodes = vec![
+    app.files.test_view_mut().tree_nodes = vec![
         FileTreeNode {
             path: PathBuf::from("src"),
             status: FileTreeNodeStatus::Directory,
@@ -1238,7 +1239,7 @@ fn files_panel_space_on_staged_directory_emits_unstage_action() {
             is_expanded: false,
         },
     ];
-    app.ui.files.panel.list_state.select(Some(0));
+    app.files.test_view_mut().panel.list_state.select(Some(0));
 
     let msg = map_test_key(&app, KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
     assert!(matches!(
@@ -1251,14 +1252,14 @@ fn files_panel_space_on_staged_directory_emits_unstage_action() {
 fn files_panel_discard_key_on_selected_file_emits_discard_paths() {
     let mut app = mock_app();
     app.ui.active_panel = SidePanel::Files;
-    app.ui.files.tree_nodes = vec![FileTreeNode {
+    app.files.test_view_mut().tree_nodes = vec![FileTreeNode {
         path: PathBuf::from("src/main.rs"),
         status: FileTreeNodeStatus::Unstaged(FileStatus::Modified),
         depth: 0,
         is_dir: false,
         is_expanded: false,
     }];
-    app.ui.files.panel.list_state.select(Some(0));
+    app.files.test_view_mut().panel.list_state.select(Some(0));
 
     let msg = map_test_key(&app, KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE));
     assert!(matches!(
@@ -1272,16 +1273,16 @@ fn files_panel_discard_key_on_selected_file_emits_discard_paths() {
 fn files_panel_discard_key_in_visual_mode_emits_discard_selection() {
     let mut app = mock_app();
     app.ui.active_panel = SidePanel::Files;
-    app.ui.files.visual_mode = true;
-    app.ui.files.tree_nodes = vec![FileTreeNode {
+    app.files.test_view_mut().visual_mode = true;
+    app.files.test_view_mut().tree_nodes = vec![FileTreeNode {
         path: PathBuf::from("src/main.rs"),
         status: FileTreeNodeStatus::Unstaged(FileStatus::Modified),
         depth: 0,
         is_dir: false,
         is_expanded: false,
     }];
-    app.ui.files.panel.list_state.select(Some(0));
-    app.ui.files.visual_anchor = Some(0);
+    app.files.test_view_mut().panel.list_state.select(Some(0));
+    app.files.test_view_mut().visual_anchor = Some(0);
 
     let msg = map_test_key(&app, KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE));
     assert!(matches!(msg, Some(DomainAction::DiscardSelection)));
@@ -1484,9 +1485,9 @@ fn search_query_is_restored_between_commit_list_and_tree_scopes() {
 fn status_refresh_preserves_duplicate_entry_selection_and_diff_sync() {
     let mut app = App::from_repo(Box::new(DuplicateStatusRepo)).expect("app from duplicate repo");
     app.ui.active_panel = SidePanel::Files;
-    assert_eq!(app.ui.files.tree_nodes.len(), 3);
+    assert_eq!(app.files.view().tree_nodes.len(), 3);
 
-    app.ui.files.panel.list_state.select(Some(2));
+    app.files.test_view_mut().panel.list_state.select(Some(2));
     app.reload_diff_now();
     crate::flux::test_runtime::finish_background(&mut app);
     assert_eq!(first_diff_content(&app), "staged");
@@ -1502,7 +1503,7 @@ fn status_refresh_preserves_duplicate_entry_selection_and_diff_sync() {
 fn files_panel_list_navigation_keeps_diff_until_pending_reload_is_flushed() {
     let mut app = App::from_repo(Box::new(NavigationDiffRepo)).expect("app from navigation repo");
     app.ui.active_panel = SidePanel::Files;
-    app.ui.files.panel.list_state.select(Some(0));
+    app.files.test_view_mut().panel.list_state.select(Some(0));
     app.reload_diff_now();
     crate::flux::test_runtime::finish_background(&mut app);
     assert_eq!(first_diff_content(&app), "file a.txt");
@@ -1704,7 +1705,7 @@ fn interaction_trace_replay_preserves_expected_panel_search_and_selection_state(
     );
 
     assert_eq!(app.ui.active_panel, SidePanel::Files);
-    assert!(app.ui.files.visual_mode);
-    assert_eq!(app.ui.files.visual_anchor, Some(0));
+    assert!(app.files.view().visual_mode);
+    assert_eq!(app.files.view().visual_anchor, Some(0));
     assert_files_selected(&app, Some(0));
 }

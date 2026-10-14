@@ -1,8 +1,11 @@
 mod branch_store;
+#[cfg(test)]
+mod capability_tests;
 mod runtime_store;
 pub use runtime_store::RuntimeStore;
 mod commit_store;
 mod diff_store;
+mod files_output;
 mod files_store;
 mod input_store;
 mod navigation_store;
@@ -17,9 +20,9 @@ pub mod state_access;
 
 use crate::app::Command;
 use crate::flux::action::ActionEnvelope;
-pub use state_access::CoreAccess;
 pub use state_access::DirtyHint;
 pub use state_access::StateAccess;
+use state_access::{InvalidationAccess, LogAccess};
 
 pub use branch_store::BranchStore;
 pub use commit_store::CommitStore;
@@ -35,19 +38,21 @@ pub use search_store::SearchStore;
 pub use selection_store::SelectionStore;
 pub use stash_store::StashStore;
 
-pub struct ReduceCtx<'a> {
-    pub state: &'a mut dyn StateAccess,
+/// Reducers declare their required capabilities through `Store<S>` bounds.
+/// Only the dispatcher erases the concrete state to `dyn StateAccess`.
+pub struct ReduceCtx<'a, S: ?Sized> {
+    pub state: &'a mut S,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct UiInvalidation(u8);
 
 impl UiInvalidation {
-    const MAIN_CONTENT: u8 = 0b0000_0001;
-    const DIFF: u8 = 0b0000_0010;
-    const COMMAND_LOG: u8 = 0b0000_0100;
-    const SHORTCUT_BAR: u8 = 0b0000_1000;
-    const OVERLAY: u8 = 0b0001_0000;
+    const MAIN_CONTENT: u8 = DirtyHint::MAIN_CONTENT;
+    const DIFF: u8 = DirtyHint::DIFF;
+    const COMMAND_LOG: u8 = DirtyHint::COMMAND_LOG;
+    const SHORTCUT_BAR: u8 = DirtyHint::SHORTCUT_BAR;
+    const OVERLAY: u8 = DirtyHint::OVERLAY;
 
     pub const fn none() -> Self {
         Self(0)
@@ -79,7 +84,7 @@ impl UiInvalidation {
         self.0 |= other.0;
     }
 
-    pub fn apply(self, state: &mut dyn StateAccess) {
+    pub fn apply(self, state: &mut (impl InvalidationAccess + ?Sized)) {
         if self.0 == 0 {
             return;
         }
@@ -115,8 +120,8 @@ impl ReduceOutput {
     }
 }
 
-pub trait Store {
-    fn reduce(&mut self, action: &ActionEnvelope, ctx: &mut ReduceCtx<'_>) -> ReduceOutput;
+pub trait Store<S: ?Sized> {
+    fn reduce(&mut self, action: &ActionEnvelope, ctx: &mut ReduceCtx<'_, S>) -> ReduceOutput;
 }
 
 /// Helper command to trigger a background task processing tick.
@@ -127,8 +132,8 @@ pub(super) fn tick_background_loads() -> Command {
 /// Log a completed operation's result and return the appropriate ReduceOutput.
 /// On success: logs success_msg, returns full-UI invalidation.
 /// On failure: logs the failure message, returns no-op output.
-pub(super) fn log_result(
-    ctx: &mut ReduceCtx<'_>,
+pub(super) fn log_result<S: LogAccess + ?Sized>(
+    ctx: &mut ReduceCtx<'_, S>,
     result: &Result<(), String>,
     success_msg: impl Into<String>,
     fail_msg: impl FnOnce(&str) -> String,
@@ -302,7 +307,7 @@ pub mod test_support {
         }
     }
 
-    pub fn reduce_action<S: super::Store>(
+    pub fn reduce_action<S: super::Store<crate::app::AppState>>(
         store: &mut S,
         app: &mut App,
         action: Action,

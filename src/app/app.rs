@@ -1,20 +1,17 @@
 use super::background_task_runner::BackgroundTaskRunner;
-use super::diff_cache_manager::DiffCacheManager;
 use super::refresh_scheduler::RefreshScheduler;
 use super::states::{
-    BranchesPanelState, CommandLogEntry, CommitsPanelState, FilesPanelState, GitState, InputState,
-    PanelState, RenderCache, SidePanel, StashPanelState, TreeModeState, UiState,
+    BranchesPanelState, CommandLogEntry, CommitsPanelState, GitState, InputState, PanelState,
+    RenderCache, SidePanel, StashPanelState, TreeModeState, UiState,
 };
-use super::{diff_cache, diff_loader, dirty_flags, refresh, revision_tree};
-use super::{AppRuntime, BackgroundLoad};
+use super::{dirty_flags, revision_tree};
+use super::{AppRuntime, BackgroundLoad, DiffState, FilesState};
 use crate::config::keymap::Keymap;
-use crate::file_tree::build_file_tree;
 use crate::flux::effects::EffectRequest;
 use crate::flux::task_manager::{TaskKey, TaskPriority, TaskRequestKind};
 use crate::git::{Git2Repository, GitRepository, GitStatus};
 use color_eyre::Result;
 use std::collections::HashSet;
-use std::time::Instant;
 use tracing::debug;
 
 const MAX_NORMAL_PRIORITY_TASKS: usize = 6;
@@ -57,7 +54,8 @@ pub struct AppState {
     pub command_log: Vec<CommandLogEntry>,
 
     pub(super) refresh: RefreshScheduler,
-    pub(super) diff_mgr: DiffCacheManager,
+    pub diff: DiffState,
+    pub files: FilesState,
     pub(super) tasks: BackgroundTaskRunner,
     keymap: Keymap,
     pub(super) effects: Vec<EffectRequest>,
@@ -111,19 +109,6 @@ impl App {
             GitStatus::default()
         };
 
-        // Comment in English.
-        let expanded_dirs = if preload_commits_and_diff {
-            refresh::collect_all_dirs(&status)
-        } else {
-            HashSet::new()
-        };
-        let file_tree_nodes = build_file_tree(
-            &status.unstaged,
-            &status.untracked,
-            &status.staged,
-            &expanded_dirs,
-        );
-
         let branches = if preload_commits_and_diff {
             repo.branches().unwrap_or_default()
         } else {
@@ -151,22 +136,9 @@ impl App {
         let mut app = Self {
             state: AppState {
                 running: true,
-                git: GitState {
-                    status,
-                    operation,
-                    current_patch: None,
-                    current_diff: Vec::new(),
-                },
+                git: GitState { operation },
                 ui: UiState {
-                    diff: Default::default(),
                     active_panel: SidePanel::Files,
-                    files: FilesPanelState {
-                        panel: PanelState::new(),
-                        tree_nodes: file_tree_nodes,
-                        expanded_dirs,
-                        visual_mode: false,
-                        visual_anchor: None,
-                    },
                     branches: BranchesPanelState {
                         panel: PanelState::new(),
                         items: branches,
@@ -188,14 +160,14 @@ impl App {
                         items: stashes,
                         tree_mode: TreeModeState::default(),
                     },
-                    diff_scroll: 0,
                     dirty: dirty_flags::DirtyFlags::default(),
                     render_cache: RenderCache::default(),
                 },
                 input: InputState::default(),
                 command_log: Vec::new(),
                 refresh: RefreshScheduler::new(!preload_commits_and_diff),
-                diff_mgr: DiffCacheManager::new(),
+                diff: DiffState::default(),
+                files: FilesState::new(status, preload_commits_and_diff),
                 tasks: BackgroundTaskRunner::new(INITIAL_COMMITS_LOAD_LIMIT),
                 keymap,
                 effects: Vec::new(),
@@ -243,35 +215,14 @@ impl AppState {
     }
 
     pub fn request_refresh(&mut self, kind: RefreshKind) {
-        self.ui.diff.reset_selection();
         self.cancel_pending_diff_task();
         self.refresh.pending_full_status_after_fast = true;
         self.refresh.pending_refresh_fast_done = false;
         if matches!(kind, RefreshKind::Full) {
             self.ui.commits.dirty = true;
         }
-        self.diff_mgr.cache.invalidate_files();
-        if !matches!(kind, RefreshKind::StatusOnly) {
-            self.diff_mgr.cache.invalidate_refs();
-            if matches!(
-                self.diff_mgr.last_diff_key,
-                Some(
-                    diff_cache::DiffCacheKey::Branch { .. }
-                        | diff_cache::DiffCacheKey::Stash { .. }
-                )
-            ) {
-                self.diff_mgr.last_diff_key = None;
-                self.git.current_patch = None;
-            }
-        }
-        if matches!(
-            self.diff_mgr.last_diff_key,
-            Some(diff_cache::DiffCacheKey::File { .. })
-                | Some(diff_cache::DiffCacheKey::Directory { .. })
-        ) {
-            self.diff_mgr.last_diff_key = None;
-            self.git.current_patch = None;
-        }
+        self.diff
+            .repository_refreshed(!matches!(kind, RefreshKind::StatusOnly));
         self.refresh.pending_refresh = Some(match self.refresh.pending_refresh {
             None => kind,
             Some(existing) => Self::max_refresh_kind(existing, kind),
@@ -294,24 +245,7 @@ impl AppState {
         }
     }
 
-    pub(super) fn diff_task_key() -> TaskKey {
-        TaskKey::Diff {
-            target: "active".to_string(),
-        }
-    }
-
-    pub(super) fn has_active_diff_task(&self) -> bool {
-        let key = Self::diff_task_key();
-        self.has_background_task(&key)
-    }
-
-    pub(super) fn cancel_pending_diff_task(&mut self) {
-        let key = Self::diff_task_key();
-        self.cancel_background_task(&key);
-        self.diff_mgr.in_flight_diff_key = None;
-    }
-
-    fn cancel_background_task(&mut self, key: &TaskKey) {
+    pub(super) fn cancel_background_task(&mut self, key: &TaskKey) {
         let _ = self.tasks.task_manager.cancel(key);
         self.tasks
             .pending_background_tasks
@@ -402,64 +336,8 @@ impl AppState {
         true
     }
 
-    pub(super) fn apply_status_refresh(&mut self, status: GitStatus) {
-        let old_dirs = refresh::collect_all_dirs(&self.git.status);
-        self.git.status = status;
-        let new_dirs = refresh::collect_all_dirs(&self.git.status);
-        self.ui
-            .files
-            .expanded_dirs
-            .retain(|dir| new_dirs.contains(dir));
-        self.ui
-            .files
-            .expanded_dirs
-            .extend(new_dirs.difference(&old_dirs).cloned());
-        self.rebuild_tree();
-        if self.ui.diff.focused
-            && self.selected_tree_node().is_some_and(|node| {
-                matches!(node.status, crate::file_tree::FileTreeNodeStatus::Untracked)
-            })
-        {
-            self.ui.diff.side = Some(super::DiffSide::Unstaged);
-        }
-    }
-
-    pub fn schedule_diff_reload(&mut self) {
-        self.ui.diff.reset_selection();
-        self.git.current_patch = None;
-        self.cancel_pending_diff_task();
-        self.refresh.pending_diff_reload = true;
-        self.refresh.pending_diff_reload_at = Some(Instant::now());
-        debug!(event = "schedule_diff_reload", "scheduled diff reload");
-    }
-
-    pub fn has_pending_diff_reload(&self) -> bool {
-        self.refresh.pending_diff_reload
-    }
-
-    pub(crate) fn is_diff_loading(&self) -> bool {
-        self.refresh.pending_diff_reload || self.has_active_diff_task()
-    }
-
     pub fn has_pending_refresh_work(&self) -> bool {
         self.refresh.pending_refresh.is_some() || !self.tasks.pending_background_tasks.is_empty()
-    }
-
-    pub fn diff_reload_debounce_elapsed(&self, debounce: std::time::Duration) -> bool {
-        self.refresh
-            .pending_diff_reload_at
-            .is_some_and(|requested_at| requested_at.elapsed() >= debounce)
-    }
-
-    pub fn pending_diff_reload_at(&self) -> Option<Instant> {
-        self.refresh.pending_diff_reload_at
-    }
-
-    pub fn flush_pending_diff_reload(&mut self) {
-        if !self.refresh.pending_diff_reload && !self.has_active_diff_task() {
-            return;
-        }
-        self.start_pending_diff_load();
     }
 
     pub(super) fn pending_refresh_kind(&self) -> Option<RefreshKind> {
@@ -501,64 +379,6 @@ impl AppState {
         if self.ui.active_panel == SidePanel::Commits && self.ui.commits.dirty {
             let _ = self.start_commits_load(self.tasks.commits_requested_limit);
         }
-    }
-
-    pub(super) fn clear_pending_diff_reload(&mut self) {
-        self.refresh.pending_diff_reload = false;
-        self.refresh.pending_diff_reload_at = None;
-    }
-
-    pub(super) fn start_pending_diff_load(&mut self) {
-        if !self.refresh.pending_diff_reload {
-            return;
-        }
-        let target = self.selected_diff_target();
-        let key = self.diff_target_to_cache_key(&target);
-        if self.diff_mgr.in_flight_diff_key.as_ref() == Some(&key) && self.has_active_diff_task() {
-            self.clear_pending_diff_reload();
-            return;
-        }
-        self.cancel_pending_diff_task();
-        self.ui.diff_scroll = 0;
-        if let Some(cached) = self.diff_mgr.cache.get_cloned(&key) {
-            self.git.current_diff = cached.lines;
-            self.git.current_patch = cached.patch;
-            self.ui.diff.reset_selection();
-            self.ui.diff.cursor = self
-                .git
-                .current_patch
-                .as_ref()
-                .and_then(|patch| patch.hunk_ids().first().copied());
-            self.diff_mgr.last_diff_key = Some(key);
-            self.clear_pending_diff_reload();
-            self.ui.dirty.mark_diff();
-            return;
-        }
-        if matches!(target, diff_loader::DiffTarget::None) {
-            self.git.current_diff.clear();
-            self.git.current_patch = None;
-            self.diff_mgr.last_diff_key = Some(key);
-            self.clear_pending_diff_reload();
-            self.ui.dirty.mark_diff();
-            return;
-        }
-        let request = self.tasks.task_manager.enqueue(
-            Self::diff_task_key(),
-            TaskPriority::High,
-            TaskRequestKind::LoadDiff {
-                target: Self::diff_cache_key_to_task_target(&key),
-            },
-        );
-        self.diff_mgr.in_flight_diff_key = Some(key.clone());
-        self.queue_background(
-            request,
-            BackgroundLoad::Diff {
-                cache_key: key,
-                target,
-            },
-        );
-        self.clear_pending_diff_reload();
-        self.ui.dirty.mark_diff();
     }
 
     pub fn open_selected_branch_commits(&mut self, limit: usize) -> Result<()> {
@@ -635,20 +455,6 @@ impl AppState {
         }
     }
 
-    pub fn toggle_visual_select_mode(&mut self) {
-        if self.ui.active_panel != SidePanel::Files {
-            return;
-        }
-        if self.ui.files.visual_mode {
-            self.ui.files.visual_mode = false;
-            self.ui.files.visual_anchor = None;
-            return;
-        }
-
-        self.ui.files.visual_mode = true;
-        self.ui.files.visual_anchor = self.ui.files.panel.list_state.selected();
-    }
-
     pub fn push_log<S: Into<String>>(&mut self, command: S, success: bool) {
         self.command_log.push(CommandLogEntry {
             command: command.into(),
@@ -662,12 +468,6 @@ impl AppState {
         self.ui.dirty.mark_command_log();
     }
 
-    pub fn has_uncommitted_changes(&self) -> bool {
-        !self.git.status.staged.is_empty()
-            || !self.git.status.unstaged.is_empty()
-            || !self.git.status.untracked.is_empty()
-    }
-
     pub fn start_branch_switch_confirm(&mut self, target: String) {
         self.input.mode = Some(InputMode::BranchSwitchConfirm);
         self.input.branch_switch_target = Some(target);
@@ -679,49 +479,6 @@ impl AppState {
 
     pub fn take_branch_switch_target(&mut self) -> Option<String> {
         self.input.branch_switch_target.take()
-    }
-
-    pub fn toggle_selected_dir(&mut self) {
-        let selected_dir_path = self.selected_tree_node().and_then(|node| {
-            if node.is_dir {
-                Some(node.path.clone())
-            } else {
-                None
-            }
-        });
-        refresh::toggle_selected_dir(&mut self.ui.files.expanded_dirs, selected_dir_path);
-        self.rebuild_tree();
-    }
-
-    /// Documentation comment in English.
-    pub fn collapse_all(&mut self) {
-        refresh::collapse_all(&mut self.ui.files.expanded_dirs);
-        self.rebuild_tree();
-    }
-
-    /// Documentation comment in English.
-    pub fn expand_all(&mut self) {
-        refresh::expand_all(&mut self.ui.files.expanded_dirs, &self.git.status);
-        self.rebuild_tree();
-    }
-
-    pub fn diff_scroll_up(&mut self) {
-        self.ui.diff_scroll = self.ui.diff_scroll.saturating_sub(10);
-    }
-
-    pub fn diff_scroll_down(&mut self) {
-        let max = self.git.current_diff.len().saturating_sub(1);
-        self.ui.diff_scroll = (self.ui.diff_scroll + 10).min(max);
-    }
-
-    pub(super) fn rebuild_tree(&mut self) {
-        refresh::rebuild_tree(
-            &self.git.status,
-            &self.ui.files.expanded_dirs,
-            &mut self.ui.files.tree_nodes,
-            &mut self.ui.files.panel,
-            &mut self.ui.files.visual_anchor,
-        );
     }
 
     pub fn stash_open_tree_or_toggle_dir(&mut self) -> Result<()> {
@@ -787,82 +544,6 @@ impl AppState {
         );
         if was_open || self.ui.stash.tree_mode.selected_source.is_some() {
             self.ui.stash.tree_mode.selected_source = None;
-        }
-    }
-
-    pub fn reload_diff_now(&mut self) {
-        self.schedule_diff_reload();
-        self.start_pending_diff_load();
-    }
-
-    pub(super) fn diff_target_to_cache_key(
-        &self,
-        target: &diff_loader::DiffTarget,
-    ) -> diff_cache::DiffCacheKey {
-        use crate::file_tree::FileTreeNodeStatus;
-        use diff_loader::DiffTarget;
-
-        match target {
-            DiffTarget::Branch { name } => diff_cache::DiffCacheKey::Branch {
-                name: name.clone(),
-                limit: 100,
-            },
-            DiffTarget::File { path, status } => {
-                let is_staged = matches!(status, FileTreeNodeStatus::Staged(_));
-                diff_cache::DiffCacheKey::File {
-                    path: path.clone(),
-                    is_staged,
-                }
-            }
-            DiffTarget::Directory { path } => {
-                let hash = self
-                    .ui
-                    .files
-                    .tree_nodes
-                    .iter()
-                    .filter(|n| n.path.starts_with(path))
-                    .map(|n| n.path.to_string_lossy().to_string())
-                    .collect::<Vec<_>>()
-                    .join("|")
-                    .bytes()
-                    .fold(0u64, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u64));
-                diff_cache::DiffCacheKey::Directory {
-                    path: path.clone(),
-                    files_hash: hash,
-                }
-            }
-            DiffTarget::Commit { oid, path } => diff_cache::DiffCacheKey::Commit {
-                oid: oid.clone(),
-                path: path.clone(),
-            },
-            DiffTarget::Stash { index, path } => diff_cache::DiffCacheKey::Stash {
-                index: *index,
-                path: path.clone(),
-            },
-            DiffTarget::None => diff_cache::DiffCacheKey::None,
-        }
-    }
-
-    pub(super) fn diff_cache_key_to_task_target(key: &diff_cache::DiffCacheKey) -> String {
-        match key {
-            diff_cache::DiffCacheKey::None => "none".to_string(),
-            diff_cache::DiffCacheKey::File { path, is_staged } => {
-                format!("file:{}:{}", path.display(), is_staged)
-            }
-            diff_cache::DiffCacheKey::Branch { name, limit } => {
-                format!("branch:{}:{}", name, limit)
-            }
-            diff_cache::DiffCacheKey::Directory { path, files_hash } => {
-                format!("dir:{}:{}", path.display(), files_hash)
-            }
-            diff_cache::DiffCacheKey::Commit { oid, path } => match path {
-                Some(path) => format!("commit:{}:{}", oid, path.display()),
-                None => format!("commit:{}:*", oid),
-            },
-            diff_cache::DiffCacheKey::Stash { index, path } => match path {
-                Some(path) => format!("stash:{}:{}", index, path.display()),
-                None => format!("stash:{}:*", index),
-            },
         }
     }
 
@@ -985,7 +666,7 @@ mod tests {
     fn test_from_repo_creates_app() {
         let app = mock_app();
         assert!(app.running);
-        assert!(app.git.current_diff.is_empty());
+        assert!(app.diff.document().lines.is_empty());
     }
 
     #[test]
@@ -1079,29 +760,32 @@ mod tests {
         let mut app = mock_app();
         // diff_scroll_down is capped at current_diff.len()-1; with empty diff stays at 0
         app.diff_scroll_down();
-        assert_eq!(app.ui.diff_scroll, 0);
+        assert_eq!(app.diff.scroll(), 0);
         // With some diff content, scroll can increase
-        app.git.current_diff = vec![
-            crate::git::DiffLine {
-                kind: crate::git::DiffLineKind::Added,
-                content: "line".to_string(),
-            };
-            20
-        ];
+        app.diff.set_test_document(
+            vec![
+                crate::git::DiffLine {
+                    kind: crate::git::DiffLineKind::Added,
+                    content: "line".to_string(),
+                };
+                20
+            ]
+            .into(),
+        );
         app.diff_scroll_down();
-        assert!(app.ui.diff_scroll > 0);
+        assert!(app.diff.scroll() > 0);
         app.diff_scroll_up();
-        assert_eq!(app.ui.diff_scroll, 0);
+        assert_eq!(app.diff.scroll(), 0);
     }
 
     #[test]
     fn test_toggle_visual_select_mode() {
         let mut app = mock_app();
-        assert!(!app.ui.files.visual_mode);
+        assert!(!app.files.view().visual_mode);
         app.toggle_visual_select_mode();
-        assert!(app.ui.files.visual_mode);
+        assert!(app.files.view().visual_mode);
         app.toggle_visual_select_mode();
-        assert!(!app.ui.files.visual_mode);
+        assert!(!app.files.view().visual_mode);
     }
 
     #[test]

@@ -57,7 +57,7 @@ impl Fixture {
     }
     fn focus(&mut self) {
         press(&mut self.app, KeyCode::Tab);
-        assert!(self.app.ui.diff.focused);
+        assert!(self.app.diff.interaction().focused);
     }
 }
 
@@ -80,7 +80,7 @@ fn refresh(app: &mut App) {
         app,
         DomainAction::Runtime(RuntimeEvent::FlushPendingDiffReload),
     );
-    assert!(!app.is_diff_loading());
+    assert!(!app.diff.is_loading());
 }
 fn help(app: &App, name: &str) -> Option<super::commands::CommandHelp> {
     app.available_commands()
@@ -108,27 +108,27 @@ fn text(buffer: &ratatui::buffer::Buffer) -> String {
 #[test]
 fn test_hunk_focus_navigation_keeps_file_selection_and_scrolls_to_header() {
     let mut fixture = Fixture::new();
-    let file = fixture.app.ui.files.panel.list_state.selected();
+    let file = fixture.app.files.view().panel.list_state.selected();
     fixture.focus();
     press(&mut fixture.app, KeyCode::Char('j'));
     assert_eq!(
-        fixture.app.ui.diff.cursor,
+        fixture.app.diff.interaction().cursor,
         Some(HunkId { file: 0, hunk: 1 })
     );
-    assert_eq!(fixture.app.ui.files.panel.list_state.selected(), file);
-    assert!(fixture.app.git.current_diff[fixture.app.ui.diff_scroll]
+    assert_eq!(fixture.app.files.view().panel.list_state.selected(), file);
+    assert!(fixture.app.diff.document().lines[fixture.app.diff.scroll()]
         .content
         .starts_with("@@"));
     press(&mut fixture.app, KeyCode::Down);
-    assert_eq!(fixture.app.ui.diff.cursor.unwrap().hunk, 1);
+    assert_eq!(fixture.app.diff.interaction().cursor.unwrap().hunk, 1);
     press(&mut fixture.app, KeyCode::Char('['));
-    assert_eq!(fixture.app.ui.diff.cursor.unwrap().hunk, 0);
+    assert_eq!(fixture.app.diff.interaction().cursor.unwrap().hunk, 0);
     press(&mut fixture.app, KeyCode::Up);
-    assert_eq!(fixture.app.ui.diff.cursor.unwrap().hunk, 0);
+    assert_eq!(fixture.app.diff.interaction().cursor.unwrap().hunk, 0);
     press(&mut fixture.app, KeyCode::Char(']'));
-    assert_eq!(fixture.app.ui.diff.cursor.unwrap().hunk, 1);
+    assert_eq!(fixture.app.diff.interaction().cursor.unwrap().hunk, 1);
     press(&mut fixture.app, KeyCode::Char('k'));
-    assert_eq!(fixture.app.ui.diff.cursor.unwrap().hunk, 0);
+    assert_eq!(fixture.app.diff.interaction().cursor.unwrap().hunk, 0);
 }
 
 #[test]
@@ -138,17 +138,17 @@ fn test_multi_hunk_selection_escape_clears_then_returns_to_list() {
     press(&mut fixture.app, KeyCode::Char(' '));
     press(&mut fixture.app, KeyCode::Char('j'));
     press(&mut fixture.app, KeyCode::Char(' '));
-    assert_eq!(fixture.app.ui.diff.selected.len(), 2);
+    assert_eq!(fixture.app.diff.interaction().selected.len(), 2);
     assert!(fixture
         .app
         .shortcut_hints()
         .iter()
         .any(|(key, label)| key == "Esc" && label == "ClearHunks"));
     press(&mut fixture.app, KeyCode::Esc);
-    assert!(fixture.app.ui.diff.focused);
-    assert!(fixture.app.ui.diff.selected.is_empty());
+    assert!(fixture.app.diff.interaction().focused);
+    assert!(fixture.app.diff.interaction().selected.is_empty());
     press(&mut fixture.app, KeyCode::Esc);
-    assert!(!fixture.app.ui.diff.focused);
+    assert!(!fixture.app.diff.interaction().focused);
 }
 
 #[test]
@@ -164,13 +164,13 @@ fn test_keyboard_stages_current_hunk_and_keeps_remaining_unstaged_view() {
         std::fs::read_to_string(fixture.dir.path().join("file.txt")).unwrap(),
         Fixture::changed()
     );
-    assert_eq!(fixture.app.git.status.staged.len(), 1);
-    assert_eq!(fixture.app.git.status.unstaged.len(), 1);
-    let patch = fixture.app.git.current_patch.as_ref().unwrap();
+    assert_eq!(fixture.app.files.status().staged.len(), 1);
+    assert_eq!(fixture.app.files.status().unstaged.len(), 1);
+    let patch = fixture.app.diff.document().patch.as_ref().unwrap();
     assert_eq!(patch.files[0].source, PatchSource::Worktree);
     assert_eq!(patch.files[0].hunks.len(), 1);
-    assert!(fixture.app.ui.diff.focused);
-    assert!(fixture.app.ui.diff.selected.is_empty());
+    assert!(fixture.app.diff.interaction().focused);
+    assert!(fixture.app.diff.interaction().selected.is_empty());
     assert!(help(&fixture.app, "hunk stage").is_some());
 }
 
@@ -182,7 +182,7 @@ fn test_switch_side_and_unstage_current_hunk_preserve_worktree() {
     refresh(&mut fixture.app);
     press(&mut fixture.app, KeyCode::Enter);
     assert_eq!(
-        fixture.app.git.current_patch.as_ref().unwrap().files[0].source,
+        fixture.app.diff.document().patch.as_ref().unwrap().files[0].source,
         PatchSource::Index
     );
     assert!(help(&fixture.app, "hunk stage").is_none());
@@ -190,11 +190,11 @@ fn test_switch_side_and_unstage_current_hunk_preserve_worktree() {
     press(&mut fixture.app, KeyCode::Char('u'));
     refresh(&mut fixture.app);
     assert_eq!(fixture.index(), Fixture::base().as_bytes());
-    assert!(fixture.app.git.current_diff.is_empty());
+    assert!(fixture.app.diff.document().lines.is_empty());
     assert!(text(&render(&fixture.app, false)).contains("No staged changes"));
     press(&mut fixture.app, KeyCode::Enter);
     assert_eq!(
-        fixture.app.git.current_patch.as_ref().unwrap().files[0]
+        fixture.app.diff.document().patch.as_ref().unwrap().files[0]
             .hunks
             .len(),
         2
@@ -219,7 +219,7 @@ fn test_selected_hunks_override_cursor_and_can_stage_all() {
     press(&mut fixture.app, KeyCode::Char('s'));
     refresh(&mut fixture.app);
     assert_eq!(fixture.index(), Fixture::changed().as_bytes());
-    assert!(fixture.app.git.current_diff.is_empty());
+    assert!(fixture.app.diff.document().lines.is_empty());
     assert!(text(&render(&fixture.app, false)).contains("No unstaged changes"));
 }
 
@@ -316,7 +316,7 @@ fn test_hunk_focus_disables_file_writes_and_preserves_modal_text_input() {
     assert_eq!(fixture.app.input.buffer, "s");
     assert_eq!(fixture.index(), Fixture::base().as_bytes());
     press(&mut fixture.app, KeyCode::Esc);
-    assert!(fixture.app.ui.diff.focused);
+    assert!(fixture.app.diff.interaction().focused);
 }
 
 #[test]
@@ -333,7 +333,7 @@ fn test_pending_write_blocks_duplicate_hunk_commands_until_completion() {
         .into_iter()
         .find(|e| matches!(e, EffectRequest::ApplyHunks { .. }))
         .unwrap();
-    let pending = fixture.app.ui.diff.pending_write;
+    let pending = fixture.app.diff.interaction().pending_write;
     assert!(help(&fixture.app, "hunk stage").is_none());
     fixture
         .app
@@ -352,11 +352,11 @@ fn test_pending_write_blocks_duplicate_hunk_commands_until_completion() {
             direction: PatchDirection::Stage,
             result: Ok(()),
         });
-    assert_eq!(fixture.app.ui.diff.pending_write, pending);
+    assert_eq!(fixture.app.diff.interaction().pending_write, pending);
     let events = effects::execute(request, &*fixture.app.runtime.repo);
     crate::flux::test_runtime::drive_actions(&mut fixture.app, events);
     refresh(&mut fixture.app);
-    assert!(fixture.app.ui.diff.pending_write.is_none());
+    assert!(fixture.app.diff.interaction().pending_write.is_none());
     assert!(help(&fixture.app, "hunk stage").is_some());
 }
 
@@ -375,11 +375,12 @@ fn test_stale_hunk_write_logs_failure_and_reloads_patch() {
         .any(|entry| !entry.success && entry.command.contains("patch changed")));
     assert!(fixture
         .app
-        .git
-        .current_diff
+        .diff
+        .document()
+        .lines
         .iter()
         .any(|line| line.content == "external change"));
-    assert!(fixture.app.ui.diff.pending_write.is_none());
+    assert!(fixture.app.diff.interaction().pending_write.is_none());
 }
 
 #[test]
@@ -388,14 +389,14 @@ fn test_refresh_and_panel_switch_reset_hunk_selection() {
     fixture.focus();
     press(&mut fixture.app, KeyCode::Char(' '));
     fixture.app.request_refresh(RefreshKind::StatusOnly);
-    assert!(fixture.app.ui.diff.selected.is_empty());
+    assert!(fixture.app.diff.interaction().selected.is_empty());
     assert!(help(&fixture.app, "hunk stage").is_none());
     refresh(&mut fixture.app);
-    assert!(fixture.app.ui.diff.focused);
+    assert!(fixture.app.diff.interaction().focused);
     press(&mut fixture.app, KeyCode::Char('2'));
-    assert!(!fixture.app.ui.diff.focused);
-    assert!(fixture.app.ui.diff.side.is_none());
-    assert!(fixture.app.ui.diff.selected.is_empty());
+    assert!(!fixture.app.diff.interaction().focused);
+    assert!(fixture.app.diff.interaction().side.is_none());
+    assert!(fixture.app.diff.interaction().selected.is_empty());
 }
 
 #[test]
@@ -406,7 +407,10 @@ fn test_render_shows_hunk_cursor_selection_source_and_snapshot_parity() {
     press(&mut fixture.app, KeyCode::Char(' '));
     let snapshot = AppStateSnapshotOwned::from_app(&fixture.app.state);
     assert!(snapshot.context.diff_focused);
-    assert_eq!(snapshot.diff_interaction.cursor, fixture.app.ui.diff.cursor);
+    assert_eq!(
+        snapshot.diff_interaction.cursor,
+        fixture.app.diff.interaction().cursor
+    );
     assert_eq!(
         snapshot
             .as_snapshot()
@@ -429,17 +433,22 @@ fn test_render_shows_hunk_cursor_selection_source_and_snapshot_parity() {
 fn test_historical_and_truncated_patches_allow_navigation_without_writes() {
     for historical in [true, false] {
         let mut fixture = Fixture::new();
-        let mut patch = (*fixture.app.git.current_patch.clone().unwrap()).clone();
+        let mut patch = (*fixture.app.diff.document().patch.clone().unwrap()).clone();
         if historical {
             patch.files[0].source = PatchSource::Commit("history".into());
         } else {
             patch.truncated = true;
         }
-        fixture.app.git.current_diff = patch.display_lines();
-        fixture.app.git.current_patch = Some(std::sync::Arc::new(patch));
+        fixture
+            .app
+            .diff
+            .set_test_document(crate::git::patch::DiffDocument {
+                lines: patch.display_lines(),
+                patch: Some(std::sync::Arc::new(patch)),
+            });
         fixture.focus();
         press(&mut fixture.app, KeyCode::Char('j'));
-        assert_eq!(fixture.app.ui.diff.cursor.unwrap().hunk, 1);
+        assert_eq!(fixture.app.diff.interaction().cursor.unwrap().hunk, 1);
         assert!(help(&fixture.app, "hunk stage").is_none());
         assert!(help(&fixture.app, "hunk unstage").is_none());
         assert!(text(&render(&fixture.app, false)).contains("Read only"));
@@ -499,14 +508,20 @@ fn load_file(fixture: &mut Fixture, name: &str) {
     refresh(&mut fixture.app);
     let index = fixture
         .app
-        .ui
         .files
+        .view()
         .tree_nodes
         .iter()
         .position(|node| node.path == Path::new(name))
         .unwrap();
-    fixture.app.ui.files.panel.list_state.select(Some(index));
-    fixture.app.ui.diff.side = None;
+    fixture
+        .app
+        .files
+        .test_view_mut()
+        .panel
+        .list_state
+        .select(Some(index));
+    fixture.app.diff.test_interaction_mut().side = None;
     fixture.app.reload_diff_now();
     crate::flux::test_runtime::finish_background(&mut fixture.app);
 }
@@ -545,7 +560,7 @@ fn test_directory_selection_stages_and_unstages_hunks_across_files() {
         press(&mut fixture.app, KeyCode::Char('j'));
     }
     press(&mut fixture.app, KeyCode::Char(' '));
-    assert_eq!(fixture.app.ui.diff.selected.len(), 2);
+    assert_eq!(fixture.app.diff.interaction().selected.len(), 2);
     press(&mut fixture.app, KeyCode::Char('s'));
     refresh(&mut fixture.app);
     let first = String::from_utf8(index_file(&fixture, "dir/a.txt").unwrap()).unwrap();
@@ -581,7 +596,7 @@ fn test_switching_selection_direction_clears_previous_directory_hunks() {
     assert!(help(&fixture.app, "hunk unstage").is_some());
     press(&mut fixture.app, KeyCode::Char('j'));
     press(&mut fixture.app, KeyCode::Char(' '));
-    assert_eq!(fixture.app.ui.diff.selected.len(), 1);
+    assert_eq!(fixture.app.diff.interaction().selected.len(), 1);
     assert!(help(&fixture.app, "hunk stage").is_some());
     assert!(help(&fixture.app, "hunk unstage").is_none());
 }
@@ -669,7 +684,7 @@ fn test_stale_index_unstage_is_rejected_and_reloaded() {
         .iter()
         .any(|entry| !entry.success && entry.command.contains("patch changed")));
     assert_eq!(
-        fixture.app.git.current_patch.as_ref().unwrap().files[0]
+        fixture.app.diff.document().patch.as_ref().unwrap().files[0]
             .hunks
             .len(),
         2
@@ -682,16 +697,16 @@ fn test_cached_diff_reentry_keeps_valid_patch_and_rejects_loading_commands() {
     fixture.focus();
     press(&mut fixture.app, KeyCode::Char(' '));
     fixture.app.schedule_diff_reload();
-    assert!(fixture.app.ui.diff.selected.is_empty());
+    assert!(fixture.app.diff.interaction().selected.is_empty());
     assert!(help(&fixture.app, "hunk stage").is_none());
     fixture.app.flush_pending_diff_reload();
-    assert!(fixture.app.git.current_patch.is_some());
+    assert!(fixture.app.diff.document().patch.is_some());
     assert!(help(&fixture.app, "hunk stage").is_some());
     press(&mut fixture.app, KeyCode::Tab);
     press(&mut fixture.app, KeyCode::Tab);
-    assert!(fixture.app.ui.diff.focused);
+    assert!(fixture.app.diff.interaction().focused);
     assert_eq!(
-        fixture.app.git.current_patch.as_ref().unwrap().files[0]
+        fixture.app.diff.document().patch.as_ref().unwrap().files[0]
             .hunks
             .len(),
         2
@@ -728,7 +743,7 @@ fn test_completion_after_panel_switch_preserves_current_focus_and_refreshes_stat
     crate::flux::test_runtime::drive_actions(&mut fixture.app, events);
     refresh(&mut fixture.app);
     assert_eq!(fixture.app.ui.active_panel, SidePanel::LocalBranches);
-    assert!(!fixture.app.ui.diff.focused);
-    assert_eq!(fixture.app.git.status.staged.len(), 1);
-    assert!(fixture.app.ui.diff.pending_write.is_none());
+    assert!(!fixture.app.diff.interaction().focused);
+    assert_eq!(fixture.app.files.status().staged.len(), 1);
+    assert!(fixture.app.diff.interaction().pending_write.is_none());
 }

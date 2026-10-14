@@ -2,6 +2,8 @@ use crate::app::{Command, CommitFieldFocus, InputMode};
 use crate::flux::action::{Action, ActionEnvelope, DomainAction};
 use crate::flux::stores::{ReduceCtx, ReduceOutput, Store, UiInvalidation};
 
+use super::state_access::{CommandAccess, InputAccess, LogAccess, SearchAccess};
+
 pub struct InputStore;
 
 impl InputStore {
@@ -9,7 +11,10 @@ impl InputStore {
         Self
     }
 
-    fn handle_esc(ctx: &mut ReduceCtx<'_>, mode: InputMode) -> ReduceOutput {
+    fn handle_esc<S: InputAccess + SearchAccess + ?Sized>(
+        ctx: &mut ReduceCtx<'_, S>,
+        mode: InputMode,
+    ) -> ReduceOutput {
         if mode == InputMode::Search {
             ctx.state.clear_search();
         }
@@ -17,7 +22,10 @@ impl InputStore {
         ReduceOutput::none().with_invalidation(UiInvalidation::log_and_overlay())
     }
 
-    fn handle_tab(ctx: &mut ReduceCtx<'_>, mode: InputMode) -> ReduceOutput {
+    fn handle_tab<S: InputAccess + ?Sized>(
+        ctx: &mut ReduceCtx<'_, S>,
+        mode: InputMode,
+    ) -> ReduceOutput {
         match mode {
             InputMode::CommitEditor => {
                 let new_focus = match ctx.state.commit_focus() {
@@ -36,7 +44,10 @@ impl InputStore {
         }
     }
 
-    fn handle_enter(ctx: &mut ReduceCtx<'_>, mode: InputMode) -> ReduceOutput {
+    fn handle_enter<S: CommandAccess + InputAccess + LogAccess + SearchAccess + ?Sized>(
+        ctx: &mut ReduceCtx<'_, S>,
+        mode: InputMode,
+    ) -> ReduceOutput {
         match mode {
             InputMode::CommitEditor => match ctx.state.commit_focus() {
                 CommitFieldFocus::Message => {
@@ -126,7 +137,10 @@ impl InputStore {
         }
     }
 
-    fn handle_backspace(ctx: &mut ReduceCtx<'_>, mode: InputMode) -> ReduceOutput {
+    fn handle_backspace<S: InputAccess + ?Sized>(
+        ctx: &mut ReduceCtx<'_, S>,
+        mode: InputMode,
+    ) -> ReduceOutput {
         match mode {
             InputMode::CommitEditor => {
                 match ctx.state.commit_focus() {
@@ -158,7 +172,11 @@ impl InputStore {
         }
     }
 
-    fn handle_char(ctx: &mut ReduceCtx<'_>, mode: InputMode, c: char) -> ReduceOutput {
+    fn handle_char<S: InputAccess + ?Sized>(
+        ctx: &mut ReduceCtx<'_, S>,
+        mode: InputMode,
+        c: char,
+    ) -> ReduceOutput {
         match mode {
             InputMode::CommitEditor => {
                 match ctx.state.commit_focus() {
@@ -187,8 +205,8 @@ impl InputStore {
     }
 }
 
-impl Store for InputStore {
-    fn reduce(&mut self, action: &ActionEnvelope, ctx: &mut ReduceCtx<'_>) -> ReduceOutput {
+impl<S: CommandAccess + InputAccess + LogAccess + SearchAccess + ?Sized> Store<S> for InputStore {
+    fn reduce(&mut self, action: &ActionEnvelope, ctx: &mut ReduceCtx<'_, S>) -> ReduceOutput {
         let Action::Domain(domain) = &action.action else {
             return ReduceOutput::none();
         };

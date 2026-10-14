@@ -3,6 +3,8 @@ use crate::flux::action::{Action, ActionEnvelope, DomainAction};
 use crate::flux::effects::EffectRequest;
 use crate::flux::stores::{ReduceCtx, ReduceOutput, Store, UiInvalidation};
 
+use super::state_access::{InputAccess, LogAccess, OverlayAccess, RefreshAccess, SelectionAccess};
+
 pub struct OverlayStore;
 
 impl OverlayStore {
@@ -11,8 +13,10 @@ impl OverlayStore {
     }
 }
 
-impl Store for OverlayStore {
-    fn reduce(&mut self, action: &ActionEnvelope, ctx: &mut ReduceCtx<'_>) -> ReduceOutput {
+impl<S: InputAccess + LogAccess + OverlayAccess + RefreshAccess + SelectionAccess + ?Sized> Store<S>
+    for OverlayStore
+{
+    fn reduce(&mut self, action: &ActionEnvelope, ctx: &mut ReduceCtx<'_, S>) -> ReduceOutput {
         let Action::Domain(domain) = &action.action else {
             return ReduceOutput::none();
         };
@@ -115,10 +119,13 @@ mod tests {
     fn test_start_commit_input_with_staged_files_opens_editor() {
         let mut store = OverlayStore::new();
         let mut app = mock_app();
-        app.git.status.staged.push(crate::git::FileEntry {
-            path: "foo.txt".into(),
-            status: crate::git::FileStatus::Modified,
-        });
+        app.files
+            .test_status_mut()
+            .staged
+            .push(crate::git::FileEntry {
+                path: "foo.txt".into(),
+                status: crate::git::FileStatus::Modified,
+            });
         reduce(
             &mut store,
             &mut app,
@@ -202,7 +209,7 @@ mod more_tests {
         let mut app = mock_app();
         app.input.mode = Some(InputMode::CommitAllConfirm);
         // Set up unstaged files to stage
-        app.git.status.unstaged = vec![crate::git::FileEntry {
+        app.files.test_status_mut().unstaged = vec![crate::git::FileEntry {
             path: "foo.txt".into(),
             status: FileStatus::Modified,
         }];
@@ -232,14 +239,14 @@ mod more_tests {
         let mut store = OverlayStore::new();
         let mut app = mock_app();
         app.ui.active_panel = SidePanel::Files;
-        app.ui.files.tree_nodes = vec![FileTreeNode {
+        app.files.test_view_mut().tree_nodes = vec![FileTreeNode {
             path: "foo.txt".into(),
             status: FileTreeNodeStatus::Unstaged(FileStatus::Modified),
             depth: 0,
             is_dir: false,
             is_expanded: false,
         }];
-        app.ui.files.panel.list_state.select(Some(0));
+        app.files.test_view_mut().panel.list_state.select(Some(0));
         reduce(
             &mut store,
             &mut app,

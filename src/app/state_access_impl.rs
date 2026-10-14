@@ -1,17 +1,18 @@
 use crate::app::{AppState, CommitFieldFocus, InputMode, RefreshKind, SidePanel};
 use crate::flux::action::DomainAction;
 use crate::flux::stores::state_access::{
-    CoreAccess, DirtyHint, InputAccess, NavigationAccess, OverlayAccess, RefreshAccess,
-    RevisionAccess, SearchAccess, SelectionAccess,
+    BranchAccess, CommandAccess, DirtyHint, FilesAccess, InputAccess, InvalidationAccess,
+    LifecycleAccess, LogAccess, NavigationAccess, OverlayAccess, PanelAccess, RefreshAccess,
+    RevisionAccess, RuntimeAccess, SearchAccess, SelectionAccess, StashAccess,
 };
 use std::path::PathBuf;
 use std::time::Duration;
 
 // ---------------------------------------------------------------------------
-// CoreAccess
+// Runtime and shared services
 // ---------------------------------------------------------------------------
 
-impl CoreAccess for AppState {
+impl RuntimeAccess for AppState {
     fn apply_repository_action(&mut self, action: &DomainAction) {
         AppState::apply_repository_action(self, action);
     }
@@ -22,14 +23,30 @@ impl CoreAccess for AppState {
     fn apply_background_completed(&mut self, completed: &crate::app::BackgroundCompleted) {
         AppState::apply_background_completed(self, completed.clone());
     }
+}
+
+impl LogAccess for AppState {
     fn push_log(&mut self, msg: String, success: bool) {
         AppState::push_log(self, msg, success);
     }
+}
 
+impl FilesAccess for AppState {
+    fn reduce_files(
+        &mut self,
+        action: crate::app::files::FilesAction<'_>,
+    ) -> crate::app::files::FilesUpdate {
+        AppState::reduce_files(self, action)
+    }
+}
+
+impl LifecycleAccess for AppState {
     fn set_running(&mut self, running: bool) {
         self.running = running;
     }
+}
 
+impl InvalidationAccess for AppState {
     fn mark_all_dirty(&mut self) {
         self.ui.dirty.mark_all();
     }
@@ -37,17 +54,17 @@ impl CoreAccess for AppState {
     fn mark_dirty(&mut self, hint: DirtyHint) {
         self.ui.dirty.apply_hint(hint);
     }
+}
 
+impl CommandAccess for AppState {
     fn resolve_command_palette_command(&self, cmd: &str) -> Option<DomainAction> {
         AppState::resolve_command_palette_command(self, cmd)
     }
+}
 
+impl BranchAccess for AppState {
     fn selected_branch_name(&self) -> Option<String> {
         AppState::selected_branch_name(self)
-    }
-
-    fn selected_stash_index(&self) -> Option<usize> {
-        AppState::selected_stash_index(self)
     }
 
     fn take_branch_switch_target(&mut self) -> Option<String> {
@@ -62,16 +79,24 @@ impl CoreAccess for AppState {
         self.ui.branches.is_fetching_remote = fetching;
     }
 
+    fn has_uncommitted_changes(&self) -> bool {
+        AppState::has_uncommitted_changes(self)
+    }
+}
+
+impl StashAccess for AppState {
+    fn selected_stash_index(&self) -> Option<usize> {
+        AppState::selected_stash_index(self)
+    }
+}
+
+impl PanelAccess for AppState {
     fn active_panel(&self) -> SidePanel {
         self.ui.active_panel
     }
 
     fn set_active_panel(&mut self, panel: SidePanel) {
         self.ui.active_panel = panel;
-    }
-
-    fn has_uncommitted_changes(&self) -> bool {
-        AppState::has_uncommitted_changes(self)
     }
 }
 
@@ -257,39 +282,12 @@ impl SearchAccess for AppState {
 // ---------------------------------------------------------------------------
 
 impl SelectionAccess for AppState {
-    fn stage_selection_targets(&self) -> (Vec<PathBuf>, Vec<PathBuf>) {
-        self.partition_toggle_targets(&self.visual_selected_indices())
-    }
-
-    fn commit_selection_targets(&self) -> Vec<PathBuf> {
-        self.collect_commit_targets(&self.visual_selected_indices())
-    }
-    fn toggle_visual_select_mode(&mut self) {
-        AppState::toggle_visual_select_mode(self);
-    }
-
     fn prepare_stash_targets_from_selection(&self) -> Vec<PathBuf> {
         AppState::prepare_stash_targets_from_selection(self)
     }
 
-    fn prepare_discard_targets_from_selection(&self) -> Vec<PathBuf> {
-        AppState::prepare_discard_targets_from_selection(self)
-    }
-
-    fn clear_files_visual_selection(&mut self) {
-        self.ui.files.visual_mode = false;
-        self.ui.files.visual_anchor = None;
-    }
-
     fn all_file_paths(&self) -> Vec<PathBuf> {
-        self.git
-            .status
-            .staged
-            .iter()
-            .chain(self.git.status.unstaged.iter())
-            .chain(self.git.status.untracked.iter())
-            .map(|e| e.path.clone())
-            .collect()
+        self.files.all_file_paths()
     }
 }
 

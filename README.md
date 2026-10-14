@@ -69,8 +69,7 @@ Ratagit follows a layered runtime design:
 
 Read more in:
 
-- [Architecture Decisions](docs/DECISIONS.md)
-- [Development Model](docs/DEVELOPMENT_MODEL.md)
+- [Application architecture, module boundaries and refactoring roadmap](src/app/README.md)
 
 ## Tech Stack
 

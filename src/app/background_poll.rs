@@ -1,32 +1,12 @@
 use super::app::RefreshKind;
-use super::diff_loader;
+use super::diff::DiffRefreshSource;
 use super::{AppState, BackgroundCompleted, BackgroundPayload, SidePanel};
 use crate::flux::effects::RuntimeEvent;
 use crate::flux::task_manager::{TaskKey, TaskResult, TaskResultKind};
 use std::collections::HashMap;
 use tracing::debug;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum DiffRefreshSource {
-    Status,
-    Branches,
-    Stashes,
-    Commits,
-}
-
 impl AppState {
-    pub(super) fn should_schedule_diff_for_refresh(&self, source: DiffRefreshSource) -> bool {
-        use diff_loader::DiffTarget;
-        matches!(
-            (source, self.selected_diff_target()),
-            (DiffRefreshSource::Status, DiffTarget::File { .. })
-                | (DiffRefreshSource::Status, DiffTarget::Directory { .. })
-                | (DiffRefreshSource::Branches, DiffTarget::Branch { .. })
-                | (DiffRefreshSource::Stashes, DiffTarget::Stash { .. })
-                | (DiffRefreshSource::Commits, DiffTarget::Commit { .. })
-        )
-    }
-
     pub fn process_background_refresh_tick(&mut self) {
         if let Some(kind) = self.refresh.pending_refresh.take() {
             let mut deferred_kind = None;
@@ -173,7 +153,7 @@ impl AppState {
                             // Fast reads omit untracked paths and can temporarily remove
                             // the selected node. Use them to populate an empty tree at
                             // startup; refresh an existing tree from a complete snapshot.
-                            let apply_status = !fast || self.ui.files.tree_nodes.is_empty();
+                            let apply_status = !fast || self.files.view().tree_nodes.is_empty();
                             if apply_status {
                                 self.apply_status_refresh(status);
                             }
@@ -260,26 +240,15 @@ impl AppState {
                             }
                         }
                         BackgroundPayload::Diff { cache_key, diff } => {
-                            if self.diff_target_to_cache_key(&self.selected_diff_target())
-                                != cache_key
-                            {
-                                self.diff_mgr.in_flight_diff_key = None;
+                            let target = self.selected_diff_target();
+                            if !self.diff.complete_load(
+                                cache_key,
+                                diff,
+                                &target,
+                                &self.files.view().tree_nodes,
+                            ) {
                                 self.schedule_diff_reload();
                                 continue;
-                            }
-                            self.diff_mgr.in_flight_diff_key = None;
-                            self.diff_mgr.cache.insert(cache_key.clone(), diff.clone());
-                            self.diff_mgr.last_diff_key = Some(cache_key);
-                            self.git.current_diff = diff.lines;
-                            self.git.current_patch = diff.patch;
-                            self.ui.diff.reset_selection();
-                            self.ui.diff.cursor = self
-                                .git
-                                .current_patch
-                                .as_ref()
-                                .and_then(|patch| patch.hunk_ids().first().copied());
-                            if !self.refresh.pending_diff_reload {
-                                self.refresh.pending_diff_reload_at = None;
                             }
                             self.ui.dirty.mark_diff();
                         }
@@ -293,11 +262,7 @@ impl AppState {
                         self.ui.branches.commits_subview_loading = false;
                     }
                     if matches!(task.key, TaskKey::Diff { .. }) {
-                        self.diff_mgr.in_flight_diff_key = None;
-                    }
-                    if matches!(task.key, TaskKey::Diff { .. }) && !self.refresh.pending_diff_reload
-                    {
-                        self.refresh.pending_diff_reload_at = None;
+                        self.diff.finish_load();
                     }
                     self.push_log(reason, false);
                 }

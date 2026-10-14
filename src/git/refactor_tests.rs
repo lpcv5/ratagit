@@ -541,10 +541,10 @@ fn test_structured_patch_reaches_state_cache_and_owned_snapshot() {
     let mut app = app(&fixture);
     app.state.reload_diff_now();
     crate::flux::test_runtime::finish_background(&mut app);
-    let patch = app.state.git.current_patch.clone().unwrap();
+    let patch = app.state.diff.document().patch.clone().unwrap();
     assert_eq!(patch.files[0].hunks.len(), 2);
     assert_eq!(
-        app.state.git.current_diff.len(),
+        app.state.diff.document().lines.len(),
         patch.display_lines().len()
     );
     let owned = AppStateSnapshotOwned::from_app(&app.state);
@@ -563,7 +563,7 @@ fn test_structured_patch_reaches_state_cache_and_owned_snapshot() {
     );
     app.state
         .request_refresh(crate::app::RefreshKind::StatusOnly);
-    assert!(app.state.git.current_patch.is_none());
+    assert!(app.state.diff.document().patch.is_none());
 }
 
 #[test]
@@ -596,7 +596,7 @@ fn test_partial_stage_effect_updates_state_only_through_completion_events() {
     assert!(fixture
         .git_ok(&["show", ":file.txt"])
         .contains("first change"));
-    assert!(app.state.git.status.staged.is_empty());
+    assert!(app.state.files.status().staged.is_empty());
     crate::flux::test_runtime::drive_actions(&mut app, events);
     crate::flux::test_runtime::drive_actions(
         &mut app,
@@ -604,7 +604,7 @@ fn test_partial_stage_effect_updates_state_only_through_completion_events() {
             effects::RuntimeEvent::FlushPendingRefresh { log_success: false },
         ))],
     );
-    assert_eq!(app.state.git.status.staged.len(), 1);
+    assert_eq!(app.state.files.status().staged.len(), 1);
     assert!(app
         .state
         .command_log

@@ -404,47 +404,20 @@ impl CommandSpec {
             return None;
         }
         Some(match self.id {
-            DiffSide
-                if env.diff.interaction.focused
-                    && env.diff.ready
-                    && matches!(
-                        env.selection.diff_target(),
-                        super::diff_loader::DiffTarget::File {
-                            status: crate::file_tree::FileTreeNodeStatus::Staged(_)
-                                | crate::file_tree::FileTreeNodeStatus::Unstaged(_),
-                            ..
-                        }
-                    ) =>
-            {
+            DiffSide if env.diff.can_switch_side(&env.selection.diff_target()) => {
                 DomainAction::SwitchDiffSide
             }
-            FocusDiff if env.diff.interaction.focused || !env.diff.ids().is_empty() => {
-                DomainAction::ToggleDiffFocus
-            }
-            HunkNext if env.diff.interaction.focused && !env.diff.ids().is_empty() => {
-                DomainAction::HunkNext
-            }
-            HunkPrevious if env.diff.interaction.focused && !env.diff.ids().is_empty() => {
-                DomainAction::HunkPrevious
-            }
-            HunkSelect if env.diff.interaction.focused && !env.diff.ids().is_empty() => {
-                DomainAction::ToggleHunkSelection
-            }
-            HunkStage
-                if env.diff.interaction.focused
-                    && !env
-                        .diff
-                        .targets(crate::git::patch::PatchDirection::Stage)
-                        .is_empty() =>
-            {
+            FocusDiff if env.diff.can_toggle_focus() => DomainAction::ToggleDiffFocus,
+            HunkNext if env.diff.can_navigate() => DomainAction::HunkNext,
+            HunkPrevious if env.diff.can_navigate() => DomainAction::HunkPrevious,
+            HunkSelect if env.diff.can_navigate() => DomainAction::ToggleHunkSelection,
+            HunkStage if env.diff.can_apply(crate::git::patch::PatchDirection::Stage) => {
                 DomainAction::ApplySelectedHunks(crate::git::patch::PatchDirection::Stage)
             }
             HunkUnstage
-                if env.diff.interaction.focused
-                    && !env
-                        .diff
-                        .targets(crate::git::patch::PatchDirection::Unstage)
-                        .is_empty() =>
+                if env
+                    .diff
+                    .can_apply(crate::git::patch::PatchDirection::Unstage) =>
             {
                 DomainAction::ApplySelectedHunks(crate::git::patch::PatchDirection::Unstage)
             }
@@ -503,7 +476,16 @@ impl CommandSpec {
                 if env.selection.file_selection().is_visual_mode() {
                     DomainAction::ToggleStageSelection
                 } else {
-                    return env.selection.file_selection().toggle_stage_action();
+                    return env
+                        .selection
+                        .file_selection()
+                        .toggle_stage_target()
+                        .map(|target| match target {
+                            super::files::StageTarget::Stage(path) => DomainAction::StageFile(path),
+                            super::files::StageTarget::Unstage(path) => {
+                                DomainAction::UnstageFile(path)
+                            }
+                        });
                 }
             }
             Discard if *env.view() == ViewContext::Files => {

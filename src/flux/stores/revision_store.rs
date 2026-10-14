@@ -4,6 +4,8 @@ use crate::flux::action::{Action, ActionEnvelope, DomainAction};
 use crate::flux::effects::EffectRequest;
 use crate::flux::stores::{ReduceCtx, ReduceOutput, Store, UiInvalidation};
 
+use super::state_access::{PanelAccess, RevisionAccess, SearchAccess};
+
 pub struct RevisionStore;
 
 impl RevisionStore {
@@ -12,8 +14,8 @@ impl RevisionStore {
     }
 }
 
-impl Store for RevisionStore {
-    fn reduce(&mut self, action: &ActionEnvelope, ctx: &mut ReduceCtx<'_>) -> ReduceOutput {
+impl<S: PanelAccess + RevisionAccess + SearchAccess + ?Sized> Store<S> for RevisionStore {
+    fn reduce(&mut self, action: &ActionEnvelope, ctx: &mut ReduceCtx<'_, S>) -> ReduceOutput {
         let Action::Domain(domain) = &action.action else {
             return ReduceOutput::none();
         };

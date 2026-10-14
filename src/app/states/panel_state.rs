@@ -57,15 +57,6 @@ impl<T> Default for TreeModeState<T> {
 }
 
 #[derive(Default, Clone)]
-pub struct FilesPanelState {
-    pub panel: PanelState,
-    pub tree_nodes: Vec<FileTreeNode>,
-    pub expanded_dirs: HashSet<PathBuf>,
-    pub visual_mode: bool,
-    pub visual_anchor: Option<usize>,
-}
-
-#[derive(Default, Clone)]
 pub struct BranchesPanelState {
     pub panel: PanelState,
     pub items: Vec<BranchInfo>,
