@@ -1,0 +1,73 @@
+UI buffer v1
+area: Rect { x: 0, y: 0, width: 120, height: 24 }
+cursor: None
+
+text:
+00: "╭Files─────────────────────────────╮╭Diff─Diff [1-6 / 6]───────────────────────────────────────────────────────────────╮"
+01: "│✎ file_20.rs                      ││--- a/README.md                                                                   │"
+02: "│✎ file_21.rs                      ││+++ b/README.md                                                                   │"
+03: "│✎ file_22.rs                      ││Unstaged @@ -1,2 +1,2 @@                                                          │"
+04: "│✎ file_23.rs                      ││ # Ratagit                                                                        │"
+05: "│✎ file_24.rs                      ││-Old description                                                                  │"
+06: "│✎ file_25.rs                      ││+Tested terminal UI                                                               │"
+07: "│✎ file_26.rs                      ││                                                                                  │"
+08: "│✎ file_27.rs                      ││                                                                                  │"
+09: "│✎ file_28.rs                      ││                                                                                  │"
+10: "│✎ file_29.rs                      ││                                                                                  │"
+11: "╰──────────────────────────────────╯│                                                                                  │"
+12: "╭Local Branches────────────────────╮│                                                                                  │"
+13: "│  branch_28                       ││                                                                                  │"
+14: "│  branch_29                       ││                                                                                  │"
+15: "╰──────────────────────────────────╯│                                                                                  │"
+16: "╭Commits───────────────────────────╮│                                                                                  │"
+17: "│● abc124c AL UI change 28         ││                                                                                  │"
+18: "│● abc124d AL UI change 29         ││                                                                                  │"
+19: "╰──────────────────────────────────╯╰──────────────────────────────────────────────────────────────────────────────────╯"
+20: "╭Stash─────────────────────────────╮╭Command Log───────────────────────────────────────────────────────────────────────╮"
+21: "│stash@{0} WIP UI tests            ││✗ git fetch: offline                                                              │"
+22: "╰──────────────────────────────────╯╰──────────────────────────────────────────────────────────────────────────────────╯"
+23: "[Tab] FocusHunks   [Space] Stage   [v] Visual   [c] Commit   [:] Command   [q] Quit                                     "
+
+symbol boundaries: []
+
+styles:
+0: Style::new().fg(Color::Rgb(82, 196, 208)).bg(Color::Reset).underline_color(Color::Reset); diff=None; skip=false
+1: Style::new().fg(Color::Rgb(82, 196, 208)).bg(Color::Reset).underline_color(Color::Reset).bold(); diff=None; skip=false
+2: Style::new().dark_gray().bg(Color::Reset).underline_color(Color::Reset); diff=None; skip=false
+3: Style::new().yellow().bg(Color::Reset).underline_color(Color::Reset); diff=None; skip=false
+4: Style::new().fg(Color::Reset).bg(Color::Reset).underline_color(Color::Reset); diff=None; skip=false
+5: Style::new().cyan().bg(Color::Reset).underline_color(Color::Reset); diff=None; skip=false
+6: Style::new().gray().bg(Color::Reset).underline_color(Color::Reset); diff=None; skip=false
+7: Style::new().red().bg(Color::Reset).underline_color(Color::Reset); diff=None; skip=false
+8: Style::new().green().bg(Color::Reset).underline_color(Color::Reset); diff=None; skip=false
+9: Style::new().white().bg(Color::Rgb(34, 52, 58)).underline_color(Color::Reset).bold(); diff=None; skip=false
+10: Style::new().white().bg(Color::Reset).underline_color(Color::Reset); diff=None; skip=false
+11: Style::new().fg(Color::Rgb(82, 196, 208)).bg(Color::Rgb(20, 28, 32)).underline_color(Color::Reset); diff=None; skip=false
+12: Style::new().fg(Color::Reset).bg(Color::Rgb(20, 28, 32)).underline_color(Color::Reset); diff=None; skip=false
+13: Style::new().white().bg(Color::Rgb(20, 28, 32)).underline_color(Color::Reset); diff=None; skip=false
+
+style runs (x start..end exclusive = style):
+00: 0..1=0 1..6=1 6..36=0 36..120=2
+01: 0..1=0 1..2=3 2..3=4 3..13=3 13..35=4 35..36=0 36..37=2 37..52=5 52..119=4 119..120=2
+02: 0..1=0 1..2=3 2..3=4 3..13=3 13..35=4 35..36=0 36..37=2 37..52=5 52..119=4 119..120=2
+03: 0..1=0 1..2=3 2..3=4 3..13=3 13..35=4 35..36=0 36..37=2 37..61=5 61..119=4 119..120=2
+04: 0..1=0 1..2=3 2..3=4 3..13=3 13..35=4 35..36=0 36..37=2 37..47=6 47..119=4 119..120=2
+05: 0..1=0 1..2=3 2..3=4 3..13=3 13..35=4 35..36=0 36..37=2 37..53=7 53..119=4 119..120=2
+06: 0..1=0 1..2=3 2..3=4 3..13=3 13..35=4 35..36=0 36..37=2 37..56=8 56..119=4 119..120=2
+07: 0..1=0 1..2=3 2..3=4 3..13=3 13..35=4 35..36=0 36..37=2 37..119=4 119..120=2
+08: 0..1=0 1..2=3 2..3=4 3..13=3 13..35=4 35..36=0 36..37=2 37..119=4 119..120=2
+09: 0..1=0 1..2=3 2..3=4 3..13=3 13..35=4 35..36=0 36..37=2 37..119=4 119..120=2
+10: 0..1=0 1..35=9 35..36=0 36..37=2 37..119=4 119..120=2
+11: 0..36=0 36..37=2 37..119=4 119..120=2
+12: 0..37=2 37..119=4 119..120=2
+13: 0..1=2 1..12=10 12..35=4 35..37=2 37..119=4 119..120=2
+14: 0..1=2 1..12=10 12..35=4 35..37=2 37..119=4 119..120=2
+15: 0..37=2 37..119=4 119..120=2
+16: 0..37=2 37..119=4 119..120=2
+17: 0..1=2 1..2=3 2..3=4 3..10=3 10..11=4 11..13=6 13..14=4 14..26=10 26..35=4 35..37=2 37..119=4 119..120=2
+18: 0..1=2 1..2=7 2..3=4 3..10=7 10..11=4 11..13=6 13..14=4 14..26=10 26..35=4 35..37=2 37..119=4 119..120=2
+19: 0..120=2
+20: 0..120=2
+21: 0..1=2 1..23=3 23..35=4 35..37=2 37..57=7 57..119=4 119..120=2
+22: 0..120=2
+23: 0..5=11 5..6=12 6..16=13 16..19=12 19..26=11 26..27=12 27..32=13 32..35=12 35..38=11 38..39=12 39..45=13 45..48=12 48..51=11 51..52=12 52..58=13 58..61=12 61..64=11 64..65=12 65..72=13 72..75=12 75..78=11 78..79=12 79..83=13 83..120=4
