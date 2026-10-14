@@ -190,10 +190,10 @@ mod tests {
 mod more_tests {
     use super::*;
     use crate::app::{InputMode, SidePanel};
+    use crate::file_tree::{FileTreeNode, FileTreeNodeStatus};
     use crate::flux::action::{Action, DomainAction};
     use crate::flux::stores::test_support::{mock_app, reduce_action as reduce};
     use crate::git::FileStatus;
-    use crate::ui::widgets::file_tree::{FileTreeNode, FileTreeNodeStatus};
     use pretty_assertions::assert_eq;
 
     #[test]

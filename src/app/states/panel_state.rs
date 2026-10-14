@@ -1,5 +1,5 @@
+use crate::file_tree::FileTreeNode;
 use crate::git::{BranchInfo, CommitInfo, FileEntry, StashInfo};
-use crate::ui::widgets::file_tree::FileTreeNode;
 use ratatui::widgets::ListState;
 use std::collections::HashSet;
 use std::path::PathBuf;

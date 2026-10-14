@@ -1,5 +1,5 @@
+use crate::file_tree::FileTreeNodeStatus;
 use crate::git::{DiffLine, GitRepository};
-use crate::ui::widgets::file_tree::FileTreeNodeStatus;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone)]

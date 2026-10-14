@@ -1,7 +1,7 @@
 use super::diff_loader::DiffTarget;
 use super::states::{BranchesPanelState, CommitsPanelState, FilesPanelState, StashPanelState};
 use super::{AppState, FileSelection, SidePanel, UiContext, ViewContext};
-use crate::ui::widgets::file_tree::FileTreeNode;
+use crate::file_tree::FileTreeNode;
 
 /// Shared, immutable selectors over state or a render snapshot.
 pub struct SelectionView<'a> {
@@ -215,16 +215,16 @@ impl AppState {
                 DiffTarget::File {
                     path,
                     status:
-                        crate::ui::widgets::file_tree::FileTreeNodeStatus::Staged(status)
-                        | crate::ui::widgets::file_tree::FileTreeNodeStatus::Unstaged(status),
+                        crate::file_tree::FileTreeNodeStatus::Staged(status)
+                        | crate::file_tree::FileTreeNodeStatus::Unstaged(status),
                 },
                 Some(side),
             ) => DiffTarget::File {
                 path,
                 status: if side == super::diff_interaction::DiffSide::Staged {
-                    crate::ui::widgets::file_tree::FileTreeNodeStatus::Staged(status)
+                    crate::file_tree::FileTreeNodeStatus::Staged(status)
                 } else {
-                    crate::ui::widgets::file_tree::FileTreeNodeStatus::Unstaged(status)
+                    crate::file_tree::FileTreeNodeStatus::Unstaged(status)
                 },
             },
             (target, _) => target,

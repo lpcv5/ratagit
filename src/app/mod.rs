@@ -15,6 +15,8 @@ pub use diff_interaction::{DiffInteraction, DiffSide, HunkView};
 mod diff_cache_manager;
 pub(crate) mod diff_loader;
 mod dirty_flags;
+#[cfg(test)]
+mod file_tree_tests;
 pub mod graph_highlight;
 mod hints;
 #[cfg(test)]

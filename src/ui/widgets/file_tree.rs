@@ -1,4 +1,4 @@
-use crate::git::{FileEntry, FileStatus};
+use crate::git::FileStatus;
 use crate::ui::highlight::highlighted_spans;
 use crate::ui::theme::UiTheme;
 use crate::ui::LIST_SCROLL_PADDING;
@@ -9,35 +9,14 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, List, ListItem, ListState, StatefulWidget},
 };
-use std::{
-    collections::HashSet,
-    path::{Path, PathBuf},
-    sync::OnceLock,
-};
+use std::{collections::HashSet, sync::OnceLock};
 
 fn empty_selected_indices() -> &'static HashSet<usize> {
     static EMPTY: OnceLock<HashSet<usize>> = OnceLock::new();
     EMPTY.get_or_init(HashSet::new)
 }
 
-/// Documentation comment in English.
-#[derive(Debug, Clone, PartialEq)]
-pub enum FileTreeNodeStatus {
-    Unstaged(FileStatus),
-    Staged(FileStatus),
-    Untracked,
-    Directory,
-}
-
-/// Documentation comment in English.
-#[derive(Debug, Clone)]
-pub struct FileTreeNode {
-    pub path: PathBuf,
-    pub status: FileTreeNodeStatus,
-    pub depth: usize,
-    pub is_dir: bool,
-    pub is_expanded: bool,
-}
+use crate::file_tree::{FileTreeNode, FileTreeNodeStatus};
 
 fn status_icon(status: &FileTreeNodeStatus) -> &'static str {
     match status {
@@ -73,40 +52,6 @@ fn status_color(status: &FileTreeNodeStatus, theme: &UiTheme) -> Color {
     }
 }
 
-/// Documentation comment in English.
-#[derive(Debug, Default)]
-pub struct FileTreeState {
-    pub list_state: ListState,
-    #[allow(dead_code)]
-    pub expanded_dirs: HashSet<PathBuf>,
-}
-
-#[allow(dead_code)]
-impl FileTreeState {
-    pub fn new() -> Self {
-        let mut s = Self::default();
-        s.list_state.select(Some(0));
-        s
-    }
-
-    pub fn toggle_dir(&mut self, path: &Path) {
-        if self.expanded_dirs.contains(path) {
-            self.expanded_dirs.remove(path);
-        } else {
-            self.expanded_dirs.insert(path.to_path_buf());
-        }
-    }
-
-    pub fn selected(&self) -> Option<usize> {
-        self.list_state.selected()
-    }
-
-    pub fn select(&mut self, idx: Option<usize>) {
-        self.list_state.select(idx);
-    }
-}
-
-/// Documentation comment in English.
 pub struct FileTree<'a> {
     nodes: &'a [FileTreeNode],
     block: Option<Block<'a>>,
@@ -150,52 +95,6 @@ impl<'a> FileTree<'a> {
         self
     }
 
-    /// Documentation comment in English.
-    #[allow(dead_code)]
-    pub fn from_git_status(
-        unstaged: &[FileEntry],
-        untracked: &[FileEntry],
-        staged: &[FileEntry],
-    ) -> Vec<FileTreeNode> {
-        let files = Self::collect_files(unstaged, untracked, staged);
-        let all_dirs = collect_dirs(&files);
-        let expanded = all_dirs.clone();
-        build_subtree(Path::new(""), &files, &all_dirs, &expanded, 0)
-    }
-
-    /// Documentation comment in English.
-    pub fn from_git_status_with_expanded(
-        unstaged: &[FileEntry],
-        untracked: &[FileEntry],
-        staged: &[FileEntry],
-        expanded: &HashSet<PathBuf>,
-    ) -> Vec<FileTreeNode> {
-        let files = Self::collect_files(unstaged, untracked, staged);
-        let all_dirs = collect_dirs(&files);
-        build_subtree(Path::new(""), &files, &all_dirs, expanded, 0)
-    }
-
-    fn collect_files(
-        unstaged: &[FileEntry],
-        untracked: &[FileEntry],
-        staged: &[FileEntry],
-    ) -> Vec<(PathBuf, FileTreeNodeStatus)> {
-        let mut files = Vec::new();
-        for f in unstaged {
-            files.push((
-                f.path.clone(),
-                FileTreeNodeStatus::Unstaged(f.status.clone()),
-            ));
-        }
-        for f in untracked {
-            files.push((f.path.clone(), FileTreeNodeStatus::Untracked));
-        }
-        for f in staged {
-            files.push((f.path.clone(), FileTreeNodeStatus::Staged(f.status.clone())));
-        }
-        files
-    }
-
     fn render_node(
         node: &FileTreeNode,
         search_query: Option<&str>,
@@ -232,93 +131,18 @@ impl<'a> FileTree<'a> {
     }
 }
 
-/// Documentation comment in English.
-fn collect_dirs(files: &[(PathBuf, FileTreeNodeStatus)]) -> HashSet<PathBuf> {
-    let mut dirs = HashSet::new();
-    for (path, _) in files {
-        let mut p = path.as_path();
-        while let Some(parent) = p.parent() {
-            if parent == Path::new("") {
-                break;
-            }
-            dirs.insert(parent.to_path_buf());
-            p = parent;
-        }
-    }
-    dirs
-}
-
-/// Documentation comment in English.
-fn build_subtree(
-    dir: &Path,
-    files: &[(PathBuf, FileTreeNodeStatus)],
-    all_dirs: &HashSet<PathBuf>,
-    expanded: &HashSet<PathBuf>,
-    depth: usize,
-) -> Vec<FileTreeNode> {
-    let mut nodes = Vec::new();
-
-    // Comment in English.
-    let mut child_dirs: Vec<PathBuf> = all_dirs
-        .iter()
-        .filter(|d| d.parent() == Some(dir))
-        .cloned()
-        .collect();
-    child_dirs.sort();
-
-    // Comment in English.
-    let mut child_files: Vec<&(PathBuf, FileTreeNodeStatus)> = files
-        .iter()
-        .filter(|(p, _)| p.parent() == Some(dir))
-        .collect();
-    child_files.sort_by(|a, b| a.0.cmp(&b.0));
-
-    // Comment in English.
-    for child_dir in child_dirs {
-        let is_expanded = expanded.contains(&child_dir);
-        nodes.push(FileTreeNode {
-            path: child_dir.clone(),
-            status: FileTreeNodeStatus::Directory,
-            depth,
-            is_dir: true,
-            is_expanded,
-        });
-        if is_expanded {
-            nodes.extend(build_subtree(
-                &child_dir,
-                files,
-                all_dirs,
-                expanded,
-                depth + 1,
-            ));
-        }
-    }
-
-    // Comment in English.
-    for (path, status) in child_files {
-        nodes.push(FileTreeNode {
-            path: path.clone(),
-            status: status.clone(),
-            depth,
-            is_dir: false,
-            is_expanded: false,
-        });
-    }
-
-    nodes
-}
-
 impl<'a> StatefulWidget for FileTree<'a> {
-    type State = FileTreeState;
+    type State = ListState;
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
-        let items: Vec<ListItem> = self
-            .nodes
+        let inner = self.block.as_ref().map_or(area, |block| block.inner(area));
+        let range = visible_range(self.nodes.len(), state, usize::from(inner.height));
+        let items: Vec<ListItem> = self.nodes[range.clone()]
             .iter()
             .enumerate()
             .map(|(idx, node)| {
                 let item = Self::render_node(node, self.search_query, &self.theme);
-                if self.selected_indices.contains(&idx) {
+                if self.selected_indices.contains(&(range.start + idx)) {
                     item.style(Style::default().bg(self.theme.visual_selection_bg))
                 } else {
                     item
@@ -326,14 +150,122 @@ impl<'a> StatefulWidget for FileTree<'a> {
             })
             .collect();
 
-        let mut list = List::new(items)
-            .scroll_padding(LIST_SCROLL_PADDING)
-            .highlight_style(self.highlight_style);
+        let mut list = List::new(items).highlight_style(self.highlight_style);
 
         if let Some(block) = self.block {
             list = list.block(block);
         }
 
-        StatefulWidget::render(list, area, buf, &mut state.list_state);
+        let mut viewport = ListState::default().with_selected(
+            state
+                .selected()
+                .and_then(|index| index.checked_sub(range.start)),
+        );
+        StatefulWidget::render(list, area, buf, &mut viewport);
+        if inner.height > 0 {
+            *state.offset_mut() = range.start;
+        }
+    }
+}
+
+/// All tree rows have height one, so viewport bounds need no full-list scan.
+fn visible_range(count: usize, state: &ListState, height: usize) -> std::ops::Range<usize> {
+    if count == 0 || height == 0 {
+        return 0..0;
+    }
+    let mut start = state.offset().min(count - 1);
+    let mut end = (start + height).min(count);
+    if let Some(selected) = state.selected().map(|index| index.min(count - 1)) {
+        let mut padding = LIST_SCROLL_PADDING;
+        while (selected + padding).min(count - 1) - selected.saturating_sub(padding) + 1 > height {
+            padding -= 1;
+        }
+        let target = if (selected + padding).min(count - 1) >= end {
+            (selected + padding).min(count - 1)
+        } else if selected.saturating_sub(padding) < start {
+            selected.saturating_sub(padding)
+        } else {
+            selected
+        };
+        if target >= end {
+            end = target + 1;
+            start = end.saturating_sub(height);
+        } else if target < start {
+            start = target;
+            end = end.min(start + height);
+        }
+    }
+    start..end
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::widgets::Borders;
+
+    #[test]
+    fn test_file_tree_viewport_matches_full_list_rendering() {
+        let nodes: Vec<_> = (0..80)
+            .map(|index| FileTreeNode {
+                path: format!("file{index:03}.txt").into(),
+                status: FileTreeNodeStatus::Unstaged(FileStatus::Modified),
+                depth: index % 3,
+                is_dir: false,
+                is_expanded: false,
+            })
+            .collect();
+        let visual = HashSet::from([0, 2, 35, 36, 79]);
+        for height in [0, 1, 2, 3, 5, 15] {
+            for offset in [0, 2, 36, 79, 100] {
+                for selected in [None, Some(0), Some(1), Some(35), Some(79)] {
+                    let area = Rect::new(0, 0, 45, height + 2);
+                    let block = Block::default().borders(Borders::ALL).title("Files");
+                    let mut expected = Buffer::empty(area);
+                    let mut actual = Buffer::empty(area);
+                    let mut expected_state = ListState::default()
+                        .with_selected(selected)
+                        .with_offset(offset);
+                    let mut actual_state = expected_state;
+                    let widget = FileTree::new(&nodes)
+                        .block(block.clone())
+                        .search_query(Some("035"))
+                        .selected_indices(&visual);
+                    let items: Vec<_> = nodes
+                        .iter()
+                        .enumerate()
+                        .map(|(index, node)| {
+                            let item = FileTree::render_node(node, Some("035"), &widget.theme);
+                            if visual.contains(&index) {
+                                item.style(Style::default().bg(widget.theme.visual_selection_bg))
+                            } else {
+                                item
+                            }
+                        })
+                        .collect();
+                    StatefulWidget::render(
+                        List::new(items)
+                            .block(block)
+                            .highlight_style(widget.highlight_style)
+                            .scroll_padding(LIST_SCROLL_PADDING),
+                        area,
+                        &mut expected,
+                        &mut expected_state,
+                    );
+                    StatefulWidget::render(widget, area, &mut actual, &mut actual_state);
+                    assert_eq!(
+                        actual, expected,
+                        "height={height}, offset={offset}, selected={selected:?}"
+                    );
+                    assert_eq!(actual_state.offset(), expected_state.offset());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_file_tree_viewport_is_bounded_for_large_lists() {
+        let state = ListState::default().with_selected(Some(99_999));
+        let range = visible_range(100_000, &state, 20);
+        assert_eq!(range, 99_980..100_000);
     }
 }

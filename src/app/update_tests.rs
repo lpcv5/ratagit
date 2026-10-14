@@ -1,5 +1,6 @@
 use super::*;
 use crate::app::{App, RefreshKind, SidePanel};
+use crate::file_tree::{FileTreeNode, FileTreeNodeStatus};
 use crate::flux::action::DomainAction;
 use crate::flux::effects::EffectRequest;
 use crate::flux::test_runtime::run_inline_effect;
@@ -7,7 +8,6 @@ use crate::git::{
     BranchInfo, CommitInfo, CommitSyncState, DiffLine, DiffLineKind, FileEntry, FileStatus,
     GitError, GitStatus, StashInfo,
 };
-use crate::ui::widgets::file_tree::{FileTreeNode, FileTreeNodeStatus};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use pretty_assertions::assert_eq;
 use std::path::{Path, PathBuf};

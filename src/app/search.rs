@@ -1,7 +1,7 @@
 #[cfg(test)]
 use crate::app::App;
 use crate::app::{AppState, SearchScopeKey, SidePanel, ViewContext};
-use crate::ui::widgets::file_tree::FileTreeNode;
+use crate::file_tree::FileTreeNode;
 
 impl AppState {
     pub fn start_search_input(&mut self) {

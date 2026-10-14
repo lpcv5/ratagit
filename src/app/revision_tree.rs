@@ -1,15 +1,8 @@
+use crate::file_tree::{build_file_tree, collect_dirs, FileTreeNode, TreeCursor};
 use crate::git::FileEntry;
-use crate::ui::widgets::file_tree::{FileTree, FileTreeNode, FileTreeNodeStatus};
 use ratatui::widgets::ListState;
 use std::collections::HashSet;
 use std::path::PathBuf;
-
-#[derive(Clone, PartialEq)]
-struct TreeSelectionKey {
-    path: PathBuf,
-    status: FileTreeNodeStatus,
-    is_dir: bool,
-}
 
 pub struct TreeModeState<'a, Id> {
     pub tree_mode: &'a mut bool,
@@ -109,51 +102,14 @@ pub fn rebuild_tree_nodes(
     tree_nodes: &mut Vec<FileTreeNode>,
     list_state: &mut ListState,
 ) {
-    let selected_node = list_state
-        .selected()
-        .and_then(|idx| tree_nodes.get(idx))
-        .map(tree_selection_key);
-    let selected_idx = list_state.selected();
-    *tree_nodes = FileTree::from_git_status_with_expanded(tree_files, &[], &[], expanded_dirs);
-    let count = tree_nodes.len();
-    if count == 0 {
-        list_state.select(None);
-        return;
-    }
-    let idx = selected_node
-        .as_ref()
-        .and_then(|selected| {
-            tree_nodes
-                .iter()
-                .position(|node| tree_selection_key(node) == *selected)
-        })
-        .unwrap_or_else(|| selected_idx.unwrap_or(0).min(count - 1));
-    list_state.select(Some(idx));
+    let cursor = TreeCursor::capture(tree_nodes, list_state.selected());
+    *tree_nodes = build_file_tree(tree_files, &[], &[], expanded_dirs);
+    list_state.select(cursor.restore(tree_nodes));
 }
 
 fn collect_dirs_from_entries(entries: &[FileEntry]) -> HashSet<PathBuf> {
-    let mut dirs = HashSet::new();
-    for entry in entries {
-        let mut p = entry.path.as_path();
-        while let Some(parent) = p.parent() {
-            if parent == std::path::Path::new("") {
-                break;
-            }
-            dirs.insert(parent.to_path_buf());
-            p = parent;
-        }
-    }
-    dirs
+    collect_dirs(entries.iter().map(|entry| entry.path.as_path()))
 }
-
-fn tree_selection_key(node: &FileTreeNode) -> TreeSelectionKey {
-    TreeSelectionKey {
-        path: node.path.clone(),
-        status: node.status.clone(),
-        is_dir: node.is_dir,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

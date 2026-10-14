@@ -1,8 +1,8 @@
 use crate::app::{AppRuntime, BackgroundCompleted, BackgroundLoad, BackgroundPayload};
+use crate::file_tree::FileTreeNodeStatus;
 use crate::flux::action::{Action, DomainAction, SystemAction};
 use crate::flux::task_manager::TaskRequest;
 use crate::git::{GitError, GitRepository};
-use crate::ui::widgets::file_tree::FileTreeNodeStatus;
 use std::path::PathBuf;
 
 /// State-only work is expressed as an event and applied by a store.

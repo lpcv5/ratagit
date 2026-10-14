@@ -410,8 +410,8 @@ impl CommandSpec {
                     && matches!(
                         env.selection.diff_target(),
                         super::diff_loader::DiffTarget::File {
-                            status: crate::ui::widgets::file_tree::FileTreeNodeStatus::Staged(_)
-                                | crate::ui::widgets::file_tree::FileTreeNodeStatus::Unstaged(_),
+                            status: crate::file_tree::FileTreeNodeStatus::Staged(_)
+                                | crate::file_tree::FileTreeNodeStatus::Unstaged(_),
                             ..
                         }
                     ) =>
