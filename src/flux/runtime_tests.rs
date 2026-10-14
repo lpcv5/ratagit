@@ -5,10 +5,10 @@ use super::runtime::EffectExecutor;
 use super::snapshot::AppStateSnapshotOwned;
 use super::stores::test_support::MockRepo;
 use crate::app::{App, AppState, Command, RefreshKind, SidePanel};
+use crate::file_tree::{FileTreeNode, FileTreeNodeStatus};
 use crate::git::{
     BranchInfo, CommitInfo, DiffLine, DiffLineKind, FileEntry, GitError, GitStatus, StashInfo,
 };
-use crate::ui::widgets::file_tree::{FileTreeNode, FileTreeNodeStatus};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver};

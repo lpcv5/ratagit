@@ -1,18 +1,14 @@
 //! Synchronous compatibility helpers for pre-existing unit tests.
 //! Production reducers cannot access these because they only receive AppState.
-use super::{refresh, revision_tree};
+use super::revision_tree;
 use super::{App, RefreshKind};
 use color_eyre::Result;
 use std::path::PathBuf;
 
 impl App {
     fn apply_refresh(&mut self, kind: RefreshKind) -> Result<()> {
-        self.state.git.status = self.runtime.repo.status()?;
-        let new_dirs = refresh::collect_all_dirs(&self.state.git.status);
-        for d in new_dirs {
-            self.state.ui.files.expanded_dirs.insert(d);
-        }
-        self.rebuild_tree();
+        let status = self.runtime.repo.status()?;
+        self.apply_status_refresh(status);
 
         if matches!(kind, RefreshKind::StatusAndRefs | RefreshKind::Full) {
             self.state.ui.branches.items = self.runtime.repo.branches().unwrap_or_default();

@@ -1,11 +1,11 @@
 use super::commands::{self, CommandId};
 use super::{App, CommitFieldFocus, InputMode, SidePanel, ViewContext};
 use crate::config::keymap::Keymap;
+use crate::file_tree::{FileTreeNode, FileTreeNodeStatus};
 use crate::flux::action::DomainAction;
 use crate::flux::snapshot::AppStateSnapshotOwned;
 use crate::flux::stores::test_support::MockRepo;
 use crate::git::{BranchInfo, FileEntry, FileStatus, StashInfo};
-use crate::ui::widgets::file_tree::{FileTreeNode, FileTreeNodeStatus};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 fn node(path: &str, status: FileTreeNodeStatus, depth: usize) -> FileTreeNode {

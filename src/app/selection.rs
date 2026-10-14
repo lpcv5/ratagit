@@ -2,7 +2,7 @@ use crate::app::states::FilesPanelState;
 #[cfg(test)]
 use crate::app::App;
 use crate::app::{AppState, SidePanel};
-use crate::ui::widgets::file_tree::FileTreeNodeStatus;
+use crate::file_tree::FileTreeNodeStatus;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
@@ -25,7 +25,7 @@ impl<'a> FileSelection<'a> {
         Self { files, active }
     }
 
-    pub fn selected_tree_node(&self) -> Option<&'a crate::ui::widgets::file_tree::FileTreeNode> {
+    pub fn selected_tree_node(&self) -> Option<&'a crate::file_tree::FileTreeNode> {
         if !self.active {
             return None;
         }
@@ -326,10 +326,10 @@ impl AppState {
 mod tests {
     use super::*;
     use crate::app::test_dispatch::dispatch_test_action;
+    use crate::file_tree::{FileTreeNode, FileTreeNodeStatus};
     use crate::flux::action::DomainAction;
     use crate::flux::stores::test_support::MockRepo;
     use crate::git::FileStatus;
-    use crate::ui::widgets::file_tree::{FileTreeNode, FileTreeNodeStatus};
     use pretty_assertions::assert_eq;
     use std::collections::HashSet;
 
@@ -453,9 +453,9 @@ mod tests {
 #[cfg(test)]
 mod more_tests {
     use super::*;
+    use crate::file_tree::{FileTreeNode, FileTreeNodeStatus};
     use crate::flux::stores::test_support::MockRepo;
     use crate::git::FileStatus;
-    use crate::ui::widgets::file_tree::{FileTreeNode, FileTreeNodeStatus};
     use pretty_assertions::assert_eq;
 
     fn mock_app() -> App {

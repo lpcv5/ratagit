@@ -1,5 +1,6 @@
 mod app;
 mod config;
+mod file_tree;
 mod flux;
 mod git;
 mod ui;

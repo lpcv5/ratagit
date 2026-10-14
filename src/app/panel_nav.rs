@@ -55,9 +55,9 @@ impl AppState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::file_tree::{FileTreeNode, FileTreeNodeStatus};
     use crate::flux::stores::test_support::MockRepo;
     use crate::git::FileStatus;
-    use crate::ui::widgets::file_tree::{FileTreeNode, FileTreeNodeStatus};
     use pretty_assertions::assert_eq;
 
     fn mock_app() -> App {

@@ -170,10 +170,11 @@ impl AppState {
                                 "status load finished"
                             );
                             self.git.operation.observe(operation_epoch, operation);
-                            // Fast reads omit untracked paths. A hunk edit can turn an
-                            // indexed file into an untracked file, so retain its selection
-                            // until the complete status arrives.
-                            if !fast || !self.ui.diff.focused {
+                            // Fast reads omit untracked paths and can temporarily remove
+                            // the selected node. Use them to populate an empty tree at
+                            // startup; refresh an existing tree from a complete snapshot.
+                            let apply_status = !fast || self.ui.files.tree_nodes.is_empty();
+                            if apply_status {
                                 self.apply_status_refresh(status);
                             }
                             if fast && self.refresh.pending_full_status_after_fast {
@@ -190,7 +191,9 @@ impl AppState {
                                         });
                                 }
                             }
-                            if self.should_schedule_diff_for_refresh(DiffRefreshSource::Status) {
+                            if apply_status
+                                && self.should_schedule_diff_for_refresh(DiffRefreshSource::Status)
+                            {
                                 schedule_diff = true;
                             }
                             self.ui.dirty.mark_all();

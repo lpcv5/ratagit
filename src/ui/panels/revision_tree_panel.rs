@@ -1,6 +1,7 @@
+use crate::file_tree::FileTreeNode;
 use crate::ui::components::organisms::empty_list_item;
 use crate::ui::theme::UiTheme;
-use crate::ui::widgets::file_tree::{FileTree, FileTreeNode, FileTreeState};
+use crate::ui::widgets::file_tree::FileTree;
 use crate::ui::LIST_SCROLL_PADDING;
 use ratatui::{
     layout::Rect,
@@ -51,10 +52,7 @@ pub fn render_revision_tree_panel(
             .block(theme.panel_block(title, is_active))
             .search_query(tree_search_query)
             .highlight_style(highlight);
-        let mut state = FileTreeState {
-            list_state,
-            expanded_dirs: std::collections::HashSet::new(),
-        };
+        let mut state = list_state;
         frame.render_stateful_widget(widget, area, &mut state);
         return;
     }

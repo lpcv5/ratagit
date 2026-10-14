@@ -2,7 +2,7 @@ use crate::app::{FilesPanelState, SidePanel};
 use crate::ui::components::organisms::{empty_list_item, title_with_search, PanelRenderContext};
 use crate::ui::theme::UiTheme;
 use crate::ui::traits::DynamicPanel;
-use crate::ui::widgets::file_tree::{FileTree, FileTreeState};
+use crate::ui::widgets::file_tree::FileTree;
 use ratatui::{layout::Rect, Frame};
 
 pub fn draw_files_panel(
@@ -36,10 +36,7 @@ pub fn draw_files_panel(
         .search_query(ctx.search_query)
         .selected_indices(ctx.visual_selected_indices);
 
-    let mut tree_state = FileTreeState {
-        list_state: state.panel.list_state,
-        expanded_dirs: std::collections::HashSet::new(),
-    };
+    let mut tree_state = state.panel.list_state;
 
     frame.render_stateful_widget(widget, area, &mut tree_state);
 }

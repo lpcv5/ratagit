@@ -8,10 +8,10 @@ use super::states::{
 use super::{diff_cache, diff_loader, dirty_flags, refresh, revision_tree};
 use super::{AppRuntime, BackgroundLoad};
 use crate::config::keymap::Keymap;
+use crate::file_tree::build_file_tree;
 use crate::flux::effects::EffectRequest;
 use crate::flux::task_manager::{TaskKey, TaskPriority, TaskRequestKind};
 use crate::git::{Git2Repository, GitRepository, GitStatus};
-use crate::ui::widgets::file_tree::FileTree;
 use color_eyre::Result;
 use std::collections::HashSet;
 use std::time::Instant;
@@ -117,7 +117,7 @@ impl App {
         } else {
             HashSet::new()
         };
-        let file_tree_nodes = FileTree::from_git_status_with_expanded(
+        let file_tree_nodes = build_file_tree(
             &status.unstaged,
             &status.untracked,
             &status.staged,
@@ -403,18 +403,21 @@ impl AppState {
     }
 
     pub(super) fn apply_status_refresh(&mut self, status: GitStatus) {
+        let old_dirs = refresh::collect_all_dirs(&self.git.status);
         self.git.status = status;
         let new_dirs = refresh::collect_all_dirs(&self.git.status);
-        for d in new_dirs {
-            self.ui.files.expanded_dirs.insert(d);
-        }
+        self.ui
+            .files
+            .expanded_dirs
+            .retain(|dir| new_dirs.contains(dir));
+        self.ui
+            .files
+            .expanded_dirs
+            .extend(new_dirs.difference(&old_dirs).cloned());
         self.rebuild_tree();
         if self.ui.diff.focused
             && self.selected_tree_node().is_some_and(|node| {
-                matches!(
-                    node.status,
-                    crate::ui::widgets::file_tree::FileTreeNodeStatus::Untracked
-                )
+                matches!(node.status, crate::file_tree::FileTreeNodeStatus::Untracked)
             })
         {
             self.ui.diff.side = Some(super::DiffSide::Unstaged);
@@ -796,7 +799,7 @@ impl AppState {
         &self,
         target: &diff_loader::DiffTarget,
     ) -> diff_cache::DiffCacheKey {
-        use crate::ui::widgets::file_tree::FileTreeNodeStatus;
+        use crate::file_tree::FileTreeNodeStatus;
         use diff_loader::DiffTarget;
 
         match target {
