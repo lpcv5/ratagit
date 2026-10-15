@@ -1,6 +1,6 @@
 use super::*;
 use crate::ui::components::organisms::{
-    draw_branches_panel, draw_commits_panel, draw_files_panel, draw_stash_panel, PanelRenderContext,
+    draw_branches_panel, draw_commits_panel, draw_files_panel, draw_stash_panel,
 };
 use crate::ui::RenderState;
 use ratatui::widgets::ListState;
@@ -67,24 +67,23 @@ fn panel(
     height: u16,
 ) -> (RenderedUi, ListState) {
     let snapshot = crate::flux::snapshot::AppStateSnapshot::from_app(&fixture.app);
-    let ctx = PanelRenderContext {
-        diff_focused: false,
-        active_panel: snapshot.active_panel,
-        panel_title_override: None,
-        search_query: None,
-        search_summary: None,
-        visual_selected_indices: PanelRenderContext::empty_visual_selected_indices(),
-        highlighted_oids: PanelRenderContext::empty_highlighted_oids(),
-    };
     let ui = render(70, height + 2, |frame| {
         let area = frame.area();
         match case {
-            0 => draw_files_panel(frame, area, &snapshot.files, &ctx, &mut state.files),
-            1 | 2 => {
-                draw_branches_panel(frame, area, &snapshot.branches, &ctx, &mut state.branches)
-            }
-            3 | 4 => draw_commits_panel(frame, area, &snapshot.commits, &ctx, &mut state.commits),
-            _ => draw_stash_panel(frame, area, &snapshot.stash, &ctx, &mut state.stash),
+            0 => draw_files_panel(frame, area, snapshot.files_panel_props(), &mut state.files),
+            1 | 2 => draw_branches_panel(
+                frame,
+                area,
+                snapshot.branches_panel_props(),
+                &mut state.branches,
+            ),
+            3 | 4 => draw_commits_panel(
+                frame,
+                area,
+                snapshot.commits_panel_props(),
+                &mut state.commits,
+            ),
+            _ => draw_stash_panel(frame, area, snapshot.stash_panel_props(), &mut state.stash),
         }
     });
     let viewport = match case {
@@ -249,14 +248,7 @@ fn diff_panel(fixture: &Fixture, state: &mut RenderState, height: u16) -> Render
         render_diff_panel(
             frame,
             frame.area(),
-            DiffViewProps {
-                hunks: snapshot.command_env().diff,
-                preview_patch: snapshot.current_patch.or(snapshot.retained_diff_patch),
-                lines: snapshot.current_diff,
-                scroll: snapshot.diff_scroll,
-                active_panel: snapshot.active_panel,
-                is_loading: snapshot.diff_loading,
-            },
+            snapshot.diff_presentation().view(),
             &mut state.diff,
         );
     })

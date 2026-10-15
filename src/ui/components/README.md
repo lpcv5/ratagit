@@ -2,7 +2,32 @@
 
 Reusable terminal components live here. Components accept data and `UiTheme`
 tokens; they do not read application state, dispatch actions, or perform Git I/O.
-Feature panels in `organisms/` adapt immutable snapshots to these components.
+Feature panels in `organisms/` receive controlled display props from
+`organisms/props.rs`. Overlay, log and footer components receive narrow display
+props from `ui/panels/props.rs`.
+Only the layout container receives an application snapshot; the adapter in
+`flux/snapshot/presentation.rs` projects it into component inputs.
+
+Command filtering, diff availability, read-only validation and selection progress
+belong to the application adapter and selectors. Components format those inputs,
+arrange child widgets and retain viewport state. The container selects the active
+overlay. Animation frames are explicit footer inputs so component rendering does
+not read a clock.
+
+`flux/snapshot/presentation/side_panels.rs` chooses branch history, commit/stash
+lists and file trees. It supplies titles, focus, scope-specific queries, selected
+indices and opaque viewport identities. Graph ownership matching is resolved to
+per-cell dimming flags, and commit sync state is projected to a semantic tone.
+Side-panel components do not import application feature state or selectors.
+The shared revision container mounts the supplied list/tree display variant and
+keeps independent viewport histories. Icon/color mapping, author initials,
+search span styling, responsive geometry and scrolling remain UI responsibilities.
+
+Keyboard events are bound by `flux/input_mapper.rs` through `app/commands.rs`;
+the registry supplies configured keys, availability and returned actions. Diff
+behavior ports bind semantic intents in `app/commands/diff_bindings.rs`. The
+runtime sends actions to the dispatcher, stores and effects. New event handlers
+must follow this path instead of invoking Git operations during rendering.
 
 | Layer | Component | Usage |
 | --- | --- | --- |

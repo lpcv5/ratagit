@@ -12,14 +12,7 @@ pub(super) fn draw(fixture: &Fixture, state: &mut DiffViewState, height: u16) ->
             crate::ui::panels::render_diff_panel(
                 frame,
                 frame.area(),
-                crate::ui::panels::DiffViewProps {
-                    hunks: view.command_env().diff,
-                    preview_patch: view.current_patch.or(view.retained_diff_patch),
-                    lines: view.current_diff,
-                    scroll: view.diff_scroll,
-                    active_panel: view.active_panel,
-                    is_loading: view.diff_loading,
-                },
+                view.diff_presentation().view(),
                 state,
             );
         })

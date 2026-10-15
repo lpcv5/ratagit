@@ -1,76 +1,57 @@
-use crate::file_tree::FileTreeNode;
 use crate::ui::components::molecules::card;
 use crate::ui::components::organisms::empty_list_item;
+use crate::ui::components::organisms::props::{PanelHeader, RevisionContent};
 use crate::ui::theme::UiTheme;
 use crate::ui::widgets::file_tree::FileTree;
 use crate::ui::LIST_SCROLL_PADDING;
 use ratatui::{
     layout::Rect,
-    widgets::{List, ListItem, ListState},
+    widgets::{List, ListItem},
     Frame,
 };
 
 pub struct RevisionTreePanelProps<'a> {
-    pub title: &'a str,
-    pub is_active: bool,
-    pub tree_mode: bool,
-    pub tree_nodes: &'a [FileTreeNode],
-    pub tree_search_query: Option<&'a str>,
-    pub list_items: Vec<ListItem<'static>>,
-    pub panel: crate::app::PanelView,
-    pub list_state: &'a mut ListState,
+    pub header: PanelHeader<'a>,
+    pub content: RevisionContent<'a, Vec<ListItem<'static>>>,
 }
 
 pub fn render_revision_tree_panel(
     frame: &mut Frame,
     area: Rect,
     props: RevisionTreePanelProps<'_>,
+    viewport: &mut super::selection::RevisionViewport,
 ) {
-    let RevisionTreePanelProps {
-        title,
-        is_active,
-        tree_mode,
-        tree_nodes,
-        tree_search_query,
-        list_items,
-        panel,
-        list_state,
-    } = props;
+    let header = props.header;
     let theme = UiTheme::default();
-    let highlight = theme.highlight_for(is_active);
-    super::selection::prepare(
-        list_state,
-        panel,
-        if tree_mode {
-            tree_nodes.len()
-        } else {
-            list_items.len()
-        },
-        usize::from(area.height.saturating_sub(2)),
-    );
-
-    if tree_mode {
-        if tree_nodes.is_empty() {
-            let items = empty_list_item("No files");
+    let block = card(&theme, &header.title, header.is_active);
+    let highlight = theme.highlight_for(header.is_active);
+    let height = usize::from(area.height.saturating_sub(2));
+    match props.content {
+        RevisionContent::Tree { nodes, view_id } => {
+            let list_state = viewport.state(true, view_id);
+            super::selection::prepare(list_state, header.selected, nodes.len(), height);
+            if !nodes.is_empty() {
+                let widget = FileTree::new(nodes)
+                    .block(block)
+                    .search_query(header.search_query)
+                    .highlight_style(highlight);
+                frame.render_stateful_widget(widget, area, list_state);
+            } else {
+                let list = List::new(empty_list_item("No files"))
+                    .block(block)
+                    .scroll_padding(LIST_SCROLL_PADDING)
+                    .highlight_style(highlight);
+                frame.render_stateful_widget(list, area, list_state);
+            }
+        }
+        RevisionContent::List(items) => {
+            let list_state = viewport.state(false, None);
+            super::selection::prepare(list_state, header.selected, items.len(), height);
             let list = List::new(items)
-                .block(card(&theme, title, is_active))
+                .block(block)
                 .scroll_padding(LIST_SCROLL_PADDING)
                 .highlight_style(highlight);
             frame.render_stateful_widget(list, area, list_state);
-            return;
         }
-
-        let widget = FileTree::new(tree_nodes)
-            .block(card(&theme, title, is_active))
-            .search_query(tree_search_query)
-            .highlight_style(highlight);
-        frame.render_stateful_widget(widget, area, list_state);
-        return;
     }
-
-    let list = List::new(list_items)
-        .block(card(&theme, title, is_active))
-        .scroll_padding(LIST_SCROLL_PADDING)
-        .highlight_style(highlight);
-    frame.render_stateful_widget(list, area, list_state);
 }

@@ -1,7 +1,6 @@
-use crate::app::revisions::CommitsRenderView;
-use crate::app::SidePanel;
-use crate::git::{CommitSyncState, GraphCell};
-use crate::ui::components::organisms::{empty_list_item, title_with_search, PanelRenderContext};
+use super::empty_list_item;
+use super::props::{CommitsPanelProps, GraphCellProps};
+use crate::ui::components::atoms::Tone;
 use crate::ui::highlight::highlighted_spans;
 use crate::ui::panels::revision_tree_panel::{render_revision_tree_panel, RevisionTreePanelProps};
 use crate::ui::theme::UiTheme;
@@ -17,90 +16,53 @@ use ratatui::{
 pub fn draw_commits_panel(
     frame: &mut Frame,
     area: Rect,
-    state: &CommitsRenderView<'_>,
-    ctx: &PanelRenderContext<'_>,
+    props: CommitsPanelProps<'_>,
     viewport: &mut crate::ui::panels::selection::RevisionViewport,
 ) {
     let theme = UiTheme::default();
-    let is_active = !ctx.diff_focused && ctx.active_panel == SidePanel::Commits;
-
-    let items: Vec<ListItem> = if state.items.is_empty() {
-        empty_list_item("No commits")
-    } else {
-        state
-            .items
-            .iter()
-            .map(|c| {
-                let g_spans = graph_spans(&c.graph, hash_color(c.sync_state), ctx.highlighted_oids);
-                let hash_spans = highlighted_spans(
-                    &c.oid[..7.min(c.oid.len())],
-                    ctx.search_query,
-                    Style::default().fg(hash_color(c.sync_state)),
-                );
-                let author_short = author_initials(&c.author);
-                let author_spans = highlighted_spans(
-                    &author_short,
-                    ctx.search_query,
+    let query = props.header.search_query;
+    let content = props.content.map(|rows| {
+        if rows.is_empty() {
+            return empty_list_item("No commits");
+        }
+        rows.iter()
+            .map(|commit| {
+                let color = hash_color(commit.tone);
+                let mut spans = graph_spans(&commit.graph, color);
+                spans.push(Span::raw(" "));
+                spans.extend(highlighted_spans(
+                    &commit.oid[..7.min(commit.oid.len())],
+                    query,
+                    Style::default().fg(color),
+                ));
+                spans.push(Span::raw(" "));
+                spans.extend(highlighted_spans(
+                    &author_initials(commit.author),
+                    query,
                     Style::default().fg(theme.text_muted),
-                );
-                let message_spans = highlighted_spans(
-                    &c.message,
-                    ctx.search_query,
+                ));
+                spans.push(Span::raw(" "));
+                spans.extend(highlighted_spans(
+                    commit.message,
+                    query,
                     Style::default().fg(theme.text_primary),
-                );
-
-                let mut spans = Vec::with_capacity(
-                    g_spans.len() + hash_spans.len() + author_spans.len() + message_spans.len() + 3,
-                );
-                spans.extend(g_spans);
-                spans.push(Span::raw(" "));
-                spans.extend(hash_spans);
-                spans.push(Span::raw(" "));
-                spans.extend(author_spans);
-                spans.push(Span::raw(" "));
-                spans.extend(message_spans);
+                ));
                 ListItem::new(Line::from(spans))
             })
             .collect()
-    };
-
-    let mut title = if let Some(title_override) = ctx.panel_title_override {
-        title_override.to_string()
-    } else if state.tree_mode.active {
-        if let Some(oid) = state.tree_mode.selected_source {
-            format!("Commit Files {} [Esc Back]", &oid[..oid.len().min(7)])
-        } else {
-            "Commit Files [Esc Back]".to_string()
-        }
-    } else {
-        "Commits".to_string()
-    };
-    title = title_with_search(&title, ctx.search_summary);
-
+    });
     render_revision_tree_panel(
         frame,
         area,
         RevisionTreePanelProps {
-            title: &title,
-            is_active,
-            tree_mode: state.tree_mode.active,
-            tree_nodes: state.tree_mode.nodes,
-            tree_search_query: if state.tree_mode.active {
-                ctx.search_query
-            } else {
-                None
-            },
-            list_items: items,
-            panel: state.panel,
-            list_state: viewport.state(
-                state.tree_mode.active,
-                state.tree_mode.selected_source.cloned(),
-            ),
+            header: props.header,
+            content,
         },
+        viewport,
     );
 }
 
-impl DynamicPanel for CommitsRenderView<'_> {
+impl DynamicPanel for CommitsPanelProps<'_> {
     fn default_height_percent(&self) -> u16 {
         40
     }
@@ -115,49 +77,31 @@ impl DynamicPanel for CommitsRenderView<'_> {
     }
 }
 
-/// Render graph cells into colored Span list.
-/// When `highlighted_oids` is non-empty, cells whose owners do not intersect it are dimmed.
-fn graph_spans(
-    cells: &[GraphCell],
-    color: Color,
-    highlighted_oids: &std::collections::HashSet<String>,
-) -> Vec<Span<'static>> {
-    let has_highlight = !highlighted_oids.is_empty();
-    let mut spans = Vec::new();
-    for cell in cells {
-        let cell_color = if has_highlight {
-            let matches_highlight = if !cell.pipe_oids.is_empty() {
-                cell.pipe_oids
-                    .iter()
-                    .any(|oid| highlighted_oids.contains(oid))
-            } else {
-                cell.pipe_oid
-                    .as_ref()
-                    .map(|oid| highlighted_oids.contains(oid))
-                    .unwrap_or(false)
-            };
-            if matches_highlight {
-                color
-            } else {
-                UiTheme::default().text_muted
-            }
-        } else {
-            color
-        };
-        spans.push(Span::styled(
-            cell.text.clone(),
-            Style::default().fg(cell_color),
-        ));
-    }
-    spans
+/// Apply the owner's graph emphasis using UI theme colors.
+fn graph_spans(cells: &[GraphCellProps<'_>], color: Color) -> Vec<Span<'static>> {
+    cells
+        .iter()
+        .map(|cell| {
+            Span::styled(
+                cell.text.to_owned(),
+                Style::default().fg(if cell.dimmed {
+                    UiTheme::default().text_muted
+                } else {
+                    color
+                }),
+            )
+        })
+        .collect()
 }
 
-fn hash_color(sync_state: CommitSyncState) -> Color {
+fn hash_color(tone: Tone) -> Color {
     let theme = UiTheme::default();
-    match sync_state {
-        CommitSyncState::DefaultBranch => theme.success,
-        CommitSyncState::RemoteBranch => theme.warning,
-        CommitSyncState::LocalOnly => theme.error,
+    match tone {
+        Tone::Success => theme.success,
+        Tone::Warning => theme.warning,
+        Tone::Danger => theme.error,
+        Tone::Accent => theme.accent,
+        Tone::Neutral => theme.text_muted,
     }
 }
 
@@ -196,30 +140,6 @@ fn author_initials(author: &str) -> String {
 mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
-    use std::collections::HashSet;
-
-    #[test]
-    fn test_graph_spans_prioritizes_highlight_when_cell_has_overlap_owner() {
-        let cells = vec![
-            GraphCell {
-                text: "x".to_string(),
-                lane: 0,
-                pipe_oid: Some("other".to_string()),
-                pipe_oids: vec!["other".to_string(), "focus".to_string()],
-            },
-            GraphCell {
-                text: "y".to_string(),
-                lane: 1,
-                pipe_oid: Some("other".to_string()),
-                pipe_oids: vec!["other".to_string()],
-            },
-        ];
-        let highlighted = HashSet::from([String::from("focus")]);
-        let spans = graph_spans(&cells, Color::Green, &highlighted);
-        assert_eq!(spans.len(), 2);
-        assert_eq!(spans[0].style.fg, Some(Color::Green));
-        assert_eq!(spans[1].style.fg, Some(UiTheme::default().text_muted));
-    }
 
     #[test]
     fn test_author_initials_prefers_first_two_words() {

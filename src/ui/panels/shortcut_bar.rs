@@ -1,5 +1,4 @@
-use crate::app::InputMode;
-use crate::flux::snapshot::AppStateSnapshot;
+use super::props::ShortcutBarProps;
 use crate::ui::components::loading_indicator::LoadingIndicator;
 use crate::ui::components::molecules::shortcut_hint;
 use crate::ui::theme::UiTheme;
@@ -11,22 +10,13 @@ use ratatui::{
     Frame,
 };
 
-pub fn render_shortcut_bar(frame: &mut Frame, area: Rect, snapshot: &AppStateSnapshot<'_>) {
+pub fn render_shortcut_bar(frame: &mut Frame, area: Rect, props: ShortcutBarProps<'_>) {
     let theme = UiTheme::default();
-    let hints = &snapshot.shortcut_hints;
+    let hints = props.hints;
 
     let mut spans = vec![Span::raw(" ")];
 
-    // Show animated spinner when background Git tasks are running.
-    if snapshot.has_background_tasks {
-        // Derive frame index from time so the spinner animates without storing
-        // per-render mutable state. 10 frames at ~100ms each = ~1 s cycle.
-        let frame_index = (std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .subsec_millis()
-            / 100) as usize
-            % 10;
+    if let Some(frame_index) = props.loading_frame {
         let mut indicator = LoadingIndicator::new();
         // Fast-forward to the correct frame.
         for _ in 0..frame_index {
@@ -36,9 +26,9 @@ pub fn render_shortcut_bar(frame: &mut Frame, area: Rect, snapshot: &AppStateSna
         spans.push(Span::raw("   "));
     }
 
-    if snapshot.input_mode == Some(InputMode::Search) {
+    if let Some(input) = props.search_input {
         spans.push(Span::styled(
-            format!("/{}", snapshot.input_buffer),
+            format!("/{input}"),
             Style::default().fg(theme.accent),
         ));
         spans.push(Span::raw("   "));

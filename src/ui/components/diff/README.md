@@ -78,9 +78,10 @@ uses the same bindings for execution and availability. Stores, reducers and
 effects continue to execute returned `DomainAction`s. Rendering never runs a
 handler, changes a selection, or applies a patch.
 
-The host adapter `ui/panels/diff_panel.rs` projects snapshots into the model. It
-keeps panel-specific hints outside the reusable component. Read-only validation
-and cursor progress are supplied by `app/diff/selectors.rs`.
+The host adapter `flux/snapshot/presentation.rs` projects snapshots into the model.
+`ui/panels/diff_panel.rs` only renders that supplied model. The adapter keeps
+panel-specific hints outside the reusable component. Read-only validation and
+cursor progress are supplied by `app/diff/selectors.rs`.
 The host also projects successful write relocations into `viewport_anchor`.
 Matching old/new Git changes belongs to `app/diff/position.rs`; the component
 only applies the supplied row displacement and never inspects Git write state.
