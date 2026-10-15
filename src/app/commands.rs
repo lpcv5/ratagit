@@ -867,6 +867,18 @@ pub struct CommandHelp {
     pub keys: Vec<String>,
 }
 
+/// Palette display and execution share the same input normalization.
+pub fn filter_commands<'a>(input: &str, commands: &'a [CommandHelp]) -> Vec<&'a CommandHelp> {
+    let query = normalize_input(input);
+    commands
+        .iter()
+        .filter(|command| {
+            command.aliases.iter().any(|alias| alias.contains(&query))
+                || command.label.to_lowercase().contains(&query)
+        })
+        .collect()
+}
+
 fn active_keys(spec: &CommandSpec, keymap: &Keymap, env: &CommandEnv<'_>) -> Vec<String> {
     spec.keys(keymap, env)
         .into_iter()

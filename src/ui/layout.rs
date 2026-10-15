@@ -1,12 +1,12 @@
-use crate::app::SidePanel;
+use crate::app::InputMode;
 use crate::flux::snapshot::AppStateSnapshot;
 use crate::ui::components::organisms::{
-    draw_branches_panel, draw_commits_panel, draw_files_panel, draw_stash_panel, PanelRenderContext,
+    draw_branches_panel, draw_commits_panel, draw_files_panel, draw_stash_panel,
 };
 use crate::ui::panels::{
     render_branch_switch_confirm, render_command_log, render_command_palette,
     render_commit_all_confirm, render_commit_editor, render_diff_panel, render_keybindings,
-    render_shortcut_bar, render_stash_editor, DiffViewProps,
+    render_shortcut_bar, render_stash_editor,
 };
 use crate::ui::theme::UiTheme;
 use ratatui::{
@@ -51,7 +51,8 @@ pub fn render_layout(
         .split(workspace);
 
     let left_h = horizontal[0].height;
-    let stash_focused = snapshot.active_panel == SidePanel::Stash;
+    let panel_layout = snapshot.side_panel_layout_props();
+    let stash_focused = panel_layout.stash_focused;
 
     // Stash panel: COLLAPSED_HEIGHT when not focused, else share remaining space
     let stash_h = if stash_focused {
@@ -79,26 +80,8 @@ pub fn render_layout(
         .spacing(gap)
         .split(top_rect);
 
-    let focus_index = match snapshot.active_panel {
-        SidePanel::Files => Some(0usize),
-        SidePanel::LocalBranches => Some(1usize),
-        SidePanel::Commits => Some(2usize),
-        SidePanel::Stash => None,
-    };
-    let focus_item_count = match snapshot.active_panel {
-        SidePanel::Files => snapshot.files.tree_nodes.len(),
-        SidePanel::LocalBranches => {
-            if snapshot.branches.commits_subview_active {
-                snapshot.branches.commits_subview.items.len()
-            } else {
-                snapshot.branches.items.len()
-            }
-        }
-        // Keep commit panel sizing stable when toggling between commit list and tree mode.
-        // Use the parent commit list length as the single source for overflow checks.
-        SidePanel::Commits => snapshot.commits.items.len(),
-        SidePanel::Stash => 0,
-    };
+    let focus_index = panel_layout.focus_index;
+    let focus_item_count = panel_layout.focus_item_count;
 
     let should_expand_focused_left_panel = focus_index
         .map(|idx| {
@@ -156,70 +139,28 @@ pub fn render_layout(
         ..horizontal[0]
     };
 
-    let files_ctx = PanelRenderContext {
-        diff_focused: snapshot.context.diff_focused,
-        active_panel: snapshot.active_panel,
-        panel_title_override: None,
-        search_query: snapshot.files_search_query,
-        search_summary: snapshot.render_cache.files_search_summary.as_deref(),
-        visual_selected_indices: &snapshot.render_cache.files_visual_selected_indices,
-        highlighted_oids: PanelRenderContext::empty_highlighted_oids(),
-    };
     draw_files_panel(
         frame,
         left_panels[0],
-        &snapshot.files,
-        &files_ctx,
+        snapshot.files_panel_props(),
         &mut state.files,
     );
-    let branches_ctx = PanelRenderContext {
-        diff_focused: snapshot.context.diff_focused,
-        active_panel: snapshot.active_panel,
-        panel_title_override: None,
-        search_query: snapshot.branches_search_query,
-        search_summary: snapshot.render_cache.branches_search_summary.as_deref(),
-        visual_selected_indices: PanelRenderContext::empty_visual_selected_indices(),
-        highlighted_oids: PanelRenderContext::empty_highlighted_oids(),
-    };
     draw_branches_panel(
         frame,
         left_panels[1],
-        &snapshot.branches,
-        &branches_ctx,
+        snapshot.branches_panel_props(),
         &mut state.branches,
     );
-
-    let commits_ctx = PanelRenderContext {
-        diff_focused: snapshot.context.diff_focused,
-        active_panel: snapshot.active_panel,
-        panel_title_override: None,
-        search_query: snapshot.commits_search_query,
-        search_summary: snapshot.render_cache.commits_search_summary.as_deref(),
-        visual_selected_indices: PanelRenderContext::empty_visual_selected_indices(),
-        highlighted_oids: snapshot.commits.highlighted_oids,
-    };
     draw_commits_panel(
         frame,
         left_panels[2],
-        &snapshot.commits,
-        &commits_ctx,
+        snapshot.commits_panel_props(),
         &mut state.commits,
     );
-
-    let stash_ctx = PanelRenderContext {
-        diff_focused: snapshot.context.diff_focused,
-        active_panel: snapshot.active_panel,
-        panel_title_override: None,
-        search_query: snapshot.stash_search_query,
-        search_summary: snapshot.render_cache.stash_search_summary.as_deref(),
-        visual_selected_indices: PanelRenderContext::empty_visual_selected_indices(),
-        highlighted_oids: PanelRenderContext::empty_highlighted_oids(),
-    };
     draw_stash_panel(
         frame,
         stash_area,
-        &snapshot.stash,
-        &stash_ctx,
+        snapshot.stash_panel_props(),
         &mut state.stash,
     );
 
@@ -242,22 +183,41 @@ pub fn render_layout(
     render_diff_panel(
         frame,
         diff_area,
-        DiffViewProps {
-            hunks: snapshot.command_env().diff,
-            preview_patch: snapshot.current_patch.or(snapshot.retained_diff_patch),
-            lines: snapshot.current_diff,
-            scroll: snapshot.diff_scroll,
-            active_panel: snapshot.active_panel,
-            is_loading: snapshot.diff_loading,
-        },
+        snapshot.diff_presentation().view(),
         &mut state.diff,
     );
-    render_command_log(frame, log_area, snapshot);
-    render_shortcut_bar(frame, vertical[1], snapshot);
-    render_commit_editor(frame, snapshot);
-    render_stash_editor(frame, snapshot);
-    render_branch_switch_confirm(frame, snapshot);
-    render_commit_all_confirm(frame, snapshot);
-    render_command_palette(frame, snapshot);
-    render_keybindings(frame, snapshot, &mut state.help);
+    render_command_log(frame, log_area, snapshot.command_log_props());
+    let animation_frame = (std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .subsec_millis()
+        / 100) as usize;
+    render_shortcut_bar(
+        frame,
+        vertical[1],
+        snapshot.shortcut_bar_props(animation_frame),
+    );
+    // The container selects the active overlay and supplies only its display data.
+    if snapshot.input_mode != Some(InputMode::Keybindings) {
+        state.help = Default::default();
+    }
+    match snapshot.input_mode {
+        Some(InputMode::CommitEditor) => {
+            render_commit_editor(frame, snapshot.commit_editor_props())
+        }
+        Some(InputMode::StashEditor) => render_stash_editor(frame, snapshot.stash_editor_props()),
+        Some(InputMode::BranchSwitchConfirm) => {
+            render_branch_switch_confirm(frame, snapshot.branch_switch_confirm_props())
+        }
+        Some(InputMode::CommitAllConfirm) => {
+            render_commit_all_confirm(frame, snapshot.commit_all_confirm_props())
+        }
+        Some(InputMode::CommandPalette) => {
+            render_command_palette(frame, snapshot.command_palette_props())
+        }
+        Some(InputMode::Keybindings) => {
+            render_keybindings(frame, snapshot.keybindings_props(), &mut state.help)
+        }
+        _ => {}
+    }
 }

@@ -153,7 +153,10 @@ fn render(app: &App, palette: bool) -> ratatui::buffer::Buffer {
     terminal
         .draw(|frame| {
             if palette {
-                crate::ui::panels::render_command_palette(frame, &snapshot.as_snapshot());
+                crate::ui::panels::render_command_palette(
+                    frame,
+                    snapshot.as_snapshot().command_palette_props(),
+                );
             } else {
                 crate::ui::layout::render_layout(
                     frame,

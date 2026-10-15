@@ -418,7 +418,7 @@ independent offsets; a new tree/history source resets its viewport. Resizing or
 shrinking a list clamps its viewport and short panels reduce the padding.
 Rendering never writes the calculated offset or a clamped selection back to
 domain state or retained snapshots. Layout policies implement `DynamicPanel` on
-render views rather than domain panel types.
+controlled UI props rather than domain panel types.
 
 Regression tests cover early scrolling in both directions, retained source/cursor/highlight
 metadata, selectors through navigation in all seven view contexts, borrowed and
@@ -470,6 +470,46 @@ and completion allocation budgets. Existing rendering goldens stay unchanged;
 a retained-snapshot test also checks that later scope/query changes do not alter
 an already published search frame.
 
+## Controlled UI Inputs and Event Ownership
+
+`ui/layout.rs` is the application-aware container. Side panels receive only the
+display props defined in `ui/components/organisms/props.rs`; overlays, the command
+log and the shortcut bar receive props defined in `ui/panels/props.rs`. The
+container chooses which overlay is mounted and resets the help viewport on unmount.
+
+`flux/snapshot/presentation.rs` adapts snapshots to these props. Palette filtering
+uses `commands::filter_commands` and the same normalization as command execution.
+Help props use the same filtered entry order as navigation and execution. Diff
+status, marks, progress, empty hints and retained preview selection are projected
+before rendering; the diff panel receives a `DiffViewModel` instead of a domain
+selector. The adapter owns temporary mark vectors for a frame, while the model
+borrows them. Footer animation is supplied as an explicit frame index.
+
+`presentation/side_panels.rs` resolves feature view routing, titles, focus and
+search scopes before rendering. Branch history is projected as a commit view;
+commit/stash trees are explicit display variants with opaque viewport identities.
+The branch history keeps its containing branch panel's focus, including when
+another side panel or the diff gains focus. Commit graph cells arrive with
+dimming flags after matching their complete owner sets, with the legacy owner
+used only when the complete set is absent. Commit sync state becomes a semantic
+UI tone. Side-panel renderers do not read feature views or application context.
+`selection::prepare` receives only a selected index, and local viewports retain
+their independent list/tree/history offsets. Layout receives the focus index and
+content count while keeping geometry and responsive sizing in the UI.
+
+Event execution remains `input_mapper -> command registry -> dispatcher -> stores
+-> effects`. The existing diff behavior ports bind semantic UI intents to domain
+actions. Components never execute those actions while rendering. The unused
+interactive/selection traits were removed because their widget-owned selection
+contract conflicted with controlled domain selection. `DynamicPanel` remains a
+layout policy on controlled display props.
+
+Tests render supplied props without constructing an application, check retained
+help display against keyboard execution, and verify loading previews remain
+non-actionable. Side-panel tests cover branch history focus, graph owner
+precedence, scope queries and stable viewport identities. Existing goldens verify
+terminal output, selection and scrolling across all seven side-panel contexts.
+
 ## Remaining Coupling and Refactoring Roadmap
 
 Store capability bounds restrict reducer dependencies, and diff/hunk, files,
@@ -492,9 +532,9 @@ application state and Git handles should not.
 Avoid splitting into workspace crates until module dependencies have a stable
 direction. The remaining `app`/`flux` type references and shared state adapters
 would otherwise become crate dependency cycles. Likewise, additional generic
-widget traits should have real consumers before being introduced: `ui/traits.rs`
-already contains unused interactive/selection abstractions alongside the used
-`DynamicPanel` trait.
+widget traits should have real consumers before being introduced. The UI uses
+explicit display props and the existing diff behavior ports; `ui/traits.rs`
+contains only the `DynamicPanel` layout policy.
 
 Run `cargo fmt --check`, `cargo check`, `cargo test` and
 `cargo clippy --all-targets --all-features -- -D warnings` for each phase.
@@ -526,7 +566,8 @@ source checks.
 `as_snapshot` borrows context, command help, shortcut hints, log entries, stash
 targets, operation state and the patch. Test-only direct-state views use owned
 `Cow` metadata where it must be derived; production views borrow the already
-constructed snapshot. UI functions continue to consume immutable feature views.
+constructed snapshot. The presentation adapter borrows these immutable feature
+views and supplies controlled display props to UI components.
 
 The opt-in profile is reproducible with:
 

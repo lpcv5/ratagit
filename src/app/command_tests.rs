@@ -692,7 +692,12 @@ fn test_palette_renders_registry_keys_and_modal_help() {
     let snapshot = AppStateSnapshotOwned::from_app(&app.state);
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(140, 40)).unwrap();
     terminal
-        .draw(|frame| crate::ui::panels::render_command_palette(frame, &snapshot.as_snapshot()))
+        .draw(|frame| {
+            crate::ui::panels::render_command_palette(
+                frame,
+                snapshot.as_snapshot().command_palette_props(),
+            )
+        })
         .unwrap();
     let content: String = terminal
         .backend()
@@ -739,7 +744,12 @@ fn test_palette_filter_and_execution_share_case_and_whitespace_normalization() {
     let snapshot = AppStateSnapshotOwned::from_app(&app.state);
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(140, 40)).unwrap();
     terminal
-        .draw(|frame| crate::ui::panels::render_command_palette(frame, &snapshot.as_snapshot()))
+        .draw(|frame| {
+            crate::ui::panels::render_command_palette(
+                frame,
+                snapshot.as_snapshot().command_palette_props(),
+            )
+        })
         .unwrap();
     let content: String = terminal
         .backend()

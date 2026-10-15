@@ -1,4 +1,3 @@
-use crate::app::PanelView;
 use crate::ui::components::scroll::scroll_offset;
 use ratatui::widgets::ListState;
 
@@ -57,8 +56,8 @@ pub struct HelpViewport {
     pub context: Option<(String, String)>,
 }
 
-pub fn prepare(state: &mut ListState, panel: PanelView, count: usize, height: usize) {
-    state.select(panel.selected());
+pub fn prepare(state: &mut ListState, selected: Option<usize>, count: usize, height: usize) {
+    state.select(selected);
     *state.offset_mut() = scroll_offset(state.offset(), state.selected(), count, height);
 }
 

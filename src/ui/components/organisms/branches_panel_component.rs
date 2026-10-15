@@ -1,11 +1,7 @@
-use crate::app::revisions::BranchesRenderView;
-use crate::app::SidePanel;
+use super::props::BranchesPanelProps;
+use super::{draw_commits_panel, empty_list_item};
 use crate::ui::components::atoms::{badge, Tone};
 use crate::ui::components::molecules::card;
-use crate::ui::components::organisms::{
-    commits_panel_component::draw_commits_panel, empty_list_item, title_with_search,
-    PanelRenderContext,
-};
 use crate::ui::highlight::highlighted_spans;
 use crate::ui::theme::UiTheme;
 use crate::ui::traits::DynamicPanel;
@@ -21,83 +17,52 @@ use ratatui::{
 pub fn draw_branches_panel(
     frame: &mut Frame,
     area: Rect,
-    state: &BranchesRenderView<'_>,
-    ctx: &PanelRenderContext<'_>,
+    props: BranchesPanelProps<'_>,
     viewport: &mut crate::ui::panels::selection::BranchesViewport,
 ) {
-    if state.commits_subview_active {
-        let title = state
-            .commits_subview_source
-            .as_ref()
-            .map(|name| {
-                if state.commits_subview_loading {
-                    format!("Branch Commits: {} [Loading...] [Esc Back]", name)
-                } else {
-                    format!("Branch Commits: {} [Esc Back]", name)
-                }
-            })
-            .unwrap_or_else(|| "Branch Commits [Esc Back]".to_string());
-        let commits_ctx = PanelRenderContext {
-            diff_focused: ctx.diff_focused,
-            active_panel: SidePanel::Commits,
-            panel_title_override: Some(title.as_str()),
-            search_query: ctx.search_query,
-            search_summary: ctx.search_summary,
-            visual_selected_indices: PanelRenderContext::empty_visual_selected_indices(),
-            highlighted_oids: state.commits_subview.highlighted_oids,
-        };
-        draw_commits_panel(
-            frame,
-            area,
-            &state.commits_subview,
-            &commits_ctx,
-            viewport.commits(state.commits_subview_source.map(String::as_str)),
-        );
-        return;
-    }
-
+    let (header, rows) = match props {
+        BranchesPanelProps::Commits { props, view_id } => {
+            draw_commits_panel(frame, area, props, viewport.commits(view_id));
+            return;
+        }
+        BranchesPanelProps::List { header, rows } => (header, rows),
+    };
     let theme = UiTheme::default();
-    let is_active = !ctx.diff_focused && ctx.active_panel == SidePanel::LocalBranches;
-
-    let items: Vec<ListItem> = if state.items.is_empty() {
+    let items: Vec<ListItem> = if rows.is_empty() {
         empty_list_item("No branches")
     } else {
-        state
-            .items
-            .iter()
-            .map(|b| {
-                let (prefix, color) = if b.is_current {
+        rows.iter()
+            .map(|branch| {
+                let (prefix, color) = if branch.is_current {
                     ("* ", theme.accent)
                 } else {
                     ("  ", theme.text_primary)
                 };
-                let text = format!("{}{}", prefix, b.name);
-                let spans = highlighted_spans(&text, ctx.search_query, Style::default().fg(color));
-                ListItem::new(Line::from(spans))
+                let text = format!("{}{}", prefix, branch.name);
+                ListItem::new(Line::from(highlighted_spans(
+                    &text,
+                    header.search_query,
+                    Style::default().fg(color),
+                )))
             })
             .collect()
     };
-
-    let highlight = theme.highlight_for(is_active);
-    let title = title_with_search("Local Branches", ctx.search_summary);
-
     let list = List::new(items)
-        .block(card(&theme, &title, is_active).title_top(
-            Line::from(badge(state.items.len().to_string(), Tone::Neutral, &theme)).right_aligned(),
+        .block(card(&theme, &header.title, header.is_active).title_top(
+            Line::from(badge(rows.len().to_string(), Tone::Neutral, &theme)).right_aligned(),
         ))
         .scroll_padding(LIST_SCROLL_PADDING)
-        .highlight_style(highlight);
-
+        .highlight_style(theme.highlight_for(header.is_active));
     crate::ui::panels::selection::prepare(
         &mut viewport.list,
-        state.panel,
-        state.items.len(),
+        header.selected,
+        rows.len(),
         usize::from(area.height.saturating_sub(2)),
     );
     frame.render_stateful_widget(list, area, &mut viewport.list);
 }
 
-impl DynamicPanel for BranchesRenderView<'_> {
+impl DynamicPanel for BranchesPanelProps<'_> {
     fn default_height_percent(&self) -> u16 {
         25
     }

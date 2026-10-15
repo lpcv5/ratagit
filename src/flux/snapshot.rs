@@ -12,6 +12,8 @@ use crate::git::DiffLine;
 use crate::shared::Shared;
 use std::borrow::Cow;
 
+mod presentation;
+
 #[cfg(test)]
 pub(crate) mod measurement;
 #[cfg(test)]

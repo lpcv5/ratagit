@@ -1,6 +1,6 @@
 //! UI regression tests exercise production renderers against checked-in buffers.
 use super::layout::render_layout;
-use super::panels::{render_diff_panel, DiffViewProps};
+use super::panels::render_diff_panel;
 use super::test_support::{assert_golden, draw, render, serialize, RenderedUi};
 use crate::app::{
     dispatch_test_action, dispatch_test_key, App, CommitFieldFocus, DiffSide, InputMode, SidePanel,
@@ -413,14 +413,7 @@ fn diff_with_viewport(
         render_diff_panel(
             frame,
             frame.area(),
-            DiffViewProps {
-                hunks: view.command_env().diff,
-                preview_patch: view.current_patch.or(view.retained_diff_patch),
-                lines: view.current_diff,
-                scroll: view.diff_scroll,
-                active_panel: view.active_panel,
-                is_loading: view.diff_loading,
-            },
+            view.diff_presentation().view(),
             viewport,
         );
     })

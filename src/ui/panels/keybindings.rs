@@ -1,6 +1,5 @@
+use super::props::KeybindingsProps;
 use crate::app::help::HelpGroup;
-use crate::app::InputMode;
-use crate::flux::snapshot::AppStateSnapshot;
 use crate::ui::panels::{centered_rect, render_overlay_chrome};
 use crate::ui::theme::UiTheme;
 use ratatui::{
@@ -13,15 +12,11 @@ use ratatui::{
 
 pub fn render_keybindings(
     frame: &mut Frame,
-    snapshot: &AppStateSnapshot<'_>,
+    props: KeybindingsProps<'_>,
     viewport: &mut super::selection::HelpViewport,
 ) {
-    if snapshot.input_mode != Some(InputMode::Keybindings) {
-        *viewport = Default::default();
-        return;
-    }
-    let help = snapshot.help;
-    let context = (help.context.clone(), help.query.clone());
+    let help = props;
+    let context = (help.context.to_owned(), help.query.to_owned());
     if viewport.context.as_ref() != Some(&context) {
         viewport.list = ListState::default();
         viewport.context = Some(context);
@@ -37,7 +32,7 @@ pub fn render_keybindings(
         Constraint::Length(1),
     ])
     .split(inner);
-    let entries = help.filtered_entries();
+    let entries = &help.entries;
     let summary = HelpGroup::ALL
         .map(|group| {
             format!(

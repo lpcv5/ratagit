@@ -1,5 +1,4 @@
-use crate::app::InputMode;
-use crate::flux::snapshot::AppStateSnapshot;
+use super::props::BranchSwitchConfirmProps;
 use crate::ui::components::{
     atoms::{badge, Tone},
     molecules::shortcut_hint,
@@ -14,14 +13,10 @@ use ratatui::{
     Frame,
 };
 
-pub fn render_branch_switch_confirm(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
-    if snapshot.input_mode != Some(InputMode::BranchSwitchConfirm) {
-        return;
-    }
-
+pub fn render_branch_switch_confirm(frame: &mut Frame, props: BranchSwitchConfirmProps<'_>) {
     let theme = UiTheme::default();
     let area = centered_rect(frame.area(), 62, 26);
-    let target = snapshot.branch_switch_target.unwrap_or("<unknown>");
+    let target = props.target;
     let title = format!("Switch Branch: {}", target);
     let inner = render_overlay_chrome(frame, area, &title, &theme);
 
@@ -35,11 +30,7 @@ pub fn render_branch_switch_confirm(frame: &mut Frame, snapshot: &AppStateSnapsh
         .split(inner);
 
     let warn = Paragraph::new(Line::from(vec![
-        badge(
-            snapshot.uncommitted_change_count.to_string(),
-            Tone::Warning,
-            &theme,
-        ),
+        badge(props.change_count.to_string(), Tone::Warning, &theme),
         ratatui::text::Span::raw(" uncommitted file(s)."),
     ]))
     .style(Style::default().fg(theme.text_primary));

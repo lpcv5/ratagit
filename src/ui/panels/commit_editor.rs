@@ -1,5 +1,5 @@
-use crate::app::{CommitFieldFocus, InputMode};
-use crate::flux::snapshot::AppStateSnapshot;
+use super::props::CommitEditorProps;
+use crate::app::CommitFieldFocus;
 use crate::ui::components::molecules::{card, shortcut_hint};
 use crate::ui::panels::{centered_rect, render_overlay_chrome};
 use crate::ui::theme::UiTheme;
@@ -11,17 +11,13 @@ use ratatui::{
     Frame,
 };
 
-pub fn render_commit_editor(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
-    if snapshot.input_mode != Some(InputMode::CommitEditor) {
-        return;
-    }
-
+pub fn render_commit_editor(frame: &mut Frame, props: CommitEditorProps<'_>) {
     let theme = UiTheme::default();
     let area = centered_rect(frame.area(), 70, 60);
-    let message_active = snapshot.commit_focus == CommitFieldFocus::Message;
-    let desc_active = snapshot.commit_focus == CommitFieldFocus::Description;
-    let (msg_line, msg_col) = line_col(snapshot.commit_message_buffer);
-    let (desc_line, desc_col) = line_col(snapshot.commit_description_buffer);
+    let message_active = props.focus == CommitFieldFocus::Message;
+    let desc_active = props.focus == CommitFieldFocus::Description;
+    let (msg_line, msg_col) = line_col(props.message);
+    let (desc_line, desc_col) = line_col(props.description);
     let (focus_name, focus_line, focus_col) = if message_active {
         ("Message", msg_line, msg_col)
     } else {
@@ -43,21 +39,17 @@ pub fn render_commit_editor(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) 
         ])
         .split(inner);
 
-    let message = Paragraph::new(snapshot.commit_message_buffer).block(card(
-        &theme,
-        "Message",
-        message_active,
-    ));
+    let message = Paragraph::new(props.message).block(card(&theme, "Message", message_active));
     frame.render_widget(message, sections[0]);
 
-    let description = Paragraph::new(snapshot.commit_description_buffer)
+    let description = Paragraph::new(props.description)
         .style(Style::default().fg(theme.text_primary))
         .block(card(&theme, "Description", desc_active));
     frame.render_widget(description, sections[1]);
 
     let help = Paragraph::new(Line::from(
-        snapshot
-            .shortcut_hints
+        props
+            .hints
             .iter()
             .flat_map(|(key, label)| shortcut_hint(key, &format!("{label}  "), &theme))
             .collect::<Vec<_>>(),

@@ -1,5 +1,4 @@
-use crate::app::InputMode;
-use crate::flux::snapshot::AppStateSnapshot;
+use super::props::CommitAllConfirmProps;
 use crate::ui::components::molecules::shortcut_hint;
 use crate::ui::panels::{centered_rect, render_overlay_chrome};
 use crate::ui::theme::UiTheme;
@@ -11,11 +10,7 @@ use ratatui::{
     Frame,
 };
 
-pub fn render_commit_all_confirm(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
-    if snapshot.input_mode != Some(InputMode::CommitAllConfirm) {
-        return;
-    }
-
+pub fn render_commit_all_confirm(frame: &mut Frame, props: CommitAllConfirmProps) {
     let theme = UiTheme::default();
     let area = centered_rect(frame.area(), 62, 26);
     let inner = render_overlay_chrome(frame, area, "Commit All Files", &theme);
@@ -31,7 +26,7 @@ pub fn render_commit_all_confirm(frame: &mut Frame, snapshot: &AppStateSnapshot<
 
     let warn = Paragraph::new(Line::from(format!(
         "No files staged. Found {} file(s) to commit.",
-        snapshot.uncommitted_change_count
+        props.change_count
     )))
     .style(Style::default().fg(theme.text_primary));
     frame.render_widget(warn, sections[0]);
