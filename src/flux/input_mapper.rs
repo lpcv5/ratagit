@@ -285,7 +285,7 @@ mod more_tests {
         app.ui.active_panel = crate::app::SidePanel::Files;
         // With visual mode, Space maps to ToggleStageSelection
         app.files.test_view_mut().visual_mode = true;
-        app.files.test_view_mut().panel.list_state.select(Some(0));
+        app.files.test_view_mut().panel.select(Some(0));
         app.files.test_view_mut().visual_anchor = Some(0);
         let actions = map(&app, key(KeyCode::Char(' ')));
         assert!(actions
@@ -362,7 +362,7 @@ mod more_tests {
     fn test_esc_in_branch_commits_subview_maps_to_revision_close() {
         let mut app = mock_app();
         app.ui.active_panel = crate::app::SidePanel::LocalBranches;
-        app.ui.branches.commits_subview_active = true;
+        app.revisions.branches.commits_subview_active = true;
         let actions = map(&app, key(KeyCode::Esc));
         assert!(actions
             .iter()

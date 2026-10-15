@@ -49,10 +49,13 @@ fn test_status_rebuild_restores_cursor_and_visual_anchor_by_path() {
     state.update(FilesAction::ToggleVisual, true);
     select(&mut state, "dir/z.txt");
     state.update(
-        FilesAction::ReplaceStatus(GitStatus {
-            unstaged: vec![entry("dir/a.txt"), entry("dir/b.txt"), entry("dir/z.txt")],
-            ..Default::default()
-        }),
+        FilesAction::ReplaceStatus(
+            GitStatus {
+                unstaged: vec![entry("dir/a.txt"), entry("dir/b.txt"), entry("dir/z.txt")],
+                ..Default::default()
+            }
+            .into(),
+        ),
         true,
     );
     assert_eq!(selected_path(&state), Path::new("dir/z.txt"));
@@ -69,10 +72,13 @@ fn test_status_refresh_keeps_collapsed_dirs_and_expands_only_new_dirs() {
     let mut state = state(&["src/a.txt", "obsolete/a.txt"], &[], &[]);
     state.update(FilesAction::CollapseAll, true);
     state.update(
-        FilesAction::ReplaceStatus(GitStatus {
-            unstaged: vec![entry("src/b.txt"), entry("new/a.txt")],
-            ..Default::default()
-        }),
+        FilesAction::ReplaceStatus(
+            GitStatus {
+                unstaged: vec![entry("src/b.txt"), entry("new/a.txt")],
+                ..Default::default()
+            }
+            .into(),
+        ),
         true,
     );
     assert!(!state.view().expanded_dirs.contains(Path::new("src")));
@@ -113,7 +119,7 @@ fn test_refresh_preserves_staged_cursor_for_partially_staged_path() {
     state.select_index(1);
     let mut status = state.status().clone();
     status.staged[0].status = FileStatus::New;
-    state.update(FilesAction::ReplaceStatus(status), true);
+    state.update(FilesAction::ReplaceStatus(status.into()), true);
     assert!(matches!(
         state.selection(true).selected_tree_node().unwrap().status,
         FileTreeNodeStatus::Staged(FileStatus::New)

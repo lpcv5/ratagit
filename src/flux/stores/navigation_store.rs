@@ -1,7 +1,6 @@
 use crate::app::Command;
 use crate::app::SidePanel;
-use crate::flux::action::{Action, ActionEnvelope, DomainAction};
-use crate::flux::effects::EffectRequest;
+use crate::flux::action::{Action, ActionEnvelope, DomainAction, RuntimeEvent};
 use crate::flux::stores::{ReduceCtx, ReduceOutput, Store, UiInvalidation};
 
 use super::state_access::{NavigationAccess, PanelAccess, RefreshAccess, SearchAccess};
@@ -22,9 +21,9 @@ impl NavigationStore {
         ctx: &mut ReduceCtx<'_, S>,
     ) -> ReduceOutput {
         ctx.state.restore_search_for_active_scope();
-        ctx.state.schedule_diff_reload();
-        ReduceOutput::from_command(Command::Effect(
-            EffectRequest::EnsureCommitsLoadedForActivePanel,
+        ctx.state.schedule_diff_reload(ctx.commands);
+        ctx.command(Command::runtime(
+            RuntimeEvent::EnsureCommitsLoadedForActivePanel,
         ))
         .with_invalidation(UiInvalidation::all())
     }
@@ -34,13 +33,13 @@ impl NavigationStore {
         ctx: &mut ReduceCtx<'_, S>,
     ) -> ReduceOutput {
         Self::recompute_commit_highlight(ctx);
-        ctx.state.schedule_diff_reload();
+        ctx.state.schedule_diff_reload(ctx.commands);
         ReduceOutput::none().with_invalidation(UiInvalidation::all())
     }
 
     /// Common post-processing after directory operations.
     fn after_dir_op<S: RefreshAccess + ?Sized>(ctx: &mut ReduceCtx<'_, S>) -> ReduceOutput {
-        ctx.state.schedule_diff_reload();
+        ctx.state.schedule_diff_reload(ctx.commands);
         ReduceOutput::none().with_invalidation(UiInvalidation::all())
     }
 }

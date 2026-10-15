@@ -33,7 +33,7 @@ impl<S: FilesAccess + LogAccess + ?Sized> Store<S> for FilesStore {
             _ => return ReduceOutput::none(),
         };
         let update = ctx.state.reduce_files(action);
-        finish_files_update(ctx.state, update)
+        finish_files_update(ctx, update)
     }
 }
 

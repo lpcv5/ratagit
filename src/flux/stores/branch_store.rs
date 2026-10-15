@@ -23,9 +23,9 @@ impl<S: BranchAccess + InputAccess + LogAccess + OverlayAccess + RefreshAccess +
             return ReduceOutput::none();
         };
         match domain {
-            DomainAction::CreateBranch(name) => ReduceOutput::from_command(Command::Effect(
-                EffectRequest::CreateBranch(name.clone()),
-            )),
+            DomainAction::CreateBranch(name) => {
+                ctx.command(Command::Effect(EffectRequest::CreateBranch(name.clone())))
+            }
             DomainAction::CreateBranchFinished { name, result } => {
                 log_result(ctx, result, format!("branch created: {}", name), |e| {
                     format!("create branch failed: {}", e)
@@ -36,12 +36,13 @@ impl<S: BranchAccess + InputAccess + LogAccess + OverlayAccess + RefreshAccess +
                     ctx.state.push_log("no branch selected".to_string(), false);
                     return ReduceOutput::none();
                 };
-                ctx.state.request_refresh(RefreshKind::StatusOnly);
+                ctx.state
+                    .request_refresh(RefreshKind::StatusOnly, ctx.commands);
                 if ctx.state.has_uncommitted_changes() {
                     ctx.state.start_branch_switch_confirm(name);
                     return ReduceOutput::none().with_invalidation(UiInvalidation::overlay());
                 }
-                ReduceOutput::from_command(Command::Effect(EffectRequest::CheckoutBranch {
+                ctx.command(Command::Effect(EffectRequest::CheckoutBranch {
                     name,
                     auto_stash: false,
                 }))
@@ -58,7 +59,7 @@ impl<S: BranchAccess + InputAccess + LogAccess + OverlayAccess + RefreshAccess +
                     return ReduceOutput::none().with_invalidation(UiInvalidation::all());
                 }
 
-                ReduceOutput::from_command(Command::Effect(EffectRequest::CheckoutBranch {
+                ctx.command(Command::Effect(EffectRequest::CheckoutBranch {
                     name: target,
                     auto_stash: true,
                 }))
@@ -76,10 +77,9 @@ impl<S: BranchAccess + InputAccess + LogAccess + OverlayAccess + RefreshAccess +
                         } else {
                             ctx.state.push_log(format!("switched to {}", name), true);
                         }
-                        return ReduceOutput {
-                            commands: vec![tick_background_loads()],
-                            invalidation: UiInvalidation::all(),
-                        };
+                        return ctx
+                            .command(tick_background_loads())
+                            .with_invalidation(UiInvalidation::all());
                     }
                     Err(e) => {
                         if *auto_stash {
@@ -94,9 +94,7 @@ impl<S: BranchAccess + InputAccess + LogAccess + OverlayAccess + RefreshAccess +
             }
             DomainAction::DeleteSelectedBranch => {
                 if let Some(name) = ctx.state.selected_branch_name() {
-                    return ReduceOutput::from_command(Command::Effect(
-                        EffectRequest::DeleteBranch(name),
-                    ));
+                    return ctx.command(Command::Effect(EffectRequest::DeleteBranch(name)));
                 }
                 ctx.state.push_log("no branch selected".to_string(), false);
                 ReduceOutput::none()
@@ -114,19 +112,18 @@ impl<S: BranchAccess + InputAccess + LogAccess + OverlayAccess + RefreshAccess +
                 }
                 ctx.state.set_fetching_remote(true);
                 ctx.state.push_log("fetch started".to_string(), true);
-                ReduceOutput::from_command(Command::Effect(EffectRequest::FetchRemote))
+                ctx.command(Command::Effect(EffectRequest::FetchRemote))
                     .with_invalidation(UiInvalidation::all())
             }
             DomainAction::FetchRemoteFinished(result) => {
                 ctx.state.set_fetching_remote(false);
                 match result {
                     Ok(remote) => {
-                        ctx.state.request_refresh(RefreshKind::Full);
+                        ctx.state.request_refresh(RefreshKind::Full, ctx.commands);
                         ctx.state.push_log(format!("fetched {}", remote), true);
-                        return ReduceOutput {
-                            commands: vec![tick_background_loads()],
-                            invalidation: UiInvalidation::all(),
-                        };
+                        return ctx
+                            .command(tick_background_loads())
+                            .with_invalidation(UiInvalidation::all());
                     }
                     Err(e) => ctx.state.push_log(format!("fetch failed: {}", e), false),
                 }
@@ -190,11 +187,12 @@ mod tests {
         let mut store = BranchStore::new();
         let mut app = mock_app();
         app.ui.active_panel = crate::app::SidePanel::LocalBranches;
-        app.ui.branches.items = vec![crate::git::BranchInfo {
+        app.revisions.branches.items = vec![crate::git::BranchInfo {
             name: "feature".to_string(),
             is_current: false,
-        }];
-        app.ui.branches.panel.list_state.select(Some(0));
+        }]
+        .into();
+        app.revisions.branches.panel.select(Some(0));
         let output = reduce(
             &mut store,
             &mut app,
@@ -208,11 +206,12 @@ mod tests {
         let mut store = BranchStore::new();
         let mut app = mock_app();
         app.ui.active_panel = crate::app::SidePanel::LocalBranches;
-        app.ui.branches.items = vec![crate::git::BranchInfo {
+        app.revisions.branches.items = vec![crate::git::BranchInfo {
             name: "feature".to_string(),
             is_current: false,
-        }];
-        app.ui.branches.panel.list_state.select(Some(0));
+        }]
+        .into();
+        app.revisions.branches.panel.select(Some(0));
         let output = reduce(
             &mut store,
             &mut app,
@@ -237,13 +236,13 @@ mod tests {
     fn test_fetch_remote_finished_ok_clears_fetching_flag() {
         let mut store = BranchStore::new();
         let mut app = mock_app();
-        app.ui.branches.is_fetching_remote = true;
+        app.revisions.branches.is_fetching_remote = true;
         reduce(
             &mut store,
             &mut app,
             Action::Domain(DomainAction::FetchRemoteFinished(Ok("origin".to_string()))),
         );
-        assert!(!app.ui.branches.is_fetching_remote);
+        assert!(!app.revisions.branches.is_fetching_remote);
     }
 
     #[test]
@@ -330,7 +329,7 @@ mod more_tests {
     fn test_fetch_remote_finished_err_logs_failure() {
         let mut store = BranchStore::new();
         let mut app = mock_app();
-        app.ui.branches.is_fetching_remote = true;
+        app.revisions.branches.is_fetching_remote = true;
         let logs_before = app.command_log.len();
         reduce(
             &mut store,
@@ -339,7 +338,7 @@ mod more_tests {
                 "fetch failed".to_string()
             ))),
         );
-        assert!(!app.ui.branches.is_fetching_remote);
+        assert!(!app.revisions.branches.is_fetching_remote);
         assert!(app.command_log.len() > logs_before);
     }
 }

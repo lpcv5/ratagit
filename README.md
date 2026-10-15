@@ -61,6 +61,28 @@ cargo run
 
 ## Architecture
 
+`src/main.rs` composes startup. `src/terminal.rs` owns terminal lifecycle and
+restoration; `src/runtime/` owns channels, task scheduling, input/render loops,
+shutdown and telemetry. Application state stays in the dispatch loop, and UI
+rendering reads immutable snapshots.
+
+Feature collections and diff text share immutable payloads across snapshots;
+state writes detach changed payloads, and rendering borrows snapshot metadata.
+Allocation measurements and the repeatable profiling command are documented in
+the application architecture guide below.
+
+Background reads carry one complete request from registration through execution.
+A single task registry accepts generations, and completion events share immutable
+payloads with feature state while retaining epoch and source checks.
+
+Files, diff, revisions and search own feature state and pure update decisions.
+Application coordinators adapt cross-feature data and apply navigation or scheduling
+intentions; search queries and matches are separate from editor input buffers.
+
+`src/git/repository.rs` composes the single Git2 backend. Private modules under
+`src/git/repository/` own the existing worktree, patch, history, reference, stash,
+commit and operation capabilities, with persistent worker routing kept explicit.
+
 Ratagit follows a layered runtime design:
 
 - UI -> `Action` -> `Dispatcher`/`Stores` -> Effect Runtime -> `GitRepository`

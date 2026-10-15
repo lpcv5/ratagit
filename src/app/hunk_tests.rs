@@ -1,7 +1,8 @@
 use super::*;
 use crate::config::keymap::Keymap;
 use crate::flux::action::DomainAction;
-use crate::flux::effects::{self, EffectRequest, RuntimeEvent};
+use crate::flux::action::RuntimeEvent;
+use crate::flux::effects::{self, EffectRequest};
 use crate::flux::snapshot::AppStateSnapshotOwned;
 use crate::git::patch::{HunkId, PatchDirection, PatchRequest, PatchSource};
 use crate::git::{Git2Repository, PatchRepository};
@@ -108,14 +109,14 @@ fn text(buffer: &ratatui::buffer::Buffer) -> String {
 #[test]
 fn test_hunk_focus_navigation_keeps_file_selection_and_scrolls_to_header() {
     let mut fixture = Fixture::new();
-    let file = fixture.app.files.view().panel.list_state.selected();
+    let file = fixture.app.files.view().panel.selected();
     fixture.focus();
     press(&mut fixture.app, KeyCode::Char('j'));
     assert_eq!(
         fixture.app.diff.interaction().cursor,
         Some(HunkId { file: 0, hunk: 1 })
     );
-    assert_eq!(fixture.app.files.view().panel.list_state.selected(), file);
+    assert_eq!(fixture.app.files.view().panel.selected(), file);
     assert!(fixture.app.diff.document().lines[fixture.app.diff.scroll()]
         .content
         .starts_with("@@"));
@@ -325,7 +326,6 @@ fn test_pending_write_blocks_duplicate_hunk_commands_until_completion() {
     fixture.focus();
     fixture
         .app
-        .state
         .apply_repository_action(&DomainAction::ApplySelectedHunks(PatchDirection::Stage));
     let request = fixture
         .app
@@ -337,7 +337,6 @@ fn test_pending_write_blocks_duplicate_hunk_commands_until_completion() {
     assert!(help(&fixture.app, "hunk stage").is_none());
     fixture
         .app
-        .state
         .apply_repository_action(&DomainAction::ApplySelectedHunks(PatchDirection::Stage));
     assert!(!fixture
         .app
@@ -346,7 +345,6 @@ fn test_pending_write_blocks_duplicate_hunk_commands_until_completion() {
         .any(|e| matches!(e, EffectRequest::ApplyHunks { .. })));
     fixture
         .app
-        .state
         .apply_repository_action(&DomainAction::ApplyHunksFinished {
             id: pending.unwrap() + 1,
             direction: PatchDirection::Stage,
@@ -443,7 +441,7 @@ fn test_historical_and_truncated_patches_allow_navigation_without_writes() {
             .app
             .diff
             .set_test_document(crate::git::patch::DiffDocument {
-                lines: patch.display_lines(),
+                lines: patch.display_lines().into(),
                 patch: Some(std::sync::Arc::new(patch)),
             });
         fixture.focus();
@@ -514,13 +512,7 @@ fn load_file(fixture: &mut Fixture, name: &str) {
         .iter()
         .position(|node| node.path == Path::new(name))
         .unwrap();
-    fixture
-        .app
-        .files
-        .test_view_mut()
-        .panel
-        .list_state
-        .select(Some(index));
+    fixture.app.files.test_view_mut().panel.select(Some(index));
     fixture.app.diff.test_interaction_mut().side = None;
     fixture.app.reload_diff_now();
     crate::flux::test_runtime::finish_background(&mut fixture.app);
@@ -730,7 +722,6 @@ fn test_completion_after_panel_switch_preserves_current_focus_and_refreshes_stat
     fixture.focus();
     fixture
         .app
-        .state
         .apply_repository_action(&DomainAction::ApplySelectedHunks(PatchDirection::Stage));
     let request = fixture
         .app

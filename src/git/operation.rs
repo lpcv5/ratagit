@@ -28,7 +28,7 @@ pub struct OperationProgress {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RepositoryOperation {
     pub kind: Option<OperationKind>,
-    pub conflicts: Vec<PathBuf>,
+    pub conflicts: crate::shared::Shared<Vec<PathBuf>>,
     pub progress: Option<OperationProgress>,
 }
 

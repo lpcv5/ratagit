@@ -1,4 +1,5 @@
-use crate::app::{BranchesPanelState, SidePanel};
+use crate::app::revisions::BranchesRenderView;
+use crate::app::SidePanel;
 use crate::ui::components::organisms::{
     commits_panel_component::draw_commits_panel, empty_list_item, title_with_search,
     PanelRenderContext,
@@ -18,7 +19,7 @@ use ratatui::{
 pub fn draw_branches_panel(
     frame: &mut Frame,
     area: Rect,
-    state: &BranchesPanelState,
+    state: &BranchesRenderView<'_>,
     ctx: &PanelRenderContext<'_>,
 ) {
     if state.commits_subview_active {
@@ -40,7 +41,7 @@ pub fn draw_branches_panel(
             search_query: ctx.search_query,
             search_summary: ctx.search_summary,
             visual_selected_indices: PanelRenderContext::empty_visual_selected_indices(),
-            highlighted_oids: &state.commits_subview.highlighted_oids,
+            highlighted_oids: state.commits_subview.highlighted_oids,
         };
         draw_commits_panel(frame, area, &state.commits_subview, &commits_ctx);
         return;
@@ -76,11 +77,11 @@ pub fn draw_branches_panel(
         .scroll_padding(LIST_SCROLL_PADDING)
         .highlight_style(highlight);
 
-    let mut list_state = state.panel.list_state;
+    let mut list_state = crate::ui::panels::selection::list_state(state.panel);
     frame.render_stateful_widget(list, area, &mut list_state);
 }
 
-impl DynamicPanel for BranchesPanelState {
+impl DynamicPanel for BranchesRenderView<'_> {
     fn default_height_percent(&self) -> u16 {
         25
     }

@@ -1,4 +1,4 @@
-use super::FilesPanelState;
+use super::FilesRenderView;
 use crate::file_tree::FileTreeNodeStatus;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -16,7 +16,7 @@ pub enum StageTarget {
 }
 
 pub struct FileSelection<'a> {
-    files: &'a FilesPanelState,
+    files: FilesRenderView<'a>,
     active: bool,
 }
 
@@ -24,7 +24,7 @@ impl<'a> FileSelection<'a> {
     pub fn is_visual_mode(&self) -> bool {
         self.active && self.files.visual_mode
     }
-    pub fn new(files: &'a FilesPanelState, active: bool) -> Self {
+    pub fn new(files: FilesRenderView<'a>, active: bool) -> Self {
         Self { files, active }
     }
 
@@ -32,15 +32,13 @@ impl<'a> FileSelection<'a> {
         if !self.active {
             return None;
         }
-        self.files
-            .tree_nodes
-            .get(self.files.panel.list_state.selected()?)
+        self.files.tree_nodes.get(self.files.panel.selected()?)
     }
 
     pub fn toggle_stage_target(&self) -> Option<StageTarget> {
         let node = self.selected_tree_node()?;
         let staged = if node.is_dir {
-            let index = self.files.panel.list_state.selected()?;
+            let index = self.files.panel.selected()?;
             let end = self.subtree_end_index(index);
             let selected = (index..=end).collect();
             self.selected_files_are_all_staged(&selected, &node.path)
@@ -59,7 +57,7 @@ impl<'a> FileSelection<'a> {
         if !self.active || !self.files.visual_mode {
             return set;
         }
-        let Some(current) = self.files.panel.list_state.selected() else {
+        let Some(current) = self.files.panel.selected() else {
             return set;
         };
         let anchor = self.files.visual_anchor.unwrap_or(current);
@@ -100,7 +98,7 @@ impl<'a> FileSelection<'a> {
             return self.collect_discard_targets(&selected);
         }
 
-        let Some(index) = self.files.panel.list_state.selected() else {
+        let Some(index) = self.files.panel.selected() else {
             return Vec::new();
         };
         self.collect_discard_targets_for_index(index)

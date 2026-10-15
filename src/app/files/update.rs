@@ -2,7 +2,7 @@ use super::FilesState;
 use std::path::{Path, PathBuf};
 
 pub enum FilesAction<'a> {
-    ReplaceStatus(crate::git::GitStatus),
+    ReplaceStatus(crate::shared::Shared<crate::git::GitStatus>),
     Next,
     Previous,
     SelectIndex(usize),
@@ -69,7 +69,6 @@ impl FilesState {
                     let index = self
                         .panel
                         .panel
-                        .list_state
                         .selected()
                         .map(|index| {
                             if matches!(action, FilesAction::Next) {
@@ -79,10 +78,10 @@ impl FilesState {
                             }
                         })
                         .unwrap_or(0);
-                    self.panel.panel.list_state.select(Some(index));
+                    self.panel.panel.select(Some(index));
                 }
             }
-            FilesAction::SelectIndex(index) => self.panel.panel.list_state.select(Some(index)),
+            FilesAction::SelectIndex(index) => self.panel.panel.select(Some(index)),
             FilesAction::ToggleDirectory => {
                 let path = self
                     .selection(active)
@@ -108,7 +107,7 @@ impl FilesState {
                     self.clear_visual_selection();
                 } else {
                     self.panel.visual_mode = true;
-                    self.panel.visual_anchor = self.panel.panel.list_state.selected();
+                    self.panel.visual_anchor = self.panel.panel.selected();
                 }
                 output.reload_diff = true;
                 output.redraw = true;

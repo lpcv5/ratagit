@@ -11,18 +11,32 @@ impl App {
         self.apply_status_refresh(status);
 
         if matches!(kind, RefreshKind::StatusAndRefs | RefreshKind::Full) {
-            self.state.ui.branches.items = self.runtime.repo.branches().unwrap_or_default();
-            self.state.ui.stash.items = self.runtime.repo.stashes().unwrap_or_default();
-            if self.state.ui.stash.tree_mode.active {
-                if let Some(index) = self.state.ui.stash.tree_mode.selected_source {
-                    if self.state.ui.stash.items.iter().any(|s| s.index == index) {
-                        self.state.ui.stash.tree_mode.files =
-                            self.runtime.repo.stash_files(index).unwrap_or_default();
+            self.state.revisions.branches.items =
+                self.runtime.repo.branches().unwrap_or_default().into();
+            self.state.revisions.stash.items =
+                self.runtime.repo.stashes().unwrap_or_default().into();
+            if self.state.revisions.stash.tree_mode.active {
+                if let Some(index) = self.state.revisions.stash.tree_mode.selected_source {
+                    if self
+                        .state
+                        .revisions
+                        .stash
+                        .items
+                        .iter()
+                        .any(|s| s.index == index)
+                    {
+                        self.state.revisions.stash.tree_mode.files = self
+                            .runtime
+                            .repo
+                            .stash_files(index)
+                            .unwrap_or_default()
+                            .into();
+                        let stash = &mut self.state.revisions.stash;
                         revision_tree::rebuild_tree_nodes(
-                            &self.state.ui.stash.tree_mode.files,
-                            &self.state.ui.stash.tree_mode.expanded_dirs,
-                            &mut self.state.ui.stash.tree_mode.nodes,
-                            &mut self.state.ui.stash.panel.list_state,
+                            &stash.tree_mode.files,
+                            &stash.tree_mode.expanded_dirs,
+                            &mut stash.tree_mode.nodes,
+                            &mut stash.panel,
                         );
                     } else {
                         self.stash_close_tree();
@@ -121,22 +135,35 @@ impl App {
     }
 
     pub(super) fn reload_commits_now(&mut self) {
-        self.state.ui.commits.items = self
+        self.state.revisions.commits.items = self
             .runtime
             .repo
-            .commits(self.state.tasks.commits_requested_limit)
-            .unwrap_or_default();
-        self.state.ui.commits.dirty = false;
-        if self.state.ui.commits.tree_mode.active {
-            if let Some(ref oid) = self.state.ui.commits.tree_mode.selected_source {
-                if self.state.ui.commits.items.iter().any(|c| c.oid == *oid) {
-                    self.state.ui.commits.tree_mode.files =
-                        self.runtime.repo.commit_files(oid).unwrap_or_default();
+            .commits(self.state.revisions.commits_requested_limit())
+            .unwrap_or_default()
+            .into();
+        self.state.revisions.commits.dirty = false;
+        if self.state.revisions.commits.tree_mode.active {
+            if let Some(ref oid) = self.state.revisions.commits.tree_mode.selected_source {
+                if self
+                    .state
+                    .revisions
+                    .commits
+                    .items
+                    .iter()
+                    .any(|c| c.oid == *oid)
+                {
+                    self.state.revisions.commits.tree_mode.files = self
+                        .runtime
+                        .repo
+                        .commit_files(oid)
+                        .unwrap_or_default()
+                        .into();
+                    let commits = &mut self.state.revisions.commits;
                     revision_tree::rebuild_tree_nodes(
-                        &self.state.ui.commits.tree_mode.files,
-                        &self.state.ui.commits.tree_mode.expanded_dirs,
-                        &mut self.state.ui.commits.tree_mode.nodes,
-                        &mut self.state.ui.commits.panel.list_state,
+                        &commits.tree_mode.files,
+                        &commits.tree_mode.expanded_dirs,
+                        &mut commits.tree_mode.nodes,
+                        &mut commits.panel,
                     );
                 } else {
                     self.commit_close_tree();
@@ -178,5 +205,62 @@ impl App {
         self.state
             .reduce_files(super::files::FilesAction::ClearVisual);
         Ok(targets.len())
+    }
+}
+
+// Direct transition fixtures use an explicit composition-owned output. This
+// compatibility adapter is excluded from production; new runtime tests emit
+// through ReduceCtx and the dispatcher just like the application.
+impl App {
+    pub fn request_refresh(&mut self, kind: RefreshKind) {
+        self.state.request_refresh(kind, &mut self.initial_output)
+    }
+    pub fn schedule_diff_reload(&mut self) {
+        self.state.schedule_diff_reload(&mut self.initial_output)
+    }
+    pub fn reload_diff_now(&mut self) {
+        self.state.reload_diff_now(&mut self.initial_output)
+    }
+    pub fn process_background_refresh_tick(&mut self) {
+        self.state
+            .process_background_refresh_tick(&mut self.initial_output)
+    }
+    pub fn flush_pending_diff_reload(&mut self) {
+        self.state
+            .flush_pending_diff_reload(&mut self.initial_output)
+    }
+    pub fn apply_repository_action(&mut self, action: &crate::flux::action::DomainAction) {
+        self.state
+            .apply_repository_action(action, &mut self.initial_output)
+    }
+    pub fn apply_runtime_event(&mut self, event: &crate::flux::action::RuntimeEvent) {
+        self.state
+            .apply_runtime_event(event, &mut self.initial_output)
+    }
+    pub fn commit_open_tree_or_toggle_dir(&mut self) -> Result<()> {
+        self.state
+            .commit_open_tree_or_toggle_dir(&mut self.initial_output)
+    }
+    pub fn commit_close_tree(&mut self) {
+        self.state.commit_close_tree(&mut self.initial_output)
+    }
+    pub fn stash_close_tree(&mut self) {
+        self.state.stash_close_tree(&mut self.initial_output)
+    }
+    pub fn start_commit_editor_guarded(&mut self) -> bool {
+        self.state
+            .start_commit_editor_guarded(&mut self.initial_output)
+    }
+    pub fn take_effects(&mut self) -> Vec<crate::flux::effects::EffectRequest> {
+        self.initial_output
+            .drain()
+            .into_iter()
+            .map(|command| {
+                let super::Command::Effect(request) = command else {
+                    panic!("direct fixture transitions only emit effects")
+                };
+                request
+            })
+            .collect()
     }
 }

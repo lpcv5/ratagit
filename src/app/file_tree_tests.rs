@@ -41,11 +41,7 @@ fn select(app: &mut App, path: &str) {
         .iter()
         .position(|node| node.path == Path::new(path))
         .unwrap();
-    app.files
-        .test_view_mut()
-        .panel
-        .list_state
-        .select(Some(index));
+    app.files.test_view_mut().panel.select(Some(index));
 }
 
 fn assert_selected(app: &App, path: &str) {
@@ -66,15 +62,19 @@ async fn refresh(app: &mut App, selected: &str) {
         let fast = matches!(
             &request,
             EffectRequest::LoadBackground {
-                load: BackgroundLoad::Status { fast: true, .. },
-                ..
+                request: crate::background::TaskRequest {
+                    load: BackgroundLoad::Status { fast: true, .. },
+                    ..
+                }
             }
         );
         let complete_status = matches!(
             &request,
             EffectRequest::LoadBackground {
-                load: BackgroundLoad::Status { fast: false, .. },
-                ..
+                request: crate::background::TaskRequest {
+                    load: BackgroundLoad::Status { fast: false, .. },
+                    ..
+                }
             }
         );
         complete_status_seen |= complete_status;

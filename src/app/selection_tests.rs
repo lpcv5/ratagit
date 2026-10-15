@@ -52,7 +52,7 @@ mod tests {
         let mut app = mock_app();
         app.ui.active_panel = SidePanel::Files;
         app.files.test_view_mut().visual_mode = true;
-        app.files.test_view_mut().panel.list_state.select(Some(2));
+        app.files.test_view_mut().panel.select(Some(2));
         app.files.test_view_mut().visual_anchor = Some(2);
         let selected = app.visual_selected_indices();
         assert_eq!(selected, HashSet::from([2]));
@@ -63,7 +63,7 @@ mod tests {
         let mut app = mock_app();
         app.ui.active_panel = SidePanel::Files;
         app.files.test_view_mut().visual_mode = true;
-        app.files.test_view_mut().panel.list_state.select(Some(4));
+        app.files.test_view_mut().panel.select(Some(4));
         app.files.test_view_mut().visual_anchor = Some(2);
         let selected = app.visual_selected_indices();
         assert_eq!(selected, HashSet::from([2, 3, 4]));
@@ -74,7 +74,7 @@ mod tests {
         let mut app = mock_app();
         app.ui.active_panel = SidePanel::Files;
         app.files.test_view_mut().visual_mode = true;
-        app.files.test_view_mut().panel.list_state.select(Some(1));
+        app.files.test_view_mut().panel.select(Some(1));
         app.files.test_view_mut().visual_anchor = Some(3);
         let selected = app.visual_selected_indices();
         assert_eq!(selected, HashSet::from([1, 2, 3]));
@@ -96,8 +96,9 @@ mod tests {
             FileTreeNodeStatus::Unstaged(FileStatus::Modified),
             false,
             0,
-        )];
-        app.files.test_view_mut().panel.list_state.select(Some(0));
+        )]
+        .into();
+        app.files.test_view_mut().panel.select(Some(0));
         let targets = app.prepare_discard_targets_from_selection();
         assert_eq!(targets.len(), 1);
         assert_eq!(targets[0], PathBuf::from("foo.txt"));
@@ -159,8 +160,8 @@ mod more_tests {
     fn test_prepare_discard_targets_for_staged_file() {
         let mut app = mock_app();
         app.ui.active_panel = SidePanel::Files;
-        app.files.test_view_mut().tree_nodes = vec![file_node("foo.txt", true)];
-        app.files.test_view_mut().panel.list_state.select(Some(0));
+        app.files.test_view_mut().tree_nodes = vec![file_node("foo.txt", true)].into();
+        app.files.test_view_mut().panel.select(Some(0));
         let targets = app.prepare_discard_targets_from_selection();
         assert_eq!(targets.len(), 1);
     }
@@ -175,8 +176,9 @@ mod more_tests {
             depth: 0,
             is_dir: false,
             is_expanded: false,
-        }];
-        app.files.test_view_mut().panel.list_state.select(Some(0));
+        }]
+        .into();
+        app.files.test_view_mut().panel.select(Some(0));
         let targets = app.prepare_discard_targets_from_selection();
         assert!(targets.is_empty());
     }
@@ -185,8 +187,8 @@ mod more_tests {
     fn test_prepare_stash_targets_single_file() {
         let mut app = mock_app();
         app.ui.active_panel = SidePanel::Files;
-        app.files.test_view_mut().tree_nodes = vec![file_node("bar.txt", false)];
-        app.files.test_view_mut().panel.list_state.select(Some(0));
+        app.files.test_view_mut().tree_nodes = vec![file_node("bar.txt", false)].into();
+        app.files.test_view_mut().panel.select(Some(0));
         let targets = app.prepare_stash_targets_from_selection();
         assert_eq!(targets.len(), 1);
         assert_eq!(targets[0], PathBuf::from("bar.txt"));
@@ -198,8 +200,8 @@ mod more_tests {
         app.ui.active_panel = SidePanel::Files;
         app.files.test_view_mut().visual_mode = true;
         app.files.test_view_mut().tree_nodes =
-            vec![file_node("a.txt", false), file_node("b.txt", false)];
-        app.files.test_view_mut().panel.list_state.select(Some(0));
+            vec![file_node("a.txt", false), file_node("b.txt", false)].into();
+        app.files.test_view_mut().panel.select(Some(0));
         app.files.test_view_mut().visual_anchor = Some(0);
         let result = app.toggle_stage_visual_selection();
         assert!(result.is_ok());
@@ -211,10 +213,10 @@ mod more_tests {
     #[test]
     fn test_subtree_end_index_for_file_node_returns_self() {
         let mut app = mock_app();
-        app.files.test_view_mut().tree_nodes = vec![file_node("a.txt", false)];
+        app.files.test_view_mut().tree_nodes = vec![file_node("a.txt", false)].into();
         // subtree_end_index is private but exercised via prepare_discard_targets
         app.ui.active_panel = SidePanel::Files;
-        app.files.test_view_mut().panel.list_state.select(Some(0));
+        app.files.test_view_mut().panel.select(Some(0));
         let targets = app.prepare_discard_targets_from_selection();
         assert_eq!(targets.len(), 1);
     }
@@ -225,8 +227,8 @@ mod more_tests {
         app.ui.active_panel = SidePanel::Files;
         app.files.test_view_mut().visual_mode = true;
         app.files.test_view_mut().tree_nodes =
-            vec![file_node("a.txt", false), file_node("b.txt", true)];
-        app.files.test_view_mut().panel.list_state.select(Some(1));
+            vec![file_node("a.txt", false), file_node("b.txt", true)].into();
+        app.files.test_view_mut().panel.select(Some(1));
         app.files.test_view_mut().visual_anchor = Some(0);
         let targets = app.prepare_discard_targets_from_selection();
         assert_eq!(targets.len(), 2);

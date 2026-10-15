@@ -2,8 +2,6 @@ use super::*;
 use crate::app::{App, RefreshKind, SidePanel};
 use crate::file_tree::{FileTreeNode, FileTreeNodeStatus};
 use crate::flux::action::DomainAction;
-use crate::flux::effects::EffectRequest;
-use crate::flux::test_runtime::run_inline_effect;
 use crate::git::{
     BranchInfo, CommitInfo, CommitSyncState, DiffLine, DiffLineKind, FileEntry, FileStatus,
     GitError, GitStatus, StashInfo,
@@ -211,19 +209,19 @@ fn first_diff_content(app: &App) -> &str {
 }
 
 fn assert_commits_selected(app: &App, expected: Option<usize>) {
-    assert_eq!(app.ui.commits.panel.list_state.selected(), expected);
+    assert_eq!(app.revisions.commits.panel.selected(), expected);
 }
 
 fn assert_files_selected(app: &App, expected: Option<usize>) {
-    assert_eq!(app.files.view().panel.list_state.selected(), expected);
+    assert_eq!(app.files.view().panel.selected(), expected);
 }
 
 fn assert_branches_selected(app: &App, expected: Option<usize>) {
-    assert_eq!(app.ui.branches.panel.list_state.selected(), expected);
+    assert_eq!(app.revisions.branches.panel.selected(), expected);
 }
 
 fn assert_stash_selected(app: &App, expected: Option<usize>) {
-    assert_eq!(app.ui.stash.panel.list_state.selected(), expected);
+    assert_eq!(app.revisions.stash.panel.selected(), expected);
 }
 
 struct CountingRepo {
@@ -1007,42 +1005,42 @@ impl crate::git::OperationRepository for RefreshCountingRepo {}
 fn revision_tree_toggle_in_commits_panel_opens_then_closes() {
     let mut app = mock_app();
     app.ui.active_panel = SidePanel::Commits;
-    app.ui.commits.panel.list_state.select(Some(0));
+    app.revisions.commits.panel.select(Some(0));
 
     dispatch_test_action(&mut app, DomainAction::RevisionOpenTreeOrToggleDir);
-    assert!(app.ui.commits.tree_mode.active);
+    assert!(app.revisions.commits.tree_mode.active);
     assert_eq!(
-        app.ui.commits.tree_mode.selected_source.as_deref(),
+        app.revisions.commits.tree_mode.selected_source.as_deref(),
         Some("abc1234567890")
     );
-    assert!(!app.ui.commits.tree_mode.nodes.is_empty());
+    assert!(!app.revisions.commits.tree_mode.nodes.is_empty());
 
     dispatch_test_action(&mut app, DomainAction::RevisionCloseTree);
-    assert!(!app.ui.commits.tree_mode.active);
-    assert!(app.ui.commits.tree_mode.selected_source.is_none());
+    assert!(!app.revisions.commits.tree_mode.active);
+    assert!(app.revisions.commits.tree_mode.selected_source.is_none());
 }
 
 #[test]
 fn revision_tree_toggle_in_stash_panel_opens_then_closes() {
     let mut app = mock_app();
     app.ui.active_panel = SidePanel::Stash;
-    app.ui.stash.panel.list_state.select(Some(0));
+    app.revisions.stash.panel.select(Some(0));
 
     dispatch_test_action(&mut app, DomainAction::RevisionOpenTreeOrToggleDir);
-    assert!(app.ui.stash.tree_mode.active);
-    assert_eq!(app.ui.stash.tree_mode.selected_source, Some(0));
-    assert!(!app.ui.stash.tree_mode.nodes.is_empty());
+    assert!(app.revisions.stash.tree_mode.active);
+    assert_eq!(app.revisions.stash.tree_mode.selected_source, Some(0));
+    assert!(!app.revisions.stash.tree_mode.nodes.is_empty());
 
     dispatch_test_action(&mut app, DomainAction::RevisionCloseTree);
-    assert!(!app.ui.stash.tree_mode.active);
-    assert!(app.ui.stash.tree_mode.selected_source.is_none());
+    assert!(!app.revisions.stash.tree_mode.active);
+    assert!(app.revisions.stash.tree_mode.selected_source.is_none());
 }
 
 #[test]
 fn commit_diff_in_tree_mode_scopes_to_selected_path() {
     let mut app = mock_app();
     app.ui.active_panel = SidePanel::Commits;
-    app.ui.commits.panel.list_state.select(Some(0));
+    app.revisions.commits.panel.select(Some(0));
 
     app.reload_diff_now();
     crate::flux::test_runtime::finish_background(&mut app);
@@ -1058,7 +1056,7 @@ fn commit_diff_in_tree_mode_scopes_to_selected_path() {
 fn stash_diff_in_tree_mode_scopes_to_selected_path() {
     let mut app = mock_app();
     app.ui.active_panel = SidePanel::Stash;
-    app.ui.stash.panel.list_state.select(Some(0));
+    app.revisions.stash.panel.select(Some(0));
 
     app.reload_diff_now();
     crate::flux::test_runtime::finish_background(&mut app);
@@ -1074,17 +1072,17 @@ fn stash_diff_in_tree_mode_scopes_to_selected_path() {
 fn commit_tree_close_restores_previous_list_selection() {
     let mut app = mock_app();
     app.ui.active_panel = SidePanel::Commits;
-    app.ui.commits.panel.list_state.select(Some(1));
+    app.revisions.commits.panel.select(Some(1));
 
     dispatch_test_action(&mut app, DomainAction::RevisionOpenTreeOrToggleDir);
-    assert!(app.ui.commits.tree_mode.active);
+    assert!(app.revisions.commits.tree_mode.active);
     assert_eq!(
-        app.ui.commits.tree_mode.selected_source.as_deref(),
+        app.revisions.commits.tree_mode.selected_source.as_deref(),
         Some("def5678901234")
     );
 
     dispatch_test_action(&mut app, DomainAction::RevisionCloseTree);
-    assert!(!app.ui.commits.tree_mode.active);
+    assert!(!app.revisions.commits.tree_mode.active);
     assert_commits_selected(&app, Some(1));
 }
 
@@ -1092,14 +1090,14 @@ fn commit_tree_close_restores_previous_list_selection() {
 fn stash_tree_close_restores_previous_list_selection() {
     let mut app = mock_app();
     app.ui.active_panel = SidePanel::Stash;
-    app.ui.stash.panel.list_state.select(Some(1));
+    app.revisions.stash.panel.select(Some(1));
 
     dispatch_test_action(&mut app, DomainAction::RevisionOpenTreeOrToggleDir);
-    assert!(app.ui.stash.tree_mode.active);
-    assert_eq!(app.ui.stash.tree_mode.selected_source, Some(1));
+    assert!(app.revisions.stash.tree_mode.active);
+    assert_eq!(app.revisions.stash.tree_mode.selected_source, Some(1));
 
     dispatch_test_action(&mut app, DomainAction::RevisionCloseTree);
-    assert!(!app.ui.stash.tree_mode.active);
+    assert!(!app.revisions.stash.tree_mode.active);
     assert_stash_selected(&app, Some(1));
 }
 
@@ -1107,7 +1105,7 @@ fn stash_tree_close_restores_previous_list_selection() {
 fn commit_search_query_supports_vim_next_prev_navigation() {
     let mut app = mock_app();
     app.ui.active_panel = SidePanel::Commits;
-    app.ui.commits.panel.list_state.select(Some(0));
+    app.revisions.commits.panel.select(Some(0));
 
     dispatch_test_action(&mut app, DomainAction::StartSearchInput);
     dispatch_test_action(
@@ -1127,9 +1125,9 @@ fn commit_search_query_supports_vim_next_prev_navigation() {
 fn commit_search_query_matches_author_field() {
     let mut app = mock_app();
     app.ui.active_panel = SidePanel::Commits;
-    app.ui.commits.panel.list_state.select(Some(0));
-    app.ui.commits.items[0].author = "alice".to_string();
-    app.ui.commits.items[1].author = "bob".to_string();
+    app.revisions.commits.panel.select(Some(0));
+    app.revisions.commits.items[0].author = "alice".to_string();
+    app.revisions.commits.items[1].author = "bob".to_string();
 
     dispatch_test_action(&mut app, DomainAction::StartSearchInput);
     dispatch_test_action(&mut app, DomainAction::SearchSetQuery("bob".to_string()));
@@ -1174,8 +1172,9 @@ fn files_search_matches_display_name_not_full_path() {
         depth: 0,
         is_dir: false,
         is_expanded: false,
-    }];
-    app.files.test_view_mut().panel.list_state.select(Some(0));
+    }]
+    .into();
+    app.files.test_view_mut().panel.select(Some(0));
 
     dispatch_test_action(&mut app, DomainAction::StartSearchInput);
     dispatch_test_action(&mut app, DomainAction::SearchSetQuery("src".to_string()));
@@ -1209,8 +1208,9 @@ fn files_panel_space_on_unstaged_directory_emits_stage_action() {
             is_dir: false,
             is_expanded: false,
         },
-    ];
-    app.files.test_view_mut().panel.list_state.select(Some(0));
+    ]
+    .into();
+    app.files.test_view_mut().panel.select(Some(0));
 
     let msg = map_test_key(&app, KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
     assert!(matches!(
@@ -1238,8 +1238,9 @@ fn files_panel_space_on_staged_directory_emits_unstage_action() {
             is_dir: false,
             is_expanded: false,
         },
-    ];
-    app.files.test_view_mut().panel.list_state.select(Some(0));
+    ]
+    .into();
+    app.files.test_view_mut().panel.select(Some(0));
 
     let msg = map_test_key(&app, KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
     assert!(matches!(
@@ -1258,8 +1259,9 @@ fn files_panel_discard_key_on_selected_file_emits_discard_paths() {
         depth: 0,
         is_dir: false,
         is_expanded: false,
-    }];
-    app.files.test_view_mut().panel.list_state.select(Some(0));
+    }]
+    .into();
+    app.files.test_view_mut().panel.select(Some(0));
 
     let msg = map_test_key(&app, KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE));
     assert!(matches!(
@@ -1280,8 +1282,9 @@ fn files_panel_discard_key_in_visual_mode_emits_discard_selection() {
         depth: 0,
         is_dir: false,
         is_expanded: false,
-    }];
-    app.files.test_view_mut().panel.list_state.select(Some(0));
+    }]
+    .into();
+    app.files.test_view_mut().panel.select(Some(0));
     app.files.test_view_mut().visual_anchor = Some(0);
 
     let msg = map_test_key(&app, KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE));
@@ -1295,11 +1298,11 @@ fn search_input_escape_clears_query_and_highlight_state() {
 
     dispatch_test_action(&mut app, DomainAction::StartSearchInput);
     dispatch_test_action(&mut app, DomainAction::SearchSetQuery("test".to_string()));
-    assert_eq!(app.input.search_query, "test");
+    assert_eq!(app.search.view().query, "test");
 
     let _ = dispatch_test_key(&mut app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
 
-    assert!(app.input.search_query.is_empty());
+    assert!(app.search.view().query.is_empty());
     assert!(!app.has_search_query_for_active_scope());
 }
 
@@ -1307,22 +1310,22 @@ fn search_input_escape_clears_query_and_highlight_state() {
 fn commits_tree_escape_clears_search_before_closing_tree() {
     let mut app = mock_app();
     app.ui.active_panel = SidePanel::Commits;
-    app.ui.commits.panel.list_state.select(Some(0));
+    app.revisions.commits.panel.select(Some(0));
 
     dispatch_test_action(&mut app, DomainAction::RevisionOpenTreeOrToggleDir);
-    assert!(app.ui.commits.tree_mode.active);
+    assert!(app.revisions.commits.tree_mode.active);
 
     dispatch_test_action(&mut app, DomainAction::StartSearchInput);
     dispatch_test_action(&mut app, DomainAction::SearchSetQuery("main".to_string()));
     app.confirm_search_input();
     dispatch_test_action(&mut app, DomainAction::SearchConfirm);
-    assert!(!app.input.search_query.is_empty());
+    assert!(!app.search.view().query.is_empty());
 
     let first_esc = map_test_key(&app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
     assert!(matches!(first_esc, Some(DomainAction::SearchClear)));
     dispatch_test_action(&mut app, first_esc.expect("search clear message"));
-    assert!(app.ui.commits.tree_mode.active);
-    assert!(app.input.search_query.is_empty());
+    assert!(app.revisions.commits.tree_mode.active);
+    assert!(app.search.view().query.is_empty());
 
     let second_esc = map_test_key(&app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
     assert!(matches!(second_esc, Some(DomainAction::RevisionCloseTree)));
@@ -1335,13 +1338,13 @@ fn fetch_remote_action_emits_effect_and_clears_fetching_on_finish() {
 
     let cmd = dispatch_test_action(&mut app, DomainAction::FetchRemote);
     assert!(matches!(cmd, Some(Command::Effect(_))));
-    assert!(app.ui.branches.is_fetching_remote);
+    assert!(app.revisions.branches.is_fetching_remote);
 
     dispatch_test_action(
         &mut app,
         DomainAction::FetchRemoteFinished(Ok("origin".to_string())),
     );
-    assert!(!app.ui.branches.is_fetching_remote);
+    assert!(!app.revisions.branches.is_fetching_remote);
 }
 
 #[test]
@@ -1394,7 +1397,7 @@ fn refresh_requests_coalesce_to_highest_priority_on_single_flush() {
 fn fetch_finished_queues_and_flushes_full_refresh() {
     let mut app = mock_app();
     app.ui.active_panel = SidePanel::LocalBranches;
-    app.ui.branches.is_fetching_remote = true;
+    app.revisions.branches.is_fetching_remote = true;
 
     dispatch_test_action(
         &mut app,
@@ -1403,7 +1406,7 @@ fn fetch_finished_queues_and_flushes_full_refresh() {
 
     // After FetchRemoteFinished, the store queues a Full refresh and immediately flushes it.
     // The optimized scheduler prioritizes status first and may defer refs to the next tick.
-    assert!(!app.ui.branches.is_fetching_remote);
+    assert!(!app.revisions.branches.is_fetching_remote);
     assert_eq!(app.pending_refresh_kind(), Some(RefreshKind::Full));
 }
 
@@ -1414,12 +1417,9 @@ fn flush_pending_refresh_without_log_success_marks_ui_dirty() {
     app.ui.dirty.clear();
     app.request_refresh(RefreshKind::Full);
 
-    let result = run_inline_effect(
-        &mut app,
-        EffectRequest::FlushPendingRefresh { log_success: false },
-    );
-
-    let actions = result.expect("state event");
+    let actions = vec![crate::flux::action::Action::Domain(DomainAction::Runtime(
+        crate::flux::action::RuntimeEvent::FlushPendingRefresh { log_success: false },
+    ))];
     assert!(app.pending_refresh_kind().is_some());
     crate::flux::test_runtime::drive_actions(&mut app, actions);
     app.process_background_refresh_tick();
@@ -1437,48 +1437,48 @@ fn search_query_is_restored_per_panel_scope_after_panel_switch() {
     dispatch_test_action(&mut app, DomainAction::SearchSetQuery("test".to_string()));
     app.confirm_search_input();
     dispatch_test_action(&mut app, DomainAction::SearchConfirm);
-    assert_eq!(app.input.search_query, "test");
+    assert_eq!(app.search.view().query, "test");
 
     dispatch_test_action(&mut app, DomainAction::PanelGoto(1));
     assert_eq!(app.ui.active_panel, SidePanel::Files);
-    assert!(app.input.search_query.is_empty());
+    assert!(app.search.view().query.is_empty());
 
     dispatch_test_action(&mut app, DomainAction::StartSearchInput);
     dispatch_test_action(&mut app, DomainAction::SearchSetQuery("main".to_string()));
     app.confirm_search_input();
     dispatch_test_action(&mut app, DomainAction::SearchConfirm);
-    assert_eq!(app.input.search_query, "main");
+    assert_eq!(app.search.view().query, "main");
 
     dispatch_test_action(&mut app, DomainAction::PanelGoto(3));
     assert_eq!(app.ui.active_panel, SidePanel::Commits);
-    assert_eq!(app.input.search_query, "test");
+    assert_eq!(app.search.view().query, "test");
 }
 
 #[test]
 fn search_query_is_restored_between_commit_list_and_tree_scopes() {
     let mut app = mock_app();
     app.ui.active_panel = SidePanel::Commits;
-    app.ui.commits.panel.list_state.select(Some(0));
+    app.revisions.commits.panel.select(Some(0));
 
     dispatch_test_action(&mut app, DomainAction::StartSearchInput);
     dispatch_test_action(&mut app, DomainAction::SearchSetQuery("test".to_string()));
     app.confirm_search_input();
     dispatch_test_action(&mut app, DomainAction::SearchConfirm);
-    assert_eq!(app.input.search_query, "test");
+    assert_eq!(app.search.view().query, "test");
 
     dispatch_test_action(&mut app, DomainAction::RevisionOpenTreeOrToggleDir);
-    assert!(app.ui.commits.tree_mode.active);
-    assert!(app.input.search_query.is_empty());
+    assert!(app.revisions.commits.tree_mode.active);
+    assert!(app.search.view().query.is_empty());
 
     dispatch_test_action(&mut app, DomainAction::StartSearchInput);
     dispatch_test_action(&mut app, DomainAction::SearchSetQuery("main".to_string()));
     app.confirm_search_input();
     dispatch_test_action(&mut app, DomainAction::SearchConfirm);
-    assert_eq!(app.input.search_query, "main");
+    assert_eq!(app.search.view().query, "main");
 
     dispatch_test_action(&mut app, DomainAction::RevisionCloseTree);
-    assert!(!app.ui.commits.tree_mode.active);
-    assert_eq!(app.input.search_query, "test");
+    assert!(!app.revisions.commits.tree_mode.active);
+    assert_eq!(app.search.view().query, "test");
 }
 
 #[test]
@@ -1487,7 +1487,7 @@ fn status_refresh_preserves_duplicate_entry_selection_and_diff_sync() {
     app.ui.active_panel = SidePanel::Files;
     assert_eq!(app.files.view().tree_nodes.len(), 3);
 
-    app.files.test_view_mut().panel.list_state.select(Some(2));
+    app.files.test_view_mut().panel.select(Some(2));
     app.reload_diff_now();
     crate::flux::test_runtime::finish_background(&mut app);
     assert_eq!(first_diff_content(&app), "staged");
@@ -1503,7 +1503,7 @@ fn status_refresh_preserves_duplicate_entry_selection_and_diff_sync() {
 fn files_panel_list_navigation_keeps_diff_until_pending_reload_is_flushed() {
     let mut app = App::from_repo(Box::new(NavigationDiffRepo)).expect("app from navigation repo");
     app.ui.active_panel = SidePanel::Files;
-    app.files.test_view_mut().panel.list_state.select(Some(0));
+    app.files.test_view_mut().panel.select(Some(0));
     app.reload_diff_now();
     crate::flux::test_runtime::finish_background(&mut app);
     assert_eq!(first_diff_content(&app), "file a.txt");
@@ -1524,7 +1524,7 @@ fn files_panel_list_navigation_keeps_diff_until_pending_reload_is_flushed() {
 fn commits_panel_list_navigation_keeps_diff_until_pending_reload_is_flushed() {
     let mut app = App::from_repo(Box::new(NavigationDiffRepo)).expect("app from navigation repo");
     app.ui.active_panel = SidePanel::Commits;
-    app.ui.commits.panel.list_state.select(Some(0));
+    app.revisions.commits.panel.select(Some(0));
     app.reload_diff_now();
     crate::flux::test_runtime::finish_background(&mut app);
     assert_eq!(first_diff_content(&app), "commit oid1");
@@ -1545,7 +1545,7 @@ fn commits_panel_list_navigation_keeps_diff_until_pending_reload_is_flushed() {
 fn branches_panel_list_navigation_keeps_diff_until_pending_reload_is_flushed() {
     let mut app = App::from_repo(Box::new(NavigationDiffRepo)).expect("app from navigation repo");
     app.ui.active_panel = SidePanel::LocalBranches;
-    app.ui.branches.panel.list_state.select(Some(0));
+    app.revisions.branches.panel.select(Some(0));
     app.reload_diff_now();
     crate::flux::test_runtime::finish_background(&mut app);
     assert_eq!(first_diff_content(&app), "branch main");
@@ -1566,7 +1566,7 @@ fn branches_panel_list_navigation_keeps_diff_until_pending_reload_is_flushed() {
 fn branches_panel_space_key_emits_checkout_selected_branch() {
     let mut app = App::from_repo(Box::new(NavigationDiffRepo)).expect("app from navigation repo");
     app.ui.active_panel = SidePanel::LocalBranches;
-    app.ui.branches.panel.list_state.select(Some(0));
+    app.revisions.branches.panel.select(Some(0));
 
     let msg = map_test_key(&app, KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
     assert!(matches!(msg, Some(DomainAction::CheckoutSelectedBranch)));
@@ -1579,7 +1579,7 @@ fn checkout_selected_branch_with_dirty_changes_opens_confirmation_input() {
     let repo = BranchSwitchRepo::new(checkout_calls, auto_stash_calls);
     let mut app = App::from_repo(Box::new(repo)).expect("app from branch switch repo");
     app.ui.active_panel = SidePanel::LocalBranches;
-    app.ui.branches.panel.list_state.select(Some(1));
+    app.revisions.branches.panel.select(Some(1));
 
     dispatch_test_action(&mut app, DomainAction::CheckoutSelectedBranch);
 
@@ -1597,7 +1597,7 @@ fn branch_switch_confirm_yes_emits_checkout_with_auto_stash() {
     let repo = BranchSwitchRepo::new(checkout_calls.clone(), auto_stash_calls.clone());
     let mut app = App::from_repo(Box::new(repo)).expect("app from branch switch repo");
     app.ui.active_panel = SidePanel::LocalBranches;
-    app.ui.branches.panel.list_state.select(Some(1));
+    app.revisions.branches.panel.select(Some(1));
 
     dispatch_test_action(&mut app, DomainAction::CheckoutSelectedBranch);
     let cmd = dispatch_test_action(&mut app, DomainAction::BranchSwitchConfirm(true));
@@ -1633,7 +1633,7 @@ fn branch_switch_confirm_no_clears_pending_target_without_checkout() {
     let repo = BranchSwitchRepo::new(checkout_calls.clone(), auto_stash_calls.clone());
     let mut app = App::from_repo(Box::new(repo)).expect("app from branch switch repo");
     app.ui.active_panel = SidePanel::LocalBranches;
-    app.ui.branches.panel.list_state.select(Some(1));
+    app.revisions.branches.panel.select(Some(1));
 
     dispatch_test_action(&mut app, DomainAction::CheckoutSelectedBranch);
     dispatch_test_action(&mut app, DomainAction::BranchSwitchConfirm(false));

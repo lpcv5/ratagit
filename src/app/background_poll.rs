@@ -1,19 +1,20 @@
 use super::app::RefreshKind;
 use super::diff::DiffRefreshSource;
+use super::revisions::RevisionAction;
 use super::{AppState, BackgroundCompleted, BackgroundPayload, SidePanel};
-use crate::flux::effects::RuntimeEvent;
-use crate::flux::task_manager::{TaskKey, TaskResult, TaskResultKind};
-use std::collections::HashMap;
+use crate::background::TaskKey;
+use crate::flux::action::RuntimeEvent;
+use crate::flux::command_output::CommandOutput;
 use tracing::debug;
 
 impl AppState {
-    pub fn process_background_refresh_tick(&mut self) {
+    pub fn process_background_refresh_tick(&mut self, output: &mut CommandOutput) {
         if let Some(kind) = self.refresh.pending_refresh.take() {
             let mut deferred_kind = None;
             if self.has_background_task(&TaskKey::Status) {
                 deferred_kind = Some(kind);
             } else if !self.refresh.pending_refresh_fast_done {
-                if self.start_status_load(true) {
+                if self.start_status_load(true, output) {
                     self.refresh.pending_refresh_fast_done = true;
                     deferred_kind = Some(kind);
                 } else {
@@ -21,7 +22,7 @@ impl AppState {
                 }
             } else {
                 if matches!(kind, RefreshKind::StatusAndRefs | RefreshKind::Full)
-                    && (!self.start_branches_load() || !self.start_stashes_load())
+                    && (!self.start_branches_load(output) || !self.start_stashes_load(output))
                 {
                     deferred_kind = Some(match deferred_kind {
                         None => RefreshKind::StatusAndRefs,
@@ -31,7 +32,7 @@ impl AppState {
                     });
                 }
                 if matches!(kind, RefreshKind::Full) {
-                    self.ui.commits.dirty = true;
+                    self.reduce_revisions(RevisionAction::MarkCommitsDirty);
                 }
                 if deferred_kind.is_none() {
                     self.refresh.pending_refresh_fast_done = false;
@@ -45,263 +46,145 @@ impl AppState {
             }
         }
 
-        if self.ui.active_panel == SidePanel::Commits && self.ui.commits.dirty {
-            let _ = self.start_commits_load(self.tasks.commits_requested_limit);
+        if self.ui.active_panel == SidePanel::Commits && self.revisions.view().commits.dirty {
+            let _ = self.start_commits_load(self.revisions.commits_requested_limit(), output);
         }
         self.maybe_schedule_commits_extend();
 
-        self.start_pending_diff_load();
+        self.start_pending_diff_load(output);
     }
 
     /// Accept results only for tasks still tracked by state. Cancellation and
     /// selection changes remove old tasks before a replacement is started.
-    pub(crate) fn apply_background_completed(&mut self, completed: BackgroundCompleted) {
-        let request = completed.request;
-        if self
-            .tasks
-            .pending_background_tasks
-            .remove(&request.generation)
-            .is_none()
-        {
+    pub(crate) fn apply_background_completed(
+        &mut self,
+        completed: &BackgroundCompleted,
+        output: &mut CommandOutput,
+    ) {
+        if !self.tasks.accept(completed) {
             return;
         }
-        let mut finished_payloads = HashMap::new();
-        let kind = match completed.result {
-            Ok(payload) => {
-                finished_payloads.insert((request.key.clone(), request.generation), payload);
-                TaskResultKind::Finished
-            }
-            Err(reason) => TaskResultKind::Failed { reason },
-        };
-        self.tasks.task_manager.submit_result(TaskResult {
-            key: request.key,
-            generation: request.generation,
-            kind,
-        });
         let mut schedule_diff = false;
         let mut refresh_search = false;
-        for task in self.tasks.task_manager.collect_ready() {
-            match task.kind {
-                TaskResultKind::Finished => {
-                    let Some(payload) = finished_payloads.remove(&(task.key, task.generation))
-                    else {
-                        continue;
-                    };
-                    refresh_search |= !matches!(&payload, BackgroundPayload::Diff { .. });
-                    match payload {
-                        BackgroundPayload::CommitFiles { oid, files } => {
-                            if self.ui.commits.tree_mode.selected_source.as_deref() == Some(&oid) {
-                                super::revision_tree::enter_tree_mode(
-                                    oid,
-                                    files,
-                                    super::revision_tree::TreeModeState {
-                                        tree_mode: &mut self.ui.commits.tree_mode.active,
-                                        tree_nodes: &mut self.ui.commits.tree_mode.nodes,
-                                        tree_files: &mut self.ui.commits.tree_mode.files,
-                                        expanded_dirs: &mut self.ui.commits.tree_mode.expanded_dirs,
-                                        selected_tree_revision: &mut self
-                                            .ui
-                                            .commits
-                                            .tree_mode
-                                            .selected_source,
-                                        list_state: &mut self.ui.commits.panel.list_state,
-                                    },
-                                );
-                                self.restore_search_for_active_scope();
-                                self.ui.dirty.mark_all();
-                                schedule_diff = true;
+        match &completed.result {
+            Ok(payload) => {
+                let payload = payload.as_ref();
+                refresh_search |= !matches!(payload, BackgroundPayload::Diff { .. });
+                match payload {
+                    BackgroundPayload::Status {
+                        status,
+                        fast,
+                        operation,
+                        operation_epoch,
+                    } => {
+                        debug!(
+                            event = "status_load_finished",
+                            mode = if *fast { "fast" } else { "full" },
+                            staged = status.staged.len(),
+                            unstaged = status.unstaged.len(),
+                            untracked = status.untracked.len(),
+                            "status load finished"
+                        );
+                        self.git
+                            .operation
+                            .observe(*operation_epoch, operation.clone());
+                        // A fast read populates an empty tree; only a full read replaces an existing tree.
+                        let apply_status = !fast || self.files.view().tree_nodes.is_empty();
+                        if apply_status {
+                            self.apply_status_refresh(status.clone());
+                        }
+                        if *fast && self.refresh.pending_full_status_after_fast {
+                            if self.start_status_load(false, output) {
+                                self.refresh.pending_full_status_after_fast = false;
+                            } else {
+                                self.refresh.pending_refresh =
+                                    Some(match self.refresh.pending_refresh {
+                                        None => RefreshKind::StatusOnly,
+                                        Some(existing) => Self::max_refresh_kind(
+                                            existing,
+                                            RefreshKind::StatusOnly,
+                                        ),
+                                    });
                             }
                         }
-                        BackgroundPayload::StashFiles { index, files } => {
-                            if self.ui.stash.tree_mode.selected_source == Some(index) {
-                                super::revision_tree::enter_tree_mode(
-                                    index,
-                                    files,
-                                    super::revision_tree::TreeModeState {
-                                        tree_mode: &mut self.ui.stash.tree_mode.active,
-                                        tree_nodes: &mut self.ui.stash.tree_mode.nodes,
-                                        tree_files: &mut self.ui.stash.tree_mode.files,
-                                        expanded_dirs: &mut self.ui.stash.tree_mode.expanded_dirs,
-                                        selected_tree_revision: &mut self
-                                            .ui
-                                            .stash
-                                            .tree_mode
-                                            .selected_source,
-                                        list_state: &mut self.ui.stash.panel.list_state,
-                                    },
-                                );
-                                self.restore_search_for_active_scope();
-                                self.ui.dirty.mark_all();
-                                schedule_diff = true;
-                            }
+                        if apply_status
+                            && self.should_schedule_diff_for_refresh(DiffRefreshSource::Status)
+                        {
+                            schedule_diff = true;
                         }
-                        BackgroundPayload::Status {
-                            status,
-                            fast,
-                            operation,
-                            operation_epoch,
-                        } => {
-                            debug!(
-                                event = "status_load_finished",
-                                mode = if fast { "fast" } else { "full" },
-                                staged = status.staged.len(),
-                                unstaged = status.unstaged.len(),
-                                untracked = status.untracked.len(),
-                                "status load finished"
-                            );
-                            self.git.operation.observe(operation_epoch, operation);
-                            // Fast reads omit untracked paths and can temporarily remove
-                            // the selected node. Use them to populate an empty tree at
-                            // startup; refresh an existing tree from a complete snapshot.
-                            let apply_status = !fast || self.files.view().tree_nodes.is_empty();
-                            if apply_status {
-                                self.apply_status_refresh(status);
-                            }
-                            if fast && self.refresh.pending_full_status_after_fast {
-                                if self.start_status_load(false) {
-                                    self.refresh.pending_full_status_after_fast = false;
-                                } else {
-                                    self.refresh.pending_refresh =
-                                        Some(match self.refresh.pending_refresh {
-                                            None => RefreshKind::StatusOnly,
-                                            Some(existing) => Self::max_refresh_kind(
-                                                existing,
-                                                RefreshKind::StatusOnly,
-                                            ),
-                                        });
-                                }
-                            }
-                            if apply_status
-                                && self.should_schedule_diff_for_refresh(DiffRefreshSource::Status)
-                            {
-                                schedule_diff = true;
-                            }
-                            self.ui.dirty.mark_all();
-                        }
-                        BackgroundPayload::Branches(items) => {
-                            self.ui.branches.items = items;
-                            if self.should_schedule_diff_for_refresh(DiffRefreshSource::Branches) {
-                                schedule_diff = true;
-                            }
-                            self.ui.dirty.mark_all();
-                        }
-                        BackgroundPayload::Stashes(items) => {
-                            self.ui.stash.items = items;
-                            if self.should_schedule_diff_for_refresh(DiffRefreshSource::Stashes) {
-                                schedule_diff = true;
-                            }
-                            self.ui.dirty.mark_all();
-                        }
-                        BackgroundPayload::Commits(items) => {
-                            debug!(
-                                event = "commits_load_finished",
-                                count = items.len(),
-                                requested_limit = self.tasks.commits_requested_limit,
-                                "commits load finished"
-                            );
-                            self.ui.commits.items = items;
-                            self.ui.commits.dirty = false;
-                            self.ui.dirty.mark_all();
-                            if self.should_schedule_diff_for_refresh(DiffRefreshSource::Commits) {
-                                schedule_diff = true;
-                            }
-                        }
-                        BackgroundPayload::CommitsFast(items) => {
-                            debug!(
-                                event = "commits_load_finished",
-                                mode = "fast",
-                                count = items.len(),
-                                requested_limit = self.tasks.commits_requested_limit,
-                                "commits fast load finished"
-                            );
-                            self.ui.commits.items = items;
-                            self.ui.commits.dirty = true;
-                            self.ui.dirty.mark_all();
-                            if self.should_schedule_diff_for_refresh(DiffRefreshSource::Commits) {
-                                schedule_diff = true;
-                            }
-                        }
-                        BackgroundPayload::BranchCommits { branch, items } => {
-                            if self.ui.branches.commits_subview_source.as_deref()
-                                == Some(branch.as_str())
-                                && self.ui.branches.commits_subview_active
-                            {
-                                self.ui.branches.commits_subview.items = items;
-                                self.ui.branches.commits_subview_loading = false;
-                                self.ui.branches.commits_subview.panel.list_state.select(
-                                    (!self.ui.branches.commits_subview.items.is_empty())
-                                        .then_some(0),
-                                );
-                                self.ui.dirty.mark_all();
-                                if self.should_schedule_diff_for_refresh(DiffRefreshSource::Commits)
-                                {
-                                    schedule_diff = true;
-                                }
-                            }
-                        }
-                        BackgroundPayload::Diff { cache_key, diff } => {
-                            let target = self.selected_diff_target();
-                            if !self.diff.complete_load(
-                                cache_key,
-                                diff,
-                                &target,
-                                &self.files.view().tree_nodes,
-                            ) {
-                                self.schedule_diff_reload();
-                                continue;
-                            }
-                            self.ui.dirty.mark_diff();
-                        }
+                        self.ui.dirty.mark_all();
                     }
-                }
-                TaskResultKind::Failed { reason } => {
-                    if matches!(task.key, TaskKey::Status) {
-                        self.refresh.pending_refresh_fast_done = false;
+                    payload @ (BackgroundPayload::Branches(_)
+                    | BackgroundPayload::Stashes(_)
+                    | BackgroundPayload::Commits(_)
+                    | BackgroundPayload::CommitsFast(_)
+                    | BackgroundPayload::BranchCommits { .. }
+                    | BackgroundPayload::CommitFiles { .. }
+                    | BackgroundPayload::StashFiles { .. }) => {
+                        schedule_diff |= self.apply_revision_payload(payload);
                     }
-                    if matches!(task.key, TaskKey::BranchCommits { .. }) {
-                        self.ui.branches.commits_subview_loading = false;
+                    BackgroundPayload::Diff { cache_key, diff } => {
+                        let target = self.selected_diff_target();
+                        if !self.diff.complete_load(
+                            cache_key.clone(),
+                            diff.clone(),
+                            &target,
+                            &self.files.view().tree_nodes,
+                        ) {
+                            self.schedule_diff_reload(output);
+                            return;
+                        }
+                        self.ui.dirty.mark_diff();
                     }
-                    if matches!(task.key, TaskKey::Diff { .. }) {
-                        self.diff.finish_load();
-                    }
-                    self.push_log(reason, false);
                 }
             }
+            Err(reason) => {
+                let key = &completed.request.key;
+                if matches!(key, TaskKey::Status) {
+                    self.refresh.pending_refresh_fast_done = false;
+                }
+                if matches!(key, TaskKey::BranchCommits { .. }) {
+                    self.reduce_revisions(RevisionAction::BranchLoadFailed);
+                }
+                if matches!(key, TaskKey::Diff { .. }) {
+                    self.diff.finish_load();
+                }
+                self.push_log(reason.clone(), false);
+            }
         }
-
         if refresh_search {
             self.restore_search_for_active_scope();
         }
         if schedule_diff {
-            self.schedule_diff_reload();
+            self.schedule_diff_reload(output);
         }
     }
-    pub(crate) fn apply_runtime_event(&mut self, event: &RuntimeEvent) {
+    pub(crate) fn apply_runtime_event(&mut self, event: &RuntimeEvent, output: &mut CommandOutput) {
         match event {
-            RuntimeEvent::ProcessBackgroundLoads => self.process_background_refresh_tick(),
+            RuntimeEvent::ProcessBackgroundLoads => self.process_background_refresh_tick(output),
             RuntimeEvent::FlushPendingRefresh { log_success } => {
-                self.process_background_refresh_tick();
+                self.process_background_refresh_tick(output);
                 if *log_success {
                     self.push_log("refresh", true);
                 }
             }
-            RuntimeEvent::FlushPendingDiffReload => self.flush_pending_diff_reload(),
+            RuntimeEvent::FlushPendingDiffReload => self.flush_pending_diff_reload(output),
             RuntimeEvent::EnsureCommitsLoadedForActivePanel => {
-                self.ensure_commits_loaded_for_active_panel()
+                self.ensure_commits_loaded_for_active_panel(output)
             }
-            RuntimeEvent::ReloadDiffNow => self.reload_diff_now(),
+            RuntimeEvent::ReloadDiffNow => self.reload_diff_now(output),
             RuntimeEvent::RevisionOpenTreeOrToggleDir => {
                 let result = match self.ui.active_panel {
-                    SidePanel::Stash => self.stash_open_tree_or_toggle_dir(),
-                    SidePanel::Commits => self.commit_open_tree_or_toggle_dir(),
-                    SidePanel::LocalBranches => self.open_selected_branch_commits(100),
+                    SidePanel::Stash => self.stash_open_tree_or_toggle_dir(output),
+                    SidePanel::Commits => self.commit_open_tree_or_toggle_dir(output),
+                    SidePanel::LocalBranches => self.open_selected_branch_commits(100, output),
                     _ => Ok(()),
                 };
                 if let Err(err) = result {
                     self.push_log(format!("revision files failed: {err}"), false);
                 }
                 self.restore_search_for_active_scope();
-                self.reload_diff_now();
+                self.reload_diff_now(output);
                 self.ui.dirty.mark_all();
             }
         }

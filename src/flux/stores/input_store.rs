@@ -65,7 +65,7 @@ impl InputStore {
                     };
                     ctx.state.set_input_mode(None);
                     ctx.state.clear_commit_buffers();
-                    ReduceOutput::from_command(Command::Sync(DomainAction::Commit(value)))
+                    ctx.command(Command::Sync(DomainAction::Commit(value)))
                 }
                 CommitFieldFocus::Description => {
                     ctx.state.push_newline_to_commit_description();
@@ -81,7 +81,7 @@ impl InputStore {
                     return ReduceOutput::none()
                         .with_invalidation(UiInvalidation::log_and_overlay());
                 }
-                ReduceOutput::from_command(Command::Sync(DomainAction::CreateBranch(value)))
+                ctx.command(Command::Sync(DomainAction::CreateBranch(value)))
                     .with_invalidation(UiInvalidation::overlay())
             }
             InputMode::CommandPalette => {
@@ -95,7 +95,8 @@ impl InputStore {
                         .with_invalidation(UiInvalidation::log_and_overlay());
                 }
                 match ctx.state.resolve_command_palette_command(&value) {
-                    Some(action) => ReduceOutput::from_command(Command::Sync(action))
+                    Some(action) => ctx
+                        .command(Command::Sync(action))
                         .with_invalidation(UiInvalidation::overlay()),
                     None => {
                         ctx.state
@@ -121,7 +122,7 @@ impl InputStore {
                     return ReduceOutput::none()
                         .with_invalidation(UiInvalidation::log_and_overlay());
                 }
-                ReduceOutput::from_command(Command::Sync(DomainAction::StashPush {
+                ctx.command(Command::Sync(DomainAction::StashPush {
                     message: value,
                     paths,
                 }))
@@ -129,7 +130,7 @@ impl InputStore {
             }
             InputMode::Search => {
                 ctx.state.confirm_search_input();
-                ReduceOutput::from_command(Command::Sync(DomainAction::SearchConfirm))
+                ctx.command(Command::Sync(DomainAction::SearchConfirm))
                     .with_invalidation(UiInvalidation::overlay())
             }
             InputMode::BranchSwitchConfirm => ReduceOutput::none(),
@@ -163,7 +164,7 @@ impl InputStore {
             }
             InputMode::Search => {
                 ctx.state.pop_input_buffer_char();
-                ReduceOutput::from_command(Command::Sync(DomainAction::SearchSetQuery(
+                ctx.command(Command::Sync(DomainAction::SearchSetQuery(
                     ctx.state.input_buffer_clone(),
                 )))
             }
@@ -195,7 +196,7 @@ impl InputStore {
             }
             InputMode::Search => {
                 ctx.state.push_input_buffer_char(c);
-                ReduceOutput::from_command(Command::Sync(DomainAction::SearchSetQuery(
+                ctx.command(Command::Sync(DomainAction::SearchSetQuery(
                     ctx.state.input_buffer_clone(),
                 )))
             }
@@ -298,10 +299,10 @@ mod tests {
         let mut store = InputStore::new();
         let mut app = mock_app();
         app.input.mode = Some(InputMode::Search);
-        app.input.search_query = "foo".to_string();
+        app.search.set_test_current("foo".into(), Vec::new());
         reduce(&mut store, &mut app, Action::Domain(DomainAction::InputEsc));
         assert!(app.input.mode.is_none());
-        assert!(app.input.search_query.is_empty());
+        assert!(app.search.view().query.is_empty());
     }
 
     #[test]

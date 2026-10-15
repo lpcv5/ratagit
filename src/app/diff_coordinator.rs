@@ -4,9 +4,10 @@ use super::diff::{
     HunkWrite,
 };
 use super::{AppState, BackgroundLoad, RefreshKind, SidePanel};
+use crate::background::{TaskKey, TaskPriority};
 use crate::flux::action::DomainAction;
+use crate::flux::command_output::CommandOutput;
 use crate::flux::effects::EffectRequest;
-use crate::flux::task_manager::{TaskKey, TaskPriority, TaskRequestKind};
 use std::time::{Duration, Instant};
 use tracing::debug;
 
@@ -27,7 +28,7 @@ impl AppState {
         self.selected_diff_target().affected_by(source)
     }
 
-    pub(crate) fn apply_diff_action(&mut self, action: &DomainAction) {
+    pub(crate) fn apply_diff_action(&mut self, action: &DomainAction, output: &mut CommandOutput) {
         let action = match action {
             DomainAction::ToggleDiffFocus => DiffAction::ToggleFocus,
             DomainAction::SwitchDiffSide => DiffAction::SwitchSide,
@@ -58,15 +59,15 @@ impl AppState {
             DomainAction::StageHunksFinished { result } => DiffAction::StageHunksFinished(result),
             _ => return,
         };
-        let output = self
+        let update = self
             .diff
             .update(action, self.ui.active_panel == SidePanel::Files);
-        self.apply_diff_update(output);
+        self.apply_diff_update(update, output);
     }
 
-    fn apply_diff_update(&mut self, output: DiffUpdate) {
-        if let Some(write) = output.write {
-            self.effects.push(match write {
+    fn apply_diff_update(&mut self, update: DiffUpdate, output: &mut CommandOutput) {
+        if let Some(write) = update.write {
+            output.effect(match write {
                 HunkWrite::Selected {
                     id,
                     patch,
@@ -83,36 +84,34 @@ impl AppState {
                 }
             });
         }
-        if let Some((message, success)) = output.log {
+        if let Some((message, success)) = update.log {
             self.push_log(message, success);
         }
-        if output.refresh_status {
-            self.request_refresh(RefreshKind::StatusOnly);
+        if update.refresh_status {
+            self.request_refresh(RefreshKind::StatusOnly, output);
         }
-        match output.reload {
+        match update.reload {
             DiffReload::None => {}
-            DiffReload::Deferred => self.schedule_diff_reload(),
-            DiffReload::Immediate => self.reload_diff_now(),
+            DiffReload::Deferred => self.schedule_diff_reload(output),
+            DiffReload::Immediate => self.reload_diff_now(output),
         }
-        if output.redraw {
+        if update.redraw {
             self.ui.dirty.mark_all();
         }
     }
 
     pub(super) fn diff_task_key() -> TaskKey {
-        TaskKey::Diff {
-            target: "active".to_string(),
-        }
+        TaskKey::active_diff()
     }
 
-    pub(super) fn cancel_pending_diff_task(&mut self) {
-        self.cancel_background_task(&Self::diff_task_key());
+    pub(super) fn cancel_pending_diff_task(&mut self, output: &mut CommandOutput) {
+        self.cancel_background_task(&Self::diff_task_key(), output);
         self.diff.cancel_load();
     }
 
-    pub fn schedule_diff_reload(&mut self) {
+    pub fn schedule_diff_reload(&mut self, output: &mut CommandOutput) {
         self.diff.schedule_reload(Instant::now());
-        self.cancel_pending_diff_task();
+        self.cancel_pending_diff_task(output);
         debug!(event = "schedule_diff_reload", "scheduled diff reload");
     }
 
@@ -128,11 +127,11 @@ impl AppState {
         self.diff.pending_reload_at()
     }
 
-    pub fn flush_pending_diff_reload(&mut self) {
-        self.start_pending_diff_load();
+    pub fn flush_pending_diff_reload(&mut self, output: &mut CommandOutput) {
+        self.start_pending_diff_load(output);
     }
 
-    pub(super) fn start_pending_diff_load(&mut self) {
+    pub(super) fn start_pending_diff_load(&mut self, output: &mut CommandOutput) {
         if !self.diff.has_pending_reload() {
             return;
         }
@@ -145,23 +144,20 @@ impl AppState {
         }
         // The feature has already selected its next load identity. Cancel only
         // the old runtime task here, without clearing that new feature identity.
-        self.cancel_background_task(&Self::diff_task_key());
+        self.cancel_background_task(&Self::diff_task_key(), output);
         if let DiffLoad::Request { cache_key, target } = decision {
-            let request = self.tasks.task_manager.enqueue(
-                Self::diff_task_key(),
+            self.queue_background(
+                BackgroundLoad::Diff { cache_key, target },
                 TaskPriority::High,
-                TaskRequestKind::LoadDiff {
-                    target: cache_key.task_target(),
-                },
+                output,
             );
-            self.queue_background(request, BackgroundLoad::Diff { cache_key, target });
         }
         self.ui.dirty.mark_diff();
     }
 
-    pub fn reload_diff_now(&mut self) {
-        self.schedule_diff_reload();
-        self.start_pending_diff_load();
+    pub fn reload_diff_now(&mut self, output: &mut CommandOutput) {
+        self.schedule_diff_reload(output);
+        self.start_pending_diff_load(output);
     }
 
     pub fn diff_scroll_up(&mut self) {

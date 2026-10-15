@@ -55,9 +55,10 @@ impl Fixture {
             &app.files.status().untracked,
             &app.files.status().staged,
             &app.files.view().expanded_dirs,
-        );
-        app.files.test_view_mut().panel.list_state.select(Some(1));
-        app.ui.branches.items = vec![
+        )
+        .into();
+        app.files.test_view_mut().panel.select(Some(1));
+        app.revisions.branches.items = vec![
             BranchInfo {
                 name: "main".into(),
                 is_current: true,
@@ -70,9 +71,10 @@ impl Fixture {
                 name: "release".into(),
                 is_current: false,
             },
-        ];
-        app.ui.commits.items = commits(3);
-        app.ui.stash.items = vec![
+        ]
+        .into();
+        app.revisions.commits.items = commits(3).into();
+        app.revisions.stash.items = vec![
             StashInfo {
                 index: 0,
                 message: "WIP UI tests".into(),
@@ -81,10 +83,11 @@ impl Fixture {
                 index: 1,
                 message: "Save documentation".into(),
             },
-        ];
+        ]
+        .into();
         let patch = patch();
         app.diff.set_test_document(crate::git::patch::DiffDocument {
-            lines: patch.display_lines(),
+            lines: patch.display_lines().into(),
             patch: Some(Arc::new(patch)),
         });
         app.push_log("git status", true);
@@ -185,6 +188,42 @@ fn layout(snapshot: &AppStateSnapshotOwned, width: u16, height: u16) -> Rendered
 }
 
 #[test]
+fn test_retained_snapshot_renders_same_buffer_after_navigation_and_log_write() {
+    let mut fixture = Fixture::populated();
+    fixture.app.ui.active_panel = SidePanel::Commits;
+    let retained = fixture.snapshot();
+    let expected = serialize(&layout(&retained, 120, 30));
+    dispatch_test_action(&mut fixture.app, DomainAction::ListDown);
+    fixture.app.push_log("later command", false);
+    let current = fixture.snapshot();
+    assert_ne!(
+        current.commits.view().panel.selected(),
+        retained.commits.view().panel.selected()
+    );
+    assert_ne!(serialize(&layout(&current, 120, 30)), expected);
+    assert_eq!(serialize(&layout(&retained, 120, 30)), expected);
+}
+
+#[test]
+fn test_retained_search_snapshot_keeps_rendering_after_scope_and_query_changes() {
+    let mut fixture = Fixture::populated();
+    dispatch_test_action(&mut fixture.app, DomainAction::SearchSetQuery("rs".into()));
+    let retained = fixture.snapshot();
+    let expected = serialize(&layout(&retained, 120, 30));
+    assert_eq!(retained.files_search_query.as_deref(), Some("rs"));
+    dispatch_test_action(&mut fixture.app, DomainAction::PanelGoto(2));
+    dispatch_test_action(
+        &mut fixture.app,
+        DomainAction::SearchSetQuery("main".into()),
+    );
+    let current = fixture.snapshot();
+    assert!(current.files_search_query.is_none());
+    assert_eq!(current.branches_search_query.as_deref(), Some("main"));
+    assert_eq!(serialize(&layout(&retained, 120, 30)), expected);
+    assert_ne!(serialize(&layout(&current, 120, 30)), expected);
+}
+
+#[test]
 fn test_empty_layout_golden() {
     assert_golden(
         "layout_empty",
@@ -218,22 +257,16 @@ fn test_overflow_expansion_and_scrolling_goldens() {
             is_expanded: false,
         })
         .collect();
-    fixture.app.ui.branches.items = (0..30)
+    fixture.app.revisions.branches.items = (0..30)
         .map(|index| BranchInfo {
             name: format!("branch_{index:02}"),
             is_current: index == 0,
         })
         .collect();
-    fixture.app.ui.commits.items = commits(30);
-    fixture
-        .app
-        .files
-        .test_view_mut()
-        .panel
-        .list_state
-        .select(Some(29));
-    fixture.app.ui.branches.panel.list_state.select(Some(29));
-    fixture.app.ui.commits.panel.list_state.select(Some(29));
+    fixture.app.revisions.commits.items = commits(30).into();
+    fixture.app.files.test_view_mut().panel.select(Some(29));
+    fixture.app.revisions.branches.panel.select(Some(29));
+    fixture.app.revisions.commits.panel.select(Some(29));
     for (panel, name) in [
         (SidePanel::Files, "overflow_files"),
         (SidePanel::LocalBranches, "overflow_branches"),
@@ -248,7 +281,7 @@ fn test_overflow_expansion_and_scrolling_goldens() {
 fn test_narrow_layout_and_unicode_golden() {
     let mut fixture = Fixture::populated();
     fixture.app.files.test_view_mut().tree_nodes[1].path = "src/界面.rs".into();
-    fixture.app.ui.commits.items[0].message = "修复界面 e\u{301}".into();
+    fixture.app.revisions.commits.items[0].message = "修复界面 e\u{301}".into();
     assert_golden(
         "layout_narrow_unicode",
         &layout(&fixture.snapshot(), 60, 18),
@@ -291,10 +324,10 @@ fn test_revision_subviews_and_graph_highlight_goldens() {
     let mut fixture = Fixture::populated();
     let nodes = fixture.app.files.view().tree_nodes.clone();
     fixture.app.ui.active_panel = SidePanel::Commits;
-    let highlighted_oid = fixture.app.ui.commits.items[0].oid.clone();
+    let highlighted_oid = fixture.app.revisions.commits.items[0].oid.clone();
     fixture
         .app
-        .ui
+        .revisions
         .commits
         .highlighted_oids
         .insert(highlighted_oid);
@@ -302,22 +335,22 @@ fn test_revision_subviews_and_graph_highlight_goldens() {
         "commits_graph_highlight",
         &layout(&fixture.snapshot(), 120, 32),
     );
-    fixture.app.ui.commits.tree_mode.active = true;
-    fixture.app.ui.commits.tree_mode.selected_source =
-        Some(fixture.app.ui.commits.items[0].oid.clone());
-    fixture.app.ui.commits.tree_mode.nodes = nodes.clone();
+    fixture.app.revisions.commits.tree_mode.active = true;
+    fixture.app.revisions.commits.tree_mode.selected_source =
+        Some(fixture.app.revisions.commits.items[0].oid.clone());
+    fixture.app.revisions.commits.tree_mode.nodes = nodes.clone();
     assert_golden("commit_files", &layout(&fixture.snapshot(), 120, 32));
     fixture.app.ui.active_panel = SidePanel::Stash;
-    fixture.app.ui.stash.tree_mode.active = true;
-    fixture.app.ui.stash.tree_mode.selected_source = Some(0);
-    fixture.app.ui.stash.tree_mode.nodes = nodes;
+    fixture.app.revisions.stash.tree_mode.active = true;
+    fixture.app.revisions.stash.tree_mode.selected_source = Some(0);
+    fixture.app.revisions.stash.tree_mode.nodes = nodes;
     assert_golden("stash_files", &layout(&fixture.snapshot(), 120, 32));
     fixture.app.ui.active_panel = SidePanel::LocalBranches;
-    fixture.app.ui.branches.commits_subview_active = true;
-    fixture.app.ui.branches.commits_subview_source = Some("main".into());
-    fixture.app.ui.branches.commits_subview.items = commits(3);
+    fixture.app.revisions.branches.commits_subview_active = true;
+    fixture.app.revisions.branches.commits_subview_source = Some("main".into());
+    fixture.app.revisions.branches.commits_subview.items = commits(3).into();
     assert_golden("branch_commits", &layout(&fixture.snapshot(), 120, 32));
-    fixture.app.ui.branches.commits_subview_loading = true;
+    fixture.app.revisions.branches.commits_subview_loading = true;
     assert_golden(
         "branch_commits_loading",
         &layout(&fixture.snapshot(), 120, 32),
@@ -407,7 +440,8 @@ fn test_diff_scroll_and_ansi_colors_golden() {
             kind: crate::git::DiffLineKind::Removed,
             content: "old line".into(),
         },
-    ];
+    ]
+    .into();
     snapshot.diff_scroll = 1;
     assert_golden("diff_scroll_ansi", &diff(&snapshot));
     snapshot.diff_scroll = usize::MAX;
@@ -421,7 +455,8 @@ fn test_diff_unicode_cell_boundaries_golden() {
     snapshot.current_diff = vec![crate::git::DiffLine {
         kind: crate::git::DiffLineKind::Context,
         content: "界面测试 e\u{301} 👩\u{200d}💻".into(),
-    }];
+    }]
+    .into();
     assert_golden("diff_unicode", &diff(&snapshot));
 }
 
@@ -535,10 +570,10 @@ fn test_loading_indicator_all_frames_golden() {
 fn test_rendering_does_not_mutate_snapshot() {
     let snapshot = Fixture::populated().snapshot();
     let before = (
-        snapshot.files.panel.list_state,
-        snapshot.branches.panel.list_state,
-        snapshot.commits.panel.list_state,
-        snapshot.stash.panel.list_state,
+        snapshot.files.view().panel,
+        snapshot.branches.view().panel,
+        snapshot.commits.view().panel,
+        snapshot.stash.view().panel,
     );
     let first = layout(&snapshot, 120, 32);
     let second = layout(&snapshot, 120, 32);
@@ -546,10 +581,118 @@ fn test_rendering_does_not_mutate_snapshot() {
     assert_eq!(
         before,
         (
-            snapshot.files.panel.list_state,
-            snapshot.branches.panel.list_state,
-            snapshot.commits.panel.list_state,
-            snapshot.stash.panel.list_state
+            snapshot.files.view().panel,
+            snapshot.branches.view().panel,
+            snapshot.commits.view().panel,
+            snapshot.stash.view().panel
         )
     );
+}
+
+#[test]
+fn test_feature_views_keep_scrolling_and_selection_isolated_across_resize_and_subviews() {
+    use crate::app::revisions::RevisionAction;
+    use crate::flux::snapshot::AppStateSnapshot;
+
+    for case in 0..7 {
+        let mut fixture = Fixture::populated();
+        fixture.app.revisions.commits.items = commits(30).into();
+        let tree = build_file_tree(
+            &(0..30)
+                .map(|index| FileEntry {
+                    path: format!("file_{index:02}.rs").into(),
+                    status: FileStatus::Modified,
+                })
+                .collect::<Vec<_>>(),
+            &[],
+            &[],
+            &Default::default(),
+        );
+        fixture.app.files.test_view_mut().tree_nodes = tree.clone().into();
+        fixture.app.ui.active_panel = match case {
+            0 => SidePanel::Files,
+            1 | 2 => SidePanel::LocalBranches,
+            3 | 4 => SidePanel::Commits,
+            _ => SidePanel::Stash,
+        };
+        match case {
+            2 => {
+                let items = fixture.app.revisions.commits.items.clone();
+                let state = &mut fixture.app.revisions.branches;
+                state.commits_subview_active = true;
+                state.commits_subview_source = Some("main".into());
+                state.commits_subview.items = items;
+            }
+            4 => {
+                let state = &mut fixture.app.revisions.commits;
+                state.tree_mode.active = true;
+                state.tree_mode.selected_source = Some(state.items[0].oid.clone());
+                state.tree_mode.nodes = tree.clone().into();
+            }
+            6 => {
+                let state = &mut fixture.app.revisions.stash;
+                state.tree_mode.active = true;
+                state.tree_mode.selected_source = Some(0);
+                state.tree_mode.nodes = tree.clone().into();
+            }
+            _ => {}
+        }
+        for selected in [None, Some(0), Some(15), Some(29), Some(99)] {
+            let app = &mut fixture.app;
+            match case {
+                0 => app.files.test_view_mut().panel.select(selected),
+                1 => app.revisions.branches.panel.select(selected),
+                2 => app
+                    .revisions
+                    .branches
+                    .commits_subview
+                    .panel
+                    .select(selected),
+                3 | 4 => app.revisions.commits.panel.select(selected),
+                _ => app.revisions.stash.panel.select(selected),
+            }
+            let snapshot = fixture.snapshot();
+            let expected = serialize(&layout(&snapshot, 120, 24));
+            for (width, height) in [(60, 18), (120, 40), (80, 12), (120, 24)] {
+                let published = layout(&snapshot, width, height);
+                let borrowed = render(width, height, |frame| {
+                    render_layout(frame, &AppStateSnapshot::from_app(&fixture.app));
+                });
+                assert_eq!(
+                    serialize(&published),
+                    serialize(&borrowed),
+                    "case={case}, selection={selected:?}"
+                );
+            }
+            assert_eq!(serialize(&layout(&snapshot, 120, 24)), expected);
+            assert_eq!(
+                snapshot
+                    .as_snapshot()
+                    .command_env()
+                    .selection
+                    .selected_index(),
+                selected
+            );
+            assert_eq!(fixture.app.selection().selected_index(), selected);
+        }
+        // A tree close restores the parent domain cursor after local widget
+        // clamping; an out-of-range render selection must never leak back.
+        if case == 4 {
+            fixture
+                .app
+                .revisions
+                .update(RevisionAction::CloseCommitTree, SidePanel::Commits);
+            assert_eq!(
+                fixture.app.revisions.view().commits.panel.selected(),
+                Some(0)
+            );
+        }
+        if case == 6 {
+            fixture
+                .app
+                .revisions
+                .update(RevisionAction::CloseStashTree, SidePanel::Stash);
+            assert_eq!(fixture.app.revisions.view().stash.panel.selected(), Some(0));
+        }
+    }
 }

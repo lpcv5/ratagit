@@ -11,8 +11,11 @@ impl AppState {
             .update(action, self.ui.active_panel == SidePanel::Files)
     }
 
-    pub(super) fn apply_status_refresh(&mut self, status: GitStatus) {
-        self.reduce_files(FilesAction::ReplaceStatus(status));
+    pub(super) fn apply_status_refresh(
+        &mut self,
+        status: impl Into<crate::shared::Shared<GitStatus>>,
+    ) {
+        self.reduce_files(FilesAction::ReplaceStatus(status.into()));
         if self
             .file_selection()
             .selected_tree_node()

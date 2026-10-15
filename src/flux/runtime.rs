@@ -1,5 +1,5 @@
-use crate::app::AppRuntime;
-use crate::flux::action::{Action, DomainAction};
+use crate::app::{AppRuntime, Command};
+use crate::flux::action::Action;
 use crate::flux::effects::{self, EffectRequest};
 use std::collections::VecDeque;
 use std::time::Instant;
@@ -13,7 +13,7 @@ pub struct EffectCompletion {
 }
 
 /// Local Git writes preserve arrival order. Reads and fetches do not wait for
-/// that lane, and state-only events never wait for an I/O slot.
+/// that lane. This executor accepts only repository I/O requests.
 pub struct EffectExecutor {
     runtime: AppRuntime,
     writes: VecDeque<EffectRequest>,
@@ -35,17 +35,13 @@ impl EffectExecutor {
         }
     }
 
-    pub fn enqueue(&mut self, request: EffectRequest) -> Vec<Action> {
-        if let Some(event) = request.state_event() {
-            return vec![Action::Domain(DomainAction::Runtime(event))];
-        }
+    pub fn enqueue(&mut self, request: EffectRequest) {
         if request.is_write() {
             self.writes.push_back(request);
         } else {
             self.reads.push_back(request);
         }
         self.start_ready();
-        Vec::new()
     }
 
     fn start_ready(&mut self) {
@@ -97,5 +93,19 @@ impl EffectExecutor {
         }
         self.start_ready();
         completion
+    }
+}
+
+/// Relay FIFO commands at the original command-consumption boundary. Follow-up
+/// actions go directly to the action queue; only I/O enters the effect executor.
+/// Returning an action never reduces state recursively.
+pub fn route_command(command: Command, executor: &mut EffectExecutor) -> Vec<Action> {
+    match command {
+        Command::None => Vec::new(),
+        Command::Sync(action) => vec![Action::Domain(action)],
+        Command::Effect(request) => {
+            executor.enqueue(request);
+            Vec::new()
+        }
     }
 }

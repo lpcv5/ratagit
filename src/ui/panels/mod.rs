@@ -6,6 +6,7 @@ pub mod commit_editor;
 pub mod diff_panel;
 pub mod overlay_utils;
 pub mod revision_tree_panel;
+pub(crate) mod selection;
 pub mod shortcut_bar;
 pub mod stash_editor;
 

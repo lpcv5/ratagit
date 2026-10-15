@@ -74,47 +74,47 @@ mod tests {
     fn test_list_down_increments_selection() {
         let mut app = mock_app();
         app.ui.active_panel = SidePanel::Files;
-        app.files.test_view_mut().tree_nodes = vec![make_node("a.txt"), make_node("b.txt")];
-        app.files.test_view_mut().panel.list_state.select(Some(0));
+        app.files.test_view_mut().tree_nodes = vec![make_node("a.txt"), make_node("b.txt")].into();
+        app.files.test_view_mut().panel.select(Some(0));
         app.list_down();
-        assert_eq!(app.files.view().panel.list_state.selected(), Some(1));
+        assert_eq!(app.files.view().panel.selected(), Some(1));
     }
 
     #[test]
     fn test_list_down_stops_at_end() {
         let mut app = mock_app();
         app.ui.active_panel = SidePanel::Files;
-        app.files.test_view_mut().tree_nodes = vec![make_node("a.txt")];
-        app.files.test_view_mut().panel.list_state.select(Some(0));
+        app.files.test_view_mut().tree_nodes = vec![make_node("a.txt")].into();
+        app.files.test_view_mut().panel.select(Some(0));
         app.list_down();
-        assert_eq!(app.files.view().panel.list_state.selected(), Some(0));
+        assert_eq!(app.files.view().panel.selected(), Some(0));
     }
 
     #[test]
     fn test_list_up_decrements_selection() {
         let mut app = mock_app();
         app.ui.active_panel = SidePanel::Files;
-        app.files.test_view_mut().tree_nodes = vec![make_node("a.txt"), make_node("b.txt")];
-        app.files.test_view_mut().panel.list_state.select(Some(1));
+        app.files.test_view_mut().tree_nodes = vec![make_node("a.txt"), make_node("b.txt")].into();
+        app.files.test_view_mut().panel.select(Some(1));
         app.list_up();
-        assert_eq!(app.files.view().panel.list_state.selected(), Some(0));
+        assert_eq!(app.files.view().panel.selected(), Some(0));
     }
 
     #[test]
     fn test_list_up_stops_at_zero() {
         let mut app = mock_app();
         app.ui.active_panel = SidePanel::Files;
-        app.files.test_view_mut().tree_nodes = vec![make_node("a.txt")];
-        app.files.test_view_mut().panel.list_state.select(Some(0));
+        app.files.test_view_mut().tree_nodes = vec![make_node("a.txt")].into();
+        app.files.test_view_mut().panel.select(Some(0));
         app.list_up();
-        assert_eq!(app.files.view().panel.list_state.selected(), Some(0));
+        assert_eq!(app.files.view().panel.selected(), Some(0));
     }
 
     #[test]
     fn test_active_panel_count_files() {
         let mut app = mock_app();
         app.ui.active_panel = SidePanel::Files;
-        app.files.test_view_mut().tree_nodes = vec![make_node("a.txt"), make_node("b.txt")];
+        app.files.test_view_mut().tree_nodes = vec![make_node("a.txt"), make_node("b.txt")].into();
         assert_eq!(app.active_panel_count(), 2);
     }
 
@@ -122,7 +122,7 @@ mod tests {
     fn test_active_panel_count_branches() {
         let mut app = mock_app();
         app.ui.active_panel = SidePanel::LocalBranches;
-        app.ui.branches.items = vec![
+        app.revisions.branches.items = vec![
             crate::git::BranchInfo {
                 name: "main".to_string(),
                 is_current: true,
@@ -131,7 +131,8 @@ mod tests {
                 name: "dev".to_string(),
                 is_current: false,
             },
-        ];
+        ]
+        .into();
         assert_eq!(app.active_panel_count(), 2);
     }
 

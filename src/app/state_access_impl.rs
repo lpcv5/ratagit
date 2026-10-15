@@ -1,5 +1,6 @@
 use crate::app::{AppState, CommitFieldFocus, InputMode, RefreshKind, SidePanel};
 use crate::flux::action::DomainAction;
+use crate::flux::command_output::CommandOutput;
 use crate::flux::stores::state_access::{
     BranchAccess, CommandAccess, DirtyHint, FilesAccess, InputAccess, InvalidationAccess,
     LifecycleAccess, LogAccess, NavigationAccess, OverlayAccess, PanelAccess, RefreshAccess,
@@ -13,15 +14,23 @@ use std::time::Duration;
 // ---------------------------------------------------------------------------
 
 impl RuntimeAccess for AppState {
-    fn apply_repository_action(&mut self, action: &DomainAction) {
-        AppState::apply_repository_action(self, action);
+    fn apply_repository_action(&mut self, action: &DomainAction, output: &mut CommandOutput) {
+        AppState::apply_repository_action(self, action, output);
     }
-    fn apply_runtime_event(&mut self, event: &crate::flux::effects::RuntimeEvent) {
-        AppState::apply_runtime_event(self, event);
+    fn apply_runtime_event(
+        &mut self,
+        event: &crate::flux::action::RuntimeEvent,
+        output: &mut CommandOutput,
+    ) {
+        AppState::apply_runtime_event(self, event, output);
     }
 
-    fn apply_background_completed(&mut self, completed: &crate::app::BackgroundCompleted) {
-        AppState::apply_background_completed(self, completed.clone());
+    fn apply_background_completed(
+        &mut self,
+        completed: &crate::background::BackgroundCompleted,
+        output: &mut CommandOutput,
+    ) {
+        AppState::apply_background_completed(self, completed, output);
     }
 }
 
@@ -72,11 +81,11 @@ impl BranchAccess for AppState {
     }
 
     fn is_fetching_remote(&self) -> bool {
-        self.ui.branches.is_fetching_remote
+        self.revisions.view().branches.is_fetching_remote
     }
 
     fn set_fetching_remote(&mut self, fetching: bool) {
-        self.ui.branches.is_fetching_remote = fetching;
+        self.reduce_revisions(crate::app::revisions::RevisionAction::SetFetching(fetching));
     }
 
     fn has_uncommitted_changes(&self) -> bool {
@@ -273,7 +282,7 @@ impl SearchAccess for AppState {
     }
 
     fn search_query_clone(&self) -> String {
-        self.input.search_query.clone()
+        self.search.view().query.to_owned()
     }
 }
 
@@ -296,8 +305,8 @@ impl SelectionAccess for AppState {
 // ---------------------------------------------------------------------------
 
 impl RefreshAccess for AppState {
-    fn request_refresh(&mut self, kind: RefreshKind) {
-        AppState::request_refresh(self, kind);
+    fn request_refresh(&mut self, kind: RefreshKind, output: &mut CommandOutput) {
+        AppState::request_refresh(self, kind, output);
     }
 
     fn has_pending_diff_reload(&self) -> bool {
@@ -308,8 +317,8 @@ impl RefreshAccess for AppState {
         AppState::diff_reload_debounce_elapsed(self, debounce)
     }
 
-    fn schedule_diff_reload(&mut self) {
-        AppState::schedule_diff_reload(self);
+    fn schedule_diff_reload(&mut self, output: &mut CommandOutput) {
+        AppState::schedule_diff_reload(self, output);
     }
 }
 
@@ -334,8 +343,8 @@ impl OverlayAccess for AppState {
         AppState::start_stash_editor(self, targets);
     }
 
-    fn start_commit_editor_guarded(&mut self) -> bool {
-        AppState::start_commit_editor_guarded(self)
+    fn start_commit_editor_guarded(&mut self, output: &mut CommandOutput) -> bool {
+        AppState::start_commit_editor_guarded(self, output)
     }
 
     fn start_branch_switch_confirm(&mut self, target: String) {
@@ -352,15 +361,15 @@ impl OverlayAccess for AppState {
 // ---------------------------------------------------------------------------
 
 impl RevisionAccess for AppState {
-    fn stash_close_tree(&mut self) {
-        AppState::stash_close_tree(self);
+    fn stash_close_tree(&mut self, output: &mut CommandOutput) {
+        AppState::stash_close_tree(self, output);
     }
 
-    fn commit_close_tree(&mut self) {
-        AppState::commit_close_tree(self);
+    fn commit_close_tree(&mut self, output: &mut CommandOutput) {
+        AppState::commit_close_tree(self, output);
     }
 
-    fn close_branch_commits_subview(&mut self) {
-        AppState::close_branch_commits_subview(self);
+    fn close_branch_commits_subview(&mut self, output: &mut CommandOutput) {
+        AppState::close_branch_commits_subview(self, output);
     }
 }

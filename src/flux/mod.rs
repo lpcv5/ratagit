@@ -1,4 +1,5 @@
 pub mod action;
+pub mod command_output;
 pub mod dispatcher;
 pub mod effects;
 pub mod input_mapper;

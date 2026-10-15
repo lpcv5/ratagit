@@ -7,18 +7,16 @@ use std::collections::VecDeque;
 /// Test scheduling is deterministic, but Git execution and completion events
 /// use exactly the same implementation as the production effect runtime.
 pub fn run_inline_effect(app: &mut App, request: EffectRequest) -> Option<Vec<Action>> {
-    if request.state_event().is_some()
-        || matches!(
-            request,
-            EffectRequest::LoadBackground { .. }
-                | EffectRequest::StageHunks { .. }
-                | EffectRequest::ApplyHunks { .. }
-                | EffectRequest::ControlRepositoryOperation { .. }
-                | EffectRequest::StagePaths(_)
-                | EffectRequest::ToggleStageSelection { .. }
-                | EffectRequest::PrepareCommitFromVisualSelection { .. }
-        )
-    {
+    if matches!(
+        request,
+        EffectRequest::LoadBackground { .. }
+            | EffectRequest::StageHunks { .. }
+            | EffectRequest::ApplyHunks { .. }
+            | EffectRequest::ControlRepositoryOperation { .. }
+            | EffectRequest::StagePaths(_)
+            | EffectRequest::ToggleStageSelection { .. }
+            | EffectRequest::PrepareCommitFromVisualSelection { .. }
+    ) {
         Some(effects::execute(request, &*app.runtime.repo))
     } else {
         None
@@ -26,7 +24,7 @@ pub fn run_inline_effect(app: &mut App, request: EffectRequest) -> Option<Vec<Ac
 }
 
 pub fn drive_actions(app: &mut App, actions: impl IntoIterator<Item = Action>) -> Option<Command> {
-    let mut dispatcher = Dispatcher::with_default_stores();
+    let mut dispatcher = Dispatcher::with_initial_output(std::mem::take(&mut app.initial_output));
     let mut pending: VecDeque<Action> = actions.into_iter().collect();
     let mut external = None;
     loop {
@@ -34,11 +32,11 @@ pub fn drive_actions(app: &mut App, actions: impl IntoIterator<Item = Action>) -
             let envelope = dispatcher.next_envelope(action);
             dispatcher.dispatch(app, envelope).commands
         } else {
-            let effects = app.take_effects();
-            if effects.is_empty() {
+            let commands = dispatcher.take_initial_commands();
+            if commands.is_empty() {
                 break;
             }
-            effects.into_iter().map(Command::Effect).collect()
+            commands
         };
         for command in commands {
             match command {

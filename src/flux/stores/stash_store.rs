@@ -18,7 +18,7 @@ fn stash_op_selected<S: LogAccess + StashAccess + ?Sized>(
     make_effect: fn(usize) -> EffectRequest,
 ) -> ReduceOutput {
     if let Some(index) = ctx.state.selected_stash_index() {
-        return ReduceOutput::from_command(Command::Effect(make_effect(index)));
+        return ctx.command(Command::Effect(make_effect(index)));
     }
     ctx.state.push_log("no stash selected".to_string(), false);
     ReduceOutput::none()
@@ -31,7 +31,7 @@ impl<S: LogAccess + StashAccess + ?Sized> Store<S> for StashStore {
         };
         match domain {
             DomainAction::StashPush { message, paths } => {
-                ReduceOutput::from_command(Command::Effect(EffectRequest::StashPush {
+                ctx.command(Command::Effect(EffectRequest::StashPush {
                     message: message.clone(),
                     paths: paths.clone(),
                 }))
@@ -120,11 +120,12 @@ mod tests {
         let mut store = StashStore::new();
         let mut app = mock_app();
         app.ui.active_panel = crate::app::SidePanel::Stash;
-        app.ui.stash.items = vec![crate::git::StashInfo {
+        app.revisions.stash.items = vec![crate::git::StashInfo {
             index: 0,
             message: "wip".to_string(),
-        }];
-        app.ui.stash.panel.list_state.select(Some(0));
+        }]
+        .into();
+        app.revisions.stash.panel.select(Some(0));
         let output = reduce(
             &mut store,
             &mut app,
@@ -169,11 +170,12 @@ mod more_tests {
         let mut store = StashStore::new();
         let mut app = mock_app();
         app.ui.active_panel = crate::app::SidePanel::Stash;
-        app.ui.stash.items = vec![crate::git::StashInfo {
+        app.revisions.stash.items = vec![crate::git::StashInfo {
             index: 0,
             message: "wip".to_string(),
-        }];
-        app.ui.stash.panel.list_state.select(Some(0));
+        }]
+        .into();
+        app.revisions.stash.panel.select(Some(0));
         let output = reduce(
             &mut store,
             &mut app,
@@ -187,11 +189,12 @@ mod more_tests {
         let mut store = StashStore::new();
         let mut app = mock_app();
         app.ui.active_panel = crate::app::SidePanel::Stash;
-        app.ui.stash.items = vec![crate::git::StashInfo {
+        app.revisions.stash.items = vec![crate::git::StashInfo {
             index: 0,
             message: "wip".to_string(),
-        }];
-        app.ui.stash.panel.list_state.select(Some(0));
+        }]
+        .into();
+        app.revisions.stash.panel.select(Some(0));
         let output = reduce(
             &mut store,
             &mut app,
