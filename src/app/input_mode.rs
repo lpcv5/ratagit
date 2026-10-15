@@ -17,19 +17,17 @@ impl AppState {
             if self.pending_refresh_kind().is_some() {
                 self.request_refresh(RefreshKind::StatusOnly, output);
             }
-            if self.files.status().staged.is_empty() {
-                // Check if there are any files to commit
-                let total_files =
-                    self.files.status().unstaged.len() + self.files.status().untracked.len();
-                if total_files == 0 {
-                    self.push_log("nothing to commit", false);
-                    return false;
-                }
-                // Enter confirmation mode
-                self.input.mode = Some(InputMode::CommitAllConfirm);
-                self.push_log("commit all: confirm to stage all files and commit", true);
-                return true;
+            // Check if there are any files to commit
+            let total_files =
+                self.files.status().unstaged.len() + self.files.status().untracked.len();
+            if total_files == 0 {
+                self.push_log("nothing to commit", false);
+                return false;
             }
+            // Enter confirmation mode
+            self.input.mode = Some(InputMode::CommitAllConfirm);
+            self.push_log("commit all: confirm to stage all files and commit", true);
+            return true;
         }
         self.start_commit_editor();
         true
@@ -112,6 +110,27 @@ mod tests {
         let result = app.start_commit_editor_guarded();
         assert!(!result);
         assert!(app.input.mode.is_none());
+    }
+
+    #[test]
+    fn test_start_commit_editor_guarded_with_pending_refresh_requires_confirmation() {
+        let mut app = mock_app();
+        app.files
+            .test_status_mut()
+            .untracked
+            .push(crate::git::FileEntry {
+                path: "new.txt".into(),
+                status: crate::git::FileStatus::New,
+            });
+        let mut output = CommandOutput::default();
+        app.state.request_refresh(RefreshKind::Full, &mut output);
+
+        assert!(app.state.start_commit_editor_guarded(&mut output));
+
+        assert_eq!(app.input.mode, Some(InputMode::CommitAllConfirm));
+        assert_eq!(app.pending_refresh_kind(), Some(RefreshKind::Full));
+        assert!(app.files.status().staged.is_empty());
+        assert_eq!(app.files.status().untracked.len(), 1);
     }
 
     #[test]

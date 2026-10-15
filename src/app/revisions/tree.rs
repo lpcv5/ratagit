@@ -1,3 +1,4 @@
+use super::TreeModeState;
 use crate::app::states::PanelState;
 use crate::file_tree::{build_file_tree, collect_dirs, FileTreeNode, TreeCursor};
 use crate::git::FileEntry;
@@ -5,77 +6,55 @@ use crate::shared::Shared;
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-pub struct TreeModeState<'a, Id> {
-    pub tree_mode: &'a mut bool,
-    pub tree_nodes: &'a mut Shared<Vec<FileTreeNode>>,
-    pub tree_files: &'a mut Shared<Vec<FileEntry>>,
-    pub expanded_dirs: &'a mut Shared<HashSet<PathBuf>>,
-    pub selected_tree_revision: &'a mut Option<Id>,
-    pub panel: &'a mut PanelState,
-}
-
-pub fn enter_tree_mode<Id: Clone>(
+pub fn enter_tree_mode<Id>(
     selected_revision: Id,
     files: Shared<Vec<FileEntry>>,
-    state: TreeModeState<'_, Id>,
+    state: &mut TreeModeState<Id>,
+    panel: &mut PanelState,
 ) {
-    let TreeModeState {
-        tree_mode,
-        tree_nodes,
-        tree_files,
-        expanded_dirs,
-        selected_tree_revision,
-        panel,
-    } = state;
+    state.files = files;
+    state.expanded_dirs = collect_dirs_from_entries(&state.files).into();
+    state.selected_source = Some(selected_revision);
+    state.active = true;
 
-    *tree_files = files;
-    *expanded_dirs = collect_dirs_from_entries(tree_files).into();
-    *selected_tree_revision = Some(selected_revision);
-    *tree_mode = true;
-
-    rebuild_tree_nodes(tree_files, expanded_dirs, tree_nodes, panel);
-    if tree_nodes.is_empty() {
+    rebuild_tree_nodes(&state.files, &state.expanded_dirs, &mut state.nodes, panel);
+    if state.nodes.is_empty() {
         panel.select(None);
     } else {
         panel.select(Some(0));
     }
 }
 
-pub fn toggle_tree_dir(
+pub fn toggle_tree_dir<Id>(
     selected_dir_path: Option<PathBuf>,
-    tree_files: &[FileEntry],
-    expanded_dirs: &mut Shared<HashSet<PathBuf>>,
-    tree_nodes: &mut Shared<Vec<FileTreeNode>>,
+    state: &mut TreeModeState<Id>,
     panel: &mut PanelState,
 ) {
     let Some(path) = selected_dir_path else {
         return;
     };
-    if expanded_dirs.contains(&path) {
-        expanded_dirs.remove(&path);
+    if state.expanded_dirs.contains(&path) {
+        state.expanded_dirs.remove(&path);
     } else {
-        expanded_dirs.insert(path);
+        state.expanded_dirs.insert(path);
     }
-    rebuild_tree_nodes(tree_files, expanded_dirs, tree_nodes, panel);
+    rebuild_tree_nodes(&state.files, &state.expanded_dirs, &mut state.nodes, panel);
 }
 
-pub fn close_tree_mode(
-    tree_mode: &mut bool,
-    tree_nodes: &mut Shared<Vec<FileTreeNode>>,
-    tree_files: &mut Shared<Vec<FileEntry>>,
-    expanded_dirs: &mut Shared<HashSet<PathBuf>>,
+pub fn close_tree_mode<Id>(
+    state: &mut TreeModeState<Id>,
     panel: &mut PanelState,
     selected_source_index: Option<usize>,
     source_len: usize,
 ) {
-    if !*tree_mode {
+    if !state.active {
         return;
     }
 
-    *tree_mode = false;
-    *tree_files = Shared::default();
-    *tree_nodes = Shared::default();
-    *expanded_dirs = Shared::default();
+    state.active = false;
+    state.files = Shared::default();
+    state.nodes = Shared::default();
+    state.expanded_dirs = Shared::default();
 
     if let Some(idx) = selected_source_index {
         panel.select(Some(idx));

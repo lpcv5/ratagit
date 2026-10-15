@@ -753,7 +753,7 @@ async fn test_cancelled_revision_load_cannot_reopen_tree() {
     let mut app = fixture(ControlledRepo::default());
     let mut dispatcher = Dispatcher::with_default_stores();
     app.state.ui.active_panel = SidePanel::Commits;
-    app.commit_open_tree_or_toggle_dir().unwrap();
+    app.commit_open_tree_or_toggle_dir();
     let request = app.take_effects().pop().unwrap();
     let actions = effects::run(request, &app.runtime).await;
     app.commit_close_tree();

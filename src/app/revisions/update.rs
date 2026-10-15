@@ -132,13 +132,7 @@ impl RevisionState {
                         .filter(|node| node.is_dir)
                         .map(|node| node.path.clone());
                     let state = &mut self.panels.commits;
-                    tree::toggle_tree_dir(
-                        path,
-                        &state.tree_mode.files,
-                        &mut state.tree_mode.expanded_dirs,
-                        &mut state.tree_mode.nodes,
-                        &mut state.panel,
-                    );
+                    tree::toggle_tree_dir(path, &mut state.tree_mode, &mut state.panel);
                 }
             }
             RevisionAction::OpenStashTree if active == SidePanel::Stash => {
@@ -155,13 +149,7 @@ impl RevisionState {
                         .filter(|node| node.is_dir)
                         .map(|node| node.path.clone());
                     let state = &mut self.panels.stash;
-                    tree::toggle_tree_dir(
-                        path,
-                        &state.tree_mode.files,
-                        &mut state.tree_mode.expanded_dirs,
-                        &mut state.tree_mode.nodes,
-                        &mut state.panel,
-                    );
+                    tree::toggle_tree_dir(path, &mut state.tree_mode, &mut state.panel);
                 }
             }
             RevisionAction::CloseCommitTree => {
@@ -173,10 +161,7 @@ impl RevisionState {
                     .as_ref()
                     .and_then(|oid| state.items.iter().position(|commit| commit.oid == *oid));
                 tree::close_tree_mode(
-                    &mut state.tree_mode.active,
-                    &mut state.tree_mode.nodes,
-                    &mut state.tree_mode.files,
-                    &mut state.tree_mode.expanded_dirs,
+                    &mut state.tree_mode,
                     &mut state.panel,
                     selected,
                     state.items.len(),
@@ -191,10 +176,7 @@ impl RevisionState {
                     .selected_source
                     .and_then(|index| state.items.iter().position(|stash| stash.index == index));
                 tree::close_tree_mode(
-                    &mut state.tree_mode.active,
-                    &mut state.tree_mode.nodes,
-                    &mut state.tree_mode.files,
-                    &mut state.tree_mode.expanded_dirs,
+                    &mut state.tree_mode,
                     &mut state.panel,
                     selected,
                     state.items.len(),
@@ -283,36 +265,14 @@ impl RevisionState {
                 if state.tree_mode.selected_source.as_deref() != Some(&oid) {
                     return output;
                 }
-                tree::enter_tree_mode(
-                    oid,
-                    files,
-                    tree::TreeModeState {
-                        tree_mode: &mut state.tree_mode.active,
-                        tree_nodes: &mut state.tree_mode.nodes,
-                        tree_files: &mut state.tree_mode.files,
-                        expanded_dirs: &mut state.tree_mode.expanded_dirs,
-                        selected_tree_revision: &mut state.tree_mode.selected_source,
-                        panel: &mut state.panel,
-                    },
-                );
+                tree::enter_tree_mode(oid, files, &mut state.tree_mode, &mut state.panel);
             }
             RevisionAction::StashFilesLoaded { index, files } => {
                 let state = &mut self.panels.stash;
                 if state.tree_mode.selected_source != Some(index) {
                     return output;
                 }
-                tree::enter_tree_mode(
-                    index,
-                    files,
-                    tree::TreeModeState {
-                        tree_mode: &mut state.tree_mode.active,
-                        tree_nodes: &mut state.tree_mode.nodes,
-                        tree_files: &mut state.tree_mode.files,
-                        expanded_dirs: &mut state.tree_mode.expanded_dirs,
-                        selected_tree_revision: &mut state.tree_mode.selected_source,
-                        panel: &mut state.panel,
-                    },
-                );
+                tree::enter_tree_mode(index, files, &mut state.tree_mode, &mut state.panel);
             }
             RevisionAction::BranchLoadFailed => {
                 self.panels.branches.commits_subview_loading = false

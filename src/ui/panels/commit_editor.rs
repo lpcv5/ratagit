@@ -18,18 +18,6 @@ pub fn render_commit_editor(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) 
 
     let theme = UiTheme::default();
     let area = centered_rect(frame.area(), 70, 60);
-    // Render chrome with empty title first; we'll overwrite with the dynamic title below.
-    let inner = render_overlay_chrome(frame, area, "", &theme);
-
-    let sections = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Min(0),
-            Constraint::Length(1),
-        ])
-        .split(inner);
-
     let message_active = snapshot.commit_focus == CommitFieldFocus::Message;
     let desc_active = snapshot.commit_focus == CommitFieldFocus::Description;
     let (msg_line, msg_col) = line_col(snapshot.commit_message_buffer);
@@ -40,12 +28,20 @@ pub fn render_commit_editor(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) 
         ("Description", desc_line, desc_col)
     };
 
-    // Overwrite the outer block with the dynamic title.
     let outer_title = format!(
         "Commit Editor | Focus: {} | Ln {} Col {}",
         focus_name, focus_line, focus_col
     );
-    frame.render_widget(card(&theme, &outer_title, true), area);
+    let inner = render_overlay_chrome(frame, area, &outer_title, &theme);
+
+    let sections = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Min(0),
+            Constraint::Length(1),
+        ])
+        .split(inner);
 
     let message = Paragraph::new(snapshot.commit_message_buffer).block(card(
         &theme,

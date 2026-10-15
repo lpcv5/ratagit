@@ -237,7 +237,7 @@ impl App {
         self.state
             .apply_runtime_event(event, &mut self.initial_output)
     }
-    pub fn commit_open_tree_or_toggle_dir(&mut self) -> Result<()> {
+    pub fn commit_open_tree_or_toggle_dir(&mut self) {
         self.state
             .commit_open_tree_or_toggle_dir(&mut self.initial_output)
     }
