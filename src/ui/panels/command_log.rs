@@ -1,9 +1,11 @@
 use crate::app::InputMode;
 use crate::flux::snapshot::AppStateSnapshot;
+use crate::ui::components::atoms::{badge, Tone};
+use crate::ui::components::molecules::card;
 use crate::ui::theme::UiTheme;
 use ratatui::{
     layout::Rect,
-    style::{Color, Style},
+    style::Style,
     text::{Line, Span},
     widgets::Paragraph,
     Frame,
@@ -16,7 +18,7 @@ pub fn render_command_log(frame: &mut Frame, area: Rect, snapshot: &AppStateSnap
     if snapshot.input_mode == Some(InputMode::CreateBranch) {
         lines.push(Line::from(Span::styled(
             format!("branch> {}", snapshot.input_buffer),
-            Style::default().fg(Color::Yellow),
+            Style::default().fg(theme.warning),
         )));
     }
 
@@ -28,7 +30,7 @@ pub fn render_command_log(frame: &mut Frame, area: Rect, snapshot: &AppStateSnap
             )));
         }
     } else {
-        let available = 3usize.saturating_sub(lines.len());
+        let available = usize::from(area.height.saturating_sub(2)).saturating_sub(lines.len());
         lines.extend(
             snapshot
                 .command_log
@@ -36,21 +38,23 @@ pub fn render_command_log(frame: &mut Frame, area: Rect, snapshot: &AppStateSnap
                 .rev()
                 .take(available)
                 .map(|entry| {
-                    let color = if entry.success {
-                        Color::Green
+                    let (label, tone) = if entry.success {
+                        ("OK", Tone::Success)
                     } else {
-                        Color::Red
+                        ("ERR", Tone::Danger)
                     };
-                    let prefix = if entry.success { "✓ " } else { "✗ " };
-                    Line::from(Span::styled(
-                        format!("{}{}", prefix, entry.command),
-                        Style::default().fg(color),
-                    ))
+                    Line::from(vec![
+                        badge(label, tone, &theme),
+                        Span::styled(
+                            format!(" {}", entry.command),
+                            Style::default().fg(theme.text_primary),
+                        ),
+                    ])
                 }),
         );
     }
 
-    let paragraph = Paragraph::new(lines).block(theme.panel_block("Command Log", false));
+    let paragraph = Paragraph::new(lines).block(card(&theme, "Command Log", false));
 
     frame.render_widget(paragraph, area);
 }

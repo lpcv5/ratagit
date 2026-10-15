@@ -128,8 +128,12 @@ fn test_primary_fifo_preserves_reads_between_cross_capability_writes() {
 fn test_stash_mutations_and_reads_share_primary_fifo() {
     let (dir, repo) = init_repo_with_commit();
     write_file(&dir.path().join("tracked.txt"), "stash sequence\n");
-    // CLI stash needs a repository-local identity, independent of user configuration.
+    // Keep CLI identity and checkout line endings independent of host configuration.
     let raw = git2::Repository::open(dir.path()).unwrap();
+    raw.config()
+        .unwrap()
+        .set_bool("core.autocrlf", false)
+        .unwrap();
     raw.config()
         .unwrap()
         .set_str("user.name", "tester")

@@ -1,5 +1,6 @@
 use crate::app::InputMode;
 use crate::flux::snapshot::AppStateSnapshot;
+use crate::ui::components::molecules::card;
 use crate::ui::panels::{centered_rect, render_overlay_chrome};
 use crate::ui::theme::UiTheme;
 use ratatui::{
@@ -33,7 +34,7 @@ pub fn render_stash_editor(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
         .split(inner);
 
     let message = Paragraph::new(snapshot.stash_message_buffer)
-        .block(theme.panel_block("Title", true))
+        .block(card(&theme, "Title", true))
         .style(Style::default().fg(theme.text_primary));
     frame.render_widget(message, sections[0]);
 

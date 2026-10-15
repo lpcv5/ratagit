@@ -17,9 +17,9 @@ text:
 symbol boundaries: []
 
 styles:
-0: Style::new().fg(Color::Rgb(82, 196, 208)).bg(Color::Reset).underline_color(Color::Reset); diff=None; skip=false
+0: Style::new().fg(Color::Rgb(121, 184, 255)).bg(Color::Reset).underline_color(Color::Reset); diff=None; skip=false
 1: Style::new().fg(Color::Reset).bg(Color::Reset).underline_color(Color::Reset); diff=None; skip=false
-2: Style::new().white().bg(Color::Reset).underline_color(Color::Reset); diff=None; skip=false
+2: Style::new().fg(Color::Rgb(218, 225, 234)).bg(Color::Reset).underline_color(Color::Reset); diff=None; skip=false
 
 style runs (x start..end exclusive = style):
 00: 0..1=0 1..2=1 2..12=2 12..24=1

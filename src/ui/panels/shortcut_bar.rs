@@ -1,6 +1,7 @@
 use crate::app::InputMode;
 use crate::flux::snapshot::AppStateSnapshot;
 use crate::ui::components::loading_indicator::LoadingIndicator;
+use crate::ui::components::molecules::shortcut_hint;
 use crate::ui::theme::UiTheme;
 use ratatui::{
     layout::Rect,
@@ -14,7 +15,7 @@ pub fn render_shortcut_bar(frame: &mut Frame, area: Rect, snapshot: &AppStateSna
     let theme = UiTheme::default();
     let hints = &snapshot.shortcut_hints;
 
-    let mut spans = Vec::new();
+    let mut spans = vec![Span::raw(" ")];
 
     // Show animated spinner when background Git tasks are running.
     if snapshot.has_background_tasks {
@@ -44,19 +45,14 @@ pub fn render_shortcut_bar(frame: &mut Frame, area: Rect, snapshot: &AppStateSna
     }
     for (idx, (keys, desc)) in hints.iter().enumerate() {
         if idx > 0 {
-            spans.push(Span::raw("   "));
+            spans.push(Span::raw("  "));
         }
-        spans.push(Span::styled(
-            format!("[{}]", keys),
-            Style::default().fg(theme.accent),
-        ));
-        spans.push(Span::raw(" "));
-        spans.push(Span::styled(
-            desc.as_str(),
-            Style::default().fg(theme.text_primary),
-        ));
+        spans.extend(shortcut_hint(keys, desc, &theme));
     }
 
-    let line = Line::from(spans).style(Style::default().bg(theme.shortcut_bg));
-    frame.render_widget(Paragraph::new(line), area);
+    let line = Line::from(spans);
+    frame.render_widget(
+        Paragraph::new(line).style(Style::default().bg(theme.shortcut_bg)),
+        area,
+    );
 }

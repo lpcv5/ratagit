@@ -1,5 +1,6 @@
 use crate::app::SidePanel;
 use crate::git::{DiffLine, DiffLineKind};
+use crate::ui::components::molecules::{card, EmptyState};
 use crate::ui::theme::UiTheme;
 use ratatui::{
     layout::Rect,
@@ -21,10 +22,10 @@ pub fn render_diff_panel(frame: &mut Frame, area: Rect, props: DiffViewProps<'_>
     let theme = UiTheme::default();
 
     if props.is_loading {
-        let paragraph = ratatui::widgets::Paragraph::new("Loading diff...")
-            .style(Style::default().fg(theme.text_muted))
-            .block(theme.panel_block("Diff", props.hunks.interaction.focused));
-        frame.render_widget(paragraph, area);
+        let block = card(&theme, "Diff", props.hunks.interaction.focused);
+        let inner = block.inner(area);
+        frame.render_widget(block, area);
+        frame.render_widget(EmptyState::new("Loading diff...", &theme), inner);
         return;
     }
 
@@ -39,10 +40,10 @@ pub fn render_diff_panel(frame: &mut Frame, area: Rect, props: DiffViewProps<'_>
                 SidePanel::Stash => "Select a stash entry/file to view diff",
             },
         };
-        let paragraph = ratatui::widgets::Paragraph::new(hint)
-            .style(Style::default().fg(theme.text_muted))
-            .block(theme.panel_block("Diff", props.hunks.interaction.focused));
-        frame.render_widget(paragraph, area);
+        let block = card(&theme, "Diff", props.hunks.interaction.focused);
+        let inner = block.inner(area);
+        frame.render_widget(block, area);
+        frame.render_widget(EmptyState::new(hint, &theme), inner);
         return;
     }
 
@@ -66,10 +67,19 @@ pub fn render_diff_panel(frame: &mut Frame, area: Rect, props: DiffViewProps<'_>
             }
 
             let (mut style, prefix) = match line.kind {
-                DiffLineKind::Added => (Style::default().fg(Color::Green), "+"),
-                DiffLineKind::Removed => (Style::default().fg(Color::Red), "-"),
-                DiffLineKind::Header => (Style::default().fg(Color::Cyan), ""),
-                DiffLineKind::Context => (Style::default().fg(Color::Gray), " "),
+                DiffLineKind::Added => (
+                    Style::default().fg(theme.success).bg(theme.diff_added_bg),
+                    "+",
+                ),
+                DiffLineKind::Removed => (
+                    Style::default().fg(theme.error).bg(theme.diff_removed_bg),
+                    "-",
+                ),
+                DiffLineKind::Header => (
+                    Style::default().fg(theme.accent).bg(theme.surface_raised),
+                    "",
+                ),
+                DiffLineKind::Context => (Style::default().fg(theme.text_primary), " "),
             };
             let span = rows.iter().find(|span| span.range.contains(&index));
             let hunk = span.map(|span| span.id);
@@ -78,7 +88,7 @@ pub fn render_diff_panel(frame: &mut Frame, area: Rect, props: DiffViewProps<'_>
             let mut marker = String::new();
             if props.hunks.interaction.focused {
                 if cursor {
-                    style = style.bg(Color::DarkGray);
+                    style = style.bg(theme.selection_bg);
                 }
                 if selected {
                     style = style.add_modifier(ratatui::style::Modifier::BOLD);
@@ -111,7 +121,7 @@ pub fn render_diff_panel(frame: &mut Frame, area: Rect, props: DiffViewProps<'_>
                 ),
                 style,
             )]);
-            ListItem::new(text)
+            ListItem::new(text).style(style)
         })
         .collect();
 
@@ -167,11 +177,7 @@ pub fn render_diff_panel(frame: &mut Frame, area: Rect, props: DiffViewProps<'_>
         format!("Diff [{}-{} / {}]{status}", scroll + 1, end, total)
     };
 
-    let list = List::new(items).block(
-        theme
-            .panel_block("Diff", props.hunks.interaction.focused)
-            .title(title),
-    );
+    let list = List::new(items).block(card(&theme, &title, props.hunks.interaction.focused));
 
     frame.render_widget(list, area);
 }

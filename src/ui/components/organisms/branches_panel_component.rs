@@ -1,5 +1,7 @@
 use crate::app::revisions::BranchesRenderView;
 use crate::app::SidePanel;
+use crate::ui::components::atoms::{badge, Tone};
+use crate::ui::components::molecules::card;
 use crate::ui::components::organisms::{
     commits_panel_component::draw_commits_panel, empty_list_item, title_with_search,
     PanelRenderContext,
@@ -73,7 +75,9 @@ pub fn draw_branches_panel(
     let title = title_with_search("Local Branches", ctx.search_summary);
 
     let list = List::new(items)
-        .block(theme.panel_block(&title, is_active))
+        .block(card(&theme, &title, is_active).title_top(
+            Line::from(badge(state.items.len().to_string(), Tone::Neutral, &theme)).right_aligned(),
+        ))
         .scroll_padding(LIST_SCROLL_PADDING)
         .highlight_style(highlight);
 

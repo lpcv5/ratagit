@@ -1,11 +1,12 @@
 use crate::app::InputMode;
 use crate::flux::snapshot::AppStateSnapshot;
+use crate::ui::components::molecules::{card, shortcut_hint};
 use crate::ui::panels::{centered_rect, render_overlay_chrome};
 use crate::ui::theme::UiTheme;
 use ratatui::{
     layout::{Constraint, Direction, Layout},
     style::Style,
-    text::Line,
+    text::{Line, Span},
     widgets::Paragraph,
     Frame,
 };
@@ -29,7 +30,7 @@ pub fn render_command_palette(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>
         .split(inner);
 
     let input = Paragraph::new(format!(":{}", snapshot.input_buffer))
-        .block(theme.panel_block("Command", true))
+        .block(card(&theme, "Command", true))
         .style(Style::default().fg(theme.text_primary));
     frame.render_widget(input, sections[0]);
 
@@ -53,23 +54,27 @@ pub fn render_command_palette(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>
                 } else {
                     command.keys.join("/")
                 };
-                Line::from(format!("{}  {}  ({})", keys, command.name, command.label))
+                let mut spans = shortcut_hint(&keys, command.name, &theme);
+                spans.push(Span::styled(
+                    format!("  ({})", command.label),
+                    Style::default().fg(theme.text_muted),
+                ));
+                Line::from(spans)
             })
             .collect()
     };
     let commands_title = format!("Commands ({})", available.len());
     let commands = Paragraph::new(rows)
         .style(Style::default().fg(theme.text_muted))
-        .block(theme.panel_block(&commands_title, false));
+        .block(card(&theme, &commands_title, false));
     frame.render_widget(commands, sections[1]);
 
     let help = Paragraph::new(Line::from(
         snapshot
             .shortcut_hints
             .iter()
-            .map(|(key, label)| format!("{key} {label}"))
-            .collect::<Vec<_>>()
-            .join(" | "),
+            .flat_map(|(key, label)| shortcut_hint(key, &format!("{label}  "), &theme))
+            .collect::<Vec<_>>(),
     ))
     .style(Style::default().fg(theme.accent));
     frame.render_widget(help, sections[2]);

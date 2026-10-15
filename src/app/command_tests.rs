@@ -617,8 +617,8 @@ fn test_palette_renders_registry_keys_and_modal_help() {
         .map(|cell| cell.symbol())
         .collect();
     assert!(content.contains("x  stage  (Stage)"));
-    assert!(content.contains("Enter Run"));
-    assert!(content.contains("Esc Cancel"));
+    assert!(content.contains("Enter  Run"));
+    assert!(content.contains("Esc  Cancel"));
     assert!(!content.contains("Space  stage"));
 }
 

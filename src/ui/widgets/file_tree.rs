@@ -5,7 +5,7 @@ use crate::ui::LIST_SCROLL_PADDING;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, List, ListItem, ListState, StatefulWidget},
 };
@@ -66,9 +66,7 @@ impl<'a> FileTree<'a> {
         Self {
             nodes,
             block: None,
-            highlight_style: Style::default()
-                .bg(Color::DarkGray)
-                .add_modifier(Modifier::BOLD),
+            highlight_style: UiTheme::default().active_highlight(),
             selected_indices: empty_selected_indices(),
             search_query: None,
             theme: UiTheme::default(),

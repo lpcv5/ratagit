@@ -1,5 +1,6 @@
 use crate::app::InputMode;
 use crate::flux::snapshot::AppStateSnapshot;
+use crate::ui::components::molecules::shortcut_hint;
 use crate::ui::panels::{centered_rect, render_overlay_chrome};
 use crate::ui::theme::UiTheme;
 use ratatui::{
@@ -40,8 +41,12 @@ pub fn render_commit_all_confirm(frame: &mut Frame, snapshot: &AppStateSnapshot<
     frame.render_widget(detail, sections[1]);
 
     let actions = Paragraph::new(Line::from(
-        "[Y] Stage All + Commit    [N/Esc] Cancel    [Enter] Confirm Y",
-    ))
-    .style(Style::default().fg(theme.accent));
+        [
+            shortcut_hint("Y", "Stage All + Commit  ", &theme),
+            shortcut_hint("N/Esc", "Cancel  ", &theme),
+            shortcut_hint("Enter", "Confirm Y", &theme),
+        ]
+        .concat(),
+    ));
     frame.render_widget(actions, sections[2]);
 }

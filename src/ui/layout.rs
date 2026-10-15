@@ -8,8 +8,11 @@ use crate::ui::panels::{
     render_commit_all_confirm, render_commit_editor, render_diff_panel, render_shortcut_bar,
     render_stash_editor, DiffViewProps,
 };
+use crate::ui::theme::UiTheme;
 use ratatui::{
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Margin},
+    style::Style,
+    widgets::Block,
     Frame,
 };
 
@@ -22,16 +25,26 @@ const LEFT_PANEL_FOCUS_SPLIT: [u16; 3] = [60, 20, 20];
 
 pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
     let size = frame.area();
+    let theme = UiTheme::default();
+    frame.render_widget(
+        Block::default().style(Style::default().bg(theme.canvas)),
+        size,
+    );
+    let roomy = size.width >= 100 && size.height >= 28;
+    let gap = u16::from(roomy);
+    let footer_height = if roomy { 2 } else { SHORTCUT_BAR_HEIGHT };
     let vertical = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(0), Constraint::Length(SHORTCUT_BAR_HEIGHT)])
+        .constraints([Constraint::Min(0), Constraint::Length(footer_height)])
         .split(size);
+    let workspace = vertical[0].inner(Margin::new(u16::from(roomy), 0));
 
     // Horizontal split: Left (30%) | Right (70%)
     let horizontal = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
-        .split(vertical[0]);
+        .spacing(u16::from(roomy))
+        .split(workspace);
 
     let left_h = horizontal[0].height;
     let stash_focused = snapshot.active_panel == SidePanel::Stash;
@@ -39,13 +52,13 @@ pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
     // Stash panel: COLLAPSED_HEIGHT when not focused, else share remaining space
     let stash_h = if stash_focused {
         // Give stash ~25% of left height
-        (left_h / 4).max(COLLAPSED_HEIGHT)
+        (left_h / 4).max(COLLAPSED_HEIGHT).min(left_h)
     } else {
-        COLLAPSED_HEIGHT
+        COLLAPSED_HEIGHT.min(left_h)
     };
 
     // Files and branches/commits share the remaining height
-    let top_h = left_h.saturating_sub(stash_h);
+    let top_h = left_h.saturating_sub(stash_h + gap);
     let top_rect = ratatui::layout::Rect {
         height: top_h,
         ..horizontal[0]
@@ -59,6 +72,7 @@ pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
             Constraint::Percentage(LEFT_PANEL_DEFAULT_SPLIT[1]),
             Constraint::Percentage(LEFT_PANEL_DEFAULT_SPLIT[2]),
         ])
+        .spacing(gap)
         .split(top_rect);
 
     let focus_index = match snapshot.active_panel {
@@ -129,10 +143,11 @@ pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
     let left_panels = Layout::default()
         .direction(Direction::Vertical)
         .constraints(left_constraints)
+        .spacing(gap)
         .split(top_rect);
 
     let stash_area = ratatui::layout::Rect {
-        y: horizontal[0].y + top_h,
+        y: horizontal[0].bottom().saturating_sub(stash_h),
         height: stash_h,
         ..horizontal[0]
     };
@@ -183,15 +198,15 @@ pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
     // Right side: diff + command log
     // Command log collapses to COLLAPSED_HEIGHT when stash is not the concern
     let right_h = horizontal[1].height;
-    let log_h = COLLAPSED_HEIGHT;
-    let diff_h = right_h.saturating_sub(log_h);
+    let log_h = COLLAPSED_HEIGHT.min(right_h);
+    let diff_h = right_h.saturating_sub(log_h + gap);
 
     let diff_area = ratatui::layout::Rect {
         height: diff_h,
         ..horizontal[1]
     };
     let log_area = ratatui::layout::Rect {
-        y: horizontal[1].y + diff_h,
+        y: horizontal[1].bottom().saturating_sub(log_h),
         height: log_h,
         ..horizontal[1]
     };

@@ -1,8 +1,10 @@
 use ratatui::style::{Color, Modifier, Style};
-use ratatui::widgets::{Block, BorderType, Borders};
 
 #[derive(Debug, Clone, Copy)]
 pub struct UiTheme {
+    pub canvas: Color,
+    pub surface: Color,
+    pub surface_raised: Color,
     pub accent: Color,
     pub border_inactive: Color,
     pub text_primary: Color,
@@ -16,48 +18,36 @@ pub struct UiTheme {
 
     pub selection_bg: Color,
     pub visual_selection_bg: Color,
+    pub diff_added_bg: Color,
+    pub diff_removed_bg: Color,
 }
 
 impl Default for UiTheme {
     fn default() -> Self {
         Self {
-            accent: Color::Rgb(82, 196, 208),
-            border_inactive: Color::DarkGray,
-            text_primary: Color::White,
-            text_muted: Color::Gray,
-            shortcut_bg: Color::Rgb(20, 28, 32),
+            canvas: Color::Rgb(13, 17, 23),
+            surface: Color::Rgb(22, 27, 34),
+            surface_raised: Color::Rgb(33, 40, 50),
+            accent: Color::Rgb(121, 184, 255),
+            border_inactive: Color::Rgb(48, 57, 69),
+            text_primary: Color::Rgb(218, 225, 234),
+            text_muted: Color::Rgb(139, 153, 171),
+            shortcut_bg: Color::Rgb(22, 27, 34),
 
-            success: Color::Green,
-            warning: Color::Yellow,
-            error: Color::Red,
-            info: Color::Cyan,
+            success: Color::Rgb(126, 211, 161),
+            warning: Color::Rgb(230, 190, 115),
+            error: Color::Rgb(245, 141, 148),
+            info: Color::Rgb(165, 180, 252),
 
-            selection_bg: Color::Rgb(34, 52, 58),
-            visual_selection_bg: Color::Rgb(60, 80, 100),
+            selection_bg: Color::Rgb(37, 57, 82),
+            visual_selection_bg: Color::Rgb(46, 58, 86),
+            diff_added_bg: Color::Rgb(24, 46, 36),
+            diff_removed_bg: Color::Rgb(51, 30, 37),
         }
     }
 }
 
 impl UiTheme {
-    pub fn panel_block<'a>(&self, title: &'a str, is_active: bool) -> Block<'a> {
-        Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .title(title)
-            .border_style(if is_active {
-                Style::default().fg(self.accent)
-            } else {
-                Style::default().fg(self.border_inactive)
-            })
-            .title_style(if is_active {
-                Style::default()
-                    .fg(self.accent)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(self.border_inactive)
-            })
-    }
-
     pub fn active_highlight(&self) -> Style {
         Style::default()
             .bg(self.selection_bg)
@@ -66,7 +56,7 @@ impl UiTheme {
     }
 
     pub fn inactive_highlight(&self) -> Style {
-        Style::default()
+        Style::default().bg(self.surface_raised)
     }
 
     pub fn highlight_for(&self, is_active: bool) -> Style {

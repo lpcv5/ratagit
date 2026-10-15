@@ -1,6 +1,7 @@
 use crate::app::files::FilesRenderView;
 use crate::app::SidePanel;
-use crate::ui::components::organisms::{empty_list_item, title_with_search, PanelRenderContext};
+use crate::ui::components::molecules::{card, EmptyState};
+use crate::ui::components::organisms::{title_with_search, PanelRenderContext};
 use crate::ui::theme::UiTheme;
 use crate::ui::traits::DynamicPanel;
 use crate::ui::widgets::file_tree::FileTree;
@@ -21,12 +22,12 @@ pub fn draw_files_panel(
         "Files"
     };
     let title = title_with_search(base, ctx.search_summary);
-    let block = theme.panel_block(&title, is_active);
+    let block = card(&theme, &title, is_active);
 
     if state.tree_nodes.is_empty() {
-        let items = empty_list_item("No changes");
-        let list = ratatui::widgets::List::new(items).block(block);
-        frame.render_widget(list, area);
+        let inner = block.inner(area);
+        frame.render_widget(block, area);
+        frame.render_widget(EmptyState::new("No changes", &theme), inner);
         return;
     }
 
