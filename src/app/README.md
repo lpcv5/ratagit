@@ -383,14 +383,17 @@ cloning. Command selectors consume the same views directly from domain state or
 from a published model, so navigation, command availability and diff identities
 share one set of selection rules.
 
-The UI adapter in `ui/panels/selection.rs` creates a fresh `ListState` from
-`PanelView`. As before, every frame starts at offset zero and Ratatui/FileTree
-calculates a local viewport using selection, area and the existing scroll padding.
+The UI loop retains `ui::RenderState` across frames. The adapter in
+`ui/panels/selection.rs` applies each immutable `PanelView` to its own viewport,
+keeping two context rows above and below the cursor where space permits.
+Parent lists, revision trees, branch histories, help and diff navigation retain
+independent offsets; a new tree/history source resets its viewport. Resizing or
+shrinking a list clamps its viewport and short panels reduce the padding.
 Rendering never writes the calculated offset or a clamped selection back to
 domain state or retained snapshots. Layout policies implement `DynamicPanel` on
 render views rather than domain panel types.
 
-Regression tests compare legacy list scrolling, retained source/cursor/highlight
+Regression tests cover early scrolling in both directions, retained source/cursor/highlight
 metadata, selectors through navigation in all seven view contexts, borrowed and
 published rendering across resizes, and tree-close restoration after widget
 clamping. Allocation checks also prove that snapshots do not retain internal

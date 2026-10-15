@@ -4,12 +4,12 @@ cursor: None
 
 text:
 00: " ╭ Files ──────────────────────────╮ ╭ Diff [Hunk 1/1 | 1 selected | README.md] ──────────────────────────────────────╮ "
-01: " │▼ src/                           │ │>[x] Unstaged @@ -1,2 +1,2 @@                                                   │ "
-02: " │  ✎ main.rs                      │ │>[x]  # Ratagit                                                                 │ "
-03: " │  ✖ old.rs                       │ │>[x] -Old description                                                           │ "
-04: " │● README.md                      │ │>[x] +Tested terminal UI                                                        │ "
-05: " │? notes.txt                      │ │                                                                                │ "
-06: " │                                 │ │                                                                                │ "
+01: " │▼ src/                           │ │ [ ] --- a/README.md                                                            │ "
+02: " │  ✎ main.rs                      │ │ [ ] +++ b/README.md                                                            │ "
+03: " │  ✖ old.rs                       │ │>[x] Unstaged @@ -1,2 +1,2 @@                                                   │ "
+04: " │● README.md                      │ │>[x]  # Ratagit                                                                 │ "
+05: " │? notes.txt                      │ │>[x] -Old description                                                           │ "
+06: " │                                 │ │>[x] +Tested terminal UI                                                        │ "
 07: " ╰─────────────────────────────────╯ │                                                                                │ "
 08: "                                     │                                                                                │ "
 09: " ╭ Local Branches ────────────── 3 ╮ │                                                                                │ "
@@ -46,16 +46,16 @@ styles:
 4: Style::new().fg(Color::Rgb(121, 184, 255)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset).bold(); diff=None; skip=false
 5: Style::new().fg(Color::Rgb(165, 180, 252)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset); diff=None; skip=false
 6: Style::new().fg(Color::Rgb(218, 225, 234)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset); diff=None; skip=false
-7: Style::new().fg(Color::Rgb(121, 184, 255)).bg(Color::Rgb(37, 57, 82)).underline_color(Color::Reset).bold(); diff=None; skip=false
+7: Style::new().fg(Color::Rgb(121, 184, 255)).bg(Color::Rgb(33, 40, 50)).underline_color(Color::Reset); diff=None; skip=false
 8: Style::new().fg(Color::Rgb(218, 225, 234)).bg(Color::Rgb(33, 40, 50)).underline_color(Color::Reset); diff=None; skip=false
 9: Style::new().fg(Color::Rgb(230, 190, 115)).bg(Color::Rgb(33, 40, 50)).underline_color(Color::Reset); diff=None; skip=false
-10: Style::new().fg(Color::Rgb(218, 225, 234)).bg(Color::Rgb(37, 57, 82)).underline_color(Color::Reset).bold(); diff=None; skip=false
-11: Style::new().fg(Color::Rgb(245, 141, 148)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset); diff=None; skip=false
-12: Style::new().fg(Color::Rgb(245, 141, 148)).bg(Color::Rgb(37, 57, 82)).underline_color(Color::Reset).bold(); diff=None; skip=false
-13: Style::new().fg(Color::Rgb(126, 211, 161)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset); diff=None; skip=false
-14: Style::new().fg(Color::Rgb(126, 211, 161)).bg(Color::Rgb(37, 57, 82)).underline_color(Color::Reset).bold(); diff=None; skip=false
-15: Style::new().fg(Color::Rgb(139, 153, 171)).bg(Color::Rgb(33, 40, 50)).underline_color(Color::Reset); diff=None; skip=false
-16: Style::new().fg(Color::Rgb(121, 184, 255)).bg(Color::Rgb(33, 40, 50)).underline_color(Color::Reset); diff=None; skip=false
+10: Style::new().fg(Color::Rgb(245, 141, 148)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset); diff=None; skip=false
+11: Style::new().fg(Color::Rgb(121, 184, 255)).bg(Color::Rgb(37, 57, 82)).underline_color(Color::Reset).bold(); diff=None; skip=false
+12: Style::new().fg(Color::Rgb(126, 211, 161)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset); diff=None; skip=false
+13: Style::new().fg(Color::Rgb(218, 225, 234)).bg(Color::Rgb(37, 57, 82)).underline_color(Color::Reset).bold(); diff=None; skip=false
+14: Style::new().fg(Color::Rgb(245, 141, 148)).bg(Color::Rgb(37, 57, 82)).underline_color(Color::Reset).bold(); diff=None; skip=false
+15: Style::new().fg(Color::Rgb(126, 211, 161)).bg(Color::Rgb(37, 57, 82)).underline_color(Color::Reset).bold(); diff=None; skip=false
+16: Style::new().fg(Color::Rgb(139, 153, 171)).bg(Color::Rgb(33, 40, 50)).underline_color(Color::Reset); diff=None; skip=false
 17: Style::new().fg(Color::Rgb(126, 211, 161)).bg(Color::Rgb(33, 40, 50)).underline_color(Color::Reset); diff=None; skip=false
 18: Style::new().fg(Color::Rgb(230, 190, 115)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset); diff=None; skip=false
 19: Style::new().fg(Color::Rgb(245, 141, 148)).bg(Color::Rgb(51, 30, 37)).underline_color(Color::Reset); diff=None; skip=false
@@ -65,15 +65,15 @@ styles:
 style runs (x start..end exclusive = style):
 00: 0..1=0 1..2=1 2..9=2 9..36=1 36..37=0 37..38=3 38..80=4 80..119=3 119..120=0
 01: 0..1=0 1..2=1 2..8=5 8..35=6 35..36=1 36..37=0 37..38=3 38..118=7 118..119=3 119..120=0
-02: 0..1=0 1..2=1 2..4=8 4..5=9 5..6=8 6..13=9 13..35=8 35..36=1 36..37=0 37..38=3 38..118=10 118..119=3 119..120=0
-03: 0..1=0 1..2=1 2..4=6 4..5=11 5..6=6 6..12=11 12..35=6 35..36=1 36..37=0 37..38=3 38..118=12 118..119=3 119..120=0
-04: 0..1=0 1..2=1 2..3=13 3..4=6 4..13=13 13..35=6 35..36=1 36..37=0 37..38=3 38..118=14 118..119=3 119..120=0
-05: 0..1=0 1..2=1 2..3=2 3..4=6 4..13=2 13..35=6 35..36=1 36..37=0 37..38=3 38..118=6 118..119=3 119..120=0
-06: 0..1=0 1..2=1 2..35=6 35..36=1 36..37=0 37..38=3 38..118=6 118..119=3 119..120=0
+02: 0..1=0 1..2=1 2..4=8 4..5=9 5..6=8 6..13=9 13..35=8 35..36=1 36..37=0 37..38=3 38..118=7 118..119=3 119..120=0
+03: 0..1=0 1..2=1 2..4=6 4..5=10 5..6=6 6..12=10 12..35=6 35..36=1 36..37=0 37..38=3 38..118=11 118..119=3 119..120=0
+04: 0..1=0 1..2=1 2..3=12 3..4=6 4..13=12 13..35=6 35..36=1 36..37=0 37..38=3 38..118=13 118..119=3 119..120=0
+05: 0..1=0 1..2=1 2..3=2 3..4=6 4..13=2 13..35=6 35..36=1 36..37=0 37..38=3 38..118=14 118..119=3 119..120=0
+06: 0..1=0 1..2=1 2..35=6 35..36=1 36..37=0 37..38=3 38..118=15 118..119=3 119..120=0
 07: 0..1=0 1..36=1 36..37=0 37..38=3 38..118=6 118..119=3 119..120=0
 08: 0..37=0 37..38=3 38..118=6 118..119=3 119..120=0
-09: 0..1=0 1..2=1 2..18=2 18..32=1 32..35=15 35..36=1 36..37=0 37..38=3 38..118=6 118..119=3 119..120=0
-10: 0..1=0 1..2=1 2..8=16 8..35=8 35..36=1 36..37=0 37..38=3 38..118=6 118..119=3 119..120=0
+09: 0..1=0 1..2=1 2..18=2 18..32=1 32..35=16 35..36=1 36..37=0 37..38=3 38..118=6 118..119=3 119..120=0
+10: 0..1=0 1..2=1 2..8=7 8..35=8 35..36=1 36..37=0 37..38=3 38..118=6 118..119=3 119..120=0
 11: 0..1=0 1..2=1 2..35=6 35..36=1 36..37=0 37..38=3 38..118=6 118..119=3 119..120=0
 12: 0..1=0 1..2=1 2..35=6 35..36=1 36..37=0 37..38=3 38..118=6 118..119=3 119..120=0
 13: 0..1=0 1..2=1 2..35=6 35..36=1 36..37=0 37..38=3 38..118=6 118..119=3 119..120=0
@@ -82,9 +82,9 @@ style runs (x start..end exclusive = style):
 16: 0..1=0 1..36=1 36..37=0 37..38=3 38..118=6 118..119=3 119..120=0
 17: 0..37=0 37..38=3 38..118=6 118..119=3 119..120=0
 18: 0..1=0 1..2=1 2..11=2 11..36=1 36..37=0 37..38=3 38..118=6 118..119=3 119..120=0
-19: 0..1=0 1..2=1 2..3=17 3..4=8 4..11=17 11..12=8 12..14=15 14..35=8 35..36=1 36..37=0 37..38=3 38..118=6 118..119=3 119..120=0
+19: 0..1=0 1..2=1 2..3=17 3..4=8 4..11=17 11..12=8 12..14=16 14..35=8 35..36=1 36..37=0 37..38=3 38..118=6 118..119=3 119..120=0
 20: 0..1=0 1..2=1 2..3=18 3..4=6 4..11=18 11..12=6 12..14=2 14..35=6 35..36=1 36..37=0 37..38=3 38..118=6 118..119=3 119..120=0
-21: 0..1=0 1..2=1 2..3=11 3..4=6 4..11=11 11..12=6 12..14=2 14..35=6 35..36=1 36..37=0 37..38=3 38..118=6 118..119=3 119..120=0
+21: 0..1=0 1..2=1 2..3=10 3..4=6 4..11=10 11..12=6 12..14=2 14..35=6 35..36=1 36..37=0 37..38=3 38..118=6 118..119=3 119..120=0
 22: 0..1=0 1..2=1 2..35=6 35..36=1 36..37=0 37..38=3 38..118=6 118..119=3 119..120=0
 23: 0..1=0 1..2=1 2..35=6 35..36=1 36..37=0 37..38=3 38..118=6 118..119=3 119..120=0
 24: 0..1=0 1..2=1 2..35=6 35..36=1 36..37=0 37..38=3 38..118=6 118..119=3 119..120=0

@@ -23,6 +23,7 @@ pub fn draw_branches_panel(
     area: Rect,
     state: &BranchesRenderView<'_>,
     ctx: &PanelRenderContext<'_>,
+    viewport: &mut crate::ui::panels::selection::BranchesViewport,
 ) {
     if state.commits_subview_active {
         let title = state
@@ -45,7 +46,13 @@ pub fn draw_branches_panel(
             visual_selected_indices: PanelRenderContext::empty_visual_selected_indices(),
             highlighted_oids: state.commits_subview.highlighted_oids,
         };
-        draw_commits_panel(frame, area, &state.commits_subview, &commits_ctx);
+        draw_commits_panel(
+            frame,
+            area,
+            &state.commits_subview,
+            &commits_ctx,
+            viewport.commits(state.commits_subview_source.map(String::as_str)),
+        );
         return;
     }
 
@@ -81,8 +88,13 @@ pub fn draw_branches_panel(
         .scroll_padding(LIST_SCROLL_PADDING)
         .highlight_style(highlight);
 
-    let mut list_state = crate::ui::panels::selection::list_state(state.panel);
-    frame.render_stateful_widget(list, area, &mut list_state);
+    crate::ui::panels::selection::prepare(
+        &mut viewport.list,
+        state.panel,
+        state.items.len(),
+        usize::from(area.height.saturating_sub(2)),
+    );
+    frame.render_stateful_widget(list, area, &mut viewport.list);
 }
 
 impl DynamicPanel for BranchesRenderView<'_> {

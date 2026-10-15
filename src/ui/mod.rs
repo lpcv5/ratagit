@@ -6,6 +6,8 @@ pub mod theme;
 pub mod traits;
 pub mod widgets;
 
+pub use panels::selection::RenderState;
+
 #[cfg(test)]
 mod golden_tests;
 #[cfg(test)]

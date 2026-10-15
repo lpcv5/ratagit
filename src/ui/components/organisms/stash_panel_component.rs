@@ -12,6 +12,7 @@ pub fn draw_stash_panel(
     area: Rect,
     state: &StashRenderView<'_>,
     ctx: &PanelRenderContext<'_>,
+    viewport: &mut crate::ui::panels::selection::RevisionViewport,
 ) {
     let is_active = !ctx.diff_focused && ctx.active_panel == SidePanel::Stash;
     let items: Vec<ListItem> = if state.items.is_empty() {
@@ -56,7 +57,14 @@ pub fn draw_stash_panel(
                 None
             },
             list_items: items,
-            list_state: crate::ui::panels::selection::list_state(state.panel),
+            panel: state.panel,
+            list_state: viewport.state(
+                state.tree_mode.active,
+                state
+                    .tree_mode
+                    .selected_source
+                    .map(|index| index.to_string()),
+            ),
         },
     );
 }

@@ -17,7 +17,8 @@ pub struct RevisionTreePanelProps<'a> {
     pub tree_nodes: &'a [FileTreeNode],
     pub tree_search_query: Option<&'a str>,
     pub list_items: Vec<ListItem<'static>>,
-    pub list_state: ListState,
+    pub panel: crate::app::PanelView,
+    pub list_state: &'a mut ListState,
 }
 
 pub fn render_revision_tree_panel(
@@ -32,10 +33,21 @@ pub fn render_revision_tree_panel(
         tree_nodes,
         tree_search_query,
         list_items,
+        panel,
         list_state,
     } = props;
     let theme = UiTheme::default();
     let highlight = theme.highlight_for(is_active);
+    super::selection::prepare(
+        list_state,
+        panel,
+        if tree_mode {
+            tree_nodes.len()
+        } else {
+            list_items.len()
+        },
+        usize::from(area.height.saturating_sub(2)),
+    );
 
     if tree_mode {
         if tree_nodes.is_empty() {
@@ -44,8 +56,7 @@ pub fn render_revision_tree_panel(
                 .block(card(&theme, title, is_active))
                 .scroll_padding(LIST_SCROLL_PADDING)
                 .highlight_style(highlight);
-            let mut state = list_state;
-            frame.render_stateful_widget(list, area, &mut state);
+            frame.render_stateful_widget(list, area, list_state);
             return;
         }
 
@@ -53,8 +64,7 @@ pub fn render_revision_tree_panel(
             .block(card(&theme, title, is_active))
             .search_query(tree_search_query)
             .highlight_style(highlight);
-        let mut state = list_state;
-        frame.render_stateful_widget(widget, area, &mut state);
+        frame.render_stateful_widget(widget, area, list_state);
         return;
     }
 
@@ -62,6 +72,5 @@ pub fn render_revision_tree_panel(
         .block(card(&theme, title, is_active))
         .scroll_padding(LIST_SCROLL_PADDING)
         .highlight_style(highlight);
-    let mut state = list_state;
-    frame.render_stateful_widget(list, area, &mut state);
+    frame.render_stateful_widget(list, area, list_state);
 }

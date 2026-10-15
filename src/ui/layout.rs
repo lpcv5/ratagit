@@ -23,7 +23,11 @@ const PANEL_BORDER_ROWS: u16 = 2;
 const LEFT_PANEL_DEFAULT_SPLIT: [u16; 3] = [40, 30, 30];
 const LEFT_PANEL_FOCUS_SPLIT: [u16; 3] = [60, 20, 20];
 
-pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
+pub fn render_layout(
+    frame: &mut Frame,
+    snapshot: &AppStateSnapshot<'_>,
+    state: &mut crate::ui::RenderState,
+) {
     let size = frame.area();
     let theme = UiTheme::default();
     frame.render_widget(
@@ -161,7 +165,13 @@ pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
         visual_selected_indices: &snapshot.render_cache.files_visual_selected_indices,
         highlighted_oids: PanelRenderContext::empty_highlighted_oids(),
     };
-    draw_files_panel(frame, left_panels[0], &snapshot.files, &files_ctx);
+    draw_files_panel(
+        frame,
+        left_panels[0],
+        &snapshot.files,
+        &files_ctx,
+        &mut state.files,
+    );
     let branches_ctx = PanelRenderContext {
         diff_focused: snapshot.context.diff_focused,
         active_panel: snapshot.active_panel,
@@ -171,7 +181,13 @@ pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
         visual_selected_indices: PanelRenderContext::empty_visual_selected_indices(),
         highlighted_oids: PanelRenderContext::empty_highlighted_oids(),
     };
-    draw_branches_panel(frame, left_panels[1], &snapshot.branches, &branches_ctx);
+    draw_branches_panel(
+        frame,
+        left_panels[1],
+        &snapshot.branches,
+        &branches_ctx,
+        &mut state.branches,
+    );
 
     let commits_ctx = PanelRenderContext {
         diff_focused: snapshot.context.diff_focused,
@@ -182,7 +198,13 @@ pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
         visual_selected_indices: PanelRenderContext::empty_visual_selected_indices(),
         highlighted_oids: snapshot.commits.highlighted_oids,
     };
-    draw_commits_panel(frame, left_panels[2], &snapshot.commits, &commits_ctx);
+    draw_commits_panel(
+        frame,
+        left_panels[2],
+        &snapshot.commits,
+        &commits_ctx,
+        &mut state.commits,
+    );
 
     let stash_ctx = PanelRenderContext {
         diff_focused: snapshot.context.diff_focused,
@@ -193,7 +215,13 @@ pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
         visual_selected_indices: PanelRenderContext::empty_visual_selected_indices(),
         highlighted_oids: PanelRenderContext::empty_highlighted_oids(),
     };
-    draw_stash_panel(frame, stash_area, &snapshot.stash, &stash_ctx);
+    draw_stash_panel(
+        frame,
+        stash_area,
+        &snapshot.stash,
+        &stash_ctx,
+        &mut state.stash,
+    );
 
     // Right side: diff + command log
     // Command log collapses to COLLAPSED_HEIGHT when stash is not the concern
@@ -221,6 +249,7 @@ pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
             active_panel: snapshot.active_panel,
             is_loading: snapshot.diff_loading,
         },
+        &mut state.diff,
     );
     render_command_log(frame, log_area, snapshot);
     render_shortcut_bar(frame, vertical[1], snapshot);
@@ -229,5 +258,5 @@ pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
     render_branch_switch_confirm(frame, snapshot);
     render_commit_all_confirm(frame, snapshot);
     render_command_palette(frame, snapshot);
-    render_keybindings(frame, snapshot);
+    render_keybindings(frame, snapshot, &mut state.help);
 }
