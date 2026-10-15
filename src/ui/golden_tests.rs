@@ -20,6 +20,8 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{backend::TestBackend, layout::Rect, Terminal};
 use std::sync::Arc;
 
+mod scrolling;
+
 struct Fixture {
     app: App,
     // Keep the repository alive until App and its Git handles have been dropped.
@@ -193,7 +195,7 @@ fn patch() -> Patch {
 
 fn layout(snapshot: &AppStateSnapshotOwned, width: u16, height: u16) -> RenderedUi {
     render(width, height, |frame| {
-        render_layout(frame, &snapshot.as_snapshot())
+        render_layout(frame, &snapshot.as_snapshot(), &mut Default::default())
     })
 }
 
@@ -403,6 +405,7 @@ fn diff(snapshot: &AppStateSnapshotOwned) -> RenderedUi {
                 active_panel: view.active_panel,
                 is_loading: view.diff_loading,
             },
+            &mut Default::default(),
         );
     })
 }
@@ -554,7 +557,7 @@ fn test_palette_key_input_filter_and_close_goldens() {
     let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
     let snapshot = fixture.snapshot();
     let baseline = draw(&mut terminal, |frame| {
-        render_layout(frame, &snapshot.as_snapshot())
+        render_layout(frame, &snapshot.as_snapshot(), &mut Default::default())
     });
     dispatch_test_key(
         &mut fixture.app,
@@ -571,7 +574,7 @@ fn test_palette_key_input_filter_and_close_goldens() {
     assert_golden(
         "palette_filtered",
         &draw(&mut terminal, |frame| {
-            render_layout(frame, &snapshot.as_snapshot())
+            render_layout(frame, &snapshot.as_snapshot(), &mut Default::default())
         }),
     );
     fixture.app.input.buffer = "no-such-command".into();
@@ -583,7 +586,7 @@ fn test_palette_key_input_filter_and_close_goldens() {
     assert_eq!(fixture.app.input.mode, None);
     let snapshot = fixture.snapshot();
     let restored = draw(&mut terminal, |frame| {
-        render_layout(frame, &snapshot.as_snapshot())
+        render_layout(frame, &snapshot.as_snapshot(), &mut Default::default())
     });
     // Opening the palette adds a log entry. Compare with a fresh render of the
     // current state to verify popup erasure while preserving that log change.
@@ -598,7 +601,7 @@ fn test_keybindings_groups_filter_and_modal_restore_goldens() {
     let mut terminal = Terminal::new(TestBackend::new(120, 48)).unwrap();
     let snapshot = fixture.snapshot();
     let baseline = draw(&mut terminal, |frame| {
-        render_layout(frame, &snapshot.as_snapshot())
+        render_layout(frame, &snapshot.as_snapshot(), &mut Default::default())
     });
     dispatch_test_key(
         &mut fixture.app,
@@ -608,7 +611,7 @@ fn test_keybindings_groups_filter_and_modal_restore_goldens() {
     assert_golden(
         "help_files",
         &draw(&mut terminal, |frame| {
-            render_layout(frame, &snapshot.as_snapshot())
+            render_layout(frame, &snapshot.as_snapshot(), &mut Default::default())
         }),
     );
     for (width, height) in [(1, 1), (20, 6), (60, 18), (120, 48)] {
@@ -617,6 +620,7 @@ fn test_keybindings_groups_filter_and_modal_restore_goldens() {
             render_layout(
                 frame,
                 &crate::flux::snapshot::AppStateSnapshot::from_app(&fixture.app),
+                &mut Default::default(),
             );
         });
         assert_eq!(serialize(&owned), serialize(&borrowed));
@@ -627,7 +631,7 @@ fn test_keybindings_groups_filter_and_modal_restore_goldens() {
     );
     let snapshot = fixture.snapshot();
     let restored = draw(&mut terminal, |frame| {
-        render_layout(frame, &snapshot.as_snapshot())
+        render_layout(frame, &snapshot.as_snapshot(), &mut Default::default())
     });
     assert_eq!(serialize(&restored), serialize(&baseline));
 
@@ -685,12 +689,12 @@ fn test_resize_clears_previous_layout_golden() {
     let snapshot = Fixture::populated().snapshot();
     let mut terminal = Terminal::new(TestBackend::new(120, 32)).unwrap();
     draw(&mut terminal, |frame| {
-        render_layout(frame, &snapshot.as_snapshot())
+        render_layout(frame, &snapshot.as_snapshot(), &mut Default::default())
     });
     terminal.backend_mut().resize(60, 18);
     terminal.resize(Rect::new(0, 0, 60, 18)).unwrap();
     let resized = draw(&mut terminal, |frame| {
-        render_layout(frame, &snapshot.as_snapshot())
+        render_layout(frame, &snapshot.as_snapshot(), &mut Default::default())
     });
     assert_eq!(serialize(&resized), serialize(&layout(&snapshot, 60, 18)));
     assert_golden("layout_resized", &resized);
@@ -799,7 +803,11 @@ fn test_feature_views_keep_scrolling_and_selection_isolated_across_resize_and_su
             for (width, height) in [(60, 18), (120, 40), (80, 12), (120, 24)] {
                 let published = layout(&snapshot, width, height);
                 let borrowed = render(width, height, |frame| {
-                    render_layout(frame, &AppStateSnapshot::from_app(&fixture.app));
+                    render_layout(
+                        frame,
+                        &AppStateSnapshot::from_app(&fixture.app),
+                        &mut Default::default(),
+                    );
                 });
                 assert_eq!(
                     serialize(&published),

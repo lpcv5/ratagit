@@ -22,6 +22,7 @@ pub(super) async fn ui_loop(
     const MAX_EVENTS_PER_FRAME: usize = 64;
     const DIFF_RELOAD_DEBOUNCE: Duration = Duration::from_millis(180);
     const SLOW_DRAW_US: u64 = 8_000;
+    let mut render_state = crate::ui::RenderState::default();
     let mut perf_log = if perf.logging_enabled() {
         PerfLog::new().ok()
     } else {
@@ -49,7 +50,11 @@ pub(super) async fn ui_loop(
             let _ = action_tx.send(Action::Domain(
                 crate::flux::action::DomainAction::EditorFinished { result },
             ));
-            draw_snapshot(session.terminal_mut(), &snapshot_rx.borrow())?;
+            draw_snapshot(
+                session.terminal_mut(),
+                &snapshot_rx.borrow(),
+                &mut render_state,
+            )?;
         }
 
         let mut processed_input_event = false;
@@ -60,7 +65,7 @@ pub(super) async fn ui_loop(
         if snapshot_rx.has_changed().unwrap_or(false) {
             let draw_started = Instant::now();
             let snapshot = snapshot_rx.borrow_and_update().clone();
-            draw_snapshot(session.terminal_mut(), &snapshot)?;
+            draw_snapshot(session.terminal_mut(), &snapshot, &mut render_state)?;
             let draw_us = draw_started.elapsed().as_micros() as u64;
             perf.ui_draws.fetch_add(1, Ordering::Relaxed);
             perf.ui_draw_us.fetch_add(draw_us, Ordering::Relaxed);
@@ -152,10 +157,11 @@ pub(super) async fn ui_loop(
 pub(super) fn draw_snapshot<B: ratatui::backend::Backend>(
     terminal: &mut ratatui::Terminal<B>,
     snapshot: &PublishedSnapshot,
+    render_state: &mut crate::ui::RenderState,
 ) -> Result<(), B::Error> {
     let started = Instant::now();
     let result = terminal.draw(|frame| {
-        crate::ui::layout::render_layout(frame, &snapshot.as_snapshot());
+        crate::ui::layout::render_layout(frame, &snapshot.as_snapshot(), render_state);
     });
     snapshot.finish(
         if result.is_ok() {

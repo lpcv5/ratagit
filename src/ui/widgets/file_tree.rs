@@ -1,7 +1,6 @@
 use crate::git::FileStatus;
 use crate::ui::highlight::highlighted_spans;
 use crate::ui::theme::UiTheme;
-use crate::ui::LIST_SCROLL_PADDING;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -171,34 +170,19 @@ fn visible_range(count: usize, state: &ListState, height: usize) -> std::ops::Ra
     if count == 0 || height == 0 {
         return 0..0;
     }
-    let mut start = state.offset().min(count - 1);
-    let mut end = (start + height).min(count);
-    if let Some(selected) = state.selected().map(|index| index.min(count - 1)) {
-        let mut padding = LIST_SCROLL_PADDING;
-        while (selected + padding).min(count - 1) - selected.saturating_sub(padding) + 1 > height {
-            padding -= 1;
-        }
-        let target = if (selected + padding).min(count - 1) >= end {
-            (selected + padding).min(count - 1)
-        } else if selected.saturating_sub(padding) < start {
-            selected.saturating_sub(padding)
-        } else {
-            selected
-        };
-        if target >= end {
-            end = target + 1;
-            start = end.saturating_sub(height);
-        } else if target < start {
-            start = target;
-            end = end.min(start + height);
-        }
-    }
-    start..end
+    let start = crate::ui::panels::selection::scroll_offset(
+        state.offset(),
+        state.selected(),
+        count,
+        height,
+    );
+    start..(start + height).min(count)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ui::LIST_SCROLL_PADDING;
     use ratatui::widgets::Borders;
 
     #[test]
@@ -224,6 +208,14 @@ mod tests {
                         .with_selected(selected)
                         .with_offset(offset);
                     let mut actual_state = expected_state;
+                    if height > 0 {
+                        *expected_state.offset_mut() = crate::ui::panels::selection::scroll_offset(
+                            expected_state.offset(),
+                            selected,
+                            nodes.len(),
+                            usize::from(height),
+                        );
+                    }
                     let widget = FileTree::new(&nodes)
                         .block(block.clone())
                         .search_query(Some("035"))

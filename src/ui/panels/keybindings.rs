@@ -11,11 +11,21 @@ use ratatui::{
     Frame,
 };
 
-pub fn render_keybindings(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
+pub fn render_keybindings(
+    frame: &mut Frame,
+    snapshot: &AppStateSnapshot<'_>,
+    viewport: &mut super::selection::HelpViewport,
+) {
     if snapshot.input_mode != Some(InputMode::Keybindings) {
+        *viewport = Default::default();
         return;
     }
     let help = snapshot.help;
+    let context = (help.context.clone(), help.query.clone());
+    if viewport.context.as_ref() != Some(&context) {
+        viewport.list = ListState::default();
+        viewport.context = Some(context);
+    }
     let theme = UiTheme::default();
     let area = centered_rect(frame.area(), 90, 90);
     let title = format!("Keybindings - {}", help.context);
@@ -100,13 +110,20 @@ pub fn render_keybindings(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
             )));
         }
     }
+    let count = rows.len();
     let list = List::new(rows)
         .style(Style::default().bg(theme.surface))
         .highlight_style(theme.active_highlight())
-        .scroll_padding(2)
+        .scroll_padding(crate::ui::LIST_SCROLL_PADDING)
         .highlight_symbol("> ");
-    let mut state = ListState::default().with_selected(selected_row);
-    frame.render_stateful_widget(list, sections[2], &mut state);
+    viewport.list.select(selected_row);
+    *viewport.list.offset_mut() = super::selection::scroll_offset(
+        viewport.list.offset(),
+        selected_row,
+        count,
+        usize::from(sections[2].height),
+    );
+    frame.render_stateful_widget(list, sections[2], &mut viewport.list);
     let position = if entries.is_empty() {
         0
     } else {

@@ -113,7 +113,11 @@ fn render(app: &App, palette: bool) -> ratatui::buffer::Buffer {
             if palette {
                 crate::ui::panels::render_command_palette(frame, &snapshot.as_snapshot());
             } else {
-                crate::ui::layout::render_layout(frame, &snapshot.as_snapshot());
+                crate::ui::layout::render_layout(
+                    frame,
+                    &snapshot.as_snapshot(),
+                    &mut Default::default(),
+                );
             }
         })
         .unwrap();

@@ -19,6 +19,7 @@ pub fn draw_commits_panel(
     area: Rect,
     state: &CommitsRenderView<'_>,
     ctx: &PanelRenderContext<'_>,
+    viewport: &mut crate::ui::panels::selection::RevisionViewport,
 ) {
     let theme = UiTheme::default();
     let is_active = !ctx.diff_focused && ctx.active_panel == SidePanel::Commits;
@@ -90,7 +91,11 @@ pub fn draw_commits_panel(
                 None
             },
             list_items: items,
-            list_state: crate::ui::panels::selection::list_state(state.panel),
+            panel: state.panel,
+            list_state: viewport.state(
+                state.tree_mode.active,
+                state.tree_mode.selected_source.cloned(),
+            ),
         },
     );
 }

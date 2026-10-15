@@ -18,10 +18,71 @@ pub struct DiffViewProps<'a> {
     pub is_loading: bool,
 }
 
-pub fn render_diff_panel(frame: &mut Frame, area: Rect, props: DiffViewProps<'_>) {
+#[derive(Default)]
+pub struct DiffViewport {
+    request: Option<crate::git::patch::PatchRequest>,
+    selected: Option<usize>,
+    requested_scroll: usize,
+    offset: usize,
+    manual: bool,
+}
+
+impl DiffViewport {
+    fn offset(&mut self, props: &DiffViewProps<'_>, height: usize) -> usize {
+        let patch = props.hunks.patch;
+        let selected = patch
+            .filter(|_| props.hunks.ready && props.hunks.interaction.focused)
+            .and_then(|patch| {
+                if props.hunks.interaction.line_mode {
+                    props
+                        .hunks
+                        .interaction
+                        .line_cursor
+                        .and_then(|id| patch.line_row(id))
+                } else {
+                    patch
+                        .hunk_spans()
+                        .iter()
+                        .find(|span| Some(span.id) == props.hunks.interaction.cursor)
+                        .map(|span| span.range.start)
+                }
+            });
+        let request = patch.map(|patch| &patch.request);
+        if self.request.as_ref() != request {
+            *self = Self {
+                request: request.cloned(),
+                ..Default::default()
+            };
+        }
+        if selected.is_some() && selected != self.selected {
+            self.manual = false;
+        } else if props.scroll != self.requested_scroll {
+            // Explicit page scrolling remains independent of cursor following.
+            self.offset = props.scroll;
+            self.manual = true;
+        }
+        if selected.is_some() && !self.manual {
+            self.offset =
+                super::selection::scroll_offset(self.offset, selected, props.lines.len(), height);
+        } else {
+            self.offset = self.offset.min(props.lines.len().saturating_sub(1));
+        }
+        self.selected = selected;
+        self.requested_scroll = props.scroll;
+        self.offset
+    }
+}
+
+pub fn render_diff_panel(
+    frame: &mut Frame,
+    area: Rect,
+    props: DiffViewProps<'_>,
+    viewport: &mut DiffViewport,
+) {
     let theme = UiTheme::default();
 
     if props.is_loading {
+        *viewport = Default::default();
         let block = card(&theme, "Diff", props.hunks.interaction.focused);
         let inner = block.inner(area);
         frame.render_widget(block, area);
@@ -30,6 +91,7 @@ pub fn render_diff_panel(frame: &mut Frame, area: Rect, props: DiffViewProps<'_>
     }
 
     if props.lines.is_empty() {
+        *viewport = Default::default();
         let hint = match props.hunks.interaction.side {
             Some(crate::app::DiffSide::Unstaged) => "No unstaged changes",
             Some(crate::app::DiffSide::Staged) => "No staged changes",
@@ -47,8 +109,8 @@ pub fn render_diff_panel(frame: &mut Frame, area: Rect, props: DiffViewProps<'_>
         return;
     }
 
-    let scroll = props.scroll.min(props.lines.len().saturating_sub(1));
     let visible_rows = usize::from(area.height.saturating_sub(2)).max(1);
+    let scroll = viewport.offset(&props, visible_rows);
     let rows = props
         .hunks
         .patch

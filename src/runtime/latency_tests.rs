@@ -86,6 +86,7 @@ impl Harness {
         ui::draw_snapshot(
             &mut Terminal::new(TestBackend::new(100, 30)).unwrap(),
             &snapshot,
+            &mut Default::default(),
         )
         .unwrap();
     }
@@ -451,7 +452,7 @@ fn test_failed_draw_and_unobserved_snapshot_do_not_produce_frame_sample() {
         },
     )
     .unwrap();
-    assert!(ui::draw_snapshot(&mut terminal, &snapshot).is_err());
+    assert!(ui::draw_snapshot(&mut terminal, &snapshot, &mut Default::default()).is_err());
     snapshot.finish("frame_unobserved", Duration::ZERO);
     let events = capture.events();
     assert!(events.iter().any(|event| event["stage"] == "draw_failed"));

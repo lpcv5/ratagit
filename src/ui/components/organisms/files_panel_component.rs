@@ -12,6 +12,7 @@ pub fn draw_files_panel(
     area: Rect,
     state: &FilesRenderView<'_>,
     ctx: &PanelRenderContext<'_>,
+    viewport: &mut ratatui::widgets::ListState,
 ) {
     let theme = UiTheme::default();
     let is_active = !ctx.diff_focused && ctx.active_panel == SidePanel::Files;
@@ -23,6 +24,12 @@ pub fn draw_files_panel(
     };
     let title = title_with_search(base, ctx.search_summary);
     let block = card(&theme, &title, is_active);
+    crate::ui::panels::selection::prepare(
+        viewport,
+        state.panel,
+        state.tree_nodes.len(),
+        usize::from(block.inner(area).height),
+    );
 
     if state.tree_nodes.is_empty() {
         let inner = block.inner(area);
@@ -38,9 +45,7 @@ pub fn draw_files_panel(
         .search_query(ctx.search_query)
         .selected_indices(ctx.visual_selected_indices);
 
-    let mut tree_state = crate::ui::panels::selection::list_state(state.panel);
-
-    frame.render_stateful_widget(widget, area, &mut tree_state);
+    frame.render_stateful_widget(widget, area, viewport);
 }
 
 impl DynamicPanel for FilesRenderView<'_> {
