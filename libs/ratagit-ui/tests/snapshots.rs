@@ -2226,9 +2226,11 @@ fn test_terminal_snapshot_partial_staging() {
     };
     let text = render_terminal_text(&state, size);
     assert!(text.contains("new first"));
-    assert!(buffer_contains_selected_text(
+    assert!(text.contains(">"));
+    assert!(buffer_contains_text_with_style(
         &render_terminal_buffer(&state, size),
-        "new first"
+        "new first",
+        Style::default().fg(Color::Green).bg(Color::Rgb(40, 80, 58))
     ));
     insta::assert_snapshot!("partial_blocks", text);
     update(&mut state, Action::Ui(UiAction::TogglePatchRange));
@@ -2239,15 +2241,25 @@ fn test_terminal_snapshot_partial_staging() {
             visible_lines: 18,
         }),
     );
-    insta::assert_snapshot!(
-        "partial_range_narrow",
-        render_terminal_text(
-            &state,
-            TerminalSize {
-                width: 65,
-                height: 20
-            }
-        )
+    let narrow = TerminalSize {
+        width: 65,
+        height: 20,
+    };
+    update(
+        &mut state,
+        Action::Ui(UiAction::DetailsViewport {
+            visible_lines: details_content_lines_for_terminal_size(narrow),
+        }),
+    );
+    let text = render_terminal_text(&state, narrow);
+    assert!(text.contains(">┃"));
+    assert!(text.contains("┃   3 │ + new last"));
+    insta::assert_snapshot!("partial_range_narrow", text);
+    update(
+        &mut state,
+        Action::Ui(UiAction::DetailsViewport {
+            visible_lines: details_content_lines_for_terminal_size(size),
+        }),
     );
     update(&mut state, Action::Ui(UiAction::RequestPatchDiscard));
     insta::assert_snapshot!(

@@ -1,4 +1,7 @@
 use crossterm::event::{KeyCode, KeyModifiers};
+#[cfg(test)]
+#[path = "patch_keyboard_tests.rs"]
+mod patch_keyboard_tests;
 use ratagit_core::{
     AppContext, BranchInputMode, BranchesSubview, CommitInputMode, FileInputMode, MenuDirection,
     MenuKind, PanelFocus, UiAction,
@@ -187,6 +190,12 @@ fn ui_action_for_key(
         }
         InputMode::Patch => {
             return match code {
+                KeyCode::Esc
+                    if state.ui.details.patch.anchor.is_some()
+                        || !state.ui.details.patch.marked.is_empty() =>
+                {
+                    Some(UiAction::ClearPatchMarks)
+                }
                 KeyCode::Esc => Some(UiAction::CloseFilePatch),
                 KeyCode::Char('j') | KeyCode::Down => Some(UiAction::MovePatchSelection {
                     up: false,
@@ -198,8 +207,12 @@ fn ui_action_for_key(
                 }),
                 KeyCode::Char('a') => Some(UiAction::CyclePatchSelection),
                 KeyCode::Char('v') => Some(UiAction::TogglePatchRange),
+                KeyCode::Char('x') => Some(UiAction::TogglePatchMark),
                 KeyCode::Tab => Some(UiAction::SwitchPatchSource),
                 KeyCode::Char(' ') => Some(UiAction::ApplyPatchSelection),
+                KeyCode::Char('d') if state.ui.details.patch.staged => {
+                    Some(UiAction::ApplyPatchSelection)
+                }
                 KeyCode::Char('d') => Some(UiAction::RequestPatchDiscard),
                 KeyCode::Char('n') => Some(UiAction::NextPatchFile { up: false }),
                 KeyCode::Char('N') => Some(UiAction::NextPatchFile { up: true }),

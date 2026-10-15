@@ -2,12 +2,17 @@
 
 ## PR #8 migration decisions
 
-The baseline remains newarch. Partial staging extends the existing Details panel;
-its rows use the existing theme, selection colors, layout, and confirmation modal.
+The surrounding baseline remains newarch. The Details diff follows PR #8: stable
+old/new line-number columns (hidden in narrow panes), `>` cursor and `┃` mark
+gutters, distinct staged/unstaged add/remove backgrounds, cursor versus mark
+colors, and mode/position/selection/range status. The existing layout and
+confirmation modal remain. Details uses explicit row styles so List cursor
+highlighting cannot overwrite multiple selected lines or their add/remove colors.
 Native source patch bytes are separate from combined display rows. A display
 mapping never authorizes a write; missing/ambiguous mappings fall back to source
-previews. Block/hunk/line selection and side-specific cursors/scroll offsets live
-in AppContext. Window resize supplies explicit viewport data to the reducer.
+previews. Hunk/line selection, independent marks, visual anchors and side-specific
+cursors/scroll offsets live in AppContext. Window resize supplies explicit
+viewport data to the reducer.
 
 Executable contextual help is integrated into the existing command palette with
 text filtering. It does not add main's separate overlay or visual component tree.

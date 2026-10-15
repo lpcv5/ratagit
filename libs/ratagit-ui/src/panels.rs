@@ -926,3 +926,4 @@ mod tests {
 }
 #[path = "partial_details.rs"]
 mod partial_details;
+pub(crate) use partial_details::render as render_patch_lines;

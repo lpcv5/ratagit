@@ -132,9 +132,15 @@ Files panel rules:
 - `space` stages unstaged targets or unstages targets when all selected targets are staged
 - `a` stages all visible status targets, or unstages all when every target is staged
 - `Enter` expands directories or opens a reviewed file patch in Details
-- Details partial staging uses `j/k` for blocks, `a` to cycle block/hunk/line mode,
-  `v` for line ranges, `Tab` for independent staged/unstaged selections, `Space`
-  to apply, `d` to confirm discard, `n/N` for adjacent files, and `Esc` to return
+- Details follows PR #8: `j/k` navigates contiguous changes (Hunk mode), `a`
+  toggles Hunk/Line mode, `v` selects a range in the current mode, and a second
+  `v` freezes that range. `x` marks independent hunks/lines; marked targets take
+  precedence over the cursor. `Esc` clears marks/range before returning to Files.
+  Line mode can traverse context, but operations apply changed lines only.
+  `Tab` switches independent staged/unstaged cursors, `Space`
+  applies stage/unstage, `d` confirms discard on unstaged changes or unstages
+  staged changes, and `n/N` selects adjacent files. After hunk writes, the cursor
+  follows the reviewed change to its destination side, allowing immediate reversal.
 - staged and unstaged edits share a native combined preview when every source
   edit maps safely; overlapping edits retain separate source previews
 - binary, truncated, renamed, mode-changing, and read-only patches cannot be

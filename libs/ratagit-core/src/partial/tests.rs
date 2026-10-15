@@ -64,13 +64,13 @@ fn test_block_hunk_line_modes_and_range() {
         vec![2, 2]
     );
     assert_eq!(groups(&patch, SelectionMode::Hunk, false).len(), 1);
-    assert_eq!(groups(&patch, SelectionMode::Line, false).len(), 4);
+    assert_eq!(groups(&patch, SelectionMode::Line, false).len(), 5);
     let mut state = state();
     toggle_range(&mut state);
     move_selection(&mut state, false, 8);
-    assert_eq!(selected_ids(&state).len(), 2);
+    assert_eq!(selected_ids(&state).len(), 4);
     assert!(
-        matches!(apply(&mut state, false).as_slice(), [Command::ApplyPatch { ids, .. }] if ids.len() == 2)
+        matches!(apply(&mut state, false).as_slice(), [Command::ApplyPatch { ids, .. }] if ids.len() == 4)
     );
 }
 
@@ -163,4 +163,113 @@ fn test_mode_change_keeps_current_block_and_side_viewports() {
     state.ui.details.scroll_offset = 1;
     switch_source(&mut state);
     assert_eq!(state.ui.details.scroll_offset, 4);
+}
+
+#[test]
+fn test_visual_hunk_range_freezes_without_forcing_line_mode() {
+    let mut state = state();
+    toggle_range(&mut state);
+    move_selection(&mut state, false, 8);
+    assert_eq!(state.ui.details.patch.mode, SelectionMode::Block);
+    assert_eq!(selected_ids(&state).len(), 4);
+    toggle_range(&mut state);
+    assert!(state.ui.details.patch.anchor.is_none());
+    move_selection(&mut state, true, 8);
+    assert_eq!(selected_ids(&state).len(), 4);
+    clear_marks(&mut state);
+    assert_eq!(selected_ids(&state).len(), 2);
+}
+
+#[test]
+fn test_independent_marks_exclude_unmarked_cursor() {
+    let mut state = state();
+    toggle_mark(&mut state);
+    move_selection(&mut state, false, 8);
+    assert_eq!(selected_ids(&state)[0].line, 0);
+    toggle_mark(&mut state);
+    assert_eq!(selected_ids(&state).len(), 4);
+    toggle_mark(&mut state);
+    assert_eq!(selected_ids(&state).len(), 2);
+}
+
+#[test]
+fn test_line_range_navigates_context_and_filters_it_from_writes() {
+    let mut state = state();
+    cycle_mode(&mut state);
+    assert_eq!(state.ui.details.patch.mode, SelectionMode::Line);
+    move_selection(&mut state, false, 8);
+    toggle_range(&mut state);
+    move_selection(&mut state, false, 8);
+    assert_eq!(cursor_ids(&state)[0].line, 2);
+    assert_eq!(selected_ids(&state).len(), 1);
+    clear_marks(&mut state);
+    assert!(selected_ids(&state).is_empty());
+    assert!(apply(&mut state, false).is_empty());
+}
+
+#[test]
+fn test_resize_follows_live_range_cursor_instead_of_anchor() {
+    let mut state = state();
+    state.ui.details.viewport_lines = 4;
+    toggle_range(&mut state);
+    move_selection(&mut state, false, 4);
+    let scroll = state.ui.details.scroll_offset;
+    assert!(scroll > 0);
+    ensure_visible(&mut state);
+    assert_eq!(state.ui.details.scroll_offset, scroll);
+}
+
+#[test]
+fn test_clamped_movement_preserves_manual_scroll() {
+    let mut state = state();
+    state.ui.details.scroll_offset = 4;
+    move_selection(&mut state, true, 5);
+    assert_eq!(state.ui.details.scroll_offset, 4);
+}
+
+#[test]
+fn test_write_cursor_follows_reviewed_bytes_to_destination_side() {
+    let mut state = state();
+    move_selection(&mut state, false, 10);
+    assert!(!apply(&mut state, false).is_empty());
+    let mut next = patch();
+    next.files[0].source = PatchSource::Index;
+    applied(&mut state, PatchDirection::Stage, Ok(()));
+    let request = next.request.clone();
+    state.work.details.patch_request = Some((42, request.clone()));
+    loaded(&mut state, 42, request, Ok(next));
+    assert!(state.ui.details.patch.staged);
+    assert_eq!(state.ui.details.patch.selected[1], 1);
+    assert!(state.ui.details.patch.write_position.is_none());
+}
+
+#[test]
+fn test_unmarked_cursor_survives_removal_of_an_earlier_hunk() {
+    let mut state = state();
+    let first = state.repo.details.patch.as_ref().unwrap().files[0].hunks[0].clone();
+    let file = &mut state.repo.details.patch.as_mut().unwrap().files[0];
+    file.hunks = (0..4)
+        .map(|index| {
+            let mut hunk = first.clone();
+            hunk.lines.truncate(2);
+            hunk.old_start = index * 20 + 1;
+            hunk.new_start = index * 20 + 1;
+            for line in &mut hunk.lines {
+                line.content = format!("change-{index}\n").into_bytes();
+            }
+            hunk
+        })
+        .collect();
+    toggle_mark(&mut state);
+    move_selection(&mut state, false, 10);
+    move_selection(&mut state, false, 10);
+    assert!(!apply(&mut state, false).is_empty());
+    let mut next = state.repo.details.patch.clone().unwrap();
+    next.files[0].hunks.remove(0);
+    applied(&mut state, PatchDirection::Stage, Ok(()));
+    let request = next.request.clone();
+    state.work.details.patch_request = Some((42, request.clone()));
+    loaded(&mut state, 42, request, Ok(next));
+    assert!(!state.ui.details.patch.staged);
+    assert_eq!(state.ui.details.patch.selected[0], 1);
 }

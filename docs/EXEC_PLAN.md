@@ -2,86 +2,76 @@
 
 ## Active Slice
 
-Name: Migrate PR #8 onto feature/newarch
+Name: Restore PR #8 Details diff and verify real keyboard operations
 
 Status: completed
 
-Tracking: docs/PR8_MIGRATION.md
+Tracking: docs/PR8_DETAILS_VALIDATION.md, extending docs/PR8_MIGRATION.md
 
 ## Problem
 
-PR #8 was developed on main while feature/newarch is the intended product.
-Its useful features and fixes must use newarch's AppContext, GitBackend,
-workspace boundaries, pure UI, and visual design.
+The initial migration simplified PR #8's Details diff and forced visual
+selection into line mode. The user makes PR #8 authoritative for the right
+Details diff and requires actual Files -> Enter -> Details testing for single
+hunks, independent multiple hunks and visual hunk ranges.
 
 ## Smallest Slice
 
-- Audit all 15 PR commits against newarch; retain existing architecture equivalents.
-- Add reviewed partial patches behind GitBackend; test native bytes before UI work.
-- Integrate block/hunk/line-range workflows into existing Details and confirmation UI.
-- Add missing file, stash, fetch, and filtered command workflows.
-- Port cache budgets, request/shutdown hardening, terminal/process regressions, and CI.
-- Verify every migrated behavior and review snapshots against the newarch baseline.
+- Restore Hunk/Line modes, visual ranges, independent marks and clear/back.
+- Port dual line numbers, cursor/mark gutters, staged diff colors and status.
+- Port reviewed-byte cursor relocation after hunk writes and whole-block scrolling.
+- Correct viewport height to match the actual ratatui layout.
+- Add the real keyboard/Git matrix and independently exercise the compiled TUI.
 
-Cross-layer changes are necessary for input -> reducer -> Command -> GitBackend
--> result -> immutable UI. Each implementation slice has focused tests before
-the next slice.
+Cross-layer changes are required for input -> pure reducer -> Command ->
+GitBackend -> immutable UI. AppContext remains the sole source of truth.
 
 ## Non-Goals
 
-- Do not merge the old src/app + Flux architecture wholesale.
-- Do not replace newarch's layout, theme, editor or branch/commit rewrite workflows.
-- Do not alter the original dirty checkout or its uncommitted branch-management work.
-- Do not publish, push, or merge remote branches.
+- Do not transplant old Flux stores or replace the surrounding newarch panels.
+- Perform test writes only in isolated fixtures, never in the user's repository.
+- Do not push or merge remote branches, or claim local Unix PTY coverage.
 
 ## Expected Files
 
-Core patch/selection/cache/action modules; GitBackend patch and file services;
-runtime ownership; application input/desktop/terminal; pure Details rendering;
-core/backend/harness/process tests; snapshots; CI and product/design docs.
+Core partial state/selection/position/viewport/row modules and actions; application
+input; pure Details projection/rendering and viewport metadata; core, input,
+snapshot and real Git keyboard tests; terminal verification runner; product,
+design, architecture and tracking documentation.
 
 ## Tests
 
-- Lossless partial stage/unstage/discard, stale/wrong-direction rejection,
-  untracked/literal paths, CRLF, EOF, binary/truncated/rename/deletion cases.
-- Combined preview mappings and overlapping-edit fallback.
-- Selection modes, ranges, independent side viewports, request ownership.
-- Real Git UI flows for partial operations, stage-all, ignore, stash preview/apply/drop.
-- Filtered/no-result palette; native editor argument boundaries; modal precedence.
-- Cache byte budgets/recency; blocked-worker shutdown; terminal startup/isolation.
-- Existing newarch tree, branch/rewrite, scroll, stale-read, and snapshot suites.
+- Visual ranges preserve mode, freeze on second v and coexist with independent marks.
+- Escape clears marks before leaving; mode/side/document changes clear stale marks.
+- Line navigation includes context while writes apply changed source lines only.
+- Applied cursors follow reviewed bytes to the destination side; unmarked cursors
+  survive removal of earlier hunks. Clamped movement preserves manual scrolling.
+- Complete replacement blocks fit before context padding; terminal heights 14–39
+  show both removed and added lines.
+- Snapshots cover marks, hunk/line ranges, staged colors, loading and narrow panes.
+- Three selection strategies x stage/unstage/discard assert exact index/worktree
+  bytes and an unrelated staged sentinel; an extra case covers staged-side d.
 
 ## Harness Decision
 
-New real Git flows assert rendered UI and actual Git state. Their failures write
-screen, AppContext, input sequence and Git state artifacts, with a focused test
-for artifact generation. Existing mock harness scenarios retain coverage of
-unchanged newarch behavior. Unix-only PTY coverage stays Unix-only.
+The production key mapper drives Runtime + HybridGitBackend with isolated real
+Git repositories. Scenarios assert rendered UI and complete Git contents, saving
+screen, AppContext, key sequence and Git state artifacts, including on failure.
+Separate Windows ConPTY runs exercise the compiled binary through Files/Enter.
 
 ## Validation
 
-Standard commands: cargo fmt --check, cargo check --locked, cargo test --locked,
-and cargo clippy --locked --all-targets --all-features -- -D warnings.
-The explicit +stable invocations below select the verified toolchain.
-
-```text
-cargo +stable fmt --check
-cargo +stable check --locked
-cargo +stable test --locked
-cargo +stable clippy --locked --all-targets --all-features -- -D warnings
-```
-
-Use verified Windows stable Cargo and the existing build cache. Ubuntu/Windows
-CI now runs all four checks. Local WSL has Ubuntu 24.04 and C tooling but no Rust
-toolchain; do not claim local Unix test execution.
+All four CI commands passed: cargo fmt --check, cargo check --locked,
+cargo test --locked, cargo clippy --locked --all-targets --all-features -- -D warnings.
+Each was invoked with +stable to select the verified Windows toolchain.
+Full tests: tmp/pr8-details-final-tests.log. No local Unix execution is claimed.
 
 ## Completion Evidence
 
-All four checks passed, including 567 workspace tests, zero failures/ignored.
-Seven new snapshots and one intentional command-modal update were reviewed;
-the baseline theme/layout/modal/editor files remain identical to newarch.
-A Windows PTY smoke session exercised patch entry, line range selection,
-command filtering, escape/back and normal quit with alternate-screen restoration.
-The migration is committed locally and delivered by fast-forwarding feature/newarch;
-the original dirty checkout and remote branches remain unchanged.
-See PR8_MIGRATION.md for source-to-target decisions and practical limits.
+589 workspace tests passed, zero failures/ignored; strict Clippy, compilation,
+formatting and git diff --check passed. Ten real Git keyboard scenarios include
+the complete nine-cell matrix plus staged-side d. Two independent nine-case
+Windows ConPTY runs passed, including a rerun after cursor/viewport fixes.
+Six new and six intentionally updated snapshots were reviewed.
+PR8_DETAILS_VALIDATION.md records keys, assertions, artifacts and portability
+decisions. The surrounding newarch UI and GitBackend boundaries remain in use.

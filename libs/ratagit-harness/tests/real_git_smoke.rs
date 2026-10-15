@@ -383,7 +383,7 @@ fn test_real_git_partial_stage_unstage_discard_ui_flow() {
     with_case_artifacts(&repo, &mut runtime, |runtime| {
         runtime.dispatch_all(&[UiAction::RefreshAll, UiAction::OpenFilePatch]);
         assert!(runtime.render_terminal_text().contains("FIRST"));
-        assert!(runtime.render_terminal_text().contains("Block"));
+        assert!(runtime.render_terminal_text().contains("Hunk 1/2"));
         runtime.dispatch_ui(UiAction::ApplyPatchSelection);
         assert_eq!(
             repo.run_git_capture(&["show", ":a.txt"]),
@@ -394,7 +394,7 @@ fn test_real_git_partial_stage_unstage_discard_ui_flow() {
                 .render_terminal_text()
                 .contains("Partial Stage completed")
         );
-        runtime.dispatch_ui(UiAction::SwitchPatchSource);
+        assert!(runtime.state().ui.details.patch.staged);
         runtime.dispatch_ui(UiAction::ApplyPatchSelection);
         assert_eq!(repo.run_git_capture(&["show", ":a.txt"]), "a1\nkeep\nend\n");
         assert!(
@@ -402,7 +402,7 @@ fn test_real_git_partial_stage_unstage_discard_ui_flow() {
                 .render_terminal_text()
                 .contains("Partial Unstage completed")
         );
-        runtime.dispatch_ui(UiAction::SwitchPatchSource);
+        assert!(!runtime.state().ui.details.patch.staged);
         runtime.dispatch_ui(UiAction::RequestPatchDiscard);
         assert!(
             runtime

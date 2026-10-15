@@ -20,6 +20,26 @@ mod tests {
             map_key(&state, KeyCode::Char('d')),
             Some(UiAction::RequestPatchDiscard)
         );
+        state.ui.details.patch.staged = true;
+        assert_eq!(
+            map_key(&state, KeyCode::Char('d')),
+            Some(UiAction::ApplyPatchSelection)
+        );
+        state.ui.details.patch.staged = false;
+        assert_eq!(
+            map_key(&state, KeyCode::Char('x')),
+            Some(UiAction::TogglePatchMark)
+        );
+        state.ui.details.patch.anchor = Some(0);
+        assert_eq!(
+            map_key(&state, KeyCode::Esc),
+            Some(UiAction::ClearPatchMarks)
+        );
+        state.ui.details.patch.anchor = None;
+        assert_eq!(
+            map_key(&state, KeyCode::Esc),
+            Some(UiAction::CloseFilePatch)
+        );
         state.ui.details.patch.discard = Some(Vec::new());
         assert_eq!(
             map_key(&state, KeyCode::Enter),

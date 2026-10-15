@@ -68,11 +68,19 @@ pub(crate) fn shortcut_line_for_state(state: &AppContext) -> ShortcutLine {
             ("j/k", "select"),
             ("a", "mode"),
             ("v", "range"),
+            ("x", "mark"),
             ("Tab", "side"),
             ("Space", "apply"),
-            ("d", "discard"),
+            (
+                "d",
+                if state.ui.details.patch.staged {
+                    "unstage"
+                } else {
+                    "discard"
+                },
+            ),
             ("n/N", "file"),
-            ("Esc", "back"),
+            ("Esc", "clear/back"),
         ]);
     }
     if let Some(editor) = &state.ui.editor.kind {

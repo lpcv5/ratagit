@@ -124,9 +124,19 @@ pub fn details_scroll_lines_for_terminal_size(size: TerminalSize) -> usize {
 }
 
 pub fn details_content_lines_for_terminal_size(size: TerminalSize) -> usize {
-    let body_height = size.height.max(1).saturating_sub(1);
-    let details_panel_height = split_by_weights(body_height, &[70, 30])[0];
-    details_panel_height.saturating_sub(2)
+    // Use the renderer's constraint solver: distributing remainder rows by
+    // hand can overestimate the Details viewport and clip the selected hunk.
+    use ratatui::layout::{Constraint, Direction, Layout, Rect};
+    let area = Rect::new(0, 0, 1, size.height.clamp(1, u16::MAX as usize) as u16);
+    let root = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(6), Constraint::Length(1)])
+        .split(area);
+    let right = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Percentage(70), Constraint::Percentage(30)])
+        .split(root[0]);
+    right[0].height.saturating_sub(2) as usize
 }
 
 pub fn focused_left_panel_content_lines_for_terminal_size(
@@ -344,7 +354,7 @@ mod tests {
                 width: 80,
                 height: 14,
             }),
-            3
+            2
         );
     }
 }

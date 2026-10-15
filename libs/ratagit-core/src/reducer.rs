@@ -79,6 +79,14 @@ fn update_ui(state: &mut AppContext, action: UiAction) -> Vec<Command> {
             crate::partial::toggle_range(state);
             Vec::new()
         }
+        UiAction::TogglePatchMark => {
+            crate::partial::toggle_mark(state);
+            Vec::new()
+        }
+        UiAction::ClearPatchMarks => {
+            crate::partial::clear_marks(state);
+            Vec::new()
+        }
         UiAction::SwitchPatchSource => {
             crate::partial::switch_source(state);
             Vec::new()
@@ -591,6 +599,8 @@ fn command_palette_action(
         CommandPaletteCommand::RequestPatchDiscard => Some(UiAction::RequestPatchDiscard),
         CommandPaletteCommand::CyclePatchSelection => Some(UiAction::CyclePatchSelection),
         CommandPaletteCommand::TogglePatchRange => Some(UiAction::TogglePatchRange),
+        CommandPaletteCommand::TogglePatchMark => Some(UiAction::TogglePatchMark),
+        CommandPaletteCommand::ClearPatchMarks => Some(UiAction::ClearPatchMarks),
         CommandPaletteCommand::SwitchPatchSource => Some(UiAction::SwitchPatchSource),
         CommandPaletteCommand::CloseFilePatch => Some(UiAction::CloseFilePatch),
         CommandPaletteCommand::Pull => Some(UiAction::Pull),

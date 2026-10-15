@@ -156,6 +156,8 @@ pub struct PatchRow {
     pub text: String,
     pub id: Option<LineId>,
     pub kind: PatchLineKind,
+    pub old_line: Option<u32>,
+    pub new_line: Option<u32>,
 }
 
 impl Patch {

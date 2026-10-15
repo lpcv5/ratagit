@@ -1,16 +1,15 @@
 ---
 source: libs/ratagit-ui/tests/snapshots.rs
-assertion_line: 573
 expression: "render_terminal_text(&state, size)"
 ---
 ╭ 1  󰈙 Files ─────────────╮ 5   Details ──────────────────────────────────────╮
-│   ? README.md           │  diff --git a/src/lib.rs b/src/lib.rs              │
-│    src/                │  @@ -1 +1 @@                                       │
-╰─────────────────────────╯  -old src/lib.rs                                   │
-│ 2   Branches           │  +new src/lib.rs                                   │
-│ main                   │  diff --git a/src/main.rs b/src/main.rs            │
-╰─────────────────────────╯  @@ -1 +1 @@                                       │
-│ 3   Commits            │  -old src/main.rs                                  │
+│   ? README.md           │  @@ -1 +1 @@                                       │
+│    src/                │  -old src/lib.rs                                   │
+╰─────────────────────────╯  +new src/lib.rs                                   │
+│ 2   Branches           │  diff --git a/src/main.rs b/src/main.rs            │
+│ main                   │  @@ -1 +1 @@                                       │
+╰─────────────────────────╯  -old src/main.rs                                  │
+│ 3   Commits            │  +new src/main.rs                                  │
 │●  abc1234  RT  init proj│────────────────────────────────────────────────────╯
 ╰─────────────────────────╯ 6  󰌱 Log                                           │
 │ 4   Stash              │  notice=Ready                                      │

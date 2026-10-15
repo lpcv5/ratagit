@@ -143,6 +143,8 @@ pub enum CommandPaletteCommand {
     RequestPatchDiscard,
     CyclePatchSelection,
     TogglePatchRange,
+    TogglePatchMark,
+    ClearPatchMarks,
     SwitchPatchSource,
     CloseFilePatch,
     Pull,
@@ -1141,6 +1143,16 @@ fn local_command_palette_entries(state: &AppContext) -> Vec<CommandPaletteEntry>
     if state.ui.details.patch.active && state.ui.focus == PanelFocus::Details {
         return vec![
             CommandPaletteEntry::local(
+                "x",
+                "mark/unmark hunk or line",
+                CommandPaletteCommand::TogglePatchMark,
+            ),
+            CommandPaletteEntry::local(
+                "Esc",
+                "clear diff selection",
+                CommandPaletteCommand::ClearPatchMarks,
+            ),
+            CommandPaletteEntry::local(
                 "space",
                 "apply selected changes",
                 CommandPaletteCommand::ApplyPatchSelection,
@@ -1152,7 +1164,7 @@ fn local_command_palette_entries(state: &AppContext) -> Vec<CommandPaletteEntry>
             ),
             CommandPaletteEntry::local(
                 "v",
-                "select line range",
+                "select hunk/line range",
                 CommandPaletteCommand::TogglePatchRange,
             ),
             CommandPaletteEntry::local(
@@ -1162,8 +1174,16 @@ fn local_command_palette_entries(state: &AppContext) -> Vec<CommandPaletteEntry>
             ),
             CommandPaletteEntry::local(
                 "d",
-                "discard selected changes",
-                CommandPaletteCommand::RequestPatchDiscard,
+                if state.ui.details.patch.staged {
+                    "unstage selected changes"
+                } else {
+                    "discard selected changes"
+                },
+                if state.ui.details.patch.staged {
+                    CommandPaletteCommand::ApplyPatchSelection
+                } else {
+                    CommandPaletteCommand::RequestPatchDiscard
+                },
             ),
             CommandPaletteEntry::local(
                 "Esc",

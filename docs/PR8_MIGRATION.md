@@ -1,5 +1,10 @@
 # PR #8 migration to newarch
 
+Follow-up: the user made PR #8 authoritative for the right Details diff.
+`PR8_DETAILS_VALIDATION.md` supersedes this document's original simplified
+Details UI/selection decision and records the actual nine-case terminal matrix.
+The surrounding newarch panels and architecture remain the baseline.
+
 ## Contract and baseline
 
 - Requested baseline: feature/newarch at 7a2221d.

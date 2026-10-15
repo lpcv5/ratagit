@@ -6,6 +6,10 @@ application behind GitBackend, and pure patch-row projection in the existing UI.
 AppContext keeps reviewed patch data under repo.details, interaction under
 ui.details, and request ownership under work.details. Load results require a
 matching request ID and target; mutation barriers still reject stale reads.
+PR #8 Details follow-up evidence lives in `docs/PR8_DETAILS_VALIDATION.md`.
+Patch rows retain presentation-side old/new line coordinates independently of
+native source LineIds. Marks and visual anchors are pure UI state; operations
+resolve them to changed source lines before returning GitBackend commands.
 Runtime teardown stops queued jobs and bounds worker joining to 100 ms. In-flight
 native calls cannot be forcibly cancelled; a detached worker exits after its
 current call and never starts queued work.

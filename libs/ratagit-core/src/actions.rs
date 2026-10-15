@@ -38,6 +38,8 @@ pub enum UiAction {
     },
     CyclePatchSelection,
     TogglePatchRange,
+    TogglePatchMark,
+    ClearPatchMarks,
     SwitchPatchSource,
     ApplyPatchSelection,
     RequestPatchDiscard,

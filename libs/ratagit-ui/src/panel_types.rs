@@ -7,6 +7,7 @@ pub(crate) struct PanelLine {
     pub(crate) spans: Vec<PanelSpan>,
     pub(crate) selected: bool,
     pub(crate) role: RowRole,
+    pub(crate) style: Style,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -24,6 +25,7 @@ impl PanelLine {
             }],
             selected: false,
             role,
+            style: Style::default(),
         }
     }
 
@@ -32,6 +34,7 @@ impl PanelLine {
             spans,
             selected: false,
             role,
+            style: Style::default(),
         }
     }
 
@@ -41,6 +44,11 @@ impl PanelLine {
 
     pub(crate) fn selected(mut self, selected: bool) -> Self {
         self.selected = selected;
+        self
+    }
+
+    pub(crate) fn styled(mut self, style: Style) -> Self {
+        self.style = style;
         self
     }
 }

@@ -3,6 +3,15 @@ pub use crate::patch::PatchRow;
 use crate::patch::{LineId, Patch, PatchDirection, PatchLineKind, PatchRequest, PatchSource};
 use crate::{AppContext, Command, FileRowKind, PanelFocus, push_notice, with_pending};
 
+mod position;
+mod rows;
+pub use position::PatchPosition;
+mod selection;
+mod viewport;
+pub use rows::patch_rows;
+pub(crate) use selection::{clear_marks, toggle_mark, toggle_range};
+pub use selection::{cursor_ids, groups, marked_ids, marked_indices, selected_ids};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SelectionMode {
     #[default]
@@ -19,54 +28,9 @@ pub struct PatchUiState {
     pub staged: bool,
     pub selected: [usize; 2],
     pub anchor: Option<usize>,
+    pub marked: std::collections::BTreeSet<usize>,
     pub discard: Option<Vec<LineId>>,
-}
-
-pub fn groups(patch: &Patch, mode: SelectionMode, staged: bool) -> Vec<Vec<LineId>> {
-    let mut groups = Vec::new();
-    for (file, entry) in patch.files.iter().enumerate() {
-        if (entry.source == PatchSource::Index) != staged {
-            continue;
-        }
-        for (hunk, entry) in entry.hunks.iter().enumerate() {
-            let mut group = Vec::new();
-            for (line, entry) in entry.lines.iter().enumerate() {
-                if matches!(entry.kind, PatchLineKind::Added | PatchLineKind::Removed) {
-                    group.push(LineId { file, hunk, line });
-                    if mode == SelectionMode::Line {
-                        groups.push(std::mem::take(&mut group));
-                    }
-                } else if mode == SelectionMode::Block
-                    && entry.kind == PatchLineKind::Context
-                    && !group.is_empty()
-                {
-                    groups.push(std::mem::take(&mut group));
-                }
-            }
-            if !group.is_empty() {
-                groups.push(group);
-            }
-        }
-    }
-    groups
-}
-
-pub fn selected_ids(state: &AppContext) -> Vec<LineId> {
-    let Some(patch) = &state.repo.details.patch else {
-        return Vec::new();
-    };
-    let ui = &state.ui.details.patch;
-    let groups = groups(patch, ui.mode, ui.staged);
-    if groups.is_empty() {
-        return Vec::new();
-    }
-    let selected = ui.selected[usize::from(ui.staged)].min(groups.len() - 1);
-    let anchor = ui.anchor.unwrap_or(selected).min(groups.len() - 1);
-    groups[selected.min(anchor)..=selected.max(anchor)]
-        .iter()
-        .flatten()
-        .copied()
-        .collect()
+    pub write_position: Option<PatchPosition>,
 }
 
 pub(crate) fn open(state: &mut AppContext) -> Vec<Command> {
@@ -155,8 +119,12 @@ pub(crate) fn loaded(
     match result {
         Ok(patch) if patch.request == request => {
             let first_load = state.repo.details.patch.is_none();
+            if state.repo.details.patch.as_deref() != Some(patch.as_ref()) {
+                clear_marks(state);
+            }
             state.repo.details.patch = Some(patch);
             state.repo.details.files_error = None;
+            position::restore(state);
             let patch = state.repo.details.patch.as_ref().unwrap();
             for staged in [false, true] {
                 let len = groups(patch, state.ui.details.patch.mode, staged).len();
@@ -176,6 +144,7 @@ pub(crate) fn loaded(
         }
         Ok(_) => push_notice(state, "Patch response target mismatch"),
         Err(error) => {
+            state.ui.details.patch.write_position = None;
             state.repo.details.patch = None;
             state.repo.details.files_error = Some(error.clone());
             push_notice(state, &error);
@@ -191,6 +160,7 @@ pub(crate) fn move_selection(state: &mut AppContext, up: bool, visible_lines: us
     let ui = &mut state.ui.details.patch;
     let groups = groups(patch, ui.mode, ui.staged);
     let selected = &mut ui.selected[usize::from(ui.staged)];
+    let previous = *selected;
     *selected = if up {
         selected.saturating_sub(1)
     } else {
@@ -198,22 +168,15 @@ pub(crate) fn move_selection(state: &mut AppContext, up: bool, visible_lines: us
             .saturating_add(1)
             .min(groups.len().saturating_sub(1))
     };
-    if let Some(id) = groups.get(*selected).and_then(|group| group.first()) {
-        let rows = patch_rows(patch);
-        if let Some(row) = rows.iter().position(|row| row.id == Some(*id)) {
-            state.ui.details.scroll_offset = crate::scroll_offset_for_selection(
-                state.ui.details.scroll_offset,
-                row,
-                rows.len(),
-                visible_lines.saturating_sub(1),
-            );
-        }
+    if *selected != previous {
+        ui.write_position = None;
+        viewport::scroll_to_cursor(state, visible_lines);
     }
 }
 
 pub(crate) fn cycle_mode(state: &mut AppContext) {
     let mode = match state.ui.details.patch.mode {
-        SelectionMode::Block => SelectionMode::Hunk,
+        SelectionMode::Block => SelectionMode::Line,
         SelectionMode::Hunk => SelectionMode::Line,
         SelectionMode::Line => SelectionMode::Block,
     };
@@ -225,6 +188,7 @@ fn set_mode(state: &mut AppContext, mode: SelectionMode) {
         return;
     };
     let ui = &mut state.ui.details.patch;
+    ui.write_position = None;
     for staged in [false, true] {
         let old = groups(patch, ui.mode, staged);
         let id = old
@@ -237,24 +201,17 @@ fn set_mode(state: &mut AppContext, mode: SelectionMode) {
     }
     ui.mode = mode;
     ui.anchor = None;
+    ui.marked.clear();
     ensure_visible(state);
-}
-
-pub(crate) fn toggle_range(state: &mut AppContext) {
-    if state.ui.details.patch.anchor.is_some() {
-        state.ui.details.patch.anchor = None;
-    } else {
-        set_mode(state, SelectionMode::Line);
-        let ui = &mut state.ui.details.patch;
-        ui.anchor = Some(ui.selected[usize::from(ui.staged)]);
-    }
 }
 
 pub(crate) fn switch_source(state: &mut AppContext) {
     let ui = &mut state.ui.details.patch;
+    ui.write_position = None;
     ui.scroll_offsets[usize::from(ui.staged)] = state.ui.details.scroll_offset;
     state.ui.details.patch.staged = !state.ui.details.patch.staged;
     state.ui.details.patch.anchor = None;
+    state.ui.details.patch.marked.clear();
     state.ui.details.scroll_offset =
         state.ui.details.patch.scroll_offsets[usize::from(state.ui.details.patch.staged)];
     ensure_visible(state);
@@ -264,21 +221,7 @@ pub(crate) fn ensure_visible(state: &mut AppContext) {
     if !state.ui.details.patch.active || state.ui.details.viewport_lines == 0 {
         return;
     }
-    let Some(id) = selected_ids(state).first().copied() else {
-        return;
-    };
-    let Some(patch) = &state.repo.details.patch else {
-        return;
-    };
-    let rows = patch_rows(patch);
-    if let Some(row) = rows.iter().position(|row| row.id == Some(id)) {
-        state.ui.details.scroll_offset = crate::scroll_offset_for_selection(
-            state.ui.details.scroll_offset,
-            row,
-            rows.len(),
-            state.ui.details.viewport_lines.saturating_sub(1),
-        );
-    }
+    viewport::scroll_to_cursor(state, state.ui.details.viewport_lines);
 }
 
 pub(crate) fn next_file(state: &mut AppContext, up: bool) -> Vec<Command> {
@@ -356,10 +299,12 @@ pub(crate) fn apply(state: &mut AppContext, discard: bool) -> Vec<Command> {
         push_notice(state, &error);
         return Vec::new();
     }
+    let patch = patch.clone();
+    state.ui.details.patch.write_position = position::capture(state, direction, &ids);
     with_pending(
         state,
         vec![Command::ApplyPatch {
-            patch: patch.clone(),
+            patch,
             ids,
             direction,
         }],
@@ -374,6 +319,7 @@ pub(crate) fn applied(
     state.work.record_operation_completed("apply_patch");
     state.last_operation = Some(format!("partial_{direction:?}").to_lowercase());
     state.ui.details.patch.anchor = None;
+    state.ui.details.patch.marked.clear();
     crate::details::clear_caches(state);
     match result {
         Ok(()) => {
@@ -381,93 +327,12 @@ pub(crate) fn applied(
             push_notice(state, &format!("Partial {direction:?} completed"));
         }
         Err(error) => {
+            state.ui.details.patch.write_position = None;
             state.repo.status.last_error = Some(error.clone());
             push_notice(state, &error);
         }
     }
     with_pending(state, vec![Command::RefreshFiles])
-}
-
-pub fn patch_rows(patch: &Patch) -> Vec<PatchRow> {
-    if let Some(rows) = &patch.preview {
-        return rows.clone();
-    }
-    let mut rows = Vec::new();
-    for (file, entry) in patch.files.iter().enumerate() {
-        let path = entry
-            .new
-            .path
-            .as_ref()
-            .or(entry.old.path.as_ref())
-            .map(|p| p.to_string_lossy())
-            .unwrap_or_default();
-        rows.push(PatchRow {
-            text: format!(
-                "--- {} [{:?}]{}",
-                path,
-                entry.source,
-                if entry.binary {
-                    " (binary; read only)"
-                } else {
-                    ""
-                }
-            ),
-            id: None,
-            kind: PatchLineKind::Context,
-        });
-        for (hunk, entry) in entry.hunks.iter().enumerate() {
-            rows.push(PatchRow {
-                text: String::from_utf8_lossy(&entry.header)
-                    .trim_end()
-                    .to_string(),
-                id: None,
-                kind: PatchLineKind::Context,
-            });
-            for (line, entry) in entry.lines.iter().enumerate() {
-                let prefix = match entry.kind {
-                    PatchLineKind::Added => '+',
-                    PatchLineKind::Removed => '-',
-                    PatchLineKind::Context => ' ',
-                    PatchLineKind::NoNewline => '\\',
-                };
-                let number = entry
-                    .new_line
-                    .or(entry.old_line)
-                    .map(|n| n.to_string())
-                    .unwrap_or_default();
-                let content: String = String::from_utf8_lossy(&entry.content)
-                    .trim_end_matches(['\r', '\n'])
-                    .chars()
-                    .map(|c| {
-                        if c == '\t' {
-                            ' '
-                        } else if c.is_control() {
-                            '\u{fffd}'
-                        } else {
-                            c
-                        }
-                    })
-                    .collect();
-                rows.push(PatchRow {
-                    text: format!("{number:>5} {prefix}{content}"),
-                    id: (entry.kind != PatchLineKind::NoNewline).then_some(LineId {
-                        file,
-                        hunk,
-                        line,
-                    }),
-                    kind: entry.kind,
-                });
-            }
-        }
-    }
-    if patch.truncated {
-        rows.push(PatchRow {
-            text: "Patch truncated; partial changes disabled".into(),
-            id: None,
-            kind: PatchLineKind::Context,
-        });
-    }
-    rows
 }
 
 #[cfg(test)]

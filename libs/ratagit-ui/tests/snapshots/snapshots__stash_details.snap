@@ -4,21 +4,21 @@ expression: "render_terminal_text(&state, size)"
 ---
 ╭ 1  󰈙 Files ────────────────────╮ 5   Details ───────────────────────────────────────────────────╮
 │   ? README.md                  │Stash diff (read only) | j/k:select Esc:back                     │
-│    src/                       │--- src/lib.rs [Stash(0)]                                        │
-│     M lib.rs                   │@@ -1,3 +1,3 @@                                                  │
-│     M main.rs                  │    1 -old first                                                 │
-│                                │    2 +new first                                                 │
-│                                │    3  unchanged                                                 │
-│                                │    4 -old last                                                  │
-│                                │    5 +new last                                                  │
-╰────────────────────────────────╯--- src/lib.rs [Stash(0)]                                        │
-│ 2   Branches                  │@@ -1,3 +1,3 @@                                                  │
-│ main                          │    1 -old first                                                 │
-│  feature/mvp                   │    2 +new first                                                 │
-│                                │    3  unchanged                                                 │
-│                                │    4 -old last                                                  │
-│                                │    5 +new last                                                  │
-╰────────────────────────────────╯                                                                 │
+│    src/                       │j/k:move a:mode v:range x:mark Tab:side Space:apply d:discard Esc│
+│     M lib.rs                   │       │   --- src/lib.rs [Stash(0)]                             │
+│     M main.rs                  │       │   @@ -1,3 +1,3 @@                                       │
+│                                │   1   │ - old first                                             │
+│                                │     1 │ + new first                                             │
+│                                │   2 2 │   unchanged                                             │
+│                                │   3   │ - old last                                              │
+╰────────────────────────────────╯     3 │ + new last                                              │
+│ 2   Branches                  │       │   --- src/lib.rs [Stash(0)]                             │
+│ main                          │       │   @@ -1,3 +1,3 @@                                       │
+│  feature/mvp                   │   1   │ - old first                                             │
+│                                │     1 │ + new first                                             │
+│                                │   2 2 │   unchanged                                             │
+│                                │   3   │ - old last                                              │
+╰────────────────────────────────╯     3 │ + new last                                              │
 │ 3   Commits                   │                                                                 │
 │●  abc1234  RT  init project    │                                                                 │
 │●  def5678  RT  wire commands   │─────────────────────────────────────────────────────────────────╯

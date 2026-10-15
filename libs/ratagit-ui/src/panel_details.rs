@@ -8,7 +8,7 @@ use crate::theme::RowRole;
 
 pub(crate) fn render_details_lines(state: &AppContext, max_lines: usize) -> Vec<PanelLine> {
     if state.ui.details.patch.active {
-        return super::partial_details::render(state, max_lines);
+        return super::partial_details::render(state, max_lines, usize::MAX);
     }
     match state.ui.last_left_focus {
         PanelFocus::Files => render_files_details_lines(state, max_lines),
@@ -85,7 +85,7 @@ pub(crate) fn render_log_lines(state: &AppContext, max_lines: usize) -> Vec<Pane
 
 fn render_files_details_lines(state: &AppContext, max_lines: usize) -> Vec<PanelLine> {
     if state.ui.details.patch.active {
-        return super::partial_details::render(state, max_lines);
+        return super::partial_details::render(state, max_lines, usize::MAX);
     }
     if max_lines == 0 {
         return Vec::new();

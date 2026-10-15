@@ -124,8 +124,18 @@ pub fn fixture_patch() -> Box<ratagit_core::patch::Patch> {
     .enumerate()
     .map(|(index, (kind, text))| PatchLine {
         kind,
-        old_line: Some(index as u32 + 1),
-        new_line: Some(index as u32 + 1),
+        old_line: match index {
+            0 => Some(1),
+            2 => Some(2),
+            3 => Some(3),
+            _ => None,
+        },
+        new_line: match index {
+            1 => Some(1),
+            2 => Some(2),
+            4 => Some(3),
+            _ => None,
+        },
         content: format!("{text}\n").into_bytes(),
     })
     .collect();

@@ -3,22 +3,22 @@ source: libs/ratagit-ui/tests/snapshots.rs
 expression: text
 ---
 ╭ 1  󰈙 Files ───────────────────────────╮╭ 5   Details ───────────────────────────────────────────────────────────────╮
-│   ? README.md                         ││Block | unstaged | a:mode v:range Tab:side Space:apply d:discard Esc:back    │
-│    src/                              ││--- src/lib.rs [Index]                                                       │
-│     M lib.rs                          ││@@ -1,3 +1,3 @@                                                              │
-│     M main.rs                         ││    1 -old first                                                             │
-│                                       ││    2 +new first                                                             │
-│                                       ││    3  unchanged                                                             │
-│                                       ││    4 -old last                                                              │
-│                                       ││    5 +new last                                                              │
-│                                       ││--- src/lib.rs [Worktree]                                                    │
-│                                       ││@@ -1,3 +1,3 @@                                                              │
-│                                       ││    1 -old first                                                             │
-│                                       ││    2 +new first                                                             │
-╰───────────────────────────────────────╯│    3  unchanged                                                             │
-│ 2   Branches                         ││    4 -old last                                                              │
-│ main                                 ││    5 +new last                                                              │
-│  feature/mvp                          ││                                                                             │
+│   ? README.md                         ││Hunk 1/2 | 0 selected | unstaged | +4 -4                                     │
+│    src/                              ││j/k:move a:mode v:range x:mark Tab:side Space:apply d:discard Esc:clear/back │
+│     M lib.rs                          ││       │   --- src/lib.rs [Index]                                            │
+│     M main.rs                         ││       │   @@ -1,3 +1,3 @@                                                   │
+│                                       ││   1   │ - old first                                                         │
+│                                       ││     1 │ + new first                                                         │
+│                                       ││   2 2 │   unchanged                                                         │
+│                                       ││   3   │ - old last                                                          │
+│                                       ││     3 │ + new last                                                          │
+│                                       ││       │   --- src/lib.rs [Worktree]                                         │
+│                                       ││       │   @@ -1,3 +1,3 @@                                                   │
+│                                       ││>  1   │ - old first                                                         │
+╰───────────────────────────────────────╯│     1 │ + new first                                                         │
+│ 2   Branches                         ││   2 2 │   unchanged                                                         │
+│ main                                 ││   3   │ - old last                                                          │
+│  feature/mvp                          ││     3 │ + new last                                                          │
 │                                       ││                                                                             │
 │                                       ││                                                                             │
 │                                       ││                                                                             │
@@ -36,4 +36,4 @@ expression: text
 │ 4   Stash                            │                                                                              │
 │ stash@{0} WIP on main: local test    │                                                                              │
 ╰───────────────────────────────────────╯──────────────────────────────────────────────────────────────────────────────╯
- j/k  select   a  mode   v  range   Tab  side   Space  apply   d  discard   n/N  file   Esc  back
+ j/k  select   a  mode   v  range   x  mark   Tab  side   Space  apply   d  discard   n/N  file   Esc  clear/back
