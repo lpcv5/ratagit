@@ -232,6 +232,29 @@ fn test_empty_layout_golden() {
 }
 
 #[test]
+fn test_workspace_responsive_chrome_and_tiny_terminals() {
+    use super::theme::UiTheme;
+
+    let snapshot = Fixture::populated().snapshot();
+    for (width, height) in [(1, 1), (4, 2), (20, 4), (60, 18), (80, 24), (120, 32)] {
+        let ui = layout(&snapshot, width, height);
+        assert_eq!(ui.buffer.area, Rect::new(0, 0, width, height));
+        if height >= 18 {
+            let panel_y = 0;
+            let gutter = u16::from(width >= 100 && height >= 28);
+            assert_eq!(ui.buffer[(gutter, panel_y)].symbol(), "╭");
+            assert_eq!(
+                ui.buffer[(gutter + 1, panel_y + 1)].bg,
+                UiTheme::default().surface
+            );
+            if gutter > 0 {
+                assert_eq!(ui.buffer[(0, panel_y)].bg, UiTheme::default().canvas);
+            }
+        }
+    }
+}
+
+#[test]
 fn test_populated_layout_panel_focus_goldens() {
     let mut fixture = Fixture::populated();
     for (panel, name) in [

@@ -3,15 +3,15 @@ area: Rect { x: 0, y: 0, width: 120, height: 24 }
 cursor: None
 
 text:
-00: "╭Files─────────────────────────────╮╭Diff─Diff [1-6 / 6]───────────────────────────────────────────────────────────────╮"
+00: "╭ Files ───────────────────────────╮╭ Diff [1-6 / 6] ──────────────────────────────────────────────────────────────────╮"
 01: "│✎ file_28.rs                      ││--- a/README.md                                                                   │"
 02: "│✎ file_29.rs                      ││+++ b/README.md                                                                   │"
 03: "╰──────────────────────────────────╯│Unstaged @@ -1,2 +1,2 @@                                                          │"
-04: "╭Local Branches────────────────────╮│ # Ratagit                                                                        │"
+04: "╭ Local Branches ────────────── 30 ╮│ # Ratagit                                                                        │"
 05: "│  branch_28                       ││-Old description                                                                  │"
 06: "│  branch_29                       ││+Tested terminal UI                                                               │"
 07: "╰──────────────────────────────────╯│                                                                                  │"
-08: "╭Commits───────────────────────────╮│                                                                                  │"
+08: "╭ Commits ─────────────────────────╮│                                                                                  │"
 09: "│● abc1244 AL UI change 20         ││                                                                                  │"
 10: "│● abc1245 AL UI change 21         ││                                                                                  │"
 11: "│● abc1246 AL UI change 22         ││                                                                                  │"
@@ -23,51 +23,54 @@ text:
 17: "│● abc124c AL UI change 28         ││                                                                                  │"
 18: "│● abc124d AL UI change 29         ││                                                                                  │"
 19: "╰──────────────────────────────────╯╰──────────────────────────────────────────────────────────────────────────────────╯"
-20: "╭Stash─────────────────────────────╮╭Command Log───────────────────────────────────────────────────────────────────────╮"
-21: "│stash@{0} WIP UI tests            ││✗ git fetch: offline                                                              │"
+20: "╭ Stash ───────────────────────────╮╭ Command Log ─────────────────────────────────────────────────────────────────────╮"
+21: "│stash@{0} WIP UI tests            ││ ERR  git fetch: offline                                                          │"
 22: "╰──────────────────────────────────╯╰──────────────────────────────────────────────────────────────────────────────────╯"
-23: "[Tab] FocusHunks   [Enter] Files   [:] Command   [q] Quit                                                               "
+23: "  Tab  FocusHunks   Enter  Files   :  Command   q  Quit                                                                 "
 
 symbol boundaries: []
 
 styles:
-0: Style::new().dark_gray().bg(Color::Reset).underline_color(Color::Reset); diff=None; skip=false
-1: Style::new().yellow().bg(Color::Reset).underline_color(Color::Reset); diff=None; skip=false
-2: Style::new().fg(Color::Reset).bg(Color::Reset).underline_color(Color::Reset); diff=None; skip=false
-3: Style::new().cyan().bg(Color::Reset).underline_color(Color::Reset); diff=None; skip=false
-4: Style::new().gray().bg(Color::Reset).underline_color(Color::Reset); diff=None; skip=false
-5: Style::new().white().bg(Color::Reset).underline_color(Color::Reset); diff=None; skip=false
-6: Style::new().red().bg(Color::Reset).underline_color(Color::Reset); diff=None; skip=false
-7: Style::new().green().bg(Color::Reset).underline_color(Color::Reset); diff=None; skip=false
-8: Style::new().fg(Color::Rgb(82, 196, 208)).bg(Color::Reset).underline_color(Color::Reset); diff=None; skip=false
-9: Style::new().fg(Color::Rgb(82, 196, 208)).bg(Color::Reset).underline_color(Color::Reset).bold(); diff=None; skip=false
-10: Style::new().white().bg(Color::Rgb(34, 52, 58)).underline_color(Color::Reset).bold(); diff=None; skip=false
-11: Style::new().fg(Color::Rgb(82, 196, 208)).bg(Color::Rgb(20, 28, 32)).underline_color(Color::Reset); diff=None; skip=false
-12: Style::new().fg(Color::Reset).bg(Color::Rgb(20, 28, 32)).underline_color(Color::Reset); diff=None; skip=false
-13: Style::new().white().bg(Color::Rgb(20, 28, 32)).underline_color(Color::Reset); diff=None; skip=false
+0: Style::new().fg(Color::Rgb(48, 57, 69)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset); diff=None; skip=false
+1: Style::new().fg(Color::Rgb(139, 153, 171)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset); diff=None; skip=false
+2: Style::new().fg(Color::Rgb(230, 190, 115)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset); diff=None; skip=false
+3: Style::new().fg(Color::Rgb(218, 225, 234)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset); diff=None; skip=false
+4: Style::new().fg(Color::Rgb(121, 184, 255)).bg(Color::Rgb(33, 40, 50)).underline_color(Color::Reset); diff=None; skip=false
+5: Style::new().fg(Color::Rgb(230, 190, 115)).bg(Color::Rgb(33, 40, 50)).underline_color(Color::Reset); diff=None; skip=false
+6: Style::new().fg(Color::Rgb(218, 225, 234)).bg(Color::Rgb(33, 40, 50)).underline_color(Color::Reset); diff=None; skip=false
+7: Style::new().fg(Color::Rgb(139, 153, 171)).bg(Color::Rgb(33, 40, 50)).underline_color(Color::Reset); diff=None; skip=false
+8: Style::new().fg(Color::Rgb(245, 141, 148)).bg(Color::Rgb(51, 30, 37)).underline_color(Color::Reset); diff=None; skip=false
+9: Style::new().fg(Color::Rgb(126, 211, 161)).bg(Color::Rgb(24, 46, 36)).underline_color(Color::Reset); diff=None; skip=false
+10: Style::new().fg(Color::Rgb(121, 184, 255)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset); diff=None; skip=false
+11: Style::new().fg(Color::Rgb(121, 184, 255)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset).bold(); diff=None; skip=false
+12: Style::new().fg(Color::Rgb(245, 141, 148)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset); diff=None; skip=false
+13: Style::new().fg(Color::Rgb(126, 211, 161)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset); diff=None; skip=false
+14: Style::new().fg(Color::Rgb(218, 225, 234)).bg(Color::Rgb(37, 57, 82)).underline_color(Color::Reset).bold(); diff=None; skip=false
+15: Style::new().fg(Color::Reset).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset); diff=None; skip=false
+16: Style::new().fg(Color::Rgb(121, 184, 255)).bg(Color::Rgb(33, 40, 50)).underline_color(Color::Reset).bold(); diff=None; skip=false
 
 style runs (x start..end exclusive = style):
-00: 0..120=0
-01: 0..1=0 1..2=1 2..3=2 3..13=1 13..35=2 35..37=0 37..52=3 52..119=2 119..120=0
-02: 0..1=0 1..2=1 2..3=2 3..13=1 13..35=2 35..37=0 37..52=3 52..119=2 119..120=0
-03: 0..37=0 37..61=3 61..119=2 119..120=0
-04: 0..37=0 37..47=4 47..119=2 119..120=0
-05: 0..1=0 1..12=5 12..35=2 35..37=0 37..53=6 53..119=2 119..120=0
-06: 0..1=0 1..12=5 12..35=2 35..37=0 37..56=7 56..119=2 119..120=0
-07: 0..37=0 37..119=2 119..120=0
-08: 0..1=8 1..8=9 8..36=8 36..37=0 37..119=2 119..120=0
-09: 0..1=8 1..2=6 2..3=2 3..10=6 10..11=2 11..13=4 13..14=2 14..26=5 26..35=2 35..36=8 36..37=0 37..119=2 119..120=0
-10: 0..1=8 1..2=7 2..3=2 3..10=7 10..11=2 11..13=4 13..14=2 14..26=5 26..35=2 35..36=8 36..37=0 37..119=2 119..120=0
-11: 0..1=8 1..2=1 2..3=2 3..10=1 10..11=2 11..13=4 13..14=2 14..26=5 26..35=2 35..36=8 36..37=0 37..119=2 119..120=0
-12: 0..1=8 1..2=6 2..3=2 3..10=6 10..11=2 11..13=4 13..14=2 14..26=5 26..35=2 35..36=8 36..37=0 37..119=2 119..120=0
-13: 0..1=8 1..2=7 2..3=2 3..10=7 10..11=2 11..13=4 13..14=2 14..26=5 26..35=2 35..36=8 36..37=0 37..119=2 119..120=0
-14: 0..1=8 1..2=1 2..3=2 3..10=1 10..11=2 11..13=4 13..14=2 14..26=5 26..35=2 35..36=8 36..37=0 37..119=2 119..120=0
-15: 0..1=8 1..2=6 2..3=2 3..10=6 10..11=2 11..13=4 13..14=2 14..26=5 26..35=2 35..36=8 36..37=0 37..119=2 119..120=0
-16: 0..1=8 1..2=7 2..3=2 3..10=7 10..11=2 11..13=4 13..14=2 14..26=5 26..35=2 35..36=8 36..37=0 37..119=2 119..120=0
-17: 0..1=8 1..2=1 2..3=2 3..10=1 10..11=2 11..13=4 13..14=2 14..26=5 26..35=2 35..36=8 36..37=0 37..119=2 119..120=0
-18: 0..1=8 1..35=10 35..36=8 36..37=0 37..119=2 119..120=0
-19: 0..36=8 36..120=0
-20: 0..120=0
-21: 0..1=0 1..23=1 23..35=2 35..37=0 37..57=6 57..119=2 119..120=0
+00: 0..1=0 1..8=1 8..37=0 37..53=1 53..120=0
+01: 0..1=0 1..2=2 2..3=3 3..13=2 13..35=3 35..37=0 37..119=4 119..120=0
+02: 0..1=0 1..2=5 2..3=6 3..13=5 13..35=6 35..37=0 37..119=4 119..120=0
+03: 0..37=0 37..119=4 119..120=0
+04: 0..1=0 1..17=1 17..31=0 31..35=7 35..37=0 37..119=3 119..120=0
+05: 0..1=0 1..35=3 35..37=0 37..119=8 119..120=0
+06: 0..1=0 1..35=6 35..37=0 37..119=9 119..120=0
+07: 0..37=0 37..119=3 119..120=0
+08: 0..1=10 1..10=11 10..36=10 36..37=0 37..119=3 119..120=0
+09: 0..1=10 1..2=12 2..3=3 3..10=12 10..11=3 11..13=1 13..35=3 35..36=10 36..37=0 37..119=3 119..120=0
+10: 0..1=10 1..2=13 2..3=3 3..10=13 10..11=3 11..13=1 13..35=3 35..36=10 36..37=0 37..119=3 119..120=0
+11: 0..1=10 1..2=2 2..3=3 3..10=2 10..11=3 11..13=1 13..35=3 35..36=10 36..37=0 37..119=3 119..120=0
+12: 0..1=10 1..2=12 2..3=3 3..10=12 10..11=3 11..13=1 13..35=3 35..36=10 36..37=0 37..119=3 119..120=0
+13: 0..1=10 1..2=13 2..3=3 3..10=13 10..11=3 11..13=1 13..35=3 35..36=10 36..37=0 37..119=3 119..120=0
+14: 0..1=10 1..2=2 2..3=3 3..10=2 10..11=3 11..13=1 13..35=3 35..36=10 36..37=0 37..119=3 119..120=0
+15: 0..1=10 1..2=12 2..3=3 3..10=12 10..11=3 11..13=1 13..35=3 35..36=10 36..37=0 37..119=3 119..120=0
+16: 0..1=10 1..2=13 2..3=3 3..10=13 10..11=3 11..13=1 13..35=3 35..36=10 36..37=0 37..119=3 119..120=0
+17: 0..1=10 1..2=2 2..3=3 3..10=2 10..11=3 11..13=1 13..35=3 35..36=10 36..37=0 37..119=3 119..120=0
+18: 0..1=10 1..35=14 35..36=10 36..37=0 37..119=3 119..120=0
+19: 0..36=10 36..120=0
+20: 0..1=0 1..8=1 8..37=0 37..50=1 50..120=0
+21: 0..1=0 1..23=5 23..35=6 35..37=0 37..42=8 42..119=3 119..120=0
 22: 0..120=0
-23: 0..5=11 5..6=12 6..16=13 16..19=12 19..26=11 26..27=12 27..32=13 32..35=12 35..38=11 38..39=12 39..46=13 46..49=12 49..52=11 52..53=12 53..57=13 57..120=2
+23: 0..1=15 1..6=16 6..7=15 7..17=1 17..19=15 19..26=16 26..27=15 27..32=1 32..34=15 34..37=16 37..38=15 38..45=1 45..47=15 47..50=16 50..51=15 51..55=1 55..120=15

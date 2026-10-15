@@ -45,7 +45,7 @@ pub fn draw_commits_panel(
                 let message_spans = highlighted_spans(
                     &c.message,
                     ctx.search_query,
-                    Style::default().fg(Color::White),
+                    Style::default().fg(theme.text_primary),
                 );
 
                 let mut spans = Vec::with_capacity(
@@ -134,7 +134,7 @@ fn graph_spans(
             if matches_highlight {
                 color
             } else {
-                Color::DarkGray
+                UiTheme::default().text_muted
             }
         } else {
             color
@@ -148,10 +148,11 @@ fn graph_spans(
 }
 
 fn hash_color(sync_state: CommitSyncState) -> Color {
+    let theme = UiTheme::default();
     match sync_state {
-        CommitSyncState::DefaultBranch => Color::Green,
-        CommitSyncState::RemoteBranch => Color::Yellow,
-        CommitSyncState::LocalOnly => Color::Red,
+        CommitSyncState::DefaultBranch => theme.success,
+        CommitSyncState::RemoteBranch => theme.warning,
+        CommitSyncState::LocalOnly => theme.error,
     }
 }
 
@@ -212,7 +213,7 @@ mod tests {
         let spans = graph_spans(&cells, Color::Green, &highlighted);
         assert_eq!(spans.len(), 2);
         assert_eq!(spans[0].style.fg, Some(Color::Green));
-        assert_eq!(spans[1].style.fg, Some(Color::DarkGray));
+        assert_eq!(spans[1].style.fg, Some(UiTheme::default().text_muted));
     }
 
     #[test]

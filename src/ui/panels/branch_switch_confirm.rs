@@ -1,5 +1,9 @@
 use crate::app::InputMode;
 use crate::flux::snapshot::AppStateSnapshot;
+use crate::ui::components::{
+    atoms::{badge, Tone},
+    molecules::shortcut_hint,
+};
 use crate::ui::panels::{centered_rect, render_overlay_chrome};
 use crate::ui::theme::UiTheme;
 use ratatui::{
@@ -30,10 +34,14 @@ pub fn render_branch_switch_confirm(frame: &mut Frame, snapshot: &AppStateSnapsh
         ])
         .split(inner);
 
-    let warn = Paragraph::new(Line::from(format!(
-        "Detected {} uncommitted file(s).",
-        snapshot.uncommitted_change_count
-    )))
+    let warn = Paragraph::new(Line::from(vec![
+        badge(
+            snapshot.uncommitted_change_count.to_string(),
+            Tone::Warning,
+            &theme,
+        ),
+        ratatui::text::Span::raw(" uncommitted file(s)."),
+    ]))
     .style(Style::default().fg(theme.text_primary));
     frame.render_widget(warn, sections[0]);
 
@@ -44,8 +52,12 @@ pub fn render_branch_switch_confirm(frame: &mut Frame, snapshot: &AppStateSnapsh
     frame.render_widget(detail, sections[1]);
 
     let actions = Paragraph::new(Line::from(
-        "[Y] Auto Stash + Switch    [N/Esc] Cancel    [Enter] Confirm Y",
-    ))
-    .style(Style::default().fg(theme.accent));
+        [
+            shortcut_hint("Y", "Auto Stash + Switch  ", &theme),
+            shortcut_hint("N/Esc", "Cancel  ", &theme),
+            shortcut_hint("Enter", "Confirm Y", &theme),
+        ]
+        .concat(),
+    ));
     frame.render_widget(actions, sections[2]);
 }

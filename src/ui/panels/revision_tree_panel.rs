@@ -1,4 +1,5 @@
 use crate::file_tree::FileTreeNode;
+use crate::ui::components::molecules::card;
 use crate::ui::components::organisms::empty_list_item;
 use crate::ui::theme::UiTheme;
 use crate::ui::widgets::file_tree::FileTree;
@@ -40,7 +41,7 @@ pub fn render_revision_tree_panel(
         if tree_nodes.is_empty() {
             let items = empty_list_item("No files");
             let list = List::new(items)
-                .block(theme.panel_block(title, is_active))
+                .block(card(&theme, title, is_active))
                 .scroll_padding(LIST_SCROLL_PADDING)
                 .highlight_style(highlight);
             let mut state = list_state;
@@ -49,7 +50,7 @@ pub fn render_revision_tree_panel(
         }
 
         let widget = FileTree::new(tree_nodes)
-            .block(theme.panel_block(title, is_active))
+            .block(card(&theme, title, is_active))
             .search_query(tree_search_query)
             .highlight_style(highlight);
         let mut state = list_state;
@@ -58,7 +59,7 @@ pub fn render_revision_tree_panel(
     }
 
     let list = List::new(list_items)
-        .block(theme.panel_block(title, is_active))
+        .block(card(&theme, title, is_active))
         .scroll_padding(LIST_SCROLL_PADDING)
         .highlight_style(highlight);
     let mut state = list_state;

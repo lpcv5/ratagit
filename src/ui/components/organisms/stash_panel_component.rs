@@ -3,14 +3,9 @@ use crate::app::SidePanel;
 use crate::ui::components::organisms::{empty_list_item, title_with_search, PanelRenderContext};
 use crate::ui::highlight::highlighted_spans;
 use crate::ui::panels::revision_tree_panel::{render_revision_tree_panel, RevisionTreePanelProps};
+use crate::ui::theme::UiTheme;
 use crate::ui::traits::DynamicPanel;
-use ratatui::{
-    layout::Rect,
-    style::{Color, Style},
-    text::Line,
-    widgets::ListItem,
-    Frame,
-};
+use ratatui::{layout::Rect, style::Style, text::Line, widgets::ListItem, Frame};
 
 pub fn draw_stash_panel(
     frame: &mut Frame,
@@ -27,8 +22,11 @@ pub fn draw_stash_panel(
             .iter()
             .map(|s| {
                 let text = format!("stash@{{{}}} {}", s.index, s.message);
-                let spans =
-                    highlighted_spans(&text, ctx.search_query, Style::default().fg(Color::Yellow));
+                let spans = highlighted_spans(
+                    &text,
+                    ctx.search_query,
+                    Style::default().fg(UiTheme::default().warning),
+                );
                 ListItem::new(Line::from(spans))
             })
             .collect()

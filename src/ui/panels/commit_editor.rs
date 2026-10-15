@@ -1,9 +1,10 @@
 use crate::app::{CommitFieldFocus, InputMode};
 use crate::flux::snapshot::AppStateSnapshot;
+use crate::ui::components::molecules::{card, shortcut_hint};
 use crate::ui::panels::{centered_rect, render_overlay_chrome};
 use crate::ui::theme::UiTheme;
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Direction, Layout},
     style::Style,
     text::Line,
     widgets::Paragraph,
@@ -22,7 +23,11 @@ pub fn render_commit_editor(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) 
 
     let sections = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(3), Constraint::Min(5)])
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Min(0),
+            Constraint::Length(1),
+        ])
         .split(inner);
 
     let message_active = snapshot.commit_focus == CommitFieldFocus::Message;
@@ -40,38 +45,28 @@ pub fn render_commit_editor(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) 
         "Commit Editor | Focus: {} | Ln {} Col {}",
         focus_name, focus_line, focus_col
     );
-    frame.render_widget(theme.panel_block(&outer_title, true), area);
+    frame.render_widget(card(&theme, &outer_title, true), area);
 
-    let message_title = if message_active {
-        "Message [ACTIVE] (Enter to confirm commit)"
-    } else {
-        "Message (Enter to confirm commit)"
-    };
-    let message = Paragraph::new(snapshot.commit_message_buffer)
-        .block(theme.panel_block(message_title, message_active));
+    let message = Paragraph::new(snapshot.commit_message_buffer).block(card(
+        &theme,
+        "Message",
+        message_active,
+    ));
     frame.render_widget(message, sections[0]);
 
-    let desc_title = if desc_active {
-        "Description [ACTIVE] (Tab switch, Enter newline)"
-    } else {
-        "Description (Tab switch, Enter newline)"
-    };
     let description = Paragraph::new(snapshot.commit_description_buffer)
         .style(Style::default().fg(theme.text_primary))
-        .block(theme.panel_block(desc_title, desc_active));
+        .block(card(&theme, "Description", desc_active));
     frame.render_widget(description, sections[1]);
 
     let help = Paragraph::new(Line::from(
-        "Tab switch field | Enter confirm/newline | Esc cancel",
-    ))
-    .style(Style::default().fg(theme.text_muted));
-    let help_area = Rect {
-        x: inner.x,
-        y: inner.y + inner.height.saturating_sub(1),
-        width: inner.width,
-        height: 1,
-    };
-    frame.render_widget(help, help_area);
+        snapshot
+            .shortcut_hints
+            .iter()
+            .flat_map(|(key, label)| shortcut_hint(key, &format!("{label}  "), &theme))
+            .collect::<Vec<_>>(),
+    ));
+    frame.render_widget(help, sections[2]);
 
     // Place terminal cursor at active input field for direct typing feedback.
     let cursor = if message_active {

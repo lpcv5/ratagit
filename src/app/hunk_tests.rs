@@ -424,7 +424,7 @@ fn test_render_shows_hunk_cursor_selection_source_and_snapshot_parity() {
     assert!(buffer
         .content
         .iter()
-        .any(|cell| cell.bg == ratatui::style::Color::DarkGray));
+        .any(|cell| cell.bg == crate::ui::theme::UiTheme::default().selection_bg));
 }
 
 #[test]

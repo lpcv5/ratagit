@@ -3,7 +3,7 @@ area: Rect { x: 0, y: 0, width: 80, height: 8 }
 cursor: None
 
 text:
-00: "╭Diff─Diff [Hunk 1/1 | 1 selected | Read only | README.md]─────────────────────╮"
+00: "╭ Diff [Hunk 1/1 | 1 selected | Read only | README.md] ────────────────────────╮"
 01: "│>[x] Unstaged @@ -1,2 +1,2 @@                                                 │"
 02: "│>[x]  # Ratagit                                                               │"
 03: "│>[x] -Old description                                                         │"
@@ -15,20 +15,20 @@ text:
 symbol boundaries: []
 
 styles:
-0: Style::new().fg(Color::Rgb(82, 196, 208)).bg(Color::Reset).underline_color(Color::Reset); diff=None; skip=false
-1: Style::new().fg(Color::Rgb(82, 196, 208)).bg(Color::Reset).underline_color(Color::Reset).bold(); diff=None; skip=false
-2: Style::new().cyan().on_dark_gray().underline_color(Color::Reset).bold(); diff=None; skip=false
-3: Style::new().fg(Color::Reset).bg(Color::Reset).underline_color(Color::Reset); diff=None; skip=false
-4: Style::new().gray().on_dark_gray().underline_color(Color::Reset).bold(); diff=None; skip=false
-5: Style::new().red().on_dark_gray().underline_color(Color::Reset).bold(); diff=None; skip=false
-6: Style::new().green().on_dark_gray().underline_color(Color::Reset).bold(); diff=None; skip=false
+0: Style::new().fg(Color::Rgb(121, 184, 255)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset); diff=None; skip=false
+1: Style::new().fg(Color::Rgb(121, 184, 255)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset).bold(); diff=None; skip=false
+2: Style::new().fg(Color::Rgb(121, 184, 255)).bg(Color::Rgb(37, 57, 82)).underline_color(Color::Reset).bold(); diff=None; skip=false
+3: Style::new().fg(Color::Rgb(218, 225, 234)).bg(Color::Rgb(37, 57, 82)).underline_color(Color::Reset).bold(); diff=None; skip=false
+4: Style::new().fg(Color::Rgb(245, 141, 148)).bg(Color::Rgb(37, 57, 82)).underline_color(Color::Reset).bold(); diff=None; skip=false
+5: Style::new().fg(Color::Rgb(126, 211, 161)).bg(Color::Rgb(37, 57, 82)).underline_color(Color::Reset).bold(); diff=None; skip=false
+6: Style::new().fg(Color::Rgb(218, 225, 234)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset); diff=None; skip=false
 
 style runs (x start..end exclusive = style):
-00: 0..1=0 1..5=1 5..6=0 6..58=1 58..80=0
-01: 0..1=0 1..30=2 30..79=3 79..80=0
-02: 0..1=0 1..16=4 16..79=3 79..80=0
-03: 0..1=0 1..22=5 22..79=3 79..80=0
-04: 0..1=0 1..25=6 25..79=3 79..80=0
-05: 0..1=0 1..79=3 79..80=0
-06: 0..1=0 1..79=3 79..80=0
+00: 0..1=0 1..55=1 55..80=0
+01: 0..1=0 1..79=2 79..80=0
+02: 0..1=0 1..79=3 79..80=0
+03: 0..1=0 1..79=4 79..80=0
+04: 0..1=0 1..79=5 79..80=0
+05: 0..1=0 1..79=6 79..80=0
+06: 0..1=0 1..79=6 79..80=0
 07: 0..80=0
