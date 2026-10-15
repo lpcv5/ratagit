@@ -227,7 +227,7 @@ fn test_reusing_stash_index_zero_does_not_reuse_previous_stash_patch() {
 #[test]
 fn test_staging_roundtrips_preserve_tracked_and_untracked_source_identity() {
     for (path, initial) in [
-        ("tracked.txt", diff::FileDiffSource::Worktree),
+        ("tracked.txt", diff::FileDiffSource::Combined),
         ("new.txt", diff::FileDiffSource::Untracked),
     ] {
         let mut fixture = Fixture::new();
@@ -244,7 +244,7 @@ fn test_staging_roundtrips_preserve_tracked_and_untracked_source_identity() {
         assert!(matches!(
             staged.target,
             diff::DiffCacheKey::File {
-                source: diff::FileDiffSource::Index,
+                source: diff::FileDiffSource::Combined,
                 ..
             }
         ));
@@ -361,7 +361,7 @@ fn test_payload_identity_must_match_the_registered_request() {
     };
     cache_key.target = diff::DiffCacheKey::File {
         path: "other.txt".into(),
-        source: diff::FileDiffSource::Worktree,
+        source: diff::FileDiffSource::Combined,
     };
     assert!(fixture.app.tasks.is_current(&completed));
     assert!(!fixture.app.background_completion_is_current(&completed));

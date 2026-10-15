@@ -21,6 +21,7 @@ fn test_render_view_borrows_all_payloads_without_allocations() {
         request: crate::git::patch::PatchRequest::Worktree("src/file.rs".into()),
         files: Vec::new(),
         truncated: false,
+        preview: None,
     }));
     app.diff.set_test_document(document);
     let snapshot = AppStateSnapshotOwned::from_app(&app.state);

@@ -1,0 +1,63 @@
+UI buffer v1
+area: Rect { x: 0, y: 0, width: 80, height: 16 }
+cursor: None
+
+text:
+00: "╭ Diff · file.txt ────────────────────────────────────────────────────── +3 -1 ╮"
+01: "│       │   --- a/file.txt                                                     │"
+02: "│       │   +++ b/file.txt                                                     │"
+03: "│       │   @@ -1,4 +1,6 @@                                                    │"
+04: "│   1 1 │   before                                                             │"
+05: "│   2   │ - old call                                                           │"
+06: "│     2 │ + new call                                                           │"
+07: "│   3 3 │   gap one                                                            │"
+08: "│   4 4 │   gap two                                                            │"
+09: "│>    5 │ + new helper one                                                     │"
+10: "│     6 │ + new helper two                                                     │"
+11: "│       │   \\ No newline at end of file                                        │"
+12: "│                                                                              │"
+13: "│                                                                              │"
+14: "│                                                                              │"
+15: "╰ Hunk 2/2 | 0 selected ───────────────────────────────────────────────────────╯"
+
+symbol boundaries: []
+
+styles:
+0: Style::new().fg(Color::Rgb(121, 184, 255)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset); diff=None; skip=false
+1: Style::new().fg(Color::Rgb(121, 184, 255)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset).bold(); diff=None; skip=false
+2: Style::new().fg(Color::Rgb(126, 211, 161)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset).bold(); diff=None; skip=false
+3: Style::new().fg(Color::Rgb(245, 141, 148)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset).bold(); diff=None; skip=false
+4: Style::new().fg(Color::Rgb(121, 184, 255)).bg(Color::Rgb(33, 40, 50)).underline_color(Color::Reset).bold(); diff=None; skip=false
+5: Style::new().fg(Color::Rgb(139, 153, 171)).bg(Color::Rgb(33, 40, 50)).underline_color(Color::Reset); diff=None; skip=false
+6: Style::new().fg(Color::Rgb(121, 184, 255)).bg(Color::Rgb(33, 40, 50)).underline_color(Color::Reset); diff=None; skip=false
+7: Style::new().fg(Color::Rgb(139, 153, 171)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset); diff=None; skip=false
+8: Style::new().fg(Color::Rgb(218, 225, 234)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset); diff=None; skip=false
+9: Style::new().fg(Color::Rgb(121, 184, 255)).bg(Color::Rgb(51, 30, 37)).underline_color(Color::Reset).bold(); diff=None; skip=false
+10: Style::new().fg(Color::Rgb(139, 153, 171)).bg(Color::Rgb(51, 30, 37)).underline_color(Color::Reset); diff=None; skip=false
+11: Style::new().fg(Color::Rgb(245, 141, 148)).bg(Color::Rgb(51, 30, 37)).underline_color(Color::Reset); diff=None; skip=false
+12: Style::new().fg(Color::Rgb(121, 184, 255)).bg(Color::Rgb(24, 46, 36)).underline_color(Color::Reset).bold(); diff=None; skip=false
+13: Style::new().fg(Color::Rgb(139, 153, 171)).bg(Color::Rgb(24, 46, 36)).underline_color(Color::Reset); diff=None; skip=false
+14: Style::new().fg(Color::Rgb(126, 211, 161)).bg(Color::Rgb(24, 46, 36)).underline_color(Color::Reset); diff=None; skip=false
+15: Style::new().fg(Color::Rgb(121, 184, 255)).bg(Color::Rgb(40, 80, 58)).underline_color(Color::Reset).bold(); diff=None; skip=false
+16: Style::new().fg(Color::Rgb(121, 184, 255)).bg(Color::Rgb(40, 80, 58)).underline_color(Color::Reset); diff=None; skip=false
+17: Style::new().fg(Color::Rgb(126, 211, 161)).bg(Color::Rgb(40, 80, 58)).underline_color(Color::Reset); diff=None; skip=false
+18: Style::new().fg(Color::Rgb(126, 211, 161)).bg(Color::Rgb(40, 80, 58)).underline_color(Color::Reset).bold(); diff=None; skip=false
+19: Style::new().fg(Color::Rgb(139, 153, 171)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset).bold(); diff=None; skip=false
+
+style runs (x start..end exclusive = style):
+00: 0..1=0 1..18=1 18..72=0 72..76=2 76..79=3 79..80=0
+01: 0..1=0 1..4=4 4..10=5 10..79=6 79..80=0
+02: 0..1=0 1..4=4 4..10=5 10..79=6 79..80=0
+03: 0..1=0 1..4=4 4..10=5 10..12=6 12..27=4 27..79=6 79..80=0
+04: 0..1=0 1..4=1 4..10=7 10..79=8 79..80=0
+05: 0..1=0 1..4=9 4..10=10 10..79=11 79..80=0
+06: 0..1=0 1..4=12 4..10=13 10..79=14 79..80=0
+07: 0..1=0 1..4=1 4..10=7 10..79=8 79..80=0
+08: 0..1=0 1..4=1 4..10=7 10..79=8 79..80=0
+09: 0..1=0 1..4=15 4..10=16 10..12=17 12..26=18 26..79=17 79..80=0
+10: 0..1=0 1..4=15 4..10=16 10..79=17 79..80=0
+11: 0..1=0 1..4=4 4..10=5 10..79=6 79..80=0
+12: 0..1=0 1..79=8 79..80=0
+13: 0..1=0 1..79=8 79..80=0
+14: 0..1=0 1..79=8 79..80=0
+15: 0..1=0 1..24=19 24..80=0

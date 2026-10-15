@@ -8,6 +8,7 @@ mod cache;
 #[cfg(test)]
 mod loader;
 mod memory;
+mod position;
 mod selectors;
 mod state;
 mod target;

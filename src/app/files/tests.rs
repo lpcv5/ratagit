@@ -114,20 +114,21 @@ fn test_collapsing_tree_restores_selection_and_anchor_to_visible_parent() {
 }
 
 #[test]
-fn test_refresh_preserves_staged_cursor_for_partially_staged_path() {
+fn test_refresh_keeps_partially_staged_file_once_and_stages_remaining_changes() {
     let mut state = state(&["file.txt"], &["file.txt"], &[]);
-    state.select_index(1);
+    state.select_index(0);
     let mut status = state.status().clone();
     status.staged[0].status = FileStatus::New;
     state.update(FilesAction::ReplaceStatus(status.into()), true);
     assert!(matches!(
         state.selection(true).selected_tree_node().unwrap().status,
-        FileTreeNodeStatus::Staged(FileStatus::New)
+        FileTreeNodeStatus::Unstaged(_)
     ));
     assert_eq!(
         state.selection(true).toggle_stage_target(),
-        Some(StageTarget::Unstage("file.txt".into()))
+        Some(StageTarget::Stage("file.txt".into()))
     );
+    assert_eq!(state.view().tree_nodes.len(), 1);
 }
 
 #[test]

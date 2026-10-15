@@ -12,6 +12,7 @@ Feature panels in `organisms/` adapt immutable snapshots to these components.
 | Molecules | `shortcut_hint(keys, label, &theme)` | Keycap and description spans for footers and modal actions |
 | Molecules | `EmptyState::new(message, &theme)` | Centered message in spacious cards, compact text in small panels |
 | Molecules | `render_modal(frame, area, title, &theme)` | Clears covered content, draws a card, returns its inner rectangle |
+| Feature containers | `DiffView::new(DiffViewModel, &theme)` | Controlled hunk/diff widget with a separate `DiffViewState` per instance |
 
 ```rust,ignore
 let theme = UiTheme::default();
@@ -31,3 +32,7 @@ retain the compact layout. There is no global header or status bar.
 `src/ui/goldens/component_library.golden`. Review changes with `cargo test ui::`.
 To intentionally refresh the visual baselines, set `RATAGIT_UPDATE_GOLDEN=1`
 for that invocation, then run the tests again without it.
+
+The [hunk/diff component](diff/README.md) exposes read-only data entry and
+semantic behavior bindings. Rendering, row styles, chrome, ANSI parsing and
+viewport history are separated from application navigation and Git operations.

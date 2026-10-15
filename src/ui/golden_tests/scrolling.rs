@@ -251,6 +251,7 @@ fn diff_panel(fixture: &Fixture, state: &mut RenderState, height: u16) -> Render
             frame.area(),
             DiffViewProps {
                 hunks: snapshot.command_env().diff,
+                preview_patch: snapshot.current_patch.or(snapshot.retained_diff_patch),
                 lines: snapshot.current_diff,
                 scroll: snapshot.diff_scroll,
                 active_panel: snapshot.active_panel,
@@ -287,6 +288,7 @@ fn test_diff_line_navigation_keeps_context_when_moving_and_reversing() {
             patch: Some(Arc::new(patch)),
         });
     dispatch_test_action(&mut fixture.app, DomainAction::ToggleDiffFocus);
+    dispatch_test_action(&mut fixture.app, DomainAction::ToggleDiffLineMode);
     let mut state = RenderState::default();
     diff_panel(&fixture, &mut state, 10);
     for _ in 0..20 {
@@ -330,7 +332,6 @@ fn test_diff_hunk_navigation_keeps_header_context_in_both_directions() {
             patch: Some(Arc::new(patch)),
         });
     dispatch_test_action(&mut fixture.app, DomainAction::ToggleDiffFocus);
-    dispatch_test_action(&mut fixture.app, DomainAction::ToggleDiffLineMode);
     let mut state = RenderState::default();
     diff_panel(&fixture, &mut state, 10);
     for _ in 0..6 {

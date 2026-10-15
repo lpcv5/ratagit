@@ -244,6 +244,7 @@ pub fn render_layout(
         diff_area,
         DiffViewProps {
             hunks: snapshot.command_env().diff,
+            preview_patch: snapshot.current_patch.or(snapshot.retained_diff_patch),
             lines: snapshot.current_diff,
             scroll: snapshot.diff_scroll,
             active_panel: snapshot.active_panel,

@@ -94,14 +94,37 @@ a single selection; directory editing is unavailable. Clipboard access requires
 a desktop clipboard service and reports an error if one is unavailable.
 
 Files and diff navigation follow Lazygit's key conventions. Press `Enter` on a
-file to focus its diff, starting in line mode. `0` also focuses the main diff,
-including directory previews. Inside the diff, `j`/`k` (or up/down) move through
-diff lines, `h`/`l` (or left/right) jump between hunks, and `a` switches between
+file to focus its diff, starting in hunk mode. `0` also focuses the main diff,
+including directory previews. Inside the diff, `j`/`k` (or up/down) select the
+next/previous hunk, `h`/`l` (or left/right) also jump between hunks, and `a` switches between
 line and hunk selection. `v` starts/finishes a range in either mode. `Space`
-immediately stages the selection on the unstaged side or unstages it on the
-staged side; without a range it acts on the cursor. `Tab` switches staged and
-unstaged sides. `n`/`N` move to the next/previous visible file while keeping diff
-focus, and `Esc` returns to the file list and clears the selection.
+immediately stages an unstaged selection or unstages a staged selection;
+without a range it acts on the cursor. The cursor stays on the changed hunk
+after staging or unstaging, so pressing `Space` again toggles it back. In line
+mode, `j`/`k` move through individual lines. Each path appears once in the file list,
+and its staged and unstaged hunks share one diff, ordered by position. `Tab`
+jumps between staged and unstaged hunks. `n`/`N` move to the next/previous visible
+file while keeping diff focus, and `Esc` returns to the file list and clears the
+selection.
+
+The diff shows old/new line numbers, with a blank on the side where a line does
+not exist. `>` marks the cursor and a blue rail marks the selected range.
+Hunk selection highlights only added and removed lines. Staged changes use
+stronger green/red shading on those lines; headers and unchanged context keep
+their normal colors, without staged/unstaged badges. Mixed staged and unstaged
+edits retain the native Git diff hunk layout and HEAD/worktree line numbers
+when their changes can be represented together. The header shows the file and change
+counts, while the bottom border shows selection mode,
+position and range status. Line numbers hide automatically in narrow panes.
+Hunk navigation scrolls the full selected change block into view when it fits;
+larger blocks start at the top of the pane. Staging and unstaging preserve the content's
+screen position, including manual scrolling inside a large hunk and adjacent
+hunks merging after a write.
+Selection in hunk mode uses individual contiguous change blocks. A replacement's
+removed and added lines form one block; unchanged context separates the next
+block, even inside the same Git hunk. `j`/`k`, highlighting, ranges and `Space`
+operate on these blocks, and the cursor marks the first changed line. Staging
+one block leaves its neighbors unstaged.
 
 Older generated default bindings are migrated when loaded, including the former
 `Tab` focus, `Enter` side switch and `s`/`u` staging keys. Custom bindings remain

@@ -26,8 +26,8 @@ fn test_line_mode_keyboard_range_stage_and_unstage_preserve_worktree() {
     assert_eq!(fixture.app.hunk_view().marked_lines().len(), 2);
     assert_eq!(fixture.app.files.view().panel.selected(), file_selection);
     let rendered = text(&render(&fixture.app, false));
-    assert!(rendered.contains("Diff [Line") && rendered.contains("| 2 selected | Range"));
-    assert!(rendered.contains("[x] +first change"));
+    assert!(rendered.contains("╰ Line ") && rendered.contains("| 2 selected | Range"));
+    assert!(rendered.contains(">┃") && rendered.contains("+ first change"));
     assert!(help(&fixture.app, "hunk stage").unwrap().label == "StageLines");
     press(&mut fixture.app, KeyCode::Char(' '));
     refresh(&mut fixture.app);
@@ -63,7 +63,7 @@ fn test_line_cursor_stage_and_local_discard_apply_only_one_changed_line() {
         String::from_utf8(fixture.index()).unwrap(),
         Fixture::base().replace("line 3\n", "")
     );
-    assert!(text(&render(&fixture.app, false)).contains("Diff [Line"));
+    assert!(text(&render(&fixture.app, false)).contains("╰ Line "));
     // The remaining first row is the added replacement, discarded from worktree.
     press(&mut fixture.app, KeyCode::Char('d'));
     refresh(&mut fixture.app);

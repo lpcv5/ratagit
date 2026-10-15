@@ -6,6 +6,7 @@ use std::path::Path;
 const MAX_PATCH_LINES: usize = 5000;
 const MAX_PREVIEW_BYTES: i64 = 1024 * 1024;
 mod lines;
+mod preview;
 
 fn options(path: Option<&Path>) -> Result<DiffOptions, GitError> {
     let mut opts = DiffOptions::new();
@@ -23,6 +24,7 @@ pub(super) fn load(repo: &mut Repository, request: PatchRequest) -> Result<Patch
         request: request.clone(),
         files: Vec::new(),
         truncated: false,
+        preview: None,
     };
     let mut remaining = MAX_PATCH_LINES;
     match &request {
@@ -35,7 +37,7 @@ pub(super) fn load(repo: &mut Repository, request: PatchRequest) -> Result<Patch
         PatchRequest::Untracked(path) => {
             append_untracked(repo, path, &mut patch, &mut remaining)?;
         }
-        PatchRequest::Directory(path) => {
+        PatchRequest::File(path) | PatchRequest::Directory(path) => {
             append_index(repo, Some(path), &mut patch, &mut remaining)?;
             append_worktree(repo, Some(path), &mut patch, &mut remaining)?;
             let mut opts = options(Some(path))?;
@@ -44,6 +46,7 @@ pub(super) fn load(repo: &mut Repository, request: PatchRequest) -> Result<Patch
                 .show_untracked_content(true);
             let diff = repo.diff_index_to_workdir(None, Some(&mut opts))?;
             append(&diff, PatchSource::Untracked, &mut patch, &mut remaining)?;
+            preview::install(repo, path, &mut patch)?;
         }
         PatchRequest::Commit { oid, path } => {
             let commit = repo.find_commit(git2::Oid::from_str(oid)?)?;

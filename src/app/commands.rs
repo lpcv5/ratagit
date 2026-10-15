@@ -1,8 +1,11 @@
 use super::{AppState, CommitFieldFocus, InputMode, SelectionView, SidePanel, ViewContext};
 use crate::config::keymap::{key_to_string, Keymap};
 use crate::flux::action::DomainAction;
+use crate::ui::components::diff::{DiffBehaviorBindings, DiffIntent};
 use crossterm::event::KeyEvent;
 use std::collections::HashMap;
+
+mod diff_bindings;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommandId {
@@ -533,69 +536,17 @@ impl CommandSpec {
         {
             return None;
         }
+        if let Some(intent) = self.id.diff_intent() {
+            return env.resolve_diff_intent(intent);
+        }
         Some(match self.id {
-            DiffSide if env.diff.can_switch_side(&env.selection.diff_target()) => {
-                DomainAction::SwitchDiffSide
-            }
-            FocusDiff if !env.diff.interaction.focused && env.diff.can_toggle_focus() => {
-                DomainAction::ToggleDiffFocus
-            }
-            DiffApply if env.diff.can_apply(crate::git::patch::PatchDirection::Stage) => {
-                DomainAction::ApplySelectedHunks(crate::git::patch::PatchDirection::Stage)
-            }
-            DiffApply
-                if env
-                    .diff
-                    .can_apply(crate::git::patch::PatchDirection::Unstage) =>
-            {
-                DomainAction::ApplySelectedHunks(crate::git::patch::PatchDirection::Unstage)
-            }
-            DiffNextLine if env.diff.can_navigate() => DomainAction::DiffNextLine,
-            DiffPreviousLine if env.diff.can_navigate() => DomainAction::DiffPreviousLine,
-            HunkNext if env.diff.can_navigate() => DomainAction::HunkNext,
-            HunkPrevious if env.diff.can_navigate() => DomainAction::HunkPrevious,
-            HunkSelect if env.diff.can_navigate() => DomainAction::ToggleHunkSelection,
-            DiffClear if env.diff.interaction.focused && env.diff.interaction.has_selection() => {
-                DomainAction::ClearHunkSelection
-            }
-            DiffNextFile | DiffPreviousFile
-                if env.diff.interaction.focused && *env.view() == ViewContext::Files =>
-            {
-                DomainAction::Runtime(crate::flux::action::RuntimeEvent::NavigateDiffFile {
-                    forward: self.id == DiffNextFile,
-                })
-            }
-            DiffLineMode if env.diff.can_navigate() => DomainAction::ToggleDiffLineMode,
-            DiffLineRange if env.diff.can_navigate() => DomainAction::ToggleDiffLineRange,
-            DiffDiscard
-                if env
-                    .diff
-                    .can_apply(crate::git::patch::PatchDirection::Discard) =>
-            {
-                DomainAction::ApplySelectedHunks(crate::git::patch::PatchDirection::Discard)
-            }
-            DiffDiscard
-                if env
-                    .diff
-                    .can_apply(crate::git::patch::PatchDirection::Unstage) =>
-            {
-                DomainAction::ApplySelectedHunks(crate::git::patch::PatchDirection::Unstage)
-            }
-            HunkStage if env.diff.can_apply(crate::git::patch::PatchDirection::Stage) => {
-                DomainAction::ApplySelectedHunks(crate::git::patch::PatchDirection::Stage)
-            }
-            HunkUnstage
-                if env
-                    .diff
-                    .can_apply(crate::git::patch::PatchDirection::Unstage) =>
-            {
-                DomainAction::ApplySelectedHunks(crate::git::patch::PatchDirection::Unstage)
-            }
             Back => match env.input {
                 Some(InputMode::BranchSwitchConfirm) => DomainAction::BranchSwitchConfirm(false),
                 Some(InputMode::CommitAllConfirm) => DomainAction::CommitAllConfirm(false),
                 Some(_) => DomainAction::InputEsc,
-                None if env.diff.interaction.focused => DomainAction::ToggleDiffFocus,
+                None if env.diff.interaction.focused => {
+                    return env.resolve_diff_intent(DiffIntent::Blur)
+                }
                 None if env.has_search_query => DomainAction::SearchClear,
                 None if env.selection.file_selection().is_visual_mode() => {
                     DomainAction::ToggleVisualSelectMode
@@ -621,8 +572,6 @@ impl CommandSpec {
             ListDown => DomainAction::ListDown,
             PanelNext => DomainAction::PanelNext,
             PanelPrev => DomainAction::PanelPrev,
-            DiffUp => DomainAction::DiffScrollUp,
-            DiffDown => DomainAction::DiffScrollDown,
             Files => DomainAction::PanelGoto(1),
             Branches => DomainAction::PanelGoto(2),
             Commits => DomainAction::PanelGoto(3),
@@ -721,6 +670,8 @@ impl CommandSpec {
         use CommandId::*;
         let label = match self.id {
             Back if env.input.is_some() => "Cancel",
+            DiffNextLine if !env.diff.interaction.line_mode => "NextHunk",
+            DiffPreviousLine if !env.diff.interaction.line_mode => "PreviousHunk",
             DiffApply
                 if matches!(
                     self.action(env),

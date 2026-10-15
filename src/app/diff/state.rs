@@ -1,8 +1,10 @@
 use super::cache::{DiffCache, DiffCacheIdentity, DiffCacheKey, DiffCacheRevision, DiffCacheStats};
+use super::position::HunkPosition;
 use super::{DiffRefreshSource, DiffTarget};
 use crate::file_tree::FileTreeNode;
-use crate::git::patch::{DiffDocument, HunkId, LineId};
+use crate::git::patch::{DiffDocument, LineId, Patch, PatchRequest};
 use std::collections::BTreeSet;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -11,44 +13,40 @@ pub enum DiffSide {
     Staged,
 }
 
-#[derive(Debug, Clone)]
+/// A successful write relocated the same reviewed change in a fresh document.
+#[derive(Debug, Clone, Copy)]
+pub struct DiffCursorRelocation {
+    pub revision: u64,
+    pub previous_row: usize,
+    pub row: usize,
+}
+
+#[derive(Debug, Clone, Default)]
 pub struct DiffInteraction {
     pub side: Option<DiffSide>,
     pub focused: bool,
-    pub cursor: Option<HunkId>,
-    pub selected: BTreeSet<HunkId>,
+    /// First changed line of the selected contiguous edit block.
+    pub cursor: Option<LineId>,
+    pub selected: BTreeSet<LineId>,
     pub line_mode: bool,
     pub line_cursor: Option<LineId>,
     pub selected_lines: BTreeSet<LineId>,
     pub range_anchor: Option<LineId>,
-    pub hunk_anchor: Option<HunkId>,
+    pub hunk_anchor: Option<LineId>,
     pub pending_write: Option<u64>,
+    pub cursor_relocation: Option<DiffCursorRelocation>,
     pub(super) next_write: u64,
-}
-
-impl Default for DiffInteraction {
-    fn default() -> Self {
-        Self {
-            side: None,
-            focused: false,
-            cursor: None,
-            selected: BTreeSet::new(),
-            line_mode: true,
-            line_cursor: None,
-            selected_lines: BTreeSet::new(),
-            range_anchor: None,
-            hunk_anchor: None,
-            pending_write: None,
-            next_write: 0,
-        }
-    }
 }
 
 impl DiffInteraction {
     pub(super) fn reset_selection(&mut self) {
         self.cursor = None;
-        self.selected.clear();
         self.line_cursor = None;
+        self.clear_marks();
+    }
+
+    pub(super) fn clear_marks(&mut self) {
+        self.selected.clear();
         self.selected_lines.clear();
         self.range_anchor = None;
         self.hunk_anchor = None;
@@ -65,8 +63,12 @@ impl DiffInteraction {
 /// All mutable diff data lives here. Consumers receive read-only projections.
 pub struct DiffState {
     pub(super) document: DiffDocument,
+    // Display-only metadata stays paired with the retained text during reloads.
+    pub(super) retained_patch: Option<Arc<Patch>>,
     pub(super) interaction: DiffInteraction,
     pub(super) scroll: usize,
+    reload_position: Option<DiffPosition>,
+    pub(super) write_position: Option<HunkPosition>,
     cache: DiffCache,
     last_key: Option<DiffCacheIdentity>,
     in_flight_key: Option<DiffCacheIdentity>,
@@ -77,12 +79,21 @@ pub struct DiffState {
     pending_reload_at: Option<Instant>,
 }
 
+struct DiffPosition {
+    cursor: Option<LineId>,
+    line_cursor: Option<LineId>,
+    scroll: usize,
+}
+
 impl Default for DiffState {
     fn default() -> Self {
         Self {
             document: Vec::new().into(),
+            retained_patch: None,
             interaction: DiffInteraction::default(),
             scroll: 0,
+            reload_position: None,
+            write_position: None,
             cache: DiffCache::new(),
             last_key: None,
             in_flight_key: None,
@@ -136,8 +147,9 @@ impl DiffState {
 
     /// Keep the old preview while the new patch is loading, but disable writes.
     pub fn schedule_reload(&mut self, now: Instant) {
+        self.remember_reload_position();
         self.interaction.reset_selection();
-        self.document.patch = None;
+        self.retain_preview();
         self.pending_reload = true;
         self.pending_reload_at = Some(now);
     }
@@ -146,8 +158,35 @@ impl DiffState {
         self.in_flight_key = None;
     }
 
+    fn retain_preview(&mut self) {
+        if let Some(patch) = self.document.patch.take() {
+            self.retained_patch = Some(patch);
+        }
+    }
+
+    fn remember_reload_position(&mut self) {
+        if self.interaction.focused
+            && self.interaction.pending_write.is_none()
+            && self.interaction.cursor.is_some()
+        {
+            self.reload_position = Some(DiffPosition {
+                cursor: self.interaction.cursor,
+                line_cursor: self.interaction.line_cursor,
+                scroll: self.scroll,
+            });
+        }
+    }
+
+    pub(super) fn forget_reload_position(&mut self) {
+        self.reload_position = None;
+        self.write_position = None;
+        self.interaction.cursor_relocation = None;
+    }
+
     pub fn repository_refreshed(&mut self, include_refs: bool) {
-        self.interaction.reset_selection();
+        // Immutable commit previews do not reload after a status refresh.
+        // Only invalidated sources need to suspend their navigation cursors.
+        self.interaction.clear_marks();
         self.source_refreshed(DiffRefreshSource::Status);
         if include_refs {
             self.branches_revision = self
@@ -202,6 +241,7 @@ impl DiffState {
                 .as_ref()
                 .is_some_and(|key| !self.is_fresh(key));
         if invalidated {
+            self.remember_reload_position();
             self.interaction.reset_selection();
         }
         if self
@@ -210,7 +250,7 @@ impl DiffState {
             .is_some_and(|key| !self.is_fresh(key))
         {
             self.last_key = None;
-            self.document.patch = None;
+            self.retain_preview();
         }
         if self
             .in_flight_key
@@ -281,7 +321,7 @@ impl DiffState {
         self.cancel_load();
         self.scroll = 0;
         if matches!(target, DiffTarget::None) {
-            self.document = Vec::new().into();
+            self.install_document(Vec::new().into());
             self.last_key = Some(cache_key);
             self.clear_reload_request();
             return DiffLoad::Ready;
@@ -334,18 +374,70 @@ impl DiffState {
     }
 
     fn install_document(&mut self, document: DiffDocument) {
+        // A periodic refresh must not move the cursor when the reviewed patch
+        // is unchanged. Never restore marked ranges or positions into new text.
+        let position = self.reload_position.take().filter(|_| {
+            self.interaction.focused
+                && document.patch.is_some()
+                && self
+                    .retained_patch
+                    .as_ref()
+                    .or(self.document.patch.as_ref())
+                    .zip(document.patch.as_ref())
+                    .is_some_and(|(previous, current)| same_preview(previous, current))
+        });
         self.document = document;
+        self.retained_patch = None;
         self.interaction.reset_selection();
-        self.interaction.cursor = self
-            .document
-            .patch
-            .as_ref()
-            .and_then(|patch| patch.hunk_ids().first().copied());
-        self.interaction.line_cursor = self
-            .document
-            .patch
-            .as_ref()
-            .and_then(|patch| patch.line_ids().first().copied());
+        self.interaction.cursor = self.document.patch.as_ref().and_then(|patch| {
+            let ids = patch.change_ids();
+            if matches!(patch.request, crate::git::patch::PatchRequest::File(_)) {
+                let preferred = if self.interaction.side == Some(DiffSide::Staged) {
+                    crate::git::patch::PatchDirection::Unstage
+                } else {
+                    crate::git::patch::PatchDirection::Stage
+                };
+                ids.iter()
+                    .copied()
+                    .find(|id| patch.files[id.file].source.direction() == Some(preferred))
+                    .or_else(|| ids.first().copied())
+            } else {
+                ids.first().copied()
+            }
+        });
+        self.interaction.line_cursor = self.interaction.cursor;
+        if let Some(position) = position {
+            self.interaction.cursor = position.cursor;
+            self.interaction.line_cursor = position.line_cursor;
+            self.scroll = position.scroll;
+        }
+        let write_position = if self.interaction.pending_write.is_none() {
+            self.write_position.take()
+        } else {
+            None
+        };
+        if let Some(location) = write_position
+            .filter(|_| self.interaction.focused)
+            .and_then(|position| position.find(self.document.patch.as_ref()?))
+        {
+            self.interaction.cursor = self
+                .document
+                .patch
+                .as_ref()
+                .and_then(|patch| patch.change_for_line(location.cursor));
+            self.interaction.line_cursor = Some(location.cursor);
+            self.interaction.cursor_relocation = Some(DiffCursorRelocation {
+                revision: self.interaction.next_write,
+                previous_row: location.previous_row,
+                row: location.row,
+            });
+            // Keep the page-scroll baseline aligned with the relocated view,
+            // so the next page movement continues from the pre-write position.
+            self.scroll = location
+                .scroll
+                .min(self.document.lines.len().saturating_sub(1));
+        }
+        self.sync_cursor_side();
     }
 
     #[cfg(test)]
@@ -357,4 +449,17 @@ impl DiffState {
     pub(crate) fn test_interaction_mut(&mut self) -> &mut DiffInteraction {
         &mut self.interaction
     }
+}
+
+fn same_preview(previous: &Patch, current: &Patch) -> bool {
+    if previous == current {
+        return true;
+    }
+    // Status can switch a new file between the combined and untracked
+    // requests after the write's fresh patch has already been installed.
+    // Identical reviewed bytes in that same path keep the saved position.
+    let same_path = matches!((&previous.request, &current.request),
+        (PatchRequest::File(a), PatchRequest::Untracked(b))
+            | (PatchRequest::Untracked(a), PatchRequest::File(b)) if a == b);
+    same_path && previous.truncated == current.truncated && previous.files == current.files
 }

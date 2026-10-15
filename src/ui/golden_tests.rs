@@ -9,7 +9,7 @@ use crate::file_tree::{build_file_tree, FileTreeNode, FileTreeNodeStatus};
 use crate::flux::action::DomainAction;
 use crate::flux::snapshot::AppStateSnapshotOwned;
 use crate::git::patch::{
-    HunkId, Patch, PatchChange, PatchFile, PatchHunk, PatchLine, PatchLineKind, PatchRequest,
+    LineId, Patch, PatchChange, PatchFile, PatchHunk, PatchLine, PatchLineKind, PatchRequest,
     PatchSide, PatchSource,
 };
 use crate::git::{
@@ -20,6 +20,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{backend::TestBackend, layout::Rect, Terminal};
 use std::sync::Arc;
 
+mod diff_presentation;
 mod scrolling;
 
 struct Fixture {
@@ -155,6 +156,7 @@ fn patch() -> Patch {
     Patch {
         request: PatchRequest::Worktree("README.md".into()),
         truncated: false,
+        preview: None,
         files: vec![PatchFile {
             source: PatchSource::Worktree,
             change: PatchChange::Modified,
@@ -393,19 +395,33 @@ fn test_revision_subviews_and_graph_highlight_goldens() {
 }
 
 fn diff(snapshot: &AppStateSnapshotOwned) -> RenderedUi {
-    render(80, 8, |frame| {
+    diff_sized(snapshot, 80, 8)
+}
+
+fn diff_sized(snapshot: &AppStateSnapshotOwned, width: u16, height: u16) -> RenderedUi {
+    diff_with_viewport(snapshot, width, height, &mut Default::default())
+}
+
+fn diff_with_viewport(
+    snapshot: &AppStateSnapshotOwned,
+    width: u16,
+    height: u16,
+    viewport: &mut super::components::diff::DiffViewState,
+) -> RenderedUi {
+    render(width, height, |frame| {
         let view = snapshot.as_snapshot();
         render_diff_panel(
             frame,
             frame.area(),
             DiffViewProps {
                 hunks: view.command_env().diff,
+                preview_patch: view.current_patch.or(view.retained_diff_patch),
                 lines: view.current_diff,
                 scroll: view.diff_scroll,
                 active_panel: view.active_panel,
                 is_loading: view.diff_loading,
             },
-            &mut Default::default(),
+            viewport,
         );
     })
 }
@@ -438,15 +454,13 @@ fn test_diff_loading_empty_and_side_hints_goldens() {
 fn test_diff_hunk_focus_and_selection_from_actions_golden() {
     let mut fixture = Fixture::populated();
     dispatch_test_action(&mut fixture.app, DomainAction::ToggleDiffFocus);
-    dispatch_test_action(&mut fixture.app, DomainAction::ToggleDiffLineMode);
     dispatch_test_action(&mut fixture.app, DomainAction::ToggleHunkSelection);
     assert!(fixture.app.diff.interaction().focused);
-    assert!(fixture
-        .app
-        .diff
-        .interaction()
-        .selected
-        .contains(&HunkId { file: 0, hunk: 0 }));
+    assert!(fixture.app.diff.interaction().selected.contains(&LineId {
+        file: 0,
+        hunk: 0,
+        line: 1
+    }));
     assert_golden("diff_hunk_selected", &layout(&fixture.snapshot(), 120, 32));
     let mut snapshot = fixture.snapshot();
     snapshot.diff_interaction.pending_write = Some(1);
@@ -468,7 +482,12 @@ fn test_diff_lazygit_keys_and_line_range_golden() {
         .position(|node| node.path == std::path::Path::new("README.md"))
         .unwrap();
     fixture.app.files.test_view_mut().panel.select(Some(index));
-    for code in [KeyCode::Enter, KeyCode::Char('v'), KeyCode::Char('j')] {
+    for code in [
+        KeyCode::Enter,
+        KeyCode::Char('a'),
+        KeyCode::Char('v'),
+        KeyCode::Char('j'),
+    ] {
         dispatch_test_key(&mut fixture.app, KeyEvent::new(code, KeyModifiers::NONE));
     }
     assert!(fixture.app.diff.interaction().focused);

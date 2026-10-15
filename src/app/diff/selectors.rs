@@ -1,10 +1,12 @@
 use super::{DiffInteraction, DiffState, DiffTarget};
 use crate::file_tree::FileTreeNodeStatus;
 use crate::git::patch::{DiffDocument, HunkId, LineId, Patch, PatchDirection};
+use std::collections::BTreeSet;
 
 /// Read model shared by snapshots and application command selectors.
 pub struct DiffView<'a> {
     pub document: &'a DiffDocument,
+    pub retained_patch: Option<&'a std::sync::Arc<Patch>>,
     pub interaction: &'a DiffInteraction,
     pub scroll: usize,
     pub loading: bool,
@@ -29,6 +31,7 @@ impl DiffState {
     pub fn view(&self) -> super::DiffView<'_> {
         DiffView {
             document: self.document(),
+            retained_patch: self.retained_patch.as_ref(),
             interaction: self.interaction(),
             scroll: self.scroll(),
             loading: self.is_loading(),
@@ -45,6 +48,34 @@ pub struct HunkView<'a> {
 }
 
 impl HunkView<'_> {
+    pub fn cursor_position(&self) -> (usize, usize) {
+        fn position<T: PartialEq>(ids: Vec<T>, cursor: Option<T>) -> (usize, usize) {
+            let current = cursor
+                .and_then(|cursor| ids.iter().position(|id| *id == cursor))
+                .map(|index| index + 1)
+                .unwrap_or(0);
+            (current, ids.len())
+        }
+        if self.interaction.line_mode {
+            position(self.line_ids(), self.interaction.line_cursor)
+        } else {
+            position(self.ids(), self.interaction.cursor)
+        }
+    }
+
+    pub fn cursor_is_read_only(&self) -> bool {
+        self.patch.is_some_and(|patch| {
+            self.interaction.cursor.is_some_and(|id| {
+                patch
+                    .validate_file_hunks(id.file, &[id.hunk], PatchDirection::Stage)
+                    .is_err()
+                    && patch
+                        .validate_file_hunks(id.file, &[id.hunk], PatchDirection::Unstage)
+                        .is_err()
+            })
+        })
+    }
+
     pub fn can_toggle_focus(&self) -> bool {
         self.interaction.focused || (!self.ready && self.files_context) || !self.ids().is_empty()
     }
@@ -70,7 +101,7 @@ impl HunkView<'_> {
             && if self.interaction.line_mode {
                 !self.line_targets(direction).is_empty()
             } else {
-                !self.targets(direction).is_empty()
+                !self.change_targets(direction).is_empty()
             }
     }
 
@@ -88,11 +119,7 @@ impl HunkView<'_> {
             .range_anchor
             .zip(self.interaction.line_cursor)
         {
-            let (start, end) = (anchor.min(cursor), anchor.max(cursor));
-            self.line_ids()
-                .into_iter()
-                .filter(|id| *id >= start && *id <= end)
-                .collect()
+            ordered_range(self.line_ids(), anchor, cursor)
         } else {
             self.interaction.selected_lines.iter().copied().collect()
         }
@@ -128,14 +155,39 @@ impl HunkView<'_> {
         }
     }
 
-    pub fn ids(&self) -> Vec<HunkId> {
+    /// Block starts in display order, including multiple edits in one Git hunk.
+    pub fn ids(&self) -> Vec<LineId> {
         self.patch
             .filter(|_| self.ready)
-            .map(Patch::hunk_ids)
+            .map(Patch::change_ids)
             .unwrap_or_default()
     }
 
+    /// Native hunk targets only when the selection covers all their edits.
     pub fn targets(&self, direction: PatchDirection) -> Vec<HunkId> {
+        let lines = self.change_targets(direction);
+        let selected: BTreeSet<_> = lines.iter().copied().collect();
+        let mut hunks = Vec::new();
+        for line in &lines {
+            if !hunks.contains(&line.hunk()) {
+                hunks.push(line.hunk());
+            }
+        }
+        // Keep the native hunk fast path only when all its edits are selected.
+        // Partial blocks must use the reviewed line-patch backend.
+        if self.patch.is_some_and(|patch| {
+            patch
+                .line_ids()
+                .iter()
+                .any(|id| hunks.contains(&id.hunk()) && !selected.contains(id))
+        }) {
+            return Vec::new();
+        }
+        hunks
+    }
+
+    /// Exact changed lines of the selected blocks, excluding context/EOF markers.
+    pub fn change_targets(&self, direction: PatchDirection) -> Vec<LineId> {
         if !self.ready || !self.files_context || self.interaction.pending_write.is_some() {
             return Vec::new();
         }
@@ -145,21 +197,42 @@ impl HunkView<'_> {
         } else {
             marked
         };
-        match self.patch {
-            Some(patch) if patch.validate_selection(&ids, direction).is_ok() => ids,
-            _ => Vec::new(),
+        let Some(patch) = self.patch else {
+            return Vec::new();
+        };
+        let Some(lines) = patch.change_lines(&ids) else {
+            return Vec::new();
+        };
+        let hunks: BTreeSet<_> = ids.iter().map(|id| id.hunk()).collect();
+        // Expansion only yields reviewed changed lines. Validate each parent
+        // once for availability instead of rechecking its metadata per line.
+        if patch
+            .validate_selection(&hunks.into_iter().collect::<Vec<_>>(), direction)
+            .is_ok()
+        {
+            lines
+        } else {
+            Vec::new()
         }
     }
 
-    pub fn marked_hunks(&self) -> Vec<HunkId> {
+    pub fn marked_hunks(&self) -> Vec<LineId> {
         if let Some((anchor, cursor)) = self.interaction.hunk_anchor.zip(self.interaction.cursor) {
-            let (start, end) = (anchor.min(cursor), anchor.max(cursor));
-            self.ids()
-                .into_iter()
-                .filter(|id| *id >= start && *id <= end)
-                .collect()
+            ordered_range(self.ids(), anchor, cursor)
         } else {
             self.interaction.selected.iter().copied().collect()
         }
     }
+}
+
+fn ordered_range<T: PartialEq>(ids: Vec<T>, anchor: T, cursor: T) -> Vec<T> {
+    let Some((start, end)) = ids
+        .iter()
+        .position(|id| *id == anchor)
+        .zip(ids.iter().position(|id| *id == cursor))
+    else {
+        return Vec::new();
+    };
+    let (start, end) = (start.min(end), start.max(end));
+    ids.into_iter().skip(start).take(end - start + 1).collect()
 }

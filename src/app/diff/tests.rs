@@ -1,8 +1,8 @@
 use super::*;
 use crate::file_tree::FileTreeNodeStatus;
 use crate::git::patch::{
-    DiffDocument, HunkId, Patch, PatchChange, PatchDirection, PatchFile, PatchHunk, PatchLine,
-    PatchLineKind, PatchRequest, PatchSide, PatchSource,
+    DiffDocument, HunkId, LineId, Patch, PatchChange, PatchDirection, PatchFile, PatchHunk,
+    PatchLine, PatchLineKind, PatchRequest, PatchSide, PatchSource,
 };
 use crate::git::{DiffLine, DiffLineKind, FileStatus};
 use std::sync::Arc;
@@ -54,6 +54,7 @@ pub(super) fn patch(sources: &[PatchSource]) -> Arc<Patch> {
             })
             .collect(),
         truncated: false,
+        preview: None,
     })
 }
 
@@ -140,7 +141,7 @@ fn test_hunk_navigation_scrolls_and_clamps_without_application_state() {
         .can_switch_side(&file_target("file.txt")));
     state.update(DiffAction::NextHunk, true);
     let second = HunkId { file: 0, hunk: 1 };
-    assert_eq!(state.interaction().cursor, Some(second));
+    assert_eq!(state.interaction().cursor.map(LineId::hunk), Some(second));
     let span = state
         .document()
         .patch
@@ -150,13 +151,13 @@ fn test_hunk_navigation_scrolls_and_clamps_without_application_state() {
         .into_iter()
         .find(|span| span.id == second)
         .unwrap();
-    assert_eq!(state.scroll(), span.range.start);
+    assert_eq!(state.scroll(), span.range.start + 1);
     state.update(DiffAction::NextHunk, true);
-    assert_eq!(state.interaction().cursor, Some(second));
+    assert_eq!(state.interaction().cursor.map(LineId::hunk), Some(second));
     state.update(DiffAction::PreviousHunk, true);
     state.update(DiffAction::PreviousHunk, true);
     assert_eq!(
-        state.interaction().cursor,
+        state.interaction().cursor.map(LineId::hunk),
         Some(HunkId { file: 0, hunk: 0 })
     );
 }
@@ -178,6 +179,7 @@ fn test_mixed_direction_selection_starts_a_new_group() {
             .selected
             .iter()
             .copied()
+            .map(LineId::hunk)
             .collect::<Vec<_>>(),
         vec![index_hunk]
     );
@@ -190,6 +192,58 @@ fn test_mixed_direction_selection_starts_a_new_group() {
         state.view().hunks(true).targets(PatchDirection::Unstage),
         vec![index_hunk]
     );
+}
+
+#[test]
+fn test_combined_ranges_follow_display_order_in_both_modes_and_directions() {
+    for line_mode in [false, true] {
+        let mut original = patch(&[PatchSource::Index, PatchSource::Worktree]);
+        let patch = Arc::make_mut(&mut original);
+        patch.request = PatchRequest::File("same.txt".into());
+        for file in &mut patch.files {
+            file.old.path = Some("same.txt".into());
+            file.new.path = Some("same.txt".into());
+        }
+        patch.files[0].hunks[0].new_start = 10;
+        patch.files[0].hunks[1].new_start = 30;
+        patch.files[1].hunks[0].old_start = 1;
+        patch.files[1].hunks[1].old_start = 20;
+        let mut state = DiffState::default();
+        state.set_test_document(document(original));
+        state.test_interaction_mut().line_mode = line_mode;
+        state.update(DiffAction::ToggleFocus, true);
+        let ids = state.view().hunks(true).ids();
+        assert_eq!(
+            ids.iter().copied().map(LineId::hunk).collect::<Vec<_>>(),
+            vec![
+                HunkId { file: 1, hunk: 0 },
+                HunkId { file: 0, hunk: 0 },
+                HunkId { file: 1, hunk: 1 },
+                HunkId { file: 0, hunk: 1 }
+            ]
+        );
+        for backwards in [false, true] {
+            state.update(DiffAction::ClearSelection, true);
+            state.update(DiffAction::ToggleRange, true);
+            state.update(
+                if backwards {
+                    DiffAction::PreviousLine
+                } else {
+                    DiffAction::NextLine
+                },
+                true,
+            );
+            let view = state.view().hunks(true);
+            if line_mode {
+                let marked = view.marked_lines();
+                assert_eq!(marked, ids[..2]);
+            } else {
+                assert_eq!(view.marked_hunks(), ids[..2]);
+            }
+            assert!(!view.can_apply(PatchDirection::Stage));
+            assert!(!view.can_apply(PatchDirection::Unstage));
+        }
+    }
 }
 
 #[test]
@@ -280,10 +334,13 @@ fn test_loading_keeps_preview_and_disables_hunk_selectors() {
     state.update(DiffAction::ToggleFocus, true);
     state.update(DiffAction::ToggleSelection, true);
     let preview = state.document().lines.len();
+    let patch = state.document().patch.clone().unwrap();
+    state.schedule_reload(Instant::now());
     state.schedule_reload(Instant::now());
     let view = state.view();
     assert_eq!(view.document.lines.len(), preview);
     assert!(view.document.patch.is_none());
+    assert!(Arc::ptr_eq(view.retained_patch.unwrap(), &patch));
     assert!(view.loading);
     assert!(!view.show_loading());
     assert!(view.hunks(true).ids().is_empty());
@@ -297,6 +354,42 @@ fn test_loading_keeps_preview_and_disables_hunk_selectors() {
     let mut empty = DiffState::default();
     empty.schedule_reload(Instant::now());
     assert!(empty.view().show_loading());
+}
+
+#[test]
+fn test_retained_patch_is_replaced_with_its_text_and_cleared_for_empty_targets() {
+    let mut state = DiffState::default();
+    let first = patch(&[PatchSource::Worktree]);
+    load(
+        &mut state,
+        file_target("first.txt"),
+        document(first.clone()),
+    );
+    state.source_refreshed(DiffRefreshSource::Status);
+    assert!(state.document().patch.is_none());
+    assert!(Arc::ptr_eq(state.view().retained_patch.unwrap(), &first));
+    assert!(state.view().hunks(true).ids().is_empty());
+
+    let second = patch(&[PatchSource::Index]);
+    let replacement = document(second.clone());
+    let replacement_lines = replacement.lines.clone();
+    load(&mut state, file_target("second.txt"), replacement);
+    assert!(state.view().retained_patch.is_none());
+    assert!(Arc::ptr_eq(
+        state.document().patch.as_ref().unwrap(),
+        &second
+    ));
+    assert!(state.document().lines.ptr_eq(&replacement_lines));
+
+    state.schedule_reload(Instant::now());
+    assert!(Arc::ptr_eq(state.view().retained_patch.unwrap(), &second));
+    assert!(matches!(
+        state.prepare_reload(DiffTarget::None, &[]),
+        DiffLoad::Ready
+    ));
+    assert!(state.document().lines.is_empty());
+    assert!(state.document().patch.is_none());
+    assert!(state.view().retained_patch.is_none());
 }
 
 #[test]
@@ -323,7 +416,7 @@ fn test_side_switch_returns_immediate_reload_intent() {
 }
 
 #[test]
-fn test_cache_reuse_preserves_patch_identity_and_resets_cursor() {
+fn test_cache_reuse_preserves_patch_identity_and_position_but_clears_selection() {
     let mut state = DiffState::default();
     let original = patch(&[PatchSource::Worktree]);
     let target = file_target("file.txt");
@@ -331,6 +424,7 @@ fn test_cache_reuse_preserves_patch_identity_and_resets_cursor() {
     state.update(DiffAction::ToggleFocus, true);
     state.update(DiffAction::NextHunk, true);
     state.update(DiffAction::ToggleSelection, true);
+    let scroll = state.scroll();
     state.schedule_reload(Instant::now());
     assert!(matches!(state.prepare_reload(target, &[]), DiffLoad::Ready));
     assert!(!state.is_loading());
@@ -339,11 +433,94 @@ fn test_cache_reuse_preserves_patch_identity_and_resets_cursor() {
         &original
     ));
     assert_eq!(
-        state.interaction().cursor,
-        Some(HunkId { file: 0, hunk: 0 })
+        state.interaction().cursor.map(LineId::hunk),
+        Some(HunkId { file: 0, hunk: 1 })
     );
     assert!(state.interaction().selected.is_empty());
-    assert_eq!(state.scroll(), 0);
+    assert_eq!(state.scroll(), scroll);
+}
+
+#[test]
+fn test_refresh_restores_line_position_without_restoring_a_range() {
+    let mut state = DiffState::default();
+    let target = file_target("file.txt");
+    let original = patch(&[PatchSource::Worktree]);
+    load(&mut state, target.clone(), document(original.clone()));
+    state.update(DiffAction::ToggleFocus, true);
+    state.update(DiffAction::ToggleLineMode, true);
+    state.update(DiffAction::NextLine, true);
+    state.update(DiffAction::ToggleRange, true);
+    let cursor = state.interaction().line_cursor;
+    let scroll = state.scroll();
+    assert!(state.interaction().range_anchor.is_some());
+
+    state.repository_refreshed(false);
+    state.schedule_reload(Instant::now());
+    assert!(state.interaction().line_cursor.is_none());
+    assert!(state
+        .view()
+        .hunks(true)
+        .line_targets(PatchDirection::Stage)
+        .is_empty());
+    load(&mut state, target, document(original));
+    assert_eq!(state.interaction().line_cursor, cursor);
+    assert_eq!(state.scroll(), scroll);
+    assert!(!state.interaction().has_selection());
+}
+
+#[test]
+fn test_repository_refresh_keeps_immutable_commit_navigation_without_a_reload() {
+    let mut state = DiffState::default();
+    let target = DiffTarget::Commit {
+        oid: "abc".into(),
+        path: Some("file.txt".into()),
+    };
+    let mut original = patch(&[PatchSource::Commit("abc".into())]);
+    Arc::make_mut(&mut original).request = PatchRequest::Commit {
+        oid: "abc".into(),
+        path: Some("file.txt".into()),
+    };
+    load(&mut state, target, document(original));
+    state.update(DiffAction::ToggleFocus, false);
+    state.update(DiffAction::NextHunk, false);
+    state.update(DiffAction::ToggleRange, false);
+    let cursor = state.interaction().cursor;
+    let scroll = state.scroll();
+    state.repository_refreshed(true);
+    assert_eq!(state.interaction().cursor, cursor);
+    assert_eq!(state.scroll(), scroll);
+    assert!(state.view().hunks(false).can_navigate());
+    assert!(!state.interaction().has_selection());
+    assert!(!state.is_loading());
+}
+
+#[test]
+fn test_reload_drops_saved_position_after_patch_or_navigation_changes() {
+    for case in 0..3 {
+        let mut state = DiffState::default();
+        let target = file_target("file.txt");
+        let mut original = patch(&[PatchSource::Worktree]);
+        load(&mut state, target.clone(), document(original.clone()));
+        state.update(DiffAction::ToggleFocus, true);
+        state.update(DiffAction::NextHunk, true);
+        assert_eq!(state.interaction().cursor.unwrap().hunk, 1);
+        state.repository_refreshed(false);
+        match case {
+            0 => {
+                Arc::make_mut(&mut original).files[0].hunks[1].lines[0].content =
+                    b"changed\n".to_vec()
+            }
+            1 => {
+                state.update(DiffAction::FileChanged, true);
+            }
+            _ => {
+                state.update(DiffAction::ToggleFocus, true);
+            }
+        }
+        load(&mut state, target, document(original));
+        assert_eq!(state.interaction().cursor.unwrap().hunk, 0, "case={case}");
+        assert_eq!(state.scroll(), 0, "case={case}");
+    }
 }
 
 #[test]
@@ -638,7 +815,33 @@ fn test_oversized_diff_remains_available_but_is_not_reused_from_cache() {
 }
 
 #[test]
-fn test_file_source_and_structured_directory_inputs_have_distinct_keys() {
+fn test_native_preview_reserved_capacity_is_part_of_cache_budget() {
+    use crate::git::patch::PatchPreview;
+    let mut raw = (*patch(&[PatchSource::Worktree])).clone();
+    let plain = document(Arc::new(raw.clone()));
+    let budget = super::memory::lines_bytes(&plain.lines) + super::memory::patch_bytes(&raw) + 1024;
+    let mut rows = raw.display_rows();
+    rows[0].line.content.reserve(64 * 1024);
+    let positions = rows
+        .iter()
+        .enumerate()
+        .filter_map(|(row, entry)| entry.metadata.id.map(|id| (id, row)))
+        .collect();
+    raw.preview = Some(PatchPreview { rows, positions });
+    let mut state = DiffState::default();
+    state.set_test_cache_limits(50, budget);
+    let target = file_target("file.txt");
+    load(&mut state, target.clone(), plain);
+    assert_eq!(state.cache_stats().entries, 1);
+    state.repository_refreshed(false);
+    load(&mut state, target, document(Arc::new(raw)));
+    assert_eq!(state.cache_stats().entries, 0);
+    assert_eq!(state.cache_stats().oversized, 1);
+    assert!(state.document().patch.as_ref().unwrap().preview.is_some());
+}
+
+#[test]
+fn test_file_sides_share_a_key_while_untracked_and_directory_inputs_are_distinct() {
     use crate::file_tree::FileTreeNode;
     let target = |status| DiffTarget::File {
         path: "same.txt".into(),
@@ -653,7 +856,11 @@ fn test_file_source_and_structured_directory_inputs_have_distinct_keys() {
         .into_iter()
         .map(|source| target(source).cache_key(&[]))
         .collect();
-    assert_eq!(keys.len(), 3);
+    assert_eq!(keys.len(), 2);
+    assert_eq!(
+        target(FileTreeNodeStatus::Unstaged(FileStatus::New)).cache_key(&[]),
+        target(FileTreeNodeStatus::Staged(FileStatus::New)).cache_key(&[])
+    );
     let node = |path: &str| FileTreeNode {
         path: path.into(),
         status: FileTreeNodeStatus::Unstaged(FileStatus::Modified),

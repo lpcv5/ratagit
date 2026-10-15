@@ -420,9 +420,10 @@ fn load_background(
             let patch_request = match &target {
                 DiffTarget::None | DiffTarget::Branch { .. } => None,
                 DiffTarget::File { path, status } => Some(match status {
-                    FileTreeNodeStatus::Staged(_) => PatchRequest::Index(path.clone()),
+                    FileTreeNodeStatus::Staged(_) | FileTreeNodeStatus::Unstaged(_) => {
+                        PatchRequest::File(path.clone())
+                    }
                     FileTreeNodeStatus::Untracked => PatchRequest::Untracked(path.clone()),
-                    FileTreeNodeStatus::Unstaged(_) => PatchRequest::Worktree(path.clone()),
                     FileTreeNodeStatus::Directory => PatchRequest::Directory(path.clone()),
                 }),
                 DiffTarget::Directory { path } => Some(PatchRequest::Directory(path.clone())),

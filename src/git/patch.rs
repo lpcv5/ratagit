@@ -3,6 +3,11 @@ use super::{DiffLine, DiffLineKind, GitError, PatchRepository};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+mod changes;
+mod preview;
+
+pub use preview::{PatchPreview, PatchRowMetadata};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PatchSource {
     Worktree,
@@ -52,9 +57,11 @@ pub enum PatchDirection {
     Discard,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PatchDisplayRow {
     pub line: DiffLine,
     pub hunk: Option<HunkId>,
+    pub metadata: PatchRowMetadata,
 }
 
 pub struct HunkSpan {
@@ -62,14 +69,32 @@ pub struct HunkSpan {
     pub range: std::ops::Range<usize>,
 }
 
+/// A contiguous edit inside a native hunk, identified by its first changed line.
+#[derive(Debug, Clone)]
+pub struct ChangeBlock {
+    pub id: LineId,
+    pub lines: std::ops::Range<usize>,
+    pub range: std::ops::Range<usize>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PatchRequest {
+    /// All index and worktree changes for one path.
+    File(PathBuf),
+    #[cfg_attr(not(test), allow(dead_code))]
     Worktree(PathBuf),
+    #[cfg_attr(not(test), allow(dead_code))]
     Index(PathBuf),
     Untracked(PathBuf),
     Directory(PathBuf),
-    Commit { oid: String, path: Option<PathBuf> },
-    Stash { index: usize, path: Option<PathBuf> },
+    Commit {
+        oid: String,
+        path: Option<PathBuf>,
+    },
+    Stash {
+        index: usize,
+        path: Option<PathBuf>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -136,9 +161,76 @@ pub struct Patch {
     pub request: PatchRequest,
     pub files: Vec<PatchFile>,
     pub truncated: bool,
+    /// Native HEAD-to-worktree presentation mapped to the reviewed source IDs.
+    /// Application always uses `files`, never these display-only rows.
+    pub preview: Option<PatchPreview>,
+}
+
+struct DisplayGroup {
+    files: Vec<usize>,
+    hunks: Vec<HunkId>,
 }
 
 impl Patch {
+    fn display_groups(&self) -> Vec<DisplayGroup> {
+        let combine = matches!(
+            self.request,
+            PatchRequest::File(_) | PatchRequest::Directory(_)
+        );
+        let mut paths = std::collections::HashMap::new();
+        let mut groups: Vec<DisplayGroup> = Vec::new();
+        for (index, file) in self.files.iter().enumerate() {
+            let path = file.new.path.as_ref().or(file.old.path.as_ref());
+            let existing = if combine {
+                path.and_then(|path| paths.get(path).copied())
+            } else {
+                None
+            };
+            let group = existing.unwrap_or_else(|| {
+                let group = groups.len();
+                if let Some(path) = path.filter(|_| combine) {
+                    paths.insert(path, group);
+                }
+                groups.push(DisplayGroup {
+                    files: Vec::new(),
+                    hunks: Vec::new(),
+                });
+                group
+            });
+            groups[group].files.push(index);
+            groups[group]
+                .hunks
+                .extend((0..file.hunks.len()).map(|hunk| HunkId { file: index, hunk }));
+        }
+        for group in &mut groups {
+            if group.files.len() > 1 {
+                // Both coordinates refer to the index: staged hunks end there,
+                // while unstaged hunks start there. Keep application IDs intact.
+                group.hunks.sort_by_key(|id| {
+                    let file = &self.files[id.file];
+                    let hunk = &file.hunks[id.hunk];
+                    if file.source == PatchSource::Index {
+                        hunk.new_start
+                    } else {
+                        hunk.old_start
+                    }
+                });
+            }
+        }
+        groups
+    }
+
+    fn group_header_rows(&self, group: &DisplayGroup) -> usize {
+        let first = &self.files[group.files[0]];
+        let last = &self.files[*group.files.last().unwrap()];
+        2 + usize::from(first.old.mode != last.new.mode)
+            + usize::from(group.files.iter().any(|index| self.files[*index].binary))
+    }
+
+    pub fn display_file_count(&self) -> usize {
+        self.display_groups().len()
+    }
+
     pub fn display_lines(&self) -> Vec<DiffLine> {
         self.display_rows()
             .into_iter()
@@ -147,15 +239,20 @@ impl Patch {
     }
 
     pub fn display_rows(&self) -> Vec<PatchDisplayRow> {
+        if let Some(preview) = &self.preview {
+            return preview.rows.clone();
+        }
         let mut lines = Vec::new();
-        for file in &self.files {
+        for group in self.display_groups() {
+            let file = &self.files[group.files[0]];
+            let last = &self.files[*group.files.last().unwrap()];
             let old = file
                 .old
                 .path
                 .as_ref()
                 .map(|p| format!("a/{}", p.display()))
                 .unwrap_or_else(|| "/dev/null".into());
-            let new = file
+            let new = last
                 .new
                 .path
                 .as_ref()
@@ -169,19 +266,20 @@ impl Patch {
                 kind: DiffLineKind::Header,
                 content: format!("+++ {new}"),
             });
-            if file.old.mode != file.new.mode {
+            if file.old.mode != last.new.mode {
                 lines.push(DiffLine {
                     kind: DiffLineKind::Header,
-                    content: format!("mode {:o} -> {:o}", file.old.mode, file.new.mode),
+                    content: format!("mode {:o} -> {:o}", file.old.mode, last.new.mode),
                 });
             }
-            if file.binary {
+            if group.files.iter().any(|index| self.files[*index].binary) {
                 lines.push(DiffLine {
                     kind: DiffLineKind::Header,
                     content: "<binary file>".into(),
                 });
             }
-            for hunk in &file.hunks {
+            for id in group.hunks {
+                let hunk = &self.files[id.file].hunks[id.hunk];
                 lines.push(DiffLine {
                     kind: DiffLineKind::Header,
                     content: String::from_utf8_lossy(&hunk.header)
@@ -212,26 +310,41 @@ impl Patch {
         }
         let mut rows: Vec<_> = lines
             .into_iter()
-            .map(|line| PatchDisplayRow { line, hunk: None })
+            .map(|line| PatchDisplayRow {
+                line,
+                hunk: None,
+                metadata: PatchRowMetadata::default(),
+            })
             .collect();
         for span in self.hunk_spans() {
-            for row in &mut rows[span.range] {
+            for (offset, row) in rows[span.range].iter_mut().enumerate() {
                 row.hunk = Some(span.id);
+                if let Some(line) = offset.checked_sub(1) {
+                    let entry = &self.files[span.id.file].hunks[span.id.hunk].lines[line];
+                    row.metadata = PatchRowMetadata {
+                        id: (entry.kind != PatchLineKind::NoNewline).then_some(LineId {
+                            file: span.id.file,
+                            hunk: span.id.hunk,
+                            line,
+                        }),
+                        old_line: entry.old_line,
+                        new_line: entry.new_line,
+                    };
+                }
             }
         }
         rows
     }
 
+    /// Source-hunk ranges for the lossless patches. Combined presentation uses
+    /// `row_metadata` and `line_row` because one native header can cover both sources.
     pub fn hunk_spans(&self) -> Vec<HunkSpan> {
         let mut spans = Vec::new();
         let mut offset = 0;
-        for (file_index, file) in self.files.iter().enumerate() {
-            offset += 2 + usize::from(file.old.mode != file.new.mode) + usize::from(file.binary);
-            for (hunk_index, hunk) in file.hunks.iter().enumerate() {
-                let id = HunkId {
-                    file: file_index,
-                    hunk: hunk_index,
-                };
+        for group in self.display_groups() {
+            offset += self.group_header_rows(&group);
+            for id in group.hunks {
+                let hunk = &self.files[id.file].hunks[id.hunk];
                 spans.push(HunkSpan {
                     id,
                     range: offset..offset + 1 + hunk.lines.len(),
@@ -291,32 +404,17 @@ impl Patch {
     }
 
     pub fn hunk_ids(&self) -> Vec<HunkId> {
-        self.files
-            .iter()
-            .enumerate()
-            .flat_map(|(file, item)| (0..item.hunks.len()).map(move |hunk| HunkId { file, hunk }))
-            .collect()
+        self.hunk_spans().into_iter().map(|span| span.id).collect()
     }
 
     pub fn line_ids(&self) -> Vec<LineId> {
-        self.files
-            .iter()
-            .enumerate()
-            .flat_map(|(file, entry)| {
-                entry
-                    .hunks
-                    .iter()
-                    .enumerate()
-                    .flat_map(move |(hunk, entry)| {
-                        entry
-                            .lines
-                            .iter()
-                            .enumerate()
-                            .filter_map(move |(line, entry)| {
-                                matches!(entry.kind, PatchLineKind::Added | PatchLineKind::Removed)
-                                    .then_some(LineId { file, hunk, line })
-                            })
-                    })
+        self.cursor_line_ids()
+            .into_iter()
+            .filter(|id| {
+                matches!(
+                    self.files[id.file].hunks[id.hunk].lines[id.line].kind,
+                    PatchLineKind::Added | PatchLineKind::Removed
+                )
             })
             .collect()
     }
@@ -343,32 +441,35 @@ impl Patch {
 
     /// Cursor movement includes context; only added/removed rows are writable.
     pub fn cursor_line_ids(&self) -> Vec<LineId> {
-        self.files
-            .iter()
-            .enumerate()
-            .flat_map(|(file, entry)| {
-                entry
-                    .hunks
+        if let Some(preview) = &self.preview {
+            return preview
+                .rows
+                .iter()
+                .filter_map(|row| row.metadata.id)
+                .collect();
+        }
+        self.hunk_ids()
+            .into_iter()
+            .flat_map(|id| {
+                self.files[id.file].hunks[id.hunk]
+                    .lines
                     .iter()
                     .enumerate()
-                    .flat_map(move |(hunk, entry)| {
-                        entry
-                            .lines
-                            .iter()
-                            .enumerate()
-                            .filter_map(move |(line, entry)| {
-                                (entry.kind != PatchLineKind::NoNewline).then_some(LineId {
-                                    file,
-                                    hunk,
-                                    line,
-                                })
-                            })
+                    .filter_map(move |(line, entry)| {
+                        (entry.kind != PatchLineKind::NoNewline).then_some(LineId {
+                            file: id.file,
+                            hunk: id.hunk,
+                            line,
+                        })
                     })
             })
             .collect()
     }
 
     pub fn line_row(&self, id: LineId) -> Option<usize> {
+        if let Some(preview) = &self.preview {
+            return preview.positions.get(&id).copied();
+        }
         self.hunk_spans()
             .iter()
             .find(|span| span.id == id.hunk())

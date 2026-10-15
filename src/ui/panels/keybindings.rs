@@ -117,7 +117,7 @@ pub fn render_keybindings(
         .scroll_padding(crate::ui::LIST_SCROLL_PADDING)
         .highlight_symbol("> ");
     viewport.list.select(selected_row);
-    *viewport.list.offset_mut() = super::selection::scroll_offset(
+    *viewport.list.offset_mut() = crate::ui::components::scroll::scroll_offset(
         viewport.list.offset(),
         selected_row,
         count,
