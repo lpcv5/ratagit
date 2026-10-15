@@ -198,10 +198,12 @@ impl AppState {
 pub(super) fn description(id: commands::CommandId, label: &str) -> String {
     use commands::CommandId::*;
     let text = match id {
-        FocusDiff => "Open diff / select lines",
+        FocusDiff => "Open diff / select hunks",
         DiffSide => "Switch staged / unstaged diff",
         DiffApply => return format!("{label} selected lines / hunks"),
+        DiffNextLine if label == "NextHunk" => "Next hunk",
         DiffNextLine => "Next line",
+        DiffPreviousLine if label == "PreviousHunk" => "Previous hunk",
         DiffPreviousLine => "Previous line",
         DiffClear => "Clear selection",
         DiffNextFile => "Next file",

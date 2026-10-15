@@ -27,7 +27,7 @@ pub struct GitStatus {
 }
 
 /// Owned repository data shared by effects and immutable UI snapshots.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DiffLineKind {
     Added,
     Removed,
@@ -36,7 +36,7 @@ pub enum DiffLineKind {
 }
 
 /// Owned repository data shared by effects and immutable UI snapshots.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiffLine {
     pub kind: DiffLineKind,
     pub content: String,

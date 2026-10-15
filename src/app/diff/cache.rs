@@ -8,8 +8,7 @@ const MAX_BYTES: usize = 32 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FileDiffSource {
-    Worktree,
-    Index,
+    Combined,
     Untracked,
     Directory,
 }
@@ -298,7 +297,7 @@ mod tests {
         let mut cache = DiffCache::new();
         let key = DiffCacheKey::File {
             path: "foo.txt".into(),
-            source: FileDiffSource::Worktree,
+            source: FileDiffSource::Combined,
         }
         .at_revision(0);
         assert!(cache.get_cloned(&key).is_none());
@@ -309,7 +308,7 @@ mod tests {
         let mut cache = DiffCache::new();
         let key = DiffCacheKey::File {
             path: "foo.txt".into(),
-            source: FileDiffSource::Worktree,
+            source: FileDiffSource::Combined,
         }
         .at_revision(0);
         let diff = make_diff(3);
@@ -323,7 +322,7 @@ mod tests {
         let mut cache = DiffCache::new();
         let key = DiffCacheKey::File {
             path: "foo.txt".into(),
-            source: FileDiffSource::Worktree,
+            source: FileDiffSource::Combined,
         }
         .at_revision(0);
         cache.insert(key.clone(), make_diff(2));
@@ -337,7 +336,7 @@ mod tests {
         let mut cache = DiffCache::new();
         let file_key = DiffCacheKey::File {
             path: "foo.txt".into(),
-            source: FileDiffSource::Worktree,
+            source: FileDiffSource::Combined,
         }
         .at_revision(0);
         let commit_key = DiffCacheKey::Commit {
@@ -357,17 +356,17 @@ mod tests {
         let mut cache = DiffCache::with_limits(2, MAX_BYTES);
         let k1 = DiffCacheKey::File {
             path: "a.txt".into(),
-            source: FileDiffSource::Worktree,
+            source: FileDiffSource::Combined,
         }
         .at_revision(0);
         let k2 = DiffCacheKey::File {
             path: "b.txt".into(),
-            source: FileDiffSource::Worktree,
+            source: FileDiffSource::Combined,
         }
         .at_revision(0);
         let k3 = DiffCacheKey::File {
             path: "c.txt".into(),
-            source: FileDiffSource::Worktree,
+            source: FileDiffSource::Combined,
         }
         .at_revision(0);
         cache.insert(k1.clone(), make_diff(1));
@@ -438,7 +437,7 @@ mod tests {
     fn file(name: &str) -> DiffCacheIdentity {
         DiffCacheKey::File {
             path: name.into(),
-            source: FileDiffSource::Worktree,
+            source: FileDiffSource::Combined,
         }
         .at_revision(0)
     }

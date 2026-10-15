@@ -5,6 +5,7 @@ fn test_keybindings_help_preserves_diff_focus_range_and_git_state() {
     use crate::app::help::HelpGroup;
     let mut fixture = Fixture::new();
     press(&mut fixture.app, KeyCode::Enter);
+    press(&mut fixture.app, KeyCode::Char('a'));
     press(&mut fixture.app, KeyCode::Char('v'));
     press(&mut fixture.app, KeyCode::Char('j'));
     let interaction = format!("{:?}", fixture.app.diff.interaction());
@@ -58,8 +59,6 @@ fn test_keybindings_help_preserves_diff_focus_range_and_git_state() {
     // The staged side shows unstage descriptions, using the same effective key.
     press(&mut fixture.app, KeyCode::Char(' '));
     refresh(&mut fixture.app);
-    press(&mut fixture.app, KeyCode::Tab);
-    refresh(&mut fixture.app);
     press(&mut fixture.app, KeyCode::Char('?'));
     let entry = fixture
         .app
@@ -86,12 +85,12 @@ fn test_enter_during_pending_diff_load_is_not_lost() {
 }
 
 #[test]
-fn test_enter_focuses_lines_space_toggles_stage_tab_switches_side_and_escape_exits() {
+fn test_enter_focuses_hunks_and_space_toggles_same_hunk_without_switching_side() {
     let mut fixture = Fixture::new();
     let selection = fixture.app.files.view().panel.selected();
     press(&mut fixture.app, KeyCode::Enter);
     assert!(fixture.app.diff.interaction().focused);
-    assert!(fixture.app.diff.interaction().line_mode);
+    assert!(!fixture.app.diff.interaction().line_mode);
     assert_eq!(fixture.app.files.view().panel.selected(), selection);
     assert!(help(&fixture.app, "diff stage")
         .unwrap()
@@ -102,15 +101,21 @@ fn test_enter_focuses_lines_space_toggles_stage_tab_switches_side_and_escape_exi
     refresh(&mut fixture.app);
     assert_eq!(
         fixture.index(),
-        Fixture::base().replace("line 3\n", "").as_bytes()
+        Fixture::base()
+            .replace("line 3\n", "first change\n")
+            .as_bytes()
     );
-    press(&mut fixture.app, KeyCode::Tab);
-    refresh(&mut fixture.app);
     assert_eq!(fixture.app.diff.interaction().side, Some(DiffSide::Staged));
     assert_eq!(help(&fixture.app, "diff stage").unwrap().label, "Unstage");
     press(&mut fixture.app, KeyCode::Char(' '));
     refresh(&mut fixture.app);
     assert_eq!(fixture.index(), Fixture::base().as_bytes());
+    assert_eq!(
+        fixture.app.diff.interaction().side,
+        Some(DiffSide::Unstaged)
+    );
+    assert_eq!(fixture.app.diff.interaction().cursor.unwrap().hunk, 0);
+    assert_eq!(help(&fixture.app, "diff stage").unwrap().label, "Stage");
     assert_eq!(
         std::fs::read_to_string(fixture.dir.path().join("file.txt")).unwrap(),
         Fixture::changed()
@@ -163,6 +168,7 @@ fn test_enter_on_directory_toggles_tree_and_zero_can_focus_directory_diff() {
 fn test_diff_hjkl_ranges_and_escape_follow_lazygit_context() {
     let mut fixture = Fixture::new();
     press(&mut fixture.app, KeyCode::Enter);
+    press(&mut fixture.app, KeyCode::Char('a'));
     let first = fixture.app.diff.interaction().line_cursor.unwrap();
     press(&mut fixture.app, KeyCode::Char('j'));
     assert_eq!(

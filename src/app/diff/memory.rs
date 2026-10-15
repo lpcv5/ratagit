@@ -1,5 +1,5 @@
 //! Approximate owned capacities, excluding cache bookkeeping and allocator overhead.
-use crate::git::patch::{Patch, PatchRequest, PatchSource};
+use crate::git::patch::{LineId, Patch, PatchPreview, PatchRequest, PatchSource};
 use crate::git::DiffLine;
 use std::mem::size_of;
 use std::path::PathBuf;
@@ -24,8 +24,28 @@ pub(super) fn lines_bytes(lines: &Vec<DiffLine>) -> usize {
 }
 
 pub(super) fn patch_bytes(patch: &Patch) -> usize {
+    let preview = patch.preview.as_ref().map_or(0, |preview| {
+        // B-tree node allocation includes keys, values and links; account for
+        // partially filled nodes conservatively in the bounded cache estimate.
+        size_of::<PatchPreview>()
+            .saturating_add(vector(&preview.rows))
+            .saturating_add(
+                preview
+                    .rows
+                    .iter()
+                    .map(|row| row.line.content.capacity())
+                    .sum::<usize>(),
+            )
+            .saturating_add(
+                preview
+                    .positions
+                    .len()
+                    .saturating_mul(2 * (size_of::<LineId>() + 3 * size_of::<usize>())),
+            )
+    });
     let request = match &patch.request {
-        PatchRequest::Worktree(path)
+        PatchRequest::File(path)
+        | PatchRequest::Worktree(path)
         | PatchRequest::Index(path)
         | PatchRequest::Untracked(path)
         | PatchRequest::Directory(path) => path.capacity(),
@@ -36,6 +56,7 @@ pub(super) fn patch_bytes(patch: &Patch) -> usize {
         ARC_HEADER
             .saturating_add(size_of::<Patch>())
             .saturating_add(request)
+            .saturating_add(preview)
             .saturating_add(vector(&patch.files)),
         |mut bytes, file| {
             if let PatchSource::Commit(oid) = &file.source {

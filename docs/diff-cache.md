@@ -11,6 +11,8 @@ The estimate includes display-line vector capacity, string capacity, the shared
 allocation headers, and lossless patch data. Patch accounting includes request
 and side paths, OIDs, file/hunk/line vector capacities, hunk headers, exact line
 bytes, and encoded patch bytes. Reserved capacity counts even when unused.
+Native combined previews also account for display rows, their string capacities
+and the source-line coordinate map.
 
 Shared line collections and patch objects are identified separately. Multiple
 cache entries referencing one allocation pay for it once; different display text
@@ -38,8 +40,7 @@ revision scoped to the mutable inputs:
 
 | Target | Key inputs | Revision |
 | --- | --- | --- |
-| Tracked unstaged file | Path and worktree source | Worktree |
-| Staged file | Path and index source | Worktree |
+| Tracked file (staged and/or unstaged) | Path and combined index/worktree source | Worktree |
 | Untracked file | Path and untracked source | Worktree |
 | Directory | Path and structured visible path/status/directory fingerprint | Worktree |
 | Branch log | Branch name and the same 20-commit limit used for execution | Branches |

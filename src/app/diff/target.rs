@@ -81,8 +81,9 @@ impl DiffTarget {
             Self::File { path, status } => DiffCacheKey::File {
                 path: path.clone(),
                 source: match status {
-                    FileTreeNodeStatus::Staged(_) => FileDiffSource::Index,
-                    FileTreeNodeStatus::Unstaged(_) => FileDiffSource::Worktree,
+                    FileTreeNodeStatus::Staged(_) | FileTreeNodeStatus::Unstaged(_) => {
+                        FileDiffSource::Combined
+                    }
                     FileTreeNodeStatus::Untracked => FileDiffSource::Untracked,
                     FileTreeNodeStatus::Directory => FileDiffSource::Directory,
                 },

@@ -75,6 +75,7 @@ impl DiffState {
         match action {
             DiffAction::ToggleFocus => {
                 if self.interaction.focused {
+                    self.forget_reload_position();
                     self.interaction.focused = false;
                     self.interaction.selected.clear();
                     self.interaction.selected_lines.clear();
@@ -107,6 +108,31 @@ impl DiffState {
                 }
             }
             DiffAction::SwitchSide if self.interaction.focused && !self.is_loading() => {
+                self.forget_reload_position();
+                if let Some(patch) = self
+                    .document
+                    .patch
+                    .as_ref()
+                    .filter(|patch| matches!(patch.request, PatchRequest::File(_)))
+                {
+                    let desired = if self.interaction.side == Some(DiffSide::Staged) {
+                        PatchDirection::Stage
+                    } else {
+                        PatchDirection::Unstage
+                    };
+                    if let Some(id) = patch
+                        .change_ids()
+                        .into_iter()
+                        .find(|id| patch.files[id.file].source.direction() == Some(desired))
+                    {
+                        self.interaction.cursor = Some(id);
+                        self.interaction.line_cursor = Some(id);
+                        self.interaction.clear_marks();
+                        self.scroll_to_selection();
+                    }
+                    output.redraw = true;
+                    return output;
+                }
                 let staged = self.interaction.side == Some(DiffSide::Staged)
                     || self
                         .document
@@ -141,9 +167,17 @@ impl DiffState {
                         } else {
                             current.saturating_sub(1)
                         };
-                        self.interaction.line_cursor = Some(ids[next]);
-                        self.interaction.cursor = Some(ids[next].hunk());
-                        self.scroll_to_selection();
+                        if self.interaction.line_cursor != Some(ids[next]) {
+                            self.write_position = None;
+                            self.interaction.cursor_relocation = None;
+                            self.interaction.line_cursor = Some(ids[next]);
+                            self.interaction.cursor = self
+                                .document
+                                .patch
+                                .as_ref()
+                                .and_then(|patch| patch.change_for_line(ids[next]));
+                            self.scroll_to_selection();
+                        }
                     }
                     output.redraw = true;
                     return output;
@@ -160,18 +194,13 @@ impl DiffState {
                     } else {
                         current.saturating_sub(1)
                     };
-                    self.interaction.cursor = Some(ids[next]);
-                    if self.interaction.line_mode {
-                        self.interaction.line_cursor = self
-                            .document
-                            .patch
-                            .as_ref()
-                            .unwrap()
-                            .line_ids()
-                            .into_iter()
-                            .find(|id| id.hunk() == ids[next]);
+                    if self.interaction.cursor != Some(ids[next]) {
+                        self.write_position = None;
+                        self.interaction.cursor_relocation = None;
+                        self.interaction.cursor = Some(ids[next]);
+                        self.interaction.line_cursor = Some(ids[next]);
+                        self.scroll_to_selection();
                     }
-                    self.scroll_to_selection();
                 }
             }
             DiffAction::ToggleSelection if self.interaction.focused => {
@@ -224,20 +253,20 @@ impl DiffState {
                 }
             }
             DiffAction::ToggleLineMode if self.view().hunks(files_context).can_navigate() => {
+                self.write_position = None;
+                self.interaction.cursor_relocation = None;
                 self.interaction.line_mode = !self.interaction.line_mode;
                 self.interaction.selected.clear();
                 self.interaction.selected_lines.clear();
                 self.interaction.range_anchor = None;
                 self.interaction.hunk_anchor = None;
                 if self.interaction.line_mode {
-                    self.interaction.line_cursor = self
-                        .document
-                        .patch
-                        .as_ref()
-                        .unwrap()
-                        .line_ids()
-                        .into_iter()
-                        .find(|id| Some(id.hunk()) == self.interaction.cursor);
+                    self.interaction.line_cursor = self.interaction.cursor;
+                } else {
+                    self.interaction.cursor = self
+                        .interaction
+                        .line_cursor
+                        .and_then(|id| self.document.patch.as_ref()?.change_for_line(id));
                 }
                 self.scroll_to_selection();
             }
@@ -292,16 +321,35 @@ impl DiffState {
                     output.redraw = true;
                     return output;
                 }
-                let ids = self.view().hunks(files_context).targets(direction);
-                if !ids.is_empty() {
+                let lines = self.view().hunks(files_context).change_targets(direction);
+                if !lines.is_empty() {
+                    let ids = self.view().hunks(files_context).targets(direction);
+                    self.write_position = self.interaction.cursor.and_then(|cursor| {
+                        super::position::HunkPosition::capture(
+                            self.document.patch.as_ref()?,
+                            cursor,
+                            direction,
+                            lines.contains(&cursor),
+                            self.scroll,
+                        )
+                    });
                     self.interaction.next_write += 1;
                     let id = self.interaction.next_write;
                     self.interaction.pending_write = Some(id);
-                    output.write = Some(HunkWrite::Selected {
-                        id,
-                        patch: self.document.patch.clone().unwrap(),
-                        ids,
-                        direction,
+                    output.write = Some(if ids.is_empty() {
+                        HunkWrite::Lines {
+                            id,
+                            patch: self.document.patch.clone().unwrap(),
+                            ids: lines,
+                            direction,
+                        }
+                    } else {
+                        HunkWrite::Selected {
+                            id,
+                            patch: self.document.patch.clone().unwrap(),
+                            ids,
+                            direction,
+                        }
                     });
                 }
             }
@@ -311,6 +359,10 @@ impl DiffState {
                 result,
             } if self.interaction.pending_write == Some(id) => {
                 self.interaction.pending_write = None;
+                if result.is_err() {
+                    self.write_position = None;
+                    self.interaction.cursor_relocation = None;
+                }
                 output.log = Some(match result {
                     Ok(()) => (
                         match direction {
@@ -329,6 +381,7 @@ impl DiffState {
                 output.reload = DiffReload::Deferred;
             }
             DiffAction::SelectionChanged | DiffAction::FileChanged => {
+                self.forget_reload_position();
                 self.interaction.focused = matches!(action, DiffAction::FileChanged);
                 self.interaction.side = None;
                 self.interaction.reset_selection();
@@ -369,26 +422,34 @@ impl DiffState {
         output
     }
 
-    fn scroll_to_selection(&mut self) {
-        if self.interaction.line_mode {
-            if let Some(row) = self.document.patch.as_ref().and_then(|patch| {
-                self.interaction
-                    .line_cursor
-                    .and_then(|id| patch.line_row(id))
-            }) {
-                self.scroll = row;
-            }
-            return;
+    pub(super) fn sync_cursor_side(&mut self) {
+        if let Some(patch) = self.document.patch.as_ref().filter(|patch| {
+            matches!(
+                patch.request,
+                PatchRequest::File(_) | PatchRequest::Directory(_)
+            )
+        }) {
+            self.interaction.side = self
+                .interaction
+                .cursor
+                .and_then(|id| patch.files.get(id.file))
+                .and_then(|file| match file.source.direction() {
+                    Some(PatchDirection::Stage) => Some(DiffSide::Unstaged),
+                    Some(PatchDirection::Unstage) => Some(DiffSide::Staged),
+                    _ => None,
+                });
         }
-        if let Some(patch) = &self.document.patch {
-            if let Some(index) = patch
-                .hunk_spans()
-                .iter()
-                .find(|span| Some(span.id) == self.interaction.cursor)
-                .map(|span| span.range.start)
-            {
-                self.scroll = index;
-            }
+    }
+
+    pub(super) fn scroll_to_selection(&mut self) {
+        self.sync_cursor_side();
+        let cursor = if self.interaction.line_mode {
+            self.interaction.line_cursor
+        } else {
+            self.interaction.cursor
+        };
+        if let Some(row) = cursor.and_then(|id| self.document.patch.as_ref()?.line_row(id)) {
+            self.scroll = row;
         }
     }
 }

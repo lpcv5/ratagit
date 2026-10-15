@@ -20,6 +20,16 @@ pub struct UiTheme {
     pub visual_selection_bg: Color,
     pub diff_added_bg: Color,
     pub diff_removed_bg: Color,
+    pub diff_staged_added_bg: Color,
+    pub diff_staged_removed_bg: Color,
+    pub diff_staged_added_selected_bg: Color,
+    pub diff_staged_removed_selected_bg: Color,
+    pub diff_staged_added_cursor_bg: Color,
+    pub diff_staged_removed_cursor_bg: Color,
+    pub diff_added_selected_bg: Color,
+    pub diff_removed_selected_bg: Color,
+    pub diff_added_cursor_bg: Color,
+    pub diff_removed_cursor_bg: Color,
 }
 
 impl Default for UiTheme {
@@ -43,6 +53,16 @@ impl Default for UiTheme {
             visual_selection_bg: Color::Rgb(46, 58, 86),
             diff_added_bg: Color::Rgb(24, 46, 36),
             diff_removed_bg: Color::Rgb(51, 30, 37),
+            diff_staged_added_bg: Color::Rgb(33, 67, 48),
+            diff_staged_removed_bg: Color::Rgb(73, 36, 45),
+            diff_staged_added_selected_bg: Color::Rgb(44, 85, 60),
+            diff_staged_removed_selected_bg: Color::Rgb(94, 44, 55),
+            diff_staged_added_cursor_bg: Color::Rgb(52, 100, 70),
+            diff_staged_removed_cursor_bg: Color::Rgb(111, 52, 64),
+            diff_added_selected_bg: Color::Rgb(30, 65, 47),
+            diff_removed_selected_bg: Color::Rgb(72, 38, 46),
+            diff_added_cursor_bg: Color::Rgb(40, 80, 58),
+            diff_removed_cursor_bg: Color::Rgb(88, 44, 54),
         }
     }
 }

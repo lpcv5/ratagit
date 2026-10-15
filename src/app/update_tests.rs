@@ -1482,21 +1482,21 @@ fn search_query_is_restored_between_commit_list_and_tree_scopes() {
 }
 
 #[test]
-fn status_refresh_preserves_duplicate_entry_selection_and_diff_sync() {
+fn status_refresh_preserves_combined_file_selection_and_diff_sync() {
     let mut app = App::from_repo(Box::new(DuplicateStatusRepo)).expect("app from duplicate repo");
     app.ui.active_panel = SidePanel::Files;
-    assert_eq!(app.files.view().tree_nodes.len(), 3);
+    assert_eq!(app.files.view().tree_nodes.len(), 2);
 
-    app.files.test_view_mut().panel.select(Some(2));
+    app.files.test_view_mut().panel.select(Some(1));
     app.reload_diff_now();
     crate::flux::test_runtime::finish_background(&mut app);
-    assert_eq!(first_diff_content(&app), "staged");
+    assert_eq!(first_diff_content(&app), "unstaged");
 
     app.request_refresh(RefreshKind::StatusOnly);
     app.flush_pending_refresh().expect("flush refresh");
 
-    assert_files_selected(&app, Some(2));
-    assert_eq!(first_diff_content(&app), "staged");
+    assert_files_selected(&app, Some(1));
+    assert_eq!(first_diff_content(&app), "unstaged");
 }
 
 #[test]

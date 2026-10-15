@@ -77,7 +77,13 @@ pub fn build_file_tree(
                 .iter()
                 .map(|entry| (entry, FileTreeNodeStatus::Staged(entry.status.clone()))),
         );
+    let mut seen = HashSet::new();
     for (entry, status) in entries {
+        // A partially staged path is one file. Keep its worktree status so
+        // whole-file staging still stages the remaining changes.
+        if !seen.insert(&entry.path) {
+            continue;
+        }
         if let Some(parent) = entry.path.parent() {
             children
                 .entry(parent.to_path_buf())
@@ -87,7 +93,6 @@ pub fn build_file_tree(
         }
     }
     for group in children.values_mut() {
-        // Stable sorting preserves unstaged/staged duplicates of the same path.
         group.files.sort_by(|a, b| a.0.cmp(&b.0));
     }
 
@@ -196,7 +201,7 @@ mod tests {
     }
 
     #[test]
-    fn test_file_tree_orders_directories_first_and_preserves_duplicate_sides() {
+    fn test_file_tree_orders_directories_first_and_combines_duplicate_sides() {
         let files = [
             entry("z.txt"),
             entry("b/deep/file.txt"),
@@ -214,13 +219,12 @@ mod tests {
                 "b/deep",
                 "b/deep/file.txt",
                 "new.txt",
-                "z.txt",
                 "z.txt"
             ]
             .map(PathBuf::from)
         );
         assert!(matches!(nodes[6].status, FileTreeNodeStatus::Unstaged(_)));
-        assert!(matches!(nodes[7].status, FileTreeNodeStatus::Staged(_)));
+        assert_eq!(nodes.len(), 7);
         let collapsed = build_file_tree(&files, &[], &[], &HashSet::new());
         assert_eq!(collapsed.len(), 3);
         assert!(collapsed[..2]
@@ -265,10 +269,10 @@ mod tests {
     }
 
     #[test]
-    fn test_file_tree_cursor_keeps_staged_side_when_status_changes() {
+    fn test_file_tree_cursor_keeps_partial_file_when_staged_status_changes() {
         let files = [entry("file.txt")];
         let nodes = build_file_tree(&files, &[], &files, &HashSet::new());
-        let cursor = TreeCursor::capture(&nodes, Some(1));
+        let cursor = TreeCursor::capture(&nodes, Some(0));
         let nodes = build_file_tree(
             &files,
             &[],
@@ -278,6 +282,6 @@ mod tests {
             }],
             &HashSet::new(),
         );
-        assert_eq!(cursor.restore(&nodes), Some(1));
+        assert_eq!(cursor.restore(&nodes), Some(0));
     }
 }

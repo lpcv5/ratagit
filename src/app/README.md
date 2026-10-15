@@ -53,6 +53,9 @@ mutable copy of shared selection would introduce additional coordination.
 - `flux/command_output.rs`: the dispatcher-owned command collector, explicit
   publication ordering and cancellation of unpublished background reads.
 - `commands.rs`: command IDs, aliases, context availability, default bindings, execution mapping and help labels. Keyboard input, the command palette and shortcut hints all use this registry.
+- `commands/diff_bindings.rs`: binds the diff container's semantic intents to
+  Flux actions and domain availability checks. The registry uses these same
+  bindings for keys, palette execution and help availability.
 - `context.rs`: `ViewContext` identities (including branch/commit/stash sources), parent views and modal `UiContext`. Contexts are derived from reducer state and included in render snapshots.
 - `test_dispatch.rs`: test helpers:
   - `dispatch_test_action(app, action)` dispatches one `DomainAction` through Flux.
@@ -61,6 +64,29 @@ mutable copy of shared selection would introduce additional coordination.
 - `update_tests.rs`: behavior regression tests (included by `app/mod.rs` under `#[cfg(test)]`).
 
 ## Domain Modules
+
+The hunk/diff display is a controlled component in `../ui/components/diff/`.
+`DiffViewModel` is its immutable data entry; `DiffIntent` and
+`DiffBehaviorBindings` are its external behavior ports. The command layer is
+the application adapter for those ports. Reducers and Git effects stay in the
+domain/runtime layers, while `../ui/panels/diff_panel.rs` only projects snapshot
+data and panel-specific hints. See the [component contract](../ui/components/diff/README.md).
+
+After a successful index write, the diff feature relocates the current change
+and publishes a revision with corresponding old/new display rows. The adapter
+projects this into `DiffViewportAnchor`; the renderer consumes it once to keep
+the content at its previous screen position. Hunk merging, unchanged cursor
+targets, manual page scrolling and untracked-to-index transitions use the same
+contract. Range fitting and viewport history stay inside the UI component.
+
+Hunk-mode cursor, marks and range anchors identify contiguous edits with the
+first changed `LineId`. `Patch::change_blocks()` splits native hunks at context
+lines without changing the reviewed patch or native `HunkId`s. Application
+selectors expand chosen blocks to exact changed line targets. A complete native
+hunk still uses the hunk backend; partial blocks use the existing line backend
+with the same freshness checks. Cursor relocation captures the chosen block's
+bytes, so staging a neighbor or merging Git hunks preserves the logical cursor.
+
 - `panel_nav.rs`: active panel counting and list navigation behavior.
 - `input_mode.rs`: commit/branch/stash editor input state transitions.
 - `search/`: private search scope/query state, pure matching/jump decisions and immutable selectors.
@@ -280,6 +306,7 @@ the feature module.
 | `diff/state.rs` | Own the document, interaction, scroll, cache and load identity; decide cache reuse, invalidation and completion acceptance. |
 | `diff/update.rs` | Reduce typed `DiffAction` inputs using only diff state and an explicit files-context flag; return `DiffUpdate` with owned writes and cross-feature intentions. |
 | `diff/selectors.rs` | Project `DiffView` and `HunkView`; determine focus/navigation/side/write command availability and validated hunk targets. |
+| `diff/position.rs` | Relocate reviewed changes and page-scroll anchors after index writes using paths, exact changed bytes and index coordinates. |
 | `diff/target.rs` | Apply explicit staged/unstaged choice, derive cache/task identities and decide which repository refresh affects a target. |
 | `diff/cache.rs` | Cache documents with their original shared patch objects and preserve existing LRU behavior. |
 | `diff/tests.rs` | Test feature decisions directly, without an App, repository or task runtime. |
@@ -597,7 +624,7 @@ with worker gates and real repositories, including a local bare remote for fetch
 
 `diff/state.rs` owns diff focus, the hunk cursor, explicit selections, staged/unstaged view choice and pending write identity. `diff/update.rs` reduces their transitions. `HunkView` is shared by key mapping, palette availability, hints and snapshots. Navigation scrolls the hunk header into view; the renderer highlights the cursor and selected hunks, identifies staged/unstaged content and shows the file path. Changing panels, selecting another file or refreshing a patch clears obsolete selections. In directory diffs, selecting a hunk with the opposite staging direction starts a new selection. Repeated write commands are disabled until completion; failures also trigger a fresh status and diff read.
 
-Default Files/diff keys follow Lazygit: `Enter` opens a file's diff or toggles a directory; `0` focuses the main diff. Diff focus starts in line mode. `j`/`k` or up/down move through diff lines, `h`/`l` or left/right jump hunks, `a` switches line/hunk mode, and `v` selects a range in either mode. `Space` applies the selection to the index in the current side's direction. `Tab` switches staged/unstaged sides inside the diff and cycles side panels outside it (`Shift+Tab` cycles backward). `n`/`N` switch visible files without leaving the diff, and `Esc` returns directly to the file list and clears selection. `d` discards unstaged changes or unstages staged changes. Legacy selection and explicit stage/unstage actions remain available through palette aliases and custom bindings. The keymap loader upgrades exact historical defaults in memory, preserves customized bindings and does not rewrite configuration comments. Modal input retains priority.
+Default Files/diff keys follow Lazygit: `Enter` opens a file's diff or toggles a directory; `0` focuses the main diff. Diff focus starts in hunk mode. `j`/`k` or up/down select hunks, `h`/`l` or left/right also jump hunks, `a` switches line/hunk mode, and `v` selects a range in either mode. In line mode, `j`/`k` move through individual lines. Hunk focus and selection tint only changed rows. `Space` toggles stage/unstage according to the selection's source; the cursor follows the operated hunk into the fresh patch so a second press toggles it back. This cursor relocation uses the path, changed bytes and index coordinates, never stale source-local IDs, and is cancelled on navigation, context changes or write failure. `Tab` switches staged/unstaged sides inside the diff and cycles side panels outside it (`Shift+Tab` cycles backward). `n`/`N` switch visible files without leaving the diff, and `Esc` returns directly to the file list and clears selection. `d` discards unstaged changes or unstages staged changes. Legacy selection and explicit stage/unstage actions remain available through palette aliases and custom bindings. The keymap loader upgrades exact historical defaults in memory, preserves customized bindings and does not rewrite configuration comments. Modal input retains priority.
 
 Status reads report both index and worktree changes for partially staged paths. While the diff is focused, partial fast status reads do not rebuild the file tree before the complete read, preserving the selected file when reversing an addition makes it untracked again. Patch display row ranges are derived once from hunk metadata for cursor/selection rendering; scrolling does not rebuild patch text.
 

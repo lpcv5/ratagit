@@ -11,7 +11,7 @@ pub use panels::selection::RenderState;
 #[cfg(test)]
 mod golden_tests;
 #[cfg(test)]
-mod test_support;
+pub(crate) mod test_support;
 
 /// Keep some breathing room around selected rows in scrollable lists.
 pub const LIST_SCROLL_PADDING: usize = 2;

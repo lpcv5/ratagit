@@ -170,7 +170,7 @@ fn visible_range(count: usize, state: &ListState, height: usize) -> std::ops::Ra
     if count == 0 || height == 0 {
         return 0..0;
     }
-    let start = crate::ui::panels::selection::scroll_offset(
+    let start = crate::ui::components::scroll::scroll_offset(
         state.offset(),
         state.selected(),
         count,
@@ -209,7 +209,7 @@ mod tests {
                         .with_offset(offset);
                     let mut actual_state = expected_state;
                     if height > 0 {
-                        *expected_state.offset_mut() = crate::ui::panels::selection::scroll_offset(
+                        *expected_state.offset_mut() = crate::ui::components::scroll::scroll_offset(
                             expected_state.offset(),
                             selected,
                             nodes.len(),

@@ -5,6 +5,62 @@ use std::path::Path;
 use std::process::Command;
 use tempfile::TempDir;
 mod lines;
+mod preview;
+
+#[test]
+fn test_combined_file_patch_groups_sources_and_applies_each_hunk_independently() {
+    let fixture = Fixture::new();
+    fixture.write("file.txt", Fixture::changed());
+    let initial = fixture.worktree();
+    fixture
+        .repo
+        .apply_hunks(
+            &initial,
+            &[HunkId { file: 0, hunk: 1 }],
+            PatchDirection::Stage,
+        )
+        .unwrap();
+    let combined = fixture.patch(PatchRequest::File("file.txt".into()));
+    assert_eq!(combined.display_file_count(), 1);
+    let ids = combined.hunk_ids();
+    assert_eq!(ids.len(), 2);
+    assert_eq!(combined.files[ids[0].file].source, PatchSource::Worktree);
+    assert_eq!(combined.files[ids[1].file].source, PatchSource::Index);
+    let rows = combined.display_rows();
+    assert_eq!(
+        rows.iter()
+            .filter(|row| row.line.content.starts_with("--- "))
+            .count(),
+        1
+    );
+    let mut previous = None;
+    for id in combined.cursor_line_ids() {
+        let row = combined.line_row(id).unwrap();
+        assert!(previous.is_none_or(|previous| previous < row));
+        assert_eq!(rows[row].hunk, Some(id.hunk()));
+        previous = Some(row);
+    }
+    fixture
+        .repo
+        .apply_hunks(&combined, &[ids[1]], PatchDirection::Unstage)
+        .unwrap();
+    assert!(fixture.git_ok(&["diff", "--cached"]).is_empty());
+    assert_eq!(
+        std::fs::read_to_string(fixture.dir.path().join("file.txt")).unwrap(),
+        Fixture::changed()
+    );
+    let remaining = fixture.patch(PatchRequest::File("file.txt".into()));
+    fixture
+        .repo
+        .apply_hunks(&remaining, &remaining.hunk_ids(), PatchDirection::Stage)
+        .unwrap();
+    let staged = fixture.patch(PatchRequest::File("file.txt".into()));
+    assert!(staged
+        .files
+        .iter()
+        .all(|file| file.source == PatchSource::Index));
+    assert_eq!(staged.hunk_ids().len(), 2);
+}
 
 struct Fixture {
     dir: TempDir,
@@ -564,6 +620,16 @@ fn test_structured_patch_reaches_state_cache_and_owned_snapshot() {
     );
     app.request_refresh(crate::app::RefreshKind::StatusOnly);
     assert!(app.state.diff.document().patch.is_none());
+    let retained = AppStateSnapshotOwned::from_app(&app.state);
+    assert!(retained.current_patch.is_none());
+    assert!(std::sync::Arc::ptr_eq(
+        retained.retained_diff_patch.as_ref().unwrap(),
+        &patch
+    ));
+    assert!(std::ptr::eq(
+        retained.as_snapshot().retained_diff_patch.unwrap(),
+        patch.as_ref()
+    ));
 }
 
 #[test]

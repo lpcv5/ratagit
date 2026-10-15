@@ -40,6 +40,8 @@ pub struct AppStateSnapshot<'a> {
     pub operation: &'a crate::git::operation::OperationMachine,
     #[cfg_attr(not(test), allow(dead_code))]
     pub current_patch: Option<&'a crate::git::patch::Patch>,
+    /// Metadata for the previous preview, unavailable to command selectors.
+    pub retained_diff_patch: Option<&'a crate::git::patch::Patch>,
     pub current_diff: &'a [DiffLine],
     pub diff_scroll: usize,
     pub diff_loading: bool,
@@ -109,6 +111,7 @@ impl<'a> AppStateSnapshot<'a> {
             render_cache: &app.ui.render_cache,
             operation: &app.git.operation,
             current_patch: diff.document.patch.as_deref(),
+            retained_diff_patch: diff.retained_patch.map(|patch| patch.as_ref()),
             current_diff: &diff.document.lines,
             diff_scroll: diff.scroll,
             diff_loading: diff.show_loading(),
@@ -172,6 +175,8 @@ pub struct AppStateSnapshotOwned {
 
     pub operation: crate::git::operation::OperationMachine,
     pub current_patch: Option<std::sync::Arc<crate::git::patch::Patch>>,
+    /// Shared with the retained text until the replacement document is installed.
+    pub retained_diff_patch: Option<std::sync::Arc<crate::git::patch::Patch>>,
     pub current_diff: Shared<Vec<DiffLine>>,
     pub diff_scroll: usize,
     pub diff_loading: bool,
@@ -222,6 +227,7 @@ impl AppStateSnapshotOwned {
             render_cache: app.ui.render_cache.clone(),
             operation: app.git.operation.clone(),
             current_patch: diff.document.patch.clone(),
+            retained_diff_patch: diff.retained_patch.cloned(),
             current_diff: diff.document.lines.clone(),
             diff_scroll: diff.scroll,
             diff_loading: diff.show_loading(),
@@ -296,6 +302,7 @@ impl AppStateSnapshotOwned {
             render_cache: &self.render_cache,
             operation: &self.operation,
             current_patch: self.current_patch.as_deref(),
+            retained_diff_patch: self.retained_diff_patch.as_deref(),
             current_diff: &self.current_diff,
             diff_scroll: self.diff_scroll,
             diff_loading: self.diff_loading,
