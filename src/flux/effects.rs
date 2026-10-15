@@ -6,8 +6,19 @@ use crate::git::{GitError, GitRepository};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
-/// Owned repository I/O. State decisions travel as RuntimeEvent actions.
+/// Owned repository/desktop I/O. State decisions travel as actions.
 pub enum EffectRequest {
+    ApplyLines {
+        id: u64,
+        patch: std::sync::Arc<crate::git::patch::Patch>,
+        ids: Vec<crate::git::patch::LineId>,
+        direction: crate::git::patch::PatchDirection,
+    },
+    ToggleStageAll,
+    AmendHead,
+    IgnoreFile(PathBuf),
+    PrepareEditor(PathBuf),
+    CopyPath(PathBuf),
     ApplyHunks {
         id: u64,
         patch: std::sync::Arc<crate::git::patch::Patch>,
@@ -58,6 +69,12 @@ impl EffectRequest {
     /// Stable diagnostic labels must never contain paths, queries or commit text.
     pub(crate) fn diagnostic_identity(&self) -> (&'static str, Option<u64>) {
         let label = match self {
+            Self::ApplyLines { .. } => "apply_lines",
+            Self::ToggleStageAll => "toggle_stage_all",
+            Self::AmendHead => "amend_head",
+            Self::IgnoreFile(_) => "ignore_file",
+            Self::PrepareEditor(_) => "prepare_editor",
+            Self::CopyPath(_) => "copy_path",
             Self::LoadBackground { request } => {
                 let label = match &request.load {
                     BackgroundLoad::Status { fast: true, .. } => "status_fast",
@@ -123,6 +140,7 @@ pub(crate) async fn run_traced(
     trace: Option<crate::latency::Trace>,
 ) -> Vec<Action> {
     let repo = runtime.repo.clone();
+    let desktop = runtime.desktop.clone();
     let fallback = request.clone();
     let (tx, rx) = tokio::sync::oneshot::channel();
     // Git jobs may be uncancellable (e.g. libgit2 network I/O). Their completion
@@ -131,7 +149,9 @@ pub(crate) async fn run_traced(
         .name("ratagit-effect".into())
         .spawn(move || {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                crate::latency::Trace::scope(trace, || execute(request, &*repo))
+                crate::latency::Trace::scope(trace, || {
+                    execute_with_desktop(request, &*repo, &*desktop)
+                })
             }))
             .map_err(|_| GitError::Worker("effect worker panicked".into()));
             let _ = tx.send(result);
@@ -153,9 +173,51 @@ pub(crate) async fn run_traced(
 }
 
 /// Shared by production execution and deterministic test drivers.
+#[cfg(test)]
 pub(crate) fn execute(request: EffectRequest, repo: &dyn GitRepository) -> Vec<Action> {
+    execute_with_desktop(request, repo, &crate::desktop::SystemDesktop::default())
+}
+
+pub(crate) fn execute_with_desktop(
+    request: EffectRequest,
+    repo: &dyn GitRepository,
+    desktop: &dyn crate::desktop::Desktop,
+) -> Vec<Action> {
     let operation = request.diagnostic_identity().0;
     match request {
+        EffectRequest::ApplyLines {
+            id,
+            patch,
+            ids,
+            direction,
+        } => domain(DomainAction::ApplyHunksFinished {
+            id,
+            direction,
+            result: repo
+                .apply_lines(&patch, &ids, direction)
+                .map_err(|e| e.context(operation)),
+        }),
+        EffectRequest::ToggleStageAll => domain(DomainAction::ToggleStageAllFinished {
+            result: repo.toggle_stage_all().map_err(|e| e.context(operation)),
+        }),
+        EffectRequest::AmendHead => domain(DomainAction::AmendHeadFinished {
+            result: repo.amend_head().map_err(|e| e.context(operation)),
+        }),
+        EffectRequest::IgnoreFile(path) => {
+            let result = repo.ignore_file(&path).map_err(|e| e.context(operation));
+            domain(DomainAction::IgnoreFileFinished { path, result })
+        }
+        EffectRequest::PrepareEditor(path) => domain(DomainAction::EditorPrepared {
+            result: repo.prepare_editor(&path).map_err(|e| e.context(operation)),
+        }),
+        EffectRequest::CopyPath(path) => {
+            let result = path
+                .to_str()
+                .ok_or_else(|| GitError::Git2("clipboard path is not UTF-8".into()))
+                .and_then(|text| desktop.copy_text(text))
+                .map_err(|e| e.context(operation));
+            domain(DomainAction::CopyPathFinished { path, result })
+        }
         EffectRequest::ApplyHunks {
             id,
             patch,
@@ -421,6 +483,28 @@ fn load_background(
 fn failed(request: EffectRequest, error: GitError) -> Vec<Action> {
     let error = error.context(request.diagnostic_identity().0);
     match request {
+        EffectRequest::ApplyLines { id, direction, .. } => {
+            domain(DomainAction::ApplyHunksFinished {
+                id,
+                direction,
+                result: Err(error),
+            })
+        }
+        EffectRequest::ToggleStageAll => {
+            domain(DomainAction::ToggleStageAllFinished { result: Err(error) })
+        }
+        EffectRequest::AmendHead => domain(DomainAction::AmendHeadFinished { result: Err(error) }),
+        EffectRequest::IgnoreFile(path) => domain(DomainAction::IgnoreFileFinished {
+            path,
+            result: Err(error),
+        }),
+        EffectRequest::CopyPath(path) => domain(DomainAction::CopyPathFinished {
+            path,
+            result: Err(error),
+        }),
+        EffectRequest::PrepareEditor(_) => {
+            domain(DomainAction::EditorPrepared { result: Err(error) })
+        }
         EffectRequest::ApplyHunks { id, direction, .. } => {
             domain(DomainAction::ApplyHunksFinished {
                 id,

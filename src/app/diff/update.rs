@@ -1,5 +1,5 @@
 use super::{DiffSide, DiffState};
-use crate::git::patch::{HunkId, Patch, PatchDirection, PatchRequest};
+use crate::git::patch::{HunkId, LineId, Patch, PatchDirection, PatchRequest};
 use std::sync::Arc;
 
 /// Feature input independent of Flux actions and the rest of application state.
@@ -8,7 +8,11 @@ pub enum DiffAction<'a> {
     SwitchSide,
     NextHunk,
     PreviousHunk,
+    NextLine,
+    PreviousLine,
     ToggleSelection,
+    ToggleLineMode,
+    ToggleRange,
     ClearSelection,
     ApplySelected(PatchDirection),
     WriteFinished {
@@ -17,6 +21,7 @@ pub enum DiffAction<'a> {
         result: &'a Result<(), crate::git::GitError>,
     },
     SelectionChanged,
+    FileChanged,
     ScrollUp,
     ScrollDown,
     StageHunks {
@@ -28,6 +33,12 @@ pub enum DiffAction<'a> {
 }
 
 pub enum HunkWrite {
+    Lines {
+        id: u64,
+        patch: Arc<Patch>,
+        ids: Vec<LineId>,
+        direction: PatchDirection,
+    },
     Selected {
         id: u64,
         patch: Arc<Patch>,
@@ -65,6 +76,14 @@ impl DiffState {
             DiffAction::ToggleFocus => {
                 if self.interaction.focused {
                     self.interaction.focused = false;
+                    self.interaction.selected.clear();
+                    self.interaction.selected_lines.clear();
+                    self.interaction.range_anchor = None;
+                    self.interaction.hunk_anchor = None;
+                } else if self.is_loading() && files_context {
+                    // Enter should focus immediately while the selected file's
+                    // debounced patch is still loading; installation sets cursors.
+                    self.interaction.focused = true;
                 } else if let Some(first) = self.view().hunks(files_context).ids().first().copied()
                 {
                     self.interaction.focused = true;
@@ -80,7 +99,11 @@ impl DiffState {
                                 _ => None,
                             });
                     self.interaction.cursor.get_or_insert(first);
-                    self.scroll_to_hunk();
+                    if self.interaction.line_mode && self.interaction.line_cursor.is_none() {
+                        self.interaction.line_cursor =
+                            self.view().hunks(files_context).line_ids().first().copied();
+                    }
+                    self.scroll_to_selection();
                 }
             }
             DiffAction::SwitchSide if self.interaction.focused && !self.is_loading() => {
@@ -97,7 +120,34 @@ impl DiffState {
                 });
                 output.reload = DiffReload::Immediate;
             }
-            DiffAction::NextHunk | DiffAction::PreviousHunk if self.interaction.focused => {
+            DiffAction::NextHunk
+            | DiffAction::PreviousHunk
+            | DiffAction::NextLine
+            | DiffAction::PreviousLine
+                if self.interaction.focused =>
+            {
+                if self.interaction.line_mode
+                    && matches!(action, DiffAction::NextLine | DiffAction::PreviousLine)
+                {
+                    let ids = self.view().hunks(files_context).line_ids();
+                    if !ids.is_empty() {
+                        let current = self
+                            .interaction
+                            .line_cursor
+                            .and_then(|cursor| ids.iter().position(|id| *id == cursor))
+                            .unwrap_or(0);
+                        let next = if matches!(action, DiffAction::NextLine) {
+                            (current + 1).min(ids.len() - 1)
+                        } else {
+                            current.saturating_sub(1)
+                        };
+                        self.interaction.line_cursor = Some(ids[next]);
+                        self.interaction.cursor = Some(ids[next].hunk());
+                        self.scroll_to_selection();
+                    }
+                    output.redraw = true;
+                    return output;
+                }
                 let ids = self.view().hunks(files_context).ids();
                 if !ids.is_empty() {
                     let current = self
@@ -105,16 +155,50 @@ impl DiffState {
                         .cursor
                         .and_then(|cursor| ids.iter().position(|id| *id == cursor))
                         .unwrap_or(0);
-                    let next = if matches!(action, DiffAction::NextHunk) {
+                    let next = if matches!(action, DiffAction::NextHunk | DiffAction::NextLine) {
                         (current + 1).min(ids.len() - 1)
                     } else {
                         current.saturating_sub(1)
                     };
                     self.interaction.cursor = Some(ids[next]);
-                    self.scroll_to_hunk();
+                    if self.interaction.line_mode {
+                        self.interaction.line_cursor = self
+                            .document
+                            .patch
+                            .as_ref()
+                            .unwrap()
+                            .line_ids()
+                            .into_iter()
+                            .find(|id| id.hunk() == ids[next]);
+                    }
+                    self.scroll_to_selection();
                 }
             }
             DiffAction::ToggleSelection if self.interaction.focused => {
+                if self.interaction.line_mode {
+                    if let Some(cursor) = self
+                        .interaction
+                        .line_cursor
+                        .filter(|id| self.view().hunks(files_context).line_ids().contains(id))
+                    {
+                        let patch = self.document.patch.as_ref().unwrap();
+                        let source = patch.files[cursor.file].source.direction();
+                        if self
+                            .interaction
+                            .selected_lines
+                            .iter()
+                            .any(|id| patch.files[id.file].source.direction() != source)
+                        {
+                            self.interaction.selected_lines.clear();
+                        }
+                        self.interaction.range_anchor = None;
+                        if !self.interaction.selected_lines.remove(&cursor) {
+                            self.interaction.selected_lines.insert(cursor);
+                        }
+                    }
+                    output.redraw = true;
+                    return output;
+                }
                 if let Some(cursor) = self
                     .interaction
                     .cursor
@@ -139,8 +223,75 @@ impl DiffState {
                     }
                 }
             }
-            DiffAction::ClearSelection => self.interaction.selected.clear(),
+            DiffAction::ToggleLineMode if self.view().hunks(files_context).can_navigate() => {
+                self.interaction.line_mode = !self.interaction.line_mode;
+                self.interaction.selected.clear();
+                self.interaction.selected_lines.clear();
+                self.interaction.range_anchor = None;
+                self.interaction.hunk_anchor = None;
+                if self.interaction.line_mode {
+                    self.interaction.line_cursor = self
+                        .document
+                        .patch
+                        .as_ref()
+                        .unwrap()
+                        .line_ids()
+                        .into_iter()
+                        .find(|id| Some(id.hunk()) == self.interaction.cursor);
+                }
+                self.scroll_to_selection();
+            }
+            DiffAction::ToggleRange if self.interaction.focused && self.interaction.line_mode => {
+                if self.interaction.range_anchor.is_some() {
+                    self.interaction.selected_lines = self
+                        .view()
+                        .hunks(files_context)
+                        .marked_lines()
+                        .into_iter()
+                        .collect();
+                    self.interaction.range_anchor = None;
+                } else {
+                    self.interaction.selected_lines.clear();
+                    self.interaction.range_anchor = self.interaction.line_cursor;
+                }
+            }
+            DiffAction::ToggleRange if self.interaction.focused => {
+                if self.interaction.hunk_anchor.is_some() {
+                    self.interaction.selected = self
+                        .view()
+                        .hunks(files_context)
+                        .marked_hunks()
+                        .into_iter()
+                        .collect();
+                    self.interaction.hunk_anchor = None;
+                } else {
+                    self.interaction.selected.clear();
+                    self.interaction.hunk_anchor = self.interaction.cursor;
+                }
+            }
+            DiffAction::ClearSelection => {
+                self.interaction.selected.clear();
+                self.interaction.selected_lines.clear();
+                self.interaction.range_anchor = None;
+                self.interaction.hunk_anchor = None;
+            }
             DiffAction::ApplySelected(direction) if self.interaction.focused => {
+                if self.interaction.line_mode {
+                    let ids = self.view().hunks(files_context).line_targets(direction);
+                    if !ids.is_empty() {
+                        self.interaction.next_write += 1;
+                        let id = self.interaction.next_write;
+                        self.interaction.pending_write = Some(id);
+                        output.write = Some(HunkWrite::Lines {
+                            id,
+                            patch: self.document.patch.clone().unwrap(),
+                            ids,
+                            direction,
+                        });
+                    }
+                    output.redraw = true;
+                    return output;
+                }
                 let ids = self.view().hunks(files_context).targets(direction);
                 if !ids.is_empty() {
                     self.interaction.next_write += 1;
@@ -162,10 +313,10 @@ impl DiffState {
                 self.interaction.pending_write = None;
                 output.log = Some(match result {
                     Ok(()) => (
-                        if direction == PatchDirection::Stage {
-                            "Selected hunks staged"
-                        } else {
-                            "Selected hunks unstaged"
+                        match direction {
+                            PatchDirection::Stage => "Selected changes staged",
+                            PatchDirection::Unstage => "Selected changes unstaged",
+                            PatchDirection::Discard => "Selected changes discarded",
                         }
                         .to_string(),
                         true,
@@ -177,8 +328,8 @@ impl DiffState {
                 output.refresh_status = true;
                 output.reload = DiffReload::Deferred;
             }
-            DiffAction::SelectionChanged => {
-                self.interaction.focused = false;
+            DiffAction::SelectionChanged | DiffAction::FileChanged => {
+                self.interaction.focused = matches!(action, DiffAction::FileChanged);
                 self.interaction.side = None;
                 self.interaction.reset_selection();
                 return output;
@@ -218,7 +369,17 @@ impl DiffState {
         output
     }
 
-    fn scroll_to_hunk(&mut self) {
+    fn scroll_to_selection(&mut self) {
+        if self.interaction.line_mode {
+            if let Some(row) = self.document.patch.as_ref().and_then(|patch| {
+                self.interaction
+                    .line_cursor
+                    .and_then(|id| patch.line_row(id))
+            }) {
+                self.scroll = row;
+            }
+            return;
+        }
         if let Some(patch) = &self.document.patch {
             if let Some(index) = patch
                 .hunk_spans()

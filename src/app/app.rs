@@ -17,6 +17,7 @@ use color_eyre::Result;
 pub enum InputMode {
     CommitEditor,
     CommandPalette,
+    Keybindings,
     CreateBranch,
     StashEditor,
     Search,

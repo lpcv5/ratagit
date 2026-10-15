@@ -2,9 +2,9 @@ use crate::app::{AppState, Command};
 use crate::flux::action::{Action, ActionEnvelope};
 use crate::flux::command_output::CommandOutput;
 use crate::flux::stores::{
-    BranchStore, CommitStore, DiffStore, FilesStore, InputStore, NavigationStore, OpsStore,
-    OverlayStore, QuitStore, ReduceCtx, RevisionStore, RuntimeStore, SearchStore, SelectionStore,
-    StashStore, StateAccess, Store, UiInvalidation,
+    BranchStore, CommitStore, DiffStore, FileToolsStore, FilesStore, HelpStore, InputStore,
+    NavigationStore, OpsStore, OverlayStore, QuitStore, ReduceCtx, RevisionStore, RuntimeStore,
+    SearchStore, SelectionStore, StashStore, StateAccess, Store, UiInvalidation,
 };
 
 pub struct DispatchResult {
@@ -34,6 +34,7 @@ impl Dispatcher {
             stores: vec![
                 Box::new(RuntimeStore),
                 Box::new(InputStore::new()),
+                Box::new(HelpStore),
                 Box::new(QuitStore::new()),
                 Box::new(OpsStore::new()),
                 Box::new(RevisionStore::new()),
@@ -43,6 +44,7 @@ impl Dispatcher {
                 Box::new(DiffStore::new()),
                 Box::new(OverlayStore::new()),
                 Box::new(FilesStore::new()),
+                Box::new(FileToolsStore),
                 Box::new(BranchStore::new()),
                 Box::new(StashStore::new()),
                 Box::new(CommitStore::new()),

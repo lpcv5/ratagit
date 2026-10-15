@@ -4,6 +4,8 @@ use crate::flux::effects::EffectRequest;
 /// An owned command published by the dispatcher for the effect loop.
 #[derive(Debug)]
 pub enum Command {
+    /// The UI owns terminal handoff; repository preparation is an effect.
+    RunEditor(crate::desktop::EditorCommand),
     /// No operation — matched exhaustively but never constructed by stores.
     /// Reducers omit command emission for no-op updates instead.
     #[allow(dead_code)]

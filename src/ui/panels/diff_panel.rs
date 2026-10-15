@@ -55,6 +55,8 @@ pub fn render_diff_panel(frame: &mut Frame, area: Rect, props: DiffViewProps<'_>
         .filter(|_| props.hunks.ready)
         .map(|patch| patch.hunk_spans())
         .unwrap_or_default();
+    let marked_lines = props.hunks.marked_lines();
+    let marked_hunks = props.hunks.marked_hunks();
     let items: Vec<ListItem> = props
         .lines
         .iter()
@@ -83,8 +85,29 @@ pub fn render_diff_panel(frame: &mut Frame, area: Rect, props: DiffViewProps<'_>
             };
             let span = rows.iter().find(|span| span.range.contains(&index));
             let hunk = span.map(|span| span.id);
-            let cursor = hunk.is_some() && hunk == props.hunks.interaction.cursor;
-            let selected = hunk.is_some_and(|id| props.hunks.interaction.selected.contains(&id));
+            let line_id = span
+                .filter(|span| {
+                    index > span.range.start
+                        && matches!(
+                            line.kind,
+                            DiffLineKind::Added | DiffLineKind::Removed | DiffLineKind::Context
+                        )
+                })
+                .map(|span| crate::git::patch::LineId {
+                    file: span.id.file,
+                    hunk: span.id.hunk,
+                    line: index - span.range.start - 1,
+                });
+            let cursor = if props.hunks.interaction.line_mode {
+                line_id.is_some() && line_id == props.hunks.interaction.line_cursor
+            } else {
+                hunk.is_some() && hunk == props.hunks.interaction.cursor
+            };
+            let selected = if props.hunks.interaction.line_mode {
+                line_id.is_some_and(|id| marked_lines.contains(&id))
+            } else {
+                hunk.is_some_and(|id| marked_hunks.contains(&id))
+            };
             let mut marker = String::new();
             if props.hunks.interaction.focused {
                 if cursor {
@@ -98,6 +121,9 @@ pub fn render_diff_panel(frame: &mut Frame, area: Rect, props: DiffViewProps<'_>
                     if cursor { ">" } else { " " },
                     if selected { "[x]" } else { "[ ]" }
                 );
+                if props.hunks.interaction.line_mode && line_id.is_none() {
+                    marker = "     ".into();
+                }
             }
             let source = if span.is_some_and(|span| span.range.start == index) {
                 hunk.and_then(|id| props.hunks.patch.map(|patch| &patch.files[id.file].source))
@@ -136,7 +162,11 @@ pub fn render_diff_panel(frame: &mut Frame, area: Rect, props: DiffViewProps<'_>
         .map(|i| i + 1)
         .unwrap_or(0);
     let status = if props.hunks.interaction.pending_write.is_some() {
-        " | Applying hunks"
+        if props.hunks.interaction.line_mode {
+            " | Applying lines"
+        } else {
+            " | Applying hunks"
+        }
     } else if props.hunks.patch.is_some_and(|patch| {
         props.hunks.interaction.cursor.is_some_and(|id| {
             patch
@@ -168,11 +198,32 @@ pub fn render_diff_panel(frame: &mut Frame, area: Rect, props: DiffViewProps<'_>
             .and_then(|file| file.new.path.as_ref().or(file.old.path.as_ref()))
             .map(|path| format!(" | {}", path.display()))
             .unwrap_or_default();
-        format!(
-            "Diff [Hunk {position}/{} | {} selected{status}{path}]",
-            ids.len(),
-            props.hunks.interaction.selected.len()
-        )
+        if props.hunks.interaction.line_mode {
+            let lines = props.hunks.line_ids();
+            let position = props
+                .hunks
+                .interaction
+                .line_cursor
+                .and_then(|cursor| lines.iter().position(|id| *id == cursor))
+                .map(|i| i + 1)
+                .unwrap_or(0);
+            let range = if props.hunks.interaction.range_anchor.is_some() {
+                " | Range"
+            } else {
+                ""
+            };
+            format!(
+                "Diff [Line {position}/{} | {} selected{range}{status}{path}]",
+                lines.len(),
+                marked_lines.len()
+            )
+        } else {
+            format!(
+                "Diff [Hunk {position}/{} | {} selected{status}{path}]",
+                ids.len(),
+                marked_hunks.len()
+            )
+        }
     } else {
         format!("Diff [{}-{} / {}]{status}", scroll + 1, end, total)
     };

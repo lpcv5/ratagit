@@ -197,6 +197,7 @@ pub(super) async fn command_loop(
     mut command_rx: mpsc::UnboundedReceiver<Tracked<app::Command>>,
     action_tx: ActionSender,
     mut shutdown_rx: broadcast::Receiver<()>,
+    editor_tx: mpsc::UnboundedSender<crate::desktop::EditorCommand>,
 ) {
     let mut executor = EffectExecutor::new(runtime);
     loop {
@@ -214,6 +215,14 @@ pub(super) async fn command_loop(
                 update_backlog(&perf.command_enqueued, &perf.command_dequeued, &perf.command_backlog_max);
                 perf.effect_commands.fetch_add(1, Ordering::Relaxed);
                 let actions = match command {
+                    app::Command::RunEditor(command) => {
+                        match editor_tx.send(command) {
+                            Ok(()) => Vec::new(),
+                            Err(_) => vec![Action::Domain(DomainAction::EditorFinished {
+                                result: Err(crate::git::GitError::Worker("terminal UI unavailable".into())),
+                            })],
+                        }
+                    }
                     app::Command::Effect(request) => {
                         executor.enqueue_traced(request, trace.clone());
                         Vec::new()

@@ -67,6 +67,11 @@ pub trait CommandAccess {
     fn resolve_command_palette_command(&self, cmd: &str) -> Option<DomainAction>;
 }
 
+/// Contextual keybinding menu state and command selection.
+pub trait HelpAccess {
+    fn reduce_help(&mut self, action: crate::app::help::HelpAction) -> Option<DomainAction>;
+}
+
 /// Branch selection, checkout preconditions and fetch progress.
 pub trait BranchAccess {
     fn selected_branch_name(&self) -> Option<String>;
@@ -192,6 +197,7 @@ pub trait StateAccess:
     + LifecycleAccess
     + InvalidationAccess
     + CommandAccess
+    + HelpAccess
     + BranchAccess
     + StashAccess
     + PanelAccess
@@ -214,6 +220,7 @@ impl<T: ?Sized> StateAccess for T where
         + LifecycleAccess
         + InvalidationAccess
         + CommandAccess
+        + HelpAccess
         + BranchAccess
         + StashAccess
         + PanelAccess

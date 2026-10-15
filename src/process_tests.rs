@@ -134,6 +134,20 @@ fn test_process_graph_environment_is_independent_between_children() {
     }
 }
 
+#[test]
+fn test_process_editor_precedence_arguments_and_exit_status_are_isolated() {
+    for override_editor in [false, true] {
+        let fixture = ProcessFixture::new();
+        let mut command = child_command(&fixture, "editor");
+        if override_editor {
+            command.env("GIT_EDITOR", "git -c core.quotePath=false hash-object --");
+        }
+        let result = report(&fixture, &mut command);
+        assert_eq!(result["override"], override_editor);
+        assert_eq!(result["editor"], "completed with literal Unicode path");
+    }
+}
+
 fn initialize_repository(work: &Path) {
     let repo = git2::Repository::init(work).unwrap();
     assert_eq!(
@@ -292,6 +306,50 @@ fn test_child_entry() {
                     #[cfg(windows)]
                     assert_eq!(Path::new("目录\\naïve 文件.txt"), relative);
                     serde_json::json!({"path": "目录/naïve 文件.txt", "separator": std::path::MAIN_SEPARATOR.to_string(), "crlf": "preserved through stage and unstage"})
+                }
+                "editor" => {
+                    let raw = git2::Repository::open(&work).unwrap();
+                    raw.config()
+                        .unwrap()
+                        .set_str("core.editor", "git hash-object --")
+                        .unwrap();
+                    let relative = Path::new("目录/editor 文件 &.txt");
+                    std::fs::write(work.join(relative), "editor fixture\n").unwrap();
+                    let prepared = repo.prepare_editor(relative).unwrap();
+                    let has_override = std::env::var_os("GIT_EDITOR").is_some();
+                    assert_eq!(prepared.program, "git");
+                    assert_eq!(prepared.cwd, work);
+                    assert_eq!(
+                        Path::new(prepared.args.last().unwrap()),
+                        work.join(relative)
+                    );
+                    assert_eq!(prepared.args.len(), if has_override { 5 } else { 3 });
+                    prepared.run().unwrap();
+                    std::fs::write(work.join("目录/naïve 文件.txt"), "changed\n").unwrap();
+                    let nonzero = crate::desktop::EditorCommand {
+                        program: "git".into(),
+                        args: vec![
+                            "-c".into(),
+                            "color.ui=false".into(),
+                            "diff".into(),
+                            "--exit-code".into(),
+                            "--".into(),
+                            work.join("目录/naïve 文件.txt").to_str().unwrap().into(),
+                        ],
+                        cwd: work.clone(),
+                    };
+                    assert!(nonzero
+                        .run()
+                        .unwrap_err()
+                        .to_string()
+                        .contains("editor exited"));
+                    let missing = crate::desktop::EditorCommand {
+                        program: work.join("nonexistent-editor").to_string_lossy().into(),
+                        args: vec![],
+                        cwd: work.clone(),
+                    };
+                    assert!(missing.run().is_err());
+                    serde_json::json!({"override": has_override, "editor": "completed with literal Unicode path"})
                 }
                 "diagnostic" => {
                     let error = repo.checkout_branch("missing-branch").unwrap_err();

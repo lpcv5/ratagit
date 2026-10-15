@@ -1,6 +1,7 @@
 mod app;
 mod background;
 mod config;
+mod desktop;
 mod file_tree;
 mod flux;
 mod git;
@@ -37,7 +38,7 @@ async fn main() -> Result<()> {
     let mut session = TerminalSession::new()?;
     let result = async {
         session.enable_mouse()?;
-        runtime::run(session.terminal_mut(), app, latency).await
+        runtime::run(&mut session, app, latency).await
     }
     .await;
     session.finish(result)

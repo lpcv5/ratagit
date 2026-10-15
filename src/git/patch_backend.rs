@@ -5,6 +5,7 @@ use std::path::Path;
 
 const MAX_PATCH_LINES: usize = 5000;
 const MAX_PREVIEW_BYTES: i64 = 1024 * 1024;
+mod lines;
 
 fn options(path: Option<&Path>) -> Result<DiffOptions, GitError> {
     let mut opts = DiffOptions::new();
@@ -259,13 +260,48 @@ pub(super) fn apply(
         ));
     }
     let bytes = selected_bytes(patch, ids)?;
+    apply_bytes(repo, &bytes, direction)
+}
+
+pub(super) fn apply_lines(
+    repo: &mut Repository,
+    patch: &Patch,
+    ids: &[LineId],
+    direction: PatchDirection,
+) -> Result<(), GitError> {
+    patch.validate_lines(ids, direction)?;
+    let fresh = load(repo, patch.request.clone())?;
+    if fresh.truncated
+        || ids
+            .iter()
+            .any(|id| fresh.files.get(id.file) != patch.files.get(id.file))
+    {
+        return Err(GitError::StalePatch(
+            "patch changed; reload before applying lines".into(),
+        ));
+    }
+    let bytes = lines::selected_bytes(patch, ids, direction)?;
+    apply_bytes(repo, &bytes, direction)
+}
+
+fn apply_bytes(
+    repo: &mut Repository,
+    bytes: &[u8],
+    direction: PatchDirection,
+) -> Result<(), GitError> {
     let workdir = repo.workdir().ok_or(GitError::InvalidState)?;
     for check in [true, false] {
         use std::io::Write;
         use std::process::{Command, Stdio};
         let mut command = Command::new("git");
-        command.arg("apply").arg("--cached");
-        if direction == PatchDirection::Unstage {
+        command
+            .arg("apply")
+            .arg("--whitespace=nowarn")
+            .arg("--unidiff-zero");
+        if direction != PatchDirection::Discard {
+            command.arg("--cached");
+        }
+        if direction != PatchDirection::Stage {
             command.arg("--reverse");
         }
         if check {
@@ -282,7 +318,7 @@ pub(super) fn apply(
             .stdin
             .take()
             .ok_or(GitError::InvalidState)?
-            .write_all(&bytes);
+            .write_all(bytes);
         let output = child.wait_with_output().map_err(GitError::from)?;
         if !output.status.success() {
             return Err(GitError::process(output));

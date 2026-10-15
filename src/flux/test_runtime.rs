@@ -12,6 +12,7 @@ pub fn run_inline_effect(app: &mut App, request: EffectRequest) -> Option<Vec<Ac
         EffectRequest::LoadBackground { .. }
             | EffectRequest::StageHunks { .. }
             | EffectRequest::ApplyHunks { .. }
+            | EffectRequest::ApplyLines { .. }
             | EffectRequest::ControlRepositoryOperation { .. }
             | EffectRequest::StagePaths(_)
             | EffectRequest::ToggleStageSelection { .. }
@@ -40,6 +41,11 @@ pub fn drive_actions(app: &mut App, actions: impl IntoIterator<Item = Action>) -
         };
         for command in commands {
             match command {
+                Command::RunEditor(command) => {
+                    if external.is_none() {
+                        external = Some(Command::RunEditor(command));
+                    }
+                }
                 Command::None => {}
                 Command::Sync(action) => pending.push_back(Action::Domain(action)),
                 Command::Effect(request) => match run_inline_effect(app, request.clone()) {

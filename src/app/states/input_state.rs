@@ -5,6 +5,7 @@ use std::path::PathBuf;
 #[derive(Clone)]
 pub struct InputState {
     pub mode: Option<InputMode>,
+    pub help: crate::app::help::HelpState,
     pub buffer: String,
     pub commit_message_buffer: String,
     pub commit_description_buffer: String,
@@ -18,6 +19,7 @@ impl Default for InputState {
     fn default() -> Self {
         Self {
             mode: None,
+            help: crate::app::help::HelpState::default(),
             buffer: String::new(),
             commit_message_buffer: String::new(),
             commit_description_buffer: String::new(),

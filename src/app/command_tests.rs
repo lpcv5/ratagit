@@ -73,6 +73,90 @@ fn fixture() -> App {
     fixture_with_keymap(Keymap::default())
 }
 
+#[test]
+fn test_file_tools_keys_palette_and_dispatch_emit_matching_effects() {
+    for (binding, alias) in [
+        ("a", "stage all"),
+        ("A", "amend"),
+        ("e", "edit"),
+        ("C-o", "copy path"),
+        ("i", "ignore"),
+    ] {
+        let mut app = fixture();
+        app.files.test_view_mut().panel.select(Some(3));
+        let action = super::map_test_key(&app, key(binding)).expect(binding);
+        assert_eq!(
+            format!("{action:?}"),
+            format!("{:?}", app.resolve_command_palette_command(alias).unwrap())
+        );
+        let mut dispatcher = crate::flux::dispatcher::Dispatcher::with_default_stores();
+        let envelope = dispatcher.next_envelope(crate::flux::action::Action::Domain(action));
+        let result = dispatcher.dispatch(&mut app.state, envelope);
+        use crate::flux::effects::EffectRequest;
+        let [super::Command::Effect(effect)] = result.commands.as_slice() else {
+            panic!("{binding}: {:?}", result.commands);
+        };
+        assert!(match (binding, effect) {
+            ("a", EffectRequest::ToggleStageAll) | ("A", EffectRequest::AmendHead) => true,
+            ("e", EffectRequest::PrepareEditor(path))
+            | ("C-o", EffectRequest::CopyPath(path))
+            | ("i", EffectRequest::IgnoreFile(path)) => path == std::path::Path::new("loose"),
+            _ => false,
+        });
+        assert!(app
+            .available_commands()
+            .iter()
+            .any(|c| c.name == alias && c.keys.contains(&binding.to_string())));
+    }
+}
+
+#[test]
+fn test_file_tools_respect_context_selection_input_and_custom_keys() {
+    let mut app = fixture();
+    app.files.test_view_mut().panel.select(Some(0));
+    assert!(super::map_test_key(&app, key("e")).is_none());
+    assert!(matches!(
+        super::map_test_key(&app, key("C-o")),
+        Some(DomainAction::CopyPath(_))
+    ));
+    app.files.test_view_mut().panel.select(Some(2));
+    assert!(super::map_test_key(&app, key("i")).is_none());
+    app.files.test_view_mut().visual_mode = true;
+    for binding in ["e", "C-o", "i"] {
+        assert!(super::map_test_key(&app, key(binding)).is_none());
+    }
+    app.files.test_view_mut().visual_mode = false;
+    app.ui.active_panel = SidePanel::LocalBranches;
+    for binding in ["a", "A", "e", "C-o", "i"] {
+        assert!(super::map_test_key(&app, key(binding)).is_none());
+    }
+    app.ui.active_panel = SidePanel::Files;
+    app.input.mode = Some(InputMode::CommitEditor);
+    assert!(matches!(
+        super::map_test_key(&app, key("a")),
+        Some(DomainAction::InputChar('a'))
+    ));
+    let mut keymap = Keymap::default();
+    keymap
+        .files
+        .bindings
+        .insert("toggle_stage_all".into(), vec!["C-a".into()]);
+    let app = fixture_with_keymap(keymap);
+    assert!(super::map_test_key(&app, key("a")).is_none());
+    assert!(matches!(
+        super::map_test_key(&app, key("C-a")),
+        Some(DomainAction::ToggleStageAll)
+    ));
+    assert_eq!(
+        app.available_commands()
+            .iter()
+            .find(|c| c.name == "stage all")
+            .unwrap()
+            .keys,
+        ["C-a"]
+    );
+}
+
 fn key(text: &str) -> KeyEvent {
     let (text, modifiers) = text
         .strip_prefix("C-")
@@ -83,6 +167,7 @@ fn key(text: &str) -> KeyEvent {
         "Enter" => KeyCode::Enter,
         "Esc" => KeyCode::Esc,
         "Tab" => KeyCode::Tab,
+        "BackTab" => KeyCode::BackTab,
         "Backspace" => KeyCode::Backspace,
         "Up" => KeyCode::Up,
         "Down" => KeyCode::Down,

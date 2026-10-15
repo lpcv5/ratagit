@@ -9,6 +9,8 @@ use crate::git::{Git2Repository, PatchRepository};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::path::Path;
 use tempfile::TempDir;
+mod lazygit;
+mod lines;
 
 struct Fixture {
     dir: TempDir,
@@ -57,7 +59,22 @@ impl Fixture {
         blob.content().to_vec()
     }
     fn focus(&mut self) {
-        press(&mut self.app, KeyCode::Tab);
+        let directory = self
+            .app
+            .file_selection()
+            .selected_tree_node()
+            .is_some_and(|node| node.is_dir);
+        press(
+            &mut self.app,
+            if directory {
+                KeyCode::Char('0')
+            } else {
+                KeyCode::Enter
+            },
+        );
+        if self.app.diff.interaction().line_mode {
+            press(&mut self.app, KeyCode::Char('a'));
+        }
         assert!(self.app.diff.interaction().focused);
     }
 }
@@ -122,33 +139,31 @@ fn test_hunk_focus_navigation_keeps_file_selection_and_scrolls_to_header() {
         .starts_with("@@"));
     press(&mut fixture.app, KeyCode::Down);
     assert_eq!(fixture.app.diff.interaction().cursor.unwrap().hunk, 1);
-    press(&mut fixture.app, KeyCode::Char('['));
+    press(&mut fixture.app, KeyCode::Char('h'));
     assert_eq!(fixture.app.diff.interaction().cursor.unwrap().hunk, 0);
     press(&mut fixture.app, KeyCode::Up);
     assert_eq!(fixture.app.diff.interaction().cursor.unwrap().hunk, 0);
-    press(&mut fixture.app, KeyCode::Char(']'));
+    press(&mut fixture.app, KeyCode::Char('l'));
     assert_eq!(fixture.app.diff.interaction().cursor.unwrap().hunk, 1);
     press(&mut fixture.app, KeyCode::Char('k'));
     assert_eq!(fixture.app.diff.interaction().cursor.unwrap().hunk, 0);
 }
 
 #[test]
-fn test_multi_hunk_selection_escape_clears_then_returns_to_list() {
+fn test_multi_hunk_selection_escape_returns_to_list_and_clears() {
     let mut fixture = Fixture::new();
     fixture.focus();
-    press(&mut fixture.app, KeyCode::Char(' '));
+    palette(&mut fixture.app, "hunk select");
     press(&mut fixture.app, KeyCode::Char('j'));
-    press(&mut fixture.app, KeyCode::Char(' '));
+    palette(&mut fixture.app, "hunk select");
     assert_eq!(fixture.app.diff.interaction().selected.len(), 2);
     assert!(fixture
         .app
         .shortcut_hints()
         .iter()
-        .any(|(key, label)| key == "Esc" && label == "ClearHunks"));
+        .any(|(key, label)| key == "Esc" && label == "BackToList"));
     press(&mut fixture.app, KeyCode::Esc);
-    assert!(fixture.app.diff.interaction().focused);
     assert!(fixture.app.diff.interaction().selected.is_empty());
-    press(&mut fixture.app, KeyCode::Esc);
     assert!(!fixture.app.diff.interaction().focused);
 }
 
@@ -156,7 +171,7 @@ fn test_multi_hunk_selection_escape_clears_then_returns_to_list() {
 fn test_keyboard_stages_current_hunk_and_keeps_remaining_unstaged_view() {
     let mut fixture = Fixture::new();
     fixture.focus();
-    press(&mut fixture.app, KeyCode::Char('s'));
+    press(&mut fixture.app, KeyCode::Char(' '));
     refresh(&mut fixture.app);
     let index = String::from_utf8(fixture.index()).unwrap();
     assert!(index.contains("first change"));
@@ -179,21 +194,21 @@ fn test_keyboard_stages_current_hunk_and_keeps_remaining_unstaged_view() {
 fn test_switch_side_and_unstage_current_hunk_preserve_worktree() {
     let mut fixture = Fixture::new();
     fixture.focus();
-    press(&mut fixture.app, KeyCode::Char('s'));
+    press(&mut fixture.app, KeyCode::Char(' '));
     refresh(&mut fixture.app);
-    press(&mut fixture.app, KeyCode::Enter);
+    press(&mut fixture.app, KeyCode::Tab);
     assert_eq!(
         fixture.app.diff.document().patch.as_ref().unwrap().files[0].source,
         PatchSource::Index
     );
     assert!(help(&fixture.app, "hunk stage").is_none());
     assert!(help(&fixture.app, "hunk unstage").is_some());
-    press(&mut fixture.app, KeyCode::Char('u'));
+    press(&mut fixture.app, KeyCode::Char(' '));
     refresh(&mut fixture.app);
     assert_eq!(fixture.index(), Fixture::base().as_bytes());
     assert!(fixture.app.diff.document().lines.is_empty());
     assert!(text(&render(&fixture.app, false)).contains("No staged changes"));
-    press(&mut fixture.app, KeyCode::Enter);
+    press(&mut fixture.app, KeyCode::Tab);
     assert_eq!(
         fixture.app.diff.document().patch.as_ref().unwrap().files[0]
             .hunks
@@ -210,14 +225,14 @@ fn test_switch_side_and_unstage_current_hunk_preserve_worktree() {
 fn test_selected_hunks_override_cursor_and_can_stage_all() {
     let mut fixture = Fixture::new();
     fixture.focus();
-    press(&mut fixture.app, KeyCode::Char(' '));
+    palette(&mut fixture.app, "hunk select");
     press(&mut fixture.app, KeyCode::Char('j'));
     palette(&mut fixture.app, "hunk stage");
     refresh(&mut fixture.app);
     let index = String::from_utf8(fixture.index()).unwrap();
     assert!(index.contains("first change"));
     assert!(!index.contains("second change"));
-    press(&mut fixture.app, KeyCode::Char('s'));
+    press(&mut fixture.app, KeyCode::Char(' '));
     refresh(&mut fixture.app);
     assert_eq!(fixture.index(), Fixture::changed().as_bytes());
     assert!(fixture.app.diff.document().lines.is_empty());
@@ -228,6 +243,7 @@ fn test_selected_hunks_override_cursor_and_can_stage_all() {
 fn test_palette_can_select_stage_and_unstage_multiple_hunks() {
     let mut fixture = Fixture::new();
     palette(&mut fixture.app, "diff focus");
+    palette(&mut fixture.app, "diff line mode");
     palette(&mut fixture.app, "hunk select");
     palette(&mut fixture.app, "hunk next");
     palette(&mut fixture.app, "hunk select");
@@ -254,12 +270,15 @@ fn test_custom_bindings_palette_and_footer_use_same_hunk_definitions() {
         .insert("hunk_stage".into(), vec!["x".into()]);
     map.rebuild_indexes();
     let mut fixture = Fixture::with_keymap(map);
-    assert!(map_test_key(
-        &fixture.app,
-        KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)
-    )
-    .is_none());
+    assert!(!matches!(
+        map_test_key(
+            &fixture.app,
+            KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)
+        ),
+        Some(DomainAction::ToggleDiffFocus)
+    ));
     press(&mut fixture.app, KeyCode::Char('f'));
+    press(&mut fixture.app, KeyCode::Char('a'));
     assert_eq!(help(&fixture.app, "hunk stage").unwrap().keys, vec!["x"]);
     assert!(fixture
         .app
@@ -280,7 +299,7 @@ fn test_custom_bindings_palette_and_footer_use_same_hunk_definitions() {
 
 #[test]
 fn test_shadowed_and_unbound_hunk_keys_are_not_advertised() {
-    for keys in [vec!["j".into()], vec![]] {
+    for keys in [vec!["l".into()], vec![]] {
         let mut map = Keymap::default();
         map.global.bindings.insert("hunk_stage".into(), keys);
         map.rebuild_indexes();
@@ -363,7 +382,7 @@ fn test_stale_hunk_write_logs_failure_and_reloads_patch() {
     let mut fixture = Fixture::new();
     fixture.focus();
     std::fs::write(fixture.dir.path().join("file.txt"), "external change\n").unwrap();
-    press(&mut fixture.app, KeyCode::Char('s'));
+    press(&mut fixture.app, KeyCode::Char(' '));
     refresh(&mut fixture.app);
     assert_eq!(fixture.index(), Fixture::base().as_bytes());
     assert!(fixture.app.command_log.iter().any(|entry| !entry.success
@@ -385,7 +404,7 @@ fn test_stale_hunk_write_logs_failure_and_reloads_patch() {
 fn test_refresh_and_panel_switch_reset_hunk_selection() {
     let mut fixture = Fixture::new();
     fixture.focus();
-    press(&mut fixture.app, KeyCode::Char(' '));
+    palette(&mut fixture.app, "hunk select");
     fixture.app.request_refresh(RefreshKind::StatusOnly);
     assert!(fixture.app.diff.interaction().selected.is_empty());
     assert!(help(&fixture.app, "hunk stage").is_none());
@@ -402,7 +421,7 @@ fn test_render_shows_hunk_cursor_selection_source_and_snapshot_parity() {
     let mut fixture = Fixture::new();
     fixture.focus();
     press(&mut fixture.app, KeyCode::Char('j'));
-    press(&mut fixture.app, KeyCode::Char(' '));
+    palette(&mut fixture.app, "hunk select");
     let snapshot = AppStateSnapshotOwned::from_app(&fixture.app.state);
     assert!(snapshot.context.diff_focused);
     assert_eq!(
@@ -547,13 +566,13 @@ fn index_file(fixture: &Fixture, name: &str) -> Option<Vec<u8>> {
 fn test_directory_selection_stages_and_unstages_hunks_across_files() {
     let mut fixture = directory_fixture();
     fixture.focus();
-    press(&mut fixture.app, KeyCode::Char(' '));
+    palette(&mut fixture.app, "hunk select");
     for _ in 0..3 {
         press(&mut fixture.app, KeyCode::Char('j'));
     }
-    press(&mut fixture.app, KeyCode::Char(' '));
+    palette(&mut fixture.app, "hunk select");
     assert_eq!(fixture.app.diff.interaction().selected.len(), 2);
-    press(&mut fixture.app, KeyCode::Char('s'));
+    press(&mut fixture.app, KeyCode::Char(' '));
     refresh(&mut fixture.app);
     let first = String::from_utf8(index_file(&fixture, "dir/a.txt").unwrap()).unwrap();
     let second = String::from_utf8(index_file(&fixture, "dir/b.txt").unwrap()).unwrap();
@@ -561,10 +580,10 @@ fn test_directory_selection_stages_and_unstages_hunks_across_files() {
     assert!(!first.contains("second change"));
     assert!(!second.contains("first change"));
     assert!(second.contains("second change"));
-    press(&mut fixture.app, KeyCode::Char(' '));
+    palette(&mut fixture.app, "hunk select");
     press(&mut fixture.app, KeyCode::Char('j'));
+    palette(&mut fixture.app, "hunk select");
     press(&mut fixture.app, KeyCode::Char(' '));
-    press(&mut fixture.app, KeyCode::Char('u'));
     refresh(&mut fixture.app);
     for name in ["dir/a.txt", "dir/b.txt"] {
         assert_eq!(
@@ -582,12 +601,12 @@ fn test_directory_selection_stages_and_unstages_hunks_across_files() {
 fn test_switching_selection_direction_clears_previous_directory_hunks() {
     let mut fixture = directory_fixture();
     fixture.focus();
-    press(&mut fixture.app, KeyCode::Char('s'));
-    refresh(&mut fixture.app);
     press(&mut fixture.app, KeyCode::Char(' '));
+    refresh(&mut fixture.app);
+    palette(&mut fixture.app, "hunk select");
     assert!(help(&fixture.app, "hunk unstage").is_some());
     press(&mut fixture.app, KeyCode::Char('j'));
-    press(&mut fixture.app, KeyCode::Char(' '));
+    palette(&mut fixture.app, "hunk select");
     assert_eq!(fixture.app.diff.interaction().selected.len(), 1);
     assert!(help(&fixture.app, "hunk stage").is_some());
     assert!(help(&fixture.app, "hunk unstage").is_none());
@@ -624,11 +643,11 @@ fn test_new_text_file_hunk_roundtrip_with_literal_filename() {
     std::fs::write(fixture.dir.path().join(name), "new content\n").unwrap();
     load_file(&mut fixture, name);
     fixture.focus();
-    press(&mut fixture.app, KeyCode::Char('s'));
+    press(&mut fixture.app, KeyCode::Char(' '));
     refresh(&mut fixture.app);
     assert_eq!(index_file(&fixture, name).unwrap(), b"new content\n");
-    press(&mut fixture.app, KeyCode::Enter);
-    press(&mut fixture.app, KeyCode::Char('u'));
+    press(&mut fixture.app, KeyCode::Tab);
+    press(&mut fixture.app, KeyCode::Char(' '));
     refresh(&mut fixture.app);
     assert!(index_file(&fixture, name).is_none());
     assert_eq!(
@@ -648,11 +667,11 @@ fn test_deleted_text_file_hunk_roundtrip_preserves_missing_worktree_file() {
     std::fs::remove_file(fixture.dir.path().join("file.txt")).unwrap();
     load_file(&mut fixture, "file.txt");
     fixture.focus();
-    press(&mut fixture.app, KeyCode::Char('s'));
+    press(&mut fixture.app, KeyCode::Char(' '));
     refresh(&mut fixture.app);
     assert!(index_file(&fixture, "file.txt").is_none());
-    press(&mut fixture.app, KeyCode::Enter);
-    press(&mut fixture.app, KeyCode::Char('u'));
+    press(&mut fixture.app, KeyCode::Tab);
+    press(&mut fixture.app, KeyCode::Char(' '));
     refresh(&mut fixture.app);
     assert_eq!(fixture.index(), Fixture::base().as_bytes());
     assert!(!fixture.dir.path().join("file.txt").exists());
@@ -662,12 +681,12 @@ fn test_deleted_text_file_hunk_roundtrip_preserves_missing_worktree_file() {
 fn test_stale_index_unstage_is_rejected_and_reloaded() {
     let mut fixture = Fixture::new();
     fixture.focus();
-    press(&mut fixture.app, KeyCode::Char('s'));
+    press(&mut fixture.app, KeyCode::Char(' '));
     refresh(&mut fixture.app);
-    press(&mut fixture.app, KeyCode::Enter);
+    press(&mut fixture.app, KeyCode::Tab);
     let external = Git2Repository::open(fixture.dir.path()).unwrap();
     crate::git::WorktreeRepository::stage(&external, Path::new("file.txt")).unwrap();
-    press(&mut fixture.app, KeyCode::Char('u'));
+    press(&mut fixture.app, KeyCode::Char(' '));
     refresh(&mut fixture.app);
     assert_eq!(fixture.index(), Fixture::changed().as_bytes());
     assert!(fixture.app.command_log.iter().any(|entry| !entry.success
@@ -687,15 +706,15 @@ fn test_stale_index_unstage_is_rejected_and_reloaded() {
 fn test_cached_diff_reentry_keeps_valid_patch_and_rejects_loading_commands() {
     let mut fixture = Fixture::new();
     fixture.focus();
-    press(&mut fixture.app, KeyCode::Char(' '));
+    palette(&mut fixture.app, "hunk select");
     fixture.app.schedule_diff_reload();
     assert!(fixture.app.diff.interaction().selected.is_empty());
     assert!(help(&fixture.app, "hunk stage").is_none());
     fixture.app.flush_pending_diff_reload();
     assert!(fixture.app.diff.document().patch.is_some());
     assert!(help(&fixture.app, "hunk stage").is_some());
-    press(&mut fixture.app, KeyCode::Tab);
-    press(&mut fixture.app, KeyCode::Tab);
+    press(&mut fixture.app, KeyCode::Esc);
+    press(&mut fixture.app, KeyCode::Enter);
     assert!(fixture.app.diff.interaction().focused);
     assert_eq!(
         fixture.app.diff.document().patch.as_ref().unwrap().files[0]

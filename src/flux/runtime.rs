@@ -21,7 +21,7 @@ struct PendingEffect {
 }
 
 /// Local Git writes preserve arrival order. Reads and fetches do not wait for
-/// that lane. This executor accepts only repository I/O requests.
+/// that lane. Desktop effects also run outside reducer-owned state.
 pub struct EffectExecutor {
     runtime: AppRuntime,
     writes: VecDeque<PendingEffect>,
@@ -126,6 +126,13 @@ impl EffectExecutor {
 /// Returning an action never reduces state recursively.
 pub fn route_command(command: Command, executor: &mut EffectExecutor) -> Vec<Action> {
     match command {
+        Command::RunEditor(_) => vec![Action::Domain(
+            crate::flux::action::DomainAction::EditorFinished {
+                result: Err(crate::git::GitError::Worker(
+                    "editor requires the terminal UI".into(),
+                )),
+            },
+        )],
         Command::None => Vec::new(),
         Command::Sync(action) => vec![Action::Domain(action)],
         Command::Effect(request) => {

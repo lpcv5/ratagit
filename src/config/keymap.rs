@@ -19,6 +19,8 @@ pub struct PanelKeymap {
 /// Documentation comment in English.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Keymap {
+    #[serde(default)]
+    schema_version: u32,
     pub global: GlobalKeymap,
     #[serde(default)]
     pub files: PanelKeymap,
@@ -55,6 +57,7 @@ impl Default for Keymap {
             bindings: crate::app::commands::default_bindings(Some(panel)),
         };
         let mut keymap = Self {
+            schema_version: 1,
             global: GlobalKeymap::default(),
             files: panel(SidePanel::Files),
             branches: panel(SidePanel::LocalBranches),
@@ -84,6 +87,7 @@ impl Keymap {
             let content = std::fs::read_to_string(path).unwrap_or_default();
             toml::from_str::<Self>(&content)
                 .map(|mut loaded| {
+                    loaded.migrate_defaults();
                     loaded.merge_missing(&defaults);
                     loaded.rebuild_indexes();
                     loaded
@@ -106,6 +110,45 @@ impl Keymap {
         merge_bindings(&mut self.branches.bindings, &defaults.branches.bindings);
         merge_bindings(&mut self.commits.bindings, &defaults.commits.bindings);
         merge_bindings(&mut self.stash.bindings, &defaults.stash.bindings);
+    }
+
+    /// Upgrade only exact historical defaults; customized bindings stay intact.
+    /// Migration is in memory so loading never rewrites a user's comments.
+    fn migrate_defaults(&mut self) {
+        if self.schema_version >= 1 {
+            return;
+        }
+        for (name, old, new) in [
+            ("focus_diff", &["Tab"][..], &["Enter", "0"][..]),
+            ("diff_side", &["Enter"][..], &["Tab"][..]),
+            ("hunk_next", &["j", "Down", "]"][..], &["l", "Right"][..]),
+            ("hunk_previous", &["k", "Up", "["][..], &["h", "Left"][..]),
+            ("hunk_select", &["Space"][..], &[][..]),
+            ("hunk_stage", &["s"][..], &[][..]),
+            ("hunk_unstage", &["u"][..], &[][..]),
+            (
+                "panel_next",
+                &["l", "Right"][..],
+                &["l", "Right", "Tab"][..],
+            ),
+            (
+                "panel_prev",
+                &["h", "Left"][..],
+                &["h", "Left", "BackTab"][..],
+            ),
+        ] {
+            if self
+                .global
+                .bindings
+                .get(name)
+                .is_some_and(|keys| keys.iter().map(String::as_str).eq(old.iter().copied()))
+            {
+                self.global
+                    .bindings
+                    .insert(name.into(), new.iter().map(|key| (*key).into()).collect());
+            }
+        }
+        self.schema_version = 1;
     }
 
     fn save_to(&self, path: &Path) {
@@ -222,6 +265,7 @@ pub fn key_to_string(key: &crossterm::event::KeyEvent) -> String {
         KeyCode::PageDown => "PageDown".into(),
         KeyCode::Home => "Home".into(),
         KeyCode::End => "End".into(),
+        KeyCode::F(number) => format!("F{number}"),
         _ => return String::new(),
     };
 
@@ -229,5 +273,75 @@ pub fn key_to_string(key: &crossterm::event::KeyEvent) -> String {
         format!("C-{}", base)
     } else {
         base
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_help_binding_merges_into_existing_config_and_preserves_overrides() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("keymap.toml");
+        let text = "# preserve comments\nschema_version = 1\n[global]\nquit = ['q']\n";
+        std::fs::write(&path, text).unwrap();
+        assert_eq!(Keymap::load_from_path(&path).global_keys("help"), ["?"]);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+        for keys in ["['F1']", "[]"] {
+            let text = format!("{text}help = {keys}\n");
+            std::fs::write(&path, &text).unwrap();
+            let loaded = Keymap::load_from_path(&path);
+            assert_eq!(
+                loaded.global_keys("help"),
+                if keys == "[]" { vec![] } else { vec!["F1"] }
+            );
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+        }
+    }
+
+    #[test]
+    fn test_legacy_default_diff_bindings_migrate_without_rewriting_config() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("keymap.toml");
+        let text = "# keep this comment\n[global]\nfocus_diff = ['Tab']\ndiff_side = ['Enter']\nhunk_next = ['j', 'Down', ']']\nhunk_previous = ['k', 'Up', '[']\nhunk_select = ['Space']\nhunk_stage = ['s']\nhunk_unstage = ['u']\npanel_next = ['l', 'Right']\npanel_prev = ['h', 'Left']\n";
+        std::fs::write(&path, text).unwrap();
+        for _ in 0..2 {
+            let loaded = Keymap::load_from_path(&path);
+            assert_eq!(loaded.global_keys("focus_diff"), ["Enter", "0"]);
+            assert_eq!(loaded.global_keys("diff_side"), ["Tab"]);
+            assert_eq!(loaded.global_keys("diff_apply"), ["Space"]);
+            assert_eq!(loaded.global_keys("hunk_next"), ["l", "Right"]);
+            assert_eq!(loaded.global_keys("hunk_previous"), ["h", "Left"]);
+            assert_eq!(loaded.global_keys("panel_next"), ["l", "Right", "Tab"]);
+            assert_eq!(loaded.global_keys("panel_prev"), ["h", "Left", "BackTab"]);
+            for action in ["hunk_select", "hunk_stage", "hunk_unstage"] {
+                assert!(loaded.global_keys(action).is_empty());
+            }
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+        }
+    }
+
+    #[test]
+    fn test_keymap_migration_preserves_custom_and_disabled_bindings() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("keymap.toml");
+        std::fs::write(&path, "[global]\nfocus_diff = ['f']\ndiff_side = ['C-t']\nhunk_select = ['x']\nhunk_stage = []\nhunk_next = ['n']\n").unwrap();
+        let loaded = Keymap::load_from_path(&path);
+        assert_eq!(loaded.global_keys("focus_diff"), ["f"]);
+        assert_eq!(loaded.global_keys("diff_side"), ["C-t"]);
+        assert_eq!(loaded.global_keys("hunk_select"), ["x"]);
+        assert!(loaded.global_keys("hunk_stage").is_empty());
+        assert_eq!(loaded.global_keys("hunk_next"), ["n"]);
+        assert_eq!(loaded.global_keys("diff_apply"), ["Space"]);
+        std::fs::write(
+            &path,
+            "schema_version = 1\n[global]\nfocus_diff = ['Tab']\n",
+        )
+        .unwrap();
+        assert_eq!(
+            Keymap::load_from_path(&path).global_keys("focus_diff"),
+            ["Tab"]
+        );
     }
 }

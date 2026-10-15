@@ -40,7 +40,8 @@ impl InputStore {
             | InputMode::CommandPalette
             | InputMode::Search
             | InputMode::BranchSwitchConfirm
-            | InputMode::CommitAllConfirm => ReduceOutput::none(),
+            | InputMode::CommitAllConfirm
+            | InputMode::Keybindings => ReduceOutput::none(),
         }
     }
 
@@ -134,7 +135,7 @@ impl InputStore {
                     .with_invalidation(UiInvalidation::overlay())
             }
             InputMode::BranchSwitchConfirm => ReduceOutput::none(),
-            InputMode::CommitAllConfirm => ReduceOutput::none(),
+            InputMode::CommitAllConfirm | InputMode::Keybindings => ReduceOutput::none(),
         }
     }
 
@@ -169,7 +170,7 @@ impl InputStore {
                 )))
             }
             InputMode::BranchSwitchConfirm => ReduceOutput::none(),
-            InputMode::CommitAllConfirm => ReduceOutput::none(),
+            InputMode::CommitAllConfirm | InputMode::Keybindings => ReduceOutput::none(),
         }
     }
 
@@ -201,7 +202,7 @@ impl InputStore {
                 )))
             }
             InputMode::BranchSwitchConfirm => ReduceOutput::none(),
-            InputMode::CommitAllConfirm => ReduceOutput::none(),
+            InputMode::CommitAllConfirm | InputMode::Keybindings => ReduceOutput::none(),
         }
     }
 }

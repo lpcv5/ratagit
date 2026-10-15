@@ -3,6 +3,9 @@ use std::path::PathBuf;
 /// State-only work is expressed as an event and applied by a store.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RuntimeEvent {
+    NavigateDiffFile {
+        forward: bool,
+    },
     ProcessBackgroundLoads,
     #[cfg_attr(not(test), allow(dead_code))]
     FlushPendingRefresh {
@@ -16,11 +19,40 @@ pub enum RuntimeEvent {
 
 #[derive(Debug, Clone)]
 pub enum DomainAction {
+    ToggleStageAll,
+    ToggleStageAllFinished {
+        result: Result<bool, crate::git::GitError>,
+    },
+    AmendHead,
+    AmendHeadFinished {
+        result: Result<String, crate::git::GitError>,
+    },
+    IgnoreFile(PathBuf),
+    IgnoreFileFinished {
+        path: PathBuf,
+        result: Result<(), crate::git::GitError>,
+    },
+    EditFile(PathBuf),
+    EditorPrepared {
+        result: Result<crate::desktop::EditorCommand, crate::git::GitError>,
+    },
+    EditorFinished {
+        result: Result<(), crate::git::GitError>,
+    },
+    CopyPath(PathBuf),
+    CopyPathFinished {
+        path: PathBuf,
+        result: Result<(), crate::git::GitError>,
+    },
     ToggleDiffFocus,
     SwitchDiffSide,
     HunkNext,
     HunkPrevious,
+    DiffNextLine,
+    DiffPreviousLine,
     ToggleHunkSelection,
+    ToggleDiffLineMode,
+    ToggleDiffLineRange,
     ClearHunkSelection,
     ApplySelectedHunks(crate::git::patch::PatchDirection),
     ApplyHunksFinished {
@@ -59,6 +91,7 @@ pub enum DomainAction {
     Refresh,
     StartCommitInput,
     StartCommandPalette,
+    Help(crate::app::help::HelpAction),
     StartSearchInput,
     StartBranchCreateInput,
     CheckoutSelectedBranch,

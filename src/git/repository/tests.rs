@@ -6,6 +6,7 @@ use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
 
+mod file_tools;
 mod scheduling;
 
 fn write_file(path: &Path, content: &str) {

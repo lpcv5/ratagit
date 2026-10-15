@@ -28,16 +28,26 @@ struct Fixture {
 
 impl Fixture {
     fn empty() -> Self {
+        Self::empty_with_keymap(crate::config::keymap::Keymap::default())
+    }
+
+    fn empty_with_keymap(keymap: crate::config::keymap::Keymap) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let repo = git2::Repository::init(dir.path()).unwrap();
         repo.set_head("refs/heads/main").unwrap();
         drop(repo);
-        let app = App::from_repo(Box::new(Git2Repository::open(dir.path()).unwrap())).unwrap();
+        let app =
+            App::from_repo_with_keymap(Box::new(Git2Repository::open(dir.path()).unwrap()), keymap)
+                .unwrap();
         Self { app, _dir: dir }
     }
 
     fn populated() -> Self {
-        let mut fixture = Self::empty();
+        Self::populated_with_keymap(crate::config::keymap::Keymap::default())
+    }
+
+    fn populated_with_keymap(keymap: crate::config::keymap::Keymap) -> Self {
+        let mut fixture = Self::empty_with_keymap(keymap);
         let app = &mut fixture.app;
         let file = |path: &str, status| FileEntry {
             path: path.into(),
@@ -425,6 +435,7 @@ fn test_diff_loading_empty_and_side_hints_goldens() {
 fn test_diff_hunk_focus_and_selection_from_actions_golden() {
     let mut fixture = Fixture::populated();
     dispatch_test_action(&mut fixture.app, DomainAction::ToggleDiffFocus);
+    dispatch_test_action(&mut fixture.app, DomainAction::ToggleDiffLineMode);
     dispatch_test_action(&mut fixture.app, DomainAction::ToggleHunkSelection);
     assert!(fixture.app.diff.interaction().focused);
     assert!(fixture
@@ -440,6 +451,27 @@ fn test_diff_hunk_focus_and_selection_from_actions_golden() {
     snapshot.diff_interaction.pending_write = None;
     Arc::make_mut(snapshot.current_patch.as_mut().unwrap()).truncated = true;
     assert_golden("diff_hunk_read_only", &diff(&snapshot));
+}
+
+#[test]
+fn test_diff_lazygit_keys_and_line_range_golden() {
+    let mut fixture = Fixture::populated();
+    let index = fixture
+        .app
+        .files
+        .view()
+        .tree_nodes
+        .iter()
+        .position(|node| node.path == std::path::Path::new("README.md"))
+        .unwrap();
+    fixture.app.files.test_view_mut().panel.select(Some(index));
+    for code in [KeyCode::Enter, KeyCode::Char('v'), KeyCode::Char('j')] {
+        dispatch_test_key(&mut fixture.app, KeyEvent::new(code, KeyModifiers::NONE));
+    }
+    assert!(fixture.app.diff.interaction().focused);
+    assert!(fixture.app.diff.interaction().line_mode);
+    assert_eq!(fixture.app.hunk_view().marked_lines().len(), 2);
+    assert_golden("diff_line_range", &layout(&fixture.snapshot(), 120, 32));
 }
 
 #[test]
@@ -558,6 +590,94 @@ fn test_palette_key_input_filter_and_close_goldens() {
     assert_eq!(layout(&snapshot, 120, 40).buffer, restored.buffer);
     assert_eq!(baseline.cursor, restored.cursor);
     assert_golden("palette_closed", &restored);
+}
+
+#[test]
+fn test_keybindings_groups_filter_and_modal_restore_goldens() {
+    let mut fixture = Fixture::populated();
+    let mut terminal = Terminal::new(TestBackend::new(120, 48)).unwrap();
+    let snapshot = fixture.snapshot();
+    let baseline = draw(&mut terminal, |frame| {
+        render_layout(frame, &snapshot.as_snapshot())
+    });
+    dispatch_test_key(
+        &mut fixture.app,
+        KeyEvent::new(KeyCode::Char('?'), KeyModifiers::NONE),
+    );
+    let snapshot = fixture.snapshot();
+    assert_golden(
+        "help_files",
+        &draw(&mut terminal, |frame| {
+            render_layout(frame, &snapshot.as_snapshot())
+        }),
+    );
+    for (width, height) in [(1, 1), (20, 6), (60, 18), (120, 48)] {
+        let owned = layout(&snapshot, width, height);
+        let borrowed = render(width, height, |frame| {
+            render_layout(
+                frame,
+                &crate::flux::snapshot::AppStateSnapshot::from_app(&fixture.app),
+            );
+        });
+        assert_eq!(serialize(&owned), serialize(&borrowed));
+    }
+    dispatch_test_key(
+        &mut fixture.app,
+        KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+    );
+    let snapshot = fixture.snapshot();
+    let restored = draw(&mut terminal, |frame| {
+        render_layout(frame, &snapshot.as_snapshot())
+    });
+    assert_eq!(serialize(&restored), serialize(&baseline));
+
+    let mut keymap = crate::config::keymap::Keymap::default();
+    keymap
+        .files
+        .bindings
+        .insert("copy_path".into(), vec!["x".into()]);
+    keymap.rebuild_indexes();
+    let mut fixture = Fixture::populated_with_keymap(keymap);
+    for code in [
+        KeyCode::Char('?'),
+        KeyCode::Char('/'),
+        KeyCode::Char('c'),
+        KeyCode::Char('o'),
+        KeyCode::Char('p'),
+        KeyCode::Char('y'),
+    ] {
+        dispatch_test_key(&mut fixture.app, KeyEvent::new(code, KeyModifiers::NONE));
+    }
+    assert_golden(
+        "help_custom_filtered",
+        &layout(&fixture.snapshot(), 100, 24),
+    );
+    for c in "界面".chars() {
+        dispatch_test_key(
+            &mut fixture.app,
+            KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE),
+        );
+    }
+    assert_golden("help_no_matches", &layout(&fixture.snapshot(), 60, 18));
+}
+
+#[test]
+fn test_keybindings_diff_context_and_selection_scroll_goldens() {
+    let mut fixture = Fixture::populated();
+    dispatch_test_action(&mut fixture.app, DomainAction::ToggleDiffFocus);
+    dispatch_test_key(
+        &mut fixture.app,
+        KeyEvent::new(KeyCode::Char('?'), KeyModifiers::NONE),
+    );
+    assert_golden("help_diff", &layout(&fixture.snapshot(), 120, 40));
+    dispatch_test_key(
+        &mut fixture.app,
+        KeyEvent::new(KeyCode::End, KeyModifiers::NONE),
+    );
+    let snapshot = fixture.snapshot();
+    assert_golden("help_scrolled", &layout(&snapshot, 80, 16));
+    let rendered = serialize(&layout(&snapshot, 80, 16));
+    assert!(rendered.contains("Refresh repository"));
 }
 
 #[test]

@@ -13,6 +13,7 @@ pub(crate) mod diff;
 #[cfg(test)]
 mod diff_cache_tests;
 mod diff_coordinator;
+pub(crate) mod help;
 pub use diff::{DiffInteraction, DiffSide, DiffState, HunkView};
 mod dirty_flags;
 #[cfg(test)]

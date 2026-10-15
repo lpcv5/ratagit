@@ -4,6 +4,7 @@ use super::*;
 use std::path::Path;
 use std::process::Command;
 use tempfile::TempDir;
+mod lines;
 
 struct Fixture {
     dir: TempDir,

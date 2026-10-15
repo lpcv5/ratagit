@@ -5,19 +5,19 @@ use crate::flux;
 use crate::flux::action::{Action, SystemAction};
 use color_eyre::Result;
 use crossterm::event::{self, Event, KeyEventKind};
-use ratatui::DefaultTerminal;
 use std::sync::{atomic::Ordering, Arc};
 use std::time::{Duration, Instant};
-use tokio::sync::{broadcast, watch};
+use tokio::sync::{broadcast, mpsc, watch};
 use tracing::info;
 
 pub(super) async fn ui_loop(
-    terminal: &mut DefaultTerminal,
+    session: &mut crate::terminal::TerminalSession,
     perf: Arc<PerfCounters>,
     action_tx: ActionSender,
     state_version_rx: &mut watch::Receiver<u64>,
     mut snapshot_rx: watch::Receiver<Arc<PublishedSnapshot>>,
     shutdown_tx: broadcast::Sender<()>,
+    mut editor_rx: mpsc::UnboundedReceiver<crate::desktop::EditorCommand>,
 ) -> Result<()> {
     const MAX_EVENTS_PER_FRAME: usize = 64;
     const DIFF_RELOAD_DEBOUNCE: Duration = Duration::from_millis(180);
@@ -42,6 +42,16 @@ pub(super) async fn ui_loop(
             }
         }
 
+        if let Ok(command) = editor_rx.try_recv() {
+            // This loop is the sole terminal reader/writer. No TUI input or
+            // rendering runs while an editor owns the console.
+            let result = session.with_suspended(|| command.run())?;
+            let _ = action_tx.send(Action::Domain(
+                crate::flux::action::DomainAction::EditorFinished { result },
+            ));
+            draw_snapshot(session.terminal_mut(), &snapshot_rx.borrow())?;
+        }
+
         let mut processed_input_event = false;
         if state_version_rx.has_changed().unwrap_or(false) {
             let _ = state_version_rx.borrow_and_update();
@@ -50,7 +60,7 @@ pub(super) async fn ui_loop(
         if snapshot_rx.has_changed().unwrap_or(false) {
             let draw_started = Instant::now();
             let snapshot = snapshot_rx.borrow_and_update().clone();
-            draw_snapshot(terminal, &snapshot)?;
+            draw_snapshot(session.terminal_mut(), &snapshot)?;
             let draw_us = draw_started.elapsed().as_micros() as u64;
             perf.ui_draws.fetch_add(1, Ordering::Relaxed);
             perf.ui_draw_us.fetch_add(draw_us, Ordering::Relaxed);

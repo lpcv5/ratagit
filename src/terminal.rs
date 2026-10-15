@@ -15,6 +15,9 @@ use tracing::{error, info};
 pub(crate) trait TerminalOps {
     type Terminal;
     fn init(&mut self) -> io::Result<Self::Terminal>;
+    fn resume(&mut self) -> io::Result<Self::Terminal> {
+        self.init()
+    }
     fn install_panic_hook(&mut self);
     fn enable_mouse(&mut self) -> io::Result<()>;
     fn disable_mouse(&mut self) -> io::Result<()>;
@@ -36,6 +39,12 @@ impl TerminalOps for CrosstermOps {
     type Terminal = DefaultTerminal;
     fn init(&mut self) -> io::Result<DefaultTerminal> {
         ratatui::try_init()
+    }
+    fn resume(&mut self) -> io::Result<DefaultTerminal> {
+        // Keep the existing mouse-before-diagnostics panic hook ordering.
+        crossterm::terminal::enable_raw_mode()?;
+        execute!(io::stdout(), crossterm::terminal::EnterAlternateScreen)?;
+        ratatui::Terminal::new(ratatui::backend::CrosstermBackend::new(io::stdout()))
     }
     fn restore_failed_init(&mut self) {
         ratatui::restore();
@@ -97,6 +106,22 @@ impl<O: TerminalOps> TerminalSession<O> {
     }
     pub fn terminal_mut(&mut self) -> &mut O::Terminal {
         self.terminal.as_mut().expect("terminal session is active")
+    }
+
+    /// Give a subprocess exclusive terminal access, then rebuild the TUI buffer.
+    /// Resume even when suspension or the subprocess reports an error.
+    pub fn with_suspended<T>(&mut self, run: impl FnOnce() -> T) -> io::Result<T> {
+        let (mouse, restore) = self.cleanup();
+        let result = mouse.and(restore).map(|()| run());
+        self.terminal = Some(match self.ops.resume() {
+            Ok(terminal) => terminal,
+            Err(error) => {
+                self.ops.restore_failed_init();
+                return Err(error);
+            }
+        });
+        self.ops.enable_mouse()?;
+        result
     }
 
     fn cleanup(&mut self) -> (io::Result<()>, io::Result<()>) {

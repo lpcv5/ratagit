@@ -4,6 +4,25 @@ use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver};
 
 pub trait WorktreeRepository: Send + Sync {
+    /// Toggle the entire worktree using fresh status in the serialized worker.
+    fn toggle_stage_all(&self) -> Result<bool, GitError> {
+        Err(GitError::Git2(
+            "stage all is unsupported by this backend".into(),
+        ))
+    }
+    fn ignore_file(&self, _path: &std::path::Path) -> Result<(), GitError> {
+        Err(GitError::Git2(
+            "ignore is unsupported by this backend".into(),
+        ))
+    }
+    fn prepare_editor(
+        &self,
+        _path: &std::path::Path,
+    ) -> Result<crate::desktop::EditorCommand, GitError> {
+        Err(GitError::Git2(
+            "editing is unsupported by this backend".into(),
+        ))
+    }
     fn status(&self) -> Result<GitStatus, GitError>;
 
     fn status_fast(&self) -> Result<GitStatus, GitError> {
@@ -64,6 +83,16 @@ pub trait WorktreeRepository: Send + Sync {
 }
 
 pub trait PatchRepository: Send + Sync {
+    fn apply_lines(
+        &self,
+        _patch: &super::patch::Patch,
+        _ids: &[super::patch::LineId],
+        _direction: super::patch::PatchDirection,
+    ) -> Result<(), GitError> {
+        Err(GitError::Git2(
+            "partial line changes are unsupported by this backend".into(),
+        ))
+    }
     fn apply_hunks(
         &self,
         _patch: &super::patch::Patch,
@@ -335,6 +364,11 @@ pub trait StashRepository: Send + Sync {
 }
 
 pub trait CommitRepository: Send + Sync {
+    fn amend_head(&self) -> Result<String, GitError> {
+        Err(GitError::Git2(
+            "amend is unsupported by this backend".into(),
+        ))
+    }
     fn commit(&self, message: &str) -> Result<String, GitError>;
 
     fn commit_async(

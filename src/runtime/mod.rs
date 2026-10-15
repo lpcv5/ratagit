@@ -14,7 +14,6 @@ use crate::flux::action::Action;
 use crate::flux::snapshot::AppStateSnapshotOwned;
 use color_eyre::Result;
 use loops::{auto_refresh_loop, command_loop, dispatch_loop};
-use ratatui::DefaultTerminal;
 use std::future::Future;
 use std::sync::Arc;
 pub(crate) use telemetry::init_logging;
@@ -23,6 +22,7 @@ use tokio::sync::{broadcast, mpsc, watch};
 use tracking::{ActionSender, PublishedSnapshot, Tracked};
 
 struct UiChannels {
+    editor_rx: mpsc::UnboundedReceiver<crate::desktop::EditorCommand>,
     action_tx: ActionSender,
     state_version_rx: watch::Receiver<u64>,
     snapshot_rx: watch::Receiver<Arc<PublishedSnapshot>>,
@@ -30,18 +30,19 @@ struct UiChannels {
 }
 
 pub(crate) async fn run(
-    terminal: &mut DefaultTerminal,
+    session: &mut crate::terminal::TerminalSession,
     app: App,
     recorder: Option<Arc<crate::latency::Recorder>>,
 ) -> Result<()> {
     run_with_ui_recording(app, recorder, |mut channels, perf| async move {
         ui::ui_loop(
-            terminal,
+            session,
             perf,
             channels.action_tx,
             &mut channels.state_version_rx,
             channels.snapshot_rx,
             channels.shutdown_tx,
+            channels.editor_rx,
         )
         .await
     })
@@ -81,6 +82,7 @@ where
             let (action_tx, action_rx) = mpsc::unbounded_channel::<Tracked<Action>>();
             let action_tx = ActionSender::new(action_tx, recorder);
             let (command_tx, command_rx) = mpsc::unbounded_channel::<Tracked<app::Command>>();
+            let (editor_tx, editor_rx) = mpsc::unbounded_channel();
             let (state_version_tx, state_version_rx) = watch::channel(0u64);
             let initial_snapshot = Arc::new(PublishedSnapshot::new(
                 AppStateSnapshotOwned::from_app(&state),
@@ -105,6 +107,7 @@ where
                 command_rx,
                 action_tx.clone(),
                 shutdown_tx.subscribe(),
+                editor_tx,
             ));
             let auto_refresh_handle = tokio::task::spawn_local(auto_refresh_loop(
                 action_tx.clone(),
@@ -114,6 +117,7 @@ where
             let final_snapshot_rx = snapshot_rx.clone();
             let ui_result = ui(
                 UiChannels {
+                    editor_rx,
                     action_tx,
                     state_version_rx,
                     snapshot_rx,

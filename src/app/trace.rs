@@ -14,7 +14,7 @@ pub fn replay_actions(app: &mut App, trace: &[DomainAction]) {
                     queue.push_front(action);
                 }
                 // Effect requests are executed by runtime loops and are intentionally not run here.
-                Command::Effect(_) => {}
+                Command::Effect(_) | Command::RunEditor(_) => {}
             }
         }
     }

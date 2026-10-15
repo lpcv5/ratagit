@@ -51,6 +51,7 @@ impl AppState {
 
     pub fn cancel_input(&mut self) {
         self.input.mode = None;
+        self.input.help = super::help::HelpState::default();
         self.input.buffer.clear();
         self.input.commit_message_buffer.clear();
         self.input.commit_description_buffer.clear();
