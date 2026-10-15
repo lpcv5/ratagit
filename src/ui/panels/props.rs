@@ -5,6 +5,7 @@ use crate::app::help::HelpEntry;
 use crate::app::{CommandLogEntry, CommitFieldFocus};
 
 pub struct CommitEditorProps<'a> {
+    pub error: Option<&'a str>,
     pub focus: CommitFieldFocus,
     pub message: &'a str,
     pub description: &'a str,
@@ -12,8 +13,14 @@ pub struct CommitEditorProps<'a> {
 }
 
 pub struct StashEditorProps<'a> {
+    pub error: Option<&'a str>,
     pub message: &'a str,
     pub targets: &'a [String],
+}
+
+pub struct BranchEditorProps<'a> {
+    pub error: Option<&'a str>,
+    pub name: &'a str,
 }
 
 pub struct BranchSwitchConfirmProps<'a> {
@@ -27,6 +34,7 @@ pub struct CommitAllConfirmProps {
 
 pub struct CommandPaletteProps<'a> {
     pub input: &'a str,
+    pub selected: usize,
     /// Already filtered by the owner using command execution normalization.
     pub commands: Vec<&'a CommandHelp>,
     pub hints: &'a [(String, String)],
@@ -43,7 +51,6 @@ pub struct KeybindingsProps<'a> {
 
 pub struct CommandLogProps<'a> {
     pub entries: &'a [CommandLogEntry],
-    pub branch_input: Option<&'a str>,
 }
 
 pub struct ShortcutBarProps<'a> {

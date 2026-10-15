@@ -36,6 +36,7 @@ impl DiffPresentation<'_> {
 impl AppStateSnapshot<'_> {
     pub fn commit_editor_props(&self) -> CommitEditorProps<'_> {
         CommitEditorProps {
+            error: self.input_error,
             focus: self.commit_focus,
             message: self.commit_message_buffer,
             description: self.commit_description_buffer,
@@ -45,6 +46,7 @@ impl AppStateSnapshot<'_> {
 
     pub fn stash_editor_props(&self) -> StashEditorProps<'_> {
         StashEditorProps {
+            error: self.input_error,
             message: self.stash_message_buffer,
             targets: &self.stash_targets,
         }
@@ -66,6 +68,7 @@ impl AppStateSnapshot<'_> {
     pub fn command_palette_props(&self) -> CommandPaletteProps<'_> {
         CommandPaletteProps {
             input: self.input_buffer,
+            selected: self.palette_selected,
             commands: crate::app::commands::filter_commands(
                 self.input_buffer,
                 &self.available_commands,
@@ -87,8 +90,6 @@ impl AppStateSnapshot<'_> {
     pub fn command_log_props(&self) -> CommandLogProps<'_> {
         CommandLogProps {
             entries: self.command_log,
-            branch_input: (self.input_mode == Some(InputMode::CreateBranch))
-                .then_some(self.input_buffer),
         }
     }
 

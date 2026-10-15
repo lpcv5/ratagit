@@ -64,7 +64,8 @@ pub trait InvalidationAccess {
 
 /// Resolve palette input through the shared command registry.
 pub trait CommandAccess {
-    fn resolve_command_palette_command(&self, cmd: &str) -> Option<DomainAction>;
+    fn move_palette_selection(&mut self, delta: isize);
+    fn selected_palette_command(&self) -> Option<DomainAction>;
 }
 
 /// Contextual keybinding menu state and command selection.
@@ -94,6 +95,7 @@ pub trait PanelAccess {
 
 /// Text input buffers: commit message, stash message, generic input buffer.
 pub trait InputAccess {
+    fn set_input_error(&mut self, error: Option<String>);
     fn cancel_input(&mut self);
     fn input_mode(&self) -> Option<InputMode>;
     fn set_input_mode(&mut self, mode: Option<InputMode>);

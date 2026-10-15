@@ -25,6 +25,7 @@ fn test_palette_displays_owner_supplied_commands_and_bindings() {
                 // The owner has already selected results, even if its matching
                 // policy differs from Ratagit's command palette policy.
                 input: "unrelated search",
+                selected: 0,
                 commands: vec![&command],
                 hints: &hints,
             },
@@ -43,6 +44,7 @@ fn test_editor_and_shortcut_bar_render_without_application_state() {
         render_commit_editor(
             frame,
             CommitEditorProps {
+                error: None,
                 focus: CommitFieldFocus::Description,
                 message: "Supplied title",
                 description: "First line\nSecond line",
@@ -51,7 +53,7 @@ fn test_editor_and_shortcut_bar_render_without_application_state() {
         );
     });
     assert!(content(&editor).contains("Supplied title"));
-    assert!(content(&editor).contains("Focus: Description | Ln 2 Col 12"));
+    assert!(content(&editor).contains("Description · optional"));
     assert!(content(&editor).contains("Ctrl+s  Save draft"));
     assert!(editor.cursor.is_some());
 

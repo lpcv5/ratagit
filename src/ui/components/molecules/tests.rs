@@ -1,4 +1,4 @@
-use super::{card, render_modal, shortcut_hint, EmptyState};
+use super::{card, render_input, render_modal, shortcut_hint, EmptyState, InputField};
 use crate::ui::{
     components::atoms::{badge, Tone},
     test_support::{assert_golden, render},
@@ -64,5 +64,35 @@ fn test_modal_erases_underlying_content_and_bounds_inner_area() {
             assert_eq!(ui.buffer[(area.x + 1, area.y + 2)].bg, theme.surface);
             assert_eq!(ui.buffer[(0, 8)].symbol(), "X");
         }
+    }
+}
+
+#[test]
+fn test_input_cursor_uses_display_cells_and_scrolls_to_editing_position() {
+    let theme = UiTheme::default();
+    for (value, expected_x, expected_y, suffix) in [
+        ("界e\u{301}", 6, 3, "界"),
+        ("01234567890123456789END", 12, 3, "END"),
+        ("one\ntwo\nthree\nfour\nEND", 6, 5, "END"),
+    ] {
+        let ui = render(18, 9, |frame| {
+            render_input(
+                frame,
+                Rect::new(2, 2, 12, 5),
+                InputField {
+                    title: "Input",
+                    value,
+                    placeholder: "Type here",
+                    focused: true,
+                },
+                &theme,
+            )
+        });
+        assert_eq!(
+            ui.cursor,
+            Some(ratatui::layout::Position::new(expected_x, expected_y))
+        );
+        let text: String = ui.buffer.content.iter().map(|cell| cell.symbol()).collect();
+        assert!(text.contains(suffix));
     }
 }

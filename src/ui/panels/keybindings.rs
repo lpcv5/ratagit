@@ -1,6 +1,9 @@
 use super::props::KeybindingsProps;
 use crate::app::help::HelpGroup;
-use crate::ui::panels::{centered_rect, render_overlay_chrome};
+use crate::ui::panels::{
+    overlay_utils::{action_lines, dialog_rect, dialog_sections},
+    render_overlay_chrome,
+};
 use crate::ui::theme::UiTheme;
 use ratatui::{
     layout::{Constraint, Layout},
@@ -22,16 +25,42 @@ pub fn render_keybindings(
         viewport.context = Some(context);
     }
     let theme = UiTheme::default();
-    let area = centered_rect(frame.area(), 90, 90);
+    let rows = HelpGroup::ALL
+        .iter()
+        .map(|group| {
+            1 + help
+                .entries
+                .iter()
+                .filter(|entry| entry.group == *group)
+                .count()
+                .max(1)
+        })
+        .sum::<usize>();
+    let area = dialog_rect(frame.area(), 104, (rows.min(30) + 8) as u16);
     let title = format!("Keybindings - {}", help.context);
     let inner = render_overlay_chrome(frame, area, &title, &theme);
+    let hints = if help.filtering {
+        vec![
+            ("Esc".into(), "Clear".into()),
+            ("↑/↓".into(), "Move".into()),
+            ("Enter".into(), "Execute".into()),
+        ]
+    } else {
+        vec![
+            ("Esc".into(), "Close".into()),
+            ("/".into(), "Filter".into()),
+            ("↑/↓".into(), "Move".into()),
+            ("Enter/Space".into(), "Execute".into()),
+        ]
+    };
+    let actions = action_lines(&hints, inner.width, &theme);
+    let (body, footer) = dialog_sections(inner, actions.len() as u16);
     let sections = Layout::vertical([
         Constraint::Length(1),
         Constraint::Length(1),
         Constraint::Min(0),
-        Constraint::Length(1),
     ])
-    .split(inner);
+    .split(body);
     let entries = &help.entries;
     let summary = HelpGroup::ALL
         .map(|group| {
@@ -119,21 +148,7 @@ pub fn render_keybindings(
         usize::from(sections[2].height),
     );
     frame.render_stateful_widget(list, sections[2], &mut viewport.list);
-    let position = if entries.is_empty() {
-        0
-    } else {
-        help.selected + 1
-    };
-    let controls = if help.filtering {
-        "Up/Down Move  Enter Execute  Type to filter  Esc Clear"
-    } else {
-        "Up/Down Move  Enter/Space Execute  / Filter  Esc Close"
-    };
-    let footer = format!("{position}/{}  {controls}", entries.len());
-    frame.render_widget(
-        Paragraph::new(footer).style(Style::default().fg(theme.text_muted)),
-        sections[3],
-    );
+    frame.render_widget(Paragraph::new(actions), footer);
     if help.filtering && sections[1].width > 0 && sections[1].height > 0 {
         let offset = filter_width.min(usize::from(sections[1].width - 1));
         frame.set_cursor_position((sections[1].x + offset as u16, sections[1].y));

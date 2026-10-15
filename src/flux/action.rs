@@ -183,6 +183,7 @@ pub enum DomainAction {
     InputEnter,
     InputBackspace,
     InputChar(char),
+    InputSelect(isize),
 }
 
 #[derive(Debug, Clone)]
