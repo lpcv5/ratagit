@@ -1,3 +1,4 @@
+use crate::flux::action::RuntimeEvent;
 mod branch_store;
 #[cfg(test)]
 mod capability_tests;
@@ -20,6 +21,7 @@ pub mod state_access;
 
 use crate::app::Command;
 use crate::flux::action::ActionEnvelope;
+use crate::flux::command_output::CommandOutput;
 pub use state_access::DirtyHint;
 pub use state_access::StateAccess;
 use state_access::{InvalidationAccess, LogAccess};
@@ -42,6 +44,15 @@ pub use stash_store::StashStore;
 /// Only the dispatcher erases the concrete state to `dyn StateAccess`.
 pub struct ReduceCtx<'a, S: ?Sized> {
     pub state: &'a mut S,
+    pub commands: &'a mut CommandOutput,
+}
+
+impl<S: ?Sized> ReduceCtx<'_, S> {
+    /// Emit to the dispatcher-owned output; return invalidation separately.
+    pub fn command(&mut self, command: Command) -> ReduceOutput {
+        self.commands.command(command);
+        ReduceOutput::none()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -98,20 +109,12 @@ impl UiInvalidation {
 
 #[derive(Default)]
 pub struct ReduceOutput {
-    pub commands: Vec<Command>,
     pub invalidation: UiInvalidation,
 }
 
 impl ReduceOutput {
     pub fn none() -> Self {
         Self::default()
-    }
-
-    pub fn from_command(command: Command) -> Self {
-        Self {
-            commands: vec![command],
-            invalidation: UiInvalidation::none(),
-        }
     }
 
     pub fn with_invalidation(mut self, invalidation: UiInvalidation) -> Self {
@@ -126,7 +129,7 @@ pub trait Store<S: ?Sized> {
 
 /// Helper command to trigger a background task processing tick.
 pub(super) fn tick_background_loads() -> Command {
-    Command::Effect(crate::flux::effects::EffectRequest::ProcessBackgroundLoads)
+    Command::runtime(RuntimeEvent::ProcessBackgroundLoads)
 }
 
 /// Log a completed operation's result and return the appropriate ReduceOutput.
@@ -307,15 +310,35 @@ pub mod test_support {
         }
     }
 
+    pub struct TestReduceOutput {
+        pub commands: Vec<crate::app::Command>,
+        pub invalidation: super::UiInvalidation,
+    }
+
+    pub fn reduce_state<S: ?Sized>(
+        store: &mut impl super::Store<S>,
+        state: &mut S,
+        action: Action,
+    ) -> TestReduceOutput {
+        let mut commands = crate::flux::command_output::CommandOutput::default();
+        let output = store.reduce(
+            &make_envelope(action),
+            &mut super::ReduceCtx {
+                state,
+                commands: &mut commands,
+            },
+        );
+        TestReduceOutput {
+            commands: commands.drain(),
+            invalidation: output.invalidation,
+        }
+    }
+
     pub fn reduce_action<S: super::Store<crate::app::AppState>>(
         store: &mut S,
         app: &mut App,
         action: Action,
-    ) -> super::ReduceOutput {
-        let env = make_envelope(action);
-        let mut ctx = super::ReduceCtx {
-            state: &mut app.state,
-        };
-        store.reduce(&env, &mut ctx)
+    ) -> TestReduceOutput {
+        reduce_state(store, &mut app.state, action)
     }
 }

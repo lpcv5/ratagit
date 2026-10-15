@@ -58,9 +58,35 @@ fn patch(sources: &[PatchSource]) -> Arc<Patch> {
 
 fn document(patch: Arc<Patch>) -> DiffDocument {
     DiffDocument {
-        lines: patch.display_lines(),
+        lines: patch.display_lines().into(),
         patch: Some(patch),
     }
+}
+
+#[test]
+fn test_diff_cache_reuses_lines_without_changing_older_document() {
+    let target = file_target("file.rs");
+    let mut state = DiffState::default();
+    state.schedule_reload(Instant::now());
+    let DiffLoad::Request { cache_key, .. } = state.prepare_reload(target.clone(), &[]) else {
+        panic!("request required")
+    };
+    let document: DiffDocument = vec![crate::git::DiffLine {
+        kind: crate::git::DiffLineKind::Added,
+        content: "accepted".into(),
+    }]
+    .into();
+    let lines = document.lines.clone();
+    assert!(state.complete_load(cache_key, document, &target, &[]));
+    let retained = state.document().clone();
+    assert!(retained.lines.ptr_eq(&lines));
+    state.schedule_reload(Instant::now());
+    assert!(matches!(state.prepare_reload(target, &[]), DiffLoad::Ready));
+    assert!(retained.lines.ptr_eq(&state.document().lines));
+    let mut changed = retained.clone();
+    changed.lines[0].content = "changed copy".into();
+    assert_eq!(retained.lines[0].content, "accepted");
+    assert_eq!(state.document().lines[0].content, "accepted");
 }
 
 fn loaded(sources: &[PatchSource]) -> DiffState {

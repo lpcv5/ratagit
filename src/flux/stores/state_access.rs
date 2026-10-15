@@ -1,5 +1,6 @@
 use crate::app::{CommitFieldFocus, InputMode, RefreshKind, SidePanel};
 use crate::flux::action::DomainAction;
+use crate::flux::command_output::CommandOutput;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -22,9 +23,17 @@ impl DirtyHint {
 
 /// Apply completion events to reducer-owned state; never execute I/O here.
 pub trait RuntimeAccess {
-    fn apply_repository_action(&mut self, action: &DomainAction);
-    fn apply_runtime_event(&mut self, event: &crate::flux::effects::RuntimeEvent);
-    fn apply_background_completed(&mut self, completed: &crate::app::BackgroundCompleted);
+    fn apply_repository_action(&mut self, action: &DomainAction, output: &mut CommandOutput);
+    fn apply_runtime_event(
+        &mut self,
+        event: &crate::flux::action::RuntimeEvent,
+        output: &mut CommandOutput,
+    );
+    fn apply_background_completed(
+        &mut self,
+        completed: &crate::background::BackgroundCompleted,
+        output: &mut CommandOutput,
+    );
 }
 
 /// Append user-visible operation results.
@@ -144,10 +153,10 @@ pub trait SelectionAccess {
 
 /// Refresh and diff-reload scheduling.
 pub trait RefreshAccess {
-    fn request_refresh(&mut self, kind: RefreshKind);
+    fn request_refresh(&mut self, kind: RefreshKind, output: &mut CommandOutput);
     fn has_pending_diff_reload(&self) -> bool;
     fn diff_reload_debounce_elapsed(&self, debounce: Duration) -> bool;
-    fn schedule_diff_reload(&mut self);
+    fn schedule_diff_reload(&mut self, output: &mut CommandOutput);
 }
 
 /// Overlay / input-mode launchers.
@@ -158,16 +167,16 @@ pub trait OverlayAccess {
     fn start_stash_editor(&mut self, targets: Vec<PathBuf>);
     /// Open the commit editor if there are staged files; otherwise prompt to stage all.
     /// Returns `true` if the editor was opened or the confirm dialog was shown.
-    fn start_commit_editor_guarded(&mut self) -> bool;
+    fn start_commit_editor_guarded(&mut self, output: &mut CommandOutput) -> bool;
     fn start_branch_switch_confirm(&mut self, target: String);
     fn start_commit_editor(&mut self);
 }
 
 /// Revision tree operations (commit tree, stash tree, branch commits subview).
 pub trait RevisionAccess {
-    fn stash_close_tree(&mut self);
-    fn commit_close_tree(&mut self);
-    fn close_branch_commits_subview(&mut self);
+    fn stash_close_tree(&mut self, output: &mut CommandOutput);
+    fn commit_close_tree(&mut self, output: &mut CommandOutput);
+    fn close_branch_commits_subview(&mut self, output: &mut CommandOutput);
 }
 
 // ---------------------------------------------------------------------------

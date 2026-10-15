@@ -65,7 +65,7 @@ pub(super) fn snapshot(repo: &Repository) -> Result<RepositoryOperation, GitErro
     };
     Ok(RepositoryOperation {
         kind,
-        conflicts,
+        conflicts: conflicts.into(),
         progress,
     })
 }

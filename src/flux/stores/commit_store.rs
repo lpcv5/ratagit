@@ -19,7 +19,7 @@ impl<S: LogAccess + ?Sized> Store<S> for CommitStore {
             return ReduceOutput::none();
         };
         match domain {
-            DomainAction::Commit(commit_message) => ReduceOutput::from_command(Command::Effect(
+            DomainAction::Commit(commit_message) => ctx.command(Command::Effect(
                 EffectRequest::Commit(commit_message.clone()),
             )),
             DomainAction::CommitFinished { message, result } => {
@@ -27,10 +27,9 @@ impl<S: LogAccess + ?Sized> Store<S> for CommitStore {
                     Ok(oid) => {
                         ctx.state
                             .push_log(format!("commit {} ({})", message, oid), true);
-                        return ReduceOutput {
-                            commands: vec![tick_background_loads()],
-                            invalidation: UiInvalidation::all(),
-                        };
+                        return ctx
+                            .command(tick_background_loads())
+                            .with_invalidation(UiInvalidation::all());
                     }
                     Err(e) => ctx.state.push_log(format!("commit failed: {}", e), false),
                 }

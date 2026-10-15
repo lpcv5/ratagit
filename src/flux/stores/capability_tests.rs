@@ -2,18 +2,21 @@
 //! The small state types also keep capability requirements checked by Rust.
 
 use super::state_access::{FilesAccess, InvalidationAccess, LogAccess, RefreshAccess, StashAccess};
-use super::test_support::make_envelope;
-use super::{
-    DiffStore, DirtyHint, FilesStore, ReduceCtx, ReduceOutput, StashStore, Store, UiInvalidation,
-};
+use super::{DiffStore, DirtyHint, FilesStore, StashStore, Store, UiInvalidation};
 use crate::app::files::{FilesAction, FilesState, FilesUpdate};
 use crate::app::{Command, RefreshKind};
+use crate::flux::action::RuntimeEvent;
 use crate::flux::action::{Action, DomainAction, SystemAction};
+use crate::flux::command_output::CommandOutput;
 use crate::flux::effects::EffectRequest;
 use std::time::Duration;
 
-fn reduce<S: ?Sized>(store: &mut impl Store<S>, state: &mut S, action: Action) -> ReduceOutput {
-    store.reduce(&make_envelope(action), &mut ReduceCtx { state })
+fn reduce<S: ?Sized>(
+    store: &mut impl Store<S>,
+    state: &mut S,
+    action: Action,
+) -> super::test_support::TestReduceOutput {
+    super::test_support::reduce_state(store, state, action)
 }
 
 #[derive(Default)]
@@ -157,7 +160,7 @@ struct RefreshState {
 }
 
 impl RefreshAccess for RefreshState {
-    fn request_refresh(&mut self, _: RefreshKind) {
+    fn request_refresh(&mut self, _: RefreshKind, _output: &mut CommandOutput) {
         panic!("the debounce reducer must not request a repository refresh");
     }
 
@@ -169,7 +172,7 @@ impl RefreshAccess for RefreshState {
         self.elapsed >= debounce
     }
 
-    fn schedule_diff_reload(&mut self) {
+    fn schedule_diff_reload(&mut self, _output: &mut CommandOutput) {
         panic!("the debounce reducer must not restart the debounce timer");
     }
 }
@@ -194,7 +197,9 @@ fn test_diff_debounce_with_only_refresh_state() {
         if should_flush {
             assert!(matches!(
                 output.commands.as_slice(),
-                [Command::Effect(EffectRequest::FlushPendingDiffReload)]
+                [Command::Sync(crate::flux::action::DomainAction::Runtime(
+                    RuntimeEvent::FlushPendingDiffReload
+                ))]
             ));
         } else {
             assert!(output.commands.is_empty());

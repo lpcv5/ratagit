@@ -106,24 +106,3 @@ impl DiffTarget {
         }
     }
 }
-
-impl DiffCacheKey {
-    pub fn task_target(&self) -> String {
-        match self {
-            Self::None => "none".to_string(),
-            Self::File { path, is_staged } => format!("file:{}:{}", path.display(), is_staged),
-            Self::Branch { name, limit } => format!("branch:{}:{}", name, limit),
-            Self::Directory { path, files_hash } => {
-                format!("dir:{}:{}", path.display(), files_hash)
-            }
-            Self::Commit { oid, path } => match path {
-                Some(path) => format!("commit:{}:{}", oid, path.display()),
-                None => format!("commit:{}:*", oid),
-            },
-            Self::Stash { index, path } => match path {
-                Some(path) => format!("stash:{}:{}", index, path.display()),
-                None => format!("stash:{}:*", index),
-            },
-        }
-    }
-}

@@ -8,13 +8,15 @@ pub struct RuntimeStore;
 impl<S: RuntimeAccess + RefreshAccess + ?Sized> Store<S> for RuntimeStore {
     fn reduce(&mut self, action: &ActionEnvelope, ctx: &mut ReduceCtx<'_, S>) -> ReduceOutput {
         if let Action::Domain(domain) = &action.action {
-            ctx.state.apply_repository_action(domain);
+            ctx.state.apply_repository_action(domain, ctx.commands);
         }
         match &action.action {
-            Action::Domain(DomainAction::Runtime(event)) => ctx.state.apply_runtime_event(event),
-            Action::System(SystemAction::BackgroundCompleted(completed)) => {
-                ctx.state.apply_background_completed(completed)
+            Action::Domain(DomainAction::Runtime(event)) => {
+                ctx.state.apply_runtime_event(event, ctx.commands)
             }
+            Action::System(SystemAction::BackgroundCompleted(completed)) => ctx
+                .state
+                .apply_background_completed(completed, ctx.commands),
             Action::Domain(domain) => {
                 use crate::app::RefreshKind;
                 let refresh = match domain {
@@ -42,7 +44,7 @@ impl<S: RuntimeAccess + RefreshAccess + ?Sized> Store<S> for RuntimeStore {
                     _ => None,
                 };
                 if let Some(kind) = refresh {
-                    ctx.state.request_refresh(kind);
+                    ctx.state.request_refresh(kind, ctx.commands);
                 }
             }
             _ => {}

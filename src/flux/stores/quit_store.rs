@@ -25,7 +25,6 @@ impl<S: LifecycleAccess + ?Sized> Store<S> for QuitStore {
 mod tests {
     use super::*;
     use crate::flux::action::{Action, DomainAction};
-    use crate::flux::stores::test_support::make_envelope;
 
     // Deliberately implements no other state capabilities.
     struct LifecycleState {
@@ -42,9 +41,11 @@ mod tests {
     fn test_quit_sets_running_false() {
         let mut store = QuitStore::new();
         let mut state = LifecycleState { running: true };
-        let env = make_envelope(Action::Domain(DomainAction::Quit));
-        let mut ctx = ReduceCtx { state: &mut state };
-        let output = store.reduce(&env, &mut ctx);
+        let output = super::super::test_support::reduce_state(
+            &mut store,
+            &mut state,
+            Action::Domain(DomainAction::Quit),
+        );
         assert!(!state.running);
         assert!(output.commands.is_empty());
         assert_eq!(output.invalidation, UiInvalidation::all());
@@ -54,9 +55,11 @@ mod tests {
     fn test_non_quit_action_does_nothing() {
         let mut store = QuitStore::new();
         let mut state = LifecycleState { running: true };
-        let env = make_envelope(Action::Domain(DomainAction::PanelNext));
-        let mut ctx = ReduceCtx { state: &mut state };
-        let output = store.reduce(&env, &mut ctx);
+        let output = super::super::test_support::reduce_state(
+            &mut store,
+            &mut state,
+            Action::Domain(DomainAction::PanelNext),
+        );
         assert!(state.running);
         assert!(output.commands.is_empty());
         assert_eq!(output.invalidation, UiInvalidation::none());

@@ -1,31 +1,33 @@
 use super::diff::DiffTarget;
-use super::states::{BranchesPanelState, CommitsPanelState, StashPanelState};
-use super::{AppState, FileSelection, FilesPanelState, SidePanel, UiContext, ViewContext};
+use super::files::FilesRenderView;
+use super::revisions::{BranchesRenderView, CommitsRenderView, StashRenderView};
+use super::{AppState, FileSelection, UiContext, ViewContext};
 use crate::file_tree::FileTreeNode;
 
 /// Shared, immutable selectors over state or a render snapshot.
 pub struct SelectionView<'a> {
     pub context: ViewContext,
-    files: &'a FilesPanelState,
-    branches: &'a BranchesPanelState,
-    commits: &'a CommitsPanelState,
-    stash: &'a StashPanelState,
+    files: FilesRenderView<'a>,
+    revisions: super::revisions::RevisionView<'a>,
 }
 
 impl<'a> SelectionView<'a> {
     pub fn new(
         context: ViewContext,
-        files: &'a FilesPanelState,
-        branches: &'a BranchesPanelState,
-        commits: &'a CommitsPanelState,
-        stash: &'a StashPanelState,
+        files: FilesRenderView<'a>,
+        branches: BranchesRenderView<'a>,
+        commits: CommitsRenderView<'a>,
+        stash: StashRenderView<'a>,
     ) -> Self {
         Self {
+            revisions: super::revisions::RevisionView::new(
+                context.clone(),
+                branches,
+                commits,
+                stash,
+            ),
             context,
             files,
-            branches,
-            commits,
-            stash,
         }
     }
 
@@ -34,94 +36,33 @@ impl<'a> SelectionView<'a> {
     }
 
     pub fn selected_branch_name(&self) -> Option<&str> {
-        match &self.context {
-            ViewContext::Branches => self
-                .branches
-                .items
-                .get(self.branches.panel.list_state.selected()?)
-                .map(|b| b.name.as_str()),
-            ViewContext::BranchCommits { branch } => {
-                (!branch.is_empty()).then_some(branch.as_str())
-            }
-            _ => None,
-        }
-    }
-
-    pub fn selected_branch_subview_commit_oid(&self) -> Option<&'a str> {
-        if !matches!(self.context, ViewContext::BranchCommits { .. }) {
-            return None;
-        }
-        self.branches
-            .commits_subview
-            .items
-            .get(self.branches.commits_subview.panel.list_state.selected()?)
-            .map(|c| c.oid.as_str())
+        self.revisions.selected_branch_name()
     }
 
     pub fn selected_commit_oid(&self) -> Option<&str> {
-        match &self.context {
-            ViewContext::Commits => self
-                .commits
-                .items
-                .get(self.commits.panel.list_state.selected()?)
-                .map(|c| c.oid.as_str()),
-            ViewContext::CommitFiles { oid } => (!oid.is_empty()).then_some(oid.as_str()),
-            ViewContext::BranchCommits { .. } => self.selected_branch_subview_commit_oid(),
-            _ => None,
-        }
+        self.revisions.selected_commit_oid()
     }
 
     pub fn selected_stash_index(&self) -> Option<usize> {
-        match self.context {
-            ViewContext::Stashes => self
-                .stash
-                .items
-                .get(self.stash.panel.list_state.selected()?)
-                .map(|s| s.index),
-            ViewContext::StashFiles { index } => index,
-            _ => None,
-        }
+        self.revisions.selected_stash_index()
     }
 
     pub fn selected_revision_node(&self) -> Option<&'a FileTreeNode> {
-        match self.context {
-            ViewContext::CommitFiles { .. } => super::revision_tree::selected_tree_node(
-                &self.commits.panel.list_state,
-                &self.commits.tree_mode.nodes,
-            ),
-            ViewContext::StashFiles { .. } => super::revision_tree::selected_tree_node(
-                &self.stash.panel.list_state,
-                &self.stash.tree_mode.nodes,
-            ),
-            _ => None,
-        }
+        self.revisions.selected_revision_node()
     }
 
     pub fn selected_index(&self) -> Option<usize> {
-        match self.context {
-            ViewContext::Files => self.files.panel.list_state.selected(),
-            ViewContext::Branches => self.branches.panel.list_state.selected(),
-            ViewContext::BranchCommits { .. } => {
-                self.branches.commits_subview.panel.list_state.selected()
-            }
-            ViewContext::Commits | ViewContext::CommitFiles { .. } => {
-                self.commits.panel.list_state.selected()
-            }
-            ViewContext::Stashes | ViewContext::StashFiles { .. } => {
-                self.stash.panel.list_state.selected()
-            }
+        if self.context == ViewContext::Files {
+            self.files.panel.selected()
+        } else {
+            self.revisions.selected_index()
         }
     }
-
     pub fn visible_count(&self) -> usize {
-        match self.context {
-            ViewContext::Files => self.files.tree_nodes.len(),
-            ViewContext::Branches => self.branches.items.len(),
-            ViewContext::BranchCommits { .. } => self.branches.commits_subview.items.len(),
-            ViewContext::Commits => self.commits.items.len(),
-            ViewContext::CommitFiles { .. } => self.commits.tree_mode.nodes.len(),
-            ViewContext::Stashes => self.stash.items.len(),
-            ViewContext::StashFiles { .. } => self.stash.tree_mode.nodes.len(),
+        if self.context == ViewContext::Files {
+            self.files.tree_nodes.len()
+        } else {
+            self.revisions.visible_count()
         }
     }
 
@@ -165,9 +106,9 @@ impl AppState {
     pub fn view_context(&self) -> ViewContext {
         ViewContext::from_panels(
             self.ui.active_panel,
-            &self.ui.branches,
-            &self.ui.commits,
-            &self.ui.stash,
+            &self.revisions.view().branches,
+            &self.revisions.view().commits,
+            &self.revisions.view().stash,
         )
     }
 
@@ -182,10 +123,10 @@ impl AppState {
     pub fn selection(&self) -> SelectionView<'_> {
         SelectionView::new(
             self.view_context(),
-            self.files.view(),
-            &self.ui.branches,
-            &self.ui.commits,
-            &self.ui.stash,
+            self.files.view().render_view(),
+            self.revisions.view().branches.render_view(),
+            self.revisions.view().commits.render_view(),
+            self.revisions.view().stash.render_view(),
         )
     }
 
@@ -198,29 +139,7 @@ impl AppState {
         self.selection().selected_branch_name().map(str::to_owned)
     }
 
-    pub fn selected_commit_oid(&self) -> Option<String> {
-        // The commit panel's actions intentionally remain scoped to its window.
-        if self.ui.active_panel != SidePanel::Commits {
-            return None;
-        }
-        self.selection().selected_commit_oid().map(str::to_owned)
-    }
-
     pub fn selected_stash_index(&self) -> Option<usize> {
         self.selection().selected_stash_index()
-    }
-
-    pub(super) fn selected_commit_tree_node(&self) -> Option<&FileTreeNode> {
-        if self.ui.active_panel != SidePanel::Commits {
-            return None;
-        }
-        self.selection().selected_revision_node()
-    }
-
-    pub(super) fn selected_stash_tree_node(&self) -> Option<&FileTreeNode> {
-        if self.ui.active_panel != SidePanel::Stash {
-            return None;
-        }
-        self.selection().selected_revision_node()
     }
 }

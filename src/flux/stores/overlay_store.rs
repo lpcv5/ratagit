@@ -22,7 +22,7 @@ impl<S: InputAccess + LogAccess + OverlayAccess + RefreshAccess + SelectionAcces
         };
         match domain {
             DomainAction::StartCommitInput => {
-                if ctx.state.start_commit_editor_guarded() {
+                if ctx.state.start_commit_editor_guarded(ctx.commands) {
                     ctx.state.push_log(
                         "commit: edit message/description then press Enter on message".to_string(),
                         true,
@@ -40,7 +40,7 @@ impl<S: InputAccess + LogAccess + OverlayAccess + RefreshAccess + SelectionAcces
                         ctx.state.push_log("nothing to stage".to_string(), false);
                         return ReduceOutput::none();
                     }
-                    ReduceOutput::from_command(Command::Effect(EffectRequest::StagePaths(paths)))
+                    ctx.command(Command::Effect(EffectRequest::StagePaths(paths)))
                 } else {
                     ctx.state.cancel_input();
                     ctx.state
@@ -50,7 +50,8 @@ impl<S: InputAccess + LogAccess + OverlayAccess + RefreshAccess + SelectionAcces
             }
             DomainAction::StagePathsFinished { result } => match result {
                 Ok(()) => {
-                    ctx.state.request_refresh(RefreshKind::StatusOnly);
+                    ctx.state
+                        .request_refresh(RefreshKind::StatusOnly, ctx.commands);
                     ctx.state.start_commit_editor();
                     ctx.state.push_log(
                         "commit: all files staged; edit message/description then press Enter"
@@ -245,8 +246,9 @@ mod more_tests {
             depth: 0,
             is_dir: false,
             is_expanded: false,
-        }];
-        app.files.test_view_mut().panel.list_state.select(Some(0));
+        }]
+        .into();
+        app.files.test_view_mut().panel.select(Some(0));
         reduce(
             &mut store,
             &mut app,

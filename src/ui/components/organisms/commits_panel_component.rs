@@ -1,4 +1,5 @@
-use crate::app::{CommitsPanelState, SidePanel};
+use crate::app::revisions::CommitsRenderView;
+use crate::app::SidePanel;
 use crate::git::{CommitSyncState, GraphCell};
 use crate::ui::components::organisms::{empty_list_item, title_with_search, PanelRenderContext};
 use crate::ui::highlight::highlighted_spans;
@@ -16,7 +17,7 @@ use ratatui::{
 pub fn draw_commits_panel(
     frame: &mut Frame,
     area: Rect,
-    state: &CommitsPanelState,
+    state: &CommitsRenderView<'_>,
     ctx: &PanelRenderContext<'_>,
 ) {
     let theme = UiTheme::default();
@@ -65,7 +66,7 @@ pub fn draw_commits_panel(
     let mut title = if let Some(title_override) = ctx.panel_title_override {
         title_override.to_string()
     } else if state.tree_mode.active {
-        if let Some(ref oid) = state.tree_mode.selected_source {
+        if let Some(oid) = state.tree_mode.selected_source {
             format!("Commit Files {} [Esc Back]", &oid[..oid.len().min(7)])
         } else {
             "Commit Files [Esc Back]".to_string()
@@ -82,19 +83,19 @@ pub fn draw_commits_panel(
             title: &title,
             is_active,
             tree_mode: state.tree_mode.active,
-            tree_nodes: &state.tree_mode.nodes,
+            tree_nodes: state.tree_mode.nodes,
             tree_search_query: if state.tree_mode.active {
                 ctx.search_query
             } else {
                 None
             },
             list_items: items,
-            list_state: state.panel.list_state,
+            list_state: crate::ui::panels::selection::list_state(state.panel),
         },
     );
 }
 
-impl DynamicPanel for CommitsPanelState {
+impl DynamicPanel for CommitsRenderView<'_> {
     fn default_height_percent(&self) -> u16 {
         40
     }

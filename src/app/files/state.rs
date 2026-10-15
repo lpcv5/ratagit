@@ -2,23 +2,23 @@ use super::{FileSelection, FilesAction};
 use crate::app::states::PanelState;
 use crate::file_tree::{build_file_tree, collect_dirs, FileTreeNode, TreeCursor};
 use crate::git::GitStatus;
+use crate::shared::Shared;
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-/// Immutable panel projection used by selection and terminal rendering.
-/// The feature keeps its instance private and exposes only a shared reference.
+/// Domain file-tree state. Render projections omit expansion bookkeeping.
 #[derive(Default, Clone)]
 pub struct FilesPanelState {
     pub panel: PanelState,
-    pub tree_nodes: Vec<FileTreeNode>,
-    pub expanded_dirs: HashSet<PathBuf>,
+    pub tree_nodes: Shared<Vec<FileTreeNode>>,
+    pub expanded_dirs: Shared<HashSet<PathBuf>>,
     pub visual_mode: bool,
     pub visual_anchor: Option<usize>,
 }
 
 #[derive(Default)]
 pub struct FilesState {
-    pub(super) status: GitStatus,
+    pub(super) status: Shared<GitStatus>,
     pub(super) panel: FilesPanelState,
 }
 
@@ -36,10 +36,10 @@ impl FilesState {
             &expanded_dirs,
         );
         Self {
-            status,
+            status: status.into(),
             panel: FilesPanelState {
-                tree_nodes,
-                expanded_dirs,
+                tree_nodes: tree_nodes.into(),
+                expanded_dirs: expanded_dirs.into(),
                 ..Default::default()
             },
         }
@@ -54,7 +54,7 @@ impl FilesState {
     }
 
     pub fn selection(&self, active: bool) -> FileSelection<'_> {
-        FileSelection::new(self.view(), active)
+        FileSelection::new(self.view().render_view(), active)
     }
 
     pub fn change_count(&self) -> usize {
@@ -71,7 +71,7 @@ impl FilesState {
             .collect()
     }
 
-    pub(super) fn replace_status(&mut self, status: GitStatus) {
+    pub(super) fn replace_status(&mut self, status: Shared<GitStatus>) {
         let old_dirs = collect_all_dirs(&self.status);
         self.status = status;
         let new_dirs = collect_all_dirs(&self.status);
@@ -85,10 +85,7 @@ impl FilesState {
     }
 
     pub(super) fn rebuild_tree(&mut self) {
-        let cursor = TreeCursor::capture(
-            &self.panel.tree_nodes,
-            self.panel.panel.list_state.selected(),
-        );
+        let cursor = TreeCursor::capture(&self.panel.tree_nodes, self.panel.panel.selected());
         let anchor = self
             .panel
             .visual_anchor
@@ -98,16 +95,16 @@ impl FilesState {
             &self.status.untracked,
             &self.status.staged,
             &self.panel.expanded_dirs,
-        );
+        )
+        .into();
         self.panel
             .panel
-            .list_state
             .select(cursor.restore(&self.panel.tree_nodes));
         self.panel.visual_anchor = anchor.and_then(|cursor| cursor.restore(&self.panel.tree_nodes));
     }
 
     pub(super) fn expand_all(&mut self) {
-        self.panel.expanded_dirs = collect_all_dirs(&self.status);
+        self.panel.expanded_dirs = collect_all_dirs(&self.status).into();
         self.rebuild_tree();
     }
 

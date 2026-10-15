@@ -1,8 +1,4 @@
-use crate::file_tree::FileTreeNode;
-use crate::git::{BranchInfo, CommitInfo, FileEntry, StashInfo};
-use ratatui::widgets::ListState;
 use std::collections::HashSet;
-use std::path::PathBuf;
 
 /// The four side panels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -14,17 +10,41 @@ pub enum SidePanel {
     Stash,
 }
 
-/// Holds a `ratatui` `ListState` for a single scrollable panel.
-#[derive(Clone)]
+/// Domain cursor. Viewport offsets are calculated locally by the renderer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PanelState {
-    pub list_state: ListState,
+    selected: Option<usize>,
 }
 
 impl PanelState {
     pub fn new() -> Self {
-        let mut list_state = ListState::default();
-        list_state.select(Some(0));
-        Self { list_state }
+        Self { selected: Some(0) }
+    }
+
+    pub fn selected(&self) -> Option<usize> {
+        self.selected
+    }
+
+    pub fn select(&mut self, selected: Option<usize>) {
+        self.selected = selected;
+    }
+
+    pub fn view(&self) -> PanelView {
+        PanelView {
+            selected: self.selected,
+        }
+    }
+}
+
+/// Read-only selection supplied to feature render models.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PanelView {
+    selected: Option<usize>,
+}
+
+impl PanelView {
+    pub fn selected(&self) -> Option<usize> {
+        self.selected
     }
 }
 
@@ -32,55 +52,6 @@ impl Default for PanelState {
     fn default() -> Self {
         Self::new()
     }
-}
-
-/// Generic tree-navigation state for commit and stash panels.
-#[derive(Clone)]
-pub struct TreeModeState<T> {
-    pub active: bool,
-    pub nodes: Vec<FileTreeNode>,
-    pub files: Vec<FileEntry>,
-    pub expanded_dirs: HashSet<PathBuf>,
-    pub selected_source: Option<T>,
-}
-
-impl<T> Default for TreeModeState<T> {
-    fn default() -> Self {
-        Self {
-            active: false,
-            nodes: Vec::new(),
-            files: Vec::new(),
-            expanded_dirs: HashSet::new(),
-            selected_source: None,
-        }
-    }
-}
-
-#[derive(Default, Clone)]
-pub struct BranchesPanelState {
-    pub panel: PanelState,
-    pub items: Vec<BranchInfo>,
-    pub is_fetching_remote: bool,
-    pub commits_subview_active: bool,
-    pub commits_subview_loading: bool,
-    pub commits_subview_source: Option<String>,
-    pub commits_subview: CommitsPanelState,
-}
-
-#[derive(Default, Clone)]
-pub struct CommitsPanelState {
-    pub panel: PanelState,
-    pub items: Vec<CommitInfo>,
-    pub dirty: bool,
-    pub tree_mode: TreeModeState<String>,
-    pub highlighted_oids: HashSet<String>,
-}
-
-#[derive(Default, Clone)]
-pub struct StashPanelState {
-    pub panel: PanelState,
-    pub items: Vec<StashInfo>,
-    pub tree_mode: TreeModeState<usize>,
 }
 
 /// A single entry in the command/operation log shown in the UI.
@@ -93,7 +64,7 @@ pub struct CommandLogEntry {
 /// Per-render cached values that are expensive to recompute each frame.
 #[derive(Default, Clone)]
 pub struct RenderCache {
-    pub files_visual_selected_indices: HashSet<usize>,
+    pub files_visual_selected_indices: crate::shared::Shared<HashSet<usize>>,
     pub files_search_summary: Option<String>,
     pub branches_search_summary: Option<String>,
     pub commits_search_summary: Option<String>,

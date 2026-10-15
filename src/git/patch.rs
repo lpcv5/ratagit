@@ -290,13 +290,16 @@ impl Patch {
 /// Textual branch logs deliberately have no patch structure.
 #[derive(Debug, Clone, Default)]
 pub struct DiffDocument {
-    pub lines: Vec<DiffLine>,
+    pub lines: crate::shared::Shared<Vec<DiffLine>>,
     pub patch: Option<Arc<Patch>>,
 }
 
 impl From<Vec<DiffLine>> for DiffDocument {
     fn from(lines: Vec<DiffLine>) -> Self {
-        Self { lines, patch: None }
+        Self {
+            lines: lines.into(),
+            patch: None,
+        }
     }
 }
 
@@ -313,7 +316,7 @@ pub(crate) fn document(
     request: PatchRequest,
 ) -> Result<Option<DiffDocument>, GitError> {
     Ok(repo.patch(request)?.map(|patch| DiffDocument {
-        lines: patch.display_lines(),
+        lines: patch.display_lines().into(),
         patch: Some(std::sync::Arc::new(patch)),
     }))
 }

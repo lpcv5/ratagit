@@ -1,6 +1,6 @@
 use crate::app::{Command, RefreshKind};
+use crate::flux::action::RuntimeEvent;
 use crate::flux::action::{Action, ActionEnvelope, SystemAction};
-use crate::flux::effects::EffectRequest;
 use crate::flux::stores::{ReduceCtx, ReduceOutput, Store, UiInvalidation};
 
 use super::state_access::RefreshAccess;
@@ -17,15 +17,11 @@ impl<S: RefreshAccess + ?Sized> Store<S> for OpsStore {
     fn reduce(&mut self, action: &ActionEnvelope, ctx: &mut ReduceCtx<'_, S>) -> ReduceOutput {
         match &action.action {
             Action::Domain(crate::flux::action::DomainAction::Refresh) => {
-                ctx.state.request_refresh(RefreshKind::Full);
-                return ReduceOutput::from_command(Command::Effect(
-                    EffectRequest::ProcessBackgroundLoads,
-                ));
+                ctx.state.request_refresh(RefreshKind::Full, ctx.commands);
+                return ctx.command(Command::runtime(RuntimeEvent::ProcessBackgroundLoads));
             }
             Action::System(SystemAction::Tick) => {
-                return ReduceOutput::from_command(Command::Effect(
-                    EffectRequest::ProcessBackgroundLoads,
-                ));
+                return ctx.command(Command::runtime(RuntimeEvent::ProcessBackgroundLoads));
             }
             Action::System(SystemAction::AutoRefresh) => {}
             Action::System(SystemAction::Resize { .. }) => {
@@ -34,8 +30,9 @@ impl<S: RefreshAccess + ?Sized> Store<S> for OpsStore {
             _ => return ReduceOutput::none(),
         }
 
-        ctx.state.request_refresh(RefreshKind::StatusAndRefs);
-        ReduceOutput::from_command(Command::Effect(EffectRequest::ProcessBackgroundLoads))
+        ctx.state
+            .request_refresh(RefreshKind::StatusAndRefs, ctx.commands);
+        ctx.command(Command::runtime(RuntimeEvent::ProcessBackgroundLoads))
     }
 }
 

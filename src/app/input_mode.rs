@@ -1,6 +1,7 @@
 #[cfg(test)]
 use crate::app::App;
 use crate::app::{AppState, CommitFieldFocus, InputMode, RefreshKind};
+use crate::flux::command_output::CommandOutput;
 use std::path::PathBuf;
 
 impl AppState {
@@ -11,10 +12,10 @@ impl AppState {
         self.input.commit_focus = CommitFieldFocus::Message;
     }
 
-    pub fn start_commit_editor_guarded(&mut self) -> bool {
+    pub fn start_commit_editor_guarded(&mut self, output: &mut CommandOutput) -> bool {
         if self.files.status().staged.is_empty() {
             if self.pending_refresh_kind().is_some() {
-                self.request_refresh(RefreshKind::StatusOnly);
+                self.request_refresh(RefreshKind::StatusOnly, output);
             }
             if self.files.status().staged.is_empty() {
                 // Check if there are any files to commit

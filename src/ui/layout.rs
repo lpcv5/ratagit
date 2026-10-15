@@ -146,7 +146,7 @@ pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
         visual_selected_indices: &snapshot.render_cache.files_visual_selected_indices,
         highlighted_oids: PanelRenderContext::empty_highlighted_oids(),
     };
-    draw_files_panel(frame, left_panels[0], snapshot.files, &files_ctx);
+    draw_files_panel(frame, left_panels[0], &snapshot.files, &files_ctx);
     let branches_ctx = PanelRenderContext {
         diff_focused: snapshot.context.diff_focused,
         active_panel: snapshot.active_panel,
@@ -156,7 +156,7 @@ pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
         visual_selected_indices: PanelRenderContext::empty_visual_selected_indices(),
         highlighted_oids: PanelRenderContext::empty_highlighted_oids(),
     };
-    draw_branches_panel(frame, left_panels[1], snapshot.branches, &branches_ctx);
+    draw_branches_panel(frame, left_panels[1], &snapshot.branches, &branches_ctx);
 
     let commits_ctx = PanelRenderContext {
         diff_focused: snapshot.context.diff_focused,
@@ -165,9 +165,9 @@ pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
         search_query: snapshot.commits_search_query,
         search_summary: snapshot.render_cache.commits_search_summary.as_deref(),
         visual_selected_indices: PanelRenderContext::empty_visual_selected_indices(),
-        highlighted_oids: &snapshot.commits.highlighted_oids,
+        highlighted_oids: snapshot.commits.highlighted_oids,
     };
-    draw_commits_panel(frame, left_panels[2], snapshot.commits, &commits_ctx);
+    draw_commits_panel(frame, left_panels[2], &snapshot.commits, &commits_ctx);
 
     let stash_ctx = PanelRenderContext {
         diff_focused: snapshot.context.diff_focused,
@@ -178,7 +178,7 @@ pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
         visual_selected_indices: PanelRenderContext::empty_visual_selected_indices(),
         highlighted_oids: PanelRenderContext::empty_highlighted_oids(),
     };
-    draw_stash_panel(frame, stash_area, snapshot.stash, &stash_ctx);
+    draw_stash_panel(frame, stash_area, &snapshot.stash, &stash_ctx);
 
     // Right side: diff + command log
     // Command log collapses to COLLAPSED_HEIGHT when stash is not the concern

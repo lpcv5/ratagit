@@ -1,5 +1,4 @@
-use crate::app::{CommitFieldFocus, InputMode, SearchScopeKey, ViewContext};
-use std::collections::HashMap;
+use crate::app::{CommitFieldFocus, InputMode};
 use std::path::PathBuf;
 
 /// Input state - all user input buffers and modes
@@ -13,10 +12,6 @@ pub struct InputState {
     pub stash_message_buffer: String,
     pub stash_targets: Vec<PathBuf>,
     pub branch_switch_target: Option<String>,
-    pub search_query: String,
-    pub(crate) search_matches: Vec<usize>,
-    pub(crate) search_scope: SearchScopeKey,
-    pub(crate) search_queries: HashMap<SearchScopeKey, String>,
 }
 
 impl Default for InputState {
@@ -30,10 +25,6 @@ impl Default for InputState {
             stash_message_buffer: String::new(),
             stash_targets: Vec::new(),
             branch_switch_target: None,
-            search_query: String::new(),
-            search_matches: Vec::new(),
-            search_scope: ViewContext::Files,
-            search_queries: HashMap::new(),
         }
     }
 }

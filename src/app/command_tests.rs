@@ -31,7 +31,8 @@ fn fixture_with_keymap(mut keymap: Keymap) -> App {
             1,
         ),
         node("loose", FileTreeNodeStatus::Untracked, 0),
-    ];
+    ]
+    .into();
     app.files.test_status_mut().staged = vec![FileEntry {
         path: "src/a".into(),
         status: FileStatus::Modified,
@@ -40,7 +41,7 @@ fn fixture_with_keymap(mut keymap: Keymap) -> App {
         path: "src/b".into(),
         status: FileStatus::Modified,
     }];
-    app.ui.branches.items = vec![
+    app.revisions.branches.items = vec![
         BranchInfo {
             name: "main".into(),
             is_current: true,
@@ -49,11 +50,12 @@ fn fixture_with_keymap(mut keymap: Keymap) -> App {
             name: "feature".into(),
             is_current: false,
         },
-    ];
-    let mut second = app.ui.commits.items[0].clone();
+    ]
+    .into();
+    let mut second = app.revisions.commits.items[0].clone();
     second.oid = "def1234567890".into();
-    app.ui.commits.items.push(second);
-    app.ui.stash.items = vec![
+    app.revisions.commits.items.push(second);
+    app.revisions.stash.items = vec![
         StashInfo {
             index: 0,
             message: "first".into(),
@@ -62,7 +64,8 @@ fn fixture_with_keymap(mut keymap: Keymap) -> App {
             index: 1,
             message: "second".into(),
         },
-    ];
+    ]
+    .into();
     app
 }
 
@@ -141,7 +144,7 @@ fn test_visual_commit_from_palette_keeps_selection_scope() {
     let mut app = fixture();
     app.files.test_view_mut().visual_mode = true;
     app.files.test_view_mut().visual_anchor = Some(2);
-    app.files.test_view_mut().panel.list_state.select(Some(2));
+    app.files.test_view_mut().panel.select(Some(2));
     assert!(matches!(
         super::map_test_key(&app, key("c")),
         Some(DomainAction::PrepareCommitFromSelection)
@@ -167,7 +170,7 @@ fn test_visual_commit_key_and_palette_open_same_editor() {
     for app in [&mut by_key, &mut by_palette] {
         app.files.test_view_mut().visual_mode = true;
         app.files.test_view_mut().visual_anchor = Some(2);
-        app.files.test_view_mut().panel.list_state.select(Some(2));
+        app.files.test_view_mut().panel.select(Some(2));
     }
     super::dispatch_test_key(&mut by_key, key("c"));
     palette(&mut by_palette, "commit");
@@ -334,14 +337,14 @@ fn test_escape_clears_search_before_leaving_visual_or_revision_view() {
         .contains(&("Esc".into(), "ClearSearch".into())));
     super::dispatch_test_key(&mut app, key("Esc"));
     assert!(app.files.view().visual_mode);
-    assert!(app.input.search_query.is_empty());
+    assert!(app.search.view().query.is_empty());
     super::dispatch_test_key(&mut app, key("Esc"));
     assert!(!app.files.view().visual_mode);
     app.ui.active_panel = SidePanel::Commits;
     super::dispatch_test_key(&mut app, key("Enter"));
     super::dispatch_test_action(&mut app, DomainAction::SearchSetQuery("path".into()));
     super::dispatch_test_key(&mut app, key("Esc"));
-    assert!(app.ui.commits.tree_mode.active);
+    assert!(app.revisions.commits.tree_mode.active);
     super::dispatch_test_key(&mut app, key("Esc"));
     assert_eq!(app.view_context(), ViewContext::Commits);
 }
@@ -411,7 +414,8 @@ fn test_shared_discard_selector_deduplicates_and_excludes_untracked_files() {
             FileTreeNodeStatus::Unstaged(FileStatus::Modified),
             0,
         ),
-    ];
+    ]
+    .into();
     let snapshot = AppStateSnapshotOwned::from_app(&app.state);
     let borrowed = snapshot.as_snapshot();
     let snapshot_paths = borrowed
@@ -432,7 +436,7 @@ fn test_partial_visual_directory_selection_does_not_expand_scope() {
     let mut app = fixture();
     app.files.test_view_mut().visual_mode = true;
     app.files.test_view_mut().visual_anchor = Some(0);
-    app.files.test_view_mut().panel.list_state.select(Some(1));
+    app.files.test_view_mut().panel.select(Some(1));
     let selected = app.visual_selected_indices();
     let (stage, unstage) = app.partition_toggle_targets(&selected);
     assert!(stage.is_empty());
@@ -473,21 +477,21 @@ fn test_branch_list_and_each_branch_history_have_separate_search_queries() {
     app.ui.active_panel = SidePanel::LocalBranches;
     super::dispatch_test_action(&mut app, DomainAction::SearchSetQuery("main".into()));
     super::dispatch_test_action(&mut app, DomainAction::RevisionOpenTreeOrToggleDir);
-    assert!(app.input.search_query.is_empty());
+    assert!(app.search.view().query.is_empty());
     super::dispatch_test_action(&mut app, DomainAction::SearchSetQuery("test".into()));
     super::dispatch_test_action(&mut app, DomainAction::RevisionCloseTree);
-    assert_eq!(app.input.search_query, "main");
-    app.ui.branches.panel.list_state.select(Some(1));
+    assert_eq!(app.search.view().query, "main");
+    app.revisions.branches.panel.select(Some(1));
     super::dispatch_test_action(&mut app, DomainAction::RevisionOpenTreeOrToggleDir);
-    assert!(app.input.search_query.is_empty());
+    assert!(app.search.view().query.is_empty());
     super::dispatch_test_action(
         &mut app,
         DomainAction::SearchSetQuery("feature query".into()),
     );
     super::dispatch_test_action(&mut app, DomainAction::RevisionCloseTree);
-    app.ui.branches.panel.list_state.select(Some(0));
+    app.revisions.branches.panel.select(Some(0));
     super::dispatch_test_action(&mut app, DomainAction::RevisionOpenTreeOrToggleDir);
-    assert_eq!(app.input.search_query, "test");
+    assert_eq!(app.search.view().query, "test");
     assert!(app.has_search_for_active_scope());
     assert!(matches!(
         super::map_test_key(&app, key("n")),
@@ -502,17 +506,17 @@ fn test_commit_file_search_is_scoped_to_revision_identity() {
     super::dispatch_test_action(&mut app, DomainAction::RevisionOpenTreeOrToggleDir);
     super::dispatch_test_action(&mut app, DomainAction::SearchSetQuery("first files".into()));
     super::dispatch_test_action(&mut app, DomainAction::RevisionCloseTree);
-    app.ui.commits.panel.list_state.select(Some(1));
+    app.revisions.commits.panel.select(Some(1));
     super::dispatch_test_action(&mut app, DomainAction::RevisionOpenTreeOrToggleDir);
-    assert!(app.input.search_query.is_empty());
+    assert!(app.search.view().query.is_empty());
     super::dispatch_test_action(
         &mut app,
         DomainAction::SearchSetQuery("second files".into()),
     );
     super::dispatch_test_action(&mut app, DomainAction::RevisionCloseTree);
-    app.ui.commits.panel.list_state.select(Some(0));
+    app.revisions.commits.panel.select(Some(0));
     super::dispatch_test_action(&mut app, DomainAction::RevisionOpenTreeOrToggleDir);
-    assert_eq!(app.input.search_query, "first files");
+    assert_eq!(app.search.view().query, "first files");
 }
 
 #[test]
@@ -536,23 +540,25 @@ fn test_every_advertised_binding_matches_palette_resolution() {
 #[test]
 fn test_context_and_diff_selectors_match_owned_snapshot_for_nested_views() {
     let mut app = fixture();
-    app.ui.commits.tree_mode.active = true;
-    app.ui.commits.tree_mode.selected_source = Some("abc1234567890".into());
-    app.ui.commits.tree_mode.nodes = vec![node(
+    app.revisions.commits.tree_mode.active = true;
+    app.revisions.commits.tree_mode.selected_source = Some("abc1234567890".into());
+    app.revisions.commits.tree_mode.nodes = vec![node(
         "committed",
         FileTreeNodeStatus::Unstaged(FileStatus::Modified),
         0,
-    )];
-    app.ui.stash.tree_mode.active = true;
-    app.ui.stash.tree_mode.selected_source = Some(1);
-    app.ui.stash.tree_mode.nodes = vec![node(
+    )]
+    .into();
+    app.revisions.stash.tree_mode.active = true;
+    app.revisions.stash.tree_mode.selected_source = Some(1);
+    app.revisions.stash.tree_mode.nodes = vec![node(
         "stashed",
         FileTreeNodeStatus::Unstaged(FileStatus::Modified),
         0,
-    )];
-    app.ui.branches.commits_subview_active = true;
-    app.ui.branches.commits_subview_source = Some("feature".into());
-    app.ui.branches.commits_subview.items = app.ui.commits.items.clone();
+    )]
+    .into();
+    app.revisions.branches.commits_subview_active = true;
+    app.revisions.branches.commits_subview_source = Some("feature".into());
+    app.revisions.branches.commits_subview.items = app.revisions.commits.items.clone();
     for panel in SidePanel::ALL {
         app.ui.active_panel = panel;
         let snapshot = AppStateSnapshotOwned::from_app(&app.state);
@@ -585,7 +591,7 @@ fn test_refresh_is_executable_from_key_and_palette() {
         by_key.pending_refresh_kind(),
         by_palette.pending_refresh_kind()
     );
-    assert!(by_key.ui.commits.dirty);
+    assert!(by_key.revisions.commits.dirty);
 }
 
 #[test]
@@ -669,7 +675,7 @@ fn test_background_refresh_recomputes_search_command_availability() {
     assert!(app.has_search_for_active_scope());
     super::dispatch_test_action(&mut app, DomainAction::Refresh);
     assert!(app.files.view().tree_nodes.is_empty());
-    assert_eq!(app.input.search_query, "src");
+    assert_eq!(app.search.view().query, "src");
     assert!(!app.has_search_for_active_scope());
     assert!(!app
         .available_commands()

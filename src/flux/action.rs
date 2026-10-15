@@ -1,5 +1,19 @@
 use std::path::PathBuf;
 
+/// State-only work is expressed as an event and applied by a store.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RuntimeEvent {
+    ProcessBackgroundLoads,
+    #[cfg_attr(not(test), allow(dead_code))]
+    FlushPendingRefresh {
+        log_success: bool,
+    },
+    FlushPendingDiffReload,
+    EnsureCommitsLoadedForActivePanel,
+    ReloadDiffNow,
+    RevisionOpenTreeOrToggleDir,
+}
+
 #[derive(Debug, Clone)]
 pub enum DomainAction {
     ToggleDiffFocus,
@@ -30,7 +44,7 @@ pub enum DomainAction {
         result: Result<(), String>,
         observed: Option<crate::git::operation::RepositoryOperation>,
     },
-    Runtime(crate::flux::effects::RuntimeEvent),
+    Runtime(RuntimeEvent),
     PanelNext,
     PanelPrev,
     PanelGoto(usize),
@@ -140,7 +154,7 @@ pub enum DomainAction {
 
 #[derive(Debug, Clone)]
 pub enum SystemAction {
-    BackgroundCompleted(Box<crate::app::BackgroundCompleted>),
+    BackgroundCompleted(Box<crate::background::BackgroundCompleted>),
     Tick,
     AutoRefresh,
     /// Terminal resize event. The `width` and `height` are forwarded for completeness;

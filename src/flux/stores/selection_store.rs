@@ -40,12 +40,13 @@ impl<S: FilesAccess + LogAccess + OverlayAccess + RefreshAccess + ?Sized> Store<
         };
         let update = ctx.state.reduce_files(action);
         if update.refresh_status {
-            ctx.state.request_refresh(RefreshKind::StatusOnly);
+            ctx.state
+                .request_refresh(RefreshKind::StatusOnly, ctx.commands);
         }
         if update.open_commit_editor {
             ctx.state.start_commit_editor();
         }
-        finish_files_update(ctx.state, update)
+        finish_files_update(ctx, update)
     }
 }
 

@@ -1,6 +1,6 @@
 use crate::app::Command;
+use crate::flux::action::RuntimeEvent;
 use crate::flux::action::{Action, ActionEnvelope, DomainAction};
-use crate::flux::effects::EffectRequest;
 use crate::flux::stores::{ReduceCtx, ReduceOutput, Store, UiInvalidation};
 
 use super::state_access::{InputAccess, LogAccess, SearchAccess};
@@ -24,7 +24,7 @@ impl<S: InputAccess + LogAccess + SearchAccess + ?Sized> Store<S> for SearchStor
                 if count > 0 {
                     ctx.state.search_select_initial_match();
                 }
-                ReduceOutput::from_command(Command::Effect(EffectRequest::ReloadDiffNow))
+                ctx.command(Command::runtime(RuntimeEvent::ReloadDiffNow))
                     .with_invalidation(UiInvalidation::all())
             }
             DomainAction::SearchConfirm => {
@@ -36,19 +36,19 @@ impl<S: InputAccess + LogAccess + SearchAccess + ?Sized> Store<S> for SearchStor
                     ctx.state
                         .push_log(format!("search match {}: {}", count, q), true);
                 }
-                ReduceOutput::from_command(Command::Effect(EffectRequest::ReloadDiffNow))
+                ctx.command(Command::runtime(RuntimeEvent::ReloadDiffNow))
                     .with_invalidation(UiInvalidation::all())
             }
             DomainAction::SearchClear => {
                 ctx.state.clear_search();
                 ctx.state.cancel_input();
                 ctx.state.push_log("search cleared".to_string(), true);
-                ReduceOutput::from_command(Command::Effect(EffectRequest::ReloadDiffNow))
+                ctx.command(Command::runtime(RuntimeEvent::ReloadDiffNow))
                     .with_invalidation(UiInvalidation::all())
             }
             DomainAction::SearchNext => {
                 if ctx.state.search_jump_next() {
-                    ReduceOutput::from_command(Command::Effect(EffectRequest::ReloadDiffNow))
+                    ctx.command(Command::runtime(RuntimeEvent::ReloadDiffNow))
                         .with_invalidation(UiInvalidation::all())
                 } else {
                     ReduceOutput::none()
@@ -56,7 +56,7 @@ impl<S: InputAccess + LogAccess + SearchAccess + ?Sized> Store<S> for SearchStor
             }
             DomainAction::SearchPrev => {
                 if ctx.state.search_jump_prev() {
-                    ReduceOutput::from_command(Command::Effect(EffectRequest::ReloadDiffNow))
+                    ctx.command(Command::runtime(RuntimeEvent::ReloadDiffNow))
                         .with_invalidation(UiInvalidation::all())
                 } else {
                     ReduceOutput::none()
@@ -83,20 +83,20 @@ mod tests {
             &mut app,
             Action::Domain(DomainAction::SearchSetQuery("foo".to_string())),
         );
-        assert_eq!(app.input.search_query, "foo");
+        assert_eq!(app.search.view().query, "foo");
     }
 
     #[test]
     fn test_search_clear_resets_state() {
         let mut store = SearchStore::new();
         let mut app = mock_app();
-        app.input.search_query = "foo".to_string();
+        app.search.set_test_current("foo".into(), Vec::new());
         reduce(
             &mut store,
             &mut app,
             Action::Domain(DomainAction::SearchClear),
         );
-        assert!(app.input.search_query.is_empty());
+        assert!(app.search.view().query.is_empty());
     }
 
     #[test]

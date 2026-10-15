@@ -334,7 +334,7 @@ fn test_merge_conflicts_and_abort_observed_from_real_repository() {
     assert_eq!(observed.kind, Some(OperationKind::Merge));
     assert_eq!(
         observed.conflicts,
-        vec![std::path::PathBuf::from("file.txt")]
+        vec![std::path::PathBuf::from("file.txt")].into()
     );
     assert!(!observed.allows(OperationControl::Continue));
     assert!(!observed.allows(OperationControl::Skip));
@@ -439,7 +439,7 @@ fn test_operation_machine_rejects_overlapping_and_stale_events() {
         Err("conflict".into()),
         Some(RepositoryOperation {
             kind: Some(OperationKind::Rebase { interactive: true }),
-            conflicts: vec!["file.txt".into()],
+            conflicts: vec!["file.txt".into()].into(),
             progress: None
         })
     ));
@@ -539,7 +539,7 @@ fn test_structured_patch_reaches_state_cache_and_owned_snapshot() {
     let fixture = Fixture::new();
     fixture.write("file.txt", Fixture::changed());
     let mut app = app(&fixture);
-    app.state.reload_diff_now();
+    app.reload_diff_now();
     crate::flux::test_runtime::finish_background(&mut app);
     let patch = app.state.diff.document().patch.clone().unwrap();
     assert_eq!(patch.files[0].hunks.len(), 2);
@@ -553,16 +553,15 @@ fn test_structured_patch_reaches_state_cache_and_owned_snapshot() {
         owned.current_patch.as_ref().unwrap(),
         &patch
     ));
-    assert!(std::sync::Arc::ptr_eq(
-        borrowed.current_patch.as_ref().unwrap(),
-        &patch
+    assert!(std::ptr::eq(
+        borrowed.current_patch.unwrap(),
+        patch.as_ref()
     ));
     assert_eq!(
         owned.as_snapshot().operation.observed,
         borrowed.operation.observed
     );
-    app.state
-        .request_refresh(crate::app::RefreshKind::StatusOnly);
+    app.request_refresh(crate::app::RefreshKind::StatusOnly);
     assert!(app.state.diff.document().patch.is_none());
 }
 
@@ -601,7 +600,7 @@ fn test_partial_stage_effect_updates_state_only_through_completion_events() {
     crate::flux::test_runtime::drive_actions(
         &mut app,
         [Action::Domain(DomainAction::Runtime(
-            effects::RuntimeEvent::FlushPendingRefresh { log_success: false },
+            crate::flux::action::RuntimeEvent::FlushPendingRefresh { log_success: false },
         ))],
     );
     assert_eq!(app.state.files.status().staged.len(), 1);
@@ -618,14 +617,12 @@ fn test_invalid_partial_stage_action_emits_no_write_effect() {
     let fixture = Fixture::new();
     fixture.write("file.txt", Fixture::changed());
     let mut app = app(&fixture);
-    app.state
-        .apply_repository_action(&DomainAction::StageHunks {
-            patch: std::sync::Arc::new(fixture.worktree()),
-            file: 0,
-            hunks: vec![99],
-        });
+    app.apply_repository_action(&DomainAction::StageHunks {
+        patch: std::sync::Arc::new(fixture.worktree()),
+        file: 0,
+        hunks: vec![99],
+    });
     assert!(!app
-        .state
         .take_effects()
         .iter()
         .any(|e| matches!(e, EffectRequest::StageHunks { .. })));
@@ -670,12 +667,10 @@ fn test_failed_control_rereads_external_state_and_rejects_stale_completion() {
     let fixture = Fixture::new();
     fixture.conflict(true);
     let mut app = app(&fixture);
-    app.state
-        .apply_repository_action(&DomainAction::ControlRepositoryOperation(
-            OperationControl::Abort,
-        ));
+    app.apply_repository_action(&DomainAction::ControlRepositoryOperation(
+        OperationControl::Abort,
+    ));
     let request = app
-        .state
         .take_effects()
         .into_iter()
         .find(|e| matches!(e, EffectRequest::ControlRepositoryOperation { .. }))
@@ -693,15 +688,14 @@ fn test_failed_control_rereads_external_state_and_rejects_stale_completion() {
         RepositoryOperation::default()
     );
     let epoch = app.state.git.operation.epoch;
-    app.state
-        .apply_repository_action(&DomainAction::RepositoryOperationFinished {
-            id: epoch - 1,
-            result: Ok(()),
-            observed: Some(RepositoryOperation {
-                kind: Some(OperationKind::Merge),
-                ..Default::default()
-            }),
-        });
+    app.apply_repository_action(&DomainAction::RepositoryOperationFinished {
+        id: epoch - 1,
+        result: Ok(()),
+        observed: Some(RepositoryOperation {
+            kind: Some(OperationKind::Merge),
+            ..Default::default()
+        }),
+    });
     assert_eq!(app.state.git.operation.epoch, epoch);
     assert!(app.state.git.operation.observed.kind.is_none());
 }
@@ -732,25 +726,25 @@ fn test_interactive_rebase_is_identified_in_operation_snapshot() {
 
 #[test]
 fn test_old_status_completion_does_not_restore_aborted_operation() {
+    use crate::flux::action::RuntimeEvent;
     use crate::flux::action::{Action, DomainAction};
-    use crate::flux::effects::{self, EffectRequest, RuntimeEvent};
+    use crate::flux::effects::{self, EffectRequest};
     let fixture = Fixture::new();
     fixture.conflict(true);
     let mut app = app(&fixture);
-    app.state
-        .request_refresh(crate::app::RefreshKind::StatusOnly);
-    app.state
-        .apply_runtime_event(&RuntimeEvent::FlushPendingRefresh { log_success: false });
+    app.request_refresh(crate::app::RefreshKind::StatusOnly);
+    app.apply_runtime_event(&RuntimeEvent::FlushPendingRefresh { log_success: false });
     let request = app
-        .state
         .take_effects()
         .into_iter()
         .find(|e| {
             matches!(
                 e,
                 EffectRequest::LoadBackground {
-                    load: crate::app::BackgroundLoad::Status { .. },
-                    ..
+                    request: crate::background::TaskRequest {
+                        load: crate::app::BackgroundLoad::Status { .. },
+                        ..
+                    }
                 }
             )
         })

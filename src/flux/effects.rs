@@ -1,22 +1,12 @@
-use crate::app::{AppRuntime, BackgroundCompleted, BackgroundLoad, BackgroundPayload};
+use crate::app::AppRuntime;
+use crate::background::{BackgroundCompleted, BackgroundLoad, BackgroundPayload, TaskRequest};
 use crate::file_tree::FileTreeNodeStatus;
 use crate::flux::action::{Action, DomainAction, SystemAction};
-use crate::flux::task_manager::TaskRequest;
 use crate::git::{GitError, GitRepository};
 use std::path::PathBuf;
 
-/// State-only work is expressed as an event and applied by a store.
 #[derive(Debug, Clone)]
-pub enum RuntimeEvent {
-    ProcessBackgroundLoads,
-    FlushPendingRefresh { log_success: bool },
-    FlushPendingDiffReload,
-    EnsureCommitsLoadedForActivePanel,
-    ReloadDiffNow,
-    RevisionOpenTreeOrToggleDir,
-}
-
-#[derive(Debug, Clone)]
+/// Owned repository I/O. State decisions travel as RuntimeEvent actions.
 pub enum EffectRequest {
     ApplyHunks {
         id: u64,
@@ -33,18 +23,8 @@ pub enum EffectRequest {
         id: u64,
         control: crate::git::operation::OperationControl,
     },
-    ProcessBackgroundLoads,
-    #[cfg_attr(not(test), allow(dead_code))]
-    FlushPendingRefresh {
-        log_success: bool,
-    },
-    FlushPendingDiffReload,
-    EnsureCommitsLoadedForActivePanel,
-    ReloadDiffNow,
-    RevisionOpenTreeOrToggleDir,
     LoadBackground {
         request: TaskRequest,
-        load: BackgroundLoad,
     },
     ToggleStageSelection {
         stage: Vec<PathBuf>,
@@ -75,25 +55,8 @@ pub enum EffectRequest {
 }
 
 impl EffectRequest {
-    pub fn state_event(&self) -> Option<RuntimeEvent> {
-        Some(match self {
-            Self::ProcessBackgroundLoads => RuntimeEvent::ProcessBackgroundLoads,
-            Self::FlushPendingRefresh { log_success } => RuntimeEvent::FlushPendingRefresh {
-                log_success: *log_success,
-            },
-            Self::FlushPendingDiffReload => RuntimeEvent::FlushPendingDiffReload,
-            Self::EnsureCommitsLoadedForActivePanel => {
-                RuntimeEvent::EnsureCommitsLoadedForActivePanel
-            }
-            Self::ReloadDiffNow => RuntimeEvent::ReloadDiffNow,
-            Self::RevisionOpenTreeOrToggleDir => RuntimeEvent::RevisionOpenTreeOrToggleDir,
-            _ => return None,
-        })
-    }
-
     pub fn is_write(&self) -> bool {
-        self.state_event().is_none()
-            && !matches!(self, Self::LoadBackground { .. } | Self::FetchRemote)
+        !matches!(self, Self::LoadBackground { .. } | Self::FetchRemote)
     }
 }
 
@@ -109,9 +72,6 @@ fn domain(action: DomainAction) -> Vec<Action> {
 
 /// Effects can access execution dependencies, never mutable application state.
 pub async fn run(request: EffectRequest, runtime: &AppRuntime) -> Vec<Action> {
-    if let Some(event) = request.state_event() {
-        return domain(DomainAction::Runtime(event));
-    }
     let repo = runtime.repo.clone();
     let fallback = request.clone();
     let (tx, rx) = tokio::sync::oneshot::channel();
@@ -137,9 +97,6 @@ pub async fn run(request: EffectRequest, runtime: &AppRuntime) -> Vec<Action> {
 
 /// Shared by production execution and deterministic test drivers.
 pub(crate) fn execute(request: EffectRequest, repo: &dyn GitRepository) -> Vec<Action> {
-    if let Some(event) = request.state_event() {
-        return domain(DomainAction::Runtime(event));
-    }
     match request {
         EffectRequest::ApplyHunks {
             id,
@@ -179,10 +136,12 @@ pub(crate) fn execute(request: EffectRequest, repo: &dyn GitRepository) -> Vec<A
                 observed,
             })
         }
-        EffectRequest::LoadBackground { request, load } => vec![Action::System(
+        EffectRequest::LoadBackground { request } => vec![Action::System(
             SystemAction::BackgroundCompleted(Box::new(BackgroundCompleted {
+                result: load_background(request.load.clone(), repo)
+                    .map(std::sync::Arc::new)
+                    .map_err(|e| e.to_string()),
                 request,
-                result: load_background(load, repo).map_err(|e| e.to_string()),
             })),
         )],
         EffectRequest::StageFile(path) => {
@@ -273,7 +232,6 @@ pub(crate) fn execute(request: EffectRequest, repo: &dyn GitRepository) -> Vec<A
             index,
             result: receive(repo.stash_drop_async(index)).map_err(|e| e.to_string()),
         }),
-        _ => unreachable!("state events are handled before I/O"),
     }
 }
 
@@ -287,27 +245,35 @@ fn load_background(
             fast,
             operation_epoch,
         } => BackgroundPayload::Status {
-            status: if fast {
+            status: (if fast {
                 receive(repo.status_fast_async())?
             } else {
                 receive(repo.status_async())?
-            },
+            })
+            .into(),
             fast,
             operation_epoch,
             operation: repo.operation_snapshot()?,
         },
-        BackgroundLoad::Branches => BackgroundPayload::Branches(receive(repo.branches_async())?),
-        BackgroundLoad::Stashes => BackgroundPayload::Stashes(receive(repo.stashes_async())?),
+        BackgroundLoad::Branches => {
+            BackgroundPayload::Branches(receive(repo.branches_async())?.into())
+        }
+        BackgroundLoad::Stashes => {
+            BackgroundPayload::Stashes(receive(repo.stashes_async())?.into())
+        }
         BackgroundLoad::Commits { limit, fast } => {
             if fast {
-                BackgroundPayload::CommitsFast(receive(repo.commits_fast_async(limit))?)
+                BackgroundPayload::CommitsFast(receive(repo.commits_fast_async(limit))?.into())
             } else {
-                BackgroundPayload::Commits(receive(repo.commits_async(limit))?)
+                BackgroundPayload::Commits(receive(repo.commits_async(limit))?.into())
             }
         }
         BackgroundLoad::BranchCommits { branch, limit } => {
             let items = receive(repo.commits_for_branch_async(&branch, limit))?;
-            BackgroundPayload::BranchCommits { branch, items }
+            BackgroundPayload::BranchCommits {
+                branch,
+                items: items.into(),
+            }
         }
         BackgroundLoad::Diff { cache_key, target } => {
             use crate::git::patch::PatchRequest;
@@ -359,11 +325,14 @@ fn load_background(
         }
         BackgroundLoad::CommitFiles { oid } => {
             let files = repo.commit_files(&oid)?;
-            BackgroundPayload::CommitFiles { oid, files }
+            BackgroundPayload::CommitFiles {
+                oid,
+                files: files.into(),
+            }
         }
         BackgroundLoad::StashFiles { index } => BackgroundPayload::StashFiles {
             index,
-            files: repo.stash_files(index)?,
+            files: repo.stash_files(index)?.into(),
         },
     })
 }
@@ -451,6 +420,5 @@ fn failed(request: EffectRequest, error: String) -> Vec<Action> {
             index,
             result: Err(error),
         }),
-        _ => unreachable!("state events never spawn blocking tasks"),
     }
 }
