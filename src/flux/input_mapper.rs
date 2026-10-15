@@ -5,6 +5,21 @@ pub fn map_key_to_actions(
     key: crossterm::event::KeyEvent,
     snapshot: &AppStateSnapshot<'_>,
 ) -> Vec<Action> {
+    if snapshot.input_mode == Some(crate::app::InputMode::CommandPalette) {
+        use crossterm::event::KeyCode;
+        let delta = match key.code {
+            KeyCode::Up | KeyCode::BackTab => Some(-1),
+            KeyCode::Down | KeyCode::Tab => Some(1),
+            KeyCode::PageUp => Some(-8),
+            KeyCode::PageDown => Some(8),
+            KeyCode::Home => Some(isize::MIN),
+            KeyCode::End => Some(isize::MAX),
+            _ => None,
+        };
+        if let Some(delta) = delta {
+            return vec![Action::Domain(DomainAction::InputSelect(delta))];
+        }
+    }
     if snapshot.input_mode == Some(crate::app::InputMode::Keybindings) {
         return snapshot
             .help

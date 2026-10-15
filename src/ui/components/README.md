@@ -37,6 +37,7 @@ must follow this path instead of invoking Git operations during rendering.
 | Molecules | `shortcut_hint(keys, label, &theme)` | Keycap and description spans for footers and modal actions |
 | Molecules | `EmptyState::new(message, &theme)` | Centered message in spacious cards, compact text in small panels |
 | Molecules | `render_modal(frame, area, title, &theme)` | Clears covered content, draws a card, returns its inner rectangle |
+| Molecules | `render_input(frame, area, InputField, &theme)` | Labeled input with placeholder, focus border and cell-aware scrolling/cursor for single or multiple lines |
 | Feature containers | `DiffView::new(DiffViewModel, &theme)` | Controlled hunk/diff widget with a separate `DiffViewState` per instance |
 
 ```rust,ignore
@@ -61,3 +62,35 @@ for that invocation, then run the tests again without it.
 The [hunk/diff component](diff/README.md) exposes read-only data entry and
 semantic behavior bindings. Rendering, row styles, chrome, ANSI parsing and
 viewport history are separated from application navigation and Git operations.
+
+## Overlay design
+
+The terminal equivalents draw on shadcn's [Dialog](https://ui.shadcn.com/docs/components/dialog),
+[Alert Dialog](https://ui.shadcn.com/docs/components/alert-dialog),
+[Field](https://ui.shadcn.com/docs/components/field) and
+[Command](https://ui.shadcn.com/docs/components/command) patterns: clear titles,
+muted descriptions, labeled fields, separate actions and searchable results.
+They use existing terminal theme tokens without adding a web UI dependency.
+
+| Pattern | Terminal usage |
+| --- | --- |
+| Alert Dialog | Stage-all and branch-switch confirmations; explain effects before the primary action |
+| Dialog + Input / Textarea | Branch creation, stash title and commit message/description; required-field errors retain the draft |
+| Command / searchable selection | Command palette with Up/Down, Tab/Shift+Tab, PageUp/PageDown, Home/End and Enter; exact aliases rank first |
+| Empty | Command search with no results; Enter keeps the search open |
+| Kbd + Button | Wrapped action rows with keycaps and an accented primary action |
+| Scroll Area | Selected commands and help entries remain visible; long input follows the editing cursor |
+
+`panels/overlay_utils.rs` owns content-sized geometry, the dimmed backdrop,
+padding and footer layout. Confirmations cap at 72 columns, branch input at 64,
+editors/palette at 84 and help at 104. Small terminals reduce gutters; footers
+reserve space before body content. The backdrop is redrawn normally on close.
+Selection belongs to application input state and is published in both borrowed
+and owned snapshots; renderers never execute commands.
+
+Additional standalone Select/Combobox, Popover/Context Menu, Drawer/Sheet,
+Checkbox/Radio and Toast components are deferred until a Git workflow needs
+them. The palette already supplies searchable single selection, visual file
+selection handles batching, and the existing command log and loading indicator
+provide operation feedback. Calendar, OTP and similar form controls do not
+currently have a repository workflow.

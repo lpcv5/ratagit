@@ -1,0 +1,70 @@
+UI buffer v1
+area: Rect { x: 0, y: 0, width: 80, height: 24 }
+cursor: Some(Position { x: 11, y: 11 })
+
+text:
+00: "╭ Files ───────────────╮╭ Diff · README.md ───────────────────────────── +1 -1 ╮"
+01: "│▼ src/                ││       │   --- a/README.md                            │"
+02: "│  ✎ main.rs           ││       │   +++ b/README.md                            │"
+03: "│  ✖ old.rs            ││       │   @@ -1,2 +1,2 @@                            │"
+04: "│● README.md           ││   1 1 │   # Ratagit                                  │"
+05: "│? notes.txt           ││   2   │ - Old description                            │"
+06: "│       ╭ Create Branch ───────────────────────────────────────────────╮       │"
+07: "╰───────│                                                              │       │"
+08: "╭ Local │ A branch name is required.                                   │       │"
+09: "│* main │                                                              │       │"
+10: "│  featu│ ╭ Branch name * ───────────────────────────────────────────╮ │       │"
+11: "│  relea│ │feature/my-change                                         │ │       │"
+12: "│       │ ╰──────────────────────────────────────────────────────────╯ │       │"
+13: "╰───────│                                                              │       │"
+14: "╭ Commit│                                                              │       │"
+15: "│● abc12│  Esc  Cancel    Enter  Create branch                         │       │"
+16: "│● abc12│                                                              │       │"
+17: "│● abc12╰──────────────────────────────────────────────────────────────╯       │"
+18: "│                      ││                                                      │"
+19: "╰──────────────────────╯╰ Rows 1-6 / 6 ────────────────────────────────────────╯"
+20: "╭ Stash ───────────────╮╭ Command Log ─────────────────────────────────────────╮"
+21: "│stash@{0} WIP UI tests││ ERR  git fetch: offline                              │"
+22: "╰──────────────────────╯╰──────────────────────────────────────────────────────╯"
+23: "  Esc  Cancel   Enter  Confirm                                                  "
+
+symbol boundaries: []
+
+styles:
+0: Style::new().fg(Color::Rgb(139, 153, 171)).bg(Color::Rgb(13, 17, 23)).underline_color(Color::Reset).dim(); diff=None; skip=false
+1: Style::new().fg(Color::Rgb(139, 153, 171)).bg(Color::Rgb(13, 17, 23)).underline_color(Color::Reset).bold().dim(); diff=None; skip=false
+2: Style::new().fg(Color::Rgb(48, 57, 69)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset); diff=None; skip=false
+3: Style::new().fg(Color::Rgb(218, 225, 234)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset).bold(); diff=None; skip=false
+4: Style::new().fg(Color::Rgb(218, 225, 234)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset); diff=None; skip=false
+5: Style::new().fg(Color::Rgb(245, 141, 148)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset); diff=None; skip=false
+6: Style::new().fg(Color::Rgb(121, 184, 255)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset); diff=None; skip=false
+7: Style::new().fg(Color::Rgb(121, 184, 255)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset).bold(); diff=None; skip=false
+8: Style::new().fg(Color::Rgb(139, 153, 171)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset); diff=None; skip=false
+9: Style::new().fg(Color::Rgb(121, 184, 255)).bg(Color::Rgb(33, 40, 50)).underline_color(Color::Reset).bold(); diff=None; skip=false
+10: Style::new().fg(Color::Rgb(13, 17, 23)).bg(Color::Rgb(121, 184, 255)).underline_color(Color::Reset).bold(); diff=None; skip=false
+
+style runs (x start..end exclusive = style):
+00: 0..1=0 1..8=1 8..80=0
+01: 0..25=0 25..28=1 28..80=0
+02: 0..1=0 1..23=1 23..25=0 25..28=1 28..80=0
+03: 0..25=0 25..28=1 28..36=0 36..51=1 51..80=0
+04: 0..25=0 25..28=1 28..80=0
+05: 0..25=0 25..28=1 28..80=0
+06: 0..8=0 8..9=2 9..24=3 24..72=2 72..80=0
+07: 0..8=0 8..9=2 9..71=4 71..72=2 72..80=0
+08: 0..8=0 8..9=2 9..10=4 10..70=5 70..71=4 71..72=2 72..80=0
+09: 0..8=0 8..9=2 9..10=4 10..70=5 70..71=4 71..72=2 72..80=0
+10: 0..8=0 8..9=2 9..10=4 10..11=6 11..26=7 26..70=6 70..71=4 71..72=2 72..80=0
+11: 0..8=0 8..9=2 9..10=4 10..11=6 11..69=8 69..70=6 70..71=4 71..72=2 72..80=0
+12: 0..8=0 8..9=2 9..10=4 10..70=6 70..71=4 71..72=2 72..80=0
+13: 0..8=0 8..9=2 9..71=4 71..72=2 72..80=0
+14: 0..8=0 8..9=2 9..71=4 71..72=2 72..80=0
+15: 0..8=0 8..9=2 9..10=4 10..15=9 15..16=4 16..22=8 22..25=4 25..46=10 46..71=4 71..72=2 72..80=0
+16: 0..8=0 8..9=2 9..71=4 71..72=2 72..80=0
+17: 0..8=0 8..72=2 72..80=0
+18: 0..80=0
+19: 0..80=0
+20: 0..80=0
+21: 0..80=0
+22: 0..80=0
+23: 0..1=0 1..6=1 6..15=0 15..22=1 22..80=0

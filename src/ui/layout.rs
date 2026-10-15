@@ -4,7 +4,7 @@ use crate::ui::components::organisms::{
     draw_branches_panel, draw_commits_panel, draw_files_panel, draw_stash_panel,
 };
 use crate::ui::panels::{
-    render_branch_switch_confirm, render_command_log, render_command_palette,
+    render_branch_editor, render_branch_switch_confirm, render_command_log, render_command_palette,
     render_commit_all_confirm, render_commit_editor, render_diff_panel, render_keybindings,
     render_shortcut_bar, render_stash_editor,
 };
@@ -202,6 +202,13 @@ pub fn render_layout(
         state.help = Default::default();
     }
     match snapshot.input_mode {
+        Some(InputMode::CreateBranch) => render_branch_editor(
+            frame,
+            crate::ui::panels::props::BranchEditorProps {
+                name: snapshot.input_buffer,
+                error: snapshot.input_error,
+            },
+        ),
         Some(InputMode::CommitEditor) => {
             render_commit_editor(frame, snapshot.commit_editor_props())
         }

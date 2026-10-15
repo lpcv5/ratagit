@@ -870,13 +870,16 @@ pub struct CommandHelp {
 /// Palette display and execution share the same input normalization.
 pub fn filter_commands<'a>(input: &str, commands: &'a [CommandHelp]) -> Vec<&'a CommandHelp> {
     let query = normalize_input(input);
-    commands
+    let mut filtered: Vec<_> = commands
         .iter()
         .filter(|command| {
             command.aliases.iter().any(|alias| alias.contains(&query))
                 || command.label.to_lowercase().contains(&query)
         })
-        .collect()
+        .collect();
+    // Exact aliases remain the default result, including aliases such as q.
+    filtered.sort_by_key(|command| !command.aliases.contains(&query.as_str()));
+    filtered
 }
 
 fn active_keys(spec: &CommandSpec, keymap: &Keymap, env: &CommandEnv<'_>) -> Vec<String> {

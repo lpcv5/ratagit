@@ -55,8 +55,8 @@ impl InputStore {
                     let title = ctx.state.commit_message_buffer().trim().to_string();
                     if title.is_empty() {
                         ctx.state
-                            .push_log("Empty commit message ignored".to_string(), false);
-                        return ReduceOutput::none();
+                            .set_input_error(Some("A commit message is required.".into()));
+                        return ReduceOutput::none().with_invalidation(UiInvalidation::overlay());
                     }
                     let description = ctx.state.commit_description_buffer().trim_end().to_string();
                     let value = if description.is_empty() {
@@ -75,47 +75,36 @@ impl InputStore {
             },
             InputMode::CreateBranch => {
                 let value = ctx.state.input_buffer().trim().to_string();
+                if value.is_empty() {
+                    ctx.state
+                        .set_input_error(Some("A branch name is required.".into()));
+                    return ReduceOutput::none().with_invalidation(UiInvalidation::overlay());
+                }
                 ctx.state.set_input_mode(None);
                 ctx.state.clear_input_buffer();
-                if value.is_empty() {
-                    ctx.state.push_log("Empty input ignored".to_string(), false);
-                    return ReduceOutput::none()
-                        .with_invalidation(UiInvalidation::log_and_overlay());
-                }
                 ctx.command(Command::Sync(DomainAction::CreateBranch(value)))
                     .with_invalidation(UiInvalidation::overlay())
             }
             InputMode::CommandPalette => {
                 let value = ctx.state.input_buffer().trim().to_string();
-                ctx.state.set_input_mode(None);
-                ctx.state.clear_input_buffer();
-                if value.is_empty() {
+                let Some(action) = ctx.state.selected_palette_command() else {
                     ctx.state
-                        .push_log("command palette: empty command".to_string(), false);
+                        .push_log(format!("No matching command: {value}"), false);
                     return ReduceOutput::none()
                         .with_invalidation(UiInvalidation::log_and_overlay());
-                }
-                match ctx.state.resolve_command_palette_command(&value) {
-                    Some(action) => ctx
-                        .command(Command::Sync(action))
-                        .with_invalidation(UiInvalidation::overlay()),
-                    None => {
-                        ctx.state
-                            .push_log(format!("unknown command: {}", value), false);
-                        ReduceOutput::none().with_invalidation(UiInvalidation::log_and_overlay())
-                    }
-                }
+                };
+                ctx.state.set_input_mode(None);
+                ctx.state.clear_input_buffer();
+                ctx.command(Command::Sync(action))
+                    .with_invalidation(UiInvalidation::overlay())
             }
             InputMode::StashEditor => {
                 let value = ctx.state.stash_message_buffer().trim().to_string();
                 let paths = ctx.state.stash_targets().to_vec();
-                ctx.state.set_input_mode(None);
-                ctx.state.clear_stash_buffers();
                 if value.is_empty() {
                     ctx.state
-                        .push_log("Empty stash title ignored".to_string(), false);
-                    return ReduceOutput::none()
-                        .with_invalidation(UiInvalidation::log_and_overlay());
+                        .set_input_error(Some("A stash title is required.".into()));
+                    return ReduceOutput::none().with_invalidation(UiInvalidation::overlay());
                 }
                 if paths.is_empty() {
                     ctx.state
@@ -123,6 +112,8 @@ impl InputStore {
                     return ReduceOutput::none()
                         .with_invalidation(UiInvalidation::log_and_overlay());
                 }
+                ctx.state.set_input_mode(None);
+                ctx.state.clear_stash_buffers();
                 ctx.command(Command::Sync(DomainAction::StashPush {
                     message: value,
                     paths,
@@ -143,6 +134,7 @@ impl InputStore {
         ctx: &mut ReduceCtx<'_, S>,
         mode: InputMode,
     ) -> ReduceOutput {
+        ctx.state.set_input_error(None);
         match mode {
             InputMode::CommitEditor => {
                 match ctx.state.commit_focus() {
@@ -179,6 +171,7 @@ impl InputStore {
         mode: InputMode,
         c: char,
     ) -> ReduceOutput {
+        ctx.state.set_input_error(None);
         match mode {
             InputMode::CommitEditor => {
                 match ctx.state.commit_focus() {
@@ -218,6 +211,7 @@ impl<S: CommandAccess + InputAccess + LogAccess + SearchAccess + ?Sized> Store<S
             | DomainAction::InputTab
             | DomainAction::InputEnter
             | DomainAction::InputBackspace
+            | DomainAction::InputSelect(_)
             | DomainAction::InputChar(_) => {}
             _ => return ReduceOutput::none(),
         }
@@ -228,6 +222,10 @@ impl<S: CommandAccess + InputAccess + LogAccess + SearchAccess + ?Sized> Store<S
         };
 
         match domain {
+            DomainAction::InputSelect(delta) if mode == InputMode::CommandPalette => {
+                ctx.state.move_palette_selection(*delta);
+                ReduceOutput::none().with_invalidation(UiInvalidation::overlay())
+            }
             DomainAction::InputEsc => Self::handle_esc(ctx, mode),
             DomainAction::InputTab => Self::handle_tab(ctx, mode),
             DomainAction::InputEnter => Self::handle_enter(ctx, mode),

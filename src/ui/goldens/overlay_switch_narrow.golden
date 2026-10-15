@@ -1,0 +1,56 @@
+UI buffer v1
+area: Rect { x: 0, y: 0, width: 40, height: 18 }
+cursor: None
+
+text:
+00: "╭ Files ───╮╭ Diff · README.md ────────╮"
+01: "│▼╭ Switch Branch ───────────────────╮d│"
+02: "│ │                                  │d│"
+03: "│ │4 uncommitted file(s)             │@│"
+04: "│●│                                  │ │"
+05: "│?│Switch to                         │n│"
+06: "│ │feature/a-long-branch-name-with-un│l│"
+07: "╰─│committed-work? Stash tracked and │ │"
+08: "╭ │untracked changes, switch         │ │"
+09: "│*│branches, then reapply the stash. │ │"
+10: "╰─│Conflicts may need resolution.    │ │"
+11: "╭ │                                  │ │"
+12: "│●│                                  │ │"
+13: "╰─│ N/Esc  Cancel                    │─╯"
+14: "╭ │ Y/Enter  Stash + switch          │─╮"
+15: "│s│                                  │ │"
+16: "╰─╰──────────────────────────────────╯─╯"
+17: "  n  Cancel   y  AutoStash+Switch       "
+
+symbol boundaries: []
+
+styles:
+0: Style::new().fg(Color::Rgb(139, 153, 171)).bg(Color::Rgb(13, 17, 23)).underline_color(Color::Reset).dim(); diff=None; skip=false
+1: Style::new().fg(Color::Rgb(139, 153, 171)).bg(Color::Rgb(13, 17, 23)).underline_color(Color::Reset).bold().dim(); diff=None; skip=false
+2: Style::new().fg(Color::Rgb(48, 57, 69)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset); diff=None; skip=false
+3: Style::new().fg(Color::Rgb(218, 225, 234)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset).bold(); diff=None; skip=false
+4: Style::new().fg(Color::Rgb(218, 225, 234)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset); diff=None; skip=false
+5: Style::new().fg(Color::Rgb(230, 190, 115)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset).bold(); diff=None; skip=false
+6: Style::new().fg(Color::Rgb(139, 153, 171)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset); diff=None; skip=false
+7: Style::new().fg(Color::Rgb(121, 184, 255)).bg(Color::Rgb(33, 40, 50)).underline_color(Color::Reset).bold(); diff=None; skip=false
+8: Style::new().fg(Color::Rgb(13, 17, 23)).bg(Color::Rgb(121, 184, 255)).underline_color(Color::Reset).bold(); diff=None; skip=false
+
+style runs (x start..end exclusive = style):
+00: 0..1=0 1..8=1 8..40=0
+01: 0..2=0 2..3=2 3..18=3 18..38=2 38..40=0
+02: 0..1=0 1..2=1 2..3=2 3..37=4 37..38=2 38..40=0
+03: 0..2=0 2..3=2 3..24=5 24..37=4 37..38=2 38..39=1 39..40=0
+04: 0..2=0 2..3=2 3..37=4 37..38=2 38..40=0
+05: 0..2=0 2..3=2 3..12=6 12..37=4 37..38=2 38..40=0
+06: 0..2=0 2..3=2 3..37=6 37..38=2 38..40=0
+07: 0..2=0 2..3=2 3..36=6 36..37=4 37..38=2 38..40=0
+08: 0..2=0 2..3=2 3..28=6 28..37=4 37..38=2 38..40=0
+09: 0..2=0 2..3=2 3..36=6 36..37=4 37..38=2 38..40=0
+10: 0..2=0 2..3=2 3..33=6 33..37=4 37..38=2 38..40=0
+11: 0..2=0 2..3=2 3..37=4 37..38=2 38..40=0
+12: 0..2=0 2..3=2 3..37=4 37..38=2 38..40=0
+13: 0..2=0 2..3=2 3..10=7 10..11=4 11..17=6 17..37=4 37..38=2 38..40=0
+14: 0..2=0 2..3=2 3..27=8 27..37=4 37..38=2 38..40=0
+15: 0..2=0 2..3=2 3..37=4 37..38=2 38..40=0
+16: 0..2=0 2..38=2 38..40=0
+17: 0..1=0 1..4=1 4..13=0 13..16=1 16..40=0

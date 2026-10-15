@@ -21,6 +21,7 @@ use ratatui::{backend::TestBackend, layout::Rect, Terminal};
 use std::sync::Arc;
 
 mod diff_presentation;
+mod overlays;
 mod scrolling;
 
 struct Fixture {

@@ -14,13 +14,6 @@ pub fn render_command_log(frame: &mut Frame, area: Rect, props: CommandLogProps<
     let theme = UiTheme::default();
     let mut lines: Vec<Line> = Vec::new();
 
-    if let Some(input) = props.branch_input {
-        lines.push(Line::from(Span::styled(
-            format!("branch> {input}"),
-            Style::default().fg(theme.warning),
-        )));
-    }
-
     if props.entries.is_empty() {
         if lines.is_empty() {
             lines.push(Line::from(Span::styled(

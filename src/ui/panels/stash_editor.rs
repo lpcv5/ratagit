@@ -1,9 +1,14 @@
-use super::props::StashEditorProps;
-use crate::ui::components::molecules::card;
-use crate::ui::panels::{centered_rect, render_overlay_chrome};
-use crate::ui::theme::UiTheme;
+use super::{
+    overlay_utils::{action_lines, dialog_rect, dialog_sections},
+    props::StashEditorProps,
+    render_overlay_chrome,
+};
+use crate::ui::{
+    components::molecules::{render_input, InputField},
+    theme::UiTheme,
+};
 use ratatui::{
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Layout},
     style::Style,
     text::Line,
     widgets::Paragraph,
@@ -12,53 +17,61 @@ use ratatui::{
 
 pub fn render_stash_editor(frame: &mut Frame, props: StashEditorProps<'_>) {
     let theme = UiTheme::default();
-    let area = centered_rect(frame.area(), 60, 25);
-    let title = format!(
-        "Stash Editor | Targets: {} | Enter confirm | Esc cancel",
-        props.targets.len()
+    let area = dialog_rect(frame.area(), 72, props.targets.len().min(5) as u16 + 12);
+    let inner = render_overlay_chrome(frame, area, "Stash Changes", &theme);
+    let hints = vec![
+        ("Esc".into(), "Cancel".into()),
+        ("Enter".into(), "Save stash".into()),
+    ];
+    let actions = action_lines(&hints, inner.width, &theme);
+    let (body, footer) = dialog_sections(inner, actions.len() as u16);
+    let sections = Layout::vertical([
+        Constraint::Length(2),
+        Constraint::Length(3),
+        Constraint::Min(0),
+    ])
+    .split(body);
+    frame.render_widget(
+        Paragraph::new(props.error.map(str::to_owned).unwrap_or_else(|| {
+            format!(
+                "Save changes from {} selected target(s).",
+                props.targets.len()
+            )
+        }))
+        .style(Style::default().fg(if props.error.is_some() {
+            theme.error
+        } else {
+            theme.text_muted
+        })),
+        sections[0],
     );
-    let inner = render_overlay_chrome(frame, area, &title, &theme);
-
-    let sections = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Length(1),
-            Constraint::Length(1),
-        ])
-        .split(inner);
-
-    let message = Paragraph::new(props.message)
-        .block(card(&theme, "Title", true))
-        .style(Style::default().fg(theme.text_primary));
-    frame.render_widget(message, sections[0]);
-
-    let help = Paragraph::new(Line::from(
-        "Use visual mode (v) for batch stash, or current cursor item",
-    ))
-    .style(Style::default().fg(theme.text_muted));
-    frame.render_widget(help, sections[1]);
-
-    let targets = Paragraph::new(Line::from(format!(
-        "Selected targets: {}",
-        props
-            .targets
-            .iter()
-            .map(|p| p.to_string())
-            .collect::<Vec<_>>()
-            .join(", ")
-    )))
-    .style(Style::default().fg(theme.text_muted));
-    frame.render_widget(targets, sections[2]);
-
-    let width = sections[0].width.saturating_sub(2).max(1);
-    let col = props
-        .message
-        .chars()
-        .count()
-        .saturating_add(1)
-        .min(width as usize);
-    let x = sections[0].x.saturating_add(col as u16);
-    let y = sections[0].y.saturating_add(1);
-    frame.set_cursor_position((x, y));
+    render_input(
+        frame,
+        sections[1],
+        InputField {
+            title: "Stash title *",
+            value: props.message,
+            placeholder: "Work in progress",
+            focused: true,
+        },
+        &theme,
+    );
+    // The field viewport is bounded; the target count always describes all paths.
+    let mut targets = vec![Line::from("Selected targets")];
+    let visible = usize::from(sections[2].height.saturating_sub(1));
+    for (index, path) in props.targets.iter().take(visible).enumerate() {
+        if index + 1 == visible && props.targets.len() > visible {
+            targets.push(Line::from(format!(
+                "… and {} more",
+                props.targets.len() - index
+            )));
+        } else {
+            targets.push(Line::from(format!("  {path}")));
+        }
+    }
+    frame.render_widget(
+        Paragraph::new(targets).style(Style::default().fg(theme.text_muted)),
+        sections[2],
+    );
+    frame.render_widget(Paragraph::new(actions), footer);
 }

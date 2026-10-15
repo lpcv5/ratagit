@@ -6,6 +6,7 @@ use std::path::PathBuf;
 
 impl AppState {
     pub fn start_commit_editor(&mut self) {
+        self.input.error = None;
         self.input.mode = Some(InputMode::CommitEditor);
         self.input.commit_message_buffer.clear();
         self.input.commit_description_buffer.clear();
@@ -34,23 +35,29 @@ impl AppState {
     }
 
     pub fn start_branch_create_input(&mut self) {
+        self.input.error = None;
         self.input.mode = Some(InputMode::CreateBranch);
         self.input.buffer.clear();
     }
 
     pub fn start_command_palette(&mut self) {
+        self.input.error = None;
         self.input.mode = Some(InputMode::CommandPalette);
         self.input.buffer.clear();
+        self.input.palette_selected = 0;
     }
 
     pub fn start_stash_editor(&mut self, targets: Vec<PathBuf>) {
+        self.input.error = None;
         self.input.mode = Some(InputMode::StashEditor);
         self.input.stash_targets = targets;
         self.input.stash_message_buffer.clear();
     }
 
     pub fn cancel_input(&mut self) {
+        self.input.error = None;
         self.input.mode = None;
+        self.input.palette_selected = 0;
         self.input.help = super::help::HelpState::default();
         self.input.buffer.clear();
         self.input.commit_message_buffer.clear();
@@ -68,6 +75,26 @@ impl AppState {
         let mut env = self.command_env();
         env.input = None;
         super::commands::resolve_palette(input, &env)
+    }
+
+    pub(crate) fn move_palette_selection(&mut self, delta: isize) {
+        let commands = self.available_commands();
+        let count = super::commands::filter_commands(&self.input.buffer, &commands).len();
+        self.input.palette_selected = self
+            .input
+            .palette_selected
+            .saturating_add_signed(delta)
+            .min(count.saturating_sub(1));
+    }
+
+    pub(crate) fn selected_palette_command(&self) -> Option<crate::flux::action::DomainAction> {
+        let commands = self.available_commands();
+        let filtered = super::commands::filter_commands(&self.input.buffer, &commands);
+        let selected = self
+            .input
+            .palette_selected
+            .min(filtered.len().saturating_sub(1));
+        self.resolve_command_palette_command(filtered.get(selected)?.name)
     }
 }
 

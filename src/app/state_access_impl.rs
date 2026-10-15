@@ -66,8 +66,11 @@ impl InvalidationAccess for AppState {
 }
 
 impl CommandAccess for AppState {
-    fn resolve_command_palette_command(&self, cmd: &str) -> Option<DomainAction> {
-        AppState::resolve_command_palette_command(self, cmd)
+    fn move_palette_selection(&mut self, delta: isize) {
+        AppState::move_palette_selection(self, delta);
+    }
+    fn selected_palette_command(&self) -> Option<DomainAction> {
+        AppState::selected_palette_command(self)
     }
 }
 
@@ -120,6 +123,9 @@ impl PanelAccess for AppState {
 // ---------------------------------------------------------------------------
 
 impl InputAccess for AppState {
+    fn set_input_error(&mut self, error: Option<String>) {
+        self.input.error = error;
+    }
     fn cancel_input(&mut self) {
         AppState::cancel_input(self);
     }
@@ -184,14 +190,17 @@ impl InputAccess for AppState {
 
     fn clear_input_buffer(&mut self) {
         self.input.buffer.clear();
+        self.input.palette_selected = 0;
     }
 
     fn push_input_buffer_char(&mut self, c: char) {
         self.input.buffer.push(c);
+        self.input.palette_selected = 0;
     }
 
     fn pop_input_buffer_char(&mut self) {
         self.input.buffer.pop();
+        self.input.palette_selected = 0;
     }
 
     fn stash_message_buffer(&self) -> &str {
