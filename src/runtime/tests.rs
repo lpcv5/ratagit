@@ -13,6 +13,44 @@ fn fixture() -> App {
     App::from_repo(Box::new(MockRepo)).unwrap()
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn test_editor_command_reaches_ui_and_completion_returns_through_dispatcher() {
+    run_with_ui(fixture(), |mut channels, _| async move {
+        let command = crate::desktop::EditorCommand {
+            program: "fake-editor".into(),
+            args: vec!["file".into()],
+            cwd: ".".into(),
+        };
+        channels
+            .action_tx
+            .send(Action::Domain(DomainAction::EditorPrepared {
+                result: Ok(command.clone()),
+            }))
+            .unwrap();
+        let received = tokio::time::timeout(Duration::from_secs(3), channels.editor_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(received, command);
+        channels
+            .action_tx
+            .send(Action::Domain(DomainAction::EditorFinished {
+                result: Ok(()),
+            }))
+            .unwrap();
+        snapshot_until(&mut channels, |snapshot| {
+            snapshot
+                .command_log
+                .iter()
+                .any(|entry| entry.command == "edit file: done" && entry.success)
+        })
+        .await;
+        Ok(())
+    })
+    .await
+    .unwrap();
+}
+
 async fn snapshot_until(
     channels: &mut UiChannels,
     predicate: impl Fn(&AppStateSnapshotOwned) -> bool,
@@ -185,6 +223,7 @@ async fn test_command_loop_keeps_fifo_actions_and_writes_while_reads_continue() 
                 command_rx,
                 action_tx,
                 shutdown_tx.subscribe(),
+                mpsc::unbounded_channel().0,
             ));
             command_tx
                 .send(Command::Effect(EffectRequest::StageFile("first".into())).into())
@@ -318,6 +357,7 @@ async fn test_traced_effect_queue_preserves_identity_while_write_is_blocked() {
                 command_rx,
                 ActionSender::new(action_tx, None),
                 shutdown_tx.subscribe(),
+                mpsc::unbounded_channel().0,
             ));
             command_tx
                 .send(Tracked::new(

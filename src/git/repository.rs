@@ -3,6 +3,7 @@
 
 mod commit;
 mod diagnostics;
+mod file_tools;
 mod history;
 mod operations;
 mod patch;

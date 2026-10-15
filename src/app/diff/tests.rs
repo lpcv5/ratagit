@@ -7,6 +7,7 @@ use crate::git::patch::{
 use crate::git::{DiffLine, DiffLineKind, FileStatus};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+mod lines;
 
 pub(super) fn patch(sources: &[PatchSource]) -> Arc<Patch> {
     let request = if sources.len() > 1 {
@@ -91,6 +92,7 @@ fn test_diff_cache_reuses_lines_without_changing_older_document() {
 
 fn loaded(sources: &[PatchSource]) -> DiffState {
     let mut state = DiffState::default();
+    state.test_interaction_mut().line_mode = false;
     state.set_test_document(document(patch(sources)));
     state
 }

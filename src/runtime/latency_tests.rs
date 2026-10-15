@@ -53,6 +53,7 @@ impl Harness {
         ));
         Self {
             channels: UiChannels {
+                editor_rx: mpsc::unbounded_channel().1,
                 action_tx,
                 state_version_rx,
                 snapshot_rx,

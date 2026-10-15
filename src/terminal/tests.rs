@@ -64,6 +64,59 @@ fn ops(failures: Failures) -> (RecordingOps, Calls) {
 }
 
 #[test]
+fn test_editor_handoff_restores_terminal_then_resumes_even_on_editor_failure() {
+    let (ops, calls) = ops(Failures::default());
+    let mut session = TerminalSession::with_ops(ops).unwrap();
+    let result = session
+        .with_suspended(|| {
+            calls.lock().unwrap().push("editor");
+            Err::<(), _>("editor failed")
+        })
+        .unwrap();
+    assert_eq!(result, Err("editor failed"));
+    assert_eq!(
+        *calls.lock().unwrap(),
+        ["init", "hook", "disable", "restore", "drop", "editor", "init", "enable"]
+    );
+    session.finish(Ok(())).unwrap();
+    assert_eq!(&calls.lock().unwrap()[8..], ["disable", "restore", "drop"]);
+}
+
+#[test]
+fn test_editor_is_not_started_when_terminal_suspension_fails() {
+    let (ops, calls) = ops(Failures {
+        restore: true,
+        ..Default::default()
+    });
+    let mut session = TerminalSession::with_ops(ops).unwrap();
+    let mut started = false;
+    assert!(session
+        .with_suspended(|| {
+            started = true;
+        })
+        .is_err());
+    assert!(!started);
+    assert!(session.terminal.is_some());
+    assert_eq!(
+        *calls.lock().unwrap(),
+        ["init", "hook", "disable", "restore", "drop", "init", "enable"]
+    );
+}
+
+#[test]
+fn test_failed_editor_resume_attempts_terminal_restoration() {
+    let (ops, calls) = ops(Failures::default());
+    let mut session = TerminalSession::with_ops(ops).unwrap();
+    session.ops.failures.init = true;
+    assert!(session.with_suspended(|| ()).is_err());
+    assert!(session.terminal.is_none());
+    assert_eq!(
+        *calls.lock().unwrap(),
+        ["init", "hook", "disable", "restore", "drop", "init", "restore"]
+    );
+}
+
+#[test]
 fn test_finish_restores_mouse_then_terminal_then_drops_once() {
     let (ops, calls) = ops(Failures::default());
     let mut session = TerminalSession::with_ops(ops).unwrap();

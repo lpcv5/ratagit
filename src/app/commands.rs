@@ -8,11 +8,20 @@ use std::collections::HashMap;
 pub enum CommandId {
     FocusDiff,
     DiffSide,
+    DiffApply,
+    DiffNextLine,
+    DiffPreviousLine,
+    DiffClear,
+    DiffNextFile,
+    DiffPreviousFile,
     HunkNext,
     HunkPrevious,
     HunkSelect,
     HunkStage,
     HunkUnstage,
+    DiffLineMode,
+    DiffLineRange,
+    DiffDiscard,
     Back,
     Confirm,
     SwitchField,
@@ -30,11 +39,17 @@ pub enum CommandId {
     Stashes,
     Commit,
     Palette,
+    Help,
     Search,
     SearchNext,
     SearchPrev,
     Refresh,
     ToggleStage,
+    StageAll,
+    Amend,
+    EditFile,
+    CopyPath,
+    IgnoreFile,
     Discard,
     StashPush,
     Visual,
@@ -95,50 +110,57 @@ pub static COMMANDS: &[CommandSpec] = &[
     command!(SwitchField, Binding::Fixed, [], "SwitchField", Some(5)),
     command!(Backspace, Binding::Fixed, [], "Backspace", None),
     command!(
+        Help,
+        Binding::Global("help", &["?"]),
+        ["help", "keybindings"],
+        "Help",
+        Some(950)
+    ),
+    command!(
         DiffSide,
-        Binding::Global("diff_side", &["Enter"]),
+        Binding::Global("diff_side", &["Tab"]),
         ["diff side"],
         "SwitchSide",
         Some(7)
     ),
     command!(
         FocusDiff,
-        Binding::Global("focus_diff", &["Tab"]),
+        Binding::Global("focus_diff", &["Enter", "0"]),
         ["diff focus"],
-        "FocusHunks",
+        "FocusDiff",
         Some(2)
     ),
     command!(
         HunkNext,
-        Binding::Global("hunk_next", &["j", "Down", "]"]),
+        Binding::Global("hunk_next", &["l", "Right"]),
         ["hunk next"],
         "NextHunk",
         Some(5)
     ),
     command!(
         HunkPrevious,
-        Binding::Global("hunk_previous", &["k", "Up", "["]),
+        Binding::Global("hunk_previous", &["h", "Left"]),
         ["hunk previous", "hunk prev"],
         "PrevHunk",
         Some(6)
     ),
     command!(
         HunkSelect,
-        Binding::Global("hunk_select", &["Space"]),
+        Binding::Global("hunk_select", &[]),
         ["hunk select"],
         "SelectHunk",
         Some(4)
     ),
     command!(
         HunkStage,
-        Binding::Global("hunk_stage", &["s"]),
+        Binding::Global("hunk_stage", &[]),
         ["hunk stage"],
         "StageHunks",
         Some(3)
     ),
     command!(
         HunkUnstage,
-        Binding::Global("hunk_unstage", &["u"]),
+        Binding::Global("hunk_unstage", &[]),
         ["hunk unstage"],
         "UnstageHunks",
         Some(3)
@@ -149,6 +171,69 @@ pub static COMMANDS: &[CommandSpec] = &[
         ["quit", "q", "exit"],
         "Quit",
         Some(1000)
+    ),
+    command!(
+        DiffApply,
+        Binding::Global("diff_apply", &["Space"]),
+        ["diff stage"],
+        "Stage",
+        Some(3)
+    ),
+    command!(
+        DiffNextLine,
+        Binding::Global("diff_next_line", &["j", "Down"]),
+        ["diff next line"],
+        "NextLine",
+        None
+    ),
+    command!(
+        DiffPreviousLine,
+        Binding::Global("diff_previous_line", &["k", "Up"]),
+        ["diff previous line"],
+        "PrevLine",
+        None
+    ),
+    command!(
+        DiffLineMode,
+        Binding::Global("diff_line_mode", &["a"]),
+        ["diff line mode"],
+        "LineMode",
+        None
+    ),
+    command!(
+        DiffNextFile,
+        Binding::Global("diff_next_file", &["n"]),
+        ["diff next file"],
+        "NextFile",
+        None
+    ),
+    command!(
+        DiffPreviousFile,
+        Binding::Global("diff_previous_file", &["N"]),
+        ["diff previous file"],
+        "PrevFile",
+        None
+    ),
+    command!(
+        DiffClear,
+        Binding::Global("diff_clear", &[]),
+        ["diff clear selection"],
+        "ClearSelection",
+        None
+    ),
+    command!(
+        DiffLineRange,
+        Binding::Global("diff_line_range", &["v"]),
+        ["diff line range"],
+        "LineRange",
+        None
+    ),
+    command!(
+        DiffDiscard,
+        Binding::Global("diff_discard", &["d"]),
+        ["diff discard"],
+        "DiscardSelection",
+        None
     ),
     command!(
         ListUp,
@@ -166,14 +251,14 @@ pub static COMMANDS: &[CommandSpec] = &[
     ),
     command!(
         PanelNext,
-        Binding::Global("panel_next", &["l", "Right"]),
+        Binding::Global("panel_next", &["l", "Right", "Tab"]),
         ["panel next"],
         "NextPanel",
         None
     ),
     command!(
         PanelPrev,
-        Binding::Global("panel_prev", &["h", "Left"]),
+        Binding::Global("panel_prev", &["h", "Left", "BackTab"]),
         ["panel prev"],
         "PrevPanel",
         None
@@ -274,6 +359,41 @@ pub static COMMANDS: &[CommandSpec] = &[
         Binding::Panel(SidePanel::Files, "discard", &["d"]),
         ["discard"],
         "Discard",
+        None
+    ),
+    command!(
+        StageAll,
+        Binding::Panel(SidePanel::Files, "toggle_stage_all", &["a"]),
+        ["stage all"],
+        "StageAll",
+        None
+    ),
+    command!(
+        Amend,
+        Binding::Panel(SidePanel::Files, "amend", &["A"]),
+        ["amend"],
+        "Amend",
+        None
+    ),
+    command!(
+        EditFile,
+        Binding::Panel(SidePanel::Files, "edit_file", &["e"]),
+        ["edit"],
+        "Edit",
+        None
+    ),
+    command!(
+        CopyPath,
+        Binding::Panel(SidePanel::Files, "copy_path", &["C-o"]),
+        ["copy path"],
+        "CopyPath",
+        None
+    ),
+    command!(
+        IgnoreFile,
+        Binding::Panel(SidePanel::Files, "ignore_file", &["i"]),
+        ["ignore"],
+        "Ignore",
         None
     ),
     command!(
@@ -380,18 +500,28 @@ impl CommandSpec {
                 self.id,
                 Back | FocusDiff
                     | DiffSide
+                    | DiffApply
+                    | DiffNextLine
+                    | DiffPreviousLine
+                    | DiffClear
+                    | DiffNextFile
+                    | DiffPreviousFile
+                    | EditFile
+                    | Commit
                     | HunkNext
                     | HunkPrevious
                     | HunkSelect
                     | HunkStage
                     | HunkUnstage
+                    | DiffLineMode
+                    | DiffLineRange
+                    | DiffDiscard
                     | Quit
                     | Palette
+                    | Help
                     | Refresh
                     | DiffUp
                     | DiffDown
-                    | PanelNext
-                    | PanelPrev
                     | Files
                     | Branches
                     | Commits
@@ -407,10 +537,50 @@ impl CommandSpec {
             DiffSide if env.diff.can_switch_side(&env.selection.diff_target()) => {
                 DomainAction::SwitchDiffSide
             }
-            FocusDiff if env.diff.can_toggle_focus() => DomainAction::ToggleDiffFocus,
+            FocusDiff if !env.diff.interaction.focused && env.diff.can_toggle_focus() => {
+                DomainAction::ToggleDiffFocus
+            }
+            DiffApply if env.diff.can_apply(crate::git::patch::PatchDirection::Stage) => {
+                DomainAction::ApplySelectedHunks(crate::git::patch::PatchDirection::Stage)
+            }
+            DiffApply
+                if env
+                    .diff
+                    .can_apply(crate::git::patch::PatchDirection::Unstage) =>
+            {
+                DomainAction::ApplySelectedHunks(crate::git::patch::PatchDirection::Unstage)
+            }
+            DiffNextLine if env.diff.can_navigate() => DomainAction::DiffNextLine,
+            DiffPreviousLine if env.diff.can_navigate() => DomainAction::DiffPreviousLine,
             HunkNext if env.diff.can_navigate() => DomainAction::HunkNext,
             HunkPrevious if env.diff.can_navigate() => DomainAction::HunkPrevious,
             HunkSelect if env.diff.can_navigate() => DomainAction::ToggleHunkSelection,
+            DiffClear if env.diff.interaction.focused && env.diff.interaction.has_selection() => {
+                DomainAction::ClearHunkSelection
+            }
+            DiffNextFile | DiffPreviousFile
+                if env.diff.interaction.focused && *env.view() == ViewContext::Files =>
+            {
+                DomainAction::Runtime(crate::flux::action::RuntimeEvent::NavigateDiffFile {
+                    forward: self.id == DiffNextFile,
+                })
+            }
+            DiffLineMode if env.diff.can_navigate() => DomainAction::ToggleDiffLineMode,
+            DiffLineRange if env.diff.can_navigate() => DomainAction::ToggleDiffLineRange,
+            DiffDiscard
+                if env
+                    .diff
+                    .can_apply(crate::git::patch::PatchDirection::Discard) =>
+            {
+                DomainAction::ApplySelectedHunks(crate::git::patch::PatchDirection::Discard)
+            }
+            DiffDiscard
+                if env
+                    .diff
+                    .can_apply(crate::git::patch::PatchDirection::Unstage) =>
+            {
+                DomainAction::ApplySelectedHunks(crate::git::patch::PatchDirection::Unstage)
+            }
             HunkStage if env.diff.can_apply(crate::git::patch::PatchDirection::Stage) => {
                 DomainAction::ApplySelectedHunks(crate::git::patch::PatchDirection::Stage)
             }
@@ -425,11 +595,6 @@ impl CommandSpec {
                 Some(InputMode::BranchSwitchConfirm) => DomainAction::BranchSwitchConfirm(false),
                 Some(InputMode::CommitAllConfirm) => DomainAction::CommitAllConfirm(false),
                 Some(_) => DomainAction::InputEsc,
-                None if env.diff.interaction.focused
-                    && !env.diff.interaction.selected.is_empty() =>
-                {
-                    DomainAction::ClearHunkSelection
-                }
                 None if env.diff.interaction.focused => DomainAction::ToggleDiffFocus,
                 None if env.has_search_query => DomainAction::SearchClear,
                 None if env.selection.file_selection().is_visual_mode() => {
@@ -467,11 +632,36 @@ impl CommandSpec {
             }
             Commit => DomainAction::StartCommitInput,
             Palette => DomainAction::StartCommandPalette,
+            Help => DomainAction::Help(super::help::HelpAction::Open),
             Search => DomainAction::StartSearchInput,
             SearchNext if env.has_search => DomainAction::SearchNext,
             SearchPrev if env.has_search => DomainAction::SearchPrev,
             SearchNext | SearchPrev => return None,
             Refresh => DomainAction::Refresh,
+            StageAll if *env.view() == ViewContext::Files => DomainAction::ToggleStageAll,
+            Amend if *env.view() == ViewContext::Files => DomainAction::AmendHead,
+            EditFile if env.diff.interaction.focused && *env.view() == ViewContext::Files => {
+                let patch = env.diff.patch?;
+                let file = patch.files.get(env.diff.interaction.cursor?.file)?;
+                DomainAction::EditFile(file.new.path.as_ref().or(file.old.path.as_ref())?.clone())
+            }
+            EditFile | CopyPath | IgnoreFile
+                if *env.view() == ViewContext::Files
+                    && !env.selection.file_selection().is_visual_mode() =>
+            {
+                let node = env.selection.file_selection().selected_tree_node()?;
+                match self.id {
+                    EditFile if !node.is_dir => DomainAction::EditFile(node.path.clone()),
+                    CopyPath => DomainAction::CopyPath(node.path.clone()),
+                    IgnoreFile
+                        if node.is_dir
+                            || node.status == crate::file_tree::FileTreeNodeStatus::Untracked =>
+                    {
+                        DomainAction::IgnoreFile(node.path.clone())
+                    }
+                    _ => return None,
+                }
+            }
             ToggleStage if *env.view() == ViewContext::Files => {
                 if env.selection.file_selection().is_visual_mode() {
                     DomainAction::ToggleStageSelection
@@ -531,8 +721,40 @@ impl CommandSpec {
         use CommandId::*;
         let label = match self.id {
             Back if env.input.is_some() => "Cancel",
-            Back if env.diff.interaction.focused && !env.diff.interaction.selected.is_empty() => {
-                "ClearHunks"
+            DiffApply
+                if matches!(
+                    self.action(env),
+                    Some(DomainAction::ApplySelectedHunks(
+                        crate::git::patch::PatchDirection::Unstage
+                    ))
+                ) =>
+            {
+                "Unstage"
+            }
+            HunkSelect if env.diff.interaction.line_mode => {
+                if env
+                    .diff
+                    .interaction
+                    .line_cursor
+                    .is_some_and(|id| env.diff.marked_lines().contains(&id))
+                {
+                    "DeselectLine"
+                } else {
+                    "SelectLine"
+                }
+            }
+            HunkStage if env.diff.interaction.line_mode => "StageLines",
+            HunkUnstage if env.diff.interaction.line_mode => "UnstageLines",
+            DiffLineMode if env.diff.interaction.line_mode => "HunkMode",
+            DiffDiscard
+                if matches!(
+                    self.action(env),
+                    Some(DomainAction::ApplySelectedHunks(
+                        crate::git::patch::PatchDirection::Unstage
+                    ))
+                ) =>
+            {
+                "UnstageSelection"
             }
             Back if env.diff.interaction.focused => "BackToList",
             FocusDiff if env.diff.interaction.focused => "FocusList",
@@ -611,6 +833,17 @@ impl CommandSpec {
     }
 
     fn matches_key(&self, key: &str, keymap: &Keymap, env: &CommandEnv<'_>) -> bool {
+        if self.id == CommandId::FocusDiff
+            && key == "Enter"
+            && (*env.view() != ViewContext::Files
+                || env
+                    .selection
+                    .file_selection()
+                    .selected_tree_node()
+                    .is_none_or(|node| node.is_dir))
+        {
+            return false;
+        }
         let binding =
             if self.id == CommandId::OpenRevision && env.view().panel() != SidePanel::Files {
                 Binding::Panel(env.view().panel(), "open_tree", &[])
@@ -691,6 +924,66 @@ fn active_keys(spec: &CommandSpec, keymap: &Keymap, env: &CommandEnv<'_>) -> Vec
         })
         .map(str::to_owned)
         .collect()
+}
+
+pub fn keybindings(keymap: &Keymap, env: &CommandEnv<'_>) -> Vec<super::help::HelpEntry> {
+    use super::help::{HelpEntry, HelpGroup};
+    let mut entries = Vec::new();
+    for spec in COMMANDS {
+        if spec.aliases.is_empty() || spec.action(env).is_none() {
+            continue;
+        }
+        let keys = active_keys(spec, keymap, env);
+        if keys.is_empty() {
+            continue;
+        }
+        let configured = spec.keys(keymap, env);
+        let defaults = match spec.binding {
+            Binding::Global(_, keys) | Binding::Panel(_, _, keys) => Some(keys),
+            Binding::Fixed => None,
+        };
+        let customized = defaults.is_some_and(|defaults| {
+            defaults.len() != configured.len()
+                || defaults.iter().any(|key| !configured.contains(key))
+        });
+        let group = if customized {
+            HelpGroup::Custom
+        } else if matches!(spec.binding, Binding::Panel(..))
+            || matches!(
+                spec.id,
+                CommandId::Back
+                    | CommandId::FocusDiff
+                    | CommandId::DiffSide
+                    | CommandId::DiffApply
+                    | CommandId::DiffNextLine
+                    | CommandId::DiffPreviousLine
+                    | CommandId::DiffClear
+                    | CommandId::DiffNextFile
+                    | CommandId::DiffPreviousFile
+                    | CommandId::HunkNext
+                    | CommandId::HunkPrevious
+                    | CommandId::HunkSelect
+                    | CommandId::HunkStage
+                    | CommandId::HunkUnstage
+                    | CommandId::DiffLineMode
+                    | CommandId::DiffLineRange
+                    | CommandId::DiffDiscard
+                    | CommandId::Commit
+            )
+        {
+            HelpGroup::Local
+        } else {
+            HelpGroup::Global
+        };
+        entries.push(HelpEntry {
+            name: spec.aliases[0],
+            description: super::help::description(spec.id, &spec.label(env)),
+            keys,
+            group,
+        });
+    }
+    entries.sort_by_key(|entry| entry.group);
+    entries
 }
 
 pub fn available_commands(keymap: &Keymap, env: &CommandEnv<'_>) -> Vec<CommandHelp> {

@@ -6,6 +6,30 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 impl AppState {
+    pub(super) fn navigate_diff_file(
+        &mut self,
+        forward: bool,
+        output: &mut crate::flux::command_output::CommandOutput,
+    ) {
+        if self.view_context() != super::ViewContext::Files || !self.diff.interaction().focused {
+            return;
+        }
+        let Some(current) = self.files.view().panel.selected() else {
+            return;
+        };
+        let nodes = &self.files.view().tree_nodes;
+        let next = if forward {
+            (current + 1..nodes.len()).find(|index| !nodes[*index].is_dir)
+        } else {
+            (0..current).rev().find(|index| !nodes[*index].is_dir)
+        };
+        if let Some(next) = next {
+            self.files.select_index(next);
+            self.diff.update(super::diff::DiffAction::FileChanged, true);
+            self.reload_diff_now(output);
+            self.ui.dirty.mark_all();
+        }
+    }
     pub(crate) fn reduce_files(&mut self, action: FilesAction<'_>) -> FilesUpdate {
         self.files
             .update(action, self.ui.active_panel == SidePanel::Files)

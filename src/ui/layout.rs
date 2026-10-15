@@ -5,8 +5,8 @@ use crate::ui::components::organisms::{
 };
 use crate::ui::panels::{
     render_branch_switch_confirm, render_command_log, render_command_palette,
-    render_commit_all_confirm, render_commit_editor, render_diff_panel, render_shortcut_bar,
-    render_stash_editor, DiffViewProps,
+    render_commit_all_confirm, render_commit_editor, render_diff_panel, render_keybindings,
+    render_shortcut_bar, render_stash_editor, DiffViewProps,
 };
 use crate::ui::theme::UiTheme;
 use ratatui::{
@@ -229,4 +229,5 @@ pub fn render_layout(frame: &mut Frame, snapshot: &AppStateSnapshot<'_>) {
     render_branch_switch_confirm(frame, snapshot);
     render_commit_all_confirm(frame, snapshot);
     render_command_palette(frame, snapshot);
+    render_keybindings(frame, snapshot);
 }

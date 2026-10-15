@@ -28,10 +28,28 @@ pub struct HunkId {
     pub hunk: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct LineId {
+    pub file: usize,
+    pub hunk: usize,
+    pub line: usize,
+}
+
+impl LineId {
+    pub fn hunk(self) -> HunkId {
+        HunkId {
+            file: self.file,
+            hunk: self.hunk,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PatchDirection {
     Stage,
     Unstage,
+    /// Reverse only the reviewed worktree changes, leaving the index untouched.
+    Discard,
 }
 
 pub struct PatchDisplayRow {
@@ -241,12 +259,21 @@ impl Patch {
         if self.truncated
             || selected.binary
             || selected.encoded.is_none()
-            || selected.source.direction() != Some(direction)
+            || !match direction {
+                PatchDirection::Discard => matches!(
+                    selected.source,
+                    PatchSource::Worktree | PatchSource::Untracked
+                ),
+                _ => selected.source.direction() == Some(direction),
+            }
             || !matches!(
                 selected.change,
                 PatchChange::Modified | PatchChange::Added | PatchChange::Deleted
             )
             || (selected.change == PatchChange::Modified && selected.old.mode != selected.new.mode)
+            || [selected.old.mode, selected.new.mode]
+                .iter()
+                .any(|mode| !matches!(mode, 0 | 0o100644 | 0o100755))
         {
             return Err(GitError::Git2(
                 "partial index changes require a complete text patch without rename or mode changes"
@@ -269,6 +296,84 @@ impl Patch {
             .enumerate()
             .flat_map(|(file, item)| (0..item.hunks.len()).map(move |hunk| HunkId { file, hunk }))
             .collect()
+    }
+
+    pub fn line_ids(&self) -> Vec<LineId> {
+        self.files
+            .iter()
+            .enumerate()
+            .flat_map(|(file, entry)| {
+                entry
+                    .hunks
+                    .iter()
+                    .enumerate()
+                    .flat_map(move |(hunk, entry)| {
+                        entry
+                            .lines
+                            .iter()
+                            .enumerate()
+                            .filter_map(move |(line, entry)| {
+                                matches!(entry.kind, PatchLineKind::Added | PatchLineKind::Removed)
+                                    .then_some(LineId { file, hunk, line })
+                            })
+                    })
+            })
+            .collect()
+    }
+
+    pub fn validate_lines(
+        &self,
+        ids: &[LineId],
+        direction: PatchDirection,
+    ) -> Result<(), GitError> {
+        if ids.is_empty() || ids.iter().collect::<std::collections::HashSet<_>>().len() != ids.len()
+        {
+            return Err(GitError::Git2("invalid line selection".into()));
+        }
+        for id in ids {
+            let file = self.validate_file_hunks(id.file, &[id.hunk], direction)?;
+            if !file.hunks[id.hunk].lines.get(id.line).is_some_and(|line| {
+                matches!(line.kind, PatchLineKind::Added | PatchLineKind::Removed)
+            }) {
+                return Err(GitError::Git2("only changed lines can be applied".into()));
+            }
+        }
+        Ok(())
+    }
+
+    /// Cursor movement includes context; only added/removed rows are writable.
+    pub fn cursor_line_ids(&self) -> Vec<LineId> {
+        self.files
+            .iter()
+            .enumerate()
+            .flat_map(|(file, entry)| {
+                entry
+                    .hunks
+                    .iter()
+                    .enumerate()
+                    .flat_map(move |(hunk, entry)| {
+                        entry
+                            .lines
+                            .iter()
+                            .enumerate()
+                            .filter_map(move |(line, entry)| {
+                                (entry.kind != PatchLineKind::NoNewline).then_some(LineId {
+                                    file,
+                                    hunk,
+                                    line,
+                                })
+                            })
+                    })
+            })
+            .collect()
+    }
+
+    pub fn line_row(&self, id: LineId) -> Option<usize> {
+        self.hunk_spans()
+            .iter()
+            .find(|span| span.id == id.hunk())
+            .filter(|span| id.line < span.range.len().saturating_sub(1))
+            .map(|span| span.range.start + 1 + id.line)
     }
 
     pub fn validate_selection(

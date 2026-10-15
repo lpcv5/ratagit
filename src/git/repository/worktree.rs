@@ -152,6 +152,29 @@ impl Git2RepoInner {
 }
 
 impl crate::git::WorktreeRepository for Git2Repository {
+    fn toggle_stage_all(&self) -> Result<bool, GitError> {
+        self.spawn_repo_job("toggle_stage_all", |inner| inner.toggle_stage_all())?
+            .recv()
+            .map_err(|_| GitError::Worker("worker disconnected".into()))?
+    }
+
+    fn ignore_file(&self, path: &std::path::Path) -> Result<(), GitError> {
+        let path = path.to_path_buf();
+        self.spawn_repo_job("ignore_file", move |inner| inner.ignore_file(&path))?
+            .recv()
+            .map_err(|_| GitError::Worker("worker disconnected".into()))?
+    }
+
+    fn prepare_editor(
+        &self,
+        path: &std::path::Path,
+    ) -> Result<crate::desktop::EditorCommand, GitError> {
+        let path = path.to_path_buf();
+        self.spawn_repo_job_external("prepare_editor", move |inner| inner.prepare_editor(&path))?
+            .recv()
+            .map_err(|_| GitError::Worker("worker disconnected".into()))?
+    }
+
     fn status(&self) -> Result<GitStatus, GitError> {
         self.spawn_repo_job("status", |inner| inner.status())?
             .recv()

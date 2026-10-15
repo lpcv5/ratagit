@@ -1,7 +1,7 @@
 use super::cache::{DiffCache, DiffCacheIdentity, DiffCacheKey, DiffCacheRevision, DiffCacheStats};
 use super::{DiffRefreshSource, DiffTarget};
 use crate::file_tree::FileTreeNode;
-use crate::git::patch::{DiffDocument, HunkId};
+use crate::git::patch::{DiffDocument, HunkId, LineId};
 use std::collections::BTreeSet;
 use std::time::{Duration, Instant};
 
@@ -11,20 +11,54 @@ pub enum DiffSide {
     Staged,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct DiffInteraction {
     pub side: Option<DiffSide>,
     pub focused: bool,
     pub cursor: Option<HunkId>,
     pub selected: BTreeSet<HunkId>,
+    pub line_mode: bool,
+    pub line_cursor: Option<LineId>,
+    pub selected_lines: BTreeSet<LineId>,
+    pub range_anchor: Option<LineId>,
+    pub hunk_anchor: Option<HunkId>,
     pub pending_write: Option<u64>,
     pub(super) next_write: u64,
+}
+
+impl Default for DiffInteraction {
+    fn default() -> Self {
+        Self {
+            side: None,
+            focused: false,
+            cursor: None,
+            selected: BTreeSet::new(),
+            line_mode: true,
+            line_cursor: None,
+            selected_lines: BTreeSet::new(),
+            range_anchor: None,
+            hunk_anchor: None,
+            pending_write: None,
+            next_write: 0,
+        }
+    }
 }
 
 impl DiffInteraction {
     pub(super) fn reset_selection(&mut self) {
         self.cursor = None;
         self.selected.clear();
+        self.line_cursor = None;
+        self.selected_lines.clear();
+        self.range_anchor = None;
+        self.hunk_anchor = None;
+    }
+
+    pub fn has_selection(&self) -> bool {
+        !self.selected.is_empty()
+            || !self.selected_lines.is_empty()
+            || self.range_anchor.is_some()
+            || self.hunk_anchor.is_some()
     }
 }
 
@@ -307,6 +341,11 @@ impl DiffState {
             .patch
             .as_ref()
             .and_then(|patch| patch.hunk_ids().first().copied());
+        self.interaction.line_cursor = self
+            .document
+            .patch
+            .as_ref()
+            .and_then(|patch| patch.line_ids().first().copied());
     }
 
     #[cfg(test)]

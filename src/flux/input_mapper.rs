@@ -5,6 +5,14 @@ pub fn map_key_to_actions(
     key: crossterm::event::KeyEvent,
     snapshot: &AppStateSnapshot<'_>,
 ) -> Vec<Action> {
+    if snapshot.input_mode == Some(crate::app::InputMode::Keybindings) {
+        return snapshot
+            .help
+            .map_key(key, snapshot.keymap)
+            .map(|action| Action::Domain(DomainAction::Help(action)))
+            .into_iter()
+            .collect();
+    }
     let env = snapshot.command_env();
     if let Some(command) = crate::app::commands::resolve_key(&key, snapshot.keymap, &env) {
         return command

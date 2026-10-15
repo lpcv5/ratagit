@@ -2,9 +2,9 @@ use crate::app::{AppState, CommitFieldFocus, InputMode, RefreshKind, SidePanel};
 use crate::flux::action::DomainAction;
 use crate::flux::command_output::CommandOutput;
 use crate::flux::stores::state_access::{
-    BranchAccess, CommandAccess, DirtyHint, FilesAccess, InputAccess, InvalidationAccess,
-    LifecycleAccess, LogAccess, NavigationAccess, OverlayAccess, PanelAccess, RefreshAccess,
-    RevisionAccess, RuntimeAccess, SearchAccess, SelectionAccess, StashAccess,
+    BranchAccess, CommandAccess, DirtyHint, FilesAccess, HelpAccess, InputAccess,
+    InvalidationAccess, LifecycleAccess, LogAccess, NavigationAccess, OverlayAccess, PanelAccess,
+    RefreshAccess, RevisionAccess, RuntimeAccess, SearchAccess, SelectionAccess, StashAccess,
 };
 use std::path::PathBuf;
 use std::time::Duration;
@@ -68,6 +68,12 @@ impl InvalidationAccess for AppState {
 impl CommandAccess for AppState {
     fn resolve_command_palette_command(&self, cmd: &str) -> Option<DomainAction> {
         AppState::resolve_command_palette_command(self, cmd)
+    }
+}
+
+impl HelpAccess for AppState {
+    fn reduce_help(&mut self, action: crate::app::help::HelpAction) -> Option<DomainAction> {
+        AppState::reduce_help(self, action)
     }
 }
 

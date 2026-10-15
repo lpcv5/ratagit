@@ -36,6 +36,9 @@ mutable copy of shared selection would introduce additional coordination.
   unchanged debug log format/cadence.
 - `app.rs`: `App` startup composition and `AppState` transitions. The dispatch loop owns the state; effects never receive it.
 - `runtime.rs`: cloneable Git execution dependencies (`AppRuntime`).
+- `help.rs`: contextual keybinding menu state, filtering and selection. The
+  command registry supplies effective keys; `HelpStore` reduces typed help
+  actions through `HelpAccess` and emits selected commands back into Flux.
 - `../background.rs`: the shared read protocol, task identity and immutable completion payloads.
 - `../flux/task_manager.rs`: authoritative registration, admission, cancellation and generation acceptance for background reads.
 - `background_poll.rs`: refresh scheduling and application of background completion events; it performs no Git I/O.
@@ -591,7 +594,7 @@ with worker gates and real repositories, including a local bare remote for fetch
 
 `diff/state.rs` owns diff focus, the hunk cursor, explicit selections, staged/unstaged view choice and pending write identity. `diff/update.rs` reduces their transitions. `HunkView` is shared by key mapping, palette availability, hints and snapshots. Navigation scrolls the hunk header into view; the renderer highlights the cursor and selected hunks, identifies staged/unstaged content and shows the file path. Changing panels, selecting another file or refreshing a patch clears obsolete selections. In directory diffs, selecting a hunk with the opposite staging direction starts a new selection. Repeated write commands are disabled until completion; failures also trigger a fresh status and diff read.
 
-Default keys in the diff are `Tab` to enter/leave, `j`/`k` or arrows (`]`/`[` also work) to navigate, `Space` to select/deselect, `s` to stage and `u` to unstage. With no explicit selection, writes use the current hunk. `Enter` switches a tracked file between staged and unstaged views. `Esc` first clears explicit selections, then returns to the list. Registry aliases are `diff focus`, `diff side`, `hunk next`, `hunk previous`, `hunk select`, `hunk stage` and `hunk unstage`; all bindings are configurable through the global keymap. Modal input retains priority.
+Default Files/diff keys follow Lazygit: `Enter` opens a file's diff or toggles a directory; `0` focuses the main diff. Diff focus starts in line mode. `j`/`k` or up/down move through diff lines, `h`/`l` or left/right jump hunks, `a` switches line/hunk mode, and `v` selects a range in either mode. `Space` applies the selection to the index in the current side's direction. `Tab` switches staged/unstaged sides inside the diff and cycles side panels outside it (`Shift+Tab` cycles backward). `n`/`N` switch visible files without leaving the diff, and `Esc` returns directly to the file list and clears selection. `d` discards unstaged changes or unstages staged changes. Legacy selection and explicit stage/unstage actions remain available through palette aliases and custom bindings. The keymap loader upgrades exact historical defaults in memory, preserves customized bindings and does not rewrite configuration comments. Modal input retains priority.
 
 Status reads report both index and worktree changes for partially staged paths. While the diff is focused, partial fast status reads do not rebuild the file tree before the complete read, preserving the selected file when reversing an addition makes it untracked again. Patch display row ranges are derived once from hunk metadata for cursor/selection rendering; scrolling does not rebuild patch text.
 

@@ -20,6 +20,10 @@ impl<S: RuntimeAccess + RefreshAccess + ?Sized> Store<S> for RuntimeStore {
             Action::Domain(domain) => {
                 use crate::app::RefreshKind;
                 let refresh = match domain {
+                    DomainAction::ToggleStageAllFinished { .. }
+                    | DomainAction::IgnoreFileFinished { .. }
+                    | DomainAction::EditorFinished { .. } => Some(RefreshKind::StatusOnly),
+                    DomainAction::AmendHeadFinished { .. } => Some(RefreshKind::Full),
                     DomainAction::StageFileFinished { result: Ok(()), .. }
                     | DomainAction::StageHunksFinished { result: Ok(()), .. }
                     | DomainAction::UnstageFileFinished { result: Ok(()), .. }

@@ -168,6 +168,7 @@ impl AppState {
     }
     pub(crate) fn apply_runtime_event(&mut self, event: &RuntimeEvent, output: &mut CommandOutput) {
         match event {
+            RuntimeEvent::NavigateDiffFile { forward } => self.navigate_diff_file(*forward, output),
             RuntimeEvent::ProcessBackgroundLoads => self.process_background_refresh_tick(output),
             RuntimeEvent::FlushPendingRefresh { log_success } => {
                 self.process_background_refresh_tick(output);

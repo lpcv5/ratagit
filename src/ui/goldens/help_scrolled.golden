@@ -1,0 +1,60 @@
+UI buffer v1
+area: Rect { x: 0, y: 0, width: 80, height: 16 }
+cursor: None
+
+text:
+00: "╭ Files ───────────────╮╭ Diff [Line 2/3 | 0 selected | README.md] ────────────╮"
+01: "│▼ s╭ Keybindings - Diff / Lines ──────────────────────────────────────────╮   │"
+02: "│  ✎│Local (14)   Global (10)   Custom (0)                                 │   │"
+03: "│  ✖│Press / to filter by description, command or key                      │   │"
+04: "│● R│       C-d  Scroll diff down                                          │   │"
+05: "│? n│         1  Go to Files                                               │   │"
+06: "╰───│         2  Go to Branches                                            │   │"
+07: "╭ Lo│         3  Go to Commits                                             │   │"
+08: "│* m│         4  Go to Stashes                                             │   │"
+09: "╰───│         :  Open command palette                                      │   │"
+10: "╭ Co│>        r  Refresh repository                                        │   │"
+11: "╰───│  Custom                                                              │───╯"
+12: "╭ St│  No custom keybindings configured                                    │───╮"
+13: "│sta│24/24  Up/Down Move  Enter/Space Execute  / Filter  Esc Close         │   │"
+14: "╰───╰──────────────────────────────────────────────────────────────────────╯───╯"
+15: "  Up/Down  Move   Enter  Execute   /  Filter   Esc  Back                        "
+
+symbol boundaries: []
+
+styles:
+0: Style::new().fg(Color::Rgb(48, 57, 69)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset); diff=None; skip=false
+1: Style::new().fg(Color::Rgb(139, 153, 171)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset); diff=None; skip=false
+2: Style::new().fg(Color::Rgb(121, 184, 255)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset); diff=None; skip=false
+3: Style::new().fg(Color::Rgb(121, 184, 255)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset).bold(); diff=None; skip=false
+4: Style::new().fg(Color::Rgb(165, 180, 252)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset); diff=None; skip=false
+5: Style::new().fg(Color::Rgb(245, 141, 148)).bg(Color::Rgb(37, 57, 82)).underline_color(Color::Reset); diff=None; skip=false
+6: Style::new().fg(Color::Rgb(218, 225, 234)).bg(Color::Rgb(33, 40, 50)).underline_color(Color::Reset); diff=None; skip=false
+7: Style::new().fg(Color::Rgb(230, 190, 115)).bg(Color::Rgb(33, 40, 50)).underline_color(Color::Reset); diff=None; skip=false
+8: Style::new().fg(Color::Rgb(126, 211, 161)).bg(Color::Rgb(24, 46, 36)).underline_color(Color::Reset); diff=None; skip=false
+9: Style::new().fg(Color::Rgb(218, 225, 234)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset); diff=None; skip=false
+10: Style::new().fg(Color::Rgb(245, 141, 148)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset); diff=None; skip=false
+11: Style::new().fg(Color::Rgb(126, 211, 161)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset); diff=None; skip=false
+12: Style::new().fg(Color::Rgb(230, 190, 115)).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset); diff=None; skip=false
+13: Style::new().fg(Color::Rgb(121, 184, 255)).bg(Color::Rgb(33, 40, 50)).underline_color(Color::Reset); diff=None; skip=false
+14: Style::new().fg(Color::Rgb(218, 225, 234)).bg(Color::Rgb(37, 57, 82)).underline_color(Color::Reset).bold(); diff=None; skip=false
+15: Style::new().fg(Color::Reset).bg(Color::Rgb(22, 27, 34)).underline_color(Color::Reset); diff=None; skip=false
+16: Style::new().fg(Color::Rgb(121, 184, 255)).bg(Color::Rgb(33, 40, 50)).underline_color(Color::Reset).bold(); diff=None; skip=false
+
+style runs (x start..end exclusive = style):
+00: 0..1=0 1..8=1 8..24=0 24..25=2 25..67=3 67..80=2
+01: 0..1=0 1..4=4 4..5=2 5..33=3 33..76=2 76..79=5 79..80=2
+02: 0..1=0 1..3=6 3..4=7 4..76=2 76..79=8 79..80=2
+03: 0..1=0 1..3=9 3..4=10 4..5=2 5..75=1 75..76=2 76..79=9 79..80=2
+04: 0..1=0 1..2=11 2..3=9 3..4=11 4..5=2 5..7=9 7..17=12 17..75=9 75..76=2 76..79=9 79..80=2
+05: 0..1=0 1..2=1 2..3=9 3..4=1 4..5=2 5..7=9 7..17=12 17..75=9 75..76=2 76..79=9 79..80=2
+06: 0..4=0 4..5=2 5..7=9 7..17=12 17..75=9 75..76=2 76..79=9 79..80=2
+07: 0..1=0 1..4=1 4..5=2 5..7=9 7..17=12 17..75=9 75..76=2 76..79=9 79..80=2
+08: 0..1=0 1..4=13 4..5=2 5..7=9 7..17=12 17..75=9 75..76=2 76..79=9 79..80=2
+09: 0..4=0 4..5=2 5..7=9 7..17=12 17..75=9 75..76=2 76..79=9 79..80=2
+10: 0..1=0 1..4=1 4..5=2 5..75=14 75..76=2 76..79=9 79..80=2
+11: 0..4=0 4..5=2 5..7=9 7..75=3 75..80=2
+12: 0..1=0 1..4=1 4..5=2 5..7=9 7..75=1 75..76=2 76..80=0
+13: 0..1=0 1..4=7 4..5=2 5..75=1 75..76=2 76..79=9 79..80=0
+14: 0..4=0 4..76=2 76..80=0
+15: 0..1=15 1..10=16 10..11=15 11..15=1 15..17=15 17..24=16 24..25=15 25..32=1 32..34=15 34..37=16 37..38=15 38..44=1 44..46=15 46..51=16 51..52=15 52..56=1 56..80=15

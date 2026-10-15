@@ -34,7 +34,11 @@ impl AppState {
             DomainAction::SwitchDiffSide => DiffAction::SwitchSide,
             DomainAction::HunkNext => DiffAction::NextHunk,
             DomainAction::HunkPrevious => DiffAction::PreviousHunk,
+            DomainAction::DiffNextLine => DiffAction::NextLine,
+            DomainAction::DiffPreviousLine => DiffAction::PreviousLine,
             DomainAction::ToggleHunkSelection => DiffAction::ToggleSelection,
+            DomainAction::ToggleDiffLineMode => DiffAction::ToggleLineMode,
+            DomainAction::ToggleDiffLineRange => DiffAction::ToggleRange,
             DomainAction::ClearHunkSelection => DiffAction::ClearSelection,
             DomainAction::ApplySelectedHunks(direction) => DiffAction::ApplySelected(*direction),
             DomainAction::ApplyHunksFinished {
@@ -68,6 +72,17 @@ impl AppState {
     fn apply_diff_update(&mut self, update: DiffUpdate, output: &mut CommandOutput) {
         if let Some(write) = update.write {
             output.effect(match write {
+                HunkWrite::Lines {
+                    id,
+                    patch,
+                    ids,
+                    direction,
+                } => EffectRequest::ApplyLines {
+                    id,
+                    patch,
+                    ids,
+                    direction,
+                },
                 HunkWrite::Selected {
                     id,
                     patch,

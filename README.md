@@ -48,16 +48,74 @@ cargo run
 | Key | Action |
 | --- | --- |
 | `q` | Quit |
+| `?` | Open contextual keybindings help |
 | `h` / `←` | Previous panel |
 | `l` / `→` | Next panel |
 | `1`-`4` | Jump to panel |
 | `j` / `↓` | Move down |
 | `k` / `↑` | Move up |
 | `Space` | Stage/unstage selected file (Files panel) |
-| `Enter` | Expand/collapse directory (Files panel) |
+| `a` | Stage all changes, or unstage all when everything is staged (Files panel) |
+| `A` | Amend HEAD with staged changes, preserving its message and author (Files panel) |
+| `e` | Edit the selected file in the configured Git editor (Files panel) |
+| `Ctrl+O` | Copy the selected repository-relative path (Files panel) |
+| `i` | Add the selected untracked file/directory to the root `.gitignore` (Files panel) |
+| `Enter` | Open a file's diff, or expand/collapse a directory (Files panel) |
+| `Tab` / `Shift+Tab` | Next/previous side panel; `Tab` switches staged/unstaged sides within a diff |
 | `-` / `=` | Collapse/expand all directories |
 | `Ctrl+U` / `Ctrl+D` | Scroll diff up/down |
 | `r` | Refresh |
+
+Press `?` for the keybindings menu. Local lists commands for the current panel
+or diff, Global lists shared commands and navigation, and Custom lists built-in
+commands whose bindings you have changed in `keymap.toml`. Only effective,
+currently available bindings are shown; conflicting and unbound shortcuts are
+omitted. Custom shell commands are not currently supported.
+
+In help, use `j`/`k` or arrows to select, `PageUp`/`PageDown` to jump,
+`Home`/`End` to reach either end, and `Enter` or `Space` to execute the selected
+command. `/` filters descriptions, command names and keys. `Esc` clears an active
+filter first, then closes help; `?` or `q` also close it when not filtering.
+Closing help preserves the underlying selection and diff focus. The help key
+can be changed with `[global] help = ["F1"]` in `keymap.toml`; text editors
+continue to accept `?` as text.
+
+Editing follows Git's editor selection (`GIT_EDITOR`, `core.editor`, `VISUAL`,
+`EDITOR`, then Git's default). Editor commands support quoted executable paths
+and arguments, such as `"C:/Program Files/Editor/editor.exe" --wait`; file paths
+are passed as separate arguments. Use the editor's wait option for GUI editors.
+The TUI releases the terminal while the editor runs, resumes afterward, and
+refreshes file status. Shell pipelines and substitutions in editor commands are
+not supported.
+
+Ignoring adds an anchored literal rule, leaves existing rules intact, and does
+not stage `.gitignore` or untrack files. Editing, copying and ignoring operate on
+a single selection; directory editing is unavailable. Clipboard access requires
+a desktop clipboard service and reports an error if one is unavailable.
+
+Files and diff navigation follow Lazygit's key conventions. Press `Enter` on a
+file to focus its diff, starting in line mode. `0` also focuses the main diff,
+including directory previews. Inside the diff, `j`/`k` (or up/down) move through
+diff lines, `h`/`l` (or left/right) jump between hunks, and `a` switches between
+line and hunk selection. `v` starts/finishes a range in either mode. `Space`
+immediately stages the selection on the unstaged side or unstages it on the
+staged side; without a range it acts on the cursor. `Tab` switches staged and
+unstaged sides. `n`/`N` move to the next/previous visible file while keeping diff
+focus, and `Esc` returns to the file list and clears the selection.
+
+Older generated default bindings are migrated when loaded, including the former
+`Tab` focus, `Enter` side switch and `s`/`u` staging keys. Custom bindings remain
+intact, and loading preserves the configuration file and its comments. New
+configurations include `schema_version = 1`; setting this explicitly also allows
+intentional overrides that match a former default.
+
+Within the diff, `d` discards only the selected unstaged lines or hunks, leaving
+the index and other changes intact. On the staged side, `d` only unstages the
+selection and preserves the working file. A directory diff can select changes
+across files, but each operation must use one source (staged or unstaged).
+Historical, binary, truncated, rename, symlink and mode-changing patches remain
+read-only. Before applying, the backend checks the reviewed patch against fresh
+repository state; stale selections fail and trigger a refresh.
 
 ## Architecture
 

@@ -179,6 +179,20 @@ impl Git2RepoInner {
 }
 
 impl crate::git::PatchRepository for Git2Repository {
+    fn apply_lines(
+        &self,
+        patch: &crate::git::patch::Patch,
+        ids: &[crate::git::patch::LineId],
+        direction: crate::git::patch::PatchDirection,
+    ) -> Result<(), GitError> {
+        let patch = patch.clone();
+        let ids = ids.to_vec();
+        self.spawn_repo_job("apply_lines", move |inner| {
+            crate::git::patch_backend::apply_lines(&mut inner.repo, &patch, &ids, direction)
+        })?
+        .recv()
+        .map_err(|_| GitError::Worker("worker disconnected".into()))?
+    }
     fn apply_hunks(
         &self,
         patch: &crate::git::patch::Patch,
