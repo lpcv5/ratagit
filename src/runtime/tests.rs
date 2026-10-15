@@ -83,15 +83,15 @@ async fn test_dispatch_publishes_snapshot_and_version_before_followup_command() 
         let mut app = fixture();
         app.input.mode = Some(InputMode::CreateBranch);
         app.input.buffer = "feature".into();
-        let initial = Arc::new(AppStateSnapshotOwned::from_app(&app.state));
+        let initial = Arc::new(PublishedSnapshot::new(AppStateSnapshotOwned::from_app(&app.state), 0, None));
         let (action_tx, action_rx) = mpsc::unbounded_channel();
         let (command_tx, mut command_rx) = mpsc::unbounded_channel();
         let (version_tx, version_rx) = watch::channel(0);
         let (snapshot_tx, mut snapshot_rx) = watch::channel(initial);
         let (shutdown_tx, _) = broadcast::channel(1);
         let handle = tokio::task::spawn_local(dispatch_loop((app.state, app.initial_output), Arc::default(), action_rx, command_tx, version_tx, snapshot_tx, shutdown_tx.subscribe()));
-        action_tx.send(Action::Domain(DomainAction::InputEnter)).unwrap();
-        let command = tokio::time::timeout(Duration::from_secs(3), command_rx.recv()).await.unwrap().unwrap();
+        action_tx.send(Action::Domain(DomainAction::InputEnter).into()).unwrap();
+        let command = tokio::time::timeout(Duration::from_secs(3), command_rx.recv()).await.unwrap().unwrap().value;
         assert!(matches!(command, Command::Sync(DomainAction::CreateBranch(name)) if name == "feature"));
         assert_eq!(*version_rx.borrow(), 1);
         assert!(snapshot_rx.has_changed().unwrap());
@@ -156,11 +156,12 @@ impl CommitRepository for PausedRepo {
 }
 impl OperationRepository for PausedRepo {}
 
-async fn next_action(receiver: &mut mpsc::UnboundedReceiver<Action>) -> Action {
+async fn next_action(receiver: &mut mpsc::UnboundedReceiver<Tracked<Action>>) -> Action {
     tokio::time::timeout(Duration::from_secs(3), receiver.recv())
         .await
         .unwrap()
         .unwrap()
+        .value
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -176,6 +177,7 @@ async fn test_command_loop_keeps_fifo_actions_and_writes_while_reads_continue() 
             let writes = repo.writes.clone();
             let (command_tx, command_rx) = mpsc::unbounded_channel();
             let (action_tx, mut action_rx) = mpsc::unbounded_channel();
+            let action_tx = ActionSender::new(action_tx, None);
             let (shutdown_tx, _) = broadcast::channel(1);
             let handle = tokio::task::spawn_local(command_loop(
                 AppRuntime::new(Box::new(repo)),
@@ -185,19 +187,19 @@ async fn test_command_loop_keeps_fifo_actions_and_writes_while_reads_continue() 
                 shutdown_tx.subscribe(),
             ));
             command_tx
-                .send(Command::Effect(EffectRequest::StageFile("first".into())))
+                .send(Command::Effect(EffectRequest::StageFile("first".into())).into())
                 .unwrap();
             command_tx
-                .send(Command::runtime(RuntimeEvent::FlushPendingDiffReload))
+                .send(Command::runtime(RuntimeEvent::FlushPendingDiffReload).into())
                 .unwrap();
             command_tx
-                .send(Command::Effect(EffectRequest::UnstageFile("second".into())))
+                .send(Command::Effect(EffectRequest::UnstageFile("second".into())).into())
                 .unwrap();
             command_tx
-                .send(Command::Effect(EffectRequest::FetchRemote))
+                .send(Command::Effect(EffectRequest::FetchRemote).into())
                 .unwrap();
             command_tx
-                .send(Command::Sync(DomainAction::InputChar('x')))
+                .send(Command::Sync(DomainAction::InputChar('x')).into())
                 .unwrap();
             tokio::time::timeout(Duration::from_secs(3), started.notified())
                 .await
@@ -274,6 +276,7 @@ async fn test_auto_refresh_ticks_immediately_and_shutdown_does_not_wait_for_inte
     tokio::task::LocalSet::new()
         .run_until(async {
             let (action_tx, mut action_rx) = mpsc::unbounded_channel();
+            let action_tx = ActionSender::new(action_tx, None);
             let (shutdown_tx, _) = broadcast::channel(1);
             let handle =
                 tokio::task::spawn_local(auto_refresh_loop(action_tx, shutdown_tx.subscribe()));
@@ -287,6 +290,95 @@ async fn test_auto_refresh_ticks_immediately_and_shutdown_does_not_wait_for_inte
                 .unwrap()
                 .unwrap();
             assert!(action_rx.recv().await.is_none());
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_traced_effect_queue_preserves_identity_while_write_is_blocked() {
+    use crate::latency::{tests::Capture, Recorder};
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            let (release, gate) = blocking::channel();
+            let repo = PausedRepo {
+                stage: Mutex::new(Some(gate)),
+                ..Default::default()
+            };
+            let started = repo.started.clone();
+            let capture = Capture::default();
+            let recorder = Recorder::with_writer(capture.clone());
+            let first = recorder.start("input").child("stage", None);
+            let second = recorder.start("input").child("unstage", None);
+            let (command_tx, command_rx) = mpsc::unbounded_channel();
+            let (action_tx, mut action_rx) = mpsc::unbounded_channel();
+            let (shutdown_tx, _) = broadcast::channel(1);
+            let handle = tokio::task::spawn_local(command_loop(
+                AppRuntime::new(Box::new(repo)),
+                Arc::default(),
+                command_rx,
+                ActionSender::new(action_tx, None),
+                shutdown_tx.subscribe(),
+            ));
+            command_tx
+                .send(Tracked::new(
+                    Command::Effect(EffectRequest::StageFile("first".into())),
+                    Some(first),
+                ))
+                .unwrap();
+            command_tx
+                .send(Tracked::new(
+                    Command::Effect(EffectRequest::UnstageFile("second".into())),
+                    Some(second),
+                ))
+                .unwrap();
+            tokio::time::timeout(Duration::from_secs(3), started.notified())
+                .await
+                .unwrap();
+            assert!(
+                !capture
+                    .events()
+                    .iter()
+                    .any(|event| event["operation"] == "unstage"
+                        && event["stage"] == "effect_started")
+            );
+            release.send(Ok(())).unwrap();
+            let first_action = tokio::time::timeout(Duration::from_secs(3), action_rx.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            let second_action = tokio::time::timeout(Duration::from_secs(3), action_rx.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(matches!(
+                first_action.value,
+                Action::Domain(DomainAction::StageFileFinished { .. })
+            ));
+            assert!(matches!(
+                second_action.value,
+                Action::Domain(DomainAction::UnstageFileFinished { .. })
+            ));
+            assert!(first_action.trace.is_some() && second_action.trace.is_some());
+            let events = capture.events();
+            let first_finished = events
+                .iter()
+                .position(|event| {
+                    event["operation"] == "stage" && event["stage"] == "effect_finished"
+                })
+                .unwrap();
+            let second_started = events
+                .iter()
+                .position(|event| {
+                    event["operation"] == "unstage" && event["stage"] == "effect_started"
+                })
+                .unwrap();
+            assert!(first_finished < second_started);
+            assert_ne!(
+                events[first_finished]["request_id"],
+                events[second_started]["request_id"]
+            );
+            shutdown_tx.send(()).unwrap();
+            handle.await.unwrap();
         })
         .await;
 }

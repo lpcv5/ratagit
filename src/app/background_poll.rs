@@ -64,6 +64,13 @@ impl AppState {
         if !self.tasks.accept(completed) {
             return;
         }
+        // Task generations and repository freshness are independent. Check both
+        // before consuming a payload or reporting a now-obsolete failure.
+        if !self.diff_completion_is_current(completed) {
+            self.diff.reject_load();
+            self.schedule_diff_reload(output);
+            return;
+        }
         let mut schedule_diff = false;
         let mut refresh_search = false;
         match &completed.result {
@@ -149,7 +156,7 @@ impl AppState {
                 if matches!(key, TaskKey::Diff { .. }) {
                     self.diff.finish_load();
                 }
-                self.push_log(reason.clone(), false);
+                self.push_log(crate::app::git_error::message(reason), false);
             }
         }
         if refresh_search {

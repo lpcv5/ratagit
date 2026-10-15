@@ -52,7 +52,7 @@ fn test_request_identity_is_derived_from_its_only_load_description() {
         (BackgroundLoad::StashFiles { index: 3 }, TaskKey::StashFiles),
         (
             BackgroundLoad::Diff {
-                cache_key: DiffCacheKey::None,
+                cache_key: DiffCacheKey::None.at_revision(0),
                 target: DiffTarget::None,
             },
             TaskKey::active_diff(),

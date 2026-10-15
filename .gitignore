@@ -4,7 +4,6 @@
 *.pdb
 
 # Cargo
-Cargo.lock
 **/*.orig
 
 # IDEs
@@ -42,6 +41,7 @@ Thumbs.db
 *.tmp
 *.bak
 *.log
+ratagit-latency.jsonl
 *.swp
 
 # Project specific

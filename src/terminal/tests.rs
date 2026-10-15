@@ -195,21 +195,19 @@ fn test_panic_fixture() {
 #[cfg(unix)]
 #[test]
 fn test_real_panic_restores_terminal_before_diagnostics() {
-    let directory = tempfile::tempdir().unwrap();
+    let fixture = crate::process_tests::support::ProcessFixture::new();
     let mut terminal = pty::Pty::new();
     let original = terminal.mode();
     let mut child = terminal.spawn(
-        std::process::Command::new(std::env::current_exe().unwrap())
+        fixture
+            .command(std::env::current_exe().unwrap())
             .args([
                 "--exact",
                 "terminal::tests::test_panic_fixture",
                 "--nocapture",
                 "--test-threads=1",
             ])
-            .current_dir(directory.path())
-            .env("RATAGIT_TERMINAL_PANIC_TEST", "1")
-            .env("RUST_BACKTRACE", "0")
-            .env("NO_COLOR", "1"),
+            .env("RATAGIT_TERMINAL_PANIC_TEST", "1"),
     );
     let mut output = Vec::new();
     terminal.wait_for(&mut child, &mut output, b"\x1b[?1006h");

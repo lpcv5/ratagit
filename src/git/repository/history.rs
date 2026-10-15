@@ -317,7 +317,7 @@ impl crate::git::HistoryRepository for Git2Repository {
         let name = name.to_string();
         self.spawn_repo_job_external("branch_log", move |inner| inner.branch_log(&name, limit))?
             .recv()
-            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+            .map_err(|_| GitError::Worker("worker disconnected".to_string()))?
     }
 
     fn branch_log_async(
@@ -331,13 +331,13 @@ impl crate::git::HistoryRepository for Git2Repository {
     fn commits(&self, limit: usize) -> Result<Vec<CommitInfo>, GitError> {
         self.spawn_repo_job_external("commits", move |inner| inner.commits(limit))?
             .recv()
-            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+            .map_err(|_| GitError::Worker("worker disconnected".to_string()))?
     }
 
     fn commits_fast(&self, limit: usize) -> Result<Vec<CommitInfo>, GitError> {
         self.spawn_repo_job_external("commits_fast", move |inner| inner.commits_fast(limit))?
             .recv()
-            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+            .map_err(|_| GitError::Worker("worker disconnected".to_string()))?
     }
 
     fn commits_async(
@@ -360,7 +360,7 @@ impl crate::git::HistoryRepository for Git2Repository {
             inner.commits_for_branch(&name, limit)
         })?
         .recv()
-        .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+        .map_err(|_| GitError::Worker("worker disconnected".to_string()))?
     }
 
     fn commits_for_branch_async(
@@ -378,6 +378,6 @@ impl crate::git::HistoryRepository for Git2Repository {
         let oid = oid.to_string();
         self.spawn_repo_job("commit_files", move |inner| inner.commit_files(&oid))?
             .recv()
-            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+            .map_err(|_| GitError::Worker("worker disconnected".to_string()))?
     }
 }

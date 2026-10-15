@@ -191,7 +191,7 @@ impl crate::git::PatchRepository for Git2Repository {
             crate::git::patch_backend::apply(&mut inner.repo, &patch, &ids, direction)
         })?
         .recv()
-        .map_err(|_| GitError::Git2("worker disconnected".into()))?
+        .map_err(|_| GitError::Worker("worker disconnected".into()))?
     }
     fn patch(
         &self,
@@ -201,7 +201,7 @@ impl crate::git::PatchRepository for Git2Repository {
             crate::git::patch_backend::load(&mut inner.repo, request).map(Some)
         })?
         .recv()
-        .map_err(|_| GitError::Git2("worker disconnected".into()))?
+        .map_err(|_| GitError::Worker("worker disconnected".into()))?
     }
 
     fn stage_hunks(
@@ -216,14 +216,14 @@ impl crate::git::PatchRepository for Git2Repository {
             crate::git::patch_backend::stage(&mut inner.repo, &patch, file, &hunks)
         })?
         .recv()
-        .map_err(|_| GitError::Git2("worker disconnected".into()))?
+        .map_err(|_| GitError::Worker("worker disconnected".into()))?
     }
 
     fn diff_unstaged(&self, path: &std::path::Path) -> Result<Vec<DiffLine>, GitError> {
         let path = path.to_path_buf();
         self.spawn_repo_job("diff_unstaged", move |inner| inner.diff_unstaged(&path))?
             .recv()
-            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+            .map_err(|_| GitError::Worker("worker disconnected".to_string()))?
     }
 
     fn diff_unstaged_async(
@@ -237,7 +237,7 @@ impl crate::git::PatchRepository for Git2Repository {
         let path = path.to_path_buf();
         self.spawn_repo_job("diff_staged", move |inner| inner.diff_staged(&path))?
             .recv()
-            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+            .map_err(|_| GitError::Worker("worker disconnected".to_string()))?
     }
 
     fn diff_staged_async(
@@ -251,7 +251,7 @@ impl crate::git::PatchRepository for Git2Repository {
         let path = path.to_path_buf();
         self.spawn_repo_job("diff_untracked", move |inner| inner.diff_untracked(&path))?
             .recv()
-            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+            .map_err(|_| GitError::Worker("worker disconnected".to_string()))?
     }
 
     fn diff_untracked_async(
@@ -265,7 +265,7 @@ impl crate::git::PatchRepository for Git2Repository {
         let path = path.to_path_buf();
         self.spawn_repo_job("diff_directory", move |inner| inner.diff_directory(&path))?
             .recv()
-            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+            .map_err(|_| GitError::Worker("worker disconnected".to_string()))?
     }
 
     fn diff_directory_async(
@@ -286,7 +286,7 @@ impl crate::git::PatchRepository for Git2Repository {
             inner.commit_diff_scoped(&oid, path.as_deref())
         })?
         .recv()
-        .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+        .map_err(|_| GitError::Worker("worker disconnected".to_string()))?
     }
 
     fn commit_diff_scoped_async(

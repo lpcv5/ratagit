@@ -45,9 +45,10 @@ impl<S: LogAccess + StashAccess + ?Sized> Store<S> for StashStore {
                         );
                         return ReduceOutput::none().with_invalidation(UiInvalidation::all());
                     }
-                    Err(e) => ctx
-                        .state
-                        .push_log(format!("stash create failed: {}", e), false),
+                    Err(e) => ctx.state.push_log(
+                        format!("stash create failed: {}", crate::app::git_error::message(e)),
+                        false,
+                    ),
                 }
                 ReduceOutput::none()
             }
@@ -245,7 +246,7 @@ mod more_tests {
             &mut app,
             Action::Domain(DomainAction::StashPushFinished {
                 message: "wip".to_string(),
-                result: Err("push failed".to_string()),
+                result: Err("push failed".into()),
             }),
         );
         assert!(app.command_log.len() > logs_before);

@@ -1,28 +1,28 @@
 //! Terminal input and immutable snapshot rendering.
-use super::telemetry::{update_backlog, update_max, PerfCounters, PerfLog, ENABLE_DEBUG_LOG};
+use super::telemetry::{update_backlog, update_max, PerfCounters, PerfLog};
+use super::tracking::{ActionSender, PublishedSnapshot};
 use crate::flux;
 use crate::flux::action::{Action, SystemAction};
-use crate::flux::snapshot::AppStateSnapshotOwned;
 use color_eyre::Result;
 use crossterm::event::{self, Event, KeyEventKind};
 use ratatui::DefaultTerminal;
 use std::sync::{atomic::Ordering, Arc};
 use std::time::{Duration, Instant};
-use tokio::sync::{broadcast, mpsc, watch};
+use tokio::sync::{broadcast, watch};
 use tracing::info;
 
 pub(super) async fn ui_loop(
     terminal: &mut DefaultTerminal,
     perf: Arc<PerfCounters>,
-    action_tx: mpsc::UnboundedSender<Action>,
+    action_tx: ActionSender,
     state_version_rx: &mut watch::Receiver<u64>,
-    mut snapshot_rx: watch::Receiver<Arc<AppStateSnapshotOwned>>,
+    mut snapshot_rx: watch::Receiver<Arc<PublishedSnapshot>>,
     shutdown_tx: broadcast::Sender<()>,
 ) -> Result<()> {
     const MAX_EVENTS_PER_FRAME: usize = 64;
     const DIFF_RELOAD_DEBOUNCE: Duration = Duration::from_millis(180);
     const SLOW_DRAW_US: u64 = 8_000;
-    let mut perf_log = if ENABLE_DEBUG_LOG {
+    let mut perf_log = if perf.logging_enabled() {
         PerfLog::new().ok()
     } else {
         None
@@ -49,11 +49,8 @@ pub(super) async fn ui_loop(
 
         if snapshot_rx.has_changed().unwrap_or(false) {
             let draw_started = Instant::now();
-            terminal.draw(|f| {
-                let snapshot = snapshot_rx.borrow_and_update();
-                let view = snapshot.as_snapshot();
-                crate::ui::layout::render_layout(f, &view);
-            })?;
+            let snapshot = snapshot_rx.borrow_and_update().clone();
+            draw_snapshot(terminal, &snapshot)?;
             let draw_us = draw_started.elapsed().as_micros() as u64;
             perf.ui_draws.fetch_add(1, Ordering::Relaxed);
             perf.ui_draw_us.fetch_add(draw_us, Ordering::Relaxed);
@@ -73,11 +70,12 @@ pub(super) async fn ui_loop(
                         perf.ui_events.fetch_add(1, Ordering::Relaxed);
                         if matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
                             let key_started = Instant::now();
+                            let trace = action_tx.start("input");
                             let snapshot = snapshot_rx.borrow();
                             let view = snapshot.as_snapshot();
                             let mapped_actions = flux::input_mapper::map_key_to_actions(key, &view);
                             for action in mapped_actions {
-                                let _ = action_tx.send(action);
+                                let _ = action_tx.send_traced(action, trace.clone());
                                 perf.ui_messages.fetch_add(1, Ordering::Relaxed);
                                 perf.action_enqueued.fetch_add(1, Ordering::Relaxed);
                                 update_backlog(
@@ -138,4 +136,24 @@ pub(super) async fn ui_loop(
         };
         tokio::time::sleep(frame_sleep).await;
     }
+}
+
+/// A frame is observed only after the backend successfully flushes it.
+pub(super) fn draw_snapshot<B: ratatui::backend::Backend>(
+    terminal: &mut ratatui::Terminal<B>,
+    snapshot: &PublishedSnapshot,
+) -> Result<(), B::Error> {
+    let started = Instant::now();
+    let result = terminal.draw(|frame| {
+        crate::ui::layout::render_layout(frame, &snapshot.as_snapshot());
+    });
+    snapshot.finish(
+        if result.is_ok() {
+            "frame_drawn"
+        } else {
+            "draw_failed"
+        },
+        started.elapsed(),
+    );
+    result.map(|_| ())
 }

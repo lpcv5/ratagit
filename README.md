@@ -92,6 +92,9 @@ Ratagit follows a layered runtime design:
 Read more in:
 
 - [Application architecture, module boundaries and refactoring roadmap](src/app/README.md)
+- [Rust practices from uv and adoption priorities for Ratagit](docs/uv-rust-practices.md)
+- [Profiling builds and end-to-end interaction latency](docs/profiling.md)
+- [Diff cache memory budget, identity and freshness](docs/diff-cache.md)
 
 ## Tech Stack
 
@@ -158,6 +161,15 @@ cargo clippy --all-targets --all-features -- -D warnings
 UI regression tests use Ratatui's in-memory backend and checked-in golden
 buffers. Run `cargo test ui::` to compare layouts, cell styles, and input cursors.
 See [UI golden buffers](src/ui/goldens/README.md) for coverage and baseline updates.
+
+CI runs the four checks on Ubuntu and Windows with the committed lockfile.
+`cargo test process_tests` exercises isolated child processes for configuration
+recovery, Unicode paths, CRLF patches, Git diagnostics, and worker shutdown.
+`cargo test --test terminal_lifecycle` checks startup failures on both platforms
+and real terminal cleanup and profiling on Unix. Each process fixture owns its
+Git configuration, home/config directories, and temporary files; children have
+bounded lifetimes. Windows console lifecycle coverage still needs a dedicated
+console harness. See [platform test details](docs/uv-rust-practices.md#extend-existing-snapshots-and-platform-tests).
 
 ## License
 

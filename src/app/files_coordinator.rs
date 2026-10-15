@@ -15,6 +15,8 @@ impl AppState {
         &mut self,
         status: impl Into<crate::shared::Shared<GitStatus>>,
     ) {
+        self.diff
+            .source_refreshed(super::diff::DiffRefreshSource::Status);
         self.reduce_files(FilesAction::ReplaceStatus(status.into()));
         if self
             .file_selection()

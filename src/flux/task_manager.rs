@@ -67,6 +67,11 @@ impl TaskManager {
         self.active.is_empty()
     }
 
+    pub(crate) fn is_current(&self, completed: &BackgroundCompleted) -> bool {
+        self.active.contains_key(&completed.request.generation)
+            && self.latest.get(&completed.request.key) == Some(&completed.request.generation)
+    }
+
     pub fn cancel(&mut self, key: &TaskKey) {
         self.active.retain(|_, active| active != key);
     }

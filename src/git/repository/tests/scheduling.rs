@@ -10,6 +10,32 @@ use tempfile::TempDir;
 
 const TIMEOUT: Duration = Duration::from_secs(10);
 
+#[test]
+fn test_git_subprocess_failure_retains_status_and_diagnostic_streams() {
+    let (_directory, repo) = init_repo_with_commit();
+    let receiver = repo
+        .spawn_repo_job("test_process_error", |inner| {
+            inner.run_git_owned(&[
+                "rev-parse".into(),
+                "--verify".into(),
+                "refs/heads/missing".into(),
+            ])
+        })
+        .unwrap();
+    let error = receiver.recv_timeout(TIMEOUT).unwrap().unwrap_err();
+    let GitError::Context { operation, source } = error else {
+        panic!("worker context")
+    };
+    assert_eq!(operation, "test_process_error");
+    let GitError::Process(diagnostic) = source.as_ref() else {
+        panic!("process diagnostic")
+    };
+    assert!(diagnostic.exit_code.is_some_and(|code| code != 0));
+    assert!(!diagnostic.stderr.is_empty());
+    assert!(diagnostic.stdout.is_empty());
+    assert_eq!(source.category(), crate::git::GitErrorCategory::Other);
+}
+
 fn receive<T>(rx: &Receiver<Result<T, GitError>>) -> T {
     rx.recv_timeout(TIMEOUT)
         .expect("worker must complete")

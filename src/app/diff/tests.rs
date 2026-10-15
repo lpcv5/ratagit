@@ -8,7 +8,7 @@ use crate::git::{DiffLine, DiffLineKind, FileStatus};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-fn patch(sources: &[PatchSource]) -> Arc<Patch> {
+pub(super) fn patch(sources: &[PatchSource]) -> Arc<Patch> {
     let request = if sources.len() > 1 {
         PatchRequest::Directory("src".into())
     } else if sources[0] == PatchSource::Index {
@@ -56,7 +56,7 @@ fn patch(sources: &[PatchSource]) -> Arc<Patch> {
     })
 }
 
-fn document(patch: Arc<Patch>) -> DiffDocument {
+pub(super) fn document(patch: Arc<Patch>) -> DiffDocument {
     DiffDocument {
         lines: patch.display_lines().into(),
         patch: Some(patch),
@@ -477,4 +477,217 @@ fn test_untracked_and_revision_targets_ignore_worktree_side_choice() {
     assert_eq!(target.cache_key(&[]), original_key);
     assert!(target.affected_by(DiffRefreshSource::Commits));
     assert!(!target.affected_by(DiffRefreshSource::Status));
+}
+
+#[test]
+fn test_refresh_revisions_reject_old_reads_without_clearing_new_in_flight_identity() {
+    for (target, source) in [
+        (file_target("same.txt"), DiffRefreshSource::Status),
+        (
+            DiffTarget::Directory { path: "src".into() },
+            DiffRefreshSource::Status,
+        ),
+        (
+            DiffTarget::Branch {
+                name: "same-name".into(),
+            },
+            DiffRefreshSource::Branches,
+        ),
+        (
+            DiffTarget::Stash {
+                index: 0,
+                path: None,
+            },
+            DiffRefreshSource::Stashes,
+        ),
+    ] {
+        let mut state = DiffState::default();
+        state.schedule_reload(Instant::now());
+        let DiffLoad::Request { cache_key: old, .. } = state.prepare_reload(target.clone(), &[])
+        else {
+            panic!("old read");
+        };
+        state.source_refreshed(source);
+        state.schedule_reload(Instant::now());
+        let DiffLoad::Request {
+            cache_key: current, ..
+        } = state.prepare_reload(target.clone(), &[])
+        else {
+            panic!("new read");
+        };
+        assert_ne!(old, current);
+        assert!(!state.complete_load(
+            old,
+            vec![DiffLine {
+                kind: DiffLineKind::Context,
+                content: "obsolete".into()
+            }]
+            .into(),
+            &target,
+            &[]
+        ));
+        assert!(state.accepts_load(&current));
+        assert!(state.is_loading());
+        assert!(state.complete_load(
+            current,
+            vec![DiffLine {
+                kind: DiffLineKind::Context,
+                content: "current".into()
+            }]
+            .into(),
+            &target,
+            &[]
+        ));
+        state.schedule_reload(Instant::now());
+        assert!(matches!(state.prepare_reload(target, &[]), DiffLoad::Ready));
+        assert_eq!(state.document()[0].content, "current");
+        assert_eq!(state.cache_stats().entries, 1);
+        assert_eq!(state.cache_stats().rejected, 1);
+    }
+}
+
+#[test]
+fn test_commit_oid_and_path_scope_survive_mutable_refreshes_in_flight_and_in_cache() {
+    let mut state = DiffState::default();
+    let target = DiffTarget::Commit {
+        oid: "a".repeat(40),
+        path: Some("src/file.txt".into()),
+    };
+    state.schedule_reload(Instant::now());
+    let DiffLoad::Request { cache_key, .. } = state.prepare_reload(target.clone(), &[]) else {
+        panic!("commit read");
+    };
+    state.repository_refreshed(true);
+    let original = document(patch(&[PatchSource::Commit("a".repeat(40))]));
+    assert!(state.complete_load(cache_key, original.clone(), &target, &[]));
+    state.repository_refreshed(true);
+    state.schedule_reload(Instant::now());
+    assert!(matches!(state.prepare_reload(target, &[]), DiffLoad::Ready));
+    assert!(original.lines.ptr_eq(&state.document().lines));
+    for target in [
+        DiffTarget::Commit {
+            oid: "b".repeat(40),
+            path: Some("src/file.txt".into()),
+        },
+        DiffTarget::Commit {
+            oid: "a".repeat(40),
+            path: None,
+        },
+        DiffTarget::Commit {
+            oid: "a".repeat(40),
+            path: Some("other.txt".into()),
+        },
+    ] {
+        state.schedule_reload(Instant::now());
+        assert!(matches!(
+            state.prepare_reload(target, &[]),
+            DiffLoad::Request { .. }
+        ));
+    }
+}
+
+#[test]
+fn test_unrelated_reference_observations_keep_worktree_cache_and_hunk_selection() {
+    let mut state = DiffState::default();
+    let target = file_target("file.txt");
+    load(
+        &mut state,
+        target.clone(),
+        document(patch(&[PatchSource::Worktree])),
+    );
+    state.update(DiffAction::ToggleFocus, true);
+    state.update(DiffAction::ToggleSelection, true);
+    let selected = state.interaction().selected.clone();
+    for source in [
+        DiffRefreshSource::Branches,
+        DiffRefreshSource::Stashes,
+        DiffRefreshSource::Commits,
+    ] {
+        state.source_refreshed(source);
+        assert_eq!(state.interaction().selected, selected);
+        assert!(state.document().patch.is_some());
+    }
+    state.schedule_reload(Instant::now());
+    assert!(matches!(state.prepare_reload(target, &[]), DiffLoad::Ready));
+}
+
+#[test]
+fn test_oversized_diff_remains_available_but_is_not_reused_from_cache() {
+    let mut state = DiffState::default();
+    state.set_test_cache_limits(50, 1);
+    let target = file_target("large.txt");
+    let original = document(patch(&[PatchSource::Worktree]));
+    load(&mut state, target.clone(), original.clone());
+    assert!(original.lines.ptr_eq(&state.document().lines));
+    assert!(Arc::ptr_eq(
+        original.patch.as_ref().unwrap(),
+        state.document().patch.as_ref().unwrap()
+    ));
+    assert_eq!(state.cache_stats().entries, 0);
+    assert_eq!(state.cache_stats().retained_bytes, 0);
+    assert_eq!(state.cache_stats().oversized, 1);
+    state.schedule_reload(Instant::now());
+    assert!(matches!(
+        state.prepare_reload(target, &[]),
+        DiffLoad::Request { .. }
+    ));
+    assert!(original.patch.is_some());
+    assert!(!original.lines.is_empty());
+}
+
+#[test]
+fn test_file_source_and_structured_directory_inputs_have_distinct_keys() {
+    use crate::file_tree::FileTreeNode;
+    let target = |status| DiffTarget::File {
+        path: "same.txt".into(),
+        status,
+    };
+    let sources = [
+        FileTreeNodeStatus::Unstaged(FileStatus::New),
+        FileTreeNodeStatus::Staged(FileStatus::New),
+        FileTreeNodeStatus::Untracked,
+    ];
+    let keys: std::collections::HashSet<_> = sources
+        .into_iter()
+        .map(|source| target(source).cache_key(&[]))
+        .collect();
+    assert_eq!(keys.len(), 3);
+    let node = |path: &str| FileTreeNode {
+        path: path.into(),
+        status: FileTreeNodeStatus::Unstaged(FileStatus::Modified),
+        depth: 0,
+        is_dir: false,
+        is_expanded: false,
+    };
+    let dir = DiffTarget::Directory { path: "src".into() };
+    let single = vec![node("src/a|src/b")];
+    let mut multiple = vec![node("src/a"), node("src/b")];
+    assert_ne!(dir.cache_key(&single), dir.cache_key(&multiple));
+    let before = dir.cache_key(&multiple);
+    multiple[0].status = FileTreeNodeStatus::Staged(FileStatus::Modified);
+    assert_ne!(before, dir.cache_key(&multiple));
+    let (_, small) = crate::flux::snapshot::measurement::measure(|| dir.cache_key(&single));
+    let large = (0..1000)
+        .map(|i| node(&format!("src/file{i}")))
+        .collect::<Vec<_>>();
+    let (_, large) = crate::flux::snapshot::measurement::measure(|| dir.cache_key(&large));
+    assert_eq!(
+        small, large,
+        "directory-key allocations must not grow with file count"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn test_directory_keys_preserve_non_utf8_path_identity() {
+    use std::os::unix::ffi::OsStringExt;
+    let node = |last| crate::file_tree::FileTreeNode {
+        path: std::ffi::OsString::from_vec(vec![b's', b'r', b'c', b'/', last]).into(),
+        status: FileTreeNodeStatus::Untracked,
+        depth: 0,
+        is_dir: false,
+        is_expanded: false,
+    };
+    let dir = DiffTarget::Directory { path: "src".into() };
+    assert_ne!(dir.cache_key(&[node(0xff)]), dir.cache_key(&[node(0xfe)]));
 }

@@ -83,7 +83,7 @@ fn test_file_failure_logs_without_emitting_a_retry() {
         &mut state,
         Action::Domain(DomainAction::UnstageFileFinished {
             path: "selected.txt".into(),
-            result: Err("index locked".to_string()),
+            result: Err("index locked".into()),
         }),
     );
     assert_eq!(

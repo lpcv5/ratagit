@@ -23,6 +23,13 @@ impl<T> From<T> for Shared<T> {
     }
 }
 
+impl<T> Shared<T> {
+    /// Identity of the shared allocation, independent of an empty Vec's buffer.
+    pub(crate) fn allocation_id(&self) -> usize {
+        Arc::as_ptr(&self.0) as usize
+    }
+}
+
 impl<T> Deref for Shared<T> {
     type Target = T;
     fn deref(&self) -> &T {

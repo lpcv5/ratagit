@@ -42,6 +42,7 @@ impl RepoWorker {
     /// Spawn the worker thread and return a handle.
     pub(super) fn spawn(repo_root: PathBuf) -> Result<Self, GitError> {
         let (tx, rx) = mpsc::sync_channel::<RepoJob>(128);
+        let (startup_tx, startup_rx) = mpsc::channel();
         thread::Builder::new()
             .name("ratagit-repo-worker".to_string())
             .spawn(move || {
@@ -53,6 +54,8 @@ impl RepoWorker {
                     },
                     Err(err) => {
                         write_git_job_log(&format!("repo_open_failed err={}", err));
+                        let _ =
+                            startup_tx.send(Err(GitError::from(err).context("open_repository")));
                         return;
                     }
                 };
@@ -61,12 +64,16 @@ impl RepoWorker {
                     t0.elapsed().as_millis(),
                     repo_root.display()
                 ));
+                let _ = startup_tx.send(Ok(()));
                 while let Ok(job) = rx.recv() {
                     job(&mut inner);
                 }
                 write_git_job_log("repo_worker_exited");
             })
-            .map_err(|e| GitError::Git2(format!("failed to spawn repo worker: {}", e)))?;
+            .map_err(|e| GitError::Worker(format!("failed to spawn repo worker: {}", e)))?;
+        startup_rx
+            .recv()
+            .map_err(|error| GitError::Worker(error.to_string()))??;
         Ok(Self { tx })
     }
 
@@ -82,11 +89,26 @@ impl RepoWorker {
     {
         let (result_tx, result_rx) = mpsc::channel();
         let enqueue_at = std::time::Instant::now();
+        let trace = crate::latency::Trace::current();
+        if let Some(trace) = &trace {
+            trace.worker_event(
+                "git_queued",
+                std::time::Duration::ZERO,
+                Some(label),
+                Some(0),
+            );
+        }
         let boxed: RepoJob = Box::new(move |inner| {
+            if let Some(trace) = &trace {
+                trace.worker_event("git_started", enqueue_at.elapsed(), Some(label), Some(0));
+            }
             let queue_ms = enqueue_at.elapsed().as_millis();
             let exec_start = std::time::Instant::now();
-            let result = job(inner);
+            let result = job(inner).map_err(|error| error.context(label));
             let exec_ms = exec_start.elapsed().as_millis();
+            if let Some(trace) = &trace {
+                trace.worker_event("git_finished", exec_start.elapsed(), Some(label), Some(0));
+            }
             write_git_job_log(&format!(
                 "git_job worker=primary label={} queue_ms={} exec_ms={} ok={}",
                 label,
@@ -98,7 +120,7 @@ impl RepoWorker {
         });
         self.tx
             .send(boxed)
-            .map_err(|_| GitError::Git2("repo worker channel closed".to_string()))?;
+            .map_err(|_| GitError::Worker("repo worker channel closed".to_string()))?;
         Ok(result_rx)
     }
 }
@@ -106,6 +128,7 @@ impl RepoWorker {
 impl RepoWorkerExternal {
     pub(super) fn spawn(repo_root: PathBuf, id: usize) -> Result<Self, GitError> {
         let (tx, rx) = mpsc::sync_channel::<ExternalRepoJob>(128);
+        let (startup_tx, startup_rx) = mpsc::channel();
         thread::Builder::new()
             .name(format!("ratagit-external-worker-{}", id))
             .spawn(move || {
@@ -117,6 +140,8 @@ impl RepoWorkerExternal {
                     },
                     Err(err) => {
                         write_git_job_log(&format!("external_repo_open_failed err={}", err));
+                        let _ =
+                            startup_tx.send(Err(GitError::from(err).context("open_repository")));
                         return;
                     }
                 };
@@ -126,6 +151,7 @@ impl RepoWorkerExternal {
                     t0.elapsed().as_millis(),
                     repo_root.display()
                 ));
+                let _ = startup_tx.send(Ok(()));
                 while let Ok(job) = rx.recv() {
                     job(&mut inner);
                 }
@@ -134,7 +160,10 @@ impl RepoWorkerExternal {
                     id
                 ));
             })
-            .map_err(|e| GitError::Git2(format!("failed to spawn external worker: {}", e)))?;
+            .map_err(|e| GitError::Worker(format!("failed to spawn external worker: {}", e)))?;
+        startup_rx
+            .recv()
+            .map_err(|error| GitError::Worker(error.to_string()))??;
         Ok(Self { id, tx })
     }
 
@@ -150,11 +179,36 @@ impl RepoWorkerExternal {
         let worker_id = self.id;
         let (result_tx, result_rx) = mpsc::channel();
         let enqueue_at = std::time::Instant::now();
+        let trace = crate::latency::Trace::current();
+        if let Some(trace) = &trace {
+            trace.worker_event(
+                "git_queued",
+                std::time::Duration::ZERO,
+                Some(label),
+                Some(worker_id + 1),
+            );
+        }
         let boxed: ExternalRepoJob = Box::new(move |inner| {
+            if let Some(trace) = &trace {
+                trace.worker_event(
+                    "git_started",
+                    enqueue_at.elapsed(),
+                    Some(label),
+                    Some(worker_id + 1),
+                );
+            }
             let queue_ms = enqueue_at.elapsed().as_millis();
             let exec_start = std::time::Instant::now();
-            let result = job(inner);
+            let result = job(inner).map_err(|error| error.context(label));
             let exec_ms = exec_start.elapsed().as_millis();
+            if let Some(trace) = &trace {
+                trace.worker_event(
+                    "git_finished",
+                    exec_start.elapsed(),
+                    Some(label),
+                    Some(worker_id + 1),
+                );
+            }
             write_git_job_log(&format!(
                 "git_job worker=external-{} label={} queue_ms={} exec_ms={} ok={}",
                 worker_id,
@@ -167,7 +221,70 @@ impl RepoWorkerExternal {
         });
         self.tx
             .send(boxed)
-            .map_err(|_| GitError::Git2("external worker channel closed".to_string()))?;
+            .map_err(|_| GitError::Worker("external worker channel closed".to_string()))?;
         Ok(result_rx)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::git::GitErrorCategory;
+    use std::time::Duration;
+
+    #[test]
+    fn test_both_native_worker_lanes_preserve_structured_failures() {
+        let directory = tempfile::tempdir().unwrap();
+        git2::Repository::init(directory.path()).unwrap();
+        let primary = RepoWorker::spawn(directory.path().into()).unwrap();
+        let external = RepoWorkerExternal::spawn(directory.path().into(), 0).unwrap();
+        for code in [
+            git2::ErrorCode::Auth,
+            git2::ErrorCode::Conflict,
+            git2::ErrorCode::Locked,
+        ] {
+            let error = GitError::from(git2::Error::new(
+                code,
+                git2::ErrorClass::Repository,
+                "same message",
+            ));
+            let for_primary = error.clone();
+            let for_external = error.clone();
+            let receivers = [
+                primary
+                    .run("test_error", move |_| Err::<(), _>(for_primary))
+                    .unwrap(),
+                external
+                    .run("test_error", move |_| Err::<(), _>(for_external))
+                    .unwrap(),
+            ];
+            for receiver in receivers {
+                assert_eq!(
+                    receiver.recv_timeout(Duration::from_secs(10)).unwrap(),
+                    Err(error.clone().context("test_error"))
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_native_worker_startup_returns_original_open_failure() {
+        let directory = tempfile::tempdir().unwrap();
+        let errors = [
+            RepoWorker::spawn(directory.path().into()).err().unwrap(),
+            RepoWorkerExternal::spawn(directory.path().into(), 0)
+                .err()
+                .unwrap(),
+        ];
+        for error in errors {
+            assert_eq!(error.category(), GitErrorCategory::NotFound);
+            assert!(matches!(
+                error,
+                GitError::Context {
+                    operation: "open_repository",
+                    ..
+                }
+            ));
+        }
     }
 }

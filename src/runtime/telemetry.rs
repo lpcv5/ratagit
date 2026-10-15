@@ -1,4 +1,5 @@
 //! Logging and performance counters used by runtime loops.
+use crate::app::diff::DiffCacheStats;
 use std::fs::{File, OpenOptions};
 use std::io;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -41,6 +42,8 @@ pub(crate) fn init_logging(debug_mode: bool) {
 
 #[derive(Default)]
 pub(super) struct PerfCounters {
+    pub(super) profiling: bool,
+    pub(super) diff_cache: CacheCounters,
     pub(super) ui_events: AtomicU64,
     pub(super) ui_messages: AtomicU64,
     pub(super) ui_ticks_sent: AtomicU64,
@@ -65,6 +68,38 @@ pub(super) struct PerfCounters {
     pub(super) ui_key_handle_max_us: AtomicU64,
     pub(super) ui_draw_max_us: AtomicU64,
     pub(super) dispatch_max_us: AtomicU64,
+}
+
+#[derive(Default)]
+pub(super) struct CacheCounters {
+    values: [AtomicU64; 9],
+}
+
+impl CacheCounters {
+    pub(super) fn record(&self, stats: DiffCacheStats) {
+        let values = [
+            stats.entries as u64,
+            stats.retained_bytes as u64,
+            stats.max_bytes as u64,
+            stats.hits,
+            stats.misses,
+            stats.evictions,
+            stats.oversized,
+            stats.invalidations,
+            stats.rejected,
+        ];
+        for (counter, value) in self.values.iter().zip(values) {
+            counter.store(value, Ordering::Relaxed);
+        }
+    }
+
+    fn line(&self) -> String {
+        let [entries, bytes, budget, hits, misses, evictions, oversized, invalidations, rejected] =
+            self.values
+                .each_ref()
+                .map(|value| value.load(Ordering::Relaxed));
+        format!("diff_cache entries={entries} retained_bytes={bytes} budget_bytes={budget} hits={hits} misses={misses} evictions={evictions} oversized={oversized} invalidations={invalidations} rejected={rejected}")
+    }
 }
 
 #[derive(Default, Clone, Copy)]
@@ -96,6 +131,10 @@ struct PerfSnapshot {
 }
 
 impl PerfCounters {
+    pub(super) fn logging_enabled(&self) -> bool {
+        ENABLE_DEBUG_LOG || self.profiling
+    }
+
     fn snapshot(&self) -> PerfSnapshot {
         PerfSnapshot {
             ui_events: self.ui_events.load(Ordering::Relaxed),
@@ -269,6 +308,7 @@ impl PerfLog {
                 task_metrics.queue_dropped_total
             ));
             self.last_snapshot = now;
+            self.write_line(&perf.diff_cache.line());
             self.last_flush = Instant::now();
         }
     }

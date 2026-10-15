@@ -37,6 +37,11 @@ impl DirtyFlags {
         self.0 != 0
     }
 
+    #[cfg(test)]
+    pub fn command_log(self) -> bool {
+        self.0 & DirtyHint::COMMAND_LOG != 0
+    }
+
     /// True if the main content panels (files, branches, commits, stash) need redrawing.
     pub fn main_content(self) -> bool {
         self.0 & DirtyHint::MAIN_CONTENT != 0

@@ -366,11 +366,11 @@ fn test_stale_hunk_write_logs_failure_and_reloads_patch() {
     press(&mut fixture.app, KeyCode::Char('s'));
     refresh(&mut fixture.app);
     assert_eq!(fixture.index(), Fixture::base().as_bytes());
-    assert!(fixture
-        .app
-        .command_log
-        .iter()
-        .any(|entry| !entry.success && entry.command.contains("patch changed")));
+    assert!(fixture.app.command_log.iter().any(|entry| !entry.success
+        && entry.command.contains("patch changed")
+        && entry
+            .command
+            .contains("Reload the diff and select hunks again")));
     assert!(fixture
         .app
         .diff
@@ -670,11 +670,11 @@ fn test_stale_index_unstage_is_rejected_and_reloaded() {
     press(&mut fixture.app, KeyCode::Char('u'));
     refresh(&mut fixture.app);
     assert_eq!(fixture.index(), Fixture::changed().as_bytes());
-    assert!(fixture
-        .app
-        .command_log
-        .iter()
-        .any(|entry| !entry.success && entry.command.contains("patch changed")));
+    assert!(fixture.app.command_log.iter().any(|entry| !entry.success
+        && entry.command.contains("patch changed")
+        && entry
+            .command
+            .contains("Reload the diff and select hunks again")));
     assert_eq!(
         fixture.app.diff.document().patch.as_ref().unwrap().files[0]
             .hunks

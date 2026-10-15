@@ -155,13 +155,13 @@ impl crate::git::WorktreeRepository for Git2Repository {
     fn status(&self) -> Result<GitStatus, GitError> {
         self.spawn_repo_job("status", |inner| inner.status())?
             .recv()
-            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+            .map_err(|_| GitError::Worker("worker disconnected".to_string()))?
     }
 
     fn status_fast(&self) -> Result<GitStatus, GitError> {
         self.spawn_repo_job_external("status_fast", |inner| inner.status_fast())?
             .recv()
-            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+            .map_err(|_| GitError::Worker("worker disconnected".to_string()))?
     }
 
     fn status_async(&self) -> Result<Receiver<Result<GitStatus, GitError>>, GitError> {
@@ -176,7 +176,7 @@ impl crate::git::WorktreeRepository for Git2Repository {
         let path = path.to_path_buf();
         self.spawn_repo_job("stage", move |inner| inner.stage(&path))?
             .recv()
-            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+            .map_err(|_| GitError::Worker("worker disconnected".to_string()))?
     }
 
     fn stage_async(&self, path: PathBuf) -> Result<Receiver<Result<(), GitError>>, GitError> {
@@ -187,14 +187,14 @@ impl crate::git::WorktreeRepository for Git2Repository {
         let paths = paths.to_vec();
         self.spawn_repo_job("stage_paths", move |inner| inner.stage_paths(&paths))?
             .recv()
-            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+            .map_err(|_| GitError::Worker("worker disconnected".to_string()))?
     }
 
     fn unstage(&self, path: &std::path::Path) -> Result<(), GitError> {
         let path = path.to_path_buf();
         self.spawn_repo_job("unstage", move |inner| inner.unstage(&path))?
             .recv()
-            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+            .map_err(|_| GitError::Worker("worker disconnected".to_string()))?
     }
 
     fn unstage_async(&self, path: PathBuf) -> Result<Receiver<Result<(), GitError>>, GitError> {
@@ -205,14 +205,14 @@ impl crate::git::WorktreeRepository for Git2Repository {
         let paths = paths.to_vec();
         self.spawn_repo_job("unstage_paths", move |inner| inner.unstage_paths(&paths))?
             .recv()
-            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+            .map_err(|_| GitError::Worker("worker disconnected".to_string()))?
     }
 
     fn discard_paths(&self, paths: &[PathBuf]) -> Result<(), GitError> {
         let paths = paths.to_vec();
         self.spawn_repo_job("discard_paths", move |inner| inner.discard_paths(&paths))?
             .recv()
-            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+            .map_err(|_| GitError::Worker("worker disconnected".to_string()))?
     }
 
     fn discard_paths_async(

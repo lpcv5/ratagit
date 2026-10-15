@@ -61,8 +61,10 @@ impl<S: InputAccess + LogAccess + OverlayAccess + RefreshAccess + SelectionAcces
                     ReduceOutput::none().with_invalidation(UiInvalidation::all())
                 }
                 Err(e) => {
-                    ctx.state
-                        .push_log(format!("stage all failed: {}", e), false);
+                    ctx.state.push_log(
+                        format!("stage all failed: {}", crate::app::git_error::message(e)),
+                        false,
+                    );
                     ReduceOutput::none()
                 }
             },

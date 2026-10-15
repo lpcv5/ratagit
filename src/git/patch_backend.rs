@@ -119,7 +119,7 @@ fn append_untracked(
     remaining: &mut usize,
 ) -> Result<(), GitError> {
     if !repo.status_file(path)?.is_wt_new() {
-        return Err(GitError::Git2(
+        return Err(GitError::StalePatch(
             "requested path is no longer untracked".into(),
         ));
     }
@@ -254,7 +254,7 @@ pub(super) fn apply(
             .iter()
             .any(|id| fresh.files.get(id.file) != patch.files.get(id.file))
     {
-        return Err(GitError::Git2(
+        return Err(GitError::StalePatch(
             "patch changed; reload before applying hunks".into(),
         ));
     }
@@ -277,21 +277,17 @@ pub(super) fn apply(
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .map_err(|e| GitError::Git2(e.to_string()))?;
+            .map_err(GitError::from)?;
         let sent = child
             .stdin
             .take()
             .ok_or(GitError::InvalidState)?
             .write_all(&bytes);
-        let output = child
-            .wait_with_output()
-            .map_err(|e| GitError::Git2(e.to_string()))?;
+        let output = child.wait_with_output().map_err(GitError::from)?;
         if !output.status.success() {
-            return Err(GitError::Git2(
-                String::from_utf8_lossy(&output.stderr).trim().into(),
-            ));
+            return Err(GitError::process(output));
         }
-        sent.map_err(|e| GitError::Git2(e.to_string()))?;
+        sent.map_err(GitError::from)?;
     }
     repo.index()?.read(true)?;
     Ok(())

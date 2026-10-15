@@ -1,8 +1,11 @@
 //! Own runtime tasks and channel wiring; UI never receives mutable AppState.
+#[cfg(test)]
+mod latency_tests;
 mod loops;
 mod telemetry;
 #[cfg(test)]
 mod tests;
+mod tracking;
 mod ui;
 
 use crate::app;
@@ -17,16 +20,21 @@ use std::sync::Arc;
 pub(crate) use telemetry::init_logging;
 use telemetry::PerfCounters;
 use tokio::sync::{broadcast, mpsc, watch};
+use tracking::{ActionSender, PublishedSnapshot, Tracked};
 
 struct UiChannels {
-    action_tx: mpsc::UnboundedSender<Action>,
+    action_tx: ActionSender,
     state_version_rx: watch::Receiver<u64>,
-    snapshot_rx: watch::Receiver<Arc<AppStateSnapshotOwned>>,
+    snapshot_rx: watch::Receiver<Arc<PublishedSnapshot>>,
     shutdown_tx: broadcast::Sender<()>,
 }
 
-pub(crate) async fn run(terminal: &mut DefaultTerminal, app: App) -> Result<()> {
-    run_with_ui(app, |mut channels, perf| async move {
+pub(crate) async fn run(
+    terminal: &mut DefaultTerminal,
+    app: App,
+    recorder: Option<Arc<crate::latency::Recorder>>,
+) -> Result<()> {
+    run_with_ui_recording(app, recorder, |mut channels, perf| async move {
         ui::ui_loop(
             terminal,
             perf,
@@ -40,7 +48,20 @@ pub(crate) async fn run(terminal: &mut DefaultTerminal, app: App) -> Result<()> 
     .await
 }
 
+#[cfg(test)]
 async fn run_with_ui<F, Fut>(app: App, ui: F) -> Result<()>
+where
+    F: FnOnce(UiChannels, Arc<PerfCounters>) -> Fut,
+    Fut: Future<Output = Result<()>>,
+{
+    run_with_ui_recording(app, None, ui).await
+}
+
+async fn run_with_ui_recording<F, Fut>(
+    app: App,
+    recorder: Option<Arc<crate::latency::Recorder>>,
+    ui: F,
+) -> Result<()>
 where
     F: FnOnce(UiChannels, Arc<PerfCounters>) -> Fut,
     Fut: Future<Output = Result<()>>,
@@ -53,11 +74,19 @@ where
                 runtime,
                 initial_output,
             } = app;
-            let perf = Arc::new(PerfCounters::default());
-            let (action_tx, action_rx) = mpsc::unbounded_channel::<Action>();
-            let (command_tx, command_rx) = mpsc::unbounded_channel::<app::Command>();
+            let perf = Arc::new(PerfCounters {
+                profiling: recorder.is_some(),
+                ..Default::default()
+            });
+            let (action_tx, action_rx) = mpsc::unbounded_channel::<Tracked<Action>>();
+            let action_tx = ActionSender::new(action_tx, recorder);
+            let (command_tx, command_rx) = mpsc::unbounded_channel::<Tracked<app::Command>>();
             let (state_version_tx, state_version_rx) = watch::channel(0u64);
-            let initial_snapshot = Arc::new(AppStateSnapshotOwned::from_app(&state));
+            let initial_snapshot = Arc::new(PublishedSnapshot::new(
+                AppStateSnapshotOwned::from_app(&state),
+                0,
+                None,
+            ));
             let (snapshot_tx, snapshot_rx) = watch::channel(initial_snapshot);
             let (shutdown_tx, _) = broadcast::channel::<()>(1);
 
@@ -82,6 +111,7 @@ where
                 shutdown_tx.subscribe(),
             ));
 
+            let final_snapshot_rx = snapshot_rx.clone();
             let ui_result = ui(
                 UiChannels {
                     action_tx,
@@ -97,6 +127,9 @@ where
             let _ = dispatch_handle.await;
             let _ = command_handle.await;
             let _ = auto_refresh_handle.await;
+            final_snapshot_rx
+                .borrow()
+                .finish("frame_unobserved", std::time::Duration::ZERO);
             ui_result
         })
         .await

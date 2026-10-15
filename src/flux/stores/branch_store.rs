@@ -83,10 +83,18 @@ impl<S: BranchAccess + InputAccess + LogAccess + OverlayAccess + RefreshAccess +
                     }
                     Err(e) => {
                         if *auto_stash {
-                            ctx.state
-                                .push_log(format!("auto-stash switch failed: {}", e), false);
+                            ctx.state.push_log(
+                                format!(
+                                    "auto-stash switch failed: {}",
+                                    crate::app::git_error::message(e)
+                                ),
+                                false,
+                            );
                         } else {
-                            ctx.state.push_log(format!("switch failed: {}", e), false);
+                            ctx.state.push_log(
+                                format!("switch failed: {}", crate::app::git_error::message(e)),
+                                false,
+                            );
                         }
                     }
                 }
@@ -125,7 +133,10 @@ impl<S: BranchAccess + InputAccess + LogAccess + OverlayAccess + RefreshAccess +
                             .command(tick_background_loads())
                             .with_invalidation(UiInvalidation::all());
                     }
-                    Err(e) => ctx.state.push_log(format!("fetch failed: {}", e), false),
+                    Err(e) => ctx.state.push_log(
+                        format!("fetch failed: {}", crate::app::git_error::message(e)),
+                        false,
+                    ),
                 }
                 ReduceOutput::none()
             }
@@ -288,7 +299,7 @@ mod more_tests {
             Action::Domain(DomainAction::CheckoutBranchFinished {
                 name: "feature".to_string(),
                 auto_stash: false,
-                result: Err("checkout failed".to_string()),
+                result: Err("checkout failed".into()),
             }),
         );
         assert!(app.command_log.len() > logs_before);
@@ -334,9 +345,9 @@ mod more_tests {
         reduce(
             &mut store,
             &mut app,
-            Action::Domain(DomainAction::FetchRemoteFinished(Err(
-                "fetch failed".to_string()
-            ))),
+            Action::Domain(DomainAction::FetchRemoteFinished(
+                Err("fetch failed".into()),
+            )),
         );
         assert!(!app.revisions.branches.is_fetching_remote);
         assert!(app.command_log.len() > logs_before);

@@ -1,4 +1,6 @@
 pub mod capabilities;
+mod error;
+pub use error::GitErrorCategory;
 mod models;
 pub mod operation;
 mod operation_backend;

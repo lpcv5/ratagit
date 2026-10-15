@@ -62,8 +62,12 @@ struct CellConnections {
 }
 
 pub(super) fn graph_charset_from_env() -> GraphCharset {
-    match std::env::var("RATAGIT_GRAPH_ASCII") {
-        Ok(value) if value == "1" => GraphCharset::ascii(),
+    graph_charset(std::env::var("RATAGIT_GRAPH_ASCII").ok().as_deref())
+}
+
+fn graph_charset(value: Option<&str>) -> GraphCharset {
+    match value {
+        Some("1") => GraphCharset::ascii(),
         _ => GraphCharset::unicode(),
     }
 }

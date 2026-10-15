@@ -31,7 +31,7 @@ text:
 25: " ╰─────────────────────────────────╯ ╰────────────────────────────────────────────────────────────────────────────────╯ "
 26: "                                                                                                                        "
 27: " ╭ Stash ──────────────────────────╮ ╭ Command Log ───────────────────────────────────────────────────────────────────╮ "
-28: " │stash@{0} WIP UI tests           │ │ ERR  Git error: object not found - no match for id (abc123000000000000000000000│ "
+28: " │stash@{0} WIP UI tests           │ │ ERR  Hint: Refresh repository state and verify the selected path or reference s│ "
 29: " ╰─────────────────────────────────╯ ╰────────────────────────────────────────────────────────────────────────────────╯ "
 30: "  Esc  ClearSearch   Enter  Files   :  Command   q  Quit                                                                "
 31: "                                                                                                                        "

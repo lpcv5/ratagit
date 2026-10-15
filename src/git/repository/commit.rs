@@ -31,7 +31,7 @@ impl crate::git::CommitRepository for Git2Repository {
         let message = message.to_string();
         self.spawn_repo_job("commit", move |inner| inner.commit(&message))?
             .recv()
-            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+            .map_err(|_| GitError::Worker("worker disconnected".to_string()))?
     }
 
     fn commit_async(

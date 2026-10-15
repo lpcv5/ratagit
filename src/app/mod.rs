@@ -10,6 +10,8 @@ mod command_tests;
 pub mod commands;
 mod context;
 pub(crate) mod diff;
+#[cfg(test)]
+mod diff_cache_tests;
 mod diff_coordinator;
 pub use diff::{DiffInteraction, DiffSide, DiffState, HunkView};
 mod dirty_flags;
@@ -17,6 +19,7 @@ mod dirty_flags;
 mod file_tree_tests;
 pub(crate) mod files;
 mod files_coordinator;
+pub(crate) mod git_error;
 mod hints;
 #[cfg(test)]
 mod hunk_tests;

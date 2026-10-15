@@ -71,7 +71,7 @@ pub enum OperationCommandState {
     },
     Failed {
         id: u64,
-        error: String,
+        error: super::GitError,
     },
 }
 
@@ -109,7 +109,7 @@ impl OperationMachine {
     pub fn finish(
         &mut self,
         id: u64,
-        result: Result<(), String>,
+        result: Result<(), super::GitError>,
         observed: Option<RepositoryOperation>,
     ) -> bool {
         if !matches!(self.command, OperationCommandState::Running { id: pending, .. } if pending == id)

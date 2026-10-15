@@ -7,6 +7,7 @@
 mod cache;
 #[cfg(test)]
 mod loader;
+mod memory;
 mod selectors;
 mod state;
 mod target;
@@ -14,9 +15,10 @@ mod target;
 mod tests;
 mod update;
 
-pub use cache::DiffCacheKey;
+pub use cache::{DiffCacheIdentity, DiffCacheKey, DiffCacheStats, FileDiffSource};
 pub use selectors::{DiffView, HunkView};
 pub(super) use state::DiffLoad;
 pub use state::{DiffInteraction, DiffSide, DiffState};
+pub(crate) use target::BRANCH_DIFF_LIMIT;
 pub use target::{DiffRefreshSource, DiffTarget};
 pub use update::{DiffAction, DiffReload, DiffUpdate, HunkWrite};

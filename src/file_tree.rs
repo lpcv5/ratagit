@@ -3,7 +3,7 @@ use crate::git::{FileEntry, FileStatus};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum FileTreeNodeStatus {
     Unstaged(FileStatus),
     Staged(FileStatus),
