@@ -105,3 +105,52 @@ pub fn fixture_unicode_paths() -> RepoSnapshot {
     snapshot.status_summary = "staged: 1, unstaged: 1".to_string();
     snapshot
 }
+/// A lossless patch fixture for partial staging UI and input tests.
+pub fn fixture_patch() -> Box<ratagit_core::patch::Patch> {
+    use ratagit_core::patch::*;
+    let side = PatchSide {
+        path: Some("src/lib.rs".into()),
+        oid: None,
+        mode: 0o100644,
+    };
+    let lines = [
+        (PatchLineKind::Removed, "old first"),
+        (PatchLineKind::Added, "new first"),
+        (PatchLineKind::Context, "unchanged"),
+        (PatchLineKind::Removed, "old last"),
+        (PatchLineKind::Added, "new last"),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(index, (kind, text))| PatchLine {
+        kind,
+        old_line: Some(index as u32 + 1),
+        new_line: Some(index as u32 + 1),
+        content: format!("{text}\n").into_bytes(),
+    })
+    .collect();
+    let file = PatchFile {
+        source: PatchSource::Worktree,
+        change: PatchChange::Modified,
+        old: side.clone(),
+        new: side,
+        binary: false,
+        encoded: Some(Vec::new()),
+        hunks: vec![PatchHunk {
+            old_start: 1,
+            old_lines: 3,
+            new_start: 1,
+            new_lines: 3,
+            header: b"@@ -1,3 +1,3 @@\n".to_vec(),
+            lines,
+        }],
+    };
+    let mut staged = file.clone();
+    staged.source = PatchSource::Index;
+    Box::new(Patch {
+        preview: None,
+        request: PatchRequest::File("src/lib.rs".into()),
+        files: vec![staged, file],
+        truncated: false,
+    })
+}

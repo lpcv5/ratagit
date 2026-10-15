@@ -5,7 +5,9 @@ use ratatui::layout::Rect;
 use crate::modal::{ConfirmBody, ModalSpec, ModalTone, render_confirm_body, render_modal};
 
 pub(crate) fn render_discard_modal(frame: &mut Frame<'_>, state: &AppContext, area: Rect) {
-    if !state.ui.discard_confirm.active {
+    let partial = state.ui.details.patch.discard.as_ref();
+    let operation = state.ui.details.repository_confirm.as_ref();
+    if !state.ui.discard_confirm.active && partial.is_none() && operation.is_none() {
         return;
     }
 
@@ -13,15 +15,40 @@ pub(crate) fn render_discard_modal(frame: &mut Frame<'_>, state: &AppContext, ar
         frame,
         area,
         ModalSpec::new("Confirm", ModalTone::Danger, 72, 12, 20, 8, 1),
-        &[&[("Enter", "discard"), ("Esc", "cancel")]],
+        &[&[
+            (
+                "Enter",
+                if operation.is_some() {
+                    "drop"
+                } else {
+                    "discard"
+                },
+            ),
+            ("Esc", "cancel"),
+        ]],
         |frame, content| {
             render_confirm_body(
                 frame,
                 content,
                 ModalTone::Danger,
-                ConfirmBody::new("Discard selected file changes?")
-                    .secondary("This action cannot be undone.")
-                    .details(format_discard_details(&state.ui.discard_confirm.context)),
+                ConfirmBody::new(if operation.is_some() {
+                    "Drop selected stash?"
+                } else if partial.is_some() {
+                    "Discard selected lines?"
+                } else {
+                    "Discard selected file changes?"
+                })
+                .secondary("This action cannot be undone.")
+                .details(
+                    operation
+                        .map(|op| format!("{op:?}"))
+                        .or_else(|| {
+                            partial.map(|ids| format!("{} reviewed changed lines", ids.len()))
+                        })
+                        .unwrap_or_else(|| {
+                            format_discard_details(&state.ui.discard_confirm.context)
+                        }),
+                ),
             );
         },
     );

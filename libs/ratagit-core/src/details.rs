@@ -1,7 +1,10 @@
+use crate::details_cache::{
+    cache_branch_log, cache_commit_diff, cache_files_diff, cached_branch_log, cached_commit_diff,
+    cached_files_diff,
+};
 use crate::{
-    ActiveLeftView, AppContext, BRANCH_DETAILS_LOG_MAX_COUNT, CachedBranchLog, CachedCommitDiff,
-    CachedFilesDiff, Command, CommitFileDiffPath, CommitFileDiffTarget, CommitFilesTarget,
-    CommitListTarget, DETAILS_DIFF_CACHE_LIMIT, DetailsRequest, DetailsRequestId,
+    ActiveLeftView, AppContext, BRANCH_DETAILS_LOG_MAX_COUNT, Command, CommitFileDiffPath,
+    CommitFileDiffTarget, CommitFilesTarget, CommitListTarget, DetailsRequest, DetailsRequestId,
     DetailsRequestTarget, FILES_DETAILS_DIFF_TARGET_LIMIT, FileDiffTarget, push_notice,
     selected_branch_commit_id, selected_commit_file_targets, selected_diff_targets_bounded,
     selected_target_paths, with_pending,
@@ -216,7 +219,8 @@ pub(crate) fn refresh_for_focus(state: &mut AppContext) -> Vec<Command> {
         Some(ActiveLeftView::BranchCommitFiles | ActiveLeftView::CommitFiles) => {
             refresh_commit_file_diff(state)
         }
-        Some(ActiveLeftView::Stash) | None => Vec::new(),
+        Some(ActiveLeftView::Stash) => crate::partial::preview_stash(state),
+        None => Vec::new(),
     }
 }
 
@@ -400,7 +404,9 @@ pub(crate) fn clear_details_pending_if(
 }
 
 pub(crate) fn reset_scroll(state: &mut AppContext) {
-    state.ui.details.scroll_offset = 0;
+    if !state.ui.details.patch.active {
+        state.ui.details.scroll_offset = 0;
+    }
 }
 
 pub(crate) fn clear_caches(state: &mut AppContext) {
@@ -529,97 +535,14 @@ fn selected_detail_commit_file_targets(state: &AppContext) -> Vec<crate::CommitF
     }
 }
 
-fn cached_files_diff(state: &AppContext, paths: &[String]) -> Option<String> {
-    cached_entry(
-        &state.repo.details.cached_files_diffs,
-        paths,
-        |entry, paths| entry.paths.as_slice() == paths,
-        |entry| &entry.diff,
-    )
-}
-
-fn cache_files_diff(state: &mut AppContext, paths: &[String], diff: &str) {
-    cache_entry(
-        &mut state.repo.details.cached_files_diffs,
-        paths,
-        diff,
-        |entry, paths| entry.paths.as_slice() == paths,
-        |paths, diff| CachedFilesDiff {
-            paths: paths.to_vec(),
-            diff: diff.to_string(),
-        },
-    );
-}
-
-fn cached_branch_log(state: &AppContext, branch: &str) -> Option<String> {
-    cached_entry(
-        &state.repo.details.cached_branch_logs,
-        branch,
-        |entry, branch| entry.branch.as_str() == branch,
-        |entry| &entry.log,
-    )
-}
-
-fn cache_branch_log(state: &mut AppContext, branch: &str, log: &str) {
-    cache_entry(
-        &mut state.repo.details.cached_branch_logs,
-        branch,
-        log,
-        |entry, branch| entry.branch.as_str() == branch,
-        |branch, log| CachedBranchLog {
-            branch: branch.to_string(),
-            log: log.to_string(),
-        },
-    );
-}
-
-fn cached_commit_diff(state: &AppContext, commit_id: &str) -> Option<String> {
-    cached_entry(
-        &state.repo.details.cached_commit_diffs,
-        commit_id,
-        |entry, commit_id| entry.commit_id.as_str() == commit_id,
-        |entry| &entry.diff,
-    )
-}
-
-fn cache_commit_diff(state: &mut AppContext, commit_id: &str, diff: &str) {
-    cache_entry(
-        &mut state.repo.details.cached_commit_diffs,
-        commit_id,
-        diff,
-        |entry, commit_id| entry.commit_id.as_str() == commit_id,
-        |commit_id, diff| CachedCommitDiff {
-            commit_id: commit_id.to_string(),
-            diff: diff.to_string(),
-        },
-    );
-}
-
-fn cached_entry<K: ?Sized, E>(
-    entries: &[E],
-    key: &K,
-    mut matches_key: impl FnMut(&E, &K) -> bool,
-    value: impl Fn(&E) -> &str,
-) -> Option<String> {
-    entries
-        .iter()
-        .find(|entry| matches_key(entry, key))
-        .map(|entry| value(entry).to_string())
-}
-
-fn cache_entry<K: ?Sized, E>(
-    entries: &mut Vec<E>,
-    key: &K,
-    value: &str,
-    mut matches_key: impl FnMut(&E, &K) -> bool,
-    build: impl FnOnce(&K, &str) -> E,
-) {
-    entries.retain(|entry| !matches_key(entry, key));
-    entries.insert(0, build(key, value));
-    entries.truncate(DETAILS_DIFF_CACHE_LIMIT);
-}
-
 fn scroll_max_offset(state: &AppContext, visible_lines: usize) -> usize {
+    if state.ui.details.patch.active {
+        return state.repo.details.patch.as_ref().map_or(0, |patch| {
+            crate::partial::patch_rows(patch)
+                .len()
+                .saturating_sub(visible_lines.saturating_sub(1))
+        });
+    }
     match state.details_left_view() {
         Some(ActiveLeftView::Files) => state
             .repo

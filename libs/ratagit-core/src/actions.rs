@@ -19,7 +19,40 @@ pub enum MenuDirection {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UiAction {
+    DetailsViewport {
+        visible_lines: usize,
+    },
+    HostFinished {
+        message: String,
+        refresh: bool,
+    },
+    OpenFilePatch,
+    OpenStashPatch,
+    CloseFilePatch,
+    NextPatchFile {
+        up: bool,
+    },
+    MovePatchSelection {
+        up: bool,
+        visible_lines: usize,
+    },
+    CyclePatchSelection,
+    TogglePatchRange,
+    SwitchPatchSource,
+    ApplyPatchSelection,
+    RequestPatchDiscard,
+    ConfirmPatchDiscard,
+    CancelPatchDiscard,
     RefreshAll,
+    ToggleStageAll,
+    Fetch,
+    IgnoreSelectedFile,
+    StashApplySelected,
+    StashDropSelected,
+    ConfirmRepositoryOperation,
+    CancelRepositoryOperation,
+    PaletteInput(char),
+    PaletteBackspace,
     Pull,
     Push,
     ConfirmForcePush,
@@ -151,6 +184,19 @@ pub enum UiAction {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GitResult {
+    RepositoryOperation {
+        operation: crate::extras::RepositoryOperation,
+        result: Result<(), String>,
+    },
+    LoadedPatch {
+        request_id: u64,
+        request: crate::patch::PatchRequest,
+        result: Result<Box<crate::patch::Patch>, String>,
+    },
+    AppliedPatch {
+        direction: crate::patch::PatchDirection,
+        result: Result<(), String>,
+    },
     Refreshed(RepoSnapshot),
     SplitRefreshed {
         files: FilesSnapshot,
@@ -317,6 +363,16 @@ pub enum Action {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
+    RepositoryOperation(crate::extras::RepositoryOperation),
+    LoadPatch {
+        request_id: u64,
+        request: crate::patch::PatchRequest,
+    },
+    ApplyPatch {
+        patch: Box<crate::patch::Patch>,
+        ids: Vec<crate::patch::LineId>,
+        direction: crate::patch::PatchDirection,
+    },
     RefreshAll,
     RefreshFiles,
     RefreshBranches,
@@ -478,6 +534,27 @@ impl Command {
 
     fn metadata(&self) -> CommandMetadata {
         match self {
+            Command::RepositoryOperation(_) => CommandMetadata {
+                log_label: CommandLogLabel::Static("repository_operation"),
+                mutating: true,
+                debounce_key: None,
+                refresh_key: None,
+                pending_label: PendingOperationLabel::Static("repository_operation"),
+            },
+            Command::LoadPatch { .. } => CommandMetadata {
+                log_label: CommandLogLabel::Static("load_patch"),
+                mutating: false,
+                debounce_key: Some("load_patch"),
+                refresh_key: None,
+                pending_label: PendingOperationLabel::None,
+            },
+            Command::ApplyPatch { .. } => CommandMetadata {
+                log_label: CommandLogLabel::Static("apply_patch"),
+                mutating: true,
+                debounce_key: None,
+                refresh_key: None,
+                pending_label: PendingOperationLabel::Static("apply_patch"),
+            },
             Command::RefreshAll => CommandMetadata {
                 log_label: CommandLogLabel::Static("refresh_all"),
                 mutating: false,
@@ -805,6 +882,9 @@ impl Command {
 impl GitResult {
     pub fn log_label(&self) -> &'static str {
         match self {
+            GitResult::RepositoryOperation { .. } => "repository_operation",
+            GitResult::LoadedPatch { .. } => "loaded_patch",
+            GitResult::AppliedPatch { .. } => "applied_patch",
             GitResult::Refreshed(_) => "refreshed",
             GitResult::SplitRefreshed { .. } => "split_refreshed",
             GitResult::Pull { .. } => "pull",
@@ -856,6 +936,9 @@ impl GitResult {
 
     pub fn is_success(&self) -> bool {
         match self {
+            GitResult::RepositoryOperation { result, .. } => result.is_ok(),
+            GitResult::LoadedPatch { result, .. } => result.is_ok(),
+            GitResult::AppliedPatch { result, .. } => result.is_ok(),
             GitResult::Refreshed(_)
             | GitResult::SplitRefreshed { .. }
             | GitResult::FilesRefreshed(_)

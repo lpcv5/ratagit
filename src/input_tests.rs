@@ -3,6 +3,66 @@ use super::*;
 mod tests {
     use super::*;
 
+    #[test]
+    fn test_partial_keys_and_confirmation_precedence() {
+        let mut state = AppContext::default();
+        state.ui.details.patch.active = true;
+        state.ui.focus = PanelFocus::Details;
+        assert_eq!(
+            map_key(&state, KeyCode::Char(' ')),
+            Some(UiAction::ApplyPatchSelection)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Tab),
+            Some(UiAction::SwitchPatchSource)
+        );
+        assert_eq!(
+            map_key(&state, KeyCode::Char('d')),
+            Some(UiAction::RequestPatchDiscard)
+        );
+        state.ui.details.patch.discard = Some(Vec::new());
+        assert_eq!(
+            map_key(&state, KeyCode::Enter),
+            Some(UiAction::ConfirmPatchDiscard)
+        );
+        assert_eq!(map_key(&state, KeyCode::Char(' ')), None);
+        assert_eq!(
+            map_key(&state, KeyCode::Esc),
+            Some(UiAction::CancelPatchDiscard)
+        );
+    }
+
+    #[test]
+    fn test_editor_and_copy_path_do_not_override_modal_typing() {
+        let mut state = AppContext::default();
+        ratagit_core::update(
+            &mut state,
+            ratagit_core::Action::GitResult(ratagit_core::GitResult::Refreshed(
+                ratagit_testkit::fixture_dirty_repo(),
+            )),
+        );
+        assert_eq!(
+            host_effect(&state, KeyCode::Char('e'), KeyModifiers::NONE),
+            Some(KeyEffect::Host {
+                edit: true,
+                path: "README.md".into()
+            })
+        );
+        assert_eq!(
+            host_effect(&state, KeyCode::Char('o'), KeyModifiers::CONTROL),
+            Some(KeyEffect::Host {
+                edit: false,
+                path: "README.md".into()
+            })
+        );
+        state.ui.command_palette.active = true;
+        assert!(host_effect(&state, KeyCode::Char('e'), KeyModifiers::NONE).is_none());
+        assert_eq!(
+            map_key(&state, KeyCode::Char('e')),
+            Some(UiAction::PaletteInput('e'))
+        );
+    }
+
     const TEST_DETAILS_SCROLL_LINES: usize = 7;
     const TEST_DETAILS_VISIBLE_LINES: usize = 18;
     const TEST_LEFT_PANEL_VISIBLE_LINES: usize = 8;
@@ -585,7 +645,7 @@ mod tests {
         );
         assert_eq!(
             map_key(&state, KeyCode::Char('j')),
-            Some(UiAction::MoveCommandPaletteDown)
+            Some(UiAction::PaletteInput('j'))
         );
         assert_eq!(
             map_key(&state, KeyCode::Up),
@@ -593,7 +653,7 @@ mod tests {
         );
         assert_eq!(
             map_key(&state, KeyCode::Char('k')),
-            Some(UiAction::MoveCommandPaletteUp)
+            Some(UiAction::PaletteInput('k'))
         );
         assert_eq!(
             map_key(&state, KeyCode::Enter),
@@ -606,7 +666,10 @@ mod tests {
             map_key(&state, KeyCode::Esc),
             Some(UiAction::CloseCommandPalette)
         );
-        assert_eq!(map_key(&state, KeyCode::Char('d')), None);
+        assert_eq!(
+            map_key(&state, KeyCode::Char('d')),
+            Some(UiAction::PaletteInput('d'))
+        );
 
         state.ui.command_palette.selected = state
             .command_palette_entries()

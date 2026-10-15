@@ -244,7 +244,12 @@ impl<'repo> GitCommandRunner<'repo> {
             let kind = classify_cli_error(args, &stderr);
             return Err(GitError::cli(
                 kind,
-                format!("git {:?} failed: {}", args, stderr),
+                format!(
+                    "git {:?} failed ({:?}): {}",
+                    args,
+                    output.status.code(),
+                    stderr
+                ),
             ));
         }
 
@@ -691,6 +696,21 @@ impl GitCli {
 
     pub(crate) fn pull(&mut self) -> Result<(), GitError> {
         self.run_git(&["pull"]).map(|_| ())
+    }
+
+    pub(crate) fn repository_operation(
+        &mut self,
+        operation: &ratagit_core::extras::RepositoryOperation,
+    ) -> Result<(), GitError> {
+        use ratagit_core::extras::RepositoryOperation;
+        match operation {
+            RepositoryOperation::Fetch => self.run_git(&["fetch", "--all", "--prune"]).map(|_| ()),
+            RepositoryOperation::StashApply(id) => {
+                self.run_git(&["stash", "apply", id]).map(|_| ())
+            }
+            RepositoryOperation::StashDrop(id) => self.run_git(&["stash", "drop", id]).map(|_| ()),
+            RepositoryOperation::Ignore(path) => crate::ignore::append(&self.repo_path, path),
+        }
     }
 
     pub(crate) fn push(&mut self, force: bool) -> Result<(), GitError> {

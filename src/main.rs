@@ -1,7 +1,8 @@
+mod desktop;
 mod input;
 
 use std::error::Error;
-use std::io::{self, Stdout};
+use std::io::{self, IsTerminal, Stdout};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -10,6 +11,7 @@ use crossterm::execute;
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
+use desktop::{Desktop, EditorCommand, SystemDesktop};
 use input::{KeyEffect, key_effect_for_key};
 use ratagit_core::{AppContext, UiAction};
 use ratagit_git::{GitBackend, HybridGitBackend, SharedMockGitBackend, is_git_repo};
@@ -30,16 +32,57 @@ fn main() -> Result<(), Box<dyn Error>> {
     run_tui()
 }
 
+fn prepare_editor(path: &str) -> io::Result<EditorCommand> {
+    let cwd = std::env::current_dir()?;
+    let root = ratagit_git::repository_workdir(&cwd).map_err(io::Error::other)?;
+    let relative = Path::new(path);
+    if relative.is_absolute()
+        || relative
+            .components()
+            .any(|part| !matches!(part, std::path::Component::Normal(_)))
+    {
+        return Err(io::Error::other(
+            "editor path must stay inside the repository",
+        ));
+    }
+    let editor = std::env::var("VISUAL")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| {
+            std::env::var("EDITOR")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+        })
+        .unwrap_or_else(|| {
+            if cfg!(windows) {
+                "notepad".into()
+            } else {
+                "vi".into()
+            }
+        });
+    let file = root.join(relative);
+    EditorCommand::new(&editor, root, file)
+}
+
 fn run_tui() -> Result<(), Box<dyn Error>> {
     let backend_factory = select_backend_factory()?;
     let mut terminal_session = TerminalSession::new()?;
     let mut runtime = build_initial_runtime(backend_factory);
     let mut spinner_frame = 0usize;
+    let desktop = SystemDesktop::default();
     let mut next_spinner_frame_at = Instant::now() + spinner_frame_interval();
     runtime.dispatch_ui(UiAction::RefreshAll);
 
     loop {
         runtime.tick();
+        let terminal_size = terminal_session.terminal.size()?;
+        let visible_lines = details_content_lines_for_terminal_size(TerminalSize {
+            width: terminal_size.width as usize,
+            height: terminal_size.height as usize,
+        });
+        if runtime.state().ui.details.viewport_lines != visible_lines {
+            runtime.dispatch_ui(UiAction::DetailsViewport { visible_lines });
+        }
         let now = Instant::now();
         if now >= next_spinner_frame_at {
             spinner_frame = spinner_frame.wrapping_add(1);
@@ -79,6 +122,34 @@ fn run_tui() -> Result<(), Box<dyn Error>> {
             details_visible_lines,
             left_panel_visible_lines,
         ) {
+            KeyEffect::Host { edit, path } => {
+                let result = if edit {
+                    match prepare_editor(&path) {
+                        Ok(command) => {
+                            terminal_session.restore()?;
+                            let result = command.run();
+                            terminal_session.resume()?;
+                            result
+                        }
+                        Err(error) => Err(error),
+                    }
+                } else {
+                    desktop.copy_text(&path)
+                };
+                runtime.dispatch_ui(UiAction::HostFinished {
+                    message: match result {
+                        Ok(()) => {
+                            if edit {
+                                "Editor finished".into()
+                            } else {
+                                format!("Copied {path}")
+                            }
+                        }
+                        Err(error) => error.to_string(),
+                    },
+                    refresh: edit,
+                });
+            }
             KeyEffect::Quit => break,
             KeyEffect::Dispatch(action) => {
                 runtime.dispatch_ui(action);
@@ -99,6 +170,15 @@ struct TerminalSession {
 
 impl TerminalSession {
     fn new() -> Result<Self, io::Error> {
+        if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
+            return Err(io::Error::other("ratagit requires an interactive terminal"));
+        }
+        let previous_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            let _ = disable_raw_mode();
+            let _ = execute!(io::stdout(), LeaveAlternateScreen, crossterm::cursor::Show);
+            previous_hook(info);
+        }));
         enable_raw_mode()?;
         let mut stdout = io::stdout();
         if let Err(err) = execute!(stdout, EnterAlternateScreen) {
@@ -127,6 +207,14 @@ impl TerminalSession {
         }
         restore_terminal(&mut self.terminal)?;
         self.restored = true;
+        Ok(())
+    }
+
+    fn resume(&mut self) -> Result<(), io::Error> {
+        enable_raw_mode()?;
+        self.restored = false;
+        execute!(self.terminal.backend_mut(), EnterAlternateScreen)?;
+        self.terminal.clear()?;
         Ok(())
     }
 }
@@ -193,7 +281,7 @@ fn select_backend_factory() -> Result<BackendFactory, Box<dyn Error>> {
 }
 
 fn select_backend_factory_for(cwd: PathBuf) -> Result<BackendFactory, Box<dyn Error>> {
-    if is_git_repo(Path::new(&cwd)) {
+    if is_git_repo(Path::new(&cwd)) || cwd.ancestors().any(|dir| dir.join(".git").exists()) {
         HybridGitBackend::open(Path::new(&cwd))?;
         Ok(Box::new(move || {
             Box::new(

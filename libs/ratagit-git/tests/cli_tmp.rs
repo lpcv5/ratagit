@@ -28,6 +28,8 @@ impl TmpGitRepo {
         repo.run_git(&["init"]);
         repo.run_git(&["config", "user.name", "ratagit-tests"]);
         repo.run_git(&["config", "user.email", "ratagit-tests@example.com"]);
+        repo.run_git(&["config", "core.autocrlf", "false"]);
+        repo.run_git(&["config", "commit.gpgsign", "false"]);
         repo
     }
 

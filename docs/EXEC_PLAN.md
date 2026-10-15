@@ -2,85 +2,86 @@
 
 ## Active Slice
 
-Name: Rebase-Based Commit History Rewrite
+Name: Migrate PR #8 onto feature/newarch
 
 Status: completed
 
+Tracking: docs/PR8_MIGRATION.md
+
 ## Problem
 
-Commit delete, squash, fixup, and reword currently rewrite history with a
-manual `reset --hard` plus `cherry-pick` replay path. These user-facing history
-rewrite actions should use Git's own interactive rebase machinery so their
-backend behavior is aligned with Git's native rewrite model while preserving the
-existing AppContext commands, UI behavior, safety checks, and harness-visible
-state changes.
+PR #8 was developed on main while feature/newarch is the intended product.
+Its useful features and fixes must use newarch's AppContext, GitBackend,
+workspace boundaries, pure UI, and visual design.
 
 ## Smallest Slice
 
-- replace the manual replay implementation for delete/squash/fixup/reword with
-  scripted `git rebase -i`
-- keep public `Command` and `GitBackendHistoryRewrite` interfaces unchanged
-- add internal per-command Git environment support for rebase editor scripts
-- preserve clean-worktree, root-commit, root-parent squash/fixup, and
-  merge-commit protections
-- update product/design docs to describe rebase-backed commit rewrites
-- add focused backend planner tests and keep existing harness scenarios passing
+- Audit all 15 PR commits against newarch; retain existing architecture equivalents.
+- Add reviewed partial patches behind GitBackend; test native bytes before UI work.
+- Integrate block/hunk/line-range workflows into existing Details and confirmation UI.
+- Add missing file, stash, fetch, and filtered command workflows.
+- Port cache budgets, request/shutdown hardening, terminal/process regressions, and CI.
+- Verify every migrated behavior and review snapshots against the newarch baseline.
+
+Cross-layer changes are necessary for input -> reducer -> Command -> GitBackend
+-> result -> immutable UI. Each implementation slice has focused tests before
+the next slice.
 
 ## Non-Goals
 
-- no UI changes or snapshot updates
-- no automatic force-push after rewriting pushed history
-- no support for rewriting merge commits
-- no support for root-parent squash/fixup via `git rebase --root`
-- no changes to staged amend behavior in this slice
+- Do not merge the old src/app + Flux architecture wholesale.
+- Do not replace newarch's layout, theme, editor or branch/commit rewrite workflows.
+- Do not alter the original dirty checkout or its uncommitted branch-management work.
+- Do not publish, push, or merge remote branches.
 
 ## Expected Files
 
-- `docs/EXEC_PLAN.md`
-- `docs/PRODUCT.md`
-- `docs/DESIGN.md`
-- `libs/ratagit-git/src/cli.rs`
-- `libs/ratagit-git/tests/git2_tmp.rs`
+Core patch/selection/cache/action modules; GitBackend patch and file services;
+runtime ownership; application input/desktop/terminal; pure Details rendering;
+core/backend/harness/process tests; snapshots; CI and product/design docs.
 
 ## Tests
 
-- unit tests for rebase todo planning, including delete, squash, fixup, reword,
-  multi-select ordering, non-contiguous selections, root rejection, root-parent
-  squash/fixup rejection, and merge rejection
-- real Git backend tests proving the existing linear rewrite scenarios still
-  work through the new rebase path
-- existing core and harness tests remain the coverage for unchanged UI and
-  command behavior
+- Lossless partial stage/unstage/discard, stale/wrong-direction rejection,
+  untracked/literal paths, CRLF, EOF, binary/truncated/rename/deletion cases.
+- Combined preview mappings and overlapping-edit fallback.
+- Selection modes, ranges, independent side viewports, request ownership.
+- Real Git UI flows for partial operations, stage-all, ignore, stash preview/apply/drop.
+- Filtered/no-result palette; native editor argument boundaries; modal precedence.
+- Cache byte budgets/recency; blocked-worker shutdown; terminal startup/isolation.
+- Existing newarch tree, branch/rewrite, scroll, stale-read, and snapshot suites.
 
 ## Harness Decision
 
-No new harness scenario is required because the user-visible command surface,
-screen notices, and Git state outcomes should remain unchanged. Existing
-commit rewrite harness scenarios continue to assert UI and Git state for squash,
-fixup, reword, pushed reword, and delete.
+New real Git flows assert rendered UI and actual Git state. Their failures write
+screen, AppContext, input sequence and Git state artifacts, with a focused test
+for artifact generation. Existing mock harness scenarios retain coverage of
+unchanged newarch behavior. Unix-only PTY coverage stays Unix-only.
 
 ## Validation
 
+Standard commands: cargo fmt --check, cargo check --locked, cargo test --locked,
+and cargo clippy --locked --all-targets --all-features -- -D warnings.
+The explicit +stable invocations below select the verified toolchain.
+
 ```text
-cargo fmt
-cargo clippy --workspace --lib --bins -- -D warnings
-cargo test
-cargo test -p ratagit --test exec_plan
+cargo +stable fmt --check
+cargo +stable check --locked
+cargo +stable test --locked
+cargo +stable clippy --locked --all-targets --all-features -- -D warnings
 ```
+
+Use verified Windows stable Cargo and the existing build cache. Ubuntu/Windows
+CI now runs all four checks. Local WSL has Ubuntu 24.04 and C tooling but no Rust
+toolchain; do not claim local Unix test execution.
 
 ## Completion Evidence
 
-- replaced commit delete/squash/fixup/reword's manual reset/cherry-pick replay
-  path with scripted `git rebase -i`
-- added per-command Git environment support for temporary sequence/message
-  editor scripts, including Git for Windows-compatible shell script paths
-- added rebase planner unit tests and a real Git non-contiguous squash scenario
-- updated product/design docs to describe rebase-backed commit rewrites
-- validation passed:
-  `cargo fmt`
-- validation passed:
-  `cargo clippy --workspace --lib --bins -- -D warnings`
-- validation passed:
-  `cargo test`
-- validation passed:
-  `cargo test -p ratagit --test exec_plan`
+All four checks passed, including 567 workspace tests, zero failures/ignored.
+Seven new snapshots and one intentional command-modal update were reviewed;
+the baseline theme/layout/modal/editor files remain identical to newarch.
+A Windows PTY smoke session exercised patch entry, line range selection,
+command filtering, escape/back and normal quit with alternate-screen restoration.
+The migration is committed locally and delivered by fast-forwarding feature/newarch;
+the original dirty checkout and remote branches remain unchanged.
+See PR8_MIGRATION.md for source-to-target decisions and practical limits.

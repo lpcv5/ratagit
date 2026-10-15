@@ -19,6 +19,80 @@ pub fn update(state: &mut AppContext, action: Action) -> Vec<Command> {
 
 fn update_ui(state: &mut AppContext, action: UiAction) -> Vec<Command> {
     match action {
+        UiAction::DetailsViewport { visible_lines } => {
+            state.ui.details.viewport_lines = visible_lines;
+            crate::partial::ensure_visible(state);
+            Vec::new()
+        }
+        UiAction::HostFinished { message, refresh } => {
+            state.ui.command_palette.active = false;
+            push_notice(state, &message);
+            if refresh {
+                details::clear_caches(state);
+                with_pending(state, Command::refresh_all_commands())
+            } else {
+                Vec::new()
+            }
+        }
+        UiAction::ToggleStageAll => crate::extras::toggle_stage_all(state),
+        UiAction::Fetch => crate::extras::run(state, crate::extras::RepositoryOperation::Fetch),
+        UiAction::IgnoreSelectedFile => crate::extras::ignore_selected(state),
+        UiAction::StashApplySelected => crate::extras::stash(state, false),
+        UiAction::StashDropSelected => crate::extras::stash(state, true),
+        UiAction::ConfirmRepositoryOperation => state
+            .ui
+            .details
+            .repository_confirm
+            .take()
+            .map(|op| crate::extras::run(state, op))
+            .unwrap_or_default(),
+        UiAction::CancelRepositoryOperation => {
+            state.ui.details.repository_confirm = None;
+            Vec::new()
+        }
+        UiAction::PaletteInput(ch) => {
+            state.ui.command_palette.query.push(ch);
+            state.ui.command_palette.selected = 0;
+            Vec::new()
+        }
+        UiAction::PaletteBackspace => {
+            state.ui.command_palette.query.pop();
+            state.ui.command_palette.selected = 0;
+            Vec::new()
+        }
+        UiAction::OpenFilePatch => crate::partial::open(state),
+        UiAction::OpenStashPatch => crate::partial::open_stash(state),
+        UiAction::NextPatchFile { up } => crate::partial::next_file(state, up),
+        UiAction::CloseFilePatch => {
+            crate::partial::close(state);
+            Vec::new()
+        }
+        UiAction::MovePatchSelection { up, visible_lines } => {
+            crate::partial::move_selection(state, up, visible_lines);
+            Vec::new()
+        }
+        UiAction::CyclePatchSelection => {
+            crate::partial::cycle_mode(state);
+            Vec::new()
+        }
+        UiAction::TogglePatchRange => {
+            crate::partial::toggle_range(state);
+            Vec::new()
+        }
+        UiAction::SwitchPatchSource => {
+            crate::partial::switch_source(state);
+            Vec::new()
+        }
+        UiAction::ApplyPatchSelection => crate::partial::apply(state, false),
+        UiAction::RequestPatchDiscard => {
+            crate::partial::request_discard(state);
+            Vec::new()
+        }
+        UiAction::ConfirmPatchDiscard => crate::partial::apply(state, true),
+        UiAction::CancelPatchDiscard => {
+            state.ui.details.patch.discard = None;
+            Vec::new()
+        }
         UiAction::RefreshAll => with_pending(state, Command::refresh_all_commands()),
         UiAction::Pull => with_pending(state, vec![Command::Pull]),
         UiAction::Push => with_pending(state, vec![Command::Push { force: false }]),
@@ -33,6 +107,7 @@ fn update_ui(state: &mut AppContext, action: UiAction) -> Vec<Command> {
             Vec::new()
         }
         UiAction::OpenCommandPalette => {
+            state.ui.command_palette.query.clear();
             state.ui.command_palette.active = true;
             clamp_command_palette_selection(state);
             Vec::new()
@@ -196,18 +271,27 @@ fn update_ui(state: &mut AppContext, action: UiAction) -> Vec<Command> {
             Vec::new()
         }
         UiAction::FocusNext => {
+            if state.ui.details.patch.active {
+                crate::partial::close(state);
+            }
             state.ui.focus = state.ui.focus.next_left();
             state.ui.last_left_focus = state.ui.focus;
             clear_search_if_incompatible(state);
             details::refresh_on_focus(state)
         }
         UiAction::FocusPrev => {
+            if state.ui.details.patch.active {
+                crate::partial::close(state);
+            }
             state.ui.focus = state.ui.focus.prev_left();
             state.ui.last_left_focus = state.ui.focus;
             clear_search_if_incompatible(state);
             details::refresh_on_focus(state)
         }
         UiAction::FocusPanel { panel } => {
+            if panel != crate::PanelFocus::Details && state.ui.details.patch.active {
+                crate::partial::close(state);
+            }
             state.ui.focus = panel;
             if panel.is_left_panel() {
                 state.ui.last_left_focus = panel;
@@ -496,6 +580,19 @@ fn command_palette_action(
     details_visible_lines: usize,
 ) -> Option<UiAction> {
     match command {
+        CommandPaletteCommand::EditFile | CommandPaletteCommand::CopyPath => None,
+        CommandPaletteCommand::ToggleStageAll => Some(UiAction::ToggleStageAll),
+        CommandPaletteCommand::Fetch => Some(UiAction::Fetch),
+        CommandPaletteCommand::IgnoreSelectedFile => Some(UiAction::IgnoreSelectedFile),
+        CommandPaletteCommand::StashApplySelected => Some(UiAction::StashApplySelected),
+        CommandPaletteCommand::StashDropSelected => Some(UiAction::StashDropSelected),
+        CommandPaletteCommand::OpenFilePatch => Some(UiAction::OpenFilePatch),
+        CommandPaletteCommand::ApplyPatchSelection => Some(UiAction::ApplyPatchSelection),
+        CommandPaletteCommand::RequestPatchDiscard => Some(UiAction::RequestPatchDiscard),
+        CommandPaletteCommand::CyclePatchSelection => Some(UiAction::CyclePatchSelection),
+        CommandPaletteCommand::TogglePatchRange => Some(UiAction::TogglePatchRange),
+        CommandPaletteCommand::SwitchPatchSource => Some(UiAction::SwitchPatchSource),
+        CommandPaletteCommand::CloseFilePatch => Some(UiAction::CloseFilePatch),
         CommandPaletteCommand::Pull => Some(UiAction::Pull),
         CommandPaletteCommand::Push => Some(UiAction::Push),
         CommandPaletteCommand::RefreshAll => Some(UiAction::RefreshAll),

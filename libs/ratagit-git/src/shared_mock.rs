@@ -51,6 +51,7 @@ macro_rules! delegate_shared_backend {
 
 impl GitBackendRead for SharedMockGitBackend {
     delegate_shared_backend! {
+        load_patch(request: ratagit_core::patch::PatchRequest) -> Result<ratagit_core::patch::Patch, GitError>;
         refresh_snapshot() -> Result<RepoSnapshot, GitError>;
         refresh_files() -> Result<FilesSnapshot, GitError>;
         refresh_branches() -> Result<Vec<BranchEntry>, GitError>;
@@ -68,6 +69,8 @@ impl GitBackendRead for SharedMockGitBackend {
 
 impl GitBackendWrite for SharedMockGitBackend {
     delegate_shared_backend! {
+        apply_patch_lines(patch: &ratagit_core::patch::Patch, ids: &[ratagit_core::patch::LineId], direction: ratagit_core::patch::PatchDirection) -> Result<(), GitError>;
+        repository_operation(operation: &ratagit_core::extras::RepositoryOperation) -> Result<(), GitError>;
         stage_file(path: &str) -> Result<(), GitError>;
         unstage_file(path: &str) -> Result<(), GitError>;
         stage_files(paths: &[String]) -> Result<(), GitError>;

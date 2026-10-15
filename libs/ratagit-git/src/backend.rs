@@ -38,7 +38,15 @@ impl GitError {
 
 impl From<git2::Error> for GitError {
     fn from(error: git2::Error) -> Self {
-        Self::with_kind(GitErrorKind::Git2, error.message().to_string())
+        Self::with_kind(
+            GitErrorKind::Git2,
+            format!(
+                "{} (code {:?}, class {:?})",
+                error.message(),
+                error.code(),
+                error.class()
+            ),
+        )
     }
 }
 
@@ -50,7 +58,21 @@ impl fmt::Display for GitError {
 
 impl std::error::Error for GitError {}
 
+impl From<std::io::Error> for GitError {
+    fn from(error: std::io::Error) -> Self {
+        Self::io(error.to_string())
+    }
+}
+
 pub trait GitBackendRead {
+    fn load_patch(
+        &mut self,
+        _request: ratagit_core::patch::PatchRequest,
+    ) -> Result<ratagit_core::patch::Patch, GitError> {
+        Err(GitError::new(
+            "patch loading is unavailable for this backend",
+        ))
+    }
     fn refresh_snapshot(&mut self) -> Result<RepoSnapshot, GitError>;
     fn refresh_files(&mut self) -> Result<FilesSnapshot, GitError> {
         let snapshot = self.refresh_snapshot()?;
@@ -89,6 +111,22 @@ pub trait GitBackendRead {
 }
 
 pub trait GitBackendWrite {
+    fn repository_operation(
+        &mut self,
+        _operation: &ratagit_core::extras::RepositoryOperation,
+    ) -> Result<(), GitError> {
+        Err(GitError::new("operation is unavailable for this backend"))
+    }
+    fn apply_patch_lines(
+        &mut self,
+        _patch: &ratagit_core::patch::Patch,
+        _ids: &[ratagit_core::patch::LineId],
+        _direction: ratagit_core::patch::PatchDirection,
+    ) -> Result<(), GitError> {
+        Err(GitError::new(
+            "partial changes are unavailable for this backend",
+        ))
+    }
     fn stage_file(&mut self, path: &str) -> Result<(), GitError>;
     fn unstage_file(&mut self, path: &str) -> Result<(), GitError>;
     fn stage_files(&mut self, paths: &[String]) -> Result<(), GitError> {
@@ -160,6 +198,7 @@ macro_rules! delegate_boxed_backend {
 
 impl<T: GitBackendRead + ?Sized> GitBackendRead for Box<T> {
     delegate_boxed_backend! {
+        load_patch(request: ratagit_core::patch::PatchRequest) -> Result<ratagit_core::patch::Patch, GitError>;
         refresh_snapshot() -> Result<RepoSnapshot, GitError>;
         refresh_files() -> Result<FilesSnapshot, GitError>;
         refresh_branches() -> Result<Vec<ratagit_core::BranchEntry>, GitError>;
@@ -177,6 +216,8 @@ impl<T: GitBackendRead + ?Sized> GitBackendRead for Box<T> {
 
 impl<T: GitBackendWrite + ?Sized> GitBackendWrite for Box<T> {
     delegate_boxed_backend! {
+        repository_operation(operation: &ratagit_core::extras::RepositoryOperation) -> Result<(), GitError>;
+        apply_patch_lines(patch: &ratagit_core::patch::Patch, ids: &[ratagit_core::patch::LineId], direction: ratagit_core::patch::PatchDirection) -> Result<(), GitError>;
         stage_file(path: &str) -> Result<(), GitError>;
         unstage_file(path: &str) -> Result<(), GitError>;
         stage_files(paths: &[String]) -> Result<(), GitError>;

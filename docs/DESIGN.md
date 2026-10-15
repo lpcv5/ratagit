@@ -1,5 +1,24 @@
 # DESIGN.md
 
+## PR #8 migration decisions
+
+The baseline remains newarch. Partial staging extends the existing Details panel;
+its rows use the existing theme, selection colors, layout, and confirmation modal.
+Native source patch bytes are separate from combined display rows. A display
+mapping never authorizes a write; missing/ambiguous mappings fall back to source
+previews. Block/hunk/line selection and side-specific cursors/scroll offsets live
+in AppContext. Window resize supplies explicit viewport data to the reducer.
+
+Executable contextual help is integrated into the existing command palette with
+text filtering. It does not add main's separate overlay or visual component tree.
+Editor and clipboard services stay in the application layer; pure input derives
+host requests, terminal ownership stays on the main thread, and completion is
+dispatched to core. Git path resolution remains in ratagit-git.
+
+Text caches retain at most 16 entries and 8 MiB of owned value/key capacity per
+kind (files, branches, commits), below a combined 24 MiB payload budget. Cache
+hits promote recency. Refreshes and mutations invalidate mutable cached data.
+
 ## MVP Design
 
 ratagit MVP uses a left-nav workspace interface with six visible panels:
@@ -448,10 +467,8 @@ Panel projection and row source:
   - hunk headers (`@@`)
   - additions (`+`)
   - removals (`-`)
-- Future hunk-level staging should replace Details' raw patch text projection
-  with an AppContext-owned structured diff model of files, hunks, and lines; the
-  UI should render that model rather than deriving selectable hunk state from
-  terminal text.
+- Interactive partial staging uses AppContext-owned files, hunks, and lossless
+  source lines. Selection never derives applicable patch data from terminal text.
 
 ---
 

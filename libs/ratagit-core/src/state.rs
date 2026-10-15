@@ -131,6 +131,20 @@ pub enum CommandPaletteSection {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommandPaletteCommand {
+    EditFile,
+    CopyPath,
+    ToggleStageAll,
+    Fetch,
+    IgnoreSelectedFile,
+    StashApplySelected,
+    StashDropSelected,
+    OpenFilePatch,
+    ApplyPatchSelection,
+    RequestPatchDiscard,
+    CyclePatchSelection,
+    TogglePatchRange,
+    SwitchPatchSource,
+    CloseFilePatch,
     Pull,
     Push,
     RefreshAll,
@@ -220,6 +234,7 @@ pub struct SearchState {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct CommandPaletteState {
+    pub query: String,
     pub active: bool,
     pub selected: usize,
 }
@@ -574,6 +589,8 @@ pub struct RefreshWork {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DetailsWork {
+    pub patch_request: Option<(u64, crate::patch::PatchRequest)>,
+    pub next_patch_request_id: u64,
     pub details_pending: bool,
     pub next_details_request_id: u64,
     pub details_request: Option<DetailsRequest>,
@@ -894,6 +911,7 @@ pub struct StashUiState {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DetailsRepoState {
+    pub patch: Option<Box<crate::patch::Patch>>,
     pub files_diff: String,
     pub files_targets: Vec<String>,
     pub files_error: Option<String>,
@@ -914,6 +932,9 @@ pub struct DetailsRepoState {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DetailsUiState {
+    pub viewport_lines: usize,
+    pub repository_confirm: Option<crate::extras::RepositoryOperation>,
+    pub patch: crate::partial::PatchUiState,
     pub scroll_offset: usize,
 }
 
@@ -1069,6 +1090,14 @@ impl AppContext {
     pub fn command_palette_entries(&self) -> Vec<CommandPaletteEntry> {
         let mut entries = local_command_palette_entries(self);
         entries.extend(global_command_palette_entries());
+        let query = self.ui.command_palette.query.to_lowercase();
+        if !query.is_empty() {
+            entries.retain(|entry| {
+                format!("{} {}", entry.key, entry.label)
+                    .to_lowercase()
+                    .contains(&query)
+            });
+        }
         entries
     }
 
@@ -1099,6 +1128,50 @@ fn left_view_for_focus(
 }
 
 fn local_command_palette_entries(state: &AppContext) -> Vec<CommandPaletteEntry> {
+    if state.ui.details.patch.active
+        && state.ui.focus == PanelFocus::Details
+        && state.ui.last_left_focus == PanelFocus::Stash
+    {
+        return vec![CommandPaletteEntry::local(
+            "Esc",
+            "back to stashes",
+            CommandPaletteCommand::CloseFilePatch,
+        )];
+    }
+    if state.ui.details.patch.active && state.ui.focus == PanelFocus::Details {
+        return vec![
+            CommandPaletteEntry::local(
+                "space",
+                "apply selected changes",
+                CommandPaletteCommand::ApplyPatchSelection,
+            ),
+            CommandPaletteEntry::local(
+                "a",
+                "change selection mode",
+                CommandPaletteCommand::CyclePatchSelection,
+            ),
+            CommandPaletteEntry::local(
+                "v",
+                "select line range",
+                CommandPaletteCommand::TogglePatchRange,
+            ),
+            CommandPaletteEntry::local(
+                "Tab",
+                "switch staged/unstaged",
+                CommandPaletteCommand::SwitchPatchSource,
+            ),
+            CommandPaletteEntry::local(
+                "d",
+                "discard selected changes",
+                CommandPaletteCommand::RequestPatchDiscard,
+            ),
+            CommandPaletteEntry::local(
+                "Esc",
+                "back to files",
+                CommandPaletteCommand::CloseFilePatch,
+            ),
+        ];
+    }
     use CommandPaletteCommand as Command;
     use CommandPaletteEntry as Entry;
 
@@ -1110,8 +1183,12 @@ fn local_command_palette_entries(state: &AppContext) -> Vec<CommandPaletteEntry>
             Entry::local("c", "commit", Command::OpenCommitEditor),
             Entry::local("s", "stash", Command::OpenStashEditor),
             Entry::local("D", "reset", Command::OpenResetMenu),
-            Entry::local("enter", "expand", Command::ToggleSelectedDirectory),
+            Entry::local("enter", "expand / partial stage", Command::OpenFilePatch),
             Entry::local("v", "visual select", Command::EnterFilesMultiSelect),
+            Entry::local("a", "stage/unstage all", Command::ToggleStageAll),
+            Entry::local("i", "ignore untracked path", Command::IgnoreSelectedFile),
+            Entry::local("e", "edit file", Command::EditFile),
+            Entry::local("Ctrl+o", "copy path", Command::CopyPath),
         ],
         Some(ActiveLeftView::BranchesList) => vec![
             Entry::local("enter", "commits", Command::OpenBranchCommitsPanel),
@@ -1148,7 +1225,11 @@ fn local_command_palette_entries(state: &AppContext) -> Vec<CommandPaletteEntry>
             Entry::local("v", "visual select", Command::EnterCommitsMultiSelect),
         ],
         Some(ActiveLeftView::Stash) => {
-            vec![Entry::local("O", "stash pop", Command::StashPopSelected)]
+            vec![
+                Entry::local("a", "stash apply", Command::StashApplySelected),
+                Entry::local("d", "stash drop", Command::StashDropSelected),
+                Entry::local("O", "stash pop", Command::StashPopSelected),
+            ]
         }
         None => Vec::new(),
     }
@@ -1160,6 +1241,7 @@ fn global_command_palette_entries() -> Vec<CommandPaletteEntry> {
 
     vec![
         Entry::global("p", "pull", Command::Pull),
+        Entry::global("F", "fetch", Command::Fetch),
         Entry::global("P", "push", Command::Push),
         Entry::global("r", "refresh", Command::RefreshAll),
         Entry::global("h", "focus previous", Command::FocusPrev),

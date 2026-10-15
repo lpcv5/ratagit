@@ -25,7 +25,12 @@ pub(crate) fn render_command_palette_modal(frame: &mut Frame<'_>, state: &AppCon
         frame,
         area,
         ModalSpec::new("Commands", ModalTone::Info, 78, 22, 24, 12, 1).with_icon("?"),
-        &[&[("j/k", "select"), ("Enter", "run"), ("Esc", "close")]],
+        &[&[
+            ("arrows", "select"),
+            ("type", "filter"),
+            ("Enter", "run"),
+            ("Esc", "close"),
+        ]],
         |frame, content| {
             frame.render_widget(
                 Paragraph::new(palette_lines(state, content.height as usize)),
@@ -36,7 +41,10 @@ pub(crate) fn render_command_palette_modal(frame: &mut Frame<'_>, state: &AppCon
 }
 
 fn palette_lines(state: &AppContext, visible_rows: usize) -> Vec<Line<'static>> {
+    let filtering = !state.ui.command_palette.query.is_empty();
+    let visible_rows = visible_rows.saturating_sub(usize::from(filtering));
     let rows = palette_rows(state);
+    let no_matches = rows.is_empty();
     let selected_row = rows
         .iter()
         .position(|row| {
@@ -49,7 +57,8 @@ fn palette_lines(state: &AppContext, visible_rows: usize) -> Vec<Line<'static>> 
         .unwrap_or(0);
     let start = viewport_start(selected_row, rows.len(), visible_rows);
 
-    rows.into_iter()
+    let mut lines: Vec<_> = rows
+        .into_iter()
         .skip(start)
         .take(visible_rows)
         .map(|row| match row {
@@ -64,7 +73,20 @@ fn palette_lines(state: &AppContext, visible_rows: usize) -> Vec<Line<'static>> 
                 command_index == state.ui.command_palette.selected,
             ),
         })
-        .collect()
+        .collect();
+    if filtering {
+        lines.insert(
+            0,
+            Line::styled(
+                format!("Filter: {}", state.ui.command_palette.query),
+                modal_text_style(),
+            ),
+        );
+    }
+    if no_matches && visible_rows > 0 {
+        lines.push(Line::styled("No matching commands", modal_muted_style()));
+    }
+    lines
 }
 
 fn palette_rows(state: &AppContext) -> Vec<PaletteRow> {

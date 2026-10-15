@@ -73,6 +73,12 @@ impl fmt::Debug for HybridGitBackend {
 }
 
 impl GitBackendRead for HybridGitBackend {
+    fn load_patch(
+        &mut self,
+        request: ratagit_core::patch::PatchRequest,
+    ) -> Result<ratagit_core::patch::Patch, GitError> {
+        crate::patch_backend::load(&mut self.repo, request)
+    }
     fn refresh_snapshot(&mut self) -> Result<RepoSnapshot, GitError> {
         let files_snapshot = self.refresh_files()?;
         let commits = self.refresh_commits()?;
@@ -280,6 +286,20 @@ impl GitBackendRead for HybridGitBackend {
 }
 
 impl GitBackendWrite for HybridGitBackend {
+    fn repository_operation(
+        &mut self,
+        operation: &ratagit_core::extras::RepositoryOperation,
+    ) -> Result<(), GitError> {
+        self.cli.repository_operation(operation)
+    }
+    fn apply_patch_lines(
+        &mut self,
+        patch: &ratagit_core::patch::Patch,
+        ids: &[ratagit_core::patch::LineId],
+        direction: ratagit_core::patch::PatchDirection,
+    ) -> Result<(), GitError> {
+        crate::patch_backend::apply_lines(&mut self.repo, patch, ids, direction)
+    }
     fn stage_file(&mut self, path: &str) -> Result<(), GitError> {
         self.stage_files(&[path.to_string()])
     }

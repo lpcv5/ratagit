@@ -176,6 +176,63 @@ fn commit_matches(commit: &CommitEntry, id: &str) -> bool {
 }
 
 impl GitBackendRead for MockGitBackend {
+    fn load_patch(
+        &mut self,
+        request: ratagit_core::patch::PatchRequest,
+    ) -> Result<ratagit_core::patch::Patch, GitError> {
+        use ratagit_core::patch::*;
+        let (path, source) = match &request {
+            PatchRequest::File(path)
+            | PatchRequest::Worktree(path)
+            | PatchRequest::Directory(path) => (path.clone(), PatchSource::Worktree),
+            PatchRequest::Index(path) => (path.clone(), PatchSource::Index),
+            PatchRequest::Untracked(path) => (path.clone(), PatchSource::Untracked),
+            PatchRequest::Stash { index, .. } => ("mock.txt".into(), PatchSource::Stash(*index)),
+            PatchRequest::Commit { oid, .. } => {
+                ("mock.txt".into(), PatchSource::Commit(oid.clone()))
+            }
+        };
+        let side = PatchSide {
+            path: Some(path),
+            oid: None,
+            mode: 0o100644,
+        };
+        let file = PatchFile {
+            source,
+            change: PatchChange::Modified,
+            old: side.clone(),
+            new: side,
+            binary: false,
+            encoded: None, // Mock text has no applicable native bytes.
+            hunks: vec![PatchHunk {
+                old_start: 1,
+                old_lines: 1,
+                new_start: 1,
+                new_lines: 1,
+                header: b"@@ -1 +1 @@\n".to_vec(),
+                lines: vec![
+                    PatchLine {
+                        kind: PatchLineKind::Removed,
+                        old_line: Some(1),
+                        new_line: None,
+                        content: b"old mock content\n".to_vec(),
+                    },
+                    PatchLine {
+                        kind: PatchLineKind::Added,
+                        old_line: None,
+                        new_line: Some(1),
+                        content: b"new mock content\n".to_vec(),
+                    },
+                ],
+            }],
+        };
+        Ok(Patch {
+            request,
+            files: vec![file],
+            truncated: false,
+            preview: None,
+        })
+    }
     fn refresh_snapshot(&mut self) -> Result<RepoSnapshot, GitError> {
         self.operations.push("refresh".to_string());
         let mut snapshot = self.snapshot.clone();

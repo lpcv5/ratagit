@@ -2212,3 +2212,80 @@ fn terminal_buffer_styles_editor_inputs_with_border_focus_only() {
             .all(|cell| cell.bg == Color::Reset)
     );
 }
+#[test]
+fn test_terminal_snapshot_partial_staging() {
+    let mut state = AppContext::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+    state.ui.focus = PanelFocus::Details;
+    state.ui.last_left_focus = PanelFocus::Files;
+    state.ui.details.patch.active = true;
+    state.repo.details.patch = Some(ratagit_testkit::fixture_patch());
+    let size = TerminalSize {
+        width: 120,
+        height: 35,
+    };
+    let text = render_terminal_text(&state, size);
+    assert!(text.contains("new first"));
+    assert!(buffer_contains_selected_text(
+        &render_terminal_buffer(&state, size),
+        "new first"
+    ));
+    insta::assert_snapshot!("partial_blocks", text);
+    update(&mut state, Action::Ui(UiAction::TogglePatchRange));
+    update(
+        &mut state,
+        Action::Ui(UiAction::MovePatchSelection {
+            up: false,
+            visible_lines: 18,
+        }),
+    );
+    insta::assert_snapshot!(
+        "partial_range_narrow",
+        render_terminal_text(
+            &state,
+            TerminalSize {
+                width: 65,
+                height: 20
+            }
+        )
+    );
+    update(&mut state, Action::Ui(UiAction::RequestPatchDiscard));
+    insta::assert_snapshot!(
+        "partial_discard_confirm",
+        render_terminal_text(&state, size)
+    );
+}
+#[test]
+fn test_terminal_snapshot_migrated_commands() {
+    let mut state = AppContext::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+    let size = TerminalSize {
+        width: 100,
+        height: 30,
+    };
+    update(&mut state, Action::Ui(UiAction::OpenCommandPalette));
+    for ch in "fetch".chars() {
+        update(&mut state, Action::Ui(UiAction::PaletteInput(ch)));
+    }
+    assert_eq!(state.command_palette_entries().len(), 1);
+    insta::assert_snapshot!("palette_filtered", render_terminal_text(&state, size));
+    update(&mut state, Action::Ui(UiAction::PaletteInput('界')));
+    assert!(render_terminal_text(&state, size).contains("No matching commands"));
+    insta::assert_snapshot!("palette_no_matches", render_terminal_text(&state, size));
+    update(&mut state, Action::Ui(UiAction::CloseCommandPalette));
+    update(
+        &mut state,
+        Action::Ui(UiAction::FocusPanel {
+            panel: PanelFocus::Stash,
+        }),
+    );
+    state.repo.details.patch = Some(ratagit_testkit::fixture_patch());
+    state.work.details.patch_request = None;
+    for file in &mut state.repo.details.patch.as_mut().unwrap().files {
+        file.source = ratagit_core::patch::PatchSource::Stash(0);
+    }
+    insta::assert_snapshot!("stash_details", render_terminal_text(&state, size));
+    update(&mut state, Action::Ui(UiAction::StashDropSelected));
+    assert!(render_terminal_text(&state, size).contains("Drop selected stash?"));
+    insta::assert_snapshot!("stash_drop_confirm", render_terminal_text(&state, size));
+}

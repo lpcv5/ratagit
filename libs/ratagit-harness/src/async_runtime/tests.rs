@@ -236,7 +236,7 @@ fn file_diff_target(path: &str) -> FileDiffTarget {
 fn read_commands_are_distributed_across_read_workers() {
     let factory = RecordingFactory::new();
     let log = Arc::clone(&factory.log);
-    let runtime_factory = factory.clone();
+    let runtime_factory = factory;
     let mut runtime = AsyncRuntime::new(
         AppContext::default(),
         move || runtime_factory.build(),
@@ -274,7 +274,7 @@ fn split_refresh_results_apply_while_files_refresh_is_blocked() {
     let (started_tx, started_rx) = std::sync::mpsc::channel();
     let (release_tx, release_rx) = std::sync::mpsc::channel();
     let factory = RecordingFactory::with_blocking_refresh(started_tx, release_rx);
-    let runtime_factory = factory.clone();
+    let runtime_factory = factory;
     let mut runtime = AsyncRuntime::new(
         AppContext::default(),
         move || runtime_factory.build(),
@@ -304,7 +304,7 @@ fn mutating_commands_are_serialized_on_the_write_worker() {
     let factory = RecordingFactory::new();
     let log = Arc::clone(&factory.log);
     let max_mutation_active = Arc::clone(&factory.max_mutation_active);
-    let runtime_factory = factory.clone();
+    let runtime_factory = factory;
     let mut runtime = AsyncRuntime::new(
         AppContext::default(),
         move || runtime_factory.build(),
@@ -338,7 +338,7 @@ fn mutating_commands_are_serialized_on_the_write_worker() {
 fn read_commands_are_deferred_while_mutation_is_pending() {
     let factory = RecordingFactory::new();
     let log = Arc::clone(&factory.log);
-    let runtime_factory = factory.clone();
+    let runtime_factory = factory;
     let mut runtime = AsyncRuntime::new(
         AppContext::default(),
         move || runtime_factory.build(),
@@ -367,7 +367,7 @@ fn stale_read_results_are_dropped_after_a_queued_mutation() {
     let (started_tx, started_rx) = std::sync::mpsc::channel();
     let (release_tx, release_rx) = std::sync::mpsc::channel();
     let factory = RecordingFactory::with_blocking_refresh(started_tx, release_rx);
-    let runtime_factory = factory.clone();
+    let runtime_factory = factory;
     let mut runtime = AsyncRuntime::new(
         AppContext::default(),
         move || runtime_factory.build(),
@@ -408,7 +408,7 @@ fn stale_read_results_are_dropped_after_a_queued_mutation() {
 fn debounce_window_defers_and_coalesces_async_read_commands() {
     let factory = RecordingFactory::new();
     let log = Arc::clone(&factory.log);
-    let runtime_factory = factory.clone();
+    let runtime_factory = factory;
     let mut runtime = AsyncRuntime::new(
         AppContext::default(),
         move || runtime_factory.build(),
@@ -440,7 +440,7 @@ fn debounce_window_defers_and_coalesces_async_read_commands() {
 fn render_smoke_paths_use_current_state_without_dispatching_git() {
     let factory = RecordingFactory::new();
     let log = Arc::clone(&factory.log);
-    let runtime_factory = factory.clone();
+    let runtime_factory = factory;
     let runtime = AsyncRuntime::new(
         AppContext::default(),
         move || runtime_factory.build(),
@@ -458,7 +458,7 @@ fn render_smoke_paths_use_current_state_without_dispatching_git() {
 #[test]
 fn empty_read_worker_pool_reports_refresh_failure() {
     let factory = RecordingFactory::new();
-    let runtime_factory = factory.clone();
+    let runtime_factory = factory;
     let mut runtime = AsyncRuntime::new(
         AppContext::default(),
         move || runtime_factory.build(),
@@ -537,5 +537,29 @@ fn spin_runtime_ticks(runtime: &mut AsyncRuntime<RecordingBackend>, label: &str,
     assert!(
         !runtime.render_terminal_text().is_empty(),
         "runtime screen should stay renderable after {label}"
+    );
+}
+#[test]
+fn test_shutdown_does_not_wait_for_blocked_read_or_run_queued_commands() {
+    let (started_tx, started_rx) = std::sync::mpsc::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel();
+    let factory = RecordingFactory::with_blocking_refresh(started_tx, release_rx);
+    let log = Arc::clone(&factory.log);
+    let mut runtime = AsyncRuntime::new(
+        AppContext::default(),
+        move || factory.build(),
+        terminal_size(),
+    );
+    runtime.process_commands(vec![Command::RefreshAll]);
+    started_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+    let started = Instant::now();
+    drop(runtime);
+    assert!(started.elapsed() < Duration::from_secs(1));
+    release_tx.send(()).unwrap();
+    assert!(
+        log.lock()
+            .unwrap()
+            .iter()
+            .any(|entry| entry.starts_with("refresh-files:"))
     );
 }

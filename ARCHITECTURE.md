@@ -1,5 +1,15 @@
 ## Overview
 
+PR #8 portability audit and regression evidence live in `docs/PR8_MIGRATION.md`.
+The migration adds lossless patch models to core, native patch generation and
+application behind GitBackend, and pure patch-row projection in the existing UI.
+AppContext keeps reviewed patch data under repo.details, interaction under
+ui.details, and request ownership under work.details. Load results require a
+matching request ID and target; mutation barriers still reject stale reads.
+Runtime teardown stops queued jobs and bounds worker joining to 100 ms. In-flight
+native calls cannot be forcibly cancelled; a detached worker exits after its
+current call and never starts queued work.
+
 ratagit is a lazygit-like Git TUI built with Rust and ratatui.
 
 The system follows a strict unidirectional data flow:

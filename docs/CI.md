@@ -5,10 +5,15 @@
 Every PR must pass:
 
 - cargo fmt --check
-- cargo clippy --all-targets -- -D warnings
-- cargo test
+- cargo check --locked
+- cargo clippy --locked --all-targets --all-features -- -D warnings
+- cargo test --locked
 - snapshot tests
 - harness scenarios
+
+The workflow runs on Ubuntu and Windows. Unix-only PTY tests verify normal exit
+restoration; Windows runs isolated startup/redirection process regressions.
+Builds without an interactive terminal fail before alternate-screen entry.
 
 ---
 

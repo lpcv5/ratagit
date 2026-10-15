@@ -7,15 +7,16 @@ use super::panel_types::{PanelLine, PanelSpan};
 use crate::theme::RowRole;
 
 pub(crate) fn render_details_lines(state: &AppContext, max_lines: usize) -> Vec<PanelLine> {
+    if state.ui.details.patch.active {
+        return super::partial_details::render(state, max_lines);
+    }
     match state.ui.last_left_focus {
         PanelFocus::Files => render_files_details_lines(state, max_lines),
         PanelFocus::Branches => render_branch_details_lines(state, max_lines),
         PanelFocus::Commits => render_commit_details_lines(state, max_lines),
-        // TODO(details-stash): replace placeholder with stash entry details projection.
-        PanelFocus::Stash => render_placeholder_details_lines(
-            "  details(stash): pending details implementation",
-            max_lines,
-        ),
+        PanelFocus::Stash => {
+            render_placeholder_details_lines("  details(stash): no stash selected", max_lines)
+        }
         PanelFocus::Details | PanelFocus::Log => Vec::new(),
     }
 }
@@ -83,6 +84,9 @@ pub(crate) fn render_log_lines(state: &AppContext, max_lines: usize) -> Vec<Pane
 }
 
 fn render_files_details_lines(state: &AppContext, max_lines: usize) -> Vec<PanelLine> {
+    if state.ui.details.patch.active {
+        return super::partial_details::render(state, max_lines);
+    }
     if max_lines == 0 {
         return Vec::new();
     }
@@ -98,7 +102,6 @@ fn render_files_details_lines(state: &AppContext, max_lines: usize) -> Vec<Panel
         )];
     }
 
-    // TODO(files-hunks): upgrade details rows into selectable hunk models for partial staging.
     let mut rendered = Vec::new();
     if let Some(total) = state.repo.details.files_diff_truncated_from {
         rendered.push(PanelLine::new(

@@ -48,6 +48,33 @@ fn shortcut_text_for_state(state: &AppContext) -> String {
 }
 
 pub(crate) fn shortcut_line_for_state(state: &AppContext) -> ShortcutLine {
+    if state.ui.details.repository_confirm.is_some() {
+        return segments(&[("Enter", "drop stash"), ("Esc", "cancel")]);
+    }
+    if state.ui.details.patch.active
+        && state.ui.focus == ratagit_core::PanelFocus::Details
+        && state.ui.last_left_focus == ratagit_core::PanelFocus::Stash
+    {
+        return segments(&[("Ctrl+U/D", "scroll"), ("Esc", "back")]);
+    }
+    if state.ui.details.patch.discard.is_some() {
+        return segments(&[("Enter", "discard"), ("Esc", "cancel")]);
+    }
+    if state.ui.details.patch.active
+        && state.ui.focus == ratagit_core::PanelFocus::Details
+        && !state.ui.command_palette.active
+    {
+        return segments(&[
+            ("j/k", "select"),
+            ("a", "mode"),
+            ("v", "range"),
+            ("Tab", "side"),
+            ("Space", "apply"),
+            ("d", "discard"),
+            ("n/N", "file"),
+            ("Esc", "back"),
+        ]);
+    }
     if let Some(editor) = &state.ui.editor.kind {
         return match editor {
             ratagit_core::EditorKind::Commit { .. } => segments(&[

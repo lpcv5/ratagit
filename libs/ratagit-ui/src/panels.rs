@@ -924,3 +924,5 @@ mod tests {
         assert_eq!(shortcuts_for_state(&state), "Enter force push  Esc cancel");
     }
 }
+#[path = "partial_details.rs"]
+mod partial_details;

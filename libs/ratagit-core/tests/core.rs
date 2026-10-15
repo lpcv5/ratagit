@@ -1881,7 +1881,13 @@ fn search_selects_matches_across_left_panels() {
         update(&mut state, Action::Ui(UiAction::InputSearchChar(ch)));
     }
     let commands = update(&mut state, Action::Ui(UiAction::ConfirmSearch));
-    assert!(commands.is_empty());
+    assert!(matches!(
+        commands.as_slice(),
+        [Command::LoadPatch {
+            request: ratagit_core::patch::PatchRequest::Stash { index: 1, .. },
+            ..
+        }]
+    ));
     assert_eq!(state.ui.stash.selected, 1);
 }
 
@@ -4133,4 +4139,32 @@ fn editor_cursor_respects_unicode_boundaries() {
             intent: CommitEditorIntent::Create,
         })
     );
+}
+#[test]
+fn test_palette_filter_executes_matches_and_handles_unicode_no_matches() {
+    let mut state = AppContext::default();
+    update(&mut state, Action::Ui(UiAction::OpenCommandPalette));
+    for ch in "FETCH".chars() {
+        update(&mut state, Action::Ui(UiAction::PaletteInput(ch)));
+    }
+    assert_eq!(state.command_palette_entries().len(), 1);
+    let commands = update(
+        &mut state,
+        Action::Ui(UiAction::ExecuteCommandPalette {
+            details_scroll_lines: 8,
+            details_visible_lines: 18,
+        }),
+    );
+    assert!(matches!(
+        commands.as_slice(),
+        [Command::RepositoryOperation(
+            ratagit_core::extras::RepositoryOperation::Fetch
+        )]
+    ));
+    assert!(!state.ui.command_palette.active);
+    update(&mut state, Action::Ui(UiAction::OpenCommandPalette));
+    update(&mut state, Action::Ui(UiAction::PaletteInput('界')));
+    assert!(state.command_palette_entries().is_empty());
+    update(&mut state, Action::Ui(UiAction::PaletteBackspace));
+    assert!(!state.command_palette_entries().is_empty());
 }

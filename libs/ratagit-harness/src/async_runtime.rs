@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::marker::PhantomData;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -23,6 +24,7 @@ pub struct AsyncRuntime<B: GitBackend + Send + 'static> {
     write_command_tx: Sender<WorkerMessage>,
     result_rx: Receiver<WorkerResult>,
     workers: Vec<JoinHandle<()>>,
+    stopping: Arc<AtomicBool>,
     terminal_size: TerminalSize,
     scheduler: CommandScheduler,
     deferred_reads: VecDeque<Command>,
@@ -73,19 +75,25 @@ impl<B: GitBackend + Send + 'static> AsyncRuntime<B> {
         let (result_tx, result_rx) = mpsc::channel::<WorkerResult>();
         let mut read_command_txs = Vec::with_capacity(DEFAULT_READ_WORKER_COUNT);
         let mut workers = Vec::with_capacity(DEFAULT_READ_WORKER_COUNT + 1);
+        let stopping = Arc::new(AtomicBool::new(false));
 
         for _ in 0..DEFAULT_READ_WORKER_COUNT {
             let (command_tx, worker) = spawn_worker(
                 Arc::clone(&backend_factory),
                 result_tx.clone(),
                 WorkerKind::Read,
+                Arc::clone(&stopping),
             );
             read_command_txs.push(command_tx);
             workers.push(worker);
         }
 
-        let (write_command_tx, write_worker) =
-            spawn_worker(backend_factory, result_tx, WorkerKind::Write);
+        let (write_command_tx, write_worker) = spawn_worker(
+            backend_factory,
+            result_tx,
+            WorkerKind::Write,
+            Arc::clone(&stopping),
+        );
         workers.push(write_worker);
 
         Self {
@@ -94,6 +102,7 @@ impl<B: GitBackend + Send + 'static> AsyncRuntime<B> {
             write_command_tx,
             result_rx,
             workers,
+            stopping,
             terminal_size,
             scheduler: CommandScheduler::default(),
             deferred_reads: VecDeque::new(),
@@ -256,12 +265,19 @@ impl<B: GitBackend + Send + 'static> AsyncRuntime<B> {
 
 impl<B: GitBackend + Send + 'static> Drop for AsyncRuntime<B> {
     fn drop(&mut self) {
+        self.stopping.store(true, Ordering::Release);
         for command_tx in &self.read_command_txs {
             let _ = command_tx.send(WorkerMessage::Stop);
         }
         let _ = self.write_command_tx.send(WorkerMessage::Stop);
+        let deadline = Instant::now() + Duration::from_millis(100);
+        while self.workers.iter().any(|worker| !worker.is_finished()) && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(1));
+        }
         for worker in self.workers.drain(..) {
-            let _ = worker.join();
+            if worker.is_finished() {
+                let _ = worker.join();
+            }
         }
     }
 }
@@ -283,6 +299,7 @@ fn spawn_worker<B, F>(
     backend_factory: Arc<F>,
     result_tx: Sender<WorkerResult>,
     kind: WorkerKind,
+    stopping: Arc<AtomicBool>,
 ) -> (Sender<WorkerMessage>, JoinHandle<()>)
 where
     B: GitBackend + Send + 'static,
@@ -291,7 +308,7 @@ where
     let (command_tx, command_rx) = mpsc::channel::<WorkerMessage>();
     let mut backend = backend_factory();
     let worker = thread::spawn(move || {
-        run_worker(&mut backend, command_rx, result_tx, kind);
+        run_worker(&mut backend, command_rx, result_tx, kind, &stopping);
     });
     (command_tx, worker)
 }
@@ -301,8 +318,12 @@ fn run_worker(
     command_rx: Receiver<WorkerMessage>,
     result_tx: Sender<WorkerResult>,
     kind: WorkerKind,
+    stopping: &AtomicBool,
 ) {
     while let Ok(message) = command_rx.recv() {
+        if stopping.load(Ordering::Acquire) {
+            break;
+        }
         match message {
             WorkerMessage::Run {
                 generation,

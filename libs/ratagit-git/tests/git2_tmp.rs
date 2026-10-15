@@ -31,6 +31,8 @@ impl TmpGitRepo {
         repo.run_git(&["init"]);
         repo.run_git(&["config", "user.name", "ratagit-tests"]);
         repo.run_git(&["config", "user.email", "ratagit-tests@example.com"]);
+        repo.run_git(&["config", "core.autocrlf", "false"]);
+        repo.run_git(&["config", "commit.gpgsign", "false"]);
         repo
     }
 
@@ -755,3 +757,5 @@ fn git2_refresh_snapshot_handles_unborn_branch() {
     assert!(snapshot.commits.is_empty());
     assert!(snapshot.branches.is_empty());
 }
+mod extras;
+mod partial;

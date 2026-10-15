@@ -6,6 +6,7 @@ use ratagit_core::{
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum KeyEffect {
+    Host { edit: bool, path: String },
     Quit,
     Dispatch(UiAction),
     Ignore,
@@ -13,6 +14,9 @@ pub(crate) enum KeyEffect {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum InputMode {
+    RepositoryConfirm,
+    PatchDiscard,
+    Patch,
     Editor,
     BranchCreate,
     BranchDeleteMenu,
@@ -32,7 +36,11 @@ pub(crate) enum InputMode {
 }
 
 pub(crate) fn input_mode_for_state(state: &AppContext) -> InputMode {
-    if state.ui.editor.is_active() {
+    if state.ui.details.repository_confirm.is_some() {
+        InputMode::RepositoryConfirm
+    } else if state.ui.details.patch.discard.is_some() {
+        InputMode::PatchDiscard
+    } else if state.ui.editor.is_active() {
         InputMode::Editor
     } else if state.ui.branches.create.active {
         InputMode::BranchCreate
@@ -62,6 +70,8 @@ pub(crate) fn input_mode_for_state(state: &AppContext) -> InputMode {
         InputMode::SearchInput
     } else if search_query_is_current(state) {
         InputMode::SearchQuery
+    } else if state.ui.details.patch.active && state.ui.focus == PanelFocus::Details {
+        InputMode::Patch
     } else {
         InputMode::Panel
     }
@@ -77,6 +87,10 @@ pub(crate) fn key_effect_for_key(
 ) -> KeyEffect {
     if code == KeyCode::Char('c') && modifiers.contains(KeyModifiers::CONTROL) {
         return KeyEffect::Quit;
+    }
+
+    if let Some(effect) = host_effect(state, code, modifiers) {
+        return effect;
     }
 
     if command_palette_selection_quits(state, code, modifiers) {
@@ -101,6 +115,47 @@ pub(crate) fn key_effect_for_key(
     KeyEffect::Ignore
 }
 
+fn host_effect(state: &AppContext, code: KeyCode, modifiers: KeyModifiers) -> Option<KeyEffect> {
+    use ratagit_core::CommandPaletteCommand;
+    let edit = if input_mode_for_state(state) == InputMode::CommandPalette && code == KeyCode::Enter
+    {
+        match state.selected_command_palette_entry()?.command {
+            CommandPaletteCommand::EditFile => true,
+            CommandPaletteCommand::CopyPath => false,
+            _ => return None,
+        }
+    } else if matches!(
+        input_mode_for_state(state),
+        InputMode::Panel | InputMode::Patch
+    ) {
+        if code == KeyCode::Char('e') && modifiers.is_empty() {
+            true
+        } else if code == KeyCode::Char('o') && modifiers.contains(KeyModifiers::CONTROL) {
+            false
+        } else {
+            return None;
+        }
+    } else {
+        return None;
+    };
+    if state.ui.focus != PanelFocus::Files
+        && !(state.ui.details.patch.active && state.ui.last_left_focus == PanelFocus::Files)
+    {
+        return None;
+    }
+    if edit && state.work.mutation.operation_pending.is_some() {
+        return None;
+    }
+    let row = ratagit_core::selected_row(&state.repo.files.items, &state.ui.files)?;
+    if edit && row.kind == ratagit_core::FileRowKind::Directory {
+        return None;
+    }
+    Some(KeyEffect::Host {
+        edit,
+        path: row.path,
+    })
+}
+
 fn ui_action_for_key(
     state: &AppContext,
     code: KeyCode,
@@ -116,6 +171,42 @@ fn ui_action_for_key(
     }
 
     match input_mode_for_state(state) {
+        InputMode::RepositoryConfirm => {
+            return match code {
+                KeyCode::Enter => Some(UiAction::ConfirmRepositoryOperation),
+                KeyCode::Esc => Some(UiAction::CancelRepositoryOperation),
+                _ => None,
+            };
+        }
+        InputMode::PatchDiscard => {
+            return match code {
+                KeyCode::Enter => Some(UiAction::ConfirmPatchDiscard),
+                KeyCode::Esc => Some(UiAction::CancelPatchDiscard),
+                _ => None,
+            };
+        }
+        InputMode::Patch => {
+            return match code {
+                KeyCode::Esc => Some(UiAction::CloseFilePatch),
+                KeyCode::Char('j') | KeyCode::Down => Some(UiAction::MovePatchSelection {
+                    up: false,
+                    visible_lines: details_visible_lines,
+                }),
+                KeyCode::Char('k') | KeyCode::Up => Some(UiAction::MovePatchSelection {
+                    up: true,
+                    visible_lines: details_visible_lines,
+                }),
+                KeyCode::Char('a') => Some(UiAction::CyclePatchSelection),
+                KeyCode::Char('v') => Some(UiAction::TogglePatchRange),
+                KeyCode::Tab => Some(UiAction::SwitchPatchSource),
+                KeyCode::Char(' ') => Some(UiAction::ApplyPatchSelection),
+                KeyCode::Char('d') => Some(UiAction::RequestPatchDiscard),
+                KeyCode::Char('n') => Some(UiAction::NextPatchFile { up: false }),
+                KeyCode::Char('N') => Some(UiAction::NextPatchFile { up: true }),
+                KeyCode::Char('?') => Some(UiAction::OpenCommandPalette),
+                _ => None,
+            };
+        }
         InputMode::Editor => return editor_action_for_key(code, modifiers),
         InputMode::BranchCreate => return branch_create_action_for_key(code, modifiers),
         InputMode::BranchDeleteMenu => return branch_delete_menu_action_for_key(code),
@@ -311,8 +402,10 @@ fn command_palette_action_for_key(
             details_visible_lines,
         }),
         KeyCode::Esc => Some(UiAction::CloseCommandPalette),
-        KeyCode::Up | KeyCode::Char('k') => Some(UiAction::MoveCommandPaletteUp),
-        KeyCode::Down | KeyCode::Char('j') => Some(UiAction::MoveCommandPaletteDown),
+        KeyCode::Up => Some(UiAction::MoveCommandPaletteUp),
+        KeyCode::Down => Some(UiAction::MoveCommandPaletteDown),
+        KeyCode::Backspace => Some(UiAction::PaletteBackspace),
+        KeyCode::Char(ch) => Some(UiAction::PaletteInput(ch)),
         _ => None,
     }
 }
@@ -351,6 +444,7 @@ fn panel_action_for_key(
 
     match code {
         KeyCode::Char('p') => return Some(UiAction::Pull),
+        KeyCode::Char('F') => return Some(UiAction::Fetch),
         KeyCode::Char('P') => return Some(UiAction::Push),
         _ => {}
     }
@@ -360,8 +454,9 @@ fn panel_action_for_key(
             return Some(UiAction::ExitFilesMultiSelect);
         }
         match code {
-            // TODO(files-hunks): map Enter to hunk-level editing/partial stage workflow.
-            KeyCode::Enter => return Some(UiAction::ToggleSelectedDirectory),
+            KeyCode::Enter => return Some(UiAction::OpenFilePatch),
+            KeyCode::Char('a') => return Some(UiAction::ToggleStageAll),
+            KeyCode::Char('i') => return Some(UiAction::IgnoreSelectedFile),
             KeyCode::Char(' ') => return Some(UiAction::ToggleSelectedFileStage),
             KeyCode::Char('v') if state.ui.files.mode != FileInputMode::MultiSelect => {
                 return Some(UiAction::EnterFilesMultiSelect);
@@ -371,6 +466,15 @@ fn panel_action_for_key(
             KeyCode::Char('s') => return Some(UiAction::OpenStashEditor),
             KeyCode::Char('d') => return Some(UiAction::OpenDiscardConfirm),
             KeyCode::Char('D') => return Some(UiAction::OpenResetMenu),
+            _ => {}
+        }
+    }
+
+    if state.ui.focus == PanelFocus::Stash {
+        match code {
+            KeyCode::Enter => return Some(UiAction::OpenStashPatch),
+            KeyCode::Char('a') => return Some(UiAction::StashApplySelected),
+            KeyCode::Char('d') => return Some(UiAction::StashDropSelected),
             _ => {}
         }
     }

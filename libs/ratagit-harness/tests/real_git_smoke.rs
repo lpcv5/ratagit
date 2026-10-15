@@ -30,6 +30,8 @@ impl TmpGitRepo {
         repo.run_git(&["init"]);
         repo.run_git(&["config", "user.name", "ratagit-tests"]);
         repo.run_git(&["config", "user.email", "ratagit-tests@example.com"]);
+        repo.run_git(&["config", "core.autocrlf", "false"]);
+        repo.run_git(&["config", "commit.gpgsign", "false"]);
         repo
     }
 
@@ -113,6 +115,65 @@ fn runtime_for(repo: &TmpGitRepo) -> Runtime<HybridGitBackend> {
 fn dispatch_all(runtime: &mut Runtime<HybridGitBackend>, actions: &[UiAction]) {
     for action in actions {
         runtime.dispatch_ui(action.clone());
+    }
+}
+
+struct TracedCase<'a> {
+    runtime: &'a mut Runtime<HybridGitBackend>,
+    actions: Vec<UiAction>,
+}
+
+impl std::ops::Deref for TracedCase<'_> {
+    type Target = Runtime<HybridGitBackend>;
+    fn deref(&self) -> &Self::Target {
+        self.runtime
+    }
+}
+
+impl TracedCase<'_> {
+    fn dispatch_ui(&mut self, action: UiAction) {
+        self.actions.push(action.clone());
+        self.runtime.dispatch_ui(action);
+    }
+    fn dispatch_all(&mut self, actions: &[UiAction]) {
+        for action in actions {
+            self.dispatch_ui(action.clone());
+        }
+    }
+}
+
+fn with_case_artifacts(
+    repo: &TmpGitRepo,
+    runtime: &mut Runtime<HybridGitBackend>,
+    check: impl FnOnce(&mut TracedCase<'_>),
+) {
+    let mut case = TracedCase {
+        runtime,
+        actions: Vec::new(),
+    };
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| check(&mut case)));
+    if let Err(payload) = outcome {
+        let name = std::thread::current()
+            .name()
+            .unwrap_or("real-git-case")
+            .replace(':', "_");
+        let base = workspace_tmp_root().join("harness-artifacts").join(name);
+        let _ = create_dir_all(&base);
+        let _ = write(base.join("screen.txt"), case.render_terminal_text());
+        let _ = write(base.join("app_context.txt"), format!("{:#?}", case.state()));
+        let _ = write(
+            base.join("input_sequence.txt"),
+            format!("{:#?}", case.actions),
+        );
+        let git_state = Command::new("git")
+            .args(["status", "--porcelain=v1"])
+            .current_dir(repo.path())
+            .output()
+            .map(|output| output.stdout)
+            .unwrap_or_default();
+        let _ = write(base.join("git_state.txt"), git_state);
+        eprintln!("real Git scenario artifacts: {}", base.display());
+        std::panic::resume_unwind(payload);
     }
 }
 
@@ -309,4 +370,139 @@ fn real_git_smoke_dirty_branch_checkout_uses_auto_stash() {
         runtime.state().last_operation.as_deref(),
         Some("checkout_branch")
     );
+}
+#[test]
+fn test_real_git_partial_stage_unstage_discard_ui_flow() {
+    let repo = seeded_repo("harness-partial");
+    repo.run_git(&["config", "core.autocrlf", "false"]);
+    write(repo.path().join("a.txt"), "a1\nkeep\nend\n").unwrap();
+    repo.run_git(&["add", "a.txt"]);
+    repo.run_git(&["commit", "-m", "extend"]);
+    write(repo.path().join("a.txt"), "FIRST\nkeep\nLAST\n").unwrap();
+    let mut runtime = runtime_for(&repo);
+    with_case_artifacts(&repo, &mut runtime, |runtime| {
+        runtime.dispatch_all(&[UiAction::RefreshAll, UiAction::OpenFilePatch]);
+        assert!(runtime.render_terminal_text().contains("FIRST"));
+        assert!(runtime.render_terminal_text().contains("Block"));
+        runtime.dispatch_ui(UiAction::ApplyPatchSelection);
+        assert_eq!(
+            repo.run_git_capture(&["show", ":a.txt"]),
+            "FIRST\nkeep\nend\n"
+        );
+        assert!(
+            runtime
+                .render_terminal_text()
+                .contains("Partial Stage completed")
+        );
+        runtime.dispatch_ui(UiAction::SwitchPatchSource);
+        runtime.dispatch_ui(UiAction::ApplyPatchSelection);
+        assert_eq!(repo.run_git_capture(&["show", ":a.txt"]), "a1\nkeep\nend\n");
+        assert!(
+            runtime
+                .render_terminal_text()
+                .contains("Partial Unstage completed")
+        );
+        runtime.dispatch_ui(UiAction::SwitchPatchSource);
+        runtime.dispatch_ui(UiAction::RequestPatchDiscard);
+        assert!(
+            runtime
+                .render_terminal_text()
+                .contains("Discard selected lines?")
+        );
+        assert_eq!(
+            std::fs::read_to_string(repo.path().join("a.txt")).unwrap(),
+            "FIRST\nkeep\nLAST\n"
+        );
+        runtime.dispatch_ui(UiAction::ConfirmPatchDiscard);
+        assert_eq!(
+            std::fs::read_to_string(repo.path().join("a.txt")).unwrap(),
+            "a1\nkeep\nLAST\n"
+        );
+        assert!(
+            runtime
+                .render_terminal_text()
+                .contains("Partial Discard completed")
+        );
+    });
+}
+#[test]
+fn test_real_git_stage_all_ignore_and_stash_confirmation() {
+    let repo = seeded_repo("harness-file-extras");
+    write(repo.path().join("a.txt"), "changed\n").unwrap();
+    write(repo.path().join("z.log"), "noise\n").unwrap();
+    let mut runtime = runtime_for(&repo);
+    with_case_artifacts(&repo, &mut runtime, |runtime| {
+        runtime.dispatch_all(&[UiAction::RefreshAll, UiAction::ToggleStageAll]);
+        assert!(
+            repo.run_git_capture(&["status", "--short"])
+                .contains("M  a.txt")
+        );
+        assert!(runtime.render_terminal_text().contains("Staged 2 files"));
+        runtime.dispatch_ui(UiAction::ToggleStageAll);
+        assert!(repo.run_git_capture(&["diff", "--cached"]).is_empty());
+        runtime.dispatch_ui(UiAction::MoveDown);
+        runtime.dispatch_ui(UiAction::IgnoreSelectedFile);
+        assert!(repo.path().join(".gitignore").exists());
+        assert!(
+            !repo
+                .run_git_capture(&["status", "--short", "--untracked-files=all"])
+                .contains("z.log")
+        );
+        assert!(runtime.render_terminal_text().contains("Ignore"));
+        runtime.dispatch_ui(UiAction::StashPush {
+            message: "saved".into(),
+        });
+        runtime.dispatch_ui(UiAction::FocusPanel {
+            panel: PanelFocus::Stash,
+        });
+        assert!(
+            runtime
+                .render_terminal_text()
+                .contains("Stash diff (read only)")
+        );
+        assert!(runtime.render_terminal_text().contains("changed"));
+        runtime.dispatch_ui(UiAction::StashApplySelected);
+        assert!(repo.run_git_capture(&["stash", "list"]).contains("saved"));
+        assert_eq!(
+            std::fs::read_to_string(repo.path().join("a.txt")).unwrap(),
+            "changed\n"
+        );
+        runtime.dispatch_ui(UiAction::StashDropSelected);
+        assert!(
+            runtime
+                .render_terminal_text()
+                .contains("Drop selected stash?")
+        );
+        assert!(!repo.run_git_capture(&["stash", "list"]).is_empty());
+        runtime.dispatch_ui(UiAction::ConfirmRepositoryOperation);
+        assert!(repo.run_git_capture(&["stash", "list"]).is_empty());
+        assert!(runtime.render_terminal_text().contains("StashDrop"));
+    });
+}
+#[test]
+fn test_real_git_case_failure_produces_action_and_state_artifacts() {
+    let repo = seeded_repo("harness-artifact-check");
+    let mut runtime = runtime_for(&repo);
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        with_case_artifacts(&repo, &mut runtime, |case| {
+            case.dispatch_ui(UiAction::RefreshAll);
+            panic!("intentional artifact verification");
+        });
+    }));
+    assert!(outcome.is_err());
+    let base = workspace_tmp_root()
+        .join("harness-artifacts")
+        .join("test_real_git_case_failure_produces_action_and_state_artifacts");
+    assert!(
+        std::fs::read_to_string(base.join("screen.txt"))
+            .unwrap()
+            .contains("Files")
+    );
+    assert!(
+        std::fs::read_to_string(base.join("input_sequence.txt"))
+            .unwrap()
+            .contains("RefreshAll")
+    );
+    assert!(base.join("app_context.txt").exists());
+    assert!(base.join("git_state.txt").exists());
 }

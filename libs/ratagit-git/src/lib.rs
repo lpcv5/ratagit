@@ -4,7 +4,9 @@ use std::time::Instant;
 mod backend;
 mod cli;
 mod hybrid;
+mod ignore;
 mod mock;
+mod patch_backend;
 mod shared_mock;
 mod status_cli;
 mod untracked_diff;
@@ -17,6 +19,13 @@ pub use backend::{
 pub use hybrid::HybridGitBackend;
 pub use mock::MockGitBackend;
 pub use shared_mock::SharedMockGitBackend;
+
+pub fn repository_workdir(path: &Path) -> Result<std::path::PathBuf, GitError> {
+    git2::Repository::discover(path)?
+        .workdir()
+        .map(Path::to_path_buf)
+        .ok_or_else(|| GitError::new("bare repository has no worktree"))
+}
 
 pub fn execute_command(backend: &mut dyn GitBackend, command: Command) -> GitResult {
     let command_label = command.log_label();
@@ -54,6 +63,33 @@ pub fn execute_command(backend: &mut dyn GitBackend, command: Command) -> GitRes
 
 fn execute_command_inner(backend: &mut dyn GitBackend, command: Command) -> GitResult {
     match command {
+        Command::RepositoryOperation(operation) => GitResult::RepositoryOperation {
+            result: backend
+                .repository_operation(&operation)
+                .map_err(|error| error.message),
+            operation,
+        },
+        Command::LoadPatch {
+            request_id,
+            request,
+        } => GitResult::LoadedPatch {
+            request_id,
+            request: request.clone(),
+            result: backend
+                .load_patch(request)
+                .map(Box::new)
+                .map_err(|error| error.message),
+        },
+        Command::ApplyPatch {
+            patch,
+            ids,
+            direction,
+        } => GitResult::AppliedPatch {
+            direction,
+            result: backend
+                .apply_patch_lines(&patch, &ids, direction)
+                .map_err(|error| error.message),
+        },
         Command::RefreshAll => execute_split_refresh(backend),
         Command::RefreshFiles => match backend.refresh_files() {
             Ok(snapshot) => GitResult::FilesRefreshed(snapshot),

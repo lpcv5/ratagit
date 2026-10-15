@@ -13,6 +13,15 @@ ratagit aims to replicate lazygit UX with a Rust + ratatui implementation.
 - details view
 - log view
 
+Migrated command workflows:
+
+- `?` retains newarch's command modal, accepts text to filter keys/labels, uses
+  arrow keys to select, `Enter` to execute, and `Esc` to close. Empty results are
+  explicit. `j/k` are filter text inside this modal.
+- `F` fetches all remotes with pruning; lowercase `f` retains commit fixup.
+- Stash focus previews the selected stash; `Enter` focuses its read-only diff,
+  `a` applies it without removal, `O` pops it, and `d` opens a drop confirmation.
+
 ---
 
 ## MVP v0 Scope
@@ -25,7 +34,7 @@ MVP v0 includes a left-nav workspace layout with six panels:
   branch; Enter drills into the selected branch's commits and then that commit's
   file tree
 - Commits: create commit, refresh list, squash/fixup/reword/delete commits, visual multi-select, detached checkout, and a commit Files subpanel
-- Stash: stash entries and stash pop selected entry
+- Stash: entries, read-only diff preview, apply, pop, and confirmed drop
 - Details:
   - Files focus projection: show merged `unstaged` then `staged` diff for the currently selected file/folder target
   - Untracked text files render as new-file patches in the `unstaged` diff section
@@ -35,7 +44,7 @@ MVP v0 includes a left-nav workspace layout with six panels:
   - Branches focus projection: show the selected branch's native `git log --graph` output with Git's ASCII graph and ANSI colors preserved, limited to 50 commits
   - Commits focus projection: show the selected commit's header and a bounded patch diff preview
   - Commit Files subpanel projection: show the selected file or folder's patch within the selected commit
-  - Stash projection: placeholder text for now (to be implemented in a later slice)
+  - Stash projection: the selected stash's reviewed, read-only native patch
   - `Ctrl+U` / `Ctrl+D` scroll Details content up/down globally by 2/5 of the Details content height without changing the focused panel
 - Log: show latest error, recent notices, and pending refresh/operation state
 - Global sync: `p` runs `git pull`, `P` runs `git push`; if normal push is
@@ -50,7 +59,7 @@ Navigation rules:
 - `p` pulls and `P` pushes from normal mode regardless of focused panel; active
   text inputs and confirmation modals keep their own key handling
 - `?` opens an executable command palette with `Local commands` and
-  `Global commands` sections; `j` / `k` or arrows select an entry, `Enter`
+  `Global commands` sections; text filters entries, arrows select an entry, `Enter`
   runs it, and `Esc` closes it
 - `p` and `P` are also available from the command palette's Global commands
   section, alongside refresh, focus navigation, Details scrolling, and quit
@@ -121,6 +130,19 @@ Files panel rules:
 - repeated file-detail diffs are cached in `AppContext` and reused when the same
   target path list is selected again
 - `space` stages unstaged targets or unstages targets when all selected targets are staged
+- `a` stages all visible status targets, or unstages all when every target is staged
+- `Enter` expands directories or opens a reviewed file patch in Details
+- Details partial staging uses `j/k` for blocks, `a` to cycle block/hunk/line mode,
+  `v` for line ranges, `Tab` for independent staged/unstaged selections, `Space`
+  to apply, `d` to confirm discard, `n/N` for adjacent files, and `Esc` to return
+- staged and unstaged edits share a native combined preview when every source
+  edit maps safely; overlapping edits retain separate source previews
+- binary, truncated, renamed, mode-changing, and read-only patches cannot be
+  partially applied; every write rechecks the exact reviewed native bytes
+- `e` edits the selected file using `VISUAL`, then `EDITOR`, then the platform
+  default; the TUI suspends and restores the terminal around the editor
+- `Ctrl+o` copies the selected relative path; `i` adds an anchored literal ignore
+  rule for an untracked file or directory without replacing existing rules
 - `c` opens a commit editor modal from Files focus
   - `message` and `body` fields are editable
   - the active field shows a real terminal cursor
@@ -130,6 +152,7 @@ Files panel rules:
   - `Tab` / `Shift+Tab` switches active field
   - `Ctrl+J` inserts a newline in body
   - `Enter` confirms, `Esc` cancels
+
   - if no files are staged but file changes exist, confirming the commit opens a
     stage-all confirmation modal; `Enter` stages all current file rows and then
     creates the commit, while `Esc` cancels the fallback
@@ -159,7 +182,7 @@ Files panel rules:
   scoped to the currently focused list or subpanel
 - search highlights the matching visible characters instead of styling the
   whole row
-- `Enter` still toggles directory expand/collapse; hunk editing and partial-stage flow are explicitly deferred
+- `Enter` toggles directories or opens partial staging for a file
 - details-diff side effects for high-frequency files navigation are debounced to keep `j` / `k` scrolling smooth
 - Files Details automatically limits folder or multi-select diffs to the first
   100 resolved file targets and shows a deterministic "first 100 of N files"

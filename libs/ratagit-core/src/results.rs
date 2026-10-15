@@ -5,6 +5,17 @@ use crate::{
 
 pub(crate) fn update_git_result(state: &mut AppContext, result: GitResult) -> Vec<Command> {
     match result {
+        GitResult::RepositoryOperation { operation, result } => {
+            crate::extras::completed(state, operation, result)
+        }
+        GitResult::LoadedPatch {
+            request_id,
+            request,
+            result,
+        } => crate::partial::loaded(state, request_id, request, result),
+        GitResult::AppliedPatch { direction, result } => {
+            crate::partial::applied(state, direction, result)
+        }
         GitResult::Refreshed(repo_snapshot) => {
             state.work.clear_refresh();
             snapshot::apply_snapshot(state, repo_snapshot);
@@ -28,6 +39,9 @@ pub(crate) fn update_git_result(state: &mut AppContext, result: GitResult) -> Ve
             snapshot::apply_files_snapshot(state, files_snapshot);
             finish_refresh_target(state, RefreshTarget::Files);
             state.repo.status.last_error = None;
+            if state.ui.details.patch.active {
+                return crate::partial::reload(state);
+            }
             refresh_details_if_focus(state, PanelFocus::Files)
         }
         GitResult::BranchesRefreshed(branches) => {
