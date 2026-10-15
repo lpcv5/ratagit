@@ -137,7 +137,7 @@ pub(super) fn tick_background_loads() -> Command {
 /// On failure: logs the failure message, returns no-op output.
 pub(super) fn log_result<S: LogAccess + ?Sized>(
     ctx: &mut ReduceCtx<'_, S>,
-    result: &Result<(), String>,
+    result: &Result<(), crate::git::GitError>,
     success_msg: impl Into<String>,
     fail_msg: impl FnOnce(&str) -> String,
 ) -> ReduceOutput {
@@ -147,7 +147,8 @@ pub(super) fn log_result<S: LogAccess + ?Sized>(
             ReduceOutput::none().with_invalidation(UiInvalidation::all())
         }
         Err(e) => {
-            ctx.state.push_log(fail_msg(e), false);
+            ctx.state
+                .push_log(fail_msg(&crate::app::git_error::message(e)), false);
             ReduceOutput::none()
         }
     }

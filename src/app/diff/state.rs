@@ -1,5 +1,5 @@
-use super::cache::{DiffCache, DiffCacheKey};
-use super::DiffTarget;
+use super::cache::{DiffCache, DiffCacheIdentity, DiffCacheKey, DiffCacheRevision, DiffCacheStats};
+use super::{DiffRefreshSource, DiffTarget};
 use crate::file_tree::FileTreeNode;
 use crate::git::patch::{DiffDocument, HunkId};
 use std::collections::BTreeSet;
@@ -34,8 +34,11 @@ pub struct DiffState {
     pub(super) interaction: DiffInteraction,
     pub(super) scroll: usize,
     cache: DiffCache,
-    last_key: Option<DiffCacheKey>,
-    in_flight_key: Option<DiffCacheKey>,
+    last_key: Option<DiffCacheIdentity>,
+    in_flight_key: Option<DiffCacheIdentity>,
+    worktree_revision: u64,
+    branches_revision: u64,
+    stashes_revision: u64,
     pending_reload: bool,
     pending_reload_at: Option<Instant>,
 }
@@ -49,6 +52,9 @@ impl Default for DiffState {
             cache: DiffCache::new(),
             last_key: None,
             in_flight_key: None,
+            worktree_revision: 0,
+            branches_revision: 0,
+            stashes_revision: 0,
             pending_reload: false,
             pending_reload_at: None,
         }
@@ -59,7 +65,7 @@ pub(crate) enum DiffLoad {
     Unchanged,
     Ready,
     Request {
-        cache_key: DiffCacheKey,
+        cache_key: DiffCacheIdentity,
         target: DiffTarget,
     },
 }
@@ -108,22 +114,113 @@ impl DiffState {
 
     pub fn repository_refreshed(&mut self, include_refs: bool) {
         self.interaction.reset_selection();
-        self.cache.invalidate_files();
+        self.source_refreshed(DiffRefreshSource::Status);
         if include_refs {
+            self.branches_revision = self
+                .branches_revision
+                .checked_add(1)
+                .expect("diff revision exhausted");
+            self.stashes_revision = self
+                .stashes_revision
+                .checked_add(1)
+                .expect("diff revision exhausted");
             self.cache.invalidate_refs();
+            self.clear_invalidated_load();
         }
-        let invalidated = matches!(
-            self.last_key,
-            Some(DiffCacheKey::File { .. } | DiffCacheKey::Directory { .. })
-        ) || (include_refs
-            && matches!(
-                self.last_key,
-                Some(DiffCacheKey::Branch { .. } | DiffCacheKey::Stash { .. })
-            ));
+    }
+
+    /// Observations invalidate even when paths/status labels have not changed.
+    pub fn source_refreshed(&mut self, source: DiffRefreshSource) {
+        match source {
+            DiffRefreshSource::Status => {
+                self.worktree_revision = self
+                    .worktree_revision
+                    .checked_add(1)
+                    .expect("diff revision exhausted");
+                self.cache.invalidate_files();
+            }
+            DiffRefreshSource::Branches => {
+                self.branches_revision = self
+                    .branches_revision
+                    .checked_add(1)
+                    .expect("diff revision exhausted");
+                self.cache.invalidate_branches();
+            }
+            DiffRefreshSource::Stashes => {
+                self.stashes_revision = self
+                    .stashes_revision
+                    .checked_add(1)
+                    .expect("diff revision exhausted");
+                self.cache.invalidate_stashes();
+            }
+            DiffRefreshSource::Commits => return,
+        }
+        self.clear_invalidated_load();
+    }
+
+    fn clear_invalidated_load(&mut self) {
+        let invalidated = self
+            .last_key
+            .as_ref()
+            .is_some_and(|key| !self.is_fresh(key))
+            || self
+                .in_flight_key
+                .as_ref()
+                .is_some_and(|key| !self.is_fresh(key));
         if invalidated {
+            self.interaction.reset_selection();
+        }
+        if self
+            .last_key
+            .as_ref()
+            .is_some_and(|key| !self.is_fresh(key))
+        {
             self.last_key = None;
             self.document.patch = None;
         }
+        if self
+            .in_flight_key
+            .as_ref()
+            .is_some_and(|key| !self.is_fresh(key))
+        {
+            self.cancel_load();
+        }
+    }
+
+    fn is_fresh(&self, key: &DiffCacheIdentity) -> bool {
+        match key.revision {
+            DiffCacheRevision::Immutable => true,
+            DiffCacheRevision::Worktree(revision) => revision == self.worktree_revision,
+            DiffCacheRevision::Branches(revision) => revision == self.branches_revision,
+            DiffCacheRevision::Stashes(revision) => revision == self.stashes_revision,
+        }
+    }
+
+    fn identity(&self, key: DiffCacheKey) -> DiffCacheIdentity {
+        let revision = match key {
+            DiffCacheKey::None | DiffCacheKey::Commit { .. } => 0,
+            DiffCacheKey::File { .. } | DiffCacheKey::Directory { .. } => self.worktree_revision,
+            DiffCacheKey::Branch { .. } => self.branches_revision,
+            DiffCacheKey::Stash { .. } => self.stashes_revision,
+        };
+        key.at_revision(revision)
+    }
+
+    pub(crate) fn accepts_load(&self, key: &DiffCacheIdentity) -> bool {
+        self.in_flight_key.as_ref() == Some(key) && self.is_fresh(key)
+    }
+
+    pub fn cache_stats(&self) -> DiffCacheStats {
+        self.cache.stats()
+    }
+
+    pub(crate) fn reject_load(&mut self) {
+        self.cache.reject();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_test_cache_limits(&mut self, entries: usize, bytes: usize) {
+        self.cache = DiffCache::with_limits(entries, bytes);
     }
 
     pub fn selected_file_became_untracked(&mut self) {
@@ -142,21 +239,21 @@ impl DiffState {
         if !self.pending_reload {
             return DiffLoad::Unchanged;
         }
-        let cache_key = target.cache_key(visible_files);
+        let cache_key = self.identity(target.cache_key(visible_files));
         if self.in_flight_key.as_ref() == Some(&cache_key) {
             self.clear_reload_request();
             return DiffLoad::Unchanged;
         }
         self.cancel_load();
         self.scroll = 0;
-        if let Some(document) = self.cache.get_cloned(&cache_key) {
-            self.install_document(document);
+        if matches!(target, DiffTarget::None) {
+            self.document = Vec::new().into();
             self.last_key = Some(cache_key);
             self.clear_reload_request();
             return DiffLoad::Ready;
         }
-        if matches!(target, DiffTarget::None) {
-            self.document = Vec::new().into();
+        if let Some(document) = self.cache.get_cloned(&cache_key) {
+            self.install_document(document);
             self.last_key = Some(cache_key);
             self.clear_reload_request();
             return DiffLoad::Ready;
@@ -170,13 +267,18 @@ impl DiffState {
     /// A still-current generation can nevertheless target an obsolete selection.
     pub fn complete_load(
         &mut self,
-        cache_key: DiffCacheKey,
+        cache_key: DiffCacheIdentity,
         document: DiffDocument,
         selected_target: &DiffTarget,
         visible_files: &[FileTreeNode],
     ) -> bool {
+        if !self.accepts_load(&cache_key) {
+            self.cache.reject();
+            return false;
+        }
         self.finish_load();
-        if selected_target.cache_key(visible_files) != cache_key {
+        if self.identity(selected_target.cache_key(visible_files)) != cache_key {
+            self.cache.reject();
             return false;
         }
         self.cache.insert(cache_key.clone(), document.clone());

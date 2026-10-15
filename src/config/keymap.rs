@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Documentation comment in English.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -73,11 +73,15 @@ impl Default for Keymap {
 
 impl Keymap {
     pub fn load() -> Self {
+        Self::load_from_path(&Self::config_path())
+    }
+
+    /// Explicit paths let isolated callers avoid platform-specific user folders.
+    pub(crate) fn load_from_path(path: &Path) -> Self {
         let mut defaults = Self::default();
         defaults.rebuild_indexes();
-        let path = Self::config_path();
         if path.exists() {
-            let content = std::fs::read_to_string(&path).unwrap_or_default();
+            let content = std::fs::read_to_string(path).unwrap_or_default();
             toml::from_str::<Self>(&content)
                 .map(|mut loaded| {
                     loaded.merge_missing(&defaults);
@@ -86,12 +90,12 @@ impl Keymap {
                 })
                 .unwrap_or_else(|_| {
                     // Avoid printing to stderr during TUI startup; it corrupts the UI buffer.
-                    defaults.save();
+                    defaults.save_to(path);
                     defaults
                 })
         } else {
             let default = defaults;
-            default.save();
+            default.save_to(path);
             default
         }
     }
@@ -104,13 +108,12 @@ impl Keymap {
         merge_bindings(&mut self.stash.bindings, &defaults.stash.bindings);
     }
 
-    fn save(&self) {
-        let path = Self::config_path();
+    fn save_to(&self, path: &Path) {
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
         if let Ok(content) = toml::to_string_pretty(self) {
-            let _ = std::fs::write(&path, content);
+            let _ = std::fs::write(path, content);
         }
     }
 

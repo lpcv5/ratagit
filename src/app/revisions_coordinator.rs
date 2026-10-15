@@ -185,6 +185,9 @@ impl AppState {
         if !update.accepted {
             return false;
         }
+        if let Some(source) = source {
+            self.diff.source_refreshed(source);
+        }
         self.ui.dirty.mark_all();
         source.is_none_or(|source| self.should_schedule_diff_for_refresh(source))
     }

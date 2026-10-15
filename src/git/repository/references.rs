@@ -117,7 +117,7 @@ impl crate::git::ReferenceRepository for Git2Repository {
     fn branches(&self) -> Result<Vec<BranchInfo>, GitError> {
         self.spawn_repo_job("branches", |inner| inner.branches())?
             .recv()
-            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+            .map_err(|_| GitError::Worker("worker disconnected".to_string()))?
     }
 
     fn branches_async(&self) -> Result<Receiver<Result<Vec<BranchInfo>, GitError>>, GitError> {
@@ -128,7 +128,7 @@ impl crate::git::ReferenceRepository for Git2Repository {
         let name = name.to_string();
         self.spawn_repo_job("create_branch", move |inner| inner.create_branch(&name))?
             .recv()
-            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+            .map_err(|_| GitError::Worker("worker disconnected".to_string()))?
     }
 
     fn create_branch_async(
@@ -142,7 +142,7 @@ impl crate::git::ReferenceRepository for Git2Repository {
         let name = name.to_string();
         self.spawn_repo_job("checkout_branch", move |inner| inner.checkout_branch(&name))?
             .recv()
-            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+            .map_err(|_| GitError::Worker("worker disconnected".to_string()))?
     }
 
     fn checkout_branch_async(
@@ -158,7 +158,7 @@ impl crate::git::ReferenceRepository for Git2Repository {
             inner.checkout_branch_with_auto_stash(&name)
         })?
         .recv()
-        .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+        .map_err(|_| GitError::Worker("worker disconnected".to_string()))?
     }
 
     fn checkout_branch_with_auto_stash_async(
@@ -174,7 +174,7 @@ impl crate::git::ReferenceRepository for Git2Repository {
         let name = name.to_string();
         self.spawn_repo_job("delete_branch", move |inner| inner.delete_branch(&name))?
             .recv()
-            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+            .map_err(|_| GitError::Worker("worker disconnected".to_string()))?
     }
 
     fn delete_branch_async(
@@ -190,7 +190,7 @@ impl crate::git::ReferenceRepository for Git2Repository {
         });
         let remote = match upstream_result.and_then(|rx| {
             rx.recv()
-                .map_err(|_| GitError::Git2("worker disconnected".to_string()))
+                .map_err(|_| GitError::Worker("worker disconnected".to_string()))
         }) {
             Ok(Ok(Some(name))) => name,
             _ => "origin".to_string(),

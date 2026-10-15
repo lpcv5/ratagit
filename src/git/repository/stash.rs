@@ -150,7 +150,7 @@ impl crate::git::StashRepository for Git2Repository {
     fn stashes(&self) -> Result<Vec<StashInfo>, GitError> {
         self.spawn_repo_job("stashes", |inner| inner.stashes())?
             .recv()
-            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+            .map_err(|_| GitError::Worker("worker disconnected".to_string()))?
     }
 
     fn stashes_async(&self) -> Result<Receiver<Result<Vec<StashInfo>, GitError>>, GitError> {
@@ -160,7 +160,7 @@ impl crate::git::StashRepository for Git2Repository {
     fn stash_files(&self, index: usize) -> Result<Vec<FileEntry>, GitError> {
         self.spawn_repo_job("stash_files", move |inner| inner.stash_files(index))?
             .recv()
-            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+            .map_err(|_| GitError::Worker("worker disconnected".to_string()))?
     }
 
     fn stash_diff(
@@ -173,7 +173,7 @@ impl crate::git::StashRepository for Git2Repository {
             inner.stash_diff(index, path.as_deref())
         })?
         .recv()
-        .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+        .map_err(|_| GitError::Worker("worker disconnected".to_string()))?
     }
 
     fn stash_diff_async(
@@ -193,7 +193,7 @@ impl crate::git::StashRepository for Git2Repository {
             inner.stash_push_paths(&paths, &message)
         })?
         .recv()
-        .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+        .map_err(|_| GitError::Worker("worker disconnected".to_string()))?
     }
 
     fn stash_push_paths_async(
@@ -209,7 +209,7 @@ impl crate::git::StashRepository for Git2Repository {
     fn stash_apply(&self, index: usize) -> Result<(), GitError> {
         self.spawn_repo_job("stash_apply", move |inner| inner.stash_apply(index))?
             .recv()
-            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+            .map_err(|_| GitError::Worker("worker disconnected".to_string()))?
     }
 
     fn stash_apply_async(&self, index: usize) -> Result<Receiver<Result<(), GitError>>, GitError> {
@@ -219,7 +219,7 @@ impl crate::git::StashRepository for Git2Repository {
     fn stash_pop(&self, index: usize) -> Result<(), GitError> {
         self.spawn_repo_job("stash_pop", move |inner| inner.stash_pop(index))?
             .recv()
-            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+            .map_err(|_| GitError::Worker("worker disconnected".to_string()))?
     }
 
     fn stash_pop_async(&self, index: usize) -> Result<Receiver<Result<(), GitError>>, GitError> {
@@ -229,7 +229,7 @@ impl crate::git::StashRepository for Git2Repository {
     fn stash_drop(&self, index: usize) -> Result<(), GitError> {
         self.spawn_repo_job("stash_drop", move |inner| inner.stash_drop(index))?
             .recv()
-            .map_err(|_| GitError::Git2("worker disconnected".to_string()))?
+            .map_err(|_| GitError::Worker("worker disconnected".to_string()))?
     }
 
     fn stash_drop_async(&self, index: usize) -> Result<Receiver<Result<(), GitError>>, GitError> {

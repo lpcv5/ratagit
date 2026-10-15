@@ -44,16 +44,13 @@ impl Git2RepoInner {
             .args(args)
             .current_dir(self.repo_root()?)
             .output()
-            .map_err(|e| GitError::Git2(format!("failed to run git {:?}: {}", args, e)))?;
+            .map_err(|error| GitError::from(error).context("spawn_git"))?;
 
         if output.status.success() {
             return Ok(String::from_utf8_lossy(&output.stdout).trim().to_string());
         }
 
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        let detail = if stderr.is_empty() { stdout } else { stderr };
-        Err(GitError::Git2(detail))
+        Err(GitError::process(output))
     }
 }
 

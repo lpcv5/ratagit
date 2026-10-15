@@ -32,7 +32,7 @@ impl AppState {
             {
                 match result {
                     Ok(()) => self.push_log("Repository operation completed", true),
-                    Err(error) => self.push_log(error.clone(), false),
+                    Err(error) => self.push_log(crate::app::git_error::message(error), false),
                 }
                 // Failed commands may still change the index, HEAD or conflict set.
                 self.request_refresh(RefreshKind::Full, output);

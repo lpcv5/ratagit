@@ -31,7 +31,7 @@ text:
 25: " │stash@{1} Save documentation     │ ╰────────────────────────────────────────────────────────────────────────────────╯ "
 26: " │                                 │                                                                                    "
 27: " │                                 │ ╭ Command Log ───────────────────────────────────────────────────────────────────╮ "
-28: " │                                 │ │ ERR  Invalid repository state                                                  │ "
+28: " │                                 │ │ ERR  Hint: Refresh repository state and check the active Git operation. Details│ "
 29: " ╰─────────────────────────────────╯ ╰────────────────────────────────────────────────────────────────────────────────╯ "
 30: "  Esc  ClearSearch   a  Apply   Enter  Files   p  Pop   :  Command   q  Quit                                            "
 31: "                                                                                                                        "

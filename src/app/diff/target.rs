@@ -1,6 +1,10 @@
-use super::{DiffCacheKey, DiffSide};
+use super::{DiffCacheKey, DiffSide, FileDiffSource};
 use crate::file_tree::{FileTreeNode, FileTreeNodeStatus};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
+
+pub(crate) const BRANCH_DIFF_LIMIT: usize = 20;
 
 #[derive(Debug, Clone)]
 pub enum DiffTarget {
@@ -72,23 +76,26 @@ impl DiffTarget {
         match self {
             Self::Branch { name } => DiffCacheKey::Branch {
                 name: name.clone(),
-                limit: 100,
+                limit: BRANCH_DIFF_LIMIT,
             },
             Self::File { path, status } => DiffCacheKey::File {
                 path: path.clone(),
-                is_staged: matches!(status, FileTreeNodeStatus::Staged(_)),
+                source: match status {
+                    FileTreeNodeStatus::Staged(_) => FileDiffSource::Index,
+                    FileTreeNodeStatus::Unstaged(_) => FileDiffSource::Worktree,
+                    FileTreeNodeStatus::Untracked => FileDiffSource::Untracked,
+                    FileTreeNodeStatus::Directory => FileDiffSource::Directory,
+                },
             },
             Self::Directory { path } => {
-                let files_hash = visible_files
+                let mut hash = DefaultHasher::new();
+                for node in visible_files
                     .iter()
                     .filter(|node| node.path.starts_with(path))
-                    .map(|node| node.path.to_string_lossy().to_string())
-                    .collect::<Vec<_>>()
-                    .join("|")
-                    .bytes()
-                    .fold(0u64, |hash, byte| {
-                        hash.wrapping_mul(31).wrapping_add(byte as u64)
-                    });
+                {
+                    (&node.path, &node.status, node.is_dir).hash(&mut hash);
+                }
+                let files_hash = hash.finish();
                 DiffCacheKey::Directory {
                     path: path.clone(),
                     files_hash,

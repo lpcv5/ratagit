@@ -1,5 +1,5 @@
 //! Shared background read protocol; no execution or mutable application state.
-use crate::app::diff::DiffCacheKey;
+use crate::app::diff::DiffCacheIdentity;
 use crate::app::diff::DiffTarget;
 use crate::git::{BranchInfo, CommitInfo, FileEntry, GitStatus, StashInfo};
 use crate::shared::Shared;
@@ -23,7 +23,7 @@ pub enum BackgroundLoad {
         limit: usize,
     },
     Diff {
-        cache_key: DiffCacheKey,
+        cache_key: DiffCacheIdentity,
         target: DiffTarget,
     },
     CommitFiles {
@@ -112,7 +112,7 @@ pub enum BackgroundPayload {
         items: Shared<Vec<CommitInfo>>,
     },
     Diff {
-        cache_key: DiffCacheKey,
+        cache_key: DiffCacheIdentity,
         diff: crate::git::patch::DiffDocument,
     },
     CommitFiles {
@@ -128,5 +128,5 @@ pub enum BackgroundPayload {
 #[derive(Debug, Clone)]
 pub struct BackgroundCompleted {
     pub request: TaskRequest,
-    pub result: Result<Arc<BackgroundPayload>, String>,
+    pub result: Result<Arc<BackgroundPayload>, crate::git::GitError>,
 }

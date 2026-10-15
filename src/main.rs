@@ -4,6 +4,9 @@ mod config;
 mod file_tree;
 mod flux;
 mod git;
+mod latency;
+#[cfg(test)]
+mod process_tests;
 mod runtime;
 mod shared;
 mod terminal;
@@ -18,6 +21,11 @@ use tracing::info;
 async fn main() -> Result<()> {
     color_eyre::install()?;
     let debug_mode = std::env::args().any(|arg| arg == "--debug");
+    let latency = if std::env::args().any(|arg| arg == "--profile-latency") {
+        Some(latency::Recorder::open("ratagit-latency.jsonl")?)
+    } else {
+        None
+    };
     runtime::init_logging(debug_mode);
     info!("app_start debug={}", debug_mode);
     if debug_mode {
@@ -29,7 +37,7 @@ async fn main() -> Result<()> {
     let mut session = TerminalSession::new()?;
     let result = async {
         session.enable_mouse()?;
-        runtime::run(session.terminal_mut(), app).await
+        runtime::run(session.terminal_mut(), app, latency).await
     }
     .await;
     session.finish(result)

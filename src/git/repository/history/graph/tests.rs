@@ -1,6 +1,5 @@
 use super::*;
 use pretty_assertions::assert_eq;
-use std::sync::{Mutex, OnceLock};
 
 #[test]
 fn test_build_commit_graph_lines_linear_history() {
@@ -92,26 +91,11 @@ fn test_build_commit_graph_lines_octopus_merge_like() {
 }
 
 #[test]
-fn test_graph_charset_from_env_toggle() {
-    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    let _guard = ENV_LOCK
-        .get_or_init(|| Mutex::new(()))
-        .lock()
-        .expect("env lock");
-
-    let original = std::env::var("RATAGIT_GRAPH_ASCII").ok();
-
-    std::env::remove_var("RATAGIT_GRAPH_ASCII");
-    assert_eq!(graph_charset_from_env().node, '◯');
-
-    std::env::set_var("RATAGIT_GRAPH_ASCII", "1");
-    assert_eq!(graph_charset_from_env().node, '*');
-
-    if let Some(value) = original {
-        std::env::set_var("RATAGIT_GRAPH_ASCII", value);
-    } else {
-        std::env::remove_var("RATAGIT_GRAPH_ASCII");
-    }
+fn test_graph_charset_values() {
+    assert_eq!(graph_charset(None).node, '◯');
+    assert_eq!(graph_charset(Some("1")).node, '*');
+    assert_eq!(graph_charset(Some("0")).node, '◯');
+    assert_eq!(graph_charset(Some("unexpected")).node, '◯');
 }
 
 fn oid(value: &str) -> git2::Oid {

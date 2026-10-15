@@ -10,7 +10,7 @@ impl OperationRepository for Git2Repository {
             crate::git::operation_backend::snapshot(&inner.repo)
         })?
         .recv()
-        .map_err(|_| GitError::Git2("worker disconnected".into()))?
+        .map_err(|_| GitError::Worker("worker disconnected".into()))?
     }
 
     fn control_operation(
@@ -26,16 +26,14 @@ impl OperationRepository for Git2Repository {
                 .env("GIT_TERMINAL_PROMPT", "0")
                 .current_dir(inner.repo_root()?)
                 .output()
-                .map_err(|e| GitError::Git2(e.to_string()))?;
+                .map_err(GitError::from)?;
             if output.status.success() {
                 Ok(())
             } else {
-                Err(GitError::Git2(
-                    String::from_utf8_lossy(&output.stderr).trim().into(),
-                ))
+                Err(GitError::process(output))
             }
         })?
         .recv()
-        .map_err(|_| GitError::Git2("worker disconnected".into()))?
+        .map_err(|_| GitError::Worker("worker disconnected".into()))?
     }
 }

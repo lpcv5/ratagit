@@ -240,8 +240,32 @@ impl AppState {
         self.refresh.pending_refresh.is_some() || !self.tasks.is_empty()
     }
 
-    pub(super) fn pending_refresh_kind(&self) -> Option<RefreshKind> {
+    pub(crate) fn pending_refresh_kind(&self) -> Option<RefreshKind> {
         self.refresh.pending_refresh
+    }
+
+    /// Read-only observation for runtime diagnostics; acceptance remains in the reducer.
+    pub(crate) fn background_completion_is_current(
+        &self,
+        completed: &crate::background::BackgroundCompleted,
+    ) -> bool {
+        self.tasks.is_current(completed) && self.diff_completion_is_current(completed)
+    }
+
+    pub(super) fn diff_completion_is_current(
+        &self,
+        completed: &crate::background::BackgroundCompleted,
+    ) -> bool {
+        let BackgroundLoad::Diff { cache_key, .. } = &completed.request.load else {
+            return true;
+        };
+        self.diff.accepts_load(cache_key)
+            && match &completed.result {
+                Ok(payload) => {
+                    matches!(payload.as_ref(), super::BackgroundPayload::Diff { cache_key: actual, .. } if actual == cache_key)
+                }
+                Err(_) => true,
+            }
     }
 
     pub fn push_log<S: Into<String>>(&mut self, command: S, success: bool) {

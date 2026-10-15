@@ -58,3 +58,12 @@ strip = true
 # Optimize dev build settings
 opt-level = 0
 debug = true
+
+# Keep release optimization while retaining symbols for latency investigations.
+[profile.profiling]
+inherits = "release"
+debug = "full"
+strip = false
+codegen-units = 16
+lto = false
+panic = "unwind"

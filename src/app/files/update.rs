@@ -17,22 +17,22 @@ pub enum FilesAction<'a> {
     DiscardPaths(&'a [PathBuf]),
     StageFinished {
         path: &'a Path,
-        result: &'a Result<(), String>,
+        result: &'a Result<(), crate::git::GitError>,
     },
     UnstageFinished {
         path: &'a Path,
-        result: &'a Result<(), String>,
+        result: &'a Result<(), crate::git::GitError>,
     },
     DiscardPathsFinished {
         paths: &'a [PathBuf],
-        result: &'a Result<(), String>,
+        result: &'a Result<(), crate::git::GitError>,
     },
     ToggleStageSelection,
-    ToggleStageSelectionFinished(&'a Result<(usize, usize), String>),
+    ToggleStageSelectionFinished(&'a Result<(usize, usize), crate::git::GitError>),
     DiscardSelection,
-    DiscardSelectionFinished(&'a Result<(), String>),
+    DiscardSelectionFinished(&'a Result<(), crate::git::GitError>),
     PrepareCommitSelection,
-    PrepareCommitFinished(&'a Result<usize, String>),
+    PrepareCommitFinished(&'a Result<usize, crate::git::GitError>),
 }
 
 /// Owned requests; this feature never accesses a repository or Flux.
@@ -145,7 +145,7 @@ impl FilesState {
                             "{} failed {}: {}",
                             if stage { "stage" } else { "unstage" },
                             path.display(),
-                            error
+                            crate::app::git_error::message(error)
                         ),
                         false,
                     ),
@@ -158,7 +158,10 @@ impl FilesState {
                         (format!("discarded {}", paths[0].display()), true)
                     }
                     Ok(()) => (format!("discarded {} path(s)", paths.len()), true),
-                    Err(error) => (format!("discard failed: {error}"), false),
+                    Err(error) => (
+                        format!("discard failed: {}", crate::app::git_error::message(error)),
+                        false,
+                    ),
                 });
                 output.redraw = result.is_ok();
             }
@@ -174,7 +177,13 @@ impl FilesState {
                         format!("selection toggled: staged {staged}, unstaged {unstaged}"),
                         true,
                     ),
-                    Err(error) => (format!("selection toggle failed: {error}"), false),
+                    Err(error) => (
+                        format!(
+                            "selection toggle failed: {}",
+                            crate::app::git_error::message(error)
+                        ),
+                        false,
+                    ),
                 });
                 output.refresh_status = result.is_ok();
                 output.redraw = result.is_ok();
@@ -213,7 +222,13 @@ impl FilesState {
                         output.redraw = true;
                     }
                     Err(error) => {
-                        output.log = Some((format!("prepare commit failed: {error}"), false))
+                        output.log = Some((
+                            format!(
+                                "prepare commit failed: {}",
+                                crate::app::git_error::message(error)
+                            ),
+                            false,
+                        ))
                     }
                 }
             }

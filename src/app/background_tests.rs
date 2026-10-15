@@ -29,6 +29,44 @@ fn complete(app: &mut App, completed: BackgroundCompleted) {
     dispatcher.dispatch(&mut app.state, envelope);
 }
 
+#[test]
+fn test_cancelled_and_superseded_structured_failures_are_silent() {
+    let mut app = fixture(false);
+    let load = BackgroundLoad::Commits {
+        limit: 30,
+        fast: false,
+    };
+    let old = register(&mut app, load.clone());
+    let current = register(&mut app, load);
+    let error = crate::git::GitError::from(git2::Error::new(
+        git2::ErrorCode::Auth,
+        git2::ErrorClass::Net,
+        "same diagnostic",
+    ))
+    .context("commits_full");
+    let logs = app.command_log.len();
+    app.ui.dirty.clear();
+    complete(
+        &mut app,
+        BackgroundCompleted {
+            request: old,
+            result: Err(error.clone()),
+        },
+    );
+    assert_eq!(app.command_log.len(), logs);
+    assert!(!app.ui.dirty.command_log());
+    app.cancel_background_task(&current.key, &mut CommandOutput::default());
+    complete(
+        &mut app,
+        BackgroundCompleted {
+            request: current,
+            result: Err(error),
+        },
+    );
+    assert_eq!(app.command_log.len(), logs);
+    assert!(!app.ui.dirty.command_log());
+}
+
 fn files() -> Shared<Vec<FileEntry>> {
     vec![FileEntry {
         path: "dir/file.rs".into(),

@@ -31,7 +31,10 @@ impl<S: LogAccess + ?Sized> Store<S> for CommitStore {
                             .command(tick_background_loads())
                             .with_invalidation(UiInvalidation::all());
                     }
-                    Err(e) => ctx.state.push_log(format!("commit failed: {}", e), false),
+                    Err(e) => ctx.state.push_log(
+                        format!("commit failed: {}", crate::app::git_error::message(e)),
+                        false,
+                    ),
                 }
                 ReduceOutput::none()
             }
@@ -84,7 +87,7 @@ mod tests {
             &mut app,
             Action::Domain(DomainAction::CommitFinished {
                 message: "fix: test".to_string(),
-                result: Err("commit failed".to_string()),
+                result: Err("commit failed".into()),
             }),
         );
         assert!(app.command_log.len() > logs_before);

@@ -154,7 +154,7 @@ mod more_tests {
             &mut app,
             Action::Domain(DomainAction::StageFileFinished {
                 path: PathBuf::from("foo.txt"),
-                result: Err("stage failed".to_string()),
+                result: Err("stage failed".into()),
             }),
         );
         assert!(app.command_log.len() > logs_before);
@@ -170,7 +170,7 @@ mod more_tests {
             &mut app,
             Action::Domain(DomainAction::UnstageFileFinished {
                 path: PathBuf::from("foo.txt"),
-                result: Err("unstage failed".to_string()),
+                result: Err("unstage failed".into()),
             }),
         );
         assert!(app.command_log.len() > logs_before);
@@ -202,7 +202,7 @@ mod more_tests {
             &mut app,
             Action::Domain(DomainAction::DiscardPathsFinished {
                 paths: vec![PathBuf::from("foo.txt")],
-                result: Err("discard failed".to_string()),
+                result: Err("discard failed".into()),
             }),
         );
         assert!(app.command_log.len() > logs_before);

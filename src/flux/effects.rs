@@ -55,6 +55,45 @@ pub enum EffectRequest {
 }
 
 impl EffectRequest {
+    /// Stable diagnostic labels must never contain paths, queries or commit text.
+    pub(crate) fn diagnostic_identity(&self) -> (&'static str, Option<u64>) {
+        let label = match self {
+            Self::LoadBackground { request } => {
+                let label = match &request.load {
+                    BackgroundLoad::Status { fast: true, .. } => "status_fast",
+                    BackgroundLoad::Status { fast: false, .. } => "status_full",
+                    BackgroundLoad::Branches => "branches",
+                    BackgroundLoad::Stashes => "stashes",
+                    BackgroundLoad::Commits { fast: true, .. } => "commits_fast",
+                    BackgroundLoad::Commits { fast: false, .. } => "commits_full",
+                    BackgroundLoad::BranchCommits { .. } => "branch_commits",
+                    BackgroundLoad::Diff { .. } => "diff",
+                    BackgroundLoad::CommitFiles { .. } => "commit_files",
+                    BackgroundLoad::StashFiles { .. } => "stash_files",
+                };
+                return (label, Some(request.generation.0));
+            }
+            Self::ApplyHunks { .. } => "apply_hunks",
+            Self::StageHunks { .. } => "stage_hunks",
+            Self::ControlRepositoryOperation { .. } => "control_operation",
+            Self::ToggleStageSelection { .. } => "toggle_stage",
+            Self::PrepareCommitFromVisualSelection { .. } => "prepare_commit",
+            Self::FetchRemote => "fetch",
+            Self::StageFile(_) | Self::StagePaths(_) => "stage",
+            Self::UnstageFile(_) => "unstage",
+            Self::DiscardPaths(_) => "discard",
+            Self::CreateBranch(_) => "create_branch",
+            Self::CheckoutBranch { .. } => "checkout_branch",
+            Self::DeleteBranch(_) => "delete_branch",
+            Self::Commit(_) => "commit",
+            Self::StashPush { .. } => "stash_push",
+            Self::StashApply(_) => "stash_apply",
+            Self::StashPop(_) => "stash_pop",
+            Self::StashDrop(_) => "stash_drop",
+        };
+        (label, None)
+    }
+
     pub fn is_write(&self) -> bool {
         !matches!(self, Self::LoadBackground { .. } | Self::FetchRemote)
     }
@@ -63,7 +102,9 @@ impl EffectRequest {
 fn receive<T>(
     request: Result<std::sync::mpsc::Receiver<Result<T, GitError>>, GitError>,
 ) -> Result<T, GitError> {
-    request?.recv().map_err(|e| GitError::Git2(e.to_string()))?
+    request?
+        .recv()
+        .map_err(|e| GitError::Worker(e.to_string()))?
 }
 
 fn domain(action: DomainAction) -> Vec<Action> {
@@ -71,7 +112,16 @@ fn domain(action: DomainAction) -> Vec<Action> {
 }
 
 /// Effects can access execution dependencies, never mutable application state.
+#[cfg(test)]
 pub async fn run(request: EffectRequest, runtime: &AppRuntime) -> Vec<Action> {
+    run_traced(request, runtime, None).await
+}
+
+pub(crate) async fn run_traced(
+    request: EffectRequest,
+    runtime: &AppRuntime,
+    trace: Option<crate::latency::Trace>,
+) -> Vec<Action> {
     let repo = runtime.repo.clone();
     let fallback = request.clone();
     let (tx, rx) = tokio::sync::oneshot::channel();
@@ -80,23 +130,31 @@ pub async fn run(request: EffectRequest, runtime: &AppRuntime) -> Vec<Action> {
     let launched = std::thread::Builder::new()
         .name("ratagit-effect".into())
         .spawn(move || {
-            let result =
-                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| execute(request, &*repo)))
-                    .map_err(|_| "effect worker panicked".to_string());
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                crate::latency::Trace::scope(trace, || execute(request, &*repo))
+            }))
+            .map_err(|_| GitError::Worker("effect worker panicked".into()));
             let _ = tx.send(result);
         });
     if let Err(err) = launched {
-        return failed(fallback, format!("effect worker failed to start: {err}"));
+        return failed(
+            fallback,
+            GitError::Worker(format!("effect worker failed to start: {err}")),
+        );
     }
     match rx.await {
         Ok(Ok(actions)) => actions,
         Ok(Err(err)) => failed(fallback, err),
-        Err(err) => failed(fallback, format!("effect worker disconnected: {err}")),
+        Err(err) => failed(
+            fallback,
+            GitError::Worker(format!("effect worker disconnected: {err}")),
+        ),
     }
 }
 
 /// Shared by production execution and deterministic test drivers.
 pub(crate) fn execute(request: EffectRequest, repo: &dyn GitRepository) -> Vec<Action> {
+    let operation = request.diagnostic_identity().0;
     match request {
         EffectRequest::ApplyHunks {
             id,
@@ -108,25 +166,32 @@ pub(crate) fn execute(request: EffectRequest, repo: &dyn GitRepository) -> Vec<A
             direction,
             result: repo
                 .apply_hunks(&patch, &ids, direction)
-                .map_err(|e| e.to_string()),
+                .map_err(|e| e.context(operation)),
         }),
         EffectRequest::StageHunks { patch, file, hunks } => {
             domain(DomainAction::StageHunksFinished {
                 result: repo
                     .stage_hunks(&patch, file, &hunks)
-                    .map_err(|e| e.to_string()),
+                    .map_err(|e| e.context(operation)),
             })
         }
         EffectRequest::ControlRepositoryOperation { id, control } => {
-            let mut result = repo.control_operation(control).map_err(|e| e.to_string());
+            let mut result = repo
+                .control_operation(control)
+                .map_err(|e| e.context(operation));
             let observed = match repo.operation_snapshot() {
                 Ok(snapshot) => Some(snapshot),
                 Err(error) => {
-                    if result.is_ok() {
-                        result = Err(format!(
-                            "operation completed, but state reload failed: {error}"
-                        ));
+                    result = Err(match result {
+                        Ok(()) => GitError::Reload {
+                            source: Box::new(error),
+                        },
+                        Err(primary) => GitError::WithReloadFailure {
+                            primary: Box::new(primary),
+                            reload: Box::new(error),
+                        },
                     }
+                    .context(operation));
                     None
                 }
             };
@@ -140,24 +205,26 @@ pub(crate) fn execute(request: EffectRequest, repo: &dyn GitRepository) -> Vec<A
             SystemAction::BackgroundCompleted(Box::new(BackgroundCompleted {
                 result: load_background(request.load.clone(), repo)
                     .map(std::sync::Arc::new)
-                    .map_err(|e| e.to_string()),
+                    .map_err(|e| e.context(operation)),
                 request,
             })),
         )],
         EffectRequest::StageFile(path) => {
-            let result = receive(repo.stage_async(path.clone())).map_err(|e| e.to_string());
+            let result = receive(repo.stage_async(path.clone())).map_err(|e| e.context(operation));
             domain(DomainAction::StageFileFinished { path, result })
         }
         EffectRequest::StagePaths(paths) => domain(DomainAction::StagePathsFinished {
-            result: receive(repo.stage_paths_async(paths.clone())).map_err(|e| e.to_string()),
+            result: receive(repo.stage_paths_async(paths.clone()))
+                .map_err(|e| e.context(operation)),
         }),
         EffectRequest::UnstageFile(path) => {
-            let result = receive(repo.unstage_async(path.clone())).map_err(|e| e.to_string());
+            let result =
+                receive(repo.unstage_async(path.clone())).map_err(|e| e.context(operation));
             domain(DomainAction::UnstageFileFinished { path, result })
         }
         EffectRequest::DiscardPaths(paths) => {
             let result =
-                receive(repo.discard_paths_async(paths.clone())).map_err(|e| e.to_string());
+                receive(repo.discard_paths_async(paths.clone())).map_err(|e| e.context(operation));
             domain(DomainAction::DiscardPathsFinished { paths, result })
         }
         EffectRequest::ToggleStageSelection { stage, unstage } => {
@@ -166,11 +233,19 @@ pub(crate) fn execute(request: EffectRequest, repo: &dyn GitRepository) -> Vec<A
                     receive(repo.stage_paths_async(stage.clone()))?;
                 }
                 if !unstage.is_empty() {
-                    repo.unstage_paths(&unstage)?;
+                    repo.unstage_paths(&unstage).map_err(|error| {
+                        if stage.is_empty() {
+                            error
+                        } else {
+                            GitError::PartialWrite {
+                                source: Box::new(error),
+                            }
+                        }
+                    })?;
                 }
                 Ok::<_, GitError>((stage.len(), unstage.len()))
             })()
-            .map_err(|e| e.to_string());
+            .map_err(|e| e.context(operation));
             domain(DomainAction::ToggleStageSelectionFinished { result })
         }
         EffectRequest::PrepareCommitFromVisualSelection { paths } => {
@@ -179,19 +254,20 @@ pub(crate) fn execute(request: EffectRequest, repo: &dyn GitRepository) -> Vec<A
             } else {
                 receive(repo.stage_paths_async(paths.clone()))
                     .map(|()| paths.len())
-                    .map_err(|e| e.to_string())
+                    .map_err(|e| e.context(operation))
             };
             domain(DomainAction::PrepareCommitFromSelectionFinished { result })
         }
         EffectRequest::FetchRemote => {
             let result = repo
                 .fetch_default_async()
-                .and_then(|rx| rx.recv().map_err(|e| GitError::Git2(e.to_string()))?)
-                .map_err(|e| e.to_string());
+                .and_then(|rx| rx.recv().map_err(|e| GitError::Worker(e.to_string()))?)
+                .map_err(|e| e.context(operation));
             domain(DomainAction::FetchRemoteFinished(result))
         }
         EffectRequest::CreateBranch(name) => {
-            let result = receive(repo.create_branch_async(name.clone())).map_err(|e| e.to_string());
+            let result =
+                receive(repo.create_branch_async(name.clone())).map_err(|e| e.context(operation));
             domain(DomainAction::CreateBranchFinished { name, result })
         }
         EffectRequest::CheckoutBranch { name, auto_stash } => {
@@ -200,7 +276,7 @@ pub(crate) fn execute(request: EffectRequest, repo: &dyn GitRepository) -> Vec<A
             } else {
                 receive(repo.checkout_branch_async(name.clone()))
             }
-            .map_err(|e| e.to_string());
+            .map_err(|e| e.context(operation));
             domain(DomainAction::CheckoutBranchFinished {
                 name,
                 auto_stash,
@@ -208,29 +284,31 @@ pub(crate) fn execute(request: EffectRequest, repo: &dyn GitRepository) -> Vec<A
             })
         }
         EffectRequest::DeleteBranch(name) => {
-            let result = receive(repo.delete_branch_async(name.clone())).map_err(|e| e.to_string());
+            let result =
+                receive(repo.delete_branch_async(name.clone())).map_err(|e| e.context(operation));
             domain(DomainAction::DeleteBranchFinished { name, result })
         }
         EffectRequest::Commit(message) => {
-            let result = receive(repo.commit_async(message.clone())).map_err(|e| e.to_string());
+            let result =
+                receive(repo.commit_async(message.clone())).map_err(|e| e.context(operation));
             domain(DomainAction::CommitFinished { message, result })
         }
         EffectRequest::StashPush { message, paths } => {
             let result = receive(repo.stash_push_paths_async(paths.clone(), message.clone()))
-                .map_err(|e| e.to_string());
+                .map_err(|e| e.context(operation));
             domain(DomainAction::StashPushFinished { message, result })
         }
         EffectRequest::StashApply(index) => domain(DomainAction::StashApplyFinished {
             index,
-            result: receive(repo.stash_apply_async(index)).map_err(|e| e.to_string()),
+            result: receive(repo.stash_apply_async(index)).map_err(|e| e.context(operation)),
         }),
         EffectRequest::StashPop(index) => domain(DomainAction::StashPopFinished {
             index,
-            result: receive(repo.stash_pop_async(index)).map_err(|e| e.to_string()),
+            result: receive(repo.stash_pop_async(index)).map_err(|e| e.context(operation)),
         }),
         EffectRequest::StashDrop(index) => domain(DomainAction::StashDropFinished {
             index,
-            result: receive(repo.stash_drop_async(index)).map_err(|e| e.to_string()),
+            result: receive(repo.stash_drop_async(index)).map_err(|e| e.context(operation)),
         }),
     }
 }
@@ -304,7 +382,9 @@ fn load_background(
             } else {
                 let diff = match target.clone() {
                     DiffTarget::None => Vec::new(),
-                    DiffTarget::Branch { name } => receive(repo.branch_log_async(name, 20))?,
+                    DiffTarget::Branch { name } => {
+                        receive(repo.branch_log_async(name, crate::app::diff::BRANCH_DIFF_LIMIT))?
+                    }
                     DiffTarget::File { path, status } => match status {
                         FileTreeNodeStatus::Staged(_) => receive(repo.diff_staged_async(path))?,
                         FileTreeNodeStatus::Untracked => receive(repo.diff_untracked_async(path))?,
@@ -338,7 +418,8 @@ fn load_background(
 }
 
 /// Preserve operation identity when a blocking task panics.
-fn failed(request: EffectRequest, error: String) -> Vec<Action> {
+fn failed(request: EffectRequest, error: GitError) -> Vec<Action> {
+    let error = error.context(request.diagnostic_identity().0);
     match request {
         EffectRequest::ApplyHunks { id, direction, .. } => {
             domain(DomainAction::ApplyHunksFinished {

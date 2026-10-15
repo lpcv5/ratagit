@@ -1,24 +1,8 @@
+pub use super::error::GitError;
 use std::path::PathBuf;
-use thiserror::Error;
 
 /// Owned repository data shared by effects and immutable UI snapshots.
-#[derive(Debug, Clone, Error)]
-pub enum GitError {
-    #[error("Git error: {0}")]
-    Git2(String),
-
-    #[error("Invalid repository state")]
-    InvalidState,
-}
-
-impl From<git2::Error> for GitError {
-    fn from(err: git2::Error) -> Self {
-        GitError::Git2(err.to_string())
-    }
-}
-
-/// Owned repository data shared by effects and immutable UI snapshots.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum FileStatus {
     New,
     Modified,

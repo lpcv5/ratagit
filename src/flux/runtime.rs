@@ -1,6 +1,7 @@
 use crate::app::{AppRuntime, Command};
 use crate::flux::action::Action;
 use crate::flux::effects::{self, EffectRequest};
+use crate::latency::Trace;
 use std::collections::VecDeque;
 use std::time::Instant;
 use tokio::task::JoinSet;
@@ -10,14 +11,21 @@ const MAX_CONCURRENT_READS: usize = 6;
 pub struct EffectCompletion {
     pub actions: Vec<Action>,
     pub elapsed_us: u64,
+    pub(crate) trace: Option<Trace>,
+}
+
+struct PendingEffect {
+    request: EffectRequest,
+    trace: Option<Trace>,
+    queued: Option<Instant>,
 }
 
 /// Local Git writes preserve arrival order. Reads and fetches do not wait for
 /// that lane. This executor accepts only repository I/O requests.
 pub struct EffectExecutor {
     runtime: AppRuntime,
-    writes: VecDeque<EffectRequest>,
-    reads: VecDeque<EffectRequest>,
+    writes: VecDeque<PendingEffect>,
+    reads: VecDeque<PendingEffect>,
     jobs: JoinSet<(bool, EffectCompletion)>,
     active_reads: usize,
     active_write: bool,
@@ -36,10 +44,19 @@ impl EffectExecutor {
     }
 
     pub fn enqueue(&mut self, request: EffectRequest) {
-        if request.is_write() {
-            self.writes.push_back(request);
+        self.enqueue_traced(request, None);
+    }
+
+    pub(crate) fn enqueue_traced(&mut self, request: EffectRequest, trace: Option<Trace>) {
+        let pending = PendingEffect {
+            queued: trace.as_ref().map(|_| Instant::now()),
+            request,
+            trace,
+        };
+        if pending.request.is_write() {
+            self.writes.push_back(pending);
         } else {
-            self.reads.push_back(request);
+            self.reads.push_back(pending);
         }
         self.start_ready();
     }
@@ -60,16 +77,24 @@ impl EffectExecutor {
         }
     }
 
-    fn start(&mut self, request: EffectRequest, write: bool) {
+    fn start(&mut self, pending: PendingEffect, write: bool) {
         let runtime = self.runtime.clone();
         self.jobs.spawn(async move {
             let started = Instant::now();
-            let actions = effects::run(request, &runtime).await;
+            if let (Some(trace), Some(queued)) = (&pending.trace, pending.queued) {
+                trace.event("effect_started", queued.elapsed());
+            }
+            let actions =
+                effects::run_traced(pending.request, &runtime, pending.trace.clone()).await;
+            if let Some(trace) = &pending.trace {
+                trace.event("effect_finished", started.elapsed());
+            }
             (
                 write,
                 EffectCompletion {
                     actions,
                     elapsed_us: started.elapsed().as_micros() as u64,
+                    trace: pending.trace,
                 },
             )
         });

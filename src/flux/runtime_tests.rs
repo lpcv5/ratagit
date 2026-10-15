@@ -32,6 +32,11 @@ struct ControlledRepo {
     diff_version: AtomicUsize,
     panic_on_stage: bool,
     fail_diff: bool,
+    diff_error: Option<GitError>,
+    control_error: Option<GitError>,
+    reload_error: Option<GitError>,
+    control_called: std::sync::atomic::AtomicBool,
+    unstage_paths_error: Option<GitError>,
 }
 
 macro_rules! delegate {
@@ -43,7 +48,16 @@ macro_rules! delegate {
 }
 
 impl crate::git::WorktreeRepository for ControlledRepo {
-    delegate! { status() -> Result<GitStatus, GitError>; stage_paths(paths: &[PathBuf]) -> Result<(), GitError>; unstage_paths(paths: &[PathBuf]) -> Result<(), GitError>; discard_paths(paths: &[PathBuf]) -> Result<(), GitError>; }
+    delegate! { status() -> Result<GitStatus, GitError>; discard_paths(paths: &[PathBuf]) -> Result<(), GitError>; }
+    fn stage_paths(&self, _: &[PathBuf]) -> Result<(), GitError> {
+        self.writes.lock().unwrap().push("stage_paths".into());
+        Ok(())
+    }
+
+    fn unstage_paths(&self, _: &[PathBuf]) -> Result<(), GitError> {
+        self.writes.lock().unwrap().push("unstage_paths".into());
+        self.unstage_paths_error.clone().map_or(Ok(()), Err)
+    }
     fn stage(&self, path: &Path) -> Result<(), GitError> {
         assert!(!self.panic_on_stage, "controlled Git failure");
         self.writes
@@ -71,6 +85,9 @@ impl crate::git::WorktreeRepository for ControlledRepo {
 impl crate::git::PatchRepository for ControlledRepo {
     delegate! { diff_staged(path: &Path) -> Result<Vec<DiffLine>, GitError>; diff_untracked(path: &Path) -> Result<Vec<DiffLine>, GitError>; commit_diff_scoped(oid: &str, path: Option<&Path>) -> Result<Vec<DiffLine>, GitError>; }
     fn diff_unstaged(&self, path: &Path) -> Result<Vec<DiffLine>, GitError> {
+        if let Some(error) = &self.diff_error {
+            return Err(error.clone());
+        }
         if self.fail_diff {
             return Err(GitError::InvalidState);
         }
@@ -110,7 +127,27 @@ impl crate::git::CommitRepository for ControlledRepo {
     delegate! { commit(message: &str) -> Result<String, GitError>; }
 }
 
-impl crate::git::OperationRepository for ControlledRepo {}
+impl crate::git::OperationRepository for ControlledRepo {
+    fn control_operation(
+        &self,
+        _: crate::git::operation::OperationControl,
+    ) -> Result<(), GitError> {
+        self.control_called.store(true, Ordering::SeqCst);
+        self.control_error.clone().map_or(Ok(()), Err)
+    }
+
+    fn operation_snapshot(&self) -> Result<crate::git::operation::RepositoryOperation, GitError> {
+        if self.control_called.load(Ordering::SeqCst) {
+            if let Some(error) = &self.reload_error {
+                return Err(error.clone());
+            }
+        }
+        Ok(Default::default())
+    }
+}
+
+#[path = "git_error_tests.rs"]
+mod git_error_tests;
 
 fn fixture(repo: ControlledRepo) -> App {
     let mut app = App::from_repo(Box::new(repo)).unwrap();
@@ -718,7 +755,8 @@ async fn test_worker_panic_emits_failure_and_releases_write_lane() {
     executor.enqueue(EffectRequest::StageFile("a.txt".into()));
     executor.enqueue(EffectRequest::UnstageFile("a.txt".into()));
     assert!(matches!(completion(&mut executor).await.as_slice(),
-        [Action::Domain(DomainAction::StageFileFinished { path, result: Err(_) })] if path == Path::new("a.txt")));
+        [Action::Domain(DomainAction::StageFileFinished { path, result: Err(error) })]
+        if path == Path::new("a.txt") && error.category() == crate::git::GitErrorCategory::Worker));
     assert!(matches!(
         completion(&mut executor).await.as_slice(),
         [Action::Domain(DomainAction::UnstageFileFinished {

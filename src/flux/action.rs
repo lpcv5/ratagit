@@ -26,7 +26,7 @@ pub enum DomainAction {
     ApplyHunksFinished {
         id: u64,
         direction: crate::git::patch::PatchDirection,
-        result: Result<(), String>,
+        result: Result<(), crate::git::GitError>,
     },
     #[cfg_attr(not(test), allow(dead_code))]
     StageHunks {
@@ -35,13 +35,13 @@ pub enum DomainAction {
         hunks: Vec<usize>,
     },
     StageHunksFinished {
-        result: Result<(), String>,
+        result: Result<(), crate::git::GitError>,
     },
     #[cfg_attr(not(test), allow(dead_code))]
     ControlRepositoryOperation(crate::git::operation::OperationControl),
     RepositoryOperationFinished {
         id: u64,
-        result: Result<(), String>,
+        result: Result<(), crate::git::GitError>,
         observed: Option<crate::git::operation::RepositoryOperation>,
     },
     Runtime(RuntimeEvent),
@@ -66,49 +66,49 @@ pub enum DomainAction {
     CommitAllConfirm(bool),
     DeleteSelectedBranch,
     FetchRemote,
-    FetchRemoteFinished(Result<String, String>),
+    FetchRemoteFinished(Result<String, crate::git::GitError>),
     CreateBranch(String),
     CreateBranchFinished {
         name: String,
-        result: Result<(), String>,
+        result: Result<(), crate::git::GitError>,
     },
     CheckoutBranchFinished {
         name: String,
         auto_stash: bool,
-        result: Result<(), String>,
+        result: Result<(), crate::git::GitError>,
     },
     DeleteBranchFinished {
         name: String,
-        result: Result<(), String>,
+        result: Result<(), crate::git::GitError>,
     },
     Commit(String),
     CommitFinished {
         message: String,
-        result: Result<String, String>,
+        result: Result<String, crate::git::GitError>,
     },
     StageFile(PathBuf),
     UnstageFile(PathBuf),
     DiscardPaths(Vec<PathBuf>),
     StageFileFinished {
         path: PathBuf,
-        result: Result<(), String>,
+        result: Result<(), crate::git::GitError>,
     },
     UnstageFileFinished {
         path: PathBuf,
-        result: Result<(), String>,
+        result: Result<(), crate::git::GitError>,
     },
     DiscardPathsFinished {
         paths: Vec<PathBuf>,
-        result: Result<(), String>,
+        result: Result<(), crate::git::GitError>,
     },
     StagePathsFinished {
-        result: Result<(), String>,
+        result: Result<(), crate::git::GitError>,
     },
     ToggleStageSelectionFinished {
-        result: Result<(usize, usize), String>,
+        result: Result<(usize, usize), crate::git::GitError>,
     },
     PrepareCommitFromSelectionFinished {
-        result: Result<usize, String>,
+        result: Result<usize, crate::git::GitError>,
     },
     ToggleVisualSelectMode,
     ToggleStageSelection,
@@ -121,24 +121,24 @@ pub enum DomainAction {
     },
     StashPushFinished {
         message: String,
-        result: Result<usize, String>,
+        result: Result<usize, crate::git::GitError>,
     },
     RevisionOpenTreeOrToggleDir,
     RevisionCloseTree,
     StashApplySelected,
     StashApplyFinished {
         index: usize,
-        result: Result<(), String>,
+        result: Result<(), crate::git::GitError>,
     },
     StashPopSelected,
     StashPopFinished {
         index: usize,
-        result: Result<(), String>,
+        result: Result<(), crate::git::GitError>,
     },
     StashDropSelected,
     StashDropFinished {
         index: usize,
-        result: Result<(), String>,
+        result: Result<(), crate::git::GitError>,
     },
     SearchSetQuery(String),
     SearchConfirm,

@@ -14,7 +14,7 @@ pub enum DiffAction<'a> {
     WriteFinished {
         id: u64,
         direction: PatchDirection,
-        result: &'a Result<(), String>,
+        result: &'a Result<(), crate::git::GitError>,
     },
     SelectionChanged,
     ScrollUp,
@@ -24,7 +24,7 @@ pub enum DiffAction<'a> {
         file: usize,
         hunks: &'a [usize],
     },
-    StageHunksFinished(&'a Result<(), String>),
+    StageHunksFinished(&'a Result<(), crate::git::GitError>),
 }
 
 pub enum HunkWrite {
@@ -170,7 +170,7 @@ impl DiffState {
                         .to_string(),
                         true,
                     ),
-                    Err(error) => (error.clone(), false),
+                    Err(error) => (crate::app::git_error::message(error), false),
                 });
                 // Failed writes also require a fresh status and patch.
                 self.interaction.reset_selection();
@@ -208,7 +208,7 @@ impl DiffState {
             DiffAction::StageHunksFinished(result) => {
                 output.log = Some(match result {
                     Ok(()) => ("Selected hunks staged".to_string(), true),
-                    Err(error) => (error.clone(), false),
+                    Err(error) => (crate::app::git_error::message(error), false),
                 });
                 return output;
             }
