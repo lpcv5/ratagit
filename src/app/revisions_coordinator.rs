@@ -4,7 +4,6 @@ use super::revisions::{RevisionAction, RevisionCancel, RevisionRead, RevisionUpd
 use super::{AppState, BackgroundLoad, BackgroundPayload, SidePanel};
 use crate::background::{TaskKey, TaskPriority};
 use crate::flux::command_output::CommandOutput;
-use color_eyre::Result;
 use tracing::debug;
 
 impl AppState {
@@ -84,14 +83,9 @@ impl AppState {
         }
     }
 
-    pub fn open_selected_branch_commits(
-        &mut self,
-        limit: usize,
-        output: &mut CommandOutput,
-    ) -> Result<()> {
+    pub fn open_selected_branch_commits(&mut self, limit: usize, output: &mut CommandOutput) {
         let update = self.reduce_revisions(RevisionAction::OpenBranchCommits { limit });
         self.apply_revision_update(update, output);
-        Ok(())
     }
 
     pub fn close_branch_commits_subview(&mut self, output: &mut CommandOutput) {
@@ -99,16 +93,14 @@ impl AppState {
         self.apply_revision_update(update, output);
     }
 
-    pub fn commit_open_tree_or_toggle_dir(&mut self, output: &mut CommandOutput) -> Result<()> {
+    pub fn commit_open_tree_or_toggle_dir(&mut self, output: &mut CommandOutput) {
         let update = self.reduce_revisions(RevisionAction::OpenCommitTree);
         self.apply_revision_update(update, output);
-        Ok(())
     }
 
-    pub fn stash_open_tree_or_toggle_dir(&mut self, output: &mut CommandOutput) -> Result<()> {
+    pub fn stash_open_tree_or_toggle_dir(&mut self, output: &mut CommandOutput) {
         let update = self.reduce_revisions(RevisionAction::OpenStashTree);
         self.apply_revision_update(update, output);
-        Ok(())
     }
 
     pub fn commit_close_tree(&mut self, output: &mut CommandOutput) {

@@ -174,14 +174,11 @@ impl AppState {
             }
             RuntimeEvent::ReloadDiffNow => self.reload_diff_now(output),
             RuntimeEvent::RevisionOpenTreeOrToggleDir => {
-                let result = match self.ui.active_panel {
+                match self.ui.active_panel {
                     SidePanel::Stash => self.stash_open_tree_or_toggle_dir(output),
                     SidePanel::Commits => self.commit_open_tree_or_toggle_dir(output),
                     SidePanel::LocalBranches => self.open_selected_branch_commits(100, output),
-                    _ => Ok(()),
-                };
-                if let Err(err) = result {
-                    self.push_log(format!("revision files failed: {err}"), false);
+                    _ => {}
                 }
                 self.restore_search_for_active_scope();
                 self.reload_diff_now(output);
