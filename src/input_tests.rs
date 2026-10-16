@@ -453,7 +453,7 @@ mod tests {
         state.ui.branches.subview = ratagit_core::BranchesSubview::CommitFiles;
         assert_eq!(
             map_key(&state, KeyCode::Enter),
-            Some(UiAction::ToggleBranchCommitFilesDirectory)
+            Some(UiAction::OpenCommitFilePatch)
         );
         assert_eq!(
             map_key(&state, KeyCode::Esc),
@@ -514,7 +514,7 @@ mod tests {
         state.ui.search.clear();
         assert_eq!(
             map_key(&state, KeyCode::Enter),
-            Some(UiAction::ToggleCommitFilesDirectory)
+            Some(UiAction::OpenCommitFilePatch)
         );
         assert_eq!(map_key(&state, KeyCode::Char('s')), None);
         state.ui.commits.files.mode = ratagit_core::FileInputMode::MultiSelect;

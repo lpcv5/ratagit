@@ -1,6 +1,5 @@
 ---
 source: libs/ratagit-ui/tests/workflows.rs
-assertion_line: 59
 expression: "render_terminal_text(&state, SIZE)"
 ---
 ╭ 1  󰈙 Files ────────────────────╮╭ 5   Details ──────────────────────────────────────────────────╮
@@ -24,7 +23,7 @@ expression: "render_terminal_text(&state, SIZE)"
 │●  abc1234  RT  ini│                                                          │                   │
 │●  def5678  RT  wir│                                                          │───────────────────╯
 │                   │ ──────────────────────────────────────────────────────── │───────────────────╮
-│                   │ Enter confirm  Esc cancel                                │                   │
+│                   │ j/k ↑/↓ select  Enter confirm  Esc cancel                │                   │
 │                   ╰──────────────────────────────────────────────────────────╯                   │
 ╰────────────────────────────────╯│                                                                │
 ╭ 4   Stash ────────────────────╮│                                                                │
@@ -32,4 +31,4 @@ expression: "render_terminal_text(&state, SIZE)"
 │                                ││                                                                │
 │                                ││                                                                │
 ╰────────────────────────────────╯╰────────────────────────────────────────────────────────────────╯
-/ loading: details   arrows  select/cursor   Enter  confirm   Esc  cancel
+/ loading: details   j/k ↑/↓  select   Enter  confirm   Esc  cancel

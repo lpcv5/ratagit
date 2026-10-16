@@ -6,6 +6,161 @@ use ratagit_core::{Action, AppContext, GitResult, PanelFocus, UiAction, update};
 fn effect(state: &AppContext, code: K, modifiers: M) -> KeyEffect {
     key_effect_for_key(state, code, modifiers, 5, 12, 8)
 }
+
+#[test]
+fn custom_patch_menu_shortcuts_copy_and_modal_ownership_match_lazygit_keys() {
+    use ratagit_core::custom_patch::{CustomPatchAction as C, OPTIONS_TITLE};
+    use ratagit_core::workflow::{Choice, ChoiceAction, Dialog};
+    let mut ctx = state(PanelFocus::Files);
+    assert_eq!(
+        effect(&ctx, K::Char('p'), M::CONTROL),
+        KeyEffect::Dispatch(UiAction::CustomPatch(C::Options))
+    );
+    let mut choices = vec![
+        Choice {
+            label: "clear".into(),
+            action: ChoiceAction::CustomPatch(C::Reset)
+        };
+        5
+    ];
+    choices.push(Choice {
+        label: "copy".into(),
+        action: ChoiceAction::Copy("exact native patch".into()),
+    });
+    ctx.ui.workflow.dialog = Some(Dialog::Menu {
+        title: OPTIONS_TITLE,
+        choices,
+        selected: 0,
+    });
+    assert_eq!(
+        effect(&ctx, K::Char('y'), M::NONE),
+        KeyEffect::Host {
+            edit: false,
+            path: "exact native patch".into()
+        }
+    );
+    for key in ['c', 'a', 'r', 'd', 'p'] {
+        assert_eq!(
+            effect(&ctx, K::Char(key), M::NONE),
+            KeyEffect::Dispatch(UiAction::CustomPatch(C::MenuKey(key)))
+        );
+    }
+    assert_eq!(
+        effect(&ctx, K::Char('j'), M::NONE),
+        KeyEffect::Dispatch(UiAction::Workflow(A::Down))
+    );
+    assert_eq!(effect(&ctx, K::Char('p'), M::CONTROL), KeyEffect::Ignore);
+    ctx.ui.workflow.dialog = None;
+    ctx.ui.editor.kind = Some(ratagit_core::EditorKind::Stash {
+        title: String::new(),
+        title_cursor: 0,
+        scope: ratagit_core::StashScope::All,
+    });
+    assert_eq!(effect(&ctx, K::Char('p'), M::CONTROL), KeyEffect::Ignore);
+    ctx.ui.editor.kind = None;
+    ctx.ui.custom_patch.preview_return_focus = Some(PanelFocus::Files);
+    assert_eq!(
+        effect(&ctx, K::Tab, M::NONE),
+        KeyEffect::Dispatch(UiAction::CustomPatch(C::ClosePreview))
+    );
+    assert_eq!(effect(&ctx, K::Char(' '), M::NONE), KeyEffect::Ignore);
+    assert_eq!(
+        effect(&ctx, K::Char('d'), M::CONTROL),
+        KeyEffect::Dispatch(UiAction::CustomPatch(C::Scroll {
+            up: false,
+            lines: 5
+        }))
+    );
+}
+
+#[test]
+fn commit_files_keys_and_host_actions_respect_current_view_and_dialogs() {
+    let mut ctx = state(PanelFocus::Commits);
+    ctx.ui.last_left_focus = PanelFocus::Commits;
+    update(&mut ctx, Action::Ui(UiAction::OpenCommitFilesPanel));
+    update(
+        &mut ctx,
+        Action::GitResult(GitResult::CommitFiles {
+            commit_id: "abc1234".into(),
+            result: Ok(vec![ratagit_core::CommitFileEntry {
+                path: "a.txt".into(),
+                old_path: None,
+                status: ratagit_core::CommitFileStatus::Modified,
+            }]),
+        }),
+    );
+    for (key, feature) in [
+        ('c', F::CommitFileCheckout),
+        ('d', F::CommitFileDiscard),
+        (' ', F::CommitFilePatch),
+        ('y', F::CommitFileCopy),
+        ('a', F::CommitFilePatchAll),
+    ] {
+        assert_eq!(
+            effect(&ctx, K::Char(key), M::NONE),
+            KeyEffect::Dispatch(UiAction::Workflow(A::Open(feature)))
+        );
+    }
+    assert_eq!(
+        effect(&ctx, K::Enter, M::NONE),
+        KeyEffect::Dispatch(UiAction::OpenCommitFilePatch)
+    );
+    assert_eq!(
+        effect(&ctx, K::Char('p'), M::CONTROL),
+        KeyEffect::Dispatch(UiAction::CustomPatch(
+            ratagit_core::custom_patch::CustomPatchAction::Options
+        ))
+    );
+    assert_eq!(
+        effect(&ctx, K::Tab, M::NONE),
+        KeyEffect::Dispatch(UiAction::Workflow(A::Open(F::CustomPatchPreview)))
+    );
+    assert_eq!(
+        effect(&ctx, K::Char('o'), M::CONTROL),
+        KeyEffect::Host {
+            edit: false,
+            path: "a.txt".into()
+        }
+    );
+    assert_eq!(
+        effect(&ctx, K::Char('e'), M::NONE),
+        KeyEffect::Host {
+            edit: true,
+            path: "a.txt".into()
+        }
+    );
+    update(
+        &mut ctx,
+        Action::Ui(UiAction::Workflow(A::Open(F::CommitFileCheckout))),
+    );
+    assert_eq!(
+        effect(&ctx, K::Char('e'), M::NONE),
+        KeyEffect::Dispatch(UiAction::Workflow(A::Input('e')))
+    );
+    assert_eq!(
+        effect(&ctx, K::Enter, M::NONE),
+        KeyEffect::Dispatch(UiAction::Workflow(A::Confirm))
+    );
+    update(&mut ctx, Action::Ui(UiAction::Workflow(A::Cancel)));
+    update(&mut ctx, Action::Ui(UiAction::OpenCommandPalette));
+    ctx.ui.command_palette.selected = ctx
+        .command_palette_entries()
+        .iter()
+        .position(|entry| entry.command == ratagit_core::CommandPaletteCommand::CopyPath)
+        .unwrap();
+    assert_eq!(
+        effect(&ctx, K::Enter, M::NONE),
+        KeyEffect::Host {
+            edit: false,
+            path: "a.txt".into()
+        }
+    );
+    update(&mut ctx, Action::Ui(UiAction::StartPaletteSearch));
+    assert_eq!(
+        effect(&ctx, K::Enter, M::NONE),
+        KeyEffect::Dispatch(UiAction::FinishPaletteSearch)
+    );
+}
 fn state(panel: PanelFocus) -> AppContext {
     let mut state = AppContext::default();
     update(

@@ -15,6 +15,14 @@ pub fn format_file_tree_row(row: &FileTreeRow) -> String {
 }
 
 pub(crate) fn file_tree_row_spans(row: &FileTreeRow, theme: &UiTheme) -> Vec<PanelSpan> {
+    file_tree_row_spans_with_patch(row, 0, theme)
+}
+
+pub(crate) fn file_tree_row_spans_with_patch(
+    row: &FileTreeRow,
+    inclusion: u8,
+    theme: &UiTheme,
+) -> Vec<PanelSpan> {
     let indent = "  ".repeat(row.depth);
     let batch = if row.selected_for_batch {
         ICON_BATCH_SELECTED
@@ -22,7 +30,7 @@ pub(crate) fn file_tree_row_spans(row: &FileTreeRow, theme: &UiTheme) -> Vec<Pan
         " "
     };
     let matched = if row.matched { ICON_SEARCH_MATCH } else { " " };
-    let prefix = format!("{batch}{matched} {indent}");
+    let prefix = format!("{batch}{matched}");
     let (marker, suffix) = match row.kind {
         FileRowKind::Directory => {
             let marker = if row.expanded {
@@ -34,16 +42,36 @@ pub(crate) fn file_tree_row_spans(row: &FileTreeRow, theme: &UiTheme) -> Vec<Pan
         }
         FileRowKind::File => (file_tree_status_marker(row), format!(" {}", row.name)),
     };
-    let mut spans = vec![
-        PanelSpan {
-            text: prefix,
+    let mut spans = if inclusion == 0 {
+        vec![PanelSpan {
+            text: format!("{prefix} {indent}"),
             style: Style::default(),
-        },
-        PanelSpan {
-            text: marker.trim_end_matches('U').to_string(),
-            style: file_tree_marker_style(row, theme),
-        },
-    ];
+        }]
+    } else {
+        vec![
+            PanelSpan {
+                text: prefix,
+                style: Style::default(),
+            },
+            PanelSpan {
+                text: match inclusion {
+                    2 => "│",
+                    1 => "╎",
+                    _ => " ",
+                }
+                .into(),
+                style: Style::default().fg(theme.info).add_modifier(Modifier::BOLD),
+            },
+            PanelSpan {
+                text: indent,
+                style: Style::default(),
+            },
+        ]
+    };
+    spans.push(PanelSpan {
+        text: marker.trim_end_matches('U').to_string(),
+        style: file_tree_marker_style(row, theme),
+    });
     if row.kind == FileRowKind::File && row.conflicted {
         spans.push(PanelSpan {
             text: "U".to_string(),

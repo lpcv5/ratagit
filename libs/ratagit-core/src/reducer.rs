@@ -19,6 +19,7 @@ pub fn update(state: &mut AppContext, action: Action) -> Vec<Command> {
 
 fn update_ui(state: &mut AppContext, action: UiAction) -> Vec<Command> {
     match action {
+        UiAction::CustomPatch(action) => crate::custom_patch::update(state, action),
         UiAction::Workflow(action) => crate::workflow::update(state, action),
         UiAction::DetailsViewport { visible_lines } => {
             state.ui.details.viewport_lines = visible_lines;
@@ -32,6 +33,9 @@ fn update_ui(state: &mut AppContext, action: UiAction) -> Vec<Command> {
             push_notice(state, &message);
             if refresh {
                 details::clear_caches(state);
+                if crate::workflow::commit_files::selection(state).is_some() {
+                    return with_pending(state, vec![Command::RefreshFiles]);
+                }
                 with_pending(state, Command::refresh_all_commands())
             } else {
                 Vec::new()
@@ -78,6 +82,7 @@ fn update_ui(state: &mut AppContext, action: UiAction) -> Vec<Command> {
             Vec::new()
         }
         UiAction::OpenFilePatch => crate::partial::open(state),
+        UiAction::OpenCommitFilePatch => crate::workflow::commit_files::enter(state),
         UiAction::OpenStashPatch => crate::partial::open_stash(state),
         UiAction::NextPatchFile { up } => crate::partial::next_file(state, up),
         UiAction::CloseFilePatch => {
@@ -621,6 +626,7 @@ fn command_palette_action(
         CommandPaletteCommand::StashApplySelected => Some(UiAction::StashApplySelected),
         CommandPaletteCommand::StashDropSelected => Some(UiAction::StashDropSelected),
         CommandPaletteCommand::OpenFilePatch => Some(UiAction::OpenFilePatch),
+        CommandPaletteCommand::OpenCommitFilePatch => Some(UiAction::OpenCommitFilePatch),
         CommandPaletteCommand::ApplyPatchSelection => Some(UiAction::ApplyPatchSelection),
         CommandPaletteCommand::RequestPatchDiscard => Some(UiAction::RequestPatchDiscard),
         CommandPaletteCommand::CyclePatchSelection => Some(UiAction::CyclePatchSelection),

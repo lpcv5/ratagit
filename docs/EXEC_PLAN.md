@@ -2,91 +2,95 @@
 
 ## Active Slice
 
-Name: Command palette slash search and j/k navigation
+Name: Real terminal review of historical patch views
 Status: completed and verified
 
 ## Problem
 
-The command palette currently treats ordinary typing as search input. The user
-wants `/` to enter search explicitly and `j` / `k` to navigate the command list.
+Run the actual native Windows TUI against an isolated real Git repository and
+check Commit Files, hunk/line/range selection, aggregate preview and options at
+120x36 and 80x24. Native PTY captures revealed that passive Commit Files diffs
+still use raw Git ANSI colors and two-space indentation, while hunk and custom
+preview use themed backgrounds and a three-column gutter. Historical selection
+also gives no visible indication when a cycles hunk/line/block modes.
 
 ## Smallest Slice
 
-Add an explicit palette search-editing state owned by AppContext and driven by
-reducer actions. Open the palette in navigation mode; `j` / `k` and arrow keys
-move selection. `/` enters search, where characters (including j/k) and
-Backspace edit the filter. Enter/Esc return from editing to navigation without
-executing a command.
-Retain the filter when returning to navigation so users can select a match.
-In navigation, Enter executes and Esc closes the palette. Backspace in navigation
-must not edit the filter; reopening / resumes editing the retained query.
-Update command palette hints and relevant behavior/design documentation.
+Route passive main/Branch Commit Files diffs through the existing read-only
+preview row parser and shared diff renderer, preserving metadata, source text,
+scrolling and error/loading fallbacks. Display current historical selection mode
+and file in the Details bottom border using the existing caption projection.
+Match workflow-menu footer hints to the menu's own j/k and arrow navigation.
+Retain all input/Git/state ownership semantics and prior uncommitted work.
 
-Acceptance:
-- Opening the palette starts in navigation mode with an empty query.
-- j/k navigate without changing the query; other ordinary typing does not filter.
-- / explicitly enters search; j/k are literal query text while editing.
-- Search can return to navigation while retaining the current filter.
-- Execution, cancellation, quit, external editor routing and arrow navigation
-  continue to respect palette ownership and search mode.
-- Tests cover key mapping, reducer transitions, rendered hints and a harness
-  flow with operation trace and unchanged Git state for navigation/search.
+Acceptance: passive file preview, hunk view and custom preview share stable
+content columns and themed add/remove/hunk styles; mode changes are visible;
+selection/inclusion/search retain precedence. Inspect the rebuilt executable
+again, including narrow windows, preview scroll/return and patch options.
 
 ## Non-Goals
 
-No backend/Git mutation changes, global key rebinding, other panel search changes,
-new dependencies, automatic commit or push.
+No new Git operations, dependencies, state model or input changes; no workspace
+Git mutations, commits/pushes, OS settings or Windows terminal UI automation.
 
 ## Expected Files
 
-- src/input.rs and input/workflow tests: palette key handling and execution routing.
-- libs/ratagit-core: palette state/actions and reducer transitions.
-- libs/ratagit-ui: mode-aware palette hint text and UI snapshot coverage.
-- libs/ratagit-harness/tests: palette interaction scenario and scenario index.
-- docs/PRODUCT.md and docs/DESIGN.md: palette interaction contract.
+Pure UI Details projection, historical border captions and regression fixtures;
+PRODUCT/DESIGN/architecture wording for unified historical previews; this plan.
+Runtime inspection scripts, isolated repository and output remain under tmp/.
 
 ## Tests
 
-Extend existing palette mapping, reducer, UI and harness coverage rather than
-adding redundant test layers. Inspect exact snapshot changes and ensure focused
-filters run the intended tests.
+Focused UI snapshots and exact buffer-cell assertions comparing passive,
+interactive and aggregate previews under a configured theme. Verify mode captions
+for hunk/line/block plus Branch Commit Files; retain real keyboard and harness
+coverage. Review native PTY text/color captures and PNG renderings of that output.
 
 ## Harness Decision
 
-This changes an input flow across executable, core and UI. Extend a deterministic
-palette harness scenario to verify search/navigation UI, operation trace and
-absence of unintended backend mutation, alongside executable key mapping tests.
+Presentation-only changes use deterministic UI/style regressions. Existing
+cross-file harness and real-Git keyboard tests cover unchanged operations.
+Native binary inspection supplements them and checks HEAD/index/worktree remain
+unchanged. Temporary Python PTY/emulator/image dependencies stay outside product.
 
 ## Validation
 
-Use the native Windows Rust toolchain through PowerShell. Focused palette tests
-first, then cargo fmt --check; cargo clippy --locked --workspace --lib --bins --
--D warnings; cargo test --locked --workspace; git diff --check.
+Build and inspect the real executable; focused UI/keyboard/harness tests;
+cargo fmt --check; cargo clippy --locked --workspace --lib --bins -- -D warnings;
+cargo test --locked --workspace; git diff --check. Preserve failure artifacts.
 
 ## Completion Evidence
 
-Implemented palette-owned search_active state and explicit StartPaletteSearch /
-FinishPaletteSearch actions. Navigation uses j/k, arrows and /; search owns literal
-characters and Backspace, with Enter/Esc retaining the filter and selected row.
-Open, close, execution and HostFinished reset search mode. Editing and execution
-reducers reject actions outside their intended palette mode.
+Before captures: tmp/patch-ui-live/20261016-170320/03-commit-files.png,
+07-hunk-selection.png, 12-preview.png, 14-options-narrow.png and terminal.ansi.
+Initial monochrome run inherited the tool shell's NO_COLOR=1; the controlled
+color run removes that variable only from the child process and uses installed
+Maple Mono Nerd Font for rendering captured terminal output. Actual process,
+ConPTY input, native Git data and async loading are exercised.
 
-Executable input derives a separate palette-search mode, suppresses plain-q
-fallthrough, and keeps search Enter out of Quit, file editing, path/branch/commit
-copying and external commit editor routes. Global Ctrl+C and Details scrolling
-retain their previous behavior.
+Repaired passive diff colors/alignment, historical mode/file captions and menu
+footer hints. Focused UI suite passes, including two new regressions comparing
+all three diff views' exact columns and custom-theme cell styles, native ANSI
+override, main/Branch projection, mode cycling and preview caption ownership.
+Affected snapshots reviewed, with no pending .snap.new files. Existing source
+file/range/preview fixtures retain selection and inclusion style assertions.
 
-UI hints reflect the active mode and show an empty filter row immediately after
-/. Reviewed all five affected/new snapshots (navigation, empty search, confirmed
-search, filtered search, no matches); no pending .snap.new artifacts. Existing
-selection/theme checks pass. Product/design docs describe the interaction.
-
-Extended harness_command_palette_executes_global_pull (same scenario index):
-checks navigation/search hints, retained filter, no backend operations or Git
-state changes before execution, and the selected pull operation afterward.
-Focused checks passed: 184 core tests, 65 executable tests, 166 UI tests and the
-exact palette harness scenario. Independent read-only review found no defects.
-Final cargo fmt --check, strict production workspace Clippy, full locked
-workspace tests (707 passed, zero failed/ignored) and git diff --check passed on
-native Windows. Full suite log: bldommuke.output in the session task directory.
-No commit or push.
+Rebuilt executable inspected under native ConPTY at 120x36 and 80x24. Evidence:
+tmp/patch-ui-live/20261016-170956/{03-commit-files,07-hunk-selection,
+11-line-range-extend,12-preview,14-preview-narrow,16-options-narrow,
+19-block-mode-narrow,20-file-list-narrow,23-branch-commit-files,
+26-branch-preview-return}.png. Corresponding .txt files, terminal.ansi,
+input.jsonl and verification.json retain exact output, keys and Git state.
+Verified cross-file whole+partial inclusion, hunk/line/range/block selection,
+preview scroll, menu and Tab returns in main and Branch Commit Files. Native
+inspection left HEAD, index entries and clean worktree unchanged; its process
+was closed. The user's pre-existing ratagit process remains running. Build and
+gate use isolated target directories under tmp/patch-ui-live to avoid its exe
+lock. Native Windows final gate passed on 2026-10-16: cargo fmt --check;
+cargo clippy --locked --workspace --lib --bins -- -D warnings;
+cargo test --locked --workspace (748 passed, zero failed/ignored);
+git diff --check. Logs: tmp/patch-ui-live-final-{fmt,clippy,tests}.log.
+Both prior real-keyboard flows, main/Branch commit-file harness flows and the
+cross-file accumulation UI/trace/state scenario passed. No new product
+dependencies, input/state transitions or Git behavior; prior uncommitted work
+is preserved. No commit or push.

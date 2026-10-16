@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+mod commit_files;
 #[cfg(test)]
 #[path = "mock/review_tests.rs"]
 mod review_tests;
@@ -195,6 +196,17 @@ fn commit_matches(commit: &CommitEntry, id: &str) -> bool {
 }
 
 impl GitBackendRead for MockGitBackend {
+    fn render_custom_patch(
+        &mut self,
+        patch: &ratagit_core::custom_patch::CustomPatch,
+    ) -> Result<Vec<u8>, GitError> {
+        self.operations.push(format!(
+            "render-custom-patch:{}:{}",
+            patch.oid,
+            patch.files.len()
+        ));
+        crate::patch_backend::custom::bytes(patch, false)
+    }
     fn remote_branches(&mut self) -> Result<Vec<String>, GitError> {
         self.operations.push("remote-branches".into());
         Ok(Vec::new())
@@ -204,6 +216,9 @@ impl GitBackendRead for MockGitBackend {
         request: ratagit_core::patch::PatchRequest,
     ) -> Result<ratagit_core::patch::Patch, GitError> {
         use ratagit_core::patch::*;
+        if let PatchRequest::CommitFiles { oid, paths } = &request {
+            return self.commit_files_patch(oid.clone(), paths.clone(), request.clone());
+        }
         let (path, source) = match &request {
             PatchRequest::File(path)
             | PatchRequest::Worktree(path)
@@ -214,6 +229,7 @@ impl GitBackendRead for MockGitBackend {
             PatchRequest::Commit { oid, .. } => {
                 ("mock.txt".into(), PatchSource::Commit(oid.clone()))
             }
+            PatchRequest::CommitFiles { .. } => unreachable!(),
         };
         let side = PatchSide {
             path: Some(path),
@@ -494,6 +510,12 @@ impl GitBackendRead for MockGitBackend {
 }
 
 impl GitBackendWrite for MockGitBackend {
+    fn repository_operation(
+        &mut self,
+        operation: &ratagit_core::extras::RepositoryOperation,
+    ) -> Result<(), GitError> {
+        self.commit_file_operation(operation)
+    }
     fn stage_file(&mut self, path: &str) -> Result<(), GitError> {
         self.operations.push(format!("stage:{path}"));
         let entry = self

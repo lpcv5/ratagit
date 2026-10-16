@@ -236,16 +236,21 @@ fn render_block_panel(
     } else {
         theme.selected_row_style()
     };
+    let mut block = Block::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(border_style);
+    if let Some(caption) = &projection.caption {
+        block = block.title_bottom(Line::styled(
+            format!(" {caption} "),
+            ratatui::style::Style::default().fg(theme.muted),
+        ));
+    }
     let widget = List::new(items)
         .highlight_style(highlight_style)
         .highlight_spacing(HighlightSpacing::Never)
-        .block(
-            Block::default()
-                .title(title)
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(border_style),
-        );
+        .block(block);
     frame.render_stateful_widget(widget, area, &mut list_state);
 }
 

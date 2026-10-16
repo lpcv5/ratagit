@@ -77,6 +77,10 @@ pub enum PatchRequest {
         oid: String,
         path: Option<PathBuf>,
     },
+    CommitFiles {
+        oid: String,
+        paths: Vec<PathBuf>,
+    },
     Stash {
         index: usize,
         path: Option<PathBuf>,

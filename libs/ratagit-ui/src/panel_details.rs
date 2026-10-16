@@ -16,6 +16,22 @@ pub(crate) fn render_details_lines_with_theme(
     max_lines: usize,
     theme: &UiTheme,
 ) -> Vec<PanelLine> {
+    if state.ui.custom_patch.preview_return_focus.is_some() {
+        if max_lines == 0 {
+            return Vec::new();
+        }
+        let text = String::from_utf8_lossy(&state.repo.custom_patch.preview);
+        let mut text_lines = text.split_inclusive('\n');
+        let bounded = text_lines
+            .by_ref()
+            .take(ratagit_core::custom_patch::PREVIEW_LINES)
+            .collect::<String>();
+        let rows = ratagit_core::partial::preview_rows(&bounded)
+            .into_iter()
+            .map(|r| super::diff_rows::DiffRow::preview(r.row, false))
+            .collect::<Vec<_>>();
+        return super::diff_rows::render(&rows, state.ui.custom_patch.scroll, max_lines, theme);
+    }
     let keep_file_preview = state.ui.last_left_focus == PanelFocus::Files
         && state.repo.details.patch.is_none()
         && state.work.details.patch_request.is_some()
@@ -25,8 +41,8 @@ pub(crate) fn render_details_lines_with_theme(
     }
     match state.ui.last_left_focus {
         PanelFocus::Files => render_files_details_lines(state, max_lines, theme),
-        PanelFocus::Branches => render_branch_details_lines(state, max_lines),
-        PanelFocus::Commits => render_commit_details_lines(state, max_lines),
+        PanelFocus::Branches => render_branch_details_lines(state, max_lines, theme),
+        PanelFocus::Commits => render_commit_details_lines(state, max_lines, theme),
         PanelFocus::Stash => {
             render_placeholder_details_lines("  details(stash): no stash selected", max_lines)
         }
@@ -135,12 +151,16 @@ fn render_files_details_lines(
     rendered
 }
 
-fn render_branch_details_lines(state: &AppContext, max_lines: usize) -> Vec<PanelLine> {
+fn render_branch_details_lines(
+    state: &AppContext,
+    max_lines: usize,
+    theme: &UiTheme,
+) -> Vec<PanelLine> {
     if state.ui.branches.subview == BranchesSubview::CommitFiles {
-        return render_commit_file_details_lines(state, max_lines);
+        return render_commit_file_details_lines(state, max_lines, theme);
     }
     if state.ui.branches.subview == BranchesSubview::Commits {
-        return render_commit_details_lines(state, max_lines);
+        return render_commit_details_lines(state, max_lines, theme);
     }
     if max_lines == 0 {
         return Vec::new();
@@ -171,9 +191,13 @@ fn render_branch_details_lines(state: &AppContext, max_lines: usize) -> Vec<Pane
     )
 }
 
-fn render_commit_details_lines(state: &AppContext, max_lines: usize) -> Vec<PanelLine> {
+fn render_commit_details_lines(
+    state: &AppContext,
+    max_lines: usize,
+    theme: &UiTheme,
+) -> Vec<PanelLine> {
     if state.ui.commits.files.active {
-        return render_commit_file_details_lines(state, max_lines);
+        return render_commit_file_details_lines(state, max_lines, theme);
     }
     if max_lines == 0 {
         return Vec::new();
@@ -204,7 +228,11 @@ fn render_commit_details_lines(state: &AppContext, max_lines: usize) -> Vec<Pane
     )
 }
 
-fn render_commit_file_details_lines(state: &AppContext, max_lines: usize) -> Vec<PanelLine> {
+fn render_commit_file_details_lines(
+    state: &AppContext,
+    max_lines: usize,
+    theme: &UiTheme,
+) -> Vec<PanelLine> {
     if max_lines == 0 {
         return Vec::new();
     }
@@ -236,10 +264,14 @@ fn render_commit_file_details_lines(state: &AppContext, max_lines: usize) -> Vec
         )];
     }
 
-    render_ansi_details_text(
-        &state.repo.details.commit_file_diff,
+    super::diff_rows::render(
+        &ratagit_core::partial::preview_rows(&state.repo.details.commit_file_diff)
+            .into_iter()
+            .map(|row| super::diff_rows::DiffRow::preview(row.row, false))
+            .collect::<Vec<_>>(),
         state.ui.details.scroll_offset,
         max_lines,
+        theme,
     )
 }
 

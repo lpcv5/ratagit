@@ -12,6 +12,7 @@ use ratagit_core::{
 
 use crate::status_cli::parse_porcelain_v1_z_limited;
 use crate::{GitError, validate_repo_relative_path};
+mod commit_files;
 mod workflow;
 
 pub(crate) const STATUS_ENTRY_LIMIT: usize = 50_000;

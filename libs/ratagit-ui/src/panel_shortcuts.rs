@@ -48,6 +48,16 @@ fn shortcut_text_for_state(state: &AppContext) -> String {
 }
 
 pub(crate) fn shortcut_line_for_state(state: &AppContext) -> ShortcutLine {
+    if matches!(
+        state.ui.workflow.dialog,
+        Some(ratagit_core::workflow::Dialog::Menu { .. })
+    ) {
+        return segments(&[
+            ("j/k ↑/↓", "select"),
+            ("Enter", "confirm"),
+            ("Esc", "cancel"),
+        ]);
+    }
     if state.ui.workflow.dialog.is_some() || state.ui.workflow.remote_request.is_some() {
         return segments(&[
             ("arrows", "select/cursor"),
@@ -57,6 +67,14 @@ pub(crate) fn shortcut_line_for_state(state: &AppContext) -> ShortcutLine {
     }
     if state.ui.details.repository_confirm.is_some() {
         return segments(&[("Enter", "drop stash"), ("Esc", "cancel")]);
+    }
+    if state.ui.custom_patch.preview_return_focus.is_some() && !state.ui.command_palette.active {
+        return segments(&[
+            ("j/k", "scroll"),
+            ("Ctrl+P", "patch options"),
+            ("Tab/Esc", "source"),
+            ("?", "commands"),
+        ]);
     }
     if state.ui.details.patch.active
         && state.ui.focus == ratagit_core::PanelFocus::Details
@@ -71,6 +89,15 @@ pub(crate) fn shortcut_line_for_state(state: &AppContext) -> ShortcutLine {
         && state.ui.focus == ratagit_core::PanelFocus::Details
         && !state.ui.command_palette.active
     {
+        if ratagit_core::workflow::commit_files::is_patch(state) {
+            return local_segments(&[
+                ("space", "patch"),
+                ("a", "mode"),
+                ("d", "remove"),
+                ("n/N", "file"),
+                ("Ctrl+P", "menu"),
+            ]);
+        }
         return segments(&[
             ("j/k", "select"),
             ("a", "mode"),
@@ -182,9 +209,7 @@ pub(crate) fn shortcut_line_for_state(state: &AppContext) -> ShortcutLine {
         Some(ActiveLeftView::BranchCommits) => {
             local_segments(&[("enter", "files"), ("Esc", "back")])
         }
-        Some(ActiveLeftView::BranchCommitFiles) => {
-            local_segments(&[("enter", "expand"), ("v", "visual"), ("Esc", "back")])
-        }
+        Some(ActiveLeftView::BranchCommitFiles) => commit_file_segments(),
         Some(ActiveLeftView::Commits) => local_segments(&[
             ("enter", "files"),
             ("A", "amend"),
@@ -194,12 +219,20 @@ pub(crate) fn shortcut_line_for_state(state: &AppContext) -> ShortcutLine {
             ("d", "delete"),
             ("space", "detach"),
         ]),
-        Some(ActiveLeftView::CommitFiles) => {
-            local_segments(&[("enter", "expand"), ("v", "visual"), ("Esc", "back")])
-        }
+        Some(ActiveLeftView::CommitFiles) => commit_file_segments(),
         Some(ActiveLeftView::Stash) => local_segments(&[("O", "stash pop")]),
         None => local_segments(&[]),
     }
+}
+
+fn commit_file_segments() -> ShortcutLine {
+    local_segments(&[
+        ("enter", "hunk"),
+        ("space", "patch"),
+        ("a", "all"),
+        ("Ctrl+P", "menu"),
+        ("Tab", "preview"),
+    ])
 }
 
 fn local_segments(values: &[(&'static str, &'static str)]) -> ShortcutLine {

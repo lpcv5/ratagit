@@ -19,6 +19,7 @@ pub enum MenuDirection {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UiAction {
+    CustomPatch(crate::custom_patch::CustomPatchAction),
     Workflow(crate::workflow::WorkflowAction),
     DetailsViewport {
         visible_lines: usize,
@@ -28,6 +29,7 @@ pub enum UiAction {
         refresh: bool,
     },
     OpenFilePatch,
+    OpenCommitFilePatch,
     OpenStashPatch,
     CloseFilePatch,
     NextPatchFile {
@@ -189,6 +191,16 @@ pub enum UiAction {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GitResult {
+    LoadedCustomPatch {
+        request_id: u64,
+        request: crate::patch::PatchRequest,
+        result: Result<Box<crate::patch::Patch>, String>,
+    },
+    RenderedCustomPatch {
+        request_id: u64,
+        patch: Box<crate::custom_patch::CustomPatch>,
+        result: Result<Vec<u8>, String>,
+    },
     RemoteBranches {
         request_id: u64,
         result: Result<Vec<String>, String>,
@@ -372,6 +384,14 @@ pub enum Action {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
+    LoadCustomPatch {
+        request_id: u64,
+        request: crate::patch::PatchRequest,
+    },
+    RenderCustomPatch {
+        request_id: u64,
+        patch: Box<crate::custom_patch::CustomPatch>,
+    },
     RemoteBranches {
         request_id: u64,
     },
@@ -567,6 +587,21 @@ impl Command {
                 refresh_key: None,
                 pending_label: PendingOperationLabel::None,
             },
+            Command::LoadCustomPatch { .. } | Command::RenderCustomPatch { .. } => {
+                CommandMetadata {
+                    log_label: CommandLogLabel::Static(
+                        if matches!(self, Command::LoadCustomPatch { .. }) {
+                            "load_custom_patch"
+                        } else {
+                            "render_custom_patch"
+                        },
+                    ),
+                    mutating: false,
+                    debounce_key: None,
+                    refresh_key: None,
+                    pending_label: PendingOperationLabel::None,
+                }
+            }
             Command::ApplyPatch { .. } => CommandMetadata {
                 log_label: CommandLogLabel::Static("apply_patch"),
                 mutating: true,
@@ -904,6 +939,8 @@ impl GitResult {
             GitResult::RemoteBranches { .. } => "remote_branches",
             GitResult::RepositoryOperation { .. } => "repository_operation",
             GitResult::LoadedPatch { .. } => "loaded_patch",
+            GitResult::LoadedCustomPatch { .. } => "loaded_custom_patch",
+            GitResult::RenderedCustomPatch { .. } => "rendered_custom_patch",
             GitResult::AppliedPatch { .. } => "applied_patch",
             GitResult::Refreshed(_) => "refreshed",
             GitResult::SplitRefreshed { .. } => "split_refreshed",
@@ -959,6 +996,8 @@ impl GitResult {
             GitResult::RemoteBranches { result, .. } => result.is_ok(),
             GitResult::RepositoryOperation { result, .. } => result.is_ok(),
             GitResult::LoadedPatch { result, .. } => result.is_ok(),
+            GitResult::LoadedCustomPatch { result, .. } => result.is_ok(),
+            GitResult::RenderedCustomPatch { result, .. } => result.is_ok(),
             GitResult::AppliedPatch { result, .. } => result.is_ok(),
             GitResult::Refreshed(_)
             | GitResult::SplitRefreshed { .. }
@@ -1020,6 +1059,7 @@ pub(crate) fn with_pending(state: &mut AppContext, commands: Vec<Command>) -> Ve
 
 fn mark_command_pending(state: &mut AppContext, command: &Command) {
     if command.is_mutating() {
+        crate::custom_patch::invalidate_reads(state);
         state.ui.workflow.remote_request = None;
     }
     match command {

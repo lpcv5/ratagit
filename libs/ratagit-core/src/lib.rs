@@ -2,6 +2,7 @@ mod actions;
 mod branches;
 mod commit_workflow;
 mod commits;
+pub mod custom_patch;
 mod details;
 mod details_cache;
 mod editor;

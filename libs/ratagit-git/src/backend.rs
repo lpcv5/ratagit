@@ -65,6 +65,20 @@ impl From<std::io::Error> for GitError {
 }
 
 pub trait GitBackendRead {
+    fn load_custom_patch(
+        &mut self,
+        request: ratagit_core::patch::PatchRequest,
+    ) -> Result<ratagit_core::patch::Patch, GitError> {
+        self.load_patch(request)
+    }
+    fn render_custom_patch(
+        &mut self,
+        _patch: &ratagit_core::custom_patch::CustomPatch,
+    ) -> Result<Vec<u8>, GitError> {
+        Err(GitError::new(
+            "custom patch rendering is unavailable for this backend",
+        ))
+    }
     fn commit_editor(&mut self) -> Result<Option<String>, GitError> {
         Ok(None)
     }
@@ -206,6 +220,8 @@ macro_rules! delegate_boxed_backend {
 
 impl<T: GitBackendRead + ?Sized> GitBackendRead for Box<T> {
     delegate_boxed_backend! {
+        load_custom_patch(request: ratagit_core::patch::PatchRequest) -> Result<ratagit_core::patch::Patch, GitError>;
+        render_custom_patch(patch: &ratagit_core::custom_patch::CustomPatch) -> Result<Vec<u8>, GitError>;
         commit_editor() -> Result<Option<String>, GitError>;
         remote_branches() -> Result<Vec<String>, GitError>;
         load_patch(request: ratagit_core::patch::PatchRequest) -> Result<ratagit_core::patch::Patch, GitError>;

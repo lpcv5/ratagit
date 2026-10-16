@@ -5,6 +5,7 @@ use std::path::Path;
 
 const MAX_PATCH_LINES: usize = 5000;
 const MAX_PREVIEW_BYTES: i64 = 1024 * 1024;
+pub(crate) mod custom;
 mod header;
 mod lines;
 mod preview;
@@ -64,6 +65,35 @@ pub(super) fn load(repo: &mut Repository, request: PatchRequest) -> Result<Patch
             };
             let mut opts = options(path.as_deref())?;
             let diff = repo.diff_tree_to_tree(parent.as_ref(), Some(&tree), Some(&mut opts))?;
+            append(
+                &diff,
+                PatchSource::Commit(oid.clone()),
+                &mut patch,
+                &mut remaining,
+            )?;
+        }
+        PatchRequest::CommitFiles { oid, paths } => {
+            if paths.is_empty() {
+                return Err(GitError::new("no commit files selected"));
+            }
+            let commit = repo.find_commit(git2::Oid::from_str(oid)?)?;
+            let tree = commit.tree()?;
+            let parent = if commit.parent_count() > 0 {
+                Some(commit.parent(0)?.tree()?)
+            } else {
+                None
+            };
+            let mut opts = options(None)?;
+            opts.disable_pathspec_match(true);
+            for path in paths {
+                crate::validate_repo_relative_path(
+                    path.to_str()
+                        .ok_or_else(|| GitError::new("patch path is not UTF-8"))?,
+                )?;
+                opts.pathspec(path);
+            }
+            let mut diff = repo.diff_tree_to_tree(parent.as_ref(), Some(&tree), Some(&mut opts))?;
+            diff.find_similar(None)?;
             append(
                 &diff,
                 PatchSource::Commit(oid.clone()),
@@ -309,10 +339,48 @@ pub(super) fn apply_lines(
     apply_bytes(repo, &bytes, direction)
 }
 
-fn apply_bytes(
+pub(super) fn apply_bytes(
     repo: &mut Repository,
     bytes: &[u8],
     direction: PatchDirection,
+) -> Result<(), GitError> {
+    apply_git_bytes(
+        repo,
+        bytes,
+        direction != PatchDirection::Discard,
+        direction != PatchDirection::Stage,
+        None,
+    )
+}
+
+pub(super) fn commit_bytes(
+    repo: &mut Repository,
+    patch: &Patch,
+    ids: &[LineId],
+    action: ratagit_core::workflow::commit_files::PatchAction,
+) -> Result<Vec<u8>, GitError> {
+    use ratagit_core::workflow::commit_files::{PatchAction, validate};
+    validate(patch, ids, action).map_err(GitError::new)?;
+    if load(repo, patch.request.clone())? != *patch {
+        return Err(GitError::new("patch changed; reload before applying lines"));
+    }
+    lines::selected_bytes(
+        patch,
+        ids,
+        if action == PatchAction::Apply {
+            PatchDirection::Stage
+        } else {
+            PatchDirection::Discard
+        },
+    )
+}
+
+pub(super) fn apply_git_bytes(
+    repo: &mut Repository,
+    bytes: &[u8],
+    cached: bool,
+    reverse: bool,
+    index: Option<&Path>,
 ) -> Result<(), GitError> {
     let workdir = repo.workdir().ok_or(GitError::new("invalid patch state"))?;
     for check in [true, false] {
@@ -323,14 +391,17 @@ fn apply_bytes(
             .arg("apply")
             .arg("--whitespace=nowarn")
             .arg("--unidiff-zero");
-        if direction != PatchDirection::Discard {
+        if cached {
             command.arg("--cached");
         }
-        if direction != PatchDirection::Stage {
+        if reverse {
             command.arg("--reverse");
         }
         if check {
             command.arg("--check");
+        }
+        if let Some(index) = index {
+            command.env("GIT_INDEX_FILE", index);
         }
         let mut child = command
             .current_dir(workdir)

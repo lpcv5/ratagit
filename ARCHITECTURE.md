@@ -10,12 +10,32 @@ native source LineIds. Marks and visual anchors are pure UI state; operations
 resolve them to changed source lines before returning GitBackend commands.
 Native file-header bytes live in PatchFile.header independently of writable body
 bytes, so read-only/truncated patches preserve Git metadata too. Passive Files
-text projects into read-only rows in core; interactive native rows and passive
-rows share one pure UI renderer. Source prefixes and indentation are preserved,
+and Commit Files text projects into read-only rows in core; interactive native
+rows and passive rows share one pure UI renderer. Source prefixes and indentation are preserved,
 and core scroll bounds use the same visible preview rows as the UI.
 Runtime teardown stops queued jobs and bounds worker joining to 100 ms. In-flight
 native calls cannot be forcibly cancelled; a detached worker exits after its
 current call and never starts queued work.
+
+Historical Commit Files reuse native patch loading and AppContext-owned hunk
+selection, with captured `CommitFiles` requests and request-ID ownership.
+Historical mutations are typed workflow operations through GitBackend's
+exclusive mutation worker; they never fall through to staging. Whole-file
+history edits restore parent tree entries, and partial edits use reviewed bytes
+in a temporary index. Descendant commits are replayed in memory before moving
+the branch; conflicting/unsupported histories and checkout obstructions are
+rejected first. Worktree-only operations refresh Files while retaining the
+Commit Files context; successful history rewrites close it and refresh panels.
+
+The custom patch builder retains immutable native source files in
+`repo.custom_patch`, source identity and accumulated whole/line inclusion in
+`ui.custom_patch`, and a serial intent queue with independent read ownership in
+`work.custom_patch`. Its load/render commands do not share Details debounce
+ownership. Reset/replacement and mutation scheduling invalidate pending reads;
+navigation preserves completed inclusion. Captured aggregate operations validate
+every source file and apply the combined native bytes through one GitBackend
+mutation, retaining whole-file metadata and partial-line guards. Preview/copy
+are backend projections of the same selection; rendering remains pure.
 
 ratagit is a lazygit-like Git TUI built with Rust and ratatui.
 

@@ -55,6 +55,90 @@ fn state() -> AppContext {
 }
 
 #[test]
+fn historical_patch_load_owns_target_and_accumulation_cannot_fall_through_to_staging() {
+    let mut state = state();
+    let request = PatchRequest::CommitFiles {
+        oid: "old-commit".into(),
+        paths: vec!["file.txt".into()],
+    };
+    let mut reviewed = patch();
+    reviewed.request = request.clone();
+    reviewed.files[0].source = PatchSource::Commit("old-commit".into());
+    state.ui.details.patch.mode = SelectionMode::Hunk;
+    state.work.details.patch_request = Some((4, request.clone()));
+    loaded(&mut state, 3, request.clone(), Ok(reviewed.clone()));
+    assert!(state.ui.workflow.dialog.is_none());
+    loaded(
+        &mut state,
+        4,
+        PatchRequest::Commit {
+            oid: "other".into(),
+            path: None,
+        },
+        Ok(reviewed.clone()),
+    );
+    assert!(state.ui.workflow.dialog.is_none());
+    loaded(&mut state, 4, request, Ok(reviewed));
+    assert!(state.ui.workflow.dialog.is_none());
+    assert!(apply(&mut state, false).is_empty());
+    assert_eq!(state.ui.custom_patch.included.len(), 1);
+    assert!(state.ui.workflow.dialog.is_none());
+    request_discard(&mut state);
+    assert!(matches!(
+        state.ui.workflow.dialog,
+        Some(crate::workflow::Dialog::Confirm(
+            crate::workflow::Operation::CommitPatch {
+                action: crate::workflow::commit_files::PatchAction::Discard,
+                ..
+            }
+        ))
+    ));
+    assert!(state.ui.details.patch.discard.is_none());
+    close(&mut state);
+    assert!(state.work.details.patch_request.is_none());
+}
+
+#[test]
+fn historical_file_range_rejects_incomplete_bytes_without_partial_inclusion() {
+    let mut state = state();
+    let patch = state.repo.details.patch.as_mut().unwrap();
+    patch.request = PatchRequest::CommitFiles {
+        oid: "commit".into(),
+        paths: vec!["file.txt".into(), "binary.dat".into()],
+    };
+    patch.files[0].source = PatchSource::Commit("commit".into());
+    let mut binary = patch.files[0].clone();
+    binary.binary = true;
+    binary.encoded = None;
+    binary.hunks.clear();
+    binary.old.path = Some("binary.dat".into());
+    binary.new.path = Some("binary.dat".into());
+    patch.files.push(binary);
+    let reviewed = patch.clone();
+    state.ui.custom_patch.source = Some("commit".into());
+    state.work.custom_patch.pending = Some(crate::custom_patch::Pending::Load {
+        id: 1,
+        request: reviewed.request.clone(),
+    });
+    crate::custom_patch::loaded(&mut state, 1, reviewed.request.clone(), Ok(reviewed));
+    assert!(state.ui.custom_patch.included.is_empty());
+    assert!(state.ui.workflow.dialog.is_none());
+    assert!(
+        state
+            .notices
+            .last()
+            .unwrap()
+            .contains("complete native file bytes")
+    );
+    assert!(apply(&mut state, false).is_empty());
+    assert_eq!(state.ui.custom_patch.included.len(), 1);
+    cycle_mode(&mut state);
+    cycle_mode(&mut state);
+    cycle_mode(&mut state);
+    assert_eq!(state.ui.details.patch.mode, SelectionMode::Block);
+}
+
+#[test]
 fn test_block_hunk_line_modes_and_range() {
     let patch = patch();
     assert_eq!(

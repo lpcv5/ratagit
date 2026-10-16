@@ -25,6 +25,18 @@ use ratagit_ui::{
 };
 use tracing::Level;
 
+mod commit_files_scenarios;
+
+#[test]
+fn harness_commit_files_operations_and_hunks() {
+    commit_files_scenarios::operations_and_hunks();
+}
+
+#[test]
+fn harness_commit_files_custom_patch_accumulation() {
+    commit_files_scenarios::accumulation();
+}
+
 fn assert_scenario(scenario: MockScenario<'_>) {
     let result = run_mock_scenario(scenario);
     assert!(result.is_ok(), "{result:?}");

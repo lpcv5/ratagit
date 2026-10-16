@@ -10,6 +10,20 @@ use crate::theme::UiTheme;
 
 pub(crate) type ModalAction = (&'static str, &'static str);
 
+pub(crate) fn command_menu_line(
+    key: &str,
+    label: &str,
+    selected: bool,
+    theme: &UiTheme,
+) -> Line<'static> {
+    let style = if selected {
+        theme.modal_selected_row_style()
+    } else {
+        theme.modal_text_style()
+    };
+    Line::styled(format!("  {key:<8} {label}"), style)
+}
+
 const DESIGN_MIN_WIDTH: u16 = 40;
 const DESIGN_MAX_WIDTH: u16 = 72;
 const DESIGN_TARGET_WIDTH_PERCENT: u16 = 60;

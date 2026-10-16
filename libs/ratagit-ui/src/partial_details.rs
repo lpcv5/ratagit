@@ -41,6 +41,15 @@ pub(crate) fn render(state: &AppContext, max_lines: usize, theme: &UiTheme) -> V
                         .is_some_and(|id| patch.files[id.file].source == PatchSource::Index),
                     focused: focused && highlight,
                     chosen: ready && highlight && row.id.is_some_and(|id| marked.contains(&id)),
+                    included: row.id.is_some_and(|id| {
+                        matches!(row.kind, PatchLineKind::Added | PatchLineKind::Removed)
+                            && ratagit_core::custom_patch::line_included(
+                                state,
+                                &patch.files[id.file],
+                                id.hunk,
+                                id.line,
+                            )
+                    }),
                     marker: focused && (ui.mode == SelectionMode::Line || row.id == first_cursor),
                     row,
                 }

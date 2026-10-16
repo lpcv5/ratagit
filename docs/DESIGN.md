@@ -45,7 +45,8 @@ previews. Hunk/line selection, independent marks, visual anchors and side-specif
 cursors/scroll offsets live in AppContext. Window resize supplies explicit
 viewport data to the reducer.
 
-Passive Files previews project bounded ANSI diff text into read-only coordinates;
+Passive Files and Commit Files previews project bounded ANSI diff text into
+read-only coordinates;
 interactive patches project reviewed native rows. Both feed the same pure
 `diff_rows` component for cursor/mark indicators and semantic colors. Old/new
 line-number columns and their separator are omitted from both modes. Native file
@@ -106,9 +107,9 @@ Focus model:
   exact target path list
 - `AppContext.repo.details` stores commit-detail diff text, selected commit target,
   detail-refresh errors, and a bounded commit-detail cache keyed by full commit id
-- Details text is stored as backend output. Files diffs project into
-  read-only rows for the shared diff component; history/log text retains the pure
-  ANSI-to-span projection.
+- Details text is stored as backend output. Files and Commit Files diffs project
+  into read-only rows for the shared diff component; full-commit history and
+  branch-log text retain the pure ANSI-to-span projection.
 - `AppContext.ui.details.scroll_offset` stores the global Details viewport offset
   used by `Ctrl+U` / `Ctrl+D`; the action carries terminal-size-derived scroll
   and visible-line counts
@@ -395,7 +396,9 @@ Files panel interaction:
     foreground
   - `j` / `k` move the Commit Files cursor through the shared panel navigation
     action path
-  - `Enter` toggles the selected directory row, while file rows leave a notice
+  - `Enter` toggles the selected directory row or opens a file's native commit
+    patch through `Command::LoadPatch` / `PatchRequest::CommitFiles`. The request
+    captures the commit OID and literal new/old paths, including rename sides
   - Details follows the selected file or folder via
     `Command::RefreshCommitFileDiff`
   - directory selections request one combined patch using the directory
@@ -411,7 +414,67 @@ Files panel interaction:
     subpanel keeps the same height even when a commit has only a few changed
     files
   - `/` searches changed-file paths and refreshes the selected file/folder diff
-  - additional local commit-files shortcuts are intentionally deferred
+  - `workflow::commit_files` resolves selected files/directory descendants and
+    visual ranges before opening dialogs. Checkout and original-commit removal
+    use captured `Workflow::Operation` targets through `RepositoryOperation`
+  - `Space` toggles persistent inclusion through `custom_patch`. Immutable
+    native source files live in `repo.custom_patch`, per-file whole/line sets
+    and the source OID in `ui.custom_patch`, and a serial intent queue plus
+    request-ID/target ownership in `work.custom_patch`. IDs within selections
+    are local hunk/line coordinates, independent of visible file indices
+  - `LoadCustomPatch` and `RenderCustomPatch` are read-only commands independent
+    of Details loading/debouncing. Rapid file/hunk toggles retain input order;
+    options await preceding toggles. Reset, source replacement and mutations
+    invalidate queued/pending reads while completed inclusion survives refresh
+  - file toggles promote partial to whole, then remove whole selections. Hunk
+    toggles use the first selected changed line's membership to choose add or
+    remove for the full range/marks. Whole files demote to line sets when hunks
+    are removed. These sets are separate from temporary visual anchors/marks
+  - Ctrl+P builds the aggregate preview/copy bytes and captures all selected
+    files for confirmed apply/reverse/history-removal workflow operations.
+    Native bytes are validated again against the immutable source before one
+    combined Git apply --check/application. Binary/rename/mode/empty-file changes
+    retain whole native patches; partial text reuses the native line builder
+  - source changes ask before replacing existing inclusion. Navigation/refresh
+    do not discard it; successful history removal clears it. Preview is read-only
+    and bounded to 5000 rendered lines, independently of complete output. The
+    builder rejects incomplete loads and more than 1024 files/16 MiB of native
+    source data. Clipboard output is offered only when patch bytes are UTF-8
+  - historical patches start in Hunk mode and reuse block/line selection,
+    ranges, independent marks, cursor scrolling and file navigation. Contextual
+    help exposes historical actions; editor/copy routes retain modal ownership
+    Mode and current file are projected into the Details bottom border, using
+    the same caption chrome as read-only custom patch preview metadata. Cycling
+    modes updates that caption without adding content rows. Passive main/Branch
+    Commit Files diffs share the hunk/aggregate preview renderer's three-column
+    gutter, hunk color and add/remove backgrounds, replacing raw Git ANSI colors
+  - checkout and worktree patch writes refresh Files while retaining the commit
+    file context. Successful history rewrites close that context and refresh all
+    repository panels. Failed history preparation retains the context
+  - checkout uses literal NUL-delimited pathspec files, preserves the index,
+    and rejects changed selected paths or ignored/untracked obstructions
+  - original-commit removal restores parent tree entries for whole files,
+    including binary/mode/rename data. Partial removal applies reviewed native
+    bytes in reverse to a temporary index. Replacement commits and descendants
+    are prepared in memory, preserving authors/messages. Merge ranges, foreign
+    commits, detached HEAD and replay conflicts are rejected before updating the
+    branch. Checkout preflight also protects ignored obstructions; Git reset
+    --keep performs the final index/worktree/branch update and records a reflog
+  - persistent patch inclusion is available in both commit-file subviews and
+    visible in file/diff gutters, including unfocused panels. Partial binary/
+    rename/type/mode/truncated patches remain non-writable; native preview caps
+    do not affect the separate whole-file tree-removal operation
+  - patch presentation reuses the shared file-tree, diff, shortcut-badge and
+    command-menu row components. The reserved tree separator carries a thin
+    whole-file rail or dotted partial rail without shifting status/name columns;
+    batch and search gutters remain separate. Theme info colors persist in
+    inactive rows; cursor/batch row styles retain precedence. Included source
+    lines use a thin rail; temporary marks retain their heavy rail and the
+    existing diff backgrounds. Accumulation never replaces styled shortcuts
+    with plain text. PanelProjection supplies optional bottom-border captions:
+    Commit Files shows the patch count; Custom Patch preview shows count, short
+    source, read-only status and any 5000-line display cap. The diff body has no
+    custom header/help rows. Options share the palette's aligned key/label rows
 - Files Details projection renders merged `unstaged` and `staged` diff sections
   for current file/folder targets from `GitBackend`.
 - Commits Details projection renders the selected commit's header and bounded
@@ -520,7 +583,8 @@ Panel projection and row source:
 - Cursor and batch selection apply their foreground/background to every text
   span, overriding author/hash/status/search colors. Search-hit substrings retain
   underline inside these highlights. Unselected rows retain semantic colors;
-  native Git ANSI history and log spans are preserved without theme recoloring.
+  full-commit history and branch-log ANSI spans retain their Git colors;
+  Commit Files diffs use the shared semantic diff colors.
 - Diff rows pair tinted staged/unstaged normal, marked, and cursor backgrounds
   with explicit RGB add/remove foregrounds. Highlighted context and cursor/mark
   gutters use `diff.context.foreground`. Validation checks these text/background

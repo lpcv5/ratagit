@@ -8,7 +8,7 @@ use ratagit_core::{
 use ratatui::style::Style;
 
 use super::panel_format::{
-    branch_entry_role, commit_entry_spans, file_tree_row_role, file_tree_row_spans,
+    branch_entry_role, commit_entry_spans, file_tree_row_role, file_tree_row_spans_with_patch,
     format_branch_entry, format_stash_entry,
 };
 use super::panel_scroll::render_indexed_entries_window_with;
@@ -18,7 +18,10 @@ use crate::theme::MAIN_UI_THEME;
 use crate::theme::{PanelLabel, RowRole, UiTheme, panel_label};
 
 pub(crate) fn panel_title(state: &AppContext, panel: PanelFocus) -> &'static str {
-    if panel == PanelFocus::Branches && state.ui.branches.subview == BranchesSubview::Commits {
+    if panel == PanelFocus::Details && state.ui.custom_patch.preview_return_focus.is_some() {
+        "[5]  Custom Patch"
+    } else if panel == PanelFocus::Branches && state.ui.branches.subview == BranchesSubview::Commits
+    {
         "[2]  Branch Commits"
     } else if panel == PanelFocus::Branches
         && state.ui.branches.subview == BranchesSubview::CommitFiles
@@ -39,7 +42,13 @@ pub(crate) fn panel_title(state: &AppContext, panel: PanelFocus) -> &'static str
 }
 
 pub(crate) fn panel_title_label(state: &AppContext, panel: PanelFocus) -> PanelLabel {
-    if panel == PanelFocus::Branches && state.ui.branches.subview == BranchesSubview::Commits {
+    if panel == PanelFocus::Details && state.ui.custom_patch.preview_return_focus.is_some() {
+        PanelLabel {
+            badge: "5",
+            body: " Custom Patch",
+        }
+    } else if panel == PanelFocus::Branches && state.ui.branches.subview == BranchesSubview::Commits
+    {
         PanelLabel {
             badge: "2",
             body: " Branch Commits",
@@ -100,7 +109,7 @@ pub(crate) fn render_files_lines_with_theme(
         state.ui.files.selected,
         state.ui.files.scroll_offset,
         max_lines,
-        SearchScope::Files,
+        TreeSource::Worktree,
         theme,
     )
 }
@@ -243,7 +252,7 @@ fn render_commit_file_lines(
         state.ui.commits.files.selected,
         state.ui.commits.files.scroll_offset,
         max_lines,
-        SearchScope::CommitFiles,
+        TreeSource::Commit(state.ui.commits.files.commit_id.as_deref()),
         theme,
     )
 }
@@ -263,9 +272,15 @@ fn render_branch_commit_file_lines(
         state.ui.branches.commit_files.selected,
         state.ui.branches.commit_files.scroll_offset,
         max_lines,
-        SearchScope::CommitFiles,
+        TreeSource::Commit(state.ui.branches.commit_files.commit_id.as_deref()),
         theme,
     )
+}
+
+#[derive(Clone, Copy)]
+enum TreeSource<'a> {
+    Worktree,
+    Commit(Option<&'a str>),
 }
 
 fn render_file_tree_lines(
@@ -274,9 +289,14 @@ fn render_file_tree_lines(
     selected: usize,
     scroll_offset: usize,
     max_lines: usize,
-    search_scope: SearchScope,
+    source: TreeSource<'_>,
     theme: &UiTheme,
 ) -> Vec<PanelLine> {
+    let search_scope = if matches!(source, TreeSource::Worktree) {
+        SearchScope::Files
+    } else {
+        SearchScope::CommitFiles
+    };
     let matches = SearchMatches::new(search_matches_for(state, search_scope));
     render_indexed_entries_window_with(rows, selected, scroll_offset, max_lines, |index, row| {
         let matched = matches.contains(&row.path);
@@ -288,8 +308,21 @@ fn render_file_tree_lines(
             visible_row.matched = matched;
             &visible_row
         };
-        let line = PanelLine::from_spans(file_tree_row_spans(row, theme), file_tree_row_role(row))
-            .selected(index == selected);
+        let inclusion = if let TreeSource::Commit(Some(oid)) = source
+            && state.ui.custom_patch.source.as_deref() == Some(oid)
+        {
+            ratagit_core::custom_patch::file_inclusion(
+                state,
+                oid,
+                &row.path,
+                row.kind == ratagit_core::FileRowKind::Directory,
+            )
+        } else {
+            0
+        };
+        let spans = file_tree_row_spans_with_patch(row, inclusion, theme);
+        let line =
+            PanelLine::from_spans(spans, file_tree_row_role(row)).selected(index == selected);
         if matched || line_contains_search_query(&line, state, search_scope) {
             highlight_search_query(line, state, search_scope, theme)
         } else {

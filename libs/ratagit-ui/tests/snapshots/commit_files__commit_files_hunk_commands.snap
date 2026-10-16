@@ -1,0 +1,40 @@
+---
+source: libs/ratagit-ui/tests/commit_files.rs
+expression: "render_terminal_text(&state, SIZE)"
+---
+╭ 1  󰈙 Files ───────────────────────────╮╭ 5   Details ───────────────────────────────────────────────────────────────╮
+│   ? README.md                         ││   diff --git a/src/lib.rs b/src/lib.rs                                      │
+│    src/                              ││   index 1111111..2222222 100644                                             │
+│     M lib.rs                          ││   --- a/src/lib.rs                                                          │
+│     M main.rs                         ││   +++ b/src/lib.rs                                                          │
+│                                       ││   @@ -1,3 +1,3 @@                                                           │
+│                                       ││ │ -old first                                                                │
+│                 ╭ ? Commands ──────────────────────────────────────────────────────────────────────╮                 │
+│                 │ Local commands                                                                   │                 │
+│                 │   Space    toggle selection in custom patch                                      │                 │
+│                 │   d        remove selection from original commit                                 │                 │
+╰─────────────────│   a        hunk/block/line mode                                                  │                 │
+╭ 2   Branches ──│   v        select range                                                          │                 │
+│ main           │   x        mark hunk or line                                                     │                 │
+│  feature/mvp    │   Esc      clear selection                                                       │                 │
+│                 │   Esc      back to commit files                                                  │                 │
+│                 │   e        edit worktree file                                                    │                 │
+│                 │   Ctrl+o   copy selected paths                                                   │                 │
+│                 │   Tab      preview accumulated patch                                             │                 │
+│                 │ Global commands                                                                  │                 │
+│                 │   p        pull                                                                  │                 │
+╰─────────────────│   F        fetch                                                                 │                 │
+╭ 3   Commit File│   P        push                                                                  │                 │
+│  ╎ src/        │   r        refresh                                                               │                 │
+│  ╎  M lib.rs    │   h        focus previous                                                        │─────────────────╯
+│                 │ ──────────────────────────────────────────────────────────────────────────────── │─────────────────╮
+│                 │ j/k ↑/↓ select  / search  Enter run  Esc close                                   │                 │
+│                 ╰──────────────────────────────────────────────────────────────────────────────────╯                 │
+│                                       ││                                                                             │
+╰ patch: 1 file ────────────────────────╯│                                                                             │
+╭ 4   Stash ───────────────────────────╮│                                                                             │
+│ stash@{0} WIP on main: local test    ││                                                                             │
+│                                       ││                                                                             │
+│                                       ││                                                                             │
+╰───────────────────────────────────────╯╰─────────────────────────────────────────────────────────────────────────────╯
+ ?  commands

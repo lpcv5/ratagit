@@ -369,7 +369,57 @@ Commits panel rules:
     `k` updates the selected range, Details follows the selected file/folder
     pathspecs, and `Esc` exits multi-select before closing the subpanel
   - `Esc` returns to the parent Commits panel and restores the selected commit diff
-  - additional commit-files local shortcuts are deferred
+  - `c` checks out the selected file, directory descendants, or visual range
+    from that commit into the worktree, preserving the index; locally changed
+    selected paths and untracked/ignored obstructions are rejected
+  - `d` removes the selection's changes from the original commit after
+    confirmation. The commit and descendants are rewritten on the current
+    branch. A clean worktree and linear history are required; replay conflicts
+    leave HEAD, index and worktree unchanged. Other branches are not rewritten
+  - `Space` adds/removes the selected files, directory descendants or visual
+    range in a custom patch. Partially included files become wholly included;
+    toggling a wholly included selection removes it. `a` toggles all files
+  - `Ctrl+o` copies selected file paths; `y` opens a path-copy menu; `e` edits
+    the current worktree file. `?` lists the available local commands
+  - `Enter` on a file opens its native historical patch in hunk selection mode.
+    `j/k` selects hunks; `a` cycles hunk/block/line selection, `v` selects a
+    range and `x` marks independent selections. `Space` toggles those changes
+    in the accumulated custom patch; `d` removes selected changes from the original commit, with
+    confirmation. `n/N` switches files; `Esc` clears selections before returning
+    to Commit Files. Historical patches never stage or unstage working changes
+    The Details bottom border shows the current hunk/block/line mode and file.
+    File previews, interactive hunks and custom patch previews use the same
+    content alignment and theme colors, including add/remove backgrounds
+  - inclusion survives file switching, leaving the subpanel, panel navigation
+    and refreshes. One patch belongs to one source commit; selecting another
+    source asks before replacing it. Nothing is saved across application runs
+  - a thin `│` rail marks whole files and included source lines; a dotted `╎`
+    rail marks partially included files/directories. File rails occupy the
+    existing gutter, preserving tree/status alignment and batch/search markers.
+    Temporary diff ranges/marks retain their heavier `┃` rail
+  - `Ctrl+P` opens custom-patch options: `c` clear, `a` apply to worktree, `r`
+    apply in reverse, `d` remove the accumulated patch from its original commit,
+    `y` copy to clipboard, and `p` preview. Arrow/j/k navigation and Enter also
+    work. `Tab` previews from the file/diff view; Tab/Esc returns to the source
+  - preview is read-only and limited to 5000 lines; copy and operations use the
+    entire accumulated patch. Copy is offered for UTF-8 patch output. Worktree
+    apply/reverse preserve the index/history and check the entire patch before
+    writing. Successful history removal clears the selection; apply/reverse
+    retain it for reuse. Clearing performs no Git mutation
+  - file/diff shortcuts use the same key badges and `? commands` entry as other
+    panels, with the full command list available through `?`. Patch counts sit
+    in the Commit Files border. Preview uses the Details panel's normal diff
+    styling with a Custom Patch title and a border caption for count, short
+    source ID, read-only status and any display limit. Options use the same
+    aligned key/label rows and selected-row style as the command palette
+  - whole-file selections support binary, rename, type/mode, added/deleted and
+    empty-file metadata. Partial selections require complete native text patches
+    without rename/type/mode changes. The builder is bounded to 1024 files and
+    16 MiB of native source data; incomplete/oversized loads are rejected as a
+    unit. A source load is also bounded to 5000 native lines
+  - these operations also work in Branch Commit Files. Keys follow lazygit's
+    patch-builder conventions; moving patches into other/new commits or the
+    index and external diff-tool/default-app launching are outside this slice
 - `/` searches loaded commit rows by visible row identity: short hash, author
   initials, and summary/message first line; confirming or navigating matches
   refreshes Commits Details
@@ -392,8 +442,9 @@ Themes are selected by a JSON configuration loaded once before terminal setup.
 The `default` and `tokyo-night` presets support partial semantic color overrides
 for panels, selections, badges, commits, files, diffs, and modals. Cursor and
 batch selection replace all text colors within selected rows; modal lists,
-including the command palette, share a full-width selection pair. Native Git
-ANSI history and log colors remain intact.
+including the command palette, share a full-width selection pair. Full-commit
+history and branch logs retain Git ANSI colors; Commit Files previews share the
+themed diff backgrounds and gutter used by hunk selection and custom patches.
 
 `RATAGIT_CONFIG` selects an explicit file, which must exist. Otherwise the app
 uses `%APPDATA%\ratagit\config.json` on Windows, or

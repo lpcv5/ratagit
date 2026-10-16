@@ -5,7 +5,7 @@ use ratagit_harness::Runtime;
 use ratagit_ui::TerminalSize;
 use std::{fs, path::Path, process::Command, time::Duration};
 
-fn git(repo: &Path, args: &[&str]) -> Vec<u8> {
+pub(super) fn git(repo: &Path, args: &[&str]) -> Vec<u8> {
     let output = Command::new("git")
         .current_dir(repo)
         .args(args)
@@ -21,7 +21,7 @@ fn git(repo: &Path, args: &[&str]) -> Vec<u8> {
     output.stdout
 }
 
-fn content(changes: &[usize]) -> String {
+pub(super) fn content(changes: &[usize]) -> String {
     (1..=60)
         .map(|line| {
             if changes.contains(&line) {
@@ -33,25 +33,33 @@ fn content(changes: &[usize]) -> String {
         .collect()
 }
 
-struct Keys {
-    runtime: Runtime<HybridGitBackend>,
-    sequence: Vec<KeyCode>,
+pub(super) struct Keys {
+    pub(super) runtime: Runtime<HybridGitBackend>,
+    pub(super) sequence: Vec<(KeyCode, KeyModifiers)>,
 }
 
 impl Keys {
-    fn key(&mut self, code: KeyCode) {
-        self.sequence.push(code);
-        match key_effect_for_key(self.runtime.state(), code, KeyModifiers::NONE, 8, 18, 10) {
+    pub(super) fn key(&mut self, code: KeyCode) {
+        self.modified(code, KeyModifiers::NONE);
+    }
+
+    pub(super) fn control(&mut self, ch: char) {
+        self.modified(KeyCode::Char(ch), KeyModifiers::CONTROL);
+    }
+
+    fn modified(&mut self, code: KeyCode, modifiers: KeyModifiers) {
+        self.sequence.push((code, modifiers));
+        match key_effect_for_key(self.runtime.state(), code, modifiers, 8, 18, 10) {
             KeyEffect::Dispatch(action) => self.runtime.dispatch_ui(action),
             effect => panic!("unexpected key effect {code:?}: {effect:?}"),
         }
     }
 
-    fn screen(&self) -> String {
+    pub(super) fn screen(&self) -> String {
         self.runtime.render_terminal_text()
     }
 
-    fn save(&self, repo: &Path, case: &str) {
+    pub(super) fn save(&self, repo: &Path, case: &str) {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("tmp/pr8-details-keyboard")
             .join(case);
@@ -227,3 +235,104 @@ case!(test_keyboard_visual_hunks_stage, "visual", "stage");
 case!(test_keyboard_visual_hunks_unstage, "visual", "unstage");
 case!(test_keyboard_visual_hunks_discard, "visual", "discard");
 case!(test_keyboard_staged_d_unstages, "single", "unstage-d");
+
+#[test]
+fn test_commit_files_keyboard_enter_hunks_apply_reverse_and_remove_original_hunk() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tmp/commit-files-keyboard");
+    fs::create_dir_all(&root).unwrap();
+    let temp = tempfile::tempdir_in(&root).unwrap();
+    let repo = temp.path();
+    git(repo, &["init", "-b", "main"]);
+    for (key, value) in [
+        ("user.name", "ratagit-tests"),
+        ("user.email", "tests@example.com"),
+        ("core.autocrlf", "false"),
+        ("commit.gpgsign", "false"),
+    ] {
+        git(repo, &["config", key, value]);
+    }
+    fs::write(repo.join("a.txt"), content(&[])).unwrap();
+    fs::write(repo.join("b.txt"), "base\n").unwrap();
+    git(repo, &["add", "."]);
+    git(repo, &["commit", "-m", "base"]);
+    fs::write(repo.join("a.txt"), content(&[2, 28, 56])).unwrap();
+    git(repo, &["commit", "-am", "three hunks"]);
+    fs::write(repo.join("b.txt"), "descendant sentinel\n").unwrap();
+    git(repo, &["commit", "-am", "later sentinel"]);
+    let original = git(repo, &["rev-parse", "HEAD"]);
+    let mut keys = Keys {
+        runtime: Runtime::new(
+            AppContext::default(),
+            HybridGitBackend::open(repo).unwrap(),
+            TerminalSize {
+                width: 140,
+                height: 40,
+            },
+        ),
+        sequence: Vec::new(),
+    };
+    keys.runtime.dispatch_ui(UiAction::RefreshAll);
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        keys.key(KeyCode::Char('3'));
+        keys.key(KeyCode::Char('j'));
+        keys.key(KeyCode::Enter);
+        keys.key(KeyCode::Enter);
+        assert_eq!(keys.runtime.state().ui.focus, PanelFocus::Details);
+        assert_eq!(
+            keys.runtime.state().ui.details.patch.mode,
+            ratagit_core::partial::SelectionMode::Hunk
+        );
+        assert!(keys.screen().contains("CHANGED-02"));
+        keys.key(KeyCode::Char(' '));
+        keys.control('p');
+        keys.key(KeyCode::Char('r'));
+        assert!(keys.screen().contains("index and commit history are"));
+        assert!(
+            keys.screen()
+                .contains("preserved; conflicting patches are rejected")
+        );
+        keys.key(KeyCode::Enter);
+        assert_eq!(
+            fs::read_to_string(repo.join("a.txt")).unwrap(),
+            content(&[28, 56])
+        );
+        assert_eq!(
+            git(repo, &["show", ":a.txt"]),
+            content(&[2, 28, 56]).as_bytes()
+        );
+        assert_eq!(git(repo, &["rev-parse", "HEAD"]), original);
+        keys.control('p');
+        keys.key(KeyCode::Char('a'));
+        keys.key(KeyCode::Enter);
+        assert_eq!(
+            fs::read_to_string(repo.join("a.txt")).unwrap(),
+            content(&[2, 28, 56])
+        );
+        keys.key(KeyCode::Char('j'));
+        keys.key(KeyCode::Char('d'));
+        assert!(keys.screen().contains("descendants will be rewritten"));
+        keys.key(KeyCode::Enter);
+        assert_eq!(
+            fs::read_to_string(repo.join("a.txt")).unwrap(),
+            content(&[2, 56])
+        );
+        assert_eq!(
+            git(repo, &["show", "HEAD:a.txt"]),
+            content(&[2, 56]).as_bytes()
+        );
+        assert_eq!(git(repo, &["show", "HEAD:b.txt"]), b"descendant sentinel\n");
+        assert_eq!(
+            git(repo, &["log", "-2", "--format=%s"]),
+            b"later sentinel\nthree hunks\n"
+        );
+        assert!(git(repo, &["status", "--porcelain=v1"]).is_empty());
+        assert_eq!(keys.runtime.state().ui.focus, PanelFocus::Commits);
+        assert!(!keys.runtime.state().ui.commits.files.active);
+    }));
+    keys.save(repo, "commit-files-historical-hunks");
+    if let Err(error) = result {
+        let kept = temp.keep();
+        eprintln!("retained Git fixture: {}", kept.display());
+        std::panic::resume_unwind(error);
+    }
+}
