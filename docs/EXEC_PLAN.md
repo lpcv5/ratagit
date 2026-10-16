@@ -1,59 +1,73 @@
-# EXEC_PLAN.md
+# Active development plan
 
 ## Active Slice
 
-Name: Isolate backend tracing regression before main promotion
-
+Name: Make agent workflow proportional to risk
 Status: completed
 
 ## Problem
 
-The user designated feature/newarch as authoritative for main. Integration
-preparation passed 606 local tests, but PR CI exposed a flaky log-capture test:
-one Ubuntu run captured no command-start event while another passed on the same
-head. The test shares process-wide tracing callsites with parallel unit tests.
+Agent instructions prescribe work independent of risk, duplicate policies across
+documents, and CI reruns snapshot/harness subsets after the complete suite.
 
 ## Smallest Slice
 
-Move the existing log-capture regression into its own integration-test binary,
-retain every logging/privacy assertion, and keep its real repository under
-workspace tmp/ with cleanup on success or panic. Revalidate and deliver PR #9.
+Research current primary sources and adopt an outcome-driven, risk-based workflow.
+Update AGENTS.md, development/testing/CI/tooling guidance and CI commands together
+so contributors receive one consistent contract. Record research and an evaluation
+protocol in docs/AGENT_WORKFLOW_REVIEW.md.
 
 ## Non-Goals
 
-Change production logging, weaken assertions, serialize unrelated tests, restore
-retired main files, rewrite history, or alter another worktree's checkout.
+No application behavior, architecture, runtime, dependencies, product assertions,
+snapshot baselines, model configuration, or remote repository changes.
 
 ## Expected Files
 
-docs/EXEC_PLAN.md, libs/ratagit-git/src/hybrid/tests.rs, and a dedicated backend
-tracing integration test. No production-layer changes.
+AGENTS.md, docs/DEVELOPMENT_LOOP.md, docs/TESTING.md, docs/CI.md,
+docs/TOOLING.md, docs/AGENT_WORKFLOW_REVIEW.md, docs/EXEC_PLAN.md,
+.github/workflows/ci.yml, tests/exec_plan.rs. The discovered working-tree gate
+requires a narrow test-infrastructure update to implement optional small plans.
+
+## Acceptance criteria
+
+- Short tasks need no plan file; complex/high-risk tasks retain a durable plan.
+- Changed behavior has relevant evidence; new tests follow coverage gaps.
+- UI snapshots, real-Git isolation, async regressions and failure artifacts remain.
+- Full workspace tests run once per CI platform; strict production lint matches
+  repository policy. Ubuntu and Windows remain required.
+- Research distinguishes vendor evidence from project-specific hypotheses.
 
 ## Tests
 
-Run the isolated logging test, the parallel backend unit suite, formatting,
-locked compilation, strict Clippy, and locked workspace tests. Require Ubuntu
-and Windows PR CI to pass before merging the validated head.
+Retain plan structure/completion tests; remove the obsolete test requiring every
+dirty worktree to edit its plan. This rule cannot classify risk and is bypassed
+by a clean CI checkout. Product assertions are unchanged.
+Validate CI test selection against Cargo's test inventory, review workflow and
+documentation consistency, and run the complete existing suite. Existing harness
+tests verify artifact generation and scenario manifest consistency.
 
 ## Harness Decision
 
-No new scenario: only test-process isolation changes. Existing assertions still
-check command metadata, timings, status parsing, and absence of Git payloads.
+No new product scenario: only workflow, CI and plan-test infrastructure changes.
+Run focused plan tests and existing manifest/artifact tests in the full suite.
 
 ## Validation
 
-Passed: cargo fmt; cargo fmt --check; cargo check --locked;
-cargo clippy --workspace --lib --bins -- -D warnings;
-cargo clippy --locked --all-targets --all-features -- -D warnings;
-cargo test --locked; git diff --check; dedicated tracing and backend unit tests.
-PR CI and final delivery are tracked in the pull request.
+cargo fmt; cargo fmt --check;
+cargo clippy --locked --workspace --lib --bins -- -D warnings;
+cargo check --locked --workspace; cargo test --locked --workspace;
+git diff --check. Record actual results after execution.
 
 ## Completion Evidence
 
-The dedicated tracing test and all 52 parallel backend unit tests passed.
-Formatting, locked compilation, both strict Clippy checks, and all 606 workspace
-tests passed with no failures or ignored tests. Log:
-tmp/newarch-isolated-tracing-tests.log. All seven logging/privacy assertions
-remain; the fixture uses workspace tmp/ with RAII cleanup. Integration merge
-a5248df records old main as an ancestor while preserving the feature tree.
-PR #9 tracks Ubuntu/Windows CI and final integration.
+Windows validation passed: cargo fmt, cargo fmt --check, production Clippy,
+cargo check --locked --workspace, and cargo test --locked --workspace (605 tests,
+zero failures or ignored tests). Focused plan tests passed. Cargo test inventory
+confirmed snapshot, harness, manifest and failure-artifact coverage in the full
+workspace command. Local documentation links and git diff --check passed.
+
+The first run exposed the old plan-shape requirement and working-tree policy;
+the plan retains its structured headings and only the obsolete dirty-worktree
+test was removed. Product tests and assertions remain intact. Ubuntu CI and
+agent A/B efficiency measurements have not been run locally.
