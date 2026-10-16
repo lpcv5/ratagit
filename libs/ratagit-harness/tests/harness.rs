@@ -419,11 +419,54 @@ fn harness_command_palette_executes_global_pull() {
             panel: PanelFocus::Details,
         },
         UiAction::OpenCommandPalette,
+        UiAction::MoveCommandPaletteDown,
+        UiAction::MoveCommandPaletteUp,
+        UiAction::StartPaletteSearch,
+        UiAction::PaletteInput('p'),
+        UiAction::PaletteInput('u'),
+        UiAction::PaletteInput('l'),
+        UiAction::PaletteInput('l'),
+        UiAction::FinishPaletteSearch,
         UiAction::ExecuteCommandPalette {
             details_scroll_lines: 4,
             details_visible_lines: 10,
         },
     ];
+    let fixture = fixture_empty_repo();
+    let mut runtime = Runtime::new(
+        AppContext::default(),
+        MockGitBackend::new(fixture.clone()),
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    );
+    for action in &inputs[..inputs.len() - 1] {
+        runtime.dispatch_ui(action.clone());
+        if *action == UiAction::OpenCommandPalette {
+            assert!(
+                runtime
+                    .render_terminal_text()
+                    .contains("j/k ↑/↓ select  / search")
+            );
+        }
+        if *action == UiAction::StartPaletteSearch {
+            let screen = runtime.render_terminal_text();
+            assert!(screen.contains("Filter: "));
+            assert!(screen.contains("Enter/Esc finish search"));
+        }
+    }
+    assert!(runtime.state().ui.command_palette.active);
+    assert!(!runtime.state().ui.command_palette.search_active);
+    assert_eq!(runtime.state().ui.command_palette.query, "pull");
+    assert!(runtime.render_terminal_text().contains("Filter: pull"));
+    assert!(runtime.render_terminal_text().contains("Enter run"));
+    assert!(runtime.backend().operations().is_empty());
+    assert_eq!(runtime.backend().snapshot(), &fixture);
+    runtime.dispatch_ui(inputs.last().unwrap().clone());
+    assert!(!runtime.state().ui.command_palette.active);
+    assert!(runtime.backend().operations().iter().any(|op| op == "pull"));
+
     assert_scenario(MockScenario::new(
         "command_palette_executes_global_pull",
         fixture_empty_repo(),

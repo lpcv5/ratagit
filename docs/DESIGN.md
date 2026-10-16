@@ -170,9 +170,13 @@ Focus model:
   modes keep priority over panel shortcuts, and confirmed search queries can
   fall through to panel shortcuts only after search-specific keys are checked.
 - `?` maps to `OpenCommandPalette` from normal panel and confirmed-search-query
-  flow. While the command palette is active, `j` / `k`, arrows, `Enter`, and
-  `Esc` are handled by command-palette actions before panel shortcuts; `Enter`
-  executes the selected command and closes the palette.
+  flow. The palette owns navigation and search-input modes before panel shortcuts.
+  Navigation uses `j` / `k` or arrows to select, `/` to enter search, `Enter` to
+  execute the selected command, and `Esc` to close. Search input accepts literal
+  characters (including j/k), Backspace, and arrow selection; `Enter` or `Esc`
+  finishes editing and retains the filter without executing. `/` in navigation
+  resumes editing the retained query. Other ordinary navigation-mode characters
+  are ignored, including `q`; selecting Quit explicitly or `Ctrl+C` quits.
 - `Ctrl+U` and `Ctrl+D` map to global Details scroll actions before
   mode-specific key handling. The input layer computes the step as
   `max(1, details_content_height * 2 / 5)` from the current terminal layout.
@@ -219,7 +223,12 @@ Search interaction:
   `Global commands` sections. Section labels are not selectable; command rows
   are selectable, viewported around the selected command when the list is taller
   than the modal content, and execute existing reducer actions rather than
-  introducing separate command semantics.
+  introducing separate command semantics. Palette search state belongs to
+  `AppContext.ui.command_palette`, independently of panel search. Opening the
+  palette clears its query and starts navigation; hints switch between
+  `j/k ↑/↓ select`, `/ search`, `Enter run`, `Esc close` and search-editing help.
+  The filter row is visible during search even before any text is entered, and
+  stays visible for a nonempty confirmed query.
 - Matches are case-insensitive and deterministic:
   - Files and Commit Files match full paths
   - Branches match branch names

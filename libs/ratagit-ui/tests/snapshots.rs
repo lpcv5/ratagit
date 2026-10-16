@@ -524,6 +524,35 @@ fn terminal_snapshot_command_palette_modal() {
 }
 
 #[test]
+fn terminal_snapshot_command_palette_search_modes() {
+    let mut state = AppContext::default();
+    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
+    let size = TerminalSize {
+        width: 100,
+        height: 30,
+    };
+    update(&mut state, Action::Ui(UiAction::OpenCommandPalette));
+    update(&mut state, Action::Ui(UiAction::StartPaletteSearch));
+    let text = render_terminal_text(&state, size);
+    assert!(text.contains("Filter: "));
+    assert!(text.contains("Enter/Esc finish search"));
+    assert!(!text.contains("Enter run"));
+    insta::assert_snapshot!("palette_search_empty", text);
+
+    for ch in "scroll".chars() {
+        update(&mut state, Action::Ui(UiAction::PaletteInput(ch)));
+    }
+    update(&mut state, Action::Ui(UiAction::FinishPaletteSearch));
+    update(&mut state, Action::Ui(UiAction::MoveCommandPaletteDown));
+    let text = render_terminal_text(&state, size);
+    assert!(text.contains("Filter: scroll"));
+    assert!(text.contains("j/k ↑/↓ select  / search"));
+    assert!(text.contains("Enter run"));
+    assert!(!text.contains("finish search"));
+    insta::assert_snapshot!("palette_search_confirmed", text);
+}
+
+#[test]
 fn terminal_snapshot_refresh_pending_loading() {
     let mut state = AppContext::default();
     let commands = update(&mut state, Action::Ui(UiAction::RefreshAll));
@@ -2737,6 +2766,7 @@ fn test_terminal_snapshot_migrated_commands() {
         height: 30,
     };
     update(&mut state, Action::Ui(UiAction::OpenCommandPalette));
+    update(&mut state, Action::Ui(UiAction::StartPaletteSearch));
     for ch in "fetch".chars() {
         update(&mut state, Action::Ui(UiAction::PaletteInput(ch)));
     }

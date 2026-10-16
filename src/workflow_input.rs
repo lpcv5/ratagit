@@ -119,7 +119,8 @@ pub(crate) fn host(
     }
     if state.ui.workflow.dialog.is_some()
         || state.ui.workflow.remote_request.is_some()
-        || (state.ui.command_palette.active && code != KeyCode::Enter)
+        || (state.ui.command_palette.active
+            && (state.ui.command_palette.search_active || code != KeyCode::Enter))
     {
         return None;
     }

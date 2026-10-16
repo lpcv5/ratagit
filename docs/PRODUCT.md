@@ -15,9 +15,11 @@ ratagit aims to replicate lazygit UX with a Rust + ratatui implementation.
 
 Command workflows:
 
-- `?` opens the command modal, accepts text to filter keys/labels, uses
-  arrow keys to select, `Enter` to execute, and `Esc` to close. Empty results are
-  explicit. `j/k` are filter text inside this modal.
+- `?` opens the command modal in navigation mode: `j/k` or arrows select,
+  `/` enters search, `Enter` executes, and `Esc` closes. Search filters keys/labels;
+  while editing, `j/k` are literal text and `Enter` or `Esc` returns to navigation
+  with the filter retained, without executing. `/` resumes editing the query.
+  Empty results are explicit; ordinary typing in navigation does not filter.
 - `F` fetches all remotes with pruning outside commit lists. In main/branch
   commit lists, `F` creates a fixup commit; fetch remains in the command palette.
   Lowercase `f` retains direct commit fixup.
@@ -113,8 +115,9 @@ Navigation rules:
 - `p` pulls and `P` pushes from normal mode regardless of focused panel; active
   text inputs and confirmation modals keep their own key handling
 - `?` opens an executable command palette with `Local commands` and
-  `Global commands` sections; text filters entries, arrows select an entry, `Enter`
-  runs it, and `Esc` closes it
+  `Global commands` sections; `j/k` or arrows select, `/` starts search, `Enter`
+  runs the selection, and `Esc` closes. In search, `Enter`/`Esc` finishes editing
+  and retains the filter for navigation
 - `p` and `P` are also available from the command palette's Global commands
   section, alongside refresh, focus navigation, Details scrolling, and quit
 - `A` amends staged changes into `HEAD` by default; when the main Commits panel

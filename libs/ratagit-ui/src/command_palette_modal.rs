@@ -25,16 +25,21 @@ pub(crate) fn render_command_palette_modal(
         return;
     }
 
+    let hints: &[(&str, &str)] = if state.ui.command_palette.search_active {
+        &[("arrows", "select"), ("Enter/Esc", "finish search")]
+    } else {
+        &[
+            ("j/k ↑/↓", "select"),
+            ("/", "search"),
+            ("Enter", "run"),
+            ("Esc", "close"),
+        ]
+    };
     render_modal(
         frame,
         area,
         ModalSpec::new("Commands", ModalTone::Info, 78, 22, 24, 12, 1).with_icon("?"),
-        &[&[
-            ("arrows", "select"),
-            ("type", "filter"),
-            ("Enter", "run"),
-            ("Esc", "close"),
-        ]],
+        &[hints],
         |frame, content| {
             render_menu_lines(
                 frame,
@@ -48,7 +53,8 @@ pub(crate) fn render_command_palette_modal(
 }
 
 fn palette_lines(state: &AppContext, visible_rows: usize, theme: &UiTheme) -> Vec<Line<'static>> {
-    let filtering = !state.ui.command_palette.query.is_empty();
+    let filtering =
+        state.ui.command_palette.search_active || !state.ui.command_palette.query.is_empty();
     let visible_rows = visible_rows.saturating_sub(usize::from(filtering));
     let rows = palette_rows(state);
     let no_matches = rows.is_empty();

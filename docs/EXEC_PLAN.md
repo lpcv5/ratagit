@@ -2,107 +2,91 @@
 
 ## Active Slice
 
-Name: Refactor UI colors into a configurable, validated theme
+Name: Command palette slash search and j/k navigation
 Status: completed and verified
 
 ## Problem
 
-Rebase, reset and command palette selection remains difficult to read because
-modal selection uses terminal-dependent ANSI colors. Palette/workflow menus
-also highlight only their text width. The user expanded scope to inspect and
-refactor the color system so configuration can control the colors and prevent
-unreadable foreground/background combinations.
+The command palette currently treats ordinary typing as search input. The user
+wants `/` to enter search explicitly and `j` / `k` to navigate the command list.
 
 ## Smallest Slice
 
-Centralize semantic UI colors, including existing scattered diff and commit
-colors, in an immutable UiTheme. Load a user JSON configuration before terminal
-initialization; allow a built-in base theme plus named semantic color overrides.
-Use RATAGIT_CONFIG for an explicit path and platform user config directories for
-the default. Pass the theme explicitly through RenderContext and rendering
-helpers; no mutable global theme, filesystem or environment access in rendering.
-Retain default convenience APIs for existing consumers/tests.
-
-Use explicit dark RGB text on pale blue for modal selection and full-row painting
-for palette/workflow lists. Validate configured foreground/background pairs for
-selection, modal selection and diff highlights, reject malformed colors/unknown
-roles/low contrast with actionable startup errors. Preserve unselected semantic
-colors and native Git ANSI history output.
+Add an explicit palette search-editing state owned by AppContext and driven by
+reducer actions. Open the palette in navigation mode; `j` / `k` and arrow keys
+move selection. `/` enters search, where characters (including j/k) and
+Backspace edit the filter. Enter/Esc return from editing to navigation without
+executing a command.
+Retain the filter when returning to navigation so users can select a match.
+In navigation, Enter executes and Esc closes the palette. Backspace in navigation
+must not edit the filter; reopening / resumes editing the retained query.
+Update command palette hints and relevant behavior/design documentation.
 
 Acceptance:
-- User config selects default or Tokyo Night base and overrides documented roles.
-- All application-owned colors come from one theme (native Git ANSI is preserved).
-- Same state/size/context yields deterministic output with no global mutation.
-- Invalid or unreadable paired overrides report the field and error before raw mode.
-- Selected modal labels, indicator and padding use one pair with contrast >=7:1;
-  other enforced pairs meet >=4.5:1.
-- Tests prove custom colors in real rendered cells across panels, modals and diffs,
-  parsing/path/error behavior, and independence of two simultaneous themes.
-- Existing text snapshots and navigation/Git behavior remain unchanged.
+- Opening the palette starts in navigation mode with an empty query.
+- j/k navigate without changing the query; other ordinary typing does not filter.
+- / explicitly enters search; j/k are literal query text while editing.
+- Search can return to navigation while retaining the current filter.
+- Execution, cancellation, quit, external editor routing and arrow navigation
+  continue to respect palette ownership and search mode.
+- Tests cover key mapping, reducer transitions, rendered hints and a harness
+  flow with operation trace and unchanged Git state for navigation/search.
 
 ## Non-Goals
 
-No Git/backend changes, live config watching, theme editor, remote writes,
-automatic commit/push, or application state ownership changes.
+No backend/Git mutation changes, global key rebinding, other panel search changes,
+new dependencies, automatic commit or push.
 
 ## Expected Files
 
-- libs/ratagit-ui/src/theme.rs: public immutable model, defaults, validation.
-- UI render helpers, projections, modal and diff formatters: explicit theme inputs.
-- src/config.rs and main.rs: startup config discovery/loading/errors.
-- Cargo manifests/lockfile as required for existing serde/serde_json dependencies.
-- UI/config regression tests and existing style expectations.
-- docs/THEMES.md with runnable example config, DESIGN/PRODUCT/ARCHITECTURE updates.
+- src/input.rs and input/workflow tests: palette key handling and execution routing.
+- libs/ratagit-core: palette state/actions and reducer transitions.
+- libs/ratagit-ui: mode-aware palette hint text and UI snapshot coverage.
+- libs/ratagit-harness/tests: palette interaction scenario and scenario index.
+- docs/PRODUCT.md and docs/DESIGN.md: palette interaction contract.
 
 ## Tests
 
-Exact rendered cells across reset/rebase/palette/workflow, panel selections,
-commit/status colors and diff states; contrast table; parsed custom config and
-invalid fields/pairs; platform path precedence tests with injected inputs. Run
-actual Windows executable with default and custom RATAGIT_CONFIG in isolated
-fixtures using existing ConPTY tools. Review any snapshot differences; color-only
-changes should not change text snapshots.
+Extend existing palette mapping, reducer, UI and harness coverage rather than
+adding redundant test layers. Inspect exact snapshot changes and ensure focused
+filters run the intended tests.
 
 ## Harness Decision
 
-Presentation/configuration change: focused UI and executable config tests plus
-live terminal evidence. Existing harness coverage remains in the workspace gate.
+This changes an input flow across executable, core and UI. Extend a deterministic
+palette harness scenario to verify search/navigation UI, operation trace and
+absence of unintended backend mutation, alongside executable key mapping tests.
 
 ## Validation
 
-cargo fmt --check; cargo clippy --locked --workspace --lib --bins -- -D warnings;
-cargo test --locked --workspace; git diff --check. Native Windows tools through
-PowerShell. Stop live executable before rebuilding workspace targets.
+Use the native Windows Rust toolchain through PowerShell. Focused palette tests
+first, then cargo fmt --check; cargo clippy --locked --workspace --lib --bins --
+-D warnings; cargo test --locked --workspace; git diff --check.
 
 ## Completion Evidence
 
-Implemented immutable UiTheme/RenderContext propagation through all panel,
-projection, modal and diff render paths. File/commit/diff application colors now
-come from theme roles. Native Git ANSI output remains intentionally unchanged.
-63 semantic override keys and two built-in presets are documented in THEMES.md.
-The executable loads JSON before terminal setup; missing default config uses
-built-ins, explicit missing/invalid files return path-bearing startup errors.
+Implemented palette-owned search_active state and explicit StartPaletteSearch /
+FinishPaletteSearch actions. Navigation uses j/k, arrows and /; search owns literal
+characters and Backspace, with Enter/Esc retaining the filter and selected row.
+Open, close, execution and HostFinished reset search mode. Editing and execution
+reducers reject actions outside their intended palette mode.
 
-Modal selections use RGB dark-on-pale-blue at >=7:1, full-row including palette
-and workflow padding. Configured selection/batch/badge pairs and all native diff
-pairs validate their resolved contrast. RGB semantic text is checked against its
-base/modal surface. Known identical ANSI/index colors are rejected; inherited
-legacy ANSI/default colors retain documented validation limitations. Removed the
-unused modal.success role after independent review.
+Executable input derives a separate palette-search mode, suppresses plain-q
+fallthrough, and keeps search Enter out of Quit, file editing, path/branch/commit
+copying and external commit editor routes. Global Ctrl+C and Details scrolling
+retain their previous behavior.
 
-Tests include 14 parser/path/error cases, invalid configuration before terminal
-setup, exact default modal selections across choices, per-context custom-theme
-isolation, custom panels/status/commit/diff/modal colors and padding. Existing
-text snapshots passed without any artifact changes. No .snap.new files remain.
+UI hints reflect the active mode and show an empty filter row immediately after
+/. Reviewed all five affected/new snapshots (navigation, empty search, confirmed
+search, filtered search, no matches); no pending .snap.new artifacts. Existing
+selection/theme checks pass. Product/design docs describe the interaction.
 
-Actual Windows TUI captures passed for default fix and a custom JSON loaded via
-RATAGIT_CONFIG. Custom foreground/background and >=50 full-row selection cells
-were checked in reset/rebase/palette before and after moving selection.
-Evidence tmp/ui-readability/select-lists/{before,after,custom}/captures.html,
-per-screen text/color JSON and results.json. Live executable exited normally.
-
-Final cargo fmt --check, strict production workspace Clippy, full locked workspace
-tests (699 passed, zero failed/ignored), and git diff --check passed. Final full
-suite log: bsgrq2s7e.output in the session task directory. Earlier full gate also
-passed; validation strengthening was followed by a complete successful rerun.
-No snapshot baseline changes. No commit or push.
+Extended harness_command_palette_executes_global_pull (same scenario index):
+checks navigation/search hints, retained filter, no backend operations or Git
+state changes before execution, and the selected pull operation afterward.
+Focused checks passed: 184 core tests, 65 executable tests, 166 UI tests and the
+exact palette harness scenario. Independent read-only review found no defects.
+Final cargo fmt --check, strict production workspace Clippy, full locked
+workspace tests (707 passed, zero failed/ignored) and git diff --check passed on
+native Windows. Full suite log: bldommuke.output in the session task directory.
+No commit or push.

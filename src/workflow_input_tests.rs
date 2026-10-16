@@ -95,6 +95,34 @@ fn copy_hosts_external_editor_and_modal_precedence() {
 }
 
 #[test]
+fn palette_search_enter_does_not_copy_branch_or_commit() {
+    for (panel, feature) in [
+        (PanelFocus::Branches, F::CopyBranch),
+        (PanelFocus::Commits, F::CopyCommit),
+    ] {
+        let mut ctx = state(panel);
+        update(&mut ctx, Action::Ui(UiAction::OpenCommandPalette));
+        ctx.ui.command_palette.selected = ctx
+            .command_palette_entries()
+            .iter()
+            .position(|entry| {
+                entry.command == ratagit_core::CommandPaletteCommand::Workflow(feature)
+            })
+            .expect("copy palette command");
+        let copy = effect(&ctx, K::Enter, M::NONE);
+        assert!(matches!(copy, KeyEffect::Host { edit: false, .. }));
+        update(&mut ctx, Action::Ui(UiAction::StartPaletteSearch));
+        assert_eq!(
+            effect(&ctx, K::Enter, M::NONE),
+            KeyEffect::Dispatch(UiAction::FinishPaletteSearch)
+        );
+        assert_eq!(crate::workflow_input::host(&ctx, K::Enter, M::NONE), None);
+        update(&mut ctx, Action::Ui(UiAction::FinishPaletteSearch));
+        assert_eq!(effect(&ctx, K::Enter, M::NONE), copy);
+    }
+}
+
+#[test]
 fn workflow_and_palette_own_capital_c_instead_of_launching_the_editor() {
     let mut ctx = state(PanelFocus::Files);
     update(
@@ -107,11 +135,20 @@ fn workflow_and_palette_own_capital_c_instead_of_launching_the_editor() {
     );
     update(&mut ctx, Action::Ui(UiAction::Workflow(A::Cancel)));
     update(&mut ctx, Action::Ui(UiAction::OpenCommandPalette));
+    assert_eq!(effect(&ctx, K::Char('C'), M::SHIFT), KeyEffect::Ignore);
+    update(&mut ctx, Action::Ui(UiAction::StartPaletteSearch));
     assert_eq!(
         effect(&ctx, K::Char('C'), M::SHIFT),
         KeyEffect::Dispatch(UiAction::PaletteInput('C'))
     );
     ctx.ui.command_palette.query = "commit with external editor".into();
+    ctx.ui.command_palette.selected = 0;
+    assert_eq!(
+        effect(&ctx, K::Enter, M::NONE),
+        KeyEffect::Dispatch(UiAction::FinishPaletteSearch)
+    );
+    assert_eq!(crate::workflow_input::host(&ctx, K::Enter, M::NONE), None);
+    update(&mut ctx, Action::Ui(UiAction::FinishPaletteSearch));
     assert_eq!(effect(&ctx, K::Enter, M::NONE), KeyEffect::CommitEditor);
     update(&mut ctx, Action::Ui(UiAction::CloseCommandPalette));
     update(&mut ctx, Action::Ui(UiAction::Workflow(A::Open(F::Stash))));

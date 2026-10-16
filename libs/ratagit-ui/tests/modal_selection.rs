@@ -272,9 +272,11 @@ fn command_palette_selection_covers_keys_labels_and_padding_after_navigation_fil
         match scenario {
             "next" => act(&mut state, UiAction::MoveCommandPaletteDown),
             "filtered" => {
+                act(&mut state, UiAction::StartPaletteSearch);
                 for ch in "fetch".chars() {
                     act(&mut state, UiAction::PaletteInput(ch));
                 }
+                act(&mut state, UiAction::FinishPaletteSearch);
                 assert_eq!(state.command_palette_entries().len(), 1);
             }
             "scrolled" => {
