@@ -36,11 +36,23 @@ MVP v0 includes a left-nav workspace layout with six panels:
 - Commits: create commit, refresh list, squash/fixup/reword/delete commits, visual multi-select, detached checkout, and a commit Files subpanel
 - Stash: entries, read-only diff preview, apply, pop, and confirmed drop
 - Details:
-  - Files focus projection: show merged `unstaged` then `staged` diff for the currently selected file/folder target
+  - Files focus projection: show native unstaged then staged diff text for the
+    currently selected file/folder target, without synthetic section labels
   - Untracked text files render as new-file patches in the `unstaged` diff section
-  - Git diff/log payloads render Git's native ANSI colors in the Details panel
-    instead of reparsing patch rows into semantic UI roles
+  - Files previews and interactive hunk selection share the same diff row
+    component, with add/remove colors in both modes. Line numbers and their
+    separator are omitted; only cursor/mark indicators precede native diff text.
+  - Diff content preserves native `git diff` headers (`diff --git`, `index`,
+    `---`/`+++`, modes and binary metadata), hunk headers and single-character
+    prefixes. No extra space is inserted after `+`/`-`; indentation and blank
+    context lines are retained. Tabs use eight-column stops within diff content.
+  - The hunk counter and inline keyboard-help rows are removed; diff content
+    uses the full panel height. Keyboard help remains in the shortcut bar.
+  - History diff/log payloads preserve Git's native ANSI colors
   - While a selected file diff is loading, Details keeps the previous content visible until new content or an error arrives
+  - Entering Details keeps Files at its expanded height. The Details content
+    column stays fixed, and its existing preview/scroll remain visible while the
+    reviewed patch loads; partial writes become available only after loading.
   - Branches focus projection: show the selected branch's native `git log --graph` output with Git's ASCII graph and ANSI colors preserved, limited to 50 commits
   - Commits focus projection: show the selected commit's header and a bounded patch diff preview
   - Commit Files subpanel projection: show the selected file or folder's patch within the selected commit

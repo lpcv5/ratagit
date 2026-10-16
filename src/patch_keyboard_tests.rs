@@ -120,7 +120,8 @@ fn scenario(selection: &str, operation: &str) {
         assert_eq!(keys.runtime.state().ui.focus, PanelFocus::Files);
         keys.key(KeyCode::Enter);
         assert_eq!(keys.runtime.state().ui.focus, PanelFocus::Details);
-        assert!(keys.screen().contains("Hunk 1/3"));
+        assert!(keys.screen().contains("-line-05"));
+        assert!(!keys.screen().contains("j/k:move"));
         assert_eq!(
             keys.runtime.state().ui.details.patch.staged,
             operation == "unstage"
@@ -134,14 +135,22 @@ fn scenario(selection: &str, operation: &str) {
                 for c in "xjjx".chars() {
                     keys.key(KeyCode::Char(c));
                 }
-                assert!(keys.screen().contains("2 selected"));
+                assert_eq!(
+                    ratagit_core::partial::marked_indices(keys.runtime.state()).len(),
+                    2
+                );
+                assert!(keys.screen().contains('┃'));
                 vec![5, 45]
             }
             "visual" => {
                 for c in "vj".chars() {
                     keys.key(KeyCode::Char(c));
                 }
-                assert!(keys.screen().contains("2 selected | Range"));
+                assert_eq!(
+                    ratagit_core::partial::marked_indices(keys.runtime.state()).len(),
+                    2
+                );
+                assert!(keys.screen().contains('┃'));
                 assert_eq!(
                     keys.runtime.state().ui.details.patch.mode,
                     ratagit_core::partial::SelectionMode::Block

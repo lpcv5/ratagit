@@ -6,35 +6,33 @@ pub fn patch_rows(patch: &Patch) -> Vec<PatchRow> {
     }
     let mut rows = Vec::new();
     for (file, entry) in patch.files.iter().enumerate() {
-        let path = entry
-            .new
-            .path
-            .as_ref()
-            .or(entry.old.path.as_ref())
-            .map(|p| p.to_string_lossy())
-            .unwrap_or_default();
-        rows.push(header(format!(
-            "--- {} [{:?}]{}",
-            path,
-            entry.source,
-            if entry.binary {
-                " (binary; read only)"
-            } else {
-                ""
-            }
-        )));
+        rows.extend(
+            String::from_utf8_lossy(&entry.header)
+                .lines()
+                .map(|line| header(line.to_string())),
+        );
         for (hunk, entry) in entry.hunks.iter().enumerate() {
             rows.push(header(
                 String::from_utf8_lossy(&entry.header)
-                    .trim_end()
+                    .trim_end_matches(['\r', '\n'])
                     .to_string(),
             ));
             for (line, entry) in entry.lines.iter().enumerate() {
-                let text = String::from_utf8_lossy(&entry.content)
+                let content = if entry.kind == PatchLineKind::NoNewline {
+                    entry.content.strip_prefix(b"\n").unwrap_or(&entry.content)
+                } else {
+                    &entry.content
+                };
+                let text = String::from_utf8_lossy(content)
                     .trim_end_matches(['\r', '\n'])
-                    .replace('\t', "    ")
                     .chars()
-                    .map(|c| if c.is_control() { '\u{fffd}' } else { c })
+                    .map(|c| {
+                        if c.is_control() && c != '\t' {
+                            '\u{fffd}'
+                        } else {
+                            c
+                        }
+                    })
                     .collect();
                 rows.push(PatchRow {
                     text,

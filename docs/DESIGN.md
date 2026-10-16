@@ -3,9 +3,9 @@
 ## PR #8 migration decisions
 
 The surrounding baseline remains newarch. The Details diff follows PR #8: stable
-old/new line-number columns (hidden in narrow panes), `>` cursor and `┃` mark
+unnumbered diff content, `>` cursor and `┃` mark
 gutters, distinct staged/unstaged add/remove backgrounds, cursor versus mark
-colors, and mode/position/selection/range status. The existing layout and
+colors. The hunk counter and inline keyboard-help rows are removed. The existing layout and
 confirmation modal remain. Details uses explicit row styles so List cursor
 highlighting cannot overwrite multiple selected lines or their add/remove colors.
 Native source patch bytes are separate from combined display rows. A display
@@ -13,6 +13,26 @@ mapping never authorizes a write; missing/ambiguous mappings fall back to source
 previews. Hunk/line selection, independent marks, visual anchors and side-specific
 cursors/scroll offsets live in AppContext. Window resize supplies explicit
 viewport data to the reducer.
+
+Passive Files previews project bounded ANSI diff text into read-only coordinates;
+interactive patches project reviewed native rows. Both feed the same pure
+`diff_rows` component for cursor/mark indicators and semantic colors. Old/new
+line-number columns and their separator are omitted from both modes. Native file
+headers are retained separately in `PatchFile.header`, including read-only and
+truncated patches. The renderer preserves diff prefixes and content indentation;
+only the gutter and semantic background colors are added. It expands tabs at
+eight-column stops relative to the original diff content. Synthetic section
+labels supply staged colors without becoming rendered rows. Core uses the same
+read-only row projection for scroll bounds. Preview rows never receive writable
+LineIds; source requests and reviewed-byte mutation checks stay unchanged.
+
+When Files hands focus to Details, pure layout continues to allocate the Files
+expansion using last_left_focus. Other left-panel focus changes retain their
+existing layout rules. Details always reserves its full border, keeping diff
+coordinates stable across focus changes. Entry preserves the current scroll;
+while LoadPatch is pending without a reviewed patch, the renderer keeps the
+existing Files preview. Success replaces it with reviewed rows; failure shows
+the patch error. Only reviewed data can authorize partial writes.
 
 Executable contextual help is integrated into the existing command palette with
 text filtering. It does not add main's separate overlay or visual component tree.
@@ -55,9 +75,9 @@ Focus model:
   exact target path list
 - `AppContext.repo.details` stores commit-detail diff text, selected commit target,
   detail-refresh errors, and a bounded commit-detail cache keyed by full commit id
-- Details diff/log text is stored as backend output and rendered through a pure
-  ANSI-to-span projection; UI rendering does not reparse patch rows into
-  metadata/hunk/add/remove roles
+- Details text is stored as backend output. Files diffs project into read-only
+  read-only rows for the shared diff component; history/log text retains the pure
+  ANSI-to-span projection.
 - `AppContext.ui.details.scroll_offset` stores the global Details viewport offset
   used by `Ctrl+U` / `Ctrl+D`; the action carries terminal-size-derived scroll
   and visible-line counts

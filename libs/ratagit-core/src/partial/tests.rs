@@ -8,6 +8,7 @@ fn patch() -> Box<Patch> {
         mode: 0o100644,
     };
     let file = PatchFile {
+        header: b"diff --git a/file.txt b/file.txt\nindex 1111111..2222222 100644\n--- a/file.txt\n+++ b/file.txt\n".to_vec(),
         source: PatchSource::Worktree,
         change: PatchChange::Modified,
         old: side.clone(),
@@ -272,4 +273,71 @@ fn test_unmarked_cursor_survives_removal_of_an_earlier_hunk() {
     loaded(&mut state, 42, request, Ok(next));
     assert!(!state.ui.details.patch.staged);
     assert_eq!(state.ui.details.patch.selected[0], 1);
+}
+
+#[test]
+fn test_patch_viewport_uses_rows_previously_reserved_for_counter_and_help() {
+    let mut state = state();
+    // Four native file-header rows, one hunk header and five patch lines.
+    move_selection(&mut state, false, 10);
+    assert_eq!(state.ui.details.scroll_offset, 0);
+    crate::details::scroll_down(&mut state, 100, 5);
+    assert_eq!(state.ui.details.scroll_offset, 5);
+}
+
+#[test]
+fn test_patch_rows_preserve_native_headers_hunks_and_content_indentation() {
+    let mut patch = patch();
+    let file = &mut patch.files[0];
+    file.hunks[0].header = b"@@ -1,3 +1,3 @@ section  \n".to_vec();
+    file.hunks[0].lines[0].content = b"  indented\ttext  \n".to_vec();
+    file.hunks[0].lines.insert(
+        1,
+        PatchLine {
+            kind: PatchLineKind::NoNewline,
+            old_line: None,
+            new_line: None,
+            content: b"\n\\ No newline at end of file\n".to_vec(),
+        },
+    );
+    let rows = patch_rows(&patch);
+    assert_eq!(rows[0].text, "diff --git a/file.txt b/file.txt");
+    assert_eq!(rows[1].text, "index 1111111..2222222 100644");
+    assert_eq!(rows[2].text, "--- a/file.txt");
+    assert_eq!(rows[3].text, "+++ b/file.txt");
+    assert_eq!(rows[4].text, "@@ -1,3 +1,3 @@ section  ");
+    assert_eq!(rows[5].text, "  indented\ttext  ");
+    assert_eq!(
+        rows[5].id,
+        Some(LineId {
+            file: 0,
+            hunk: 0,
+            line: 0
+        })
+    );
+    assert_eq!(rows[6].text, "\\ No newline at end of file");
+    assert_eq!(rows[6].id, None);
+}
+
+#[test]
+fn test_open_retains_preview_scroll_but_requires_new_reviewed_patch_for_writes() {
+    let mut state = AppContext::default();
+    state.repo.files.items = vec![crate::FileEntry {
+        path: "file.txt".into(),
+        staged: false,
+        untracked: false,
+        status: crate::CommitFileStatus::Modified,
+        conflicted: false,
+    }];
+    crate::initialize_tree_if_needed(&state.repo.files.items, &mut state.ui.files);
+    state.repo.details.files_diff = "@@ -1 +1 @@\n-old\n+new".into();
+    state.ui.details.scroll_offset = 7;
+    let commands = open(&mut state);
+    assert!(matches!(commands.as_slice(), [Command::LoadPatch { .. }]));
+    assert_eq!(state.ui.details.scroll_offset, 7);
+    assert_eq!(state.ui.focus, PanelFocus::Details);
+    assert!(state.repo.details.patch.is_none());
+    assert!(apply(&mut state, false).is_empty());
+    request_discard(&mut state);
+    assert!(state.ui.details.patch.discard.is_none());
 }

@@ -3,12 +3,12 @@ source: libs/ratagit-ui/tests/snapshots.rs
 expression: "render_terminal_text(&state, size)"
 ---
 ╭ 1  󰈙 Files ───────────────────────────╮╭ 5   Details ───────────────────────────────────────────────────────────────╮
-│   ? README.md                         ││Hunk 2/2 | 2 selected | Range | unstaged | +4 -4                             │
-│    src/                              ││j/k:move a:mode v:range x:mark Tab:side Space:apply d:discard Esc:clear/back │
-│     M lib.rs                          ││       │   --- src/lib.rs [Index]                                            │
-│     M main.rs                         ││       │   @@ -1,3 +1,3 @@                                                   │
-│                                       ││   1   │ - old first                                                         │
-│                                       ││     1 │ + new first                                                         │
+│   ? README.md                         ││   diff --git a/src/lib.rs b/src/lib.rs                                      │
+│    src/                              ││   index 1111111..2222222 100644                                             │
+│     M lib.rs                          ││   --- a/src/lib.rs                                                          │
+│     M main.rs                         ││   +++ b/src/lib.rs                                                          │
+│                                       ││   @@ -1,3 +1,3 @@                                                           │
+│                                       ││   -old first                                                                │
 │                 ╭ ‼ Confirm ───────────────────────────────────────────────────────────────────────╮                 │
 │                 │                                                                                  │                 │
 │                 │                                                                                  │                 │

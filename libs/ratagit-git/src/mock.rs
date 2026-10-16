@@ -198,6 +198,11 @@ impl GitBackendRead for MockGitBackend {
             mode: 0o100644,
         };
         let file = PatchFile {
+            header: format!(
+                "diff --git a/{0} b/{0}\nindex 1111111..2222222 100644\n--- a/{0}\n+++ b/{0}\n",
+                side.path.as_ref().unwrap().display()
+            )
+            .into_bytes(),
             source,
             change: PatchChange::Modified,
             old: side.clone(),

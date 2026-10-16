@@ -3,17 +3,19 @@
 This file is generated from `libs/ratagit-harness/tests/harness.rs`.
 Detailed assertions live in the Rust scenario definitions.
 
-Total scenarios: 81
+Total scenarios: 83
 
 ## Global (1)
 
 - `harness_global_pull_and_push_sync_repo`
 
-## Files (30)
+## Files (32)
 
 - `harness_files_stage_and_unstage`
 - `harness_files_details_follow_cursor_with_combined_diff_sections`
 - `harness_files_details_reuses_cached_diff_when_selection_repeats`
+- `harness_files_details_entry_preserves_expansion_and_preview`
+- `harness_files_details_show_diff_without_line_numbers_on_entry_and_exit`
 - `harness_files_details_show_untracked_file_diff`
 - `harness_files_details_ctrl_scroll_moves_details_content_without_git_change`
 - `harness_files_tree_expand_collapse`

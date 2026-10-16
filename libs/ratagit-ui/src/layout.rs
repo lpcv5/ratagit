@@ -79,7 +79,13 @@ pub(crate) fn compute_left_panel_heights(
         );
     }
 
-    if let Some(focus_index) = left_panel_index(state.ui.focus)
+    let layout_focus =
+        if state.ui.focus == PanelFocus::Details && state.ui.last_left_focus == PanelFocus::Files {
+            PanelFocus::Files
+        } else {
+            state.ui.focus
+        };
+    if let Some(focus_index) = left_panel_index(layout_focus)
         && focus_index != STASH_INDEX
     {
         let content_lengths = [
@@ -300,7 +306,7 @@ mod tests {
     #[test]
     fn focused_left_panel_expands_when_content_overflows() {
         let mut state = state_with_many_files();
-        state.ui.focus = PanelFocus::Details;
+        state.ui.focus = PanelFocus::Log;
         let baseline = compute_left_panel_heights(&state, 40, 2);
 
         state.ui.focus = PanelFocus::Files;
@@ -328,6 +334,24 @@ mod tests {
         let subpanel_height = compute_left_panel_heights(&state, 24, 2).commits;
 
         assert_eq!(subpanel_height, parent_height);
+    }
+
+    #[test]
+    fn details_entry_keeps_files_expansion_and_all_panel_boundaries() {
+        let mut state = state_with_many_files();
+        for height in [8, 14, 24, 40, 80] {
+            for chrome in [1, 2] {
+                state.ui.focus = PanelFocus::Files;
+                state.ui.last_left_focus = PanelFocus::Files;
+                let before = compute_left_panel_heights(&state, height, chrome);
+                state.ui.focus = PanelFocus::Details;
+                assert_eq!(compute_left_panel_heights(&state, height, chrome), before);
+            }
+        }
+        let details = compute_left_panel_heights(&state, 40, 2);
+        state.ui.focus = PanelFocus::Branches;
+        state.ui.last_left_focus = PanelFocus::Branches;
+        assert!(compute_left_panel_heights(&state, 40, 2).files < details.files);
     }
 
     #[test]

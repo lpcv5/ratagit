@@ -708,13 +708,14 @@ mod tests {
     }
 
     #[test]
-    fn details_panel_projects_files_diff_as_native_output_lines() {
+    fn details_panel_projects_files_diff_without_line_numbers() {
         let state = state_with_dirty_repo();
 
         let lines = render_details_lines(&state, 5);
 
-        assert_eq!(lines[0].text(), "  ### unstaged");
-        assert!(lines.iter().all(|line| line.role == RowRole::Normal));
+        assert_eq!(lines[0].text(), "   diff --git a/README.md b/README.md");
+        assert_eq!(lines[2].role, RowRole::DiffRemove);
+        assert_eq!(lines[3].role, RowRole::DiffAdd);
         assert!(lines.iter().all(|line| !line.spans.is_empty()));
     }
 
@@ -754,9 +755,9 @@ mod tests {
 
         let lines = render_details_lines(&state, 3);
 
-        assert_eq!(lines[0].text(), "  @@ -1 +1 @@");
-        assert_eq!(lines[1].text(), "  -old README.md");
-        assert_eq!(lines[2].text(), "  +new README.md");
+        assert_eq!(lines[0].text(), "   @@ -1 +1 @@");
+        assert_eq!(lines[1].text(), "   -old README.md");
+        assert_eq!(lines[2].text(), "   +new README.md");
     }
 
     #[test]
@@ -924,6 +925,7 @@ mod tests {
         assert_eq!(shortcuts_for_state(&state), "Enter force push  Esc cancel");
     }
 }
+#[path = "diff_rows.rs"]
+mod diff_rows;
 #[path = "partial_details.rs"]
 mod partial_details;
-pub(crate) use partial_details::render as render_patch_lines;

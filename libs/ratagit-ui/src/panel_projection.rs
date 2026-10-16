@@ -29,25 +29,6 @@ pub(crate) fn project_panel(
     }
 }
 
-pub(crate) fn project_details_panel(
-    state: &AppContext,
-    visible_lines: usize,
-    width: usize,
-) -> PanelProjection {
-    let panel = PanelFocus::Details;
-    PanelProjection {
-        panel,
-        focused: state.ui.focus == panel,
-        title: panel_title_label(state, panel),
-        legacy_text_title: panel_title(state, panel),
-        lines: if state.ui.details.patch.active {
-            crate::panels::render_patch_lines(state, visible_lines, width)
-        } else {
-            render_details_lines(state, visible_lines)
-        },
-    }
-}
-
 fn panel_lines(state: &AppContext, panel: PanelFocus, visible_lines: usize) -> Vec<PanelLine> {
     match panel {
         PanelFocus::Files => render_files_lines(state, visible_lines),

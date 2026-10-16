@@ -138,6 +138,9 @@ fn test_binary_and_truncated_patches_are_read_only() {
         .load_patch(PatchRequest::File("file.txt".into()))
         .unwrap();
     assert!(patch.files.iter().any(|file| file.binary));
+    let header = String::from_utf8_lossy(&patch.files[0].header);
+    assert!(header.starts_with("diff --git a/file.txt b/file.txt\n"));
+    assert!(header.contains("Binary files a/file.txt and b/file.txt differ"));
     assert!(
         backend
             .apply_patch_lines(&patch, &[], PatchDirection::Stage)
@@ -149,10 +152,79 @@ fn test_binary_and_truncated_patches_are_read_only() {
         .unwrap();
     assert!(patch.truncated);
     assert!(
+        String::from_utf8_lossy(&patch.files[0].header)
+            .contains("--- a/file.txt\n+++ b/file.txt\n")
+    );
+    assert!(
         backend
             .apply_patch_lines(&patch, &patch.line_ids()[..1], PatchDirection::Stage)
             .is_err()
     );
+}
+
+#[test]
+fn test_reviewed_rows_reproduce_native_git_diff_text() {
+    let before = (1..=40)
+        .map(|n| format!("    line {n}\n"))
+        .collect::<String>();
+    let repo = tracked_repo("native-diff-rows", before.as_bytes());
+    let after = before
+        .replace("    line 3\n", "    CHANGED 3  \n")
+        .replace("    line 30\n", "    CHANGED 30\n");
+    write(repo.path().join("file.txt"), after).unwrap();
+    let expected = repo.run_git_capture(&[
+        "diff",
+        "--no-color",
+        "--no-ext-diff",
+        "--abbrev=7",
+        "--",
+        "file.txt",
+    ]);
+    let mut backend = HybridGitBackend::open(repo.path()).unwrap();
+    let patch = backend
+        .load_patch(PatchRequest::File("file.txt".into()))
+        .unwrap();
+    let content = ratagit_core::partial::patch_rows(&patch)
+        .into_iter()
+        .map(|row| {
+            let prefix = match row.kind {
+                PatchLineKind::Added => "+",
+                PatchLineKind::Removed => "-",
+                PatchLineKind::Context if row.id.is_some() => " ",
+                _ => "",
+            };
+            format!("{prefix}{}\n", row.text)
+        })
+        .collect::<String>();
+    assert_eq!(content, expected);
+    assert_eq!(repo.run_git_capture(&["show", ":file.txt"]), before);
+}
+
+#[test]
+fn test_mode_only_patch_retains_native_metadata_without_selectable_lines() {
+    let repo = tracked_repo("native-mode-header", b"unchanged\n");
+    repo.run_git(&["update-index", "--chmod=+x", "file.txt"]);
+    let expected = repo.run_git_capture(&[
+        "diff",
+        "--cached",
+        "--no-color",
+        "--no-ext-diff",
+        "--",
+        "file.txt",
+    ]);
+    let mut backend = HybridGitBackend::open(repo.path()).unwrap();
+    let patch = backend
+        .load_patch(PatchRequest::Index("file.txt".into()))
+        .unwrap();
+    let rows = ratagit_core::partial::patch_rows(&patch);
+    let content = rows
+        .iter()
+        .map(|row| format!("{}\n", row.text))
+        .collect::<String>();
+    assert_eq!(content, expected);
+    assert!(content.contains("old mode 100644\nnew mode 100755\n"));
+    assert!(rows.iter().all(|row| row.id.is_none()));
+    assert!(patch.line_ids().is_empty());
 }
 
 #[test]

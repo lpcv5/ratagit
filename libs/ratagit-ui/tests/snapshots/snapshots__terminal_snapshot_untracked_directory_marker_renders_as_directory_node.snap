@@ -1,28 +1,27 @@
 ---
 source: libs/ratagit-ui/tests/snapshots.rs
-assertion_line: 1672
 expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30, },)"
 ---
-╭ 1  󰈙 Files ────────────────────╮ 5   Details ───────────────────────────────────────────────────╮
-│    libs/ratagit-git/tests/    │  ### unstaged                                                   │
-│                                │  diff --git a/libs/ratagit-git/tests/ b/libs/ratagit-git/tests/ │
-│                                │  @@ -1 +1 @@                                                    │
-│                                │  -old libs/ratagit-git/tests/                                   │
-│                                │  +new libs/ratagit-git/tests/                                   │
-│                                │                                                                 │
-│                                │                                                                 │
-│                                │                                                                 │
-│                                │                                                                 │
-╰────────────────────────────────╯                                                                 │
-│ 2   Branches                  │                                                                 │
-│ main                          │                                                                 │
-│                                │                                                                 │
-│                                │                                                                 │
-│                                │                                                                 │
-│                                │                                                                 │
-│                                │                                                                 │
-╰────────────────────────────────╯                                                                 │
-│ 3   Commits                   │─────────────────────────────────────────────────────────────────╯
+╭ 1  󰈙 Files ────────────────────╮╭ 5   Details ──────────────────────────────────────────────────╮
+│    libs/ratagit-git/tests/    ││   diff --git a/libs/ratagit-git/tests/ b/libs/ratagit-git/tests│
+│                                ││   @@ -1 +1 @@                                                  │
+│                                ││   -old libs/ratagit-git/tests/                                 │
+│                                ││   +new libs/ratagit-git/tests/                                 │
+│                                ││                                                                │
+│                                ││                                                                │
+│                                ││                                                                │
+│                                ││                                                                │
+│                                ││                                                                │
+╰────────────────────────────────╯│                                                                │
+│ 2   Branches                  ││                                                                │
+│ main                          ││                                                                │
+│                                ││                                                                │
+│                                ││                                                                │
+│                                ││                                                                │
+│                                ││                                                                │
+│                                ││                                                                │
+╰────────────────────────────────╯│                                                                │
+│ 3   Commits                   │╰────────────────────────────────────────────────────────────────╯
 │                                │ 6  󰌱 Log                                                        │
 │                                │  notice=Ready                                                   │
 │                                │                                                                 │

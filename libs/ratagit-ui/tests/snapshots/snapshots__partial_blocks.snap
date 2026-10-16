@@ -3,26 +3,26 @@ source: libs/ratagit-ui/tests/snapshots.rs
 expression: text
 ---
 ╭ 1  󰈙 Files ───────────────────────────╮╭ 5   Details ───────────────────────────────────────────────────────────────╮
-│   ? README.md                         ││Hunk 1/2 | 0 selected | unstaged | +4 -4                                     │
-│    src/                              ││j/k:move a:mode v:range x:mark Tab:side Space:apply d:discard Esc:clear/back │
-│     M lib.rs                          ││       │   --- src/lib.rs [Index]                                            │
-│     M main.rs                         ││       │   @@ -1,3 +1,3 @@                                                   │
-│                                       ││   1   │ - old first                                                         │
-│                                       ││     1 │ + new first                                                         │
-│                                       ││   2 2 │   unchanged                                                         │
-│                                       ││   3   │ - old last                                                          │
-│                                       ││     3 │ + new last                                                          │
-│                                       ││       │   --- src/lib.rs [Worktree]                                         │
-│                                       ││       │   @@ -1,3 +1,3 @@                                                   │
-│                                       ││>  1   │ - old first                                                         │
-╰───────────────────────────────────────╯│     1 │ + new first                                                         │
-│ 2   Branches                         ││   2 2 │   unchanged                                                         │
-│ main                                 ││   3   │ - old last                                                          │
-│  feature/mvp                          ││     3 │ + new last                                                          │
-│                                       ││                                                                             │
-│                                       ││                                                                             │
-│                                       ││                                                                             │
-│                                       ││                                                                             │
+│   ? README.md                         ││   diff --git a/src/lib.rs b/src/lib.rs                                      │
+│    src/                              ││   index 1111111..2222222 100644                                             │
+│     M lib.rs                          ││   --- a/src/lib.rs                                                          │
+│     M main.rs                         ││   +++ b/src/lib.rs                                                          │
+│                                       ││   @@ -1,3 +1,3 @@                                                           │
+│                                       ││   -old first                                                                │
+│                                       ││   +new first                                                                │
+│                                       ││    unchanged                                                                │
+│                                       ││   -old last                                                                 │
+│                                       ││   +new last                                                                 │
+│                                       ││   diff --git a/src/lib.rs b/src/lib.rs                                      │
+│                                       ││   index 1111111..2222222 100644                                             │
+╰───────────────────────────────────────╯│   --- a/src/lib.rs                                                          │
+│ 2   Branches                         ││   +++ b/src/lib.rs                                                          │
+│ main                                 ││   @@ -1,3 +1,3 @@                                                           │
+│  feature/mvp                          ││>  -old first                                                                │
+│                                       ││   +new first                                                                │
+│                                       ││    unchanged                                                                │
+│                                       ││   -old last                                                                 │
+│                                       ││   +new last                                                                 │
 │                                       ││                                                                             │
 ╰───────────────────────────────────────╯│                                                                             │
 │ 3   Commits                          │╰─────────────────────────────────────────────────────────────────────────────╯

@@ -766,7 +766,7 @@ fn harness_files_stage_and_unstage() {
         fixture_dirty_repo(),
         &inputs,
         ScenarioExpectations {
-            screen_contains: &["Files", "src/lib.rs", "### unstaged"],
+            screen_contains: &["Files", "src/lib.rs", "diff --git"],
             screen_not_contains: &[],
             selected_screen_rows: &[],
             batch_selected_screen_rows: &[],
@@ -785,11 +785,9 @@ fn harness_files_details_follow_cursor_with_combined_diff_sections() {
         &inputs,
         ScenarioExpectations {
             screen_contains: &[
-                "### unstaged",
                 "diff --git a/src/lib.rs b/src/lib.rs",
                 "@@ -1 +1 @@",
                 "+new src/lib.rs",
-                "### staged",
                 "diff --git a/src/main.rs b/src/main.rs",
             ],
             screen_not_contains: &[],
@@ -878,6 +876,58 @@ fn harness_details_keeps_previous_content_while_new_diff_is_pending() {
 }
 
 #[test]
+fn harness_files_details_entry_preserves_expansion_and_preview() {
+    details_entry::verify();
+}
+
+#[path = "details_entry/mod.rs"]
+mod details_entry;
+
+#[test]
+fn harness_files_details_show_diff_without_line_numbers_on_entry_and_exit() {
+    for (name, inputs, expected) in [
+        (
+            "files_preview_without_line_numbers",
+            vec![UiAction::RefreshAll],
+            "+new file README.md",
+        ),
+        (
+            "files_patch_entered_without_line_numbers",
+            vec![UiAction::RefreshAll, UiAction::OpenFilePatch],
+            "+new mock content",
+        ),
+        (
+            "files_patch_left_without_line_numbers",
+            vec![
+                UiAction::RefreshAll,
+                UiAction::OpenFilePatch,
+                UiAction::CloseFilePatch,
+            ],
+            "+new file README.md",
+        ),
+    ] {
+        assert_scenario(MockScenario::new(
+            name,
+            fixture_dirty_repo(),
+            &inputs,
+            ScenarioExpectations {
+                screen_contains: &[expected],
+                screen_not_contains: &["Hunk 1/", "j/k:move", "Space:apply", "1 │ +", "1   │ -"],
+                git_ops_contains: &["refresh", "details-diff:README.md"],
+                git_state_contains: &[
+                    "path: \"README.md\"",
+                    "untracked: true",
+                    "path: \"src/main.rs\"",
+                    "staged: true",
+                    "path: \"src/lib.rs\"",
+                ],
+                ..ScenarioExpectations::default()
+            },
+        ));
+    }
+}
+
+#[test]
 fn harness_files_details_show_untracked_file_diff() {
     let inputs = [UiAction::RefreshAll];
     assert_scenario(MockScenario::new(
@@ -885,11 +935,7 @@ fn harness_files_details_show_untracked_file_diff() {
         fixture_dirty_repo(),
         &inputs,
         ScenarioExpectations {
-            screen_contains: &[
-                "### unstaged",
-                "diff --git a/README.md b/README.md",
-                "+new file README.md",
-            ],
+            screen_contains: &["diff --git a/README.md b/README.md", "+new file README.md"],
             screen_not_contains: &[],
             selected_screen_rows: &[],
             batch_selected_screen_rows: &[],
@@ -991,7 +1037,7 @@ fn harness_files_space_toggles_directory_stage() {
         fixture_dirty_repo(),
         &inputs,
         ScenarioExpectations {
-            screen_contains: &["Staged src/lib.rs", "### staged"],
+            screen_contains: &["Staged src/lib.rs", "diff --git"],
             screen_not_contains: &[],
             selected_screen_rows: &[],
             batch_selected_screen_rows: &[],

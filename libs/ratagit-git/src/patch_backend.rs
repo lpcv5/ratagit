@@ -5,8 +5,10 @@ use std::path::Path;
 
 const MAX_PATCH_LINES: usize = 5000;
 const MAX_PREVIEW_BYTES: i64 = 1024 * 1024;
+mod header;
 mod lines;
 mod preview;
+use header::native_header;
 
 fn options(path: Option<&Path>) -> Result<DiffOptions, GitError> {
     let mut opts = DiffOptions::new();
@@ -203,7 +205,7 @@ fn append(
             result.truncated = true;
             break;
         }
-        let raw = git2::Patch::from_diff(diff, idx)?;
+        let mut raw = git2::Patch::from_diff(diff, idx)?;
         let change = match delta.status() {
             git2::Delta::Added | git2::Delta::Untracked => PatchChange::Added,
             git2::Delta::Deleted => PatchChange::Deleted,
@@ -215,6 +217,10 @@ fn append(
             _ => PatchChange::Other,
         };
         let mut file = PatchFile {
+            header: match raw.as_mut() {
+                Some(raw) => native_header(raw)?,
+                None => Vec::new(),
+            },
             source: source.clone(),
             old: side(delta.old_file(), change == PatchChange::Added),
             new: side(delta.new_file(), change == PatchChange::Deleted),
@@ -224,7 +230,8 @@ fn append(
             encoded: None,
         };
         // Count metadata too, so thousands of empty/binary files remain bounded.
-        *remaining -= 1;
+        *remaining =
+            remaining.saturating_sub(file.header.split_inclusive(|b| *b == b'\n').count().max(1));
         if let Some(raw) = raw {
             'hunks: for h in 0..raw.num_hunks() {
                 let (info, count) = raw.hunk(h)?;

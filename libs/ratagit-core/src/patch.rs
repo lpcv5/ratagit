@@ -131,6 +131,8 @@ pub struct PatchHunk {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PatchFile {
+    /// Native Git file header, independent of whether the body is writable.
+    pub header: Vec<u8>,
     pub source: PatchSource,
     pub change: PatchChange,
     pub old: PatchSide,

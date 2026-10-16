@@ -371,60 +371,8 @@ fn real_git_smoke_dirty_branch_checkout_uses_auto_stash() {
         Some("checkout_branch")
     );
 }
-#[test]
-fn test_real_git_partial_stage_unstage_discard_ui_flow() {
-    let repo = seeded_repo("harness-partial");
-    repo.run_git(&["config", "core.autocrlf", "false"]);
-    write(repo.path().join("a.txt"), "a1\nkeep\nend\n").unwrap();
-    repo.run_git(&["add", "a.txt"]);
-    repo.run_git(&["commit", "-m", "extend"]);
-    write(repo.path().join("a.txt"), "FIRST\nkeep\nLAST\n").unwrap();
-    let mut runtime = runtime_for(&repo);
-    with_case_artifacts(&repo, &mut runtime, |runtime| {
-        runtime.dispatch_all(&[UiAction::RefreshAll, UiAction::OpenFilePatch]);
-        assert!(runtime.render_terminal_text().contains("FIRST"));
-        assert!(runtime.render_terminal_text().contains("Hunk 1/2"));
-        runtime.dispatch_ui(UiAction::ApplyPatchSelection);
-        assert_eq!(
-            repo.run_git_capture(&["show", ":a.txt"]),
-            "FIRST\nkeep\nend\n"
-        );
-        assert!(
-            runtime
-                .render_terminal_text()
-                .contains("Partial Stage completed")
-        );
-        assert!(runtime.state().ui.details.patch.staged);
-        runtime.dispatch_ui(UiAction::ApplyPatchSelection);
-        assert_eq!(repo.run_git_capture(&["show", ":a.txt"]), "a1\nkeep\nend\n");
-        assert!(
-            runtime
-                .render_terminal_text()
-                .contains("Partial Unstage completed")
-        );
-        assert!(!runtime.state().ui.details.patch.staged);
-        runtime.dispatch_ui(UiAction::RequestPatchDiscard);
-        assert!(
-            runtime
-                .render_terminal_text()
-                .contains("Discard selected lines?")
-        );
-        assert_eq!(
-            std::fs::read_to_string(repo.path().join("a.txt")).unwrap(),
-            "FIRST\nkeep\nLAST\n"
-        );
-        runtime.dispatch_ui(UiAction::ConfirmPatchDiscard);
-        assert_eq!(
-            std::fs::read_to_string(repo.path().join("a.txt")).unwrap(),
-            "a1\nkeep\nLAST\n"
-        );
-        assert!(
-            runtime
-                .render_terminal_text()
-                .contains("Partial Discard completed")
-        );
-    });
-}
+#[path = "real_git/native_diff.rs"]
+mod native_diff;
 #[test]
 fn test_real_git_stage_all_ignore_and_stash_confirmation() {
     let repo = seeded_repo("harness-file-extras");
@@ -458,7 +406,7 @@ fn test_real_git_stage_all_ignore_and_stash_confirmation() {
         assert!(
             runtime
                 .render_terminal_text()
-                .contains("Stash diff (read only)")
+                .contains("diff --git a/a.txt b/a.txt")
         );
         assert!(runtime.render_terminal_text().contains("changed"));
         runtime.dispatch_ui(UiAction::StashApplySelected);

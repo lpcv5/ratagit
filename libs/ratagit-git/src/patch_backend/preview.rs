@@ -162,13 +162,6 @@ fn project(patch: &Patch, native: &Patch) -> Option<Vec<PatchRow>> {
             previous = row;
         }
     }
-    for row in &mut rows {
-        if row.id.is_none() {
-            row.text = row
-                .text
-                .replace("[Worktree]", "[Combined staged + unstaged]");
-        }
-    }
     Some(rows)
 }
 

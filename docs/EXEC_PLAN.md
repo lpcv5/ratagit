@@ -2,76 +2,54 @@
 
 ## Active Slice
 
-Name: Restore PR #8 Details diff and verify real keyboard operations
+Name: Remove Details line-number columns
 
 Status: completed
 
-Tracking: docs/PR8_DETAILS_VALIDATION.md, extending docs/PR8_MIGRATION.md
-
 ## Problem
 
-The initial migration simplified PR #8's Details diff and forced visual
-selection into line mode. The user makes PR #8 authoritative for the right
-Details diff and requires actual Files -> Enter -> Details testing for single
-hunks, independent multiple hunks and visual hunk ranges.
+The user no longer wants line numbers in Details. Both passive previews and
+interactive patches currently add old/new number columns and a separator.
 
 ## Smallest Slice
 
-- Restore Hunk/Line modes, visual ranges, independent marks and clear/back.
-- Port dual line numbers, cursor/mark gutters, staged diff colors and status.
-- Port reviewed-byte cursor relocation after hunk writes and whole-block scrolling.
-- Correct viewport height to match the actual ratatui layout.
-- Add the real keyboard/Git matrix and independently exercise the compiled TUI.
-
-Cross-layer changes are required for input -> pure reducer -> Command ->
-GitBackend -> immutable UI. AppContext remains the sole source of truth.
+Remove number formatting and its separator from the shared diff row renderer.
+Keep cursor/mark indicators, native diff content, background colors and stable
+entry geometry. Retain source coordinates in core for patch mapping/operations.
 
 ## Non-Goals
 
-- Do not transplant old Flux stores or replace the surrounding newarch panels.
-- Perform test writes only in isolated fixtures, never in the user's repository.
-- Do not push or merge remote branches, or claim local Unix PTY coverage.
+Change GitBackend, source coordinates, selection, scrolling or loading behavior.
 
 ## Expected Files
 
-Core partial state/selection/position/viewport/row modules and actions; application
-input; pure Details projection/rendering and viewport metadata; core, input,
-snapshot and real Git keyboard tests; terminal verification runner; product,
-design, architecture and tracking documentation.
+Shared UI diff renderer; affected unit/UI/keyboard/harness assertions and
+snapshots; product/design docs. No cross-layer production changes are needed.
 
 ## Tests
 
-- Visual ranges preserve mode, freeze on second v and coexist with independent marks.
-- Escape clears marks before leaving; mode/side/document changes clear stale marks.
-- Line navigation includes context while writes apply changed source lines only.
-- Applied cursors follow reviewed bytes to the destination side; unmarked cursors
-  survive removal of earlier hunks. Clamped movement preserves manual scrolling.
-- Complete replacement blocks fit before context padding; terminal heights 14–39
-  show both removed and added lines.
-- Snapshots cover marks, hunk/line ranges, staged colors, loading and narrow panes.
-- Three selection strategies x stage/unstage/discard assert exact index/worktree
-  bytes and an unrelated staged sentinel; an extra case covers staged-side d.
+- Shared rows add only cursor/mark space before native diff content.
+- Passive, pending and interactive frames have no number column or separator.
+- Diff colors, marks, native text and stable entry geometry still pass.
 
 ## Harness Decision
 
-The production key mapper drives Runtime + HybridGitBackend with isolated real
-Git repositories. Scenarios assert rendered UI and complete Git contents, saving
-screen, AppContext, key sequence and Git state artifacts, including on failure.
-Separate Windows ConPTY runs exercise the compiled binary through Files/Enter.
+Update the existing enter/leave diff scenario to assert unnumbered diff rows
+and unchanged Git state. Keep existing failure artifacts and real Git coverage.
 
 ## Validation
 
-All four CI commands passed: cargo fmt --check, cargo check --locked,
-cargo test --locked, cargo clippy --locked --all-targets --all-features -- -D warnings.
-Each was invoked with +stable to select the verified Windows toolchain.
-Full tests: tmp/pr8-details-final-tests.log. No local Unix execution is claimed.
+cargo fmt, cargo fmt --check and git diff --check passed.
+cargo clippy --workspace --lib --bins -- -D warnings passed.
+cargo test --target-dir tmp/native-diff-build --no-fail-fast passed 606 tests.
+Reviewed updated snapshots, then all 83 UI integration/snapshot tests passed
+with normal comparison. Logs: tmp/details-no-numbers-update-tests.log,
+tmp/details-no-numbers-snapshots.log and tmp/details-no-numbers-clippy.log.
 
 ## Completion Evidence
 
-589 workspace tests passed, zero failures/ignored; strict Clippy, compilation,
-formatting and git diff --check passed. Ten real Git keyboard scenarios include
-the complete nine-cell matrix plus staged-side d. Two independent nine-case
-Windows ConPTY runs passed, including a rerun after cursor/viewport fixes.
-Six new and six intentionally updated snapshots were reviewed.
-PR8_DETAILS_VALIDATION.md records keys, assertions, artifacts and portability
-decisions. The surrounding newarch UI and GitBackend boundaries remain in use.
+The shared renderer omits number formatting, number columns and their separator.
+Existing native-text, color, mark, loading and geometry assertions pass. The
+enter/leave harness scenario now asserts unnumbered rows and unchanged Git
+state. Core coordinates and all patch operations remain covered by existing
+real Git tests. Updated the passive-preview snapshot name and current docs.

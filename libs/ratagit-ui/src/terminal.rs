@@ -14,7 +14,7 @@ use crate::editor_modal::render_editor_modal;
 use crate::frame::{RenderContext, TerminalBuffer, TerminalCursor, TerminalSize, buffer_to_text};
 use crate::layout::compute_left_panel_heights;
 use crate::loading_indicator::loading_indicator_for_state;
-use crate::panel_projection::{PanelProjection, project_details_panel, project_panel};
+use crate::panel_projection::{PanelProjection, project_panel};
 use crate::panels::{PanelLine, ShortcutLine, shortcut_line_for_state};
 use crate::reset_modal::render_reset_modal;
 use crate::stage_all_modal::render_stage_all_modal;
@@ -168,10 +168,10 @@ fn render_panel_grid(frame: &mut Frame<'_>, state: &AppContext, area: Rect) {
     render_block_panel(
         frame,
         right[0],
-        project_details_panel(
+        project_panel(
             state,
+            PanelFocus::Details,
             right[0].height.saturating_sub(2) as usize,
-            right[0].width.saturating_sub(2) as usize,
         ),
     );
     render_block_panel(
@@ -238,7 +238,7 @@ fn panel_borders(panel: PanelFocus, focused: bool) -> Borders {
         PanelFocus::Branches | PanelFocus::Commits | PanelFocus::Stash => {
             Borders::LEFT | Borders::RIGHT | Borders::BOTTOM
         }
-        PanelFocus::Details => Borders::TOP | Borders::RIGHT | Borders::BOTTOM,
+        PanelFocus::Details => Borders::ALL,
         PanelFocus::Log => Borders::RIGHT | Borders::BOTTOM,
     }
 }

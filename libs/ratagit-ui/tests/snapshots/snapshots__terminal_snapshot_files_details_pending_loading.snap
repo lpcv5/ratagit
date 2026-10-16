@@ -1,28 +1,27 @@
 ---
 source: libs/ratagit-ui/tests/snapshots.rs
-assertion_line: 546
 expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30, },)"
 ---
-╭ 1  󰈙 Files ────────────────────╮ 5   Details ───────────────────────────────────────────────────╮
-│   ? README.md                  │  details(files): no diff for current selection                  │
-│    src/                       │                                                                 │
-│     M lib.rs                   │                                                                 │
-│     M main.rs                  │                                                                 │
-│                                │                                                                 │
-│                                │                                                                 │
-│                                │                                                                 │
-│                                │                                                                 │
-│                                │                                                                 │
-╰────────────────────────────────╯                                                                 │
-│ 2   Branches                  │                                                                 │
-│ main                          │                                                                 │
-│  feature/mvp                   │                                                                 │
-│                                │                                                                 │
-│                                │                                                                 │
-│                                │                                                                 │
-│                                │                                                                 │
-╰────────────────────────────────╯                                                                 │
-│ 3   Commits                   │─────────────────────────────────────────────────────────────────╯
+╭ 1  󰈙 Files ────────────────────╮╭ 5   Details ──────────────────────────────────────────────────╮
+│   ? README.md                  ││  details(files): no diff for current selection                 │
+│    src/                       ││                                                                │
+│     M lib.rs                   ││                                                                │
+│     M main.rs                  ││                                                                │
+│                                ││                                                                │
+│                                ││                                                                │
+│                                ││                                                                │
+│                                ││                                                                │
+│                                ││                                                                │
+╰────────────────────────────────╯│                                                                │
+│ 2   Branches                  ││                                                                │
+│ main                          ││                                                                │
+│  feature/mvp                   ││                                                                │
+│                                ││                                                                │
+│                                ││                                                                │
+│                                ││                                                                │
+│                                ││                                                                │
+╰────────────────────────────────╯│                                                                │
+│ 3   Commits                   │╰────────────────────────────────────────────────────────────────╯
 │●  abc1234  RT  init project    │ 6  󰌱 Log                                                        │
 │●  def5678  RT  wire commands   │  notice=Ready                                                   │
 │                                │                                                                 │

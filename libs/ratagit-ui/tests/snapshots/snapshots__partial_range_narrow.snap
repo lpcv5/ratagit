@@ -3,17 +3,17 @@ source: libs/ratagit-ui/tests/snapshots.rs
 expression: text
 ---
 ╭ 1  󰈙 Files ────────╮╭ 5   Details ───────────────────────────╮
-│   ? README.md      ││Hunk 2/2 | 2 selected | Range | unstaged │
-│    src/           ││j/k:move a:mode v:range x:mark Tab:side S│
-│     M lib.rs       ││   3   │ - old last                      │
-│     M main.rs      ││     3 │ + new last                      │
-╰────────────────────╯│       │   --- src/lib.rs [Worktree]     │
-│ 2   Branches      ││       │   @@ -1,3 +1,3 @@               │
-│ main              ││ ┃ 1   │ - old first                     │
-│  feature/mvp       ││ ┃   1 │ + new first                     │
-│                    ││   2 2 │   unchanged                     │
-╰────────────────────╯│>┃ 3   │ - old last                      │
-│ 3   Commits       ││ ┃   3 │ + new last                      │
+│   ? README.md      ││   +new last                             │
+│    src/           ││   diff --git a/src/lib.rs b/src/lib.rs  │
+│     M lib.rs       ││   index 1111111..2222222 100644         │
+│     M main.rs      ││   --- a/src/lib.rs                      │
+╰────────────────────╯│   +++ b/src/lib.rs                      │
+│ 2   Branches      ││   @@ -1,3 +1,3 @@                       │
+│ main              ││ ┃ -old first                            │
+│  feature/mvp       ││ ┃ +new first                            │
+│                    ││    unchanged                            │
+╰────────────────────╯│>┃ -old last                             │
+│ 3   Commits       ││ ┃ +new last                             │
 │●  abc1234  RT  init│╰─────────────────────────────────────────╯
 │●  def5678  RT  wire│ 6  󰌱 Log                                 │
 │                    │  notice=Ready                            │

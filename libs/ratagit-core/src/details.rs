@@ -540,16 +540,12 @@ fn scroll_max_offset(state: &AppContext, visible_lines: usize) -> usize {
         return state.repo.details.patch.as_ref().map_or(0, |patch| {
             crate::partial::patch_rows(patch)
                 .len()
-                .saturating_sub(visible_lines.saturating_sub(2))
+                .saturating_sub(visible_lines)
         });
     }
     match state.details_left_view() {
-        Some(ActiveLeftView::Files) => state
-            .repo
-            .details
-            .files_diff
-            .lines()
-            .count()
+        Some(ActiveLeftView::Files) => crate::partial::preview_rows(&state.repo.details.files_diff)
+            .len()
             .saturating_sub(visible_lines),
         Some(ActiveLeftView::BranchesList) => state
             .repo

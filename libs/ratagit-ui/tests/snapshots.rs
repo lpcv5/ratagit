@@ -1871,7 +1871,7 @@ fn terminal_buffer_uses_rounded_shared_panel_borders() {
 
     assert!(first_line.starts_with('╭'));
     assert!(!screen.contains('┌'));
-    assert_eq!(first_line.matches('╭').count(), 1);
+    assert_eq!(first_line.matches('╭').count(), 2);
 }
 
 #[test]
@@ -1965,7 +1965,7 @@ fn terminal_buffer_styles_shortcut_keys_as_badges() {
 }
 
 #[test]
-fn terminal_buffer_styles_files_details_diff_from_ansi() {
+fn terminal_buffer_styles_files_details_diff_with_shared_palette() {
     let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     state.repo.details.files_diff = [
@@ -1995,7 +1995,7 @@ fn terminal_buffer_styles_files_details_diff_from_ansi() {
     assert!(buffer_contains_text_with_style(
         &buffer,
         "diff --git a/old.bin b/new.bin",
-        Style::default().add_modifier(Modifier::BOLD),
+        Style::default(),
     ));
     assert!(buffer_contains_text_with_style(
         &buffer,
@@ -2005,12 +2005,12 @@ fn terminal_buffer_styles_files_details_diff_from_ansi() {
     assert!(buffer_contains_text_with_style(
         &buffer,
         "-old README.md",
-        Style::default().fg(Color::Red),
+        Style::default().fg(Color::Red).bg(Color::Rgb(51, 30, 37)),
     ));
     assert!(buffer_contains_text_with_style(
         &buffer,
         "+new README.md",
-        Style::default().fg(Color::Green),
+        Style::default().fg(Color::Green).bg(Color::Rgb(24, 46, 36)),
     ));
 }
 
@@ -2253,7 +2253,7 @@ fn test_terminal_snapshot_partial_staging() {
     );
     let text = render_terminal_text(&state, narrow);
     assert!(text.contains(">┃"));
-    assert!(text.contains("┃   3 │ + new last"));
+    assert!(text.contains("┃ +new last"));
     insta::assert_snapshot!("partial_range_narrow", text);
     update(
         &mut state,

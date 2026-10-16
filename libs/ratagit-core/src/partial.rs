@@ -4,8 +4,10 @@ use crate::patch::{LineId, Patch, PatchDirection, PatchLineKind, PatchRequest, P
 use crate::{AppContext, Command, FileRowKind, PanelFocus, push_notice, with_pending};
 
 mod position;
+mod preview;
 mod rows;
 pub use position::PatchPosition;
+pub use preview::{PreviewRow, preview_rows};
 mod selection;
 mod viewport;
 pub use rows::patch_rows;
@@ -50,7 +52,6 @@ pub(crate) fn open(state: &mut AppContext) -> Vec<Command> {
     };
     state.ui.focus = PanelFocus::Details;
     state.ui.last_left_focus = PanelFocus::Files;
-    state.ui.details.scroll_offset = 0;
     state.repo.details.patch = None;
     crate::details::clear_details_pending(state);
     load(state, PatchRequest::File(row.path.into()))

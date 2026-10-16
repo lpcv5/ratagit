@@ -2,26 +2,26 @@
 source: libs/ratagit-ui/tests/snapshots.rs
 expression: "render_terminal_text(&state, size)"
 ---
-╭ 1  󰈙 Files ────────────────────╮ 5   Details ───────────────────────────────────────────────────╮
-│   ? README.md                  │Stash diff (read only) | j/k:select Esc:back                     │
-│    src/                       │j/k:move a:mode v:range x:mark Tab:side Space:apply d:discard Esc│
-│     M lib.rs                   │       │   --- src/lib.rs [Stash(0)]                             │
-│     M main.rs                  │       │   @@ -1,3 +1,3 @@                                       │
-│                                │   1   │ - old first                                             │
-│                                │     1 │ + new first                                             │
-│                                │   2 2 │   unchanged                                             │
-│                                │   3   │ - old last                                              │
-╰────────────────────────────────╯     3 │ + new last                                              │
-│ 2   Branches                  │       │   --- src/lib.rs [Stash(0)]                             │
-│ main                          │       │   @@ -1,3 +1,3 @@                                       │
-│  feature/mvp                   │   1   │ - old first                                             │
-│                                │     1 │ + new first                                             │
-│                                │   2 2 │   unchanged                                             │
-│                                │   3   │ - old last                                              │
-╰────────────────────────────────╯     3 │ + new last                                              │
-│ 3   Commits                   │                                                                 │
-│●  abc1234  RT  init project    │                                                                 │
-│●  def5678  RT  wire commands   │─────────────────────────────────────────────────────────────────╯
+╭ 1  󰈙 Files ────────────────────╮╭ 5   Details ──────────────────────────────────────────────────╮
+│   ? README.md                  ││   diff --git a/src/lib.rs b/src/lib.rs                         │
+│    src/                       ││   index 1111111..2222222 100644                                │
+│     M lib.rs                   ││   --- a/src/lib.rs                                             │
+│     M main.rs                  ││   +++ b/src/lib.rs                                             │
+│                                ││   @@ -1,3 +1,3 @@                                              │
+│                                ││   -old first                                                   │
+│                                ││   +new first                                                   │
+│                                ││    unchanged                                                   │
+╰────────────────────────────────╯│   -old last                                                    │
+│ 2   Branches                  ││   +new last                                                    │
+│ main                          ││   diff --git a/src/lib.rs b/src/lib.rs                         │
+│  feature/mvp                   ││   index 1111111..2222222 100644                                │
+│                                ││   --- a/src/lib.rs                                             │
+│                                ││   +++ b/src/lib.rs                                             │
+│                                ││   @@ -1,3 +1,3 @@                                              │
+╰────────────────────────────────╯│   -old first                                                   │
+│ 3   Commits                   ││   +new first                                                   │
+│●  abc1234  RT  init project    ││    unchanged                                                   │
+│●  def5678  RT  wire commands   │╰────────────────────────────────────────────────────────────────╯
 │                                │ 6  󰌱 Log                                                        │
 │                                │  notice=Ready                                                   │
 │                                │                                                                 │

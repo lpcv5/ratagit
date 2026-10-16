@@ -140,6 +140,7 @@ pub fn fixture_patch() -> Box<ratagit_core::patch::Patch> {
     })
     .collect();
     let file = PatchFile {
+        header: b"diff --git a/src/lib.rs b/src/lib.rs\nindex 1111111..2222222 100644\n--- a/src/lib.rs\n+++ b/src/lib.rs\n".to_vec(),
         source: PatchSource::Worktree,
         change: PatchChange::Modified,
         old: side.clone(),

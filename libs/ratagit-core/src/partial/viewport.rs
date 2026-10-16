@@ -16,7 +16,7 @@ pub(super) fn scroll_to_cursor(state: &mut AppContext, visible_lines: usize) {
     let Some(&start) = positions.first() else {
         return;
     };
-    let height = visible_lines.saturating_sub(2);
+    let height = visible_lines;
     let offset = state.ui.details.scroll_offset;
     state.ui.details.scroll_offset = if state.ui.details.patch.mode == SelectionMode::Line {
         crate::scroll_offset_for_selection(offset, start, rows.len(), height)

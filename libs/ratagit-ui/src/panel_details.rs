@@ -7,8 +7,12 @@ use super::panel_types::{PanelLine, PanelSpan};
 use crate::theme::RowRole;
 
 pub(crate) fn render_details_lines(state: &AppContext, max_lines: usize) -> Vec<PanelLine> {
-    if state.ui.details.patch.active {
-        return super::partial_details::render(state, max_lines, usize::MAX);
+    let keep_file_preview = state.ui.last_left_focus == PanelFocus::Files
+        && state.repo.details.patch.is_none()
+        && state.work.details.patch_request.is_some()
+        && !state.repo.details.files_diff.trim().is_empty();
+    if state.ui.details.patch.active && !keep_file_preview {
+        return super::partial_details::render(state, max_lines);
     }
     match state.ui.last_left_focus {
         PanelFocus::Files => render_files_details_lines(state, max_lines),
@@ -84,9 +88,6 @@ pub(crate) fn render_log_lines(state: &AppContext, max_lines: usize) -> Vec<Pane
 }
 
 fn render_files_details_lines(state: &AppContext, max_lines: usize) -> Vec<PanelLine> {
-    if state.ui.details.patch.active {
-        return super::partial_details::render(state, max_lines, usize::MAX);
-    }
     if max_lines == 0 {
         return Vec::new();
     }
@@ -109,8 +110,11 @@ fn render_files_details_lines(state: &AppContext, max_lines: usize) -> Vec<Panel
             RowRole::Notice,
         ));
     }
-    rendered.extend(render_ansi_details_text(
-        &state.repo.details.files_diff,
+    rendered.extend(super::diff_rows::render(
+        &ratagit_core::partial::preview_rows(&state.repo.details.files_diff)
+            .into_iter()
+            .map(|r| super::diff_rows::DiffRow::preview(r.row, r.staged))
+            .collect::<Vec<_>>(),
         state.ui.details.scroll_offset,
         max_lines.saturating_sub(rendered.len()),
     ));
@@ -462,7 +466,7 @@ mod tests {
                 .into_iter()
                 .map(|line| line.text())
                 .collect::<Vec<_>>(),
-            vec!["  line 3".to_string(), "  line 4".to_string()]
+            vec!["   line 3".to_string(), "   line 4".to_string()]
         );
     }
 

@@ -10,6 +10,11 @@ PR #8 Details follow-up evidence lives in `docs/PR8_DETAILS_VALIDATION.md`.
 Patch rows retain presentation-side old/new line coordinates independently of
 native source LineIds. Marks and visual anchors are pure UI state; operations
 resolve them to changed source lines before returning GitBackend commands.
+Native file-header bytes live in PatchFile.header independently of writable body
+bytes, so read-only/truncated patches preserve Git metadata too. Passive Files
+text projects into read-only rows in core; interactive native rows and passive
+rows share one pure UI renderer. Source prefixes and indentation are preserved,
+and core scroll bounds use the same visible preview rows as the UI.
 Runtime teardown stops queued jobs and bounds worker joining to 100 ms. In-flight
 native calls cannot be forcibly cancelled; a detached worker exits after its
 current call and never starts queued work.
