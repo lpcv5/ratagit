@@ -1,5 +1,6 @@
 ---
 source: libs/ratagit-ui/tests/workflows.rs
+assertion_line: 87
 expression: "render_terminal_text(&state, SIZE)"
 ---
 ╭ 1  󰈙 Files ────────────────────╮╭ 5   Details ──────────────────────────────────────────────────╮
@@ -11,24 +12,24 @@ expression: "render_terminal_text(&state, SIZE)"
 │                   ╭ ‼ Confirm repository change ─────────────────────────────╮                   │
 │                   │ Autosquash fixup commits from abc1234                    │                   │
 │                   │                                                          │                   │
-│                   │ Commit history will be rewritten. Resolve conflicts with │                   │
-╰───────────────────│ M and continue with m.                                   │                   │
-│ 2   Branches     │ Esc leaves the repository unchanged.                     │                   │
-│ main             │                                                          │                   │
+╰───────────────────│ Commit history will be rewritten. Resolve conflicts with │                   │
+╭ 2   Branches ────│ M and continue with m.                                   │                   │
+│ main             │ Esc leaves the repository unchanged.                     │                   │
 │  feature/mvp      │                                                          │                   │
 │                   │                                                          │                   │
 │                   │                                                          │                   │
 │                   │                                                          │                   │
-│                   │                                                          │                   │
 ╰───────────────────│                                                          │                   │
-╭ 3   Commits ─────│                                                          │───────────────────╯
-│●  abc1234  RT  ini│ ──────────────────────────────────────────────────────── │                   │
-│●  def5678  RT  wir│ Enter confirm  Esc cancel                                │                   │
+╭ 3   Commits ─────│                                                          │                   │
+│●  abc1234  RT  ini│                                                          │                   │
+│●  def5678  RT  wir│                                                          │───────────────────╯
+│                   │ ──────────────────────────────────────────────────────── │───────────────────╮
+│                   │ Enter confirm  Esc cancel                                │                   │
 │                   ╰──────────────────────────────────────────────────────────╯                   │
-│                                │                                                                 │
-│                                │                                                                 │
-╰────────────────────────────────╯                                                                 │
-│ 4   Stash                     │                                                                 │
-│ stash@{0} WIP on main: local t│                                                                 │
-╰────────────────────────────────╯─────────────────────────────────────────────────────────────────╯
+╰────────────────────────────────╯│                                                                │
+╭ 4   Stash ────────────────────╮│                                                                │
+│ stash@{0} WIP on main: local t││                                                                │
+│                                ││                                                                │
+│                                ││                                                                │
+╰────────────────────────────────╯╰────────────────────────────────────────────────────────────────╯
 / loading: details   arrows  select/cursor   Enter  confirm   Esc  cancel

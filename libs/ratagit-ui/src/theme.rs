@@ -63,7 +63,7 @@ pub(crate) const TOKYO_NIGHT_THEME: UiTheme = UiTheme {
     accent: Color::Rgb(0xe0, 0xaf, 0x68),
     selection_text: Color::Rgb(0x1a, 0x1b, 0x26),
     selection: Color::Rgb(0xe0, 0xaf, 0x68),
-    batch_selection_text: Color::Rgb(0xc0, 0xca, 0xf5),
+    batch_selection_text: Color::Rgb(0x1a, 0x1b, 0x26),
     batch_selection: Color::Rgb(0x7a, 0xa2, 0xf7),
     muted: Color::Rgb(0x56, 0x5f, 0x89),
     danger: Color::Rgb(0xf7, 0x76, 0x8e),
@@ -161,10 +161,10 @@ pub(crate) fn modal_background_style() -> Style {
 }
 
 pub(crate) fn modal_scrim_style() -> Style {
-    style_with_optional_bg(
-        Style::default().fg(current_theme().modal.dim),
-        current_theme().modal.scrim,
-    )
+    Style::default()
+        .fg(current_theme().modal.dim)
+        // A missing background would preserve batch and diff highlights underneath.
+        .bg(current_theme().modal.scrim.unwrap_or(Color::Reset))
 }
 
 pub(crate) fn modal_border_style() -> Style {

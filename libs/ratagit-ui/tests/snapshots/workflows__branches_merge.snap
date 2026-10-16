@@ -1,5 +1,6 @@
 ---
 source: libs/ratagit-ui/tests/workflows.rs
+assertion_line: 59
 expression: "render_terminal_text(&state, SIZE)"
 ---
 ╭ 1  󰈙 Files ────────────────────╮╭ 5   Details ──────────────────────────────────────────────────╮
@@ -11,7 +12,6 @@ expression: "render_terminal_text(&state, SIZE)"
 │                   ╭ ℹ Merge selected branch into current ────────────────────╮                   │
 │                   │ Merge                                                    │                   │
 │                   │ Squash merge (stage changes without committing)          │                   │
-│                   │                                                          │                   │
 ╰───────────────────│                                                          │                   │
 ╭ 2   Branches ────│                                                          │                   │
 │ main             │                                                          │                   │
@@ -19,16 +19,17 @@ expression: "render_terminal_text(&state, SIZE)"
 │                   │                                                          │                   │
 │                   │                                                          │                   │
 │                   │                                                          │                   │
-│                   │                                                          │                   │
 ╰───────────────────│                                                          │                   │
-│ 3   Commits      │                                                          │───────────────────╯
-│●  abc1234  RT  ini│ ──────────────────────────────────────────────────────── │                   │
-│●  def5678  RT  wir│ Enter confirm  Esc cancel                                │                   │
+╭ 3   Commits ─────│                                                          │                   │
+│●  abc1234  RT  ini│                                                          │                   │
+│●  def5678  RT  wir│                                                          │───────────────────╯
+│                   │ ──────────────────────────────────────────────────────── │───────────────────╮
+│                   │ Enter confirm  Esc cancel                                │                   │
 │                   ╰──────────────────────────────────────────────────────────╯                   │
-│                                │                                                                 │
-│                                │                                                                 │
-╰────────────────────────────────╯                                                                 │
-│ 4   Stash                     │                                                                 │
-│ stash@{0} WIP on main: local t│                                                                 │
-╰────────────────────────────────╯─────────────────────────────────────────────────────────────────╯
+╰────────────────────────────────╯│                                                                │
+╭ 4   Stash ────────────────────╮│                                                                │
+│ stash@{0} WIP on main: local t││                                                                │
+│                                ││                                                                │
+│                                ││                                                                │
+╰────────────────────────────────╯╰────────────────────────────────────────────────────────────────╯
 / loading: details   arrows  select/cursor   Enter  confirm   Esc  cancel

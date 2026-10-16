@@ -1,18 +1,19 @@
 ---
 source: libs/ratagit-ui/tests/snapshots.rs
+assertion_line: 571
 expression: "render_terminal_text(&state, size)"
 ---
 ╭ 1  󰈙 Files ─────────────╮╭ 5   Details ─────────────────────────────────────╮
-│   ? README.md           ││   @@ -1 +1 @@                                     │
-│    src/                ││   -old src/lib.rs                                 │
-╰─────────────────────────╯│   +new src/lib.rs                                 │
-│ 2   Branches           ││   diff --git a/src/main.rs b/src/main.rs          │
-│ main                   ││   @@ -1 +1 @@                                     │
-╰─────────────────────────╯│   -old src/main.rs                                │
-│ 3   Commits            ││   +new src/main.rs                                │
-│●  abc1234  RT  init proj│╰───────────────────────────────────────────────────╯
-╰─────────────────────────╯ 6  󰌱 Log                                           │
-│ 4   Stash              │  notice=Ready                                      │
-│ stash@{0} WIP on main: │                                                    │
-╰─────────────────────────╯────────────────────────────────────────────────────╯
+│   ? README.md           ││   -old src/lib.rs                                 │
+│    src/                ││   +new src/lib.rs                                 │
+╰─────────────────────────╯│   diff --git a/src/main.rs b/src/main.rs          │
+╭ 2   Branches ──────────╮│   @@ -1 +1 @@                                     │
+│ main                   ││   -old src/main.rs                                │
+╰─────────────────────────╯│   +new src/main.rs                                │
+╭ 3   Commits ───────────╮╰───────────────────────────────────────────────────╯
+│●  abc1234  RT  init proj│╭ 6  󰌱 Log ─────────────────────────────────────────╮
+╰─────────────────────────╯│  notice=Ready                                     │
+╭ 4   Stash ─────────────╮│                                                   │
+│ stash@{0} WIP on main: ││                                                   │
+╰─────────────────────────╯╰───────────────────────────────────────────────────╯
  space  stage/unstage   d  discard   A  amend   c  commit   s  stash   D  reset

@@ -329,7 +329,8 @@ fn highlight_text_segments(text: &str, base_style: Style, query: &str) -> (Vec<P
         }
         spans.push(PanelSpan {
             text: text[start..end].to_string(),
-            style: row_style(RowRole::SearchMatch),
+            style: row_style(RowRole::SearchMatch)
+                .add_modifier(ratatui::style::Modifier::UNDERLINED),
         });
         cursor = end;
     }

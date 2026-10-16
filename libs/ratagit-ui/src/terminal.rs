@@ -12,7 +12,7 @@ use crate::command_palette_modal::render_command_palette_modal;
 use crate::discard_modal::render_discard_modal;
 use crate::editor_modal::render_editor_modal;
 use crate::frame::{RenderContext, TerminalBuffer, TerminalCursor, TerminalSize, buffer_to_text};
-use crate::layout::compute_left_panel_heights;
+use crate::layout::{compute_left_panel_heights, compute_right_panel_heights};
 use crate::loading_indicator::loading_indicator_for_state;
 use crate::panel_projection::{PanelProjection, project_panel};
 use crate::panels::{PanelLine, ShortcutLine, shortcut_line_for_state};
@@ -130,9 +130,10 @@ fn render_panel_grid(frame: &mut Frame<'_>, state: &AppContext, area: Rect) {
             Constraint::Length(left_heights.stash as u16),
         ])
         .split(columns[0]);
+    let right_heights = compute_right_panel_heights(columns[1].height as usize, 2);
     let right = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Percentage(70), Constraint::Percentage(30)])
+        .constraints(right_heights.map(|height| Constraint::Length(height as u16)))
         .split(columns[1]);
 
     render_block_panel(
@@ -192,7 +193,6 @@ fn render_panel_grid(frame: &mut Frame<'_>, state: &AppContext, area: Rect) {
 }
 
 fn render_block_panel(frame: &mut Frame<'_>, area: Rect, projection: PanelProjection) {
-    let panel = projection.panel;
     let focused = projection.focused;
     let border_style = if focused {
         focused_panel_style()
@@ -227,26 +227,11 @@ fn render_block_panel(frame: &mut Frame<'_>, area: Rect, projection: PanelProjec
         .block(
             Block::default()
                 .title(title)
-                .borders(panel_borders(panel, focused))
+                .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
                 .border_style(border_style),
         );
     frame.render_stateful_widget(widget, area, &mut list_state);
-}
-
-fn panel_borders(panel: PanelFocus, focused: bool) -> Borders {
-    if focused {
-        return Borders::ALL;
-    }
-
-    match panel {
-        PanelFocus::Files => Borders::ALL,
-        PanelFocus::Branches | PanelFocus::Commits | PanelFocus::Stash => {
-            Borders::LEFT | Borders::RIGHT | Borders::BOTTOM
-        }
-        PanelFocus::Details => Borders::ALL,
-        PanelFocus::Log => Borders::RIGHT | Borders::BOTTOM,
-    }
 }
 
 fn panel_title_line(
@@ -263,10 +248,15 @@ fn panel_title_line(
 }
 
 fn line_to_ratatui_line(line: &PanelLine) -> Line<'static> {
+    let overlay = if line.role == RowRole::BatchSelected {
+        batch_selected_row_style()
+    } else {
+        ratatui::style::Style::default()
+    };
     Line::from(
         line.spans
             .iter()
-            .map(|span| Span::styled(span.text.clone(), span.style))
+            .map(|span| Span::styled(span.text.clone(), span.style.patch(overlay)))
             .collect::<Vec<_>>(),
     )
 }

@@ -4,6 +4,11 @@ use crate::theme::{RowRole, current_theme};
 use ratagit_core::patch::{PatchLineKind, PatchRow};
 use ratatui::style::{Color, Modifier, Style};
 
+// Explicit RGB text keeps contrast independent of the terminal's ANSI palette.
+const ADD_FOREGROUND: Color = Color::Rgb(174, 239, 190);
+const REMOVE_FOREGROUND: Color = Color::Rgb(255, 190, 198);
+const CONTEXT_FOREGROUND: Color = Color::Rgb(224, 230, 240);
+
 pub(super) struct DiffRow {
     pub row: PatchRow,
     pub staged: bool,
@@ -67,9 +72,12 @@ fn render_row(display: &DiffRow) -> PanelLine {
                     if display.marker { ">" } else { " " },
                     if display.chosen { "┃" } else { " " }
                 ),
-                style: Style::default()
-                    .fg(current_theme().accent)
-                    .add_modifier(Modifier::BOLD),
+                style: if style.bg.is_some() {
+                    style.fg(CONTEXT_FOREGROUND)
+                } else {
+                    Style::default().fg(current_theme().accent)
+                }
+                .add_modifier(Modifier::BOLD),
             },
             PanelSpan {
                 text: expand_tabs(&format!("{prefix}{}", row.text)),
@@ -102,20 +110,22 @@ fn expand_tabs(text: &str) -> String {
 // PR #8's diff palette preserves add/remove polarity through cursor and marks.
 fn diff_style(kind: PatchLineKind, staged: bool, cursor: bool, selected: bool) -> Style {
     let (foreground, background) = match (kind, staged, cursor, selected) {
-        (PatchLineKind::Added, true, true, _) => (Color::Green, Color::Rgb(52, 100, 70)),
-        (PatchLineKind::Added, true, false, true) => (Color::Green, Color::Rgb(44, 85, 60)),
-        (PatchLineKind::Added, true, false, false) => (Color::Green, Color::Rgb(33, 67, 48)),
-        (PatchLineKind::Added, false, true, _) => (Color::Green, Color::Rgb(40, 80, 58)),
-        (PatchLineKind::Added, false, false, true) => (Color::Green, Color::Rgb(30, 65, 47)),
-        (PatchLineKind::Added, false, false, false) => (Color::Green, Color::Rgb(24, 46, 36)),
-        (PatchLineKind::Removed, true, true, _) => (Color::Red, Color::Rgb(111, 52, 64)),
-        (PatchLineKind::Removed, true, false, true) => (Color::Red, Color::Rgb(94, 44, 55)),
-        (PatchLineKind::Removed, true, false, false) => (Color::Red, Color::Rgb(73, 36, 45)),
-        (PatchLineKind::Removed, false, true, _) => (Color::Red, Color::Rgb(88, 44, 54)),
-        (PatchLineKind::Removed, false, false, true) => (Color::Red, Color::Rgb(72, 38, 46)),
-        (PatchLineKind::Removed, false, false, false) => (Color::Red, Color::Rgb(51, 30, 37)),
-        (_, _, true, _) => (Color::Reset, Color::Rgb(37, 57, 82)),
-        (_, _, false, true) => (Color::Reset, Color::Rgb(46, 58, 86)),
+        (PatchLineKind::Added, true, true, _) => (ADD_FOREGROUND, Color::Rgb(52, 100, 70)),
+        (PatchLineKind::Added, true, false, true) => (ADD_FOREGROUND, Color::Rgb(44, 85, 60)),
+        (PatchLineKind::Added, true, false, false) => (ADD_FOREGROUND, Color::Rgb(33, 67, 48)),
+        (PatchLineKind::Added, false, true, _) => (ADD_FOREGROUND, Color::Rgb(40, 80, 58)),
+        (PatchLineKind::Added, false, false, true) => (ADD_FOREGROUND, Color::Rgb(30, 65, 47)),
+        (PatchLineKind::Added, false, false, false) => (ADD_FOREGROUND, Color::Rgb(24, 46, 36)),
+        (PatchLineKind::Removed, true, true, _) => (REMOVE_FOREGROUND, Color::Rgb(111, 52, 64)),
+        (PatchLineKind::Removed, true, false, true) => (REMOVE_FOREGROUND, Color::Rgb(94, 44, 55)),
+        (PatchLineKind::Removed, true, false, false) => (REMOVE_FOREGROUND, Color::Rgb(73, 36, 45)),
+        (PatchLineKind::Removed, false, true, _) => (REMOVE_FOREGROUND, Color::Rgb(88, 44, 54)),
+        (PatchLineKind::Removed, false, false, true) => (REMOVE_FOREGROUND, Color::Rgb(72, 38, 46)),
+        (PatchLineKind::Removed, false, false, false) => {
+            (REMOVE_FOREGROUND, Color::Rgb(51, 30, 37))
+        }
+        (_, _, true, _) => (CONTEXT_FOREGROUND, Color::Rgb(37, 57, 82)),
+        (_, _, false, true) => (CONTEXT_FOREGROUND, Color::Rgb(46, 58, 86)),
         _ => return Style::default(),
     };
     Style::default().fg(foreground).bg(background)

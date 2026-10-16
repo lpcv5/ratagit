@@ -148,11 +148,17 @@ Focus model:
 - `AppContext.repo.details.files_diff_truncated_from` stores the original target count
   when Files Details diff output is limited to the first 100 targets
 - left-panel height baseline follows the Files/Branches/Commits/Stash ratio
-- when `Stash` is unfocused it collapses to one content row and freed height is
-  redistributed by ratio to Files/Branches/Commits
+- reserve three content rows per left panel before distributing remaining height
+  by ratio; when `Stash` is unfocused it keeps those three rows and freed height
+  is redistributed by ratio to Files/Branches/Commits
 - when focus is in Files/Branches/Commits and content overflows, the focused
-  panel borrows height from other left panels in round-robin order while keeping
-  minimum readable rows
+  panel borrows height from other left panels in round-robin order, preserving
+  at least three content rows in every donor
+- complete left-panel frames with this reserve need 20 body rows (21 terminal
+  rows including shortcuts); smaller terminals reduce the common content reserve
+  evenly, conserving available height without overlap
+- Details/Log retain their 70/30 split, clamped to three content rows per panel
+  whenever both fully bordered panels fit
 
 ---
 
@@ -457,11 +463,9 @@ Panel projection and row source:
 ## Visual Theme
 
 - The UI assumes Unicode/Nerd Font support.
-- Terminal panel borders use rounded corners and omit shared left/top edges for
-  right-side or lower panels so adjacent panels read as one grid instead of
-  double-drawn boxes.
-- The focused panel renders a complete rounded border even when an inactive
-  panel in the same position would omit a shared edge.
+- Every terminal panel owns a complete rounded border with all four edges,
+  regardless of focus. Adjacent panels occupy separate rectangles and never
+  share or overwrite border cells; focus changes border/title color only.
 - Panel titles include semantic icons and never use `*` to show focus.
 - Terminal panel titles render the numbered focus hint as a reverse-video badge
   before the semantic icon and label.
@@ -470,7 +474,8 @@ Panel projection and row source:
 - Visual-selected file rows use a color distinct from cursor selection.
 - Commit rows use fixed graph/hash/author/message columns; the graph is a `●`
   placeholder until a later topology pass, hash colors represent main/upstream
-  reachability, and author initials use deterministic per-author colors.
+  reachability, and author initials use deterministic per-author colors, with a
+  bright RGB blue replacing dark ANSI blue for readability on dark terminals.
 - Files and Commits share the same AppContext-owned scroll direction/origin helper
   so list windows move only after the cursor crosses the three-row top/bottom
   reserve.
@@ -496,7 +501,16 @@ Panel projection and row source:
   default foreground/background, yellow focus and cursor selection, blue batch
   selection, dark-gray muted chrome, and standard warning/danger/success/info
   colors. Modal overlays use the same default palette instead of a separate
-  Tokyo Night background.
+  Tokyo Night background. Batch selection applies its foreground/background to
+  every text span, overriding author/hash/status/search colors so marked rows
+  remain readable. Search-hit substrings also use underline, preserving their
+  distinction inside cursor/batch highlights. Unselected rows retain semantic
+  colors and native Git ANSI history colors remain intact.
+- Diff rows pair their tinted backgrounds with explicit bright RGB foregrounds,
+  including highlighted context and line-number gutters. These pairs retain at
+  least 4.5:1 contrast across staged, cursor and marked states.
+- Modal scrims clear underlying selection/diff backgrounds before applying muted
+  text, so background highlights do not bleed through the overlay.
 - Additional built-in palettes, including Tokyo Night, are kept as theme
   candidates. Configuration-file theme selection is a future TODO and is not
   active in the current runtime.

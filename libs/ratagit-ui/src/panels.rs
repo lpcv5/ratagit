@@ -115,9 +115,12 @@ mod tests {
     }
 
     fn has_search_span(line: &PanelLine, text: &str) -> bool {
-        line.spans
-            .iter()
-            .any(|span| span.text == text && span.style == row_style(RowRole::SearchMatch))
+        line.spans.iter().any(|span| {
+            span.text == text
+                && span.style
+                    == row_style(RowRole::SearchMatch)
+                        .add_modifier(ratatui::style::Modifier::UNDERLINED)
+        })
     }
 
     #[test]

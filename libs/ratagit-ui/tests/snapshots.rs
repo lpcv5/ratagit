@@ -8,11 +8,11 @@ use ratagit_testkit::{
     fixture_many_files, fixture_unicode_paths,
 };
 use ratagit_ui::{
-    RenderContext, TerminalSize, batch_selected_row_style, buffer_contains_batch_selected_text,
-    buffer_contains_selected_text, buffer_contains_text_with_style,
-    buffer_to_text_with_selected_marker, details_content_lines_for_terminal_size,
-    details_scroll_lines_for_terminal_size, focused_left_panel_content_lines_for_terminal_size,
-    focused_panel_style, render, render_terminal_buffer, render_terminal_buffer_with_cursor,
+    RenderContext, TerminalSize, batch_selected_row_style, buffer_contains_selected_text,
+    buffer_contains_text_with_style, buffer_to_text_with_selected_marker,
+    details_content_lines_for_terminal_size, details_scroll_lines_for_terminal_size,
+    focused_left_panel_content_lines_for_terminal_size, focused_panel_style, render,
+    render_terminal_buffer, render_terminal_buffer_with_cursor,
     render_terminal_buffer_with_render_context, render_terminal_text,
     render_terminal_text_with_context,
 };
@@ -1732,16 +1732,8 @@ fn terminal_buffer_highlights_marked_files_with_batch_style() {
         },
     );
 
-    assert!(buffer_contains_text_with_style(
-        &buffer,
-        "✓  ? README.md",
-        batch_selected_row_style()
-    ));
-    assert!(buffer_contains_text_with_style(
-        &buffer,
-        "✓   src/",
-        batch_selected_row_style()
-    ));
+    assert_batch_row(&buffer, "󰈙 Files", "✓  ? README.md");
+    assert_batch_row(&buffer, "󰈙 Files", "✓   src/");
 }
 
 #[test]
@@ -1765,16 +1757,21 @@ fn terminal_buffer_highlights_marked_branches_with_batch_style() {
         },
     );
 
-    assert!(buffer_contains_text_with_style(
-        &buffer,
-        " main",
-        batch_selected_row_style()
-    ));
-    assert!(buffer_contains_text_with_style(
-        &buffer,
-        "  feature/mvp",
-        batch_selected_row_style()
-    ));
+    assert_batch_row(&buffer, " Branches", " main");
+    assert_batch_row(&buffer, " Branches", "  feature/mvp");
+
+    state.ui.search.scope = Some(ratagit_core::SearchScope::Branches);
+    state.ui.search.query = "ain".to_string();
+    state.ui.search.matches = vec!["main".to_string()];
+    let buffer = render_terminal_buffer(
+        &state,
+        TerminalSize {
+            width: 100,
+            height: 30,
+        },
+    );
+    assert_batch_row(&buffer, " Branches", " main");
+    assert_query_underlined(&buffer, " main", 3, 3);
 }
 
 #[test]
@@ -1799,12 +1796,8 @@ fn terminal_buffer_highlights_marked_commit_files_with_batch_style() {
         },
     );
 
-    assert!(buffer_contains_text_with_style(
-        &buffer,
-        "✓  M README.md",
-        batch_selected_row_style()
-    ));
-    assert!(buffer_contains_batch_selected_text(&buffer, " src/"));
+    assert_batch_row(&buffer, " Commit Files", "✓  M README.md");
+    assert_batch_row(&buffer, " Commit Files", "✓   src/");
 }
 
 #[test]
@@ -1855,45 +1848,498 @@ fn terminal_buffer_styles_focused_panel_title() {
     ));
 }
 
-#[test]
-fn terminal_buffer_uses_rounded_shared_panel_borders() {
-    let mut state = AppContext::default();
-    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
-
-    let screen = render_terminal_text(
-        &state,
-        TerminalSize {
-            width: 100,
-            height: 30,
-        },
+fn assert_batch_row(buffer: &ratagit_ui::TerminalBuffer, title: &str, needle: &str) {
+    let rect = panel_rect(buffer, title);
+    let (_, y) = needle_position(buffer, needle);
+    assert!(
+        y > rect.y && y < rect.bottom() - 1,
+        "{needle:?} must be inside {title}"
     );
-    let first_line = screen.lines().next().expect("screen should have lines");
+    let style = batch_selected_row_style();
+    for x in rect.x + 1..rect.right() - 1 {
+        let cell = &buffer[(x, y)];
+        assert_eq!(
+            Some(cell.fg),
+            style.fg,
+            "{needle:?} foreground at ({x}, {y})"
+        );
+        assert_eq!(
+            Some(cell.bg),
+            style.bg,
+            "{needle:?} background at ({x}, {y})"
+        );
+        assert!(
+            cell.modifier.contains(style.add_modifier),
+            "{needle:?} modifiers at ({x}, {y})"
+        );
+    }
+    assert_eq!(
+        buffer[(rect.right() - 2, y)].symbol(),
+        " ",
+        "exercise trailing row padding"
+    );
+}
 
-    assert!(first_line.starts_with('╭'));
-    assert!(!screen.contains('┌'));
-    assert_eq!(first_line.matches('╭').count(), 2);
+fn assert_needle_fg(buffer: &ratagit_ui::TerminalBuffer, needle: &str, fg: Color) {
+    let (x, y) = needle_position(buffer, needle);
+    for offset in 0..needle.chars().count() as u16 {
+        let cell = &buffer[(x + offset, y)];
+        assert_eq!(
+            cell.fg,
+            fg,
+            "{needle:?} foreground at ({}, {y})",
+            x + offset
+        );
+        assert_eq!(
+            cell.bg,
+            Color::Reset,
+            "ordinary semantic text keeps its background"
+        );
+    }
 }
 
 #[test]
-fn terminal_buffer_focused_shared_panel_uses_complete_border() {
+fn terminal_buffer_marked_commits_override_all_semantic_spans_in_both_commit_views() {
+    for branch_commits in [false, true] {
+        let mut snapshot = fixture_dirty_repo();
+        snapshot.commits = [
+            ("aaa1111", "marked commit", CommitHashStatus::MergedToMain),
+            ("bbb2222", "cursor commit", CommitHashStatus::Pushed),
+            ("ccc3333", "ordinary commit", CommitHashStatus::Unpushed),
+        ]
+        .into_iter()
+        .map(|(id, summary, status)| {
+            let mut entry = fixture_commit(id, summary);
+            entry.author_name = "AC".to_string();
+            entry.graph = "|".to_string();
+            entry.hash_status = status;
+            entry
+        })
+        .collect();
+        let mut state = AppContext::default();
+        apply_refreshed_with_mock_details(&mut state, snapshot);
+        let (panel, title) = if branch_commits {
+            state.repo.branches.commits = std::mem::take(&mut state.repo.commits.items);
+            state.ui.branches.subview = ratagit_core::BranchesSubview::Commits;
+            state.ui.branches.subview_branch = Some("main".to_string());
+            (PanelFocus::Branches, " Branch Commits")
+        } else {
+            (PanelFocus::Commits, " Commits")
+        };
+        state.ui.focus = panel;
+        state.ui.last_left_focus = panel;
+        let size = TerminalSize {
+            width: 160,
+            height: 50,
+        };
+        let ordinary = render_terminal_buffer(&state, size);
+        // The third row is never the cursor or batch selected: its AC author is blue.
+        let (hash_x, ordinary_y) = needle_position(&ordinary, "ccc3333");
+        assert_needle_fg(&ordinary, "ccc3333", Color::Red);
+        assert_eq!(ordinary[(hash_x + 9, ordinary_y)].symbol(), "A");
+        assert_eq!(
+            ordinary[(hash_x + 9, ordinary_y)].fg,
+            Color::Rgb(138, 180, 248)
+        );
+        assert_eq!(ordinary[(hash_x + 10, ordinary_y)].symbol(), "C");
+        assert_eq!(
+            ordinary[(hash_x + 10, ordinary_y)].fg,
+            Color::Rgb(138, 180, 248)
+        );
+        assert_eq!(ordinary[(hash_x - 3, ordinary_y)].fg, Color::DarkGray);
+        assert_needle_fg(&ordinary, "ordinary commit", Color::Reset);
+
+        update(&mut state, Action::Ui(UiAction::EnterCommitsMultiSelect));
+        update(&mut state, Action::Ui(UiAction::MoveDown));
+        let selected = if branch_commits {
+            state.ui.branches.commits.selected
+        } else {
+            state.ui.commits.selected
+        };
+        assert_eq!(
+            selected, 1,
+            "the marked first commit must not be the cursor"
+        );
+        let buffer = render_terminal_buffer(&state, size);
+        assert_batch_row(&buffer, title, "|  aaa1111  AC  marked commit");
+        assert_batch_row(&buffer, title, "|  bbb2222  AC  cursor commit");
+        assert_needle_fg(&buffer, "ccc3333", Color::Red);
+        assert_needle_fg(&buffer, "ordinary commit", Color::Reset);
+        assert_eq!(
+            buffer[(hash_x + 9, ordinary_y)].fg,
+            Color::Rgb(138, 180, 248)
+        );
+        assert_eq!(
+            buffer[(hash_x + 10, ordinary_y)].fg,
+            Color::Rgb(138, 180, 248)
+        );
+
+        state.ui.search.scope = Some(ratagit_core::SearchScope::Commits);
+        state.ui.search.query = "marked".to_string();
+        state.ui.search.matches = vec!["aaa1111".to_string()];
+        let buffer = render_terminal_buffer(&state, size);
+        assert_batch_row(&buffer, title, "|  aaa1111  AC  marked commit");
+        assert_query_underlined(&buffer, "|  aaa1111  AC  marked commit", 16, 6);
+    }
+}
+
+fn assert_search_emphasis_survives_batch(
+    ordinary: &ratagit_ui::TerminalBuffer,
+    marked: &ratagit_ui::TerminalBuffer,
+    needle: &str,
+    query_offset: u16,
+    query_len: u16,
+) {
+    let (before_x, before_y) = needle_position(ordinary, needle);
+    let (after_x, after_y) = needle_position(marked, needle);
+    for offset in query_offset..query_offset + query_len {
+        let before = &ordinary[(before_x + offset, before_y)];
+        let after = &marked[(after_x + offset, after_y)];
+        assert_eq!(
+            before.fg,
+            Color::Yellow,
+            "exercise a search-colored semantic span"
+        );
+        assert!(
+            before
+                .modifier
+                .contains(Modifier::BOLD | Modifier::UNDERLINED)
+        );
+        assert!(
+            after
+                .modifier
+                .contains(Modifier::BOLD | Modifier::UNDERLINED)
+        );
+    }
+    assert_query_underlined(marked, needle, query_offset, query_len);
+}
+
+fn assert_query_underlined(
+    buffer: &ratagit_ui::TerminalBuffer,
+    needle: &str,
+    query_offset: u16,
+    query_len: u16,
+) {
+    let (x, y) = needle_position(buffer, needle);
+    for offset in 0..needle.chars().count() as u16 {
+        assert_eq!(
+            buffer[(x + offset, y)]
+                .modifier
+                .contains(Modifier::UNDERLINED),
+            (query_offset..query_offset + query_len).contains(&offset),
+            "{needle:?} search underline at ({}, {y})",
+            x + offset
+        );
+    }
+}
+
+#[test]
+fn terminal_buffer_marked_files_override_status_and_search_spans_without_recoloring_ordinary_rows()
+{
+    let mut snapshot = fixture_dirty_repo();
+    let mut conflict = fixture_file("c-conflict.txt", false, false);
+    conflict.conflicted = true;
+    snapshot.files = vec![
+        fixture_file("a-staged.txt", true, false),
+        fixture_file("b-untracked.txt", false, true),
+        conflict,
+        fixture_file("d-cursor.txt", false, false),
+        fixture_file("e-staged.txt", true, false),
+        fixture_file("f-untracked.txt", false, true),
+    ];
     let mut state = AppContext::default();
-    apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
-    update(
+    apply_refreshed_with_mock_details(&mut state, snapshot);
+    state.ui.search.scope = Some(ratagit_core::SearchScope::Files);
+    state.ui.search.query = "staged".to_string();
+    state.ui.search.matches = vec!["a-staged.txt".to_string(), "e-staged.txt".to_string()];
+    state.ui.focus = PanelFocus::Log;
+    let size = TerminalSize {
+        width: 160,
+        height: 50,
+    };
+    let ordinary = render_terminal_buffer(&state, size);
+    let (x, y) = needle_position(&ordinary, "? b-untracked.txt");
+    assert_eq!(ordinary[(x, y)].fg, Color::Cyan);
+    let (x, y) = needle_position(&ordinary, "MU c-conflict.txt");
+    assert_eq!(ordinary[(x + 1, y)].fg, Color::Red);
+    assert_eq!(ordinary[(x, y)].fg, Color::Yellow);
+    let (x, y) = needle_position(&ordinary, "M a-staged.txt");
+    assert_eq!(ordinary[(x, y)].fg, Color::Yellow);
+    assert_eq!(ordinary[(x + 2, y)].fg, Color::Green);
+
+    state.ui.focus = PanelFocus::Files;
+    update(&mut state, Action::Ui(UiAction::EnterFilesMultiSelect));
+    for _ in 0..3 {
+        update(&mut state, Action::Ui(UiAction::MoveDown));
+    }
+    assert_eq!(state.ui.files.selected, 3);
+    let buffer = render_terminal_buffer(&state, size);
+    for needle in [
+        "M a-staged.txt",
+        "? b-untracked.txt",
+        "MU c-conflict.txt",
+        "M d-cursor.txt",
+    ] {
+        assert_batch_row(&buffer, "󰈙 Files", needle);
+    }
+    assert_search_emphasis_survives_batch(&ordinary, &buffer, "M a-staged.txt", 4, 6);
+    let (x, y) = needle_position(&buffer, "M e-staged.txt");
+    assert_eq!(buffer[(x, y)].fg, Color::Yellow);
+    assert_eq!(buffer[(x + 2, y)].fg, Color::Green);
+    assert_eq!(buffer[(x, y)].bg, Color::Reset);
+    let (x, y) = needle_position(&buffer, "? f-untracked.txt");
+    assert_eq!(buffer[(x, y)].fg, Color::Cyan);
+    assert_eq!(buffer[(x, y)].bg, Color::Reset);
+}
+
+#[test]
+fn terminal_buffer_marked_commit_files_override_status_and_search_spans() {
+    let mut state = AppContext::default();
+    let mut snapshot = fixture_dirty_repo();
+    snapshot.commits = (0..30)
+        .map(|i| fixture_commit(&format!("{i:07x}"), "commit"))
+        .collect();
+    apply_refreshed_with_mock_details(&mut state, snapshot);
+    state.ui.focus = PanelFocus::Commits;
+    state.ui.last_left_focus = PanelFocus::Commits;
+    let commands = update(&mut state, Action::Ui(UiAction::OpenCommitFilesPanel));
+    let [Command::RefreshCommitFiles { commit_id }] = commands.as_slice() else {
+        panic!("expected commit files request")
+    };
+    let commands = update(
         &mut state,
-        Action::Ui(UiAction::FocusPanel {
-            panel: PanelFocus::Branches,
+        Action::GitResult(GitResult::CommitFiles {
+            commit_id: commit_id.clone(),
+            result: Ok([
+                ("a-added.txt", CommitFileStatus::Added),
+                ("b-deleted.txt", CommitFileStatus::Deleted),
+                ("c-renamed.txt", CommitFileStatus::Renamed),
+                ("d-modified.txt", CommitFileStatus::Modified),
+                ("e-cursor.txt", CommitFileStatus::Unknown),
+                ("f-added.txt", CommitFileStatus::Added),
+                ("g-deleted.txt", CommitFileStatus::Deleted),
+            ]
+            .into_iter()
+            .map(|(path, status)| CommitFileEntry {
+                path: path.to_string(),
+                old_path: None,
+                status,
+            })
+            .collect()),
         }),
     );
-
-    let screen = render_terminal_text(
-        &state,
-        TerminalSize {
-            width: 100,
-            height: 30,
-        },
+    apply_mock_details_commands(&mut state, commands);
+    state.ui.search.scope = Some(ratagit_core::SearchScope::CommitFiles);
+    state.ui.search.query = "added".to_string();
+    state.ui.search.matches = vec!["a-added.txt".to_string(), "f-added.txt".to_string()];
+    state.ui.focus = PanelFocus::Log;
+    let size = TerminalSize {
+        width: 160,
+        height: 50,
+    };
+    let ordinary = render_terminal_buffer(&state, size);
+    for (needle, fg) in [
+        ("A a-added.txt", Color::Green),
+        ("D b-deleted.txt", Color::Red),
+        ("R c-renamed.txt", Color::Cyan),
+        ("M d-modified.txt", Color::Yellow),
+    ] {
+        let (x, y) = needle_position(&ordinary, needle);
+        assert_eq!(
+            ordinary[(x, y)].fg,
+            fg,
+            "{needle} status before batch selection"
+        );
+    }
+    state.ui.focus = PanelFocus::Commits;
+    update(
+        &mut state,
+        Action::Ui(UiAction::EnterCommitFilesMultiSelect),
     );
+    for _ in 0..4 {
+        update(&mut state, Action::Ui(UiAction::MoveDown));
+    }
+    assert_eq!(state.ui.commits.files.selected, 4);
+    let buffer = render_terminal_buffer(&state, size);
+    for needle in [
+        "A a-added.txt",
+        "D b-deleted.txt",
+        "R c-renamed.txt",
+        "M d-modified.txt",
+        "? e-cursor.txt",
+    ] {
+        assert_batch_row(&buffer, " Commit Files", needle);
+    }
+    assert_search_emphasis_survives_batch(&ordinary, &buffer, "A a-added.txt", 4, 5);
+    let (x, y) = needle_position(&buffer, "A f-added.txt");
+    assert_eq!(buffer[(x, y)].fg, Color::Green);
+    assert_eq!(buffer[(x, y)].bg, Color::Reset);
+    let (x, y) = needle_position(&buffer, "D g-deleted.txt");
+    assert_eq!(buffer[(x, y)].fg, Color::Red);
+    assert_eq!(buffer[(x, y)].bg, Color::Reset);
+}
 
-    assert!(screen.contains("╭ 2   Branches"));
+fn needle_position(buffer: &ratagit_ui::TerminalBuffer, needle: &str) -> (u16, u16) {
+    let positions = (0..buffer.area.height)
+        .flat_map(|y| {
+            (0..buffer.area.width).filter_map(move |x| {
+                let matches = needle.chars().enumerate().all(|(offset, ch)| {
+                    let column = x as usize + offset;
+                    column < buffer.area.width as usize
+                        && buffer[(column as u16, y)].symbol() == ch.to_string()
+                });
+                matches.then_some((x, y))
+            })
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        positions.len(),
+        1,
+        "expected unique text {needle:?}, got {positions:?}"
+    );
+    positions[0]
+}
+
+fn panel_rect(buffer: &ratagit_ui::TerminalBuffer, title: &str) -> ratatui::layout::Rect {
+    let (title_x, top) = needle_position(buffer, title);
+    let left = (0..title_x)
+        .rev()
+        .find(|x| buffer[(*x, top)].symbol() == "╭")
+        .expect("panel must have its own top-left corner");
+    let right = (title_x..buffer.area.width)
+        .find(|x| buffer[(*x, top)].symbol() == "╮")
+        .expect("panel must have its own top-right corner");
+    let bottom = (top + 1..buffer.area.height)
+        .find(|y| buffer[(left, *y)].symbol() == "╰")
+        .expect("panel must have its own bottom-left corner");
+    ratatui::layout::Rect::new(left, top, right - left + 1, bottom - top + 1)
+}
+
+fn assert_panel_edges(buffer: &ratagit_ui::TerminalBuffer, title: &str) -> ratatui::layout::Rect {
+    let rect = panel_rect(buffer, title);
+    let right = rect.right() - 1;
+    let bottom = rect.bottom() - 1;
+    for (x, y, symbol) in [
+        (rect.x, rect.y, "╭"),
+        (right, rect.y, "╮"),
+        (rect.x, bottom, "╰"),
+        (right, bottom, "╯"),
+    ] {
+        assert_eq!(
+            buffer[(x, y)].symbol(),
+            symbol,
+            "{title} corner at ({x}, {y})"
+        );
+    }
+    for y in rect.y + 1..bottom {
+        for x in [rect.x, right] {
+            assert_eq!(buffer[(x, y)].symbol(), "│", "{title} side at ({x}, {y})");
+        }
+    }
+    for x in rect.x + 1..right {
+        assert_eq!(
+            buffer[(x, bottom)].symbol(),
+            "─",
+            "{title} bottom at ({x}, {bottom})"
+        );
+    }
+    let (title_x, _) = needle_position(buffer, title);
+    for x in title_x + title.chars().count() as u16 + 1..right {
+        assert_eq!(
+            buffer[(x, rect.y)].symbol(),
+            "─",
+            "{title} top at ({x}, {})",
+            rect.y
+        );
+    }
+    rect
+}
+
+#[test]
+fn terminal_buffer_all_six_panels_keep_independent_borders_and_readable_content() {
+    let focuses = [
+        PanelFocus::Files,
+        PanelFocus::Branches,
+        PanelFocus::Commits,
+        PanelFocus::Stash,
+        PanelFocus::Details,
+        PanelFocus::Log,
+    ];
+    let mut overflow = fixture_many_files();
+    overflow.branches = (0..30)
+        .map(|index| ratagit_testkit::fixture_branch(&format!("branch-{index:02}"), index == 0))
+        .collect();
+    overflow.commits = (0..30)
+        .map(|index| fixture_commit(&format!("{index:07x}"), &format!("commit {index}")))
+        .collect();
+    overflow.stashes = (0..30)
+        .map(|index| ratagit_core::StashEntry {
+            id: format!("stash@{{{index}}}"),
+            summary: format!("saved changes {index}"),
+        })
+        .collect();
+    for snapshot in [fixture_empty_repo(), fixture_dirty_repo(), overflow] {
+        let mut state = AppContext::default();
+        apply_refreshed_with_mock_details(&mut state, snapshot);
+        for (width, height) in [
+            (80, 14),
+            (65, 20),
+            (80, 21),
+            (80, 24),
+            (100, 30),
+            (120, 40),
+            (160, 50),
+        ] {
+            for focus in focuses {
+                state.ui.focus = focus;
+                state.ui.last_left_focus = focus;
+                let buffer = render_terminal_buffer(&state, TerminalSize { width, height });
+                let left = ["󰈙 Files", " Branches", " Commits", " Stash"]
+                    .map(|title| assert_panel_edges(&buffer, title));
+                let right = [" Details", "󰌱 Log"].map(|title| assert_panel_edges(&buffer, title));
+                let left_minimum = 3.min((height - 1 - 8) / 4) as u16;
+                for rect in left {
+                    assert!(
+                        rect.height - 2 >= left_minimum,
+                        "{focus:?}, {width}x{height}: {rect:?}"
+                    );
+                    assert_eq!(rect.x, 0);
+                    assert_eq!(rect.width, left[0].width);
+                }
+                for rect in right {
+                    assert!(
+                        rect.height - 2 >= 3,
+                        "{focus:?}, {width}x{height}: {rect:?}"
+                    );
+                    assert_eq!(rect.x, left[0].right());
+                    assert_eq!(rect.right(), width as u16);
+                }
+                assert_eq!(left[0].y, 0);
+                assert_eq!(right[0].y, 0);
+                for panels in left.windows(2) {
+                    assert_eq!(
+                        panels[0].bottom(),
+                        panels[1].y,
+                        "left panels must not share an edge"
+                    );
+                }
+                assert_eq!(
+                    right[0].bottom(),
+                    right[1].y,
+                    "right panels must not share an edge"
+                );
+                assert_eq!(left[3].bottom(), height as u16 - 1);
+                assert_eq!(right[1].bottom(), height as u16 - 1);
+                if focus != PanelFocus::Stash {
+                    assert_eq!(
+                        left[3].height - 2,
+                        left_minimum,
+                        "unfocused stash stays at the content floor"
+                    );
+                }
+            }
+        }
+    }
 }
 
 #[test]
@@ -2005,12 +2451,16 @@ fn terminal_buffer_styles_files_details_diff_with_shared_palette() {
     assert!(buffer_contains_text_with_style(
         &buffer,
         "-old README.md",
-        Style::default().fg(Color::Red).bg(Color::Rgb(51, 30, 37)),
+        Style::default()
+            .fg(Color::Rgb(255, 190, 198))
+            .bg(Color::Rgb(51, 30, 37)),
     ));
     assert!(buffer_contains_text_with_style(
         &buffer,
         "+new README.md",
-        Style::default().fg(Color::Green).bg(Color::Rgb(24, 46, 36)),
+        Style::default()
+            .fg(Color::Rgb(174, 239, 190))
+            .bg(Color::Rgb(24, 46, 36)),
     ));
 }
 
@@ -2230,7 +2680,9 @@ fn test_terminal_snapshot_partial_staging() {
     assert!(buffer_contains_text_with_style(
         &render_terminal_buffer(&state, size),
         "new first",
-        Style::default().fg(Color::Green).bg(Color::Rgb(40, 80, 58))
+        Style::default()
+            .fg(Color::Rgb(174, 239, 190))
+            .bg(Color::Rgb(40, 80, 58))
     ));
     insta::assert_snapshot!("partial_blocks", text);
     update(&mut state, Action::Ui(UiAction::TogglePatchRange));

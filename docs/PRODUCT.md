@@ -141,13 +141,21 @@ Navigation rules:
   shortcuts; while search input is active, the bottom row becomes
   `search: <query>`
 - focused panels are indicated by a colored border/title accent, not by `*`
-- focused panels render a complete border; inactive panels may omit shared
-  edges to keep the panel grid compact
+- every panel renders its own complete rounded border, including inactive panels;
+  focus changes the border/title color without changing the content inset
 - cursor rows are indicated by color only and only in the focused selectable panel
-- files selected for batch operations use a separate batch color
+- rows selected for batch operations use a separate batch color; every text
+  fragment uses the selection foreground, including authors, hashes, file statuses
+  and search matches, to preserve readability
 - empty panels render blank content lines instead of `<empty>` / `<none>` placeholders
-- Stash panel shows one content row when unfocused and restores default height when focused
-- focused Files/Branches/Commits panels can grow dynamically when content overflows by borrowing height evenly from other left panels
+- Stash panel keeps three content rows when unfocused and restores its weighted
+  height when focused
+- focused Files/Branches/Commits panels can grow dynamically when content overflows
+  by borrowing height evenly from other left panels, preserving three content rows
+  plus each panel's own borders
+- the three-row reserve fits all left panels at terminal heights of 21 rows or
+  more, including shortcuts; smaller terminals reduce the reserve evenly within
+  the available height; Details and Log also keep three content rows when possible
 - left-panel subviews keep the same height as their parent panel view, so entering a short subview does not resize surrounding panels
 
 Files panel rules:
@@ -374,8 +382,8 @@ All features are keyboard-driven and deterministic.
 
 The visual theme is Unicode/Nerd Font first. Panel titles and file, branch, and
 status rows use a compact semantic icon set while preserving deterministic text
-layout. Terminal panel chrome uses rounded corners and shared borders so
-adjacent panels avoid double-drawn edges.
+layout. Every terminal panel uses rounded corners and its own complete border;
+adjacent panels do not share edges.
 
 ---
 

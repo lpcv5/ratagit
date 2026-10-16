@@ -218,7 +218,7 @@ fn author_style(author_name: &str) -> Style {
     const PALETTE: [Color; 8] = [
         Color::Cyan,
         Color::Magenta,
-        Color::Blue,
+        Color::Rgb(138, 180, 248),
         Color::LightGreen,
         Color::LightBlue,
         Color::LightMagenta,
