@@ -13,9 +13,9 @@ ratagit aims to replicate lazygit UX with a Rust + ratatui implementation.
 - details view
 - log view
 
-Migrated command workflows:
+Command workflows:
 
-- `?` retains newarch's command modal, accepts text to filter keys/labels, uses
+- `?` opens the command modal, accepts text to filter keys/labels, uses
   arrow keys to select, `Enter` to execute, and `Esc` to close. Empty results are
   explicit. `j/k` are filter text inside this modal.
 - `F` fetches all remotes with pruning; lowercase `f` retains commit fixup.
@@ -144,7 +144,7 @@ Files panel rules:
 - `space` stages unstaged targets or unstages targets when all selected targets are staged
 - `a` stages all visible status targets, or unstages all when every target is staged
 - `Enter` expands directories or opens a reviewed file patch in Details
-- Details follows PR #8: `j/k` navigates contiguous changes (Hunk mode), `a`
+- In Details, `j/k` navigates contiguous changes (Hunk mode), `a`
   toggles Hunk/Line mode, `v` selects a range in the current mode, and a second
   `v` freezes that range. `x` marks independent hunks/lines; marked targets take
   precedence over the cursor. `Esc` clears marks/range before returning to Files.

@@ -1,9 +1,8 @@
 # DESIGN.md
 
-## PR #8 migration decisions
+## Details and runtime design
 
-The surrounding baseline remains newarch. The Details diff follows PR #8: stable
-unnumbered diff content, `>` cursor and `┃` mark
+The Details diff uses stable unnumbered diff content, `>` cursor and `┃` mark
 gutters, distinct staged/unstaged add/remove backgrounds, cursor versus mark
 colors. The hunk counter and inline keyboard-help rows are removed. The existing layout and
 confirmation modal remain. Details uses explicit row styles so List cursor
@@ -34,8 +33,8 @@ while LoadPatch is pending without a reviewed patch, the renderer keeps the
 existing Files preview. Success replaces it with reviewed rows; failure shows
 the patch error. Only reviewed data can authorize partial writes.
 
-Executable contextual help is integrated into the existing command palette with
-text filtering. It does not add main's separate overlay or visual component tree.
+Executable contextual help is integrated into the command palette with
+text filtering.
 Editor and clipboard services stay in the application layer; pure input derives
 host requests, terminal ownership stays on the main thread, and completion is
 dispatched to core. Git path resolution remains in ratagit-git.
@@ -75,7 +74,7 @@ Focus model:
   exact target path list
 - `AppContext.repo.details` stores commit-detail diff text, selected commit target,
   detail-refresh errors, and a bounded commit-detail cache keyed by full commit id
-- Details text is stored as backend output. Files diffs project into read-only
+- Details text is stored as backend output. Files diffs project into
   read-only rows for the shared diff component; history/log text retains the pure
   ANSI-to-span projection.
 - `AppContext.ui.details.scroll_offset` stores the global Details viewport offset
@@ -262,7 +261,8 @@ Files panel interaction:
   - choices are `mixed`, `soft`, `hard`, and `Nuke`
   - `j` / `k` or arrow keys select an option
   - the selected option controls the description rendered below the list
-  - `Enter` confirms immediately and emits a reset or nuke command, `Esc` cancels
+  - `Enter` emits mixed/soft reset commands immediately; hard reset and Nuke
+    require danger confirmation. `Esc` cancels the menu or confirmation.
   - `Nuke` performs hard reset semantics followed by `git clean -fd`
 - `d` opens a file-targeted discard confirmation modal:
   - targets are resolved when the modal opens from the current cursor target or visual-selected rows
@@ -387,8 +387,8 @@ Files panel interaction:
 - Repeated Commit Details selections reuse the `AppContext.repo.details` diff cache without
   emitting a new Git command; the cache is cleared after snapshot refreshes and
   successful mutating Git operations.
-- Stash Details projection is a placeholder in this slice and intentionally
-  marked for follow-up implementation.
+- Stash Details projects the selected stash's read-only native patch;
+  request ownership prevents stale results from replacing the current selection.
 
 Panel projection and row source:
 
@@ -433,8 +433,8 @@ Panel projection and row source:
 - Panel titles include semantic icons and never use `*` to show focus.
 - Terminal panel titles render the numbered focus hint as a reverse-video badge
   before the semantic icon and label.
-- File rows use icons for folders, files, staged files, untracked files,
-  batch membership, and search matches.
+- Directory rows use expand/collapse icons; file rows use Git status markers.
+  Batch membership and search matches use distinct styles.
 - Visual-selected file rows use a color distinct from cursor selection.
 - Commit rows use fixed graph/hash/author/message columns; the graph is a `●`
   placeholder until a later topology pass, hash colors represent main/upstream
@@ -485,7 +485,6 @@ Panel projection and row source:
   branch force-delete confirmation uses danger; branch rebase plus auto-stash
   confirmation use warning.
 - Files diff rows in Details are color-coded by semantics:
-  - section headers (`### ...`)
   - diff metadata (`diff --...`, `---`, `+++`, `index`, mode changes,
     rename/copy headers, similarity headers, binary patch headers, submodule
     headers, and no-newline markers)

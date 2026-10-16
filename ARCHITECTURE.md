@@ -1,12 +1,10 @@
 ## Overview
 
-PR #8 portability audit and regression evidence live in `docs/PR8_MIGRATION.md`.
-The migration adds lossless patch models to core, native patch generation and
-application behind GitBackend, and pure patch-row projection in the existing UI.
+Core owns lossless patch models; GitBackend owns native patch generation and
+application; UI owns pure patch-row projection.
 AppContext keeps reviewed patch data under repo.details, interaction under
 ui.details, and request ownership under work.details. Load results require a
 matching request ID and target; mutation barriers still reject stale reads.
-PR #8 Details follow-up evidence lives in `docs/PR8_DETAILS_VALIDATION.md`.
 Patch rows retain presentation-side old/new line coordinates independently of
 native source LineIds. Marks and visual anchors are pure UI state; operations
 resolve them to changed source lines before returning GitBackend commands.

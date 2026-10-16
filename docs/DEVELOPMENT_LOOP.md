@@ -20,8 +20,8 @@ Each iteration must follow:
 
 The active plan lives in `docs/EXEC_PLAN.md`. It is the current slice contract:
 what will change, what will not change, how tests/harness are decided, and what
-validation proves completion. Keep historical notes outside this file so agents
-can read the active work without scanning old phases.
+validation proves completion. Replace completed slice details when starting new
+work; use Git history to retrieve previous plans and validation evidence.
 
 Tiny changes do not require a standalone exec plan. Use a short goal, change
 summary, and validation note for typo fixes, comments, fixture polish, and

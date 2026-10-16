@@ -77,11 +77,3 @@ RATAGIT_TRACE=1
 
 `debug` is the recommended level for diagnosing slow Git backend behavior in
 very large repositories.
-
----
-
-## State Dump
-
-Support:
-
-ratagit --dump-state

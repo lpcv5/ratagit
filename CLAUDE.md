@@ -61,7 +61,9 @@ Interaction loop: input → `UiAction` → `update()` → emits `Command` → di
 
 6 panels: left column (Files, Branches, Commits, Stash) + right column (Details, Log) + bottom shortcut bar. Dynamic left-panel heights: Stash collapses when unfocused; focused panel borrows height from others.
 
-Details diff/log stored as raw backend output, rendered via ANSI-to-span projection (no re-parsing). Bounded caches for file-detail and commit-detail diffs.
+Files Details previews and reviewed native patches share a pure diff-row renderer.
+History/log text uses ANSI-to-span projection. Bounded caches retain file-detail
+and commit-detail diffs. See `docs/DESIGN.md` for the current rendering contract.
 
 ### Git backend (`ratagit-git`)
 
