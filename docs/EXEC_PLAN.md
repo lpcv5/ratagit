@@ -2,51 +2,58 @@
 
 ## Active Slice
 
-Name: Remove obsolete and redundant documentation
+Name: Prepare feature/newarch promotion to main
 
-Status: completed
+Status: validated; integration pending
 
 ## Problem
 
-Completed migration records, a finished refactoring checklist, an empty archive
-guide, and duplicate policy documents obscure the current project contract.
-Some retained guides still describe behavior that has already been replaced.
+The user designated feature/newarch as the authoritative implementation for
+main and retired the old main implementation. The branches have diverged;
+ordinary conflict resolution would reintroduce retired architecture files.
+The all-target CI Clippy check also finds redundant casts in two UI tests.
 
 ## Smallest Slice
 
-Delete completed and redundant documents, repair references, and correct stale
-descriptions in the retained architecture, design, product, and agent guides.
-Keep the active plan and test-maintained harness manifest.
+Remove the redundant test casts, validate the current implementation, and record
+old main as merged using the ours merge strategy so its history remains reachable
+while the feature/newarch tree stays authoritative. Push feature/newarch, create
+a PR targeting main, validate its checks, and merge the reviewed head.
 
 ## Non-Goals
 
-Change application code, tests, runtime behavior, Git semantics, or tooling.
+Restore the retired implementation, rewrite remote history, change product
+behavior, delete branches, or alter another worktree's local main checkout.
 
 ## Expected Files
 
-Documentation only: root guides and docs/. No production-layer changes.
+docs/EXEC_PLAN.md and the two UI integration tests flagged by Clippy. The
+integration merge must preserve the validated feature/newarch tree exactly.
 
 ## Tests
 
-Check deleted-document references, local Markdown links, and diff whitespace.
-Run existing workspace checks, including active-plan and harness-manifest tests.
-No new unit or snapshot tests are needed for documentation-only cleanup.
+Run formatting, locked compilation, production and all-target strict Clippy,
+and locked workspace tests including existing snapshots and harness scenarios.
+Check that the integration merge tree equals its first parent's tree, old main
+is an ancestor, the worktree is clean, and the PR merges the validated head.
+Existing tests cover the cast cleanup; no new tests are needed.
 
 ## Harness Decision
 
-No new scenario: rendered behavior, input handling, and Git state are unchanged.
-Retain the scenario index and terminal verification runner.
+No new scenario: product rendering, input handling, and backend Git semantics
+are unchanged. Existing harness and real Git tests validate the adopted version.
 
 ## Validation
 
-Passed: cargo fmt; cargo clippy --workspace --lib --bins -- -D warnings;
-cargo test (including snapshots, harness scenarios, and real Git tests);
-git diff --check; deleted-document reference and local Markdown link checks.
+Planned: cargo fmt; cargo fmt --check; cargo check --locked;
+cargo clippy --workspace --lib --bins -- -D warnings;
+cargo clippy --locked --all-targets --all-features -- -D warnings;
+cargo test --locked; git diff --check; merge ancestry/tree checks.
+PR CI and final delivery are tracked in the pull request.
 
 ## Completion Evidence
 
-Removed nine completed, obsolete, or redundant documents. Retained the active
-specifications, agent instructions, operational guides, and checked harness
-manifest. Updated stale rendering/stash/reset descriptions and kept manual
-terminal verification instructions in TESTING.md. All changes are Markdown only;
-the standard formatting, strict production Clippy, and workspace tests passed.
+Formatting, locked compilation, production and all-target strict Clippy passed.
+cargo test --locked passed 606 tests with zero failures or ignored tests,
+including snapshots and harness coverage. Log: tmp/promote-newarch-tests.log.
+The integration merge and its ancestry/tree checks remain pending.

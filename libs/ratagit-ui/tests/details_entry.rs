@@ -26,7 +26,7 @@ fn position(state: &AppContext, needle: &str) -> (usize, usize) {
     let buffer = render_terminal_buffer(state, SIZE);
     buffer
         .content()
-        .chunks(SIZE.width as usize)
+        .chunks(SIZE.width)
         .enumerate()
         .find_map(|(y, row)| {
             let text = row.iter().map(|cell| cell.symbol()).collect::<String>();

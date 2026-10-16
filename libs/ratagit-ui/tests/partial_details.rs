@@ -168,7 +168,7 @@ fn test_passive_preview_and_interactive_patch_share_unnumbered_colored_rows() {
         let row = |buffer: &ratatui::buffer::Buffer| {
             buffer
                 .content()
-                .chunks(SIZE.width as usize)
+                .chunks(SIZE.width)
                 .find(|row| {
                     row.iter()
                         .map(|cell| cell.symbol())
