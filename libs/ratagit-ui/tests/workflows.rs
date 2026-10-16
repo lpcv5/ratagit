@@ -33,8 +33,8 @@ fn files_workflow_dialogs_have_deterministic_snapshots_and_selected_style() {
         &buffer,
         "All changes (including untracked)",
         ratatui::style::Style::default()
-            .fg(ratatui::style::Color::White)
-            .bg(ratatui::style::Color::Blue)
+            .fg(ratatui::style::Color::Rgb(20, 34, 56))
+            .bg(ratatui::style::Color::Rgb(180, 215, 255))
             .add_modifier(ratatui::style::Modifier::BOLD)
     ));
     open(&mut state, Feature::Filter);

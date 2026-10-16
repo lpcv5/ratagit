@@ -29,11 +29,13 @@ Input → Action → Update → AppContext → Render
 
 ### 1. Single Source of Truth
 
-All UI must be derived from `AppContext`.
+Application UI state must be derived from `AppContext`. Immutable presentation
+inputs, including the theme and spinner frame, are supplied explicitly through
+`RenderContext`.
 
 - No hidden state
 - No implicit global variables
-- No UI-only state outside AppContext
+- No interaction state outside AppContext
 - No `GitBackend`, runtime handles, environment, clock, or external dependency
   handles inside AppContext
 
@@ -64,10 +66,22 @@ UI rendering must be pure:
 (AppContext, TerminalSize, RenderContext) -> Frame
 ```
 
-`RenderContext` carries explicit render-only inputs such as the current loading
-spinner frame. The real TUI may advance those inputs from its event loop, but
-rendering still receives them as data and must not read time itself. Convenience
-test APIs use a default `RenderContext` to keep snapshots deterministic.
+`RenderContext<'a>` carries explicit render-only inputs: the current loading
+`spinner_frame` and an immutable `&'a UiTheme`. The executable loads and validates
+the theme once through `src/config.rs`, before enabling raw mode or entering the
+alternate screen, and owns it for the event loop. Each draw passes that theme to
+panel, row, diff, and modal projections. Configuration file IO and environment
+lookup stay in the executable; `ratagit-core` remains dependency-free, and the
+UI reads neither files nor environment to choose colors. Theme data does not
+belong in `AppContext`.
+
+The real TUI advances the spinner frame in its event loop, but rendering receives
+it as data and must not read time itself. Convenience test APIs use a default
+`RenderContext` with spinner frame zero and `MAIN_UI_THEME` for deterministic
+snapshots. Theme-aware callers pass their context explicitly. Preset resolution,
+semantic role overrides, and fixed RGB contrast validation are `UiTheme`
+operations; the JSON schema and discovery rules are documented in
+[Themes](docs/THEMES.md).
 
 Forbidden:
 
@@ -129,6 +143,7 @@ Same:
 
 - AppContext
 - terminal size
+- RenderContext (theme and spinner frame)
 - input sequence
 
 Must produce identical UI.
@@ -146,6 +161,8 @@ internal library packages under `libs/`.
 - terminal setup and event loop, including the RAII terminal session guard that
   restores raw mode, alternate screen, and cursor on normal exit or early return
 - backend selection
+- configuration path discovery, JSON parsing, and startup theme loading before
+  terminal setup
 
 ### ratagit-core
 

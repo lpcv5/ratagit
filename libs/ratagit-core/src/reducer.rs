@@ -27,6 +27,7 @@ fn update_ui(state: &mut AppContext, action: UiAction) -> Vec<Command> {
         }
         UiAction::HostFinished { message, refresh } => {
             state.ui.command_palette.active = false;
+            state.ui.command_palette.search_active = false;
             state.ui.workflow.dialog = None;
             push_notice(state, &message);
             if refresh {
@@ -52,14 +53,28 @@ fn update_ui(state: &mut AppContext, action: UiAction) -> Vec<Command> {
             state.ui.details.repository_confirm = None;
             Vec::new()
         }
+        UiAction::StartPaletteSearch => {
+            if state.ui.command_palette.active {
+                state.ui.command_palette.search_active = true;
+            }
+            Vec::new()
+        }
+        UiAction::FinishPaletteSearch => {
+            state.ui.command_palette.search_active = false;
+            Vec::new()
+        }
         UiAction::PaletteInput(ch) => {
-            state.ui.command_palette.query.push(ch);
-            state.ui.command_palette.selected = 0;
+            if state.ui.command_palette.active && state.ui.command_palette.search_active {
+                state.ui.command_palette.query.push(ch);
+                state.ui.command_palette.selected = 0;
+            }
             Vec::new()
         }
         UiAction::PaletteBackspace => {
-            state.ui.command_palette.query.pop();
-            state.ui.command_palette.selected = 0;
+            if state.ui.command_palette.active && state.ui.command_palette.search_active {
+                state.ui.command_palette.query.pop();
+                state.ui.command_palette.selected = 0;
+            }
             Vec::new()
         }
         UiAction::OpenFilePatch => crate::partial::open(state),
@@ -119,11 +134,13 @@ fn update_ui(state: &mut AppContext, action: UiAction) -> Vec<Command> {
         UiAction::OpenCommandPalette => {
             state.ui.command_palette.query.clear();
             state.ui.command_palette.active = true;
+            state.ui.command_palette.search_active = false;
             clamp_command_palette_selection(state);
             Vec::new()
         }
         UiAction::CloseCommandPalette => {
             state.ui.command_palette.active = false;
+            state.ui.command_palette.search_active = false;
             Vec::new()
         }
         UiAction::MoveCommandPaletteUp => {
@@ -573,10 +590,14 @@ fn execute_command_palette_selection(
     details_scroll_lines: usize,
     details_visible_lines: usize,
 ) -> Vec<Command> {
+    if !state.ui.command_palette.active || state.ui.command_palette.search_active {
+        return Vec::new();
+    }
     let action = state.selected_command_palette_entry().and_then(|entry| {
         command_palette_action(entry.command, details_scroll_lines, details_visible_lines)
     });
     state.ui.command_palette.active = false;
+    state.ui.command_palette.search_active = false;
     if let Some(action) = action {
         update_ui(state, action)
     } else {

@@ -1,5 +1,6 @@
 ---
 source: libs/ratagit-ui/tests/snapshots.rs
+assertion_line: 1271
 expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 24, },)"
 ---
 ╭ 1  󰈙 Files ────────────────────╮╭ 5   Details ──────────────────────────────────────────────────╮
@@ -9,20 +10,20 @@ expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 24,
 │   M file-03.txt                ││   +new file-00.txt                                             │
 │   M file-04.txt                ││                                                                │
 │   M file-05.txt                ││                                                                │
-│   M file-06.txt                ││                                                                │
-│   M file-07.txt                ││                                                                │
-│   M file-08.txt                ││                                                                │
-│   M file-09.txt                ││                                                                │
-│   M file-10.txt                ││                                                                │
-│   M file-11.txt                ││                                                                │
 ╰────────────────────────────────╯│                                                                │
-│ 2   Branches                  ││                                                                │
-│ main                          │╰────────────────────────────────────────────────────────────────╯
-╰────────────────────────────────╯ 6  󰌱 Log                                                        │
-│ 3   Commits                   │  notice=Ready                                                   │
-│●  abc1234  RT  init project    │                                                                 │
-╰────────────────────────────────╯                                                                 │
-│ 4   Stash                     │                                                                 │
-│ stash@{0} WIP on main: local t│                                                                 │
-╰────────────────────────────────╯─────────────────────────────────────────────────────────────────╯
+╭ 2   Branches ─────────────────╮│                                                                │
+│ main                          ││                                                                │
+│  feature/mvp                   ││                                                                │
+│                                ││                                                                │
+╰────────────────────────────────╯│                                                                │
+╭ 3   Commits ──────────────────╮│                                                                │
+│●  abc1234  RT  init project    ││                                                                │
+│●  def5678  RT  wire commands   │╰────────────────────────────────────────────────────────────────╯
+│                                │╭ 6  󰌱 Log ──────────────────────────────────────────────────────╮
+╰────────────────────────────────╯│  notice=Ready                                                  │
+╭ 4   Stash ────────────────────╮│                                                                │
+│ stash@{0} WIP on main: local t││                                                                │
+│                                ││                                                                │
+│                                ││                                                                │
+╰────────────────────────────────╯╰────────────────────────────────────────────────────────────────╯
  space  stage/unstage   d  discard   A  amend   c  commit   s  stash   D  reset   enter  expand   ?

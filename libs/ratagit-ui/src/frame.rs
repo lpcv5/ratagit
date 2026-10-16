@@ -18,9 +18,19 @@ pub struct TerminalCursor {
     pub y: u16,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct RenderContext {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RenderContext<'a> {
     pub spinner_frame: usize,
+    pub theme: &'a crate::theme::UiTheme,
+}
+
+impl Default for RenderContext<'_> {
+    fn default() -> Self {
+        Self {
+            spinner_frame: 0,
+            theme: &crate::theme::MAIN_UI_THEME,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

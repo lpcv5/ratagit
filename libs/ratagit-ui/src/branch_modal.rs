@@ -14,30 +14,40 @@ use crate::modal::{
     modal_content_rect, render_choice_menu_body, render_confirm_body, render_input_block,
     render_modal, render_section_label, render_text,
 };
-use crate::theme::modal_muted_style;
+use crate::theme::UiTheme;
 
-pub(crate) fn render_branch_modals(frame: &mut Frame<'_>, state: &AppContext, area: Rect) {
+pub(crate) fn render_branch_modals(
+    frame: &mut Frame<'_>,
+    state: &AppContext,
+    area: Rect,
+    theme: &UiTheme,
+) {
     if state.ui.branches.create.active {
-        render_branch_create_modal(frame, state, area);
+        render_branch_create_modal(frame, state, area, theme);
     }
     if state.ui.branches.delete_menu.menu.active {
-        render_branch_delete_modal(frame, state, area);
+        render_branch_delete_modal(frame, state, area, theme);
     }
     if state.ui.branches.delete_confirm.active {
-        render_branch_delete_confirm_modal(frame, state, area);
+        render_branch_delete_confirm_modal(frame, state, area, theme);
     }
     if state.ui.branches.force_delete_confirm.active {
-        render_force_delete_modal(frame, state, area);
+        render_force_delete_modal(frame, state, area, theme);
     }
     if state.ui.branches.rebase_menu.menu.active {
-        render_branch_rebase_modal(frame, state, area);
+        render_branch_rebase_modal(frame, state, area, theme);
     }
     if state.ui.branches.auto_stash_confirm.active {
-        render_auto_stash_modal(frame, state, area);
+        render_auto_stash_modal(frame, state, area, theme);
     }
 }
 
-fn render_branch_delete_confirm_modal(frame: &mut Frame<'_>, state: &AppContext, area: Rect) {
+fn render_branch_delete_confirm_modal(
+    frame: &mut Frame<'_>,
+    state: &AppContext,
+    area: Rect,
+    theme: &UiTheme,
+) {
     let mode = state
         .ui
         .branches
@@ -62,8 +72,10 @@ fn render_branch_delete_confirm_modal(frame: &mut Frame<'_>, state: &AppContext,
                 ConfirmBody::new(branch_delete_confirm_question(mode, branch))
                     .secondary("Remote branch deletion may affect other collaborators.")
                     .details(branch_delete_confirm_details(mode, branch)),
+                theme,
             );
         },
+        theme,
     );
 }
 
@@ -83,7 +95,12 @@ pub(crate) fn branch_create_cursor_position(
     )
 }
 
-fn render_branch_create_modal(frame: &mut Frame<'_>, state: &AppContext, area: Rect) {
+fn render_branch_create_modal(
+    frame: &mut Frame<'_>,
+    state: &AppContext,
+    area: Rect,
+    theme: &UiTheme,
+) {
     let rendered = render_modal(
         frame,
         area,
@@ -91,11 +108,12 @@ fn render_branch_create_modal(frame: &mut Frame<'_>, state: &AppContext, area: R
         &[&[("Enter", "create"), ("Esc", "cancel")]],
         |frame, content| {
             let rows = branch_create_rows(content);
-            render_section_label(frame, rows[0], "Create branch from selected branch");
+            render_section_label(frame, rows[0], "Create branch from selected branch", theme);
             render_text(
                 frame,
                 rows[1],
                 format!("Start point: {}", state.ui.branches.create.start_point),
+                theme,
             );
             render_input_block(
                 frame,
@@ -104,11 +122,13 @@ fn render_branch_create_modal(frame: &mut Frame<'_>, state: &AppContext, area: R
                 vec![Line::from(state.ui.branches.create.name.clone())],
                 true,
                 ModalTone::Info,
+                theme,
             );
             if rows.len() > 3 {
                 frame.render_widget(Paragraph::new(""), rows[3]);
             }
         },
+        theme,
     );
     if rendered.is_some()
         && let Some(cursor) = branch_create_cursor_position(state, area)
@@ -117,8 +137,13 @@ fn render_branch_create_modal(frame: &mut Frame<'_>, state: &AppContext, area: R
     }
 }
 
-fn render_branch_delete_modal(frame: &mut Frame<'_>, state: &AppContext, area: Rect) {
-    let choices = branch_delete_choices();
+fn render_branch_delete_modal(
+    frame: &mut Frame<'_>,
+    state: &AppContext,
+    area: Rect,
+    theme: &UiTheme,
+) {
+    let choices = branch_delete_choices(theme);
     render_modal(
         frame,
         area,
@@ -148,13 +173,20 @@ fn render_branch_delete_modal(frame: &mut Frame<'_>, state: &AppContext, area: R
                     )
                     .to_string(),
                 },
+                theme,
             );
         },
+        theme,
     );
 }
 
-fn render_branch_rebase_modal(frame: &mut Frame<'_>, state: &AppContext, area: Rect) {
-    let choices = branch_rebase_choices();
+fn render_branch_rebase_modal(
+    frame: &mut Frame<'_>,
+    state: &AppContext,
+    area: Rect,
+    theme: &UiTheme,
+) {
+    let choices = branch_rebase_choices(theme);
     render_modal(
         frame,
         area,
@@ -187,12 +219,19 @@ fn render_branch_rebase_modal(frame: &mut Frame<'_>, state: &AppContext, area: R
                         &state.ui.branches.rebase_menu.target_branch,
                     ),
                 },
+                theme,
             );
         },
+        theme,
     );
 }
 
-fn render_force_delete_modal(frame: &mut Frame<'_>, state: &AppContext, area: Rect) {
+fn render_force_delete_modal(
+    frame: &mut Frame<'_>,
+    state: &AppContext,
+    area: Rect,
+    theme: &UiTheme,
+) {
     render_modal(
         frame,
         area,
@@ -212,12 +251,14 @@ fn render_force_delete_modal(frame: &mut Frame<'_>, state: &AppContext, area: Re
                     "Git refused safe deletion:\n{}",
                     state.ui.branches.force_delete_confirm.context.reason
                 )),
+                theme,
             );
         },
+        theme,
     );
 }
 
-fn render_auto_stash_modal(frame: &mut Frame<'_>, state: &AppContext, area: Rect) {
+fn render_auto_stash_modal(frame: &mut Frame<'_>, state: &AppContext, area: Rect, theme: &UiTheme) {
     render_modal(
         frame,
         area,
@@ -235,8 +276,10 @@ fn render_auto_stash_modal(frame: &mut Frame<'_>, state: &AppContext, area: Rect
                         "Operation: {}",
                         auto_stash_operation_label(operation)
                     )),
+                theme,
             );
         },
+        theme,
     );
 }
 
@@ -256,9 +299,9 @@ fn branch_create_rows(area: Rect) -> std::rc::Rc<[Rect]> {
         .split(area)
 }
 
-fn branch_delete_choices() -> Vec<(BranchDeleteChoice, &'static str, Style)> {
+fn branch_delete_choices(theme: &UiTheme) -> Vec<(BranchDeleteChoice, &'static str, Style)> {
     choice_menu_rows(&BranchDeleteChoice::ALL, branch_delete_label, |_| {
-        modal_muted_style()
+        theme.modal_muted_style()
     })
 }
 
@@ -302,9 +345,9 @@ fn branch_delete_confirm_details(mode: BranchDeleteMode, branch: &str) -> String
     }
 }
 
-fn branch_rebase_choices() -> Vec<(BranchRebaseChoice, &'static str, Style)> {
+fn branch_rebase_choices(theme: &UiTheme) -> Vec<(BranchRebaseChoice, &'static str, Style)> {
     choice_menu_rows(&BranchRebaseChoice::ALL, branch_rebase_label, |_| {
-        modal_muted_style()
+        theme.modal_muted_style()
     })
 }
 

@@ -13,7 +13,9 @@ use super::panel_format::{
 };
 use super::panel_scroll::render_indexed_entries_window_with;
 use super::panel_types::{PanelLine, PanelSpan};
-use crate::theme::{PanelLabel, RowRole, panel_label, row_style};
+#[cfg(test)]
+use crate::theme::MAIN_UI_THEME;
+use crate::theme::{PanelLabel, RowRole, UiTheme, panel_label};
 
 pub(crate) fn panel_title(state: &AppContext, panel: PanelFocus) -> &'static str {
     if panel == PanelFocus::Branches && state.ui.branches.subview == BranchesSubview::Commits {
@@ -81,7 +83,16 @@ pub(crate) fn left_panel_content_len(state: &AppContext, panel: PanelFocus) -> u
     }
 }
 
+#[cfg(test)]
 pub(crate) fn render_files_lines(state: &AppContext, max_lines: usize) -> Vec<PanelLine> {
+    render_files_lines_with_theme(state, max_lines, &MAIN_UI_THEME)
+}
+
+pub(crate) fn render_files_lines_with_theme(
+    state: &AppContext,
+    max_lines: usize,
+    theme: &UiTheme,
+) -> Vec<PanelLine> {
     let rows = file_tree_rows_for_read(&state.repo.files.items, &state.ui.files);
     render_file_tree_lines(
         state,
@@ -90,12 +101,22 @@ pub(crate) fn render_files_lines(state: &AppContext, max_lines: usize) -> Vec<Pa
         state.ui.files.scroll_offset,
         max_lines,
         SearchScope::Files,
+        theme,
     )
 }
 
+#[cfg(test)]
 pub(crate) fn render_branches_lines(state: &AppContext, max_lines: usize) -> Vec<PanelLine> {
+    render_branches_lines_with_theme(state, max_lines, &MAIN_UI_THEME)
+}
+
+pub(crate) fn render_branches_lines_with_theme(
+    state: &AppContext,
+    max_lines: usize,
+    theme: &UiTheme,
+) -> Vec<PanelLine> {
     if state.ui.branches.subview == BranchesSubview::CommitFiles {
-        return render_branch_commit_file_lines(state, max_lines);
+        return render_branch_commit_file_lines(state, max_lines, theme);
     }
     if state.ui.branches.subview == BranchesSubview::Commits {
         return render_commit_list_lines(
@@ -103,6 +124,7 @@ pub(crate) fn render_branches_lines(state: &AppContext, max_lines: usize) -> Vec
             &state.repo.branches.commits,
             &state.ui.branches.commits,
             max_lines,
+            theme,
         );
     }
     let matches = SearchMatches::new(search_matches_for(state, SearchScope::Branches));
@@ -120,7 +142,7 @@ pub(crate) fn render_branches_lines(state: &AppContext, max_lines: usize) -> Vec
             let line = PanelLine::new(format_branch_entry(branch), role)
                 .selected(index == state.ui.branches.selected);
             if matches.contains(&branch.name) {
-                highlight_search_query(line, state, SearchScope::Branches)
+                highlight_search_query(line, state, SearchScope::Branches, theme)
             } else {
                 line
             }
@@ -128,15 +150,25 @@ pub(crate) fn render_branches_lines(state: &AppContext, max_lines: usize) -> Vec
     )
 }
 
+#[cfg(test)]
 pub(crate) fn render_commits_lines(state: &AppContext, max_lines: usize) -> Vec<PanelLine> {
+    render_commits_lines_with_theme(state, max_lines, &MAIN_UI_THEME)
+}
+
+pub(crate) fn render_commits_lines_with_theme(
+    state: &AppContext,
+    max_lines: usize,
+    theme: &UiTheme,
+) -> Vec<PanelLine> {
     if state.ui.commits.files.active {
-        return render_commit_file_lines(state, max_lines);
+        return render_commit_file_lines(state, max_lines, theme);
     }
     render_commit_list_lines(
         state,
         &state.repo.commits.items,
         &state.ui.commits,
         max_lines,
+        theme,
     )
 }
 
@@ -145,6 +177,7 @@ fn render_commit_list_lines(
     items: &[CommitEntry],
     ui: &CommitsUiState,
     max_lines: usize,
+    theme: &UiTheme,
 ) -> Vec<PanelLine> {
     let matches = SearchMatches::new(search_matches_for(state, SearchScope::Commits));
     render_indexed_entries_window_with(
@@ -158,10 +191,10 @@ fn render_commit_list_lines(
             } else {
                 RowRole::Normal
             };
-            let line = PanelLine::from_spans(commit_entry_spans(entry), role)
+            let line = PanelLine::from_spans(commit_entry_spans(entry, theme), role)
                 .selected(index == ui.selected);
             if matches.contains(&commit_key(entry)) {
-                highlight_search_query(line, state, SearchScope::Commits)
+                highlight_search_query(line, state, SearchScope::Commits, theme)
             } else {
                 line
             }
@@ -169,7 +202,16 @@ fn render_commit_list_lines(
     )
 }
 
+#[cfg(test)]
 pub(crate) fn render_stash_lines(state: &AppContext, max_lines: usize) -> Vec<PanelLine> {
+    render_stash_lines_with_theme(state, max_lines, &MAIN_UI_THEME)
+}
+
+pub(crate) fn render_stash_lines_with_theme(
+    state: &AppContext,
+    max_lines: usize,
+    theme: &UiTheme,
+) -> Vec<PanelLine> {
     let matches = SearchMatches::new(search_matches_for(state, SearchScope::Stash));
     render_indexed_entries_window_with(
         &state.repo.stash.items,
@@ -180,7 +222,7 @@ pub(crate) fn render_stash_lines(state: &AppContext, max_lines: usize) -> Vec<Pa
             let line = PanelLine::new(format_stash_entry(stash), RowRole::Normal)
                 .selected(index == state.ui.stash.selected);
             if matches.contains(&stash.id) {
-                highlight_search_query(line, state, SearchScope::Stash)
+                highlight_search_query(line, state, SearchScope::Stash, theme)
             } else {
                 line
             }
@@ -188,7 +230,11 @@ pub(crate) fn render_stash_lines(state: &AppContext, max_lines: usize) -> Vec<Pa
     )
 }
 
-fn render_commit_file_lines(state: &AppContext, max_lines: usize) -> Vec<PanelLine> {
+fn render_commit_file_lines(
+    state: &AppContext,
+    max_lines: usize,
+    theme: &UiTheme,
+) -> Vec<PanelLine> {
     let rows =
         commit_file_tree_rows_for_read(&state.repo.commits.files.items, &state.ui.commits.files);
     render_file_tree_lines(
@@ -198,10 +244,15 @@ fn render_commit_file_lines(state: &AppContext, max_lines: usize) -> Vec<PanelLi
         state.ui.commits.files.scroll_offset,
         max_lines,
         SearchScope::CommitFiles,
+        theme,
     )
 }
 
-fn render_branch_commit_file_lines(state: &AppContext, max_lines: usize) -> Vec<PanelLine> {
+fn render_branch_commit_file_lines(
+    state: &AppContext,
+    max_lines: usize,
+    theme: &UiTheme,
+) -> Vec<PanelLine> {
     let rows = commit_file_tree_rows_for_read(
         &state.repo.branches.commit_files.items,
         &state.ui.branches.commit_files,
@@ -213,6 +264,7 @@ fn render_branch_commit_file_lines(state: &AppContext, max_lines: usize) -> Vec<
         state.ui.branches.commit_files.scroll_offset,
         max_lines,
         SearchScope::CommitFiles,
+        theme,
     )
 }
 
@@ -223,6 +275,7 @@ fn render_file_tree_lines(
     scroll_offset: usize,
     max_lines: usize,
     search_scope: SearchScope,
+    theme: &UiTheme,
 ) -> Vec<PanelLine> {
     let matches = SearchMatches::new(search_matches_for(state, search_scope));
     render_indexed_entries_window_with(rows, selected, scroll_offset, max_lines, |index, row| {
@@ -235,10 +288,10 @@ fn render_file_tree_lines(
             visible_row.matched = matched;
             &visible_row
         };
-        let line = PanelLine::from_spans(file_tree_row_spans(row), file_tree_row_role(row))
+        let line = PanelLine::from_spans(file_tree_row_spans(row, theme), file_tree_row_role(row))
             .selected(index == selected);
         if matched || line_contains_search_query(&line, state, search_scope) {
-            highlight_search_query(line, state, search_scope)
+            highlight_search_query(line, state, search_scope, theme)
         } else {
             line
         }
@@ -279,6 +332,7 @@ fn highlight_search_query(
     mut line: PanelLine,
     state: &AppContext,
     scope: SearchScope,
+    theme: &UiTheme,
 ) -> PanelLine {
     if !state.ui.search.has_query_for(scope) {
         return line;
@@ -289,7 +343,7 @@ fn highlight_search_query(
     }
     let mut highlighted = Vec::new();
     for span in std::mem::take(&mut line.spans) {
-        let (mut split, _) = highlight_text_segments(&span.text, span.style, query);
+        let (mut split, _) = highlight_text_segments(&span.text, span.style, query, theme);
         highlighted.append(&mut split);
     }
     line.spans = highlighted;
@@ -306,7 +360,12 @@ fn line_contains_search_query(line: &PanelLine, state: &AppContext, scope: Searc
         .any(|span| span.text.to_lowercase().contains(&query))
 }
 
-fn highlight_text_segments(text: &str, base_style: Style, query: &str) -> (Vec<PanelSpan>, bool) {
+fn highlight_text_segments(
+    text: &str,
+    base_style: Style,
+    query: &str,
+    theme: &UiTheme,
+) -> (Vec<PanelSpan>, bool) {
     let ranges = case_insensitive_match_ranges(text, query);
     if ranges.is_empty() {
         return (
@@ -329,7 +388,9 @@ fn highlight_text_segments(text: &str, base_style: Style, query: &str) -> (Vec<P
         }
         spans.push(PanelSpan {
             text: text[start..end].to_string(),
-            style: row_style(RowRole::SearchMatch),
+            style: theme
+                .row_style(RowRole::SearchMatch)
+                .add_modifier(ratatui::style::Modifier::UNDERLINED),
         });
         cursor = end;
     }

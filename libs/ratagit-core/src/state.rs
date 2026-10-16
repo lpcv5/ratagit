@@ -239,6 +239,7 @@ pub struct SearchState {
 pub struct CommandPaletteState {
     pub query: String,
     pub active: bool,
+    pub search_active: bool,
     pub selected: usize,
 }
 

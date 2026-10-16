@@ -1,8 +1,8 @@
 use ratagit_core::{AppContext, PanelFocus};
 
 use crate::frame::{RenderContext, RenderedFrame, TerminalSize, normalize_lines, pad_and_truncate};
-use crate::layout::compute_left_panel_heights;
-use crate::panel_projection::{PanelProjection, project_panel};
+use crate::layout::{compute_left_panel_heights, compute_right_panel_heights};
+use crate::panel_projection::{PanelProjection, project_panel_with_theme};
 use crate::panels::shortcuts_for_state_with_context;
 
 pub fn render(state: &AppContext, size: TerminalSize) -> RenderedFrame {
@@ -20,7 +20,12 @@ pub fn render_with_context(
 
     let body_height = height.saturating_sub(1);
     if body_height > 0 {
-        lines.extend(render_workspace_rows(state, width, body_height));
+        lines.extend(render_workspace_rows(
+            state,
+            width,
+            body_height,
+            context.theme,
+        ));
     }
     lines.push(pad_and_truncate(
         shortcuts_for_state_with_context(state, context),
@@ -34,6 +39,7 @@ fn render_workspace_rows(
     state: &AppContext,
     total_width: usize,
     body_height: usize,
+    theme: &crate::theme::UiTheme,
 ) -> Vec<String> {
     let separator = " | ";
     let separator_width = separator.len();
@@ -43,43 +49,47 @@ fn render_workspace_rows(
 
     let (left_width, right_width) = split_columns(total_width - separator_width);
     let left_heights = compute_left_panel_heights(state, body_height, 1);
-    let right_heights = split_vertical(body_height, &[70, 30]);
+    let right_heights = compute_right_panel_heights(body_height, 1);
 
     let left_panels = [
         render_panel(
             left_width,
             left_heights.files,
-            project_panel(
+            project_panel_with_theme(
                 state,
                 PanelFocus::Files,
                 left_heights.files.saturating_sub(1),
+                theme,
             ),
         ),
         render_panel(
             left_width,
             left_heights.branches,
-            project_panel(
+            project_panel_with_theme(
                 state,
                 PanelFocus::Branches,
                 left_heights.branches.saturating_sub(1),
+                theme,
             ),
         ),
         render_panel(
             left_width,
             left_heights.commits,
-            project_panel(
+            project_panel_with_theme(
                 state,
                 PanelFocus::Commits,
                 left_heights.commits.saturating_sub(1),
+                theme,
             ),
         ),
         render_panel(
             left_width,
             left_heights.stash,
-            project_panel(
+            project_panel_with_theme(
                 state,
                 PanelFocus::Stash,
                 left_heights.stash.saturating_sub(1),
+                theme,
             ),
         ),
     ]
@@ -89,16 +99,22 @@ fn render_workspace_rows(
         render_panel(
             right_width,
             right_heights[0],
-            project_panel(
+            project_panel_with_theme(
                 state,
                 PanelFocus::Details,
                 right_heights[0].saturating_sub(1),
+                theme,
             ),
         ),
         render_panel(
             right_width,
             right_heights[1],
-            project_panel(state, PanelFocus::Log, right_heights[1].saturating_sub(1)),
+            project_panel_with_theme(
+                state,
+                PanelFocus::Log,
+                right_heights[1].saturating_sub(1),
+                theme,
+            ),
         ),
     ]
     .concat();
@@ -130,30 +146,6 @@ fn split_columns(workspace_width: usize) -> (usize, usize) {
         left = workspace_width - 20;
     }
     (left, workspace_width.saturating_sub(left))
-}
-
-fn split_vertical(total_height: usize, ratios: &[usize]) -> Vec<usize> {
-    if ratios.is_empty() {
-        return Vec::new();
-    }
-    let sum: usize = ratios.iter().sum();
-    if sum == 0 {
-        return vec![0; ratios.len()];
-    }
-
-    let mut values: Vec<usize> = ratios
-        .iter()
-        .map(|ratio| total_height * ratio / sum)
-        .collect();
-    let used: usize = values.iter().sum();
-    let mut remainder = total_height.saturating_sub(used);
-    let mut index = 0usize;
-    while remainder > 0 {
-        values[index] = values[index].saturating_add(1);
-        remainder -= 1;
-        index = (index + 1) % values.len();
-    }
-    values
 }
 
 fn render_panel(width: usize, height: usize, projection: PanelProjection) -> Vec<String> {

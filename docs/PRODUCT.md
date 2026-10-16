@@ -15,9 +15,11 @@ ratagit aims to replicate lazygit UX with a Rust + ratatui implementation.
 
 Command workflows:
 
-- `?` opens the command modal, accepts text to filter keys/labels, uses
-  arrow keys to select, `Enter` to execute, and `Esc` to close. Empty results are
-  explicit. `j/k` are filter text inside this modal.
+- `?` opens the command modal in navigation mode: `j/k` or arrows select,
+  `/` enters search, `Enter` executes, and `Esc` closes. Search filters keys/labels;
+  while editing, `j/k` are literal text and `Enter` or `Esc` returns to navigation
+  with the filter retained, without executing. `/` resumes editing the query.
+  Empty results are explicit; ordinary typing in navigation does not filter.
 - `F` fetches all remotes with pruning outside commit lists. In main/branch
   commit lists, `F` creates a fixup commit; fetch remains in the command palette.
   Lowercase `f` retains direct commit fixup.
@@ -113,8 +115,9 @@ Navigation rules:
 - `p` pulls and `P` pushes from normal mode regardless of focused panel; active
   text inputs and confirmation modals keep their own key handling
 - `?` opens an executable command palette with `Local commands` and
-  `Global commands` sections; text filters entries, arrows select an entry, `Enter`
-  runs it, and `Esc` closes it
+  `Global commands` sections; `j/k` or arrows select, `/` starts search, `Enter`
+  runs the selection, and `Esc` closes. In search, `Enter`/`Esc` finishes editing
+  and retains the filter for navigation
 - `p` and `P` are also available from the command palette's Global commands
   section, alongside refresh, focus navigation, Details scrolling, and quit
 - `A` amends staged changes into `HEAD` by default; when the main Commits panel
@@ -141,13 +144,21 @@ Navigation rules:
   shortcuts; while search input is active, the bottom row becomes
   `search: <query>`
 - focused panels are indicated by a colored border/title accent, not by `*`
-- focused panels render a complete border; inactive panels may omit shared
-  edges to keep the panel grid compact
+- every panel renders its own complete rounded border, including inactive panels;
+  focus changes the border/title color without changing the content inset
 - cursor rows are indicated by color only and only in the focused selectable panel
-- files selected for batch operations use a separate batch color
+- rows selected for batch operations use a separate batch color; every text
+  fragment uses the selection foreground, including authors, hashes, file statuses
+  and search matches, to preserve readability
 - empty panels render blank content lines instead of `<empty>` / `<none>` placeholders
-- Stash panel shows one content row when unfocused and restores default height when focused
-- focused Files/Branches/Commits panels can grow dynamically when content overflows by borrowing height evenly from other left panels
+- Stash panel keeps three content rows when unfocused and restores its weighted
+  height when focused
+- focused Files/Branches/Commits panels can grow dynamically when content overflows
+  by borrowing height evenly from other left panels, preserving three content rows
+  plus each panel's own borders
+- the three-row reserve fits all left panels at terminal heights of 21 rows or
+  more, including shortcuts; smaller terminals reduce the reserve evenly within
+  the available height; Details and Log also keep three content rows when possible
 - left-panel subviews keep the same height as their parent panel view, so entering a short subview does not resize surrounding panels
 
 Files panel rules:
@@ -374,8 +385,24 @@ All features are keyboard-driven and deterministic.
 
 The visual theme is Unicode/Nerd Font first. Panel titles and file, branch, and
 status rows use a compact semantic icon set while preserving deterministic text
-layout. Terminal panel chrome uses rounded corners and shared borders so
-adjacent panels avoid double-drawn edges.
+layout. Every terminal panel uses rounded corners and its own complete border;
+adjacent panels do not share edges.
+
+Themes are selected by a JSON configuration loaded once before terminal setup.
+The `default` and `tokyo-night` presets support partial semantic color overrides
+for panels, selections, badges, commits, files, diffs, and modals. Cursor and
+batch selection replace all text colors within selected rows; modal lists,
+including the command palette, share a full-width selection pair. Native Git
+ANSI history and log colors remain intact.
+
+`RATAGIT_CONFIG` selects an explicit file, which must exist. Otherwise the app
+uses `%APPDATA%\ratagit\config.json` on Windows, or
+`$XDG_CONFIG_HOME/ratagit/config.json` on Unix with a
+`$HOME/.config/ratagit/config.json` fallback. A missing implicit file uses the
+default theme; invalid configuration stops startup with a path-bearing error.
+Fixed RGB selection and diff pairs are contrast-validated; terminal-defined
+colors are not guaranteed by that validation. See [Themes](THEMES.md) for the
+exact JSON shape, role reference, contrast constraints, and a runnable example.
 
 ---
 

@@ -12,18 +12,14 @@ use crate::command_palette_modal::render_command_palette_modal;
 use crate::discard_modal::render_discard_modal;
 use crate::editor_modal::render_editor_modal;
 use crate::frame::{RenderContext, TerminalBuffer, TerminalCursor, TerminalSize, buffer_to_text};
-use crate::layout::compute_left_panel_heights;
+use crate::layout::{compute_left_panel_heights, compute_right_panel_heights};
 use crate::loading_indicator::loading_indicator_for_state;
-use crate::panel_projection::{PanelProjection, project_panel};
+use crate::panel_projection::{PanelProjection, project_panel_with_theme};
 use crate::panels::{PanelLine, ShortcutLine, shortcut_line_for_state};
 use crate::reset_modal::render_reset_modal;
 use crate::stage_all_modal::render_stage_all_modal;
 use crate::sync_modal::render_sync_modal;
-use crate::theme::{
-    LoadingSpotlightTone, RowRole, batch_selected_row_style, focused_panel_style,
-    inactive_panel_style, loading_spinner_style, loading_text_style, row_style, selected_row_style,
-    title_badge_style,
-};
+use crate::theme::{LoadingSpotlightTone, RowRole, UiTheme};
 
 pub fn render_terminal(frame: &mut Frame<'_>, state: &AppContext) {
     render_terminal_with_context(frame, state, RenderContext::default());
@@ -35,21 +31,22 @@ pub fn render_terminal_with_context(
     context: RenderContext,
 ) {
     let area = frame.area();
+    frame.render_widget(Block::default().style(context.theme.base_style()), area);
     let root = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(6), Constraint::Length(1)])
         .split(area);
 
-    render_panel_grid(frame, state, root[0]);
+    render_panel_grid(frame, state, root[0], context.theme);
     render_shortcuts(frame, state, context, root[1]);
-    render_editor_modal(frame, state, root[0]);
-    render_branch_modals(frame, state, root[0]);
-    render_reset_modal(frame, state, root[0]);
-    render_discard_modal(frame, state, root[0]);
-    render_sync_modal(frame, state, root[0]);
-    render_stage_all_modal(frame, state, root[0]);
-    render_command_palette_modal(frame, state, root[0]);
-    crate::workflow_modal::render(frame, state, root[0]);
+    render_editor_modal(frame, state, root[0], context.theme);
+    render_branch_modals(frame, state, root[0], context.theme);
+    render_reset_modal(frame, state, root[0], context.theme);
+    render_discard_modal(frame, state, root[0], context.theme);
+    render_sync_modal(frame, state, root[0], context.theme);
+    render_stage_all_modal(frame, state, root[0], context.theme);
+    render_command_palette_modal(frame, state, root[0], context.theme);
+    crate::workflow_modal::render(frame, state, root[0], context.theme);
 }
 
 pub fn render_terminal_text(state: &AppContext, size: TerminalSize) -> String {
@@ -115,7 +112,7 @@ pub fn render_terminal_buffer_with_cursor_and_context(
     (terminal.backend().buffer().clone(), cursor)
 }
 
-fn render_panel_grid(frame: &mut Frame<'_>, state: &AppContext, area: Rect) {
+fn render_panel_grid(frame: &mut Frame<'_>, state: &AppContext, area: Rect, theme: &UiTheme) {
     let columns = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(34), Constraint::Percentage(66)])
@@ -130,81 +127,99 @@ fn render_panel_grid(frame: &mut Frame<'_>, state: &AppContext, area: Rect) {
             Constraint::Length(left_heights.stash as u16),
         ])
         .split(columns[0]);
+    let right_heights = compute_right_panel_heights(columns[1].height as usize, 2);
     let right = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Percentage(70), Constraint::Percentage(30)])
+        .constraints(right_heights.map(|height| Constraint::Length(height as u16)))
         .split(columns[1]);
 
     render_block_panel(
         frame,
         left[0],
-        project_panel(
+        project_panel_with_theme(
             state,
             PanelFocus::Files,
             left[0].height.saturating_sub(2) as usize,
+            theme,
         ),
+        theme,
     );
     render_block_panel(
         frame,
         left[1],
-        project_panel(
+        project_panel_with_theme(
             state,
             PanelFocus::Branches,
             left[1].height.saturating_sub(2) as usize,
+            theme,
         ),
+        theme,
     );
     render_block_panel(
         frame,
         left[2],
-        project_panel(
+        project_panel_with_theme(
             state,
             PanelFocus::Commits,
             left[2].height.saturating_sub(2) as usize,
+            theme,
         ),
+        theme,
     );
     render_block_panel(
         frame,
         left[3],
-        project_panel(
+        project_panel_with_theme(
             state,
             PanelFocus::Stash,
             left[3].height.saturating_sub(2) as usize,
+            theme,
         ),
+        theme,
     );
     render_block_panel(
         frame,
         right[0],
-        project_panel(
+        project_panel_with_theme(
             state,
             PanelFocus::Details,
             right[0].height.saturating_sub(2) as usize,
+            theme,
         ),
+        theme,
     );
     render_block_panel(
         frame,
         right[1],
-        project_panel(
+        project_panel_with_theme(
             state,
             PanelFocus::Log,
             right[1].height.saturating_sub(2) as usize,
+            theme,
         ),
+        theme,
     );
 }
 
-fn render_block_panel(frame: &mut Frame<'_>, area: Rect, projection: PanelProjection) {
-    let panel = projection.panel;
+fn render_block_panel(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    projection: PanelProjection,
+    theme: &UiTheme,
+) {
     let focused = projection.focused;
     let border_style = if focused {
-        focused_panel_style()
+        theme.focused_panel_style()
     } else {
-        inactive_panel_style()
+        theme.inactive_panel_style()
     };
-    let title = panel_title_line(&projection, border_style);
+    let title = panel_title_line(&projection, border_style, theme);
     let items = projection
         .lines
         .iter()
         .map(|line| {
-            ListItem::new(line_to_ratatui_line(line)).style(row_style(line.role).patch(line.style))
+            ListItem::new(line_to_ratatui_line(line, theme))
+                .style(theme.row_style(line.role).patch(line.style))
         })
         .collect::<Vec<_>>();
     let mut list_state = ListState::default();
@@ -217,9 +232,9 @@ fn render_block_panel(frame: &mut Frame<'_>, area: Rect, projection: PanelProjec
             .and_then(|index| projection.lines.get(index))
             .is_some_and(|line| line.role == RowRole::BatchSelected)
     {
-        batch_selected_row_style()
+        theme.batch_selected_row_style()
     } else {
-        selected_row_style()
+        theme.selected_row_style()
     };
     let widget = List::new(items)
         .highlight_style(highlight_style)
@@ -227,46 +242,37 @@ fn render_block_panel(frame: &mut Frame<'_>, area: Rect, projection: PanelProjec
         .block(
             Block::default()
                 .title(title)
-                .borders(panel_borders(panel, focused))
+                .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
                 .border_style(border_style),
         );
     frame.render_stateful_widget(widget, area, &mut list_state);
 }
 
-fn panel_borders(panel: PanelFocus, focused: bool) -> Borders {
-    if focused {
-        return Borders::ALL;
-    }
-
-    match panel {
-        PanelFocus::Files => Borders::ALL,
-        PanelFocus::Branches | PanelFocus::Commits | PanelFocus::Stash => {
-            Borders::LEFT | Borders::RIGHT | Borders::BOTTOM
-        }
-        PanelFocus::Details => Borders::ALL,
-        PanelFocus::Log => Borders::RIGHT | Borders::BOTTOM,
-    }
-}
-
 fn panel_title_line(
     projection: &PanelProjection,
     title_style: ratatui::style::Style,
+    theme: &UiTheme,
 ) -> Line<'static> {
     Line::from(vec![
         Span::styled(
             format!(" {} ", projection.title.badge),
-            title_badge_style(projection.focused),
+            theme.title_badge_style(projection.focused),
         ),
         Span::styled(format!(" {} ", projection.title.body), title_style),
     ])
 }
 
-fn line_to_ratatui_line(line: &PanelLine) -> Line<'static> {
+fn line_to_ratatui_line(line: &PanelLine, theme: &UiTheme) -> Line<'static> {
+    let overlay = if line.role == RowRole::BatchSelected {
+        theme.batch_selected_row_style()
+    } else {
+        ratatui::style::Style::default()
+    };
     Line::from(
         line.spans
             .iter()
-            .map(|span| Span::styled(span.text.clone(), span.style))
+            .map(|span| Span::styled(span.text.clone(), span.style.patch(overlay)))
             .collect::<Vec<_>>(),
     )
 }
@@ -288,12 +294,13 @@ fn shortcut_line_to_ratatui_line(
     let mut prefix =
         loading_indicator_for_state(state, context).map_or_else(Vec::new, |indicator| {
             let mut spans = vec![
-                Span::styled(indicator.spinner, loading_spinner_style()),
+                Span::styled(indicator.spinner, context.theme.loading_spinner_style()),
                 Span::raw(" "),
             ];
             spans.extend(loading_text_spans(
                 &format!("loading: {}", indicator.kind),
                 indicator.spotlight_index,
+                context.theme,
             ));
             spans.push(Span::raw("  "));
             spans
@@ -311,7 +318,7 @@ fn shortcut_line_to_ratatui_line(
                 }
                 spans.push(Span::styled(
                     format!(" {} ", segment.key),
-                    title_badge_style(true),
+                    context.theme.title_badge_style(true),
                 ));
                 spans.push(Span::raw(format!(" {}", segment.label)));
             }
@@ -320,13 +327,13 @@ fn shortcut_line_to_ratatui_line(
     }
 }
 
-fn loading_text_spans(text: &str, spotlight_index: usize) -> Vec<Span<'static>> {
+fn loading_text_spans(text: &str, spotlight_index: usize, theme: &UiTheme) -> Vec<Span<'static>> {
     text.chars()
         .enumerate()
         .map(|(index, ch)| {
             Span::styled(
                 ch.to_string(),
-                loading_text_style(spotlight_tone(index, spotlight_index)),
+                theme.loading_text_style(spotlight_tone(index, spotlight_index)),
             )
         })
         .collect()

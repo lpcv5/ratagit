@@ -222,6 +222,96 @@ fn command_palette_opens_moves_clamps_and_closes() {
 }
 
 #[test]
+fn command_palette_search_retains_filter_and_selection_until_reopened() {
+    let mut state = AppContext::default();
+    assert!(!state.ui.command_palette.search_active);
+    update(&mut state, Action::Ui(UiAction::StartPaletteSearch));
+    assert!(!state.ui.command_palette.search_active);
+    update(&mut state, Action::Ui(UiAction::OpenCommandPalette));
+    assert!(!state.ui.command_palette.search_active);
+
+    for action in [UiAction::PaletteInput('x'), UiAction::PaletteBackspace] {
+        update(&mut state, Action::Ui(action));
+        assert!(state.ui.command_palette.query.is_empty());
+    }
+    update(&mut state, Action::Ui(UiAction::StartPaletteSearch));
+    update(&mut state, Action::Ui(UiAction::PaletteInput('c')));
+    update(&mut state, Action::Ui(UiAction::MoveCommandPaletteDown));
+    let filtered_entries = state.command_palette_entries();
+    assert!(filtered_entries.len() > 1);
+    assert_eq!(state.ui.command_palette.selected, 1);
+
+    update(&mut state, Action::Ui(UiAction::FinishPaletteSearch));
+    assert!(state.ui.command_palette.active);
+    assert!(!state.ui.command_palette.search_active);
+    assert_eq!(state.ui.command_palette.query, "c");
+    assert_eq!(state.ui.command_palette.selected, 1);
+    for action in [UiAction::PaletteInput('x'), UiAction::PaletteBackspace] {
+        update(&mut state, Action::Ui(action));
+        assert_eq!(state.ui.command_palette.query, "c");
+        assert_eq!(state.ui.command_palette.selected, 1);
+    }
+    update(&mut state, Action::Ui(UiAction::StartPaletteSearch));
+    assert!(state.ui.command_palette.search_active);
+    assert_eq!(state.ui.command_palette.query, "c");
+    assert_eq!(state.ui.command_palette.selected, 1);
+    update(&mut state, Action::Ui(UiAction::PaletteInput('o')));
+    assert_eq!(state.ui.command_palette.query, "co");
+    assert_eq!(state.ui.command_palette.selected, 0);
+    update(&mut state, Action::Ui(UiAction::PaletteBackspace));
+    assert_eq!(state.command_palette_entries(), filtered_entries);
+}
+
+#[test]
+fn command_palette_search_blocks_execution_and_resets_on_lifecycle_actions() {
+    let mut state = AppContext::default();
+    let execute = UiAction::ExecuteCommandPalette {
+        details_scroll_lines: 4,
+        details_visible_lines: 10,
+    };
+    update(&mut state, Action::Ui(UiAction::OpenCommandPalette));
+    select_palette_command(&mut state, CommandPaletteCommand::Pull);
+    update(&mut state, Action::Ui(UiAction::StartPaletteSearch));
+    let palette = state.ui.command_palette.clone();
+    assert!(update(&mut state, Action::Ui(execute.clone())).is_empty());
+    assert_eq!(state.ui.command_palette, palette);
+    assert!(state.work.mutation.operation_pending.is_none());
+    update(&mut state, Action::Ui(UiAction::FinishPaletteSearch));
+    assert_eq!(
+        update(&mut state, Action::Ui(execute.clone())),
+        vec![Command::Pull]
+    );
+    assert!(!state.ui.command_palette.active);
+    assert!(!state.ui.command_palette.search_active);
+    assert!(update(&mut state, Action::Ui(execute)).is_empty());
+
+    for action in [
+        UiAction::OpenCommandPalette,
+        UiAction::CloseCommandPalette,
+        UiAction::HostFinished {
+            message: "copied".into(),
+            refresh: false,
+        },
+    ] {
+        update(&mut state, Action::Ui(UiAction::OpenCommandPalette));
+        update(&mut state, Action::Ui(UiAction::StartPaletteSearch));
+        update(&mut state, Action::Ui(UiAction::PaletteInput('c')));
+        update(&mut state, Action::Ui(action.clone()));
+        assert!(!state.ui.command_palette.search_active);
+        let reopened = action == UiAction::OpenCommandPalette;
+        assert_eq!(state.ui.command_palette.active, reopened);
+        assert_eq!(
+            state.ui.command_palette.query,
+            if reopened { "" } else { "c" }
+        );
+    }
+    let palette = state.ui.command_palette.clone();
+    update(&mut state, Action::Ui(UiAction::PaletteInput('x')));
+    update(&mut state, Action::Ui(UiAction::PaletteBackspace));
+    assert_eq!(state.ui.command_palette, palette);
+}
+
+#[test]
 fn command_palette_executes_global_commands_and_closes() {
     let mut state = AppContext::default();
     update(&mut state, Action::Ui(UiAction::OpenCommandPalette));
@@ -4186,10 +4276,12 @@ fn editor_cursor_respects_unicode_boundaries() {
 fn test_palette_filter_executes_matches_and_handles_unicode_no_matches() {
     let mut state = AppContext::default();
     update(&mut state, Action::Ui(UiAction::OpenCommandPalette));
+    update(&mut state, Action::Ui(UiAction::StartPaletteSearch));
     for ch in "FETCH".chars() {
         update(&mut state, Action::Ui(UiAction::PaletteInput(ch)));
     }
     assert_eq!(state.command_palette_entries().len(), 1);
+    update(&mut state, Action::Ui(UiAction::FinishPaletteSearch));
     let commands = update(
         &mut state,
         Action::Ui(UiAction::ExecuteCommandPalette {
@@ -4205,6 +4297,7 @@ fn test_palette_filter_executes_matches_and_handles_unicode_no_matches() {
     ));
     assert!(!state.ui.command_palette.active);
     update(&mut state, Action::Ui(UiAction::OpenCommandPalette));
+    update(&mut state, Action::Ui(UiAction::StartPaletteSearch));
     update(&mut state, Action::Ui(UiAction::PaletteInput('界')));
     assert!(state.command_palette_entries().is_empty());
     update(&mut state, Action::Ui(UiAction::PaletteBackspace));

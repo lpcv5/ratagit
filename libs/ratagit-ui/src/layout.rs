@@ -4,6 +4,7 @@ use crate::frame::TerminalSize;
 use crate::panels::left_panel_content_len;
 
 const LEFT_PANEL_COUNT: usize = 4;
+const MIN_PANEL_CONTENT_LINES: usize = 3;
 const LEFT_PANEL_WEIGHTS: [usize; LEFT_PANEL_COUNT] = [36, 22, 26, 16];
 const NON_STASH_WEIGHTS: [usize; 3] = [36, 22, 26];
 const FILES_INDEX: usize = 0;
@@ -62,21 +63,13 @@ pub(crate) fn compute_left_panel_heights(
     }
 
     let available_content = total_height.saturating_sub(chrome_budget);
-    let mut content = split_by_weights(available_content, &LEFT_PANEL_WEIGHTS);
-    let minimum_readable = if available_content >= LEFT_PANEL_COUNT {
-        1
-    } else {
-        0
-    };
-    let stash_collapsed_lines = if available_content > 0 { 1 } else { 0 };
+    let minimum_readable = MIN_PANEL_CONTENT_LINES.min(available_content / LEFT_PANEL_COUNT);
+    let extra = available_content - minimum_readable * LEFT_PANEL_COUNT;
+    let mut content =
+        split_by_weights(extra, &LEFT_PANEL_WEIGHTS).map(|lines| lines + minimum_readable);
 
     if state.ui.focus != PanelFocus::Stash {
-        collapse_stash_when_unfocused(
-            &mut content,
-            stash_collapsed_lines,
-            minimum_readable,
-            available_content,
-        );
+        collapse_stash_when_unfocused(&mut content, minimum_readable);
     }
 
     let layout_focus =
@@ -97,12 +90,7 @@ pub(crate) fn compute_left_panel_heights(
         let overflow = content_lengths[focus_index].saturating_sub(content[focus_index]);
         if overflow > 0 {
             let donor_order = donor_order_for_focus(focus_index);
-            let donor_mins = [
-                minimum_readable,
-                minimum_readable,
-                minimum_readable,
-                stash_collapsed_lines,
-            ];
+            let donor_mins = [minimum_readable; LEFT_PANEL_COUNT];
             borrow_lines_evenly(
                 &mut content,
                 focus_index,
@@ -138,11 +126,24 @@ pub fn details_content_lines_for_terminal_size(size: TerminalSize) -> usize {
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(6), Constraint::Length(1)])
         .split(area);
-    let right = Layout::default()
+    compute_right_panel_heights(root[0].height as usize, 2)[0].saturating_sub(2)
+}
+
+pub(crate) fn compute_right_panel_heights(total_height: usize, chrome: usize) -> [usize; 2] {
+    use ratatui::layout::{Constraint, Direction, Layout, Rect};
+    let area = Rect::new(0, 0, 1, total_height.min(u16::MAX as usize) as u16);
+    let panels = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Percentage(70), Constraint::Percentage(30)])
-        .split(root[0]);
-    right[0].height.saturating_sub(2) as usize
+        .split(area);
+    let total = area.height as usize;
+    let chrome_budget = chrome * 2;
+    if total < chrome_budget {
+        return [panels[0].height as usize, panels[1].height as usize];
+    }
+    let minimum = chrome + MIN_PANEL_CONTENT_LINES.min((total - chrome_budget) / 2);
+    let details = (panels[0].height as usize).clamp(minimum, total - minimum);
+    [details, total - details]
 }
 
 pub fn focused_left_panel_content_lines_for_terminal_size(
@@ -161,38 +162,13 @@ pub fn focused_left_panel_content_lines_for_terminal_size(
     .saturating_sub(2)
 }
 
-fn collapse_stash_when_unfocused(
-    content: &mut [usize; LEFT_PANEL_COUNT],
-    stash_target: usize,
-    minimum_readable: usize,
-    available_content: usize,
-) {
-    if content[STASH_INDEX] > stash_target {
-        let freed = content[STASH_INDEX] - stash_target;
-        content[STASH_INDEX] = stash_target;
-        let distributed = split_by_weights(freed, &NON_STASH_WEIGHTS);
-        content[FILES_INDEX] = content[FILES_INDEX].saturating_add(distributed[0]);
-        content[BRANCHES_INDEX] = content[BRANCHES_INDEX].saturating_add(distributed[1]);
-        content[COMMITS_INDEX] = content[COMMITS_INDEX].saturating_add(distributed[2]);
-        return;
-    }
-
-    if content[STASH_INDEX] < stash_target {
-        let needed = stash_target - content[STASH_INDEX];
-        let donor_mins = [
-            minimum_readable,
-            minimum_readable,
-            minimum_readable,
-            if available_content > 0 { 1 } else { 0 },
-        ];
-        borrow_lines_evenly(
-            content,
-            STASH_INDEX,
-            needed,
-            &[FILES_INDEX, BRANCHES_INDEX, COMMITS_INDEX],
-            &donor_mins,
-        );
-    }
+fn collapse_stash_when_unfocused(content: &mut [usize; LEFT_PANEL_COUNT], stash_target: usize) {
+    let freed = content[STASH_INDEX].saturating_sub(stash_target);
+    content[STASH_INDEX] -= freed;
+    let distributed = split_by_weights(freed, &NON_STASH_WEIGHTS);
+    content[FILES_INDEX] += distributed[0];
+    content[BRANCHES_INDEX] += distributed[1];
+    content[COMMITS_INDEX] += distributed[2];
 }
 
 fn borrow_lines_evenly(
@@ -281,11 +257,11 @@ mod tests {
     }
 
     #[test]
-    fn stash_collapses_to_single_content_line_when_unfocused() {
+    fn stash_collapses_to_three_content_lines_when_unfocused() {
         let state = AppContext::default();
         let heights = compute_left_panel_heights(&state, 40, 2);
 
-        assert_eq!(heights.stash.saturating_sub(2), 1);
+        assert_eq!(heights.stash.saturating_sub(2), 3);
     }
 
     #[test]
@@ -362,6 +338,55 @@ mod tests {
         borrow_lines_evenly(&mut content, FILES_INDEX, 12, &[1, 2, 3], &donor_mins);
 
         assert_eq!(content, [20, 1, 2, 1]);
+    }
+
+    #[test]
+    fn left_panels_reserve_readable_rows_before_weighting_and_borrowing() {
+        for mut state in [AppContext::default(), state_with_many_files()] {
+            for focus in [
+                PanelFocus::Files,
+                PanelFocus::Branches,
+                PanelFocus::Commits,
+                PanelFocus::Stash,
+                PanelFocus::Details,
+                PanelFocus::Log,
+            ] {
+                state.ui.focus = focus;
+                for chrome in [1, 2] {
+                    for height in 0..=100 {
+                        let heights = compute_left_panel_heights(&state, height, chrome).as_array();
+                        assert_eq!(heights.iter().sum::<usize>(), height);
+                        if height >= chrome * LEFT_PANEL_COUNT {
+                            let minimum = MIN_PANEL_CONTENT_LINES
+                                .min((height - chrome * LEFT_PANEL_COUNT) / LEFT_PANEL_COUNT);
+                            assert!(
+                                heights.iter().all(|value| *value >= chrome + minimum),
+                                "focus={focus:?}, height={height}, chrome={chrome}: {heights:?}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn right_panels_keep_three_content_rows_when_space_allows() {
+        for chrome in [1, 2] {
+            for height in 0..=100 {
+                let heights = compute_right_panel_heights(height, chrome);
+                assert_eq!(heights.iter().sum::<usize>(), height);
+                if height >= 2 * (chrome + MIN_PANEL_CONTENT_LINES) {
+                    assert!(
+                        heights
+                            .iter()
+                            .all(|value| *value >= chrome + MIN_PANEL_CONTENT_LINES)
+                    );
+                }
+            }
+        }
+        assert_eq!(compute_right_panel_heights(9, 2), [5, 4]);
+        assert_eq!(compute_right_panel_heights(10, 2), [5, 5]);
     }
 
     #[test]

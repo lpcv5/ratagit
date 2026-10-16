@@ -8,7 +8,6 @@ works; choose implementation steps to fit the task.
 Follow [ARCHITECTURE.md](ARCHITECTURE.md): AppContext owns application state,
 reducers own transitions, rendering is pure, and Git access goes through
 GitBackend. Keep async request ownership and mutation barriers intact.
-Use apply_patch for code edits. Preserve unrelated working-tree changes.
 
 ## Workflow
 

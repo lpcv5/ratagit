@@ -10,8 +10,14 @@ use crate::modal::{
     ModalSpec, ModalTone, modal_content_rect, render_input_block, render_modal,
     render_section_label, render_text,
 };
+use crate::theme::UiTheme;
 
-pub(crate) fn render_editor_modal(frame: &mut Frame<'_>, state: &AppContext, area: Rect) {
+pub(crate) fn render_editor_modal(
+    frame: &mut Frame<'_>,
+    state: &AppContext,
+    area: Rect,
+    theme: &UiTheme,
+) {
     let Some(editor) = &state.ui.editor.kind else {
         return;
     };
@@ -49,8 +55,10 @@ pub(crate) fn render_editor_modal(frame: &mut Frame<'_>, state: &AppContext, are
                         body_cursor: *body_cursor,
                         active_field: *active_field,
                     },
+                    theme,
                 );
             },
+            theme,
         ),
         EditorKind::Stash {
             title,
@@ -65,8 +73,9 @@ pub(crate) fn render_editor_modal(frame: &mut Frame<'_>, state: &AppContext, are
                 &[("Enter", "confirm"), ("Esc", "cancel")],
             ],
             |frame, content| {
-                render_stash_editor(frame, content, title, *title_cursor, scope);
+                render_stash_editor(frame, content, title, *title_cursor, scope, theme);
             },
+            theme,
         ),
     };
 
@@ -108,7 +117,12 @@ struct CommitEditorContent<'a> {
     active_field: CommitField,
 }
 
-fn render_commit_editor(frame: &mut Frame<'_>, area: Rect, content: CommitEditorContent<'_>) {
+fn render_commit_editor(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    content: CommitEditorContent<'_>,
+    theme: &UiTheme,
+) {
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -117,7 +131,12 @@ fn render_commit_editor(frame: &mut Frame<'_>, area: Rect, content: CommitEditor
             Constraint::Min(3),
         ])
         .split(area);
-    render_section_label(frame, rows[0], "Edit commit subject and optional body");
+    render_section_label(
+        frame,
+        rows[0],
+        "Edit commit subject and optional body",
+        theme,
+    );
     render_input_block(
         frame,
         rows[1],
@@ -125,6 +144,7 @@ fn render_commit_editor(frame: &mut Frame<'_>, area: Rect, content: CommitEditor
         vec![Line::from(content.message.to_string())],
         content.active_field == CommitField::Message,
         ModalTone::Info,
+        theme,
     );
     let body_lines = body_visible_lines(
         content.body,
@@ -138,6 +158,7 @@ fn render_commit_editor(frame: &mut Frame<'_>, area: Rect, content: CommitEditor
         body_lines,
         content.active_field == CommitField::Body,
         ModalTone::Info,
+        theme,
     );
 }
 
@@ -147,6 +168,7 @@ fn render_stash_editor(
     title: &str,
     _title_cursor: usize,
     scope: &StashScope,
+    theme: &UiTheme,
 ) {
     let rows = Layout::default()
         .direction(Direction::Vertical)
@@ -157,7 +179,7 @@ fn render_stash_editor(
             Constraint::Min(1),
         ])
         .split(area);
-    render_section_label(frame, rows[0], "Name the stash before saving");
+    render_section_label(frame, rows[0], "Name the stash before saving", theme);
     render_input_block(
         frame,
         rows[1],
@@ -165,12 +187,13 @@ fn render_stash_editor(
         vec![Line::from(title.to_string())],
         true,
         ModalTone::Info,
+        theme,
     );
     let scope_text = match scope {
         StashScope::All => "all changes".to_string(),
         StashScope::SelectedPaths(paths) => format!("selected files ({})", paths.len()),
     };
-    render_text(frame, rows[2], format!("Scope: {scope_text}"));
+    render_text(frame, rows[2], format!("Scope: {scope_text}"), theme);
     if rows.len() > 3 {
         frame.render_widget(Paragraph::new(""), rows[3]);
     }

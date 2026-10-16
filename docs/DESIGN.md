@@ -148,11 +148,17 @@ Focus model:
 - `AppContext.repo.details.files_diff_truncated_from` stores the original target count
   when Files Details diff output is limited to the first 100 targets
 - left-panel height baseline follows the Files/Branches/Commits/Stash ratio
-- when `Stash` is unfocused it collapses to one content row and freed height is
-  redistributed by ratio to Files/Branches/Commits
+- reserve three content rows per left panel before distributing remaining height
+  by ratio; when `Stash` is unfocused it keeps those three rows and freed height
+  is redistributed by ratio to Files/Branches/Commits
 - when focus is in Files/Branches/Commits and content overflows, the focused
-  panel borrows height from other left panels in round-robin order while keeping
-  minimum readable rows
+  panel borrows height from other left panels in round-robin order, preserving
+  at least three content rows in every donor
+- complete left-panel frames with this reserve need 20 body rows (21 terminal
+  rows including shortcuts); smaller terminals reduce the common content reserve
+  evenly, conserving available height without overlap
+- Details/Log retain their 70/30 split, clamped to three content rows per panel
+  whenever both fully bordered panels fit
 
 ---
 
@@ -164,9 +170,13 @@ Focus model:
   modes keep priority over panel shortcuts, and confirmed search queries can
   fall through to panel shortcuts only after search-specific keys are checked.
 - `?` maps to `OpenCommandPalette` from normal panel and confirmed-search-query
-  flow. While the command palette is active, `j` / `k`, arrows, `Enter`, and
-  `Esc` are handled by command-palette actions before panel shortcuts; `Enter`
-  executes the selected command and closes the palette.
+  flow. The palette owns navigation and search-input modes before panel shortcuts.
+  Navigation uses `j` / `k` or arrows to select, `/` to enter search, `Enter` to
+  execute the selected command, and `Esc` to close. Search input accepts literal
+  characters (including j/k), Backspace, and arrow selection; `Enter` or `Esc`
+  finishes editing and retains the filter without executing. `/` in navigation
+  resumes editing the retained query. Other ordinary navigation-mode characters
+  are ignored, including `q`; selecting Quit explicitly or `Ctrl+C` quits.
 - `Ctrl+U` and `Ctrl+D` map to global Details scroll actions before
   mode-specific key handling. The input layer computes the step as
   `max(1, details_content_height * 2 / 5)` from the current terminal layout.
@@ -192,7 +202,8 @@ Focus model:
   uses `Command` metadata for mutating barriers, debounce keys, and refresh
   coalescing keys instead of duplicating command matches in each runtime.
 - Backend output re-enters `update()` as `GitResult`.
-- UI rendering reads only `AppContext`.
+- UI rendering reads immutable `AppContext`, terminal size, and explicit
+  `RenderContext` inputs, including the resolved theme and spinner frame.
 - High-frequency side effects use runtime command debouncing keyed by
   `ratagit_core::debounce_key_for_command`, so rapid navigation can collapse to
   the latest command while keeping state transitions deterministic.
@@ -212,7 +223,12 @@ Search interaction:
   `Global commands` sections. Section labels are not selectable; command rows
   are selectable, viewported around the selected command when the list is taller
   than the modal content, and execute existing reducer actions rather than
-  introducing separate command semantics.
+  introducing separate command semantics. Palette search state belongs to
+  `AppContext.ui.command_palette`, independently of panel search. Opening the
+  palette clears its query and starts navigation; hints switch between
+  `j/k ↑/↓ select`, `/ search`, `Enter run`, `Esc close` and search-editing help.
+  The filter row is visible during search even before any text is entered, and
+  stays visible for a nonempty confirmed query.
 - Matches are case-insensitive and deterministic:
   - Files and Commit Files match full paths
   - Branches match branch names
@@ -457,11 +473,9 @@ Panel projection and row source:
 ## Visual Theme
 
 - The UI assumes Unicode/Nerd Font support.
-- Terminal panel borders use rounded corners and omit shared left/top edges for
-  right-side or lower panels so adjacent panels read as one grid instead of
-  double-drawn boxes.
-- The focused panel renders a complete rounded border even when an inactive
-  panel in the same position would omit a shared edge.
+- Every terminal panel owns a complete rounded border with all four edges,
+  regardless of focus. Adjacent panels occupy separate rectangles and never
+  share or overwrite border cells; focus changes border/title color only.
 - Panel titles include semantic icons and never use `*` to show focus.
 - Terminal panel titles render the numbered focus hint as a reverse-video badge
   before the semantic icon and label.
@@ -470,7 +484,8 @@ Panel projection and row source:
 - Visual-selected file rows use a color distinct from cursor selection.
 - Commit rows use fixed graph/hash/author/message columns; the graph is a `●`
   placeholder until a later topology pass, hash colors represent main/upstream
-  reachability, and author initials use deterministic per-author colors.
+  reachability, and author initials use deterministic per-author colors, with a
+  bright RGB blue replacing dark ANSI blue for readability on dark terminals.
 - Files and Commits share the same AppContext-owned scroll direction/origin helper
   so list windows move only after the cursor crosses the three-row top/bottom
   reserve.
@@ -491,24 +506,54 @@ Panel projection and row source:
   the terminal width up to the shared modal maximum. Modal outer frames target
   three fifths of the terminal height while preserving small-terminal minimum
   and maximum clamps.
-- `ratagit-ui` uses a shared semantic theme for panels, rows, loading text, and
-  modals. The current default follows the main terminal UI palette: terminal
-  default foreground/background, yellow focus and cursor selection, blue batch
-  selection, dark-gray muted chrome, and standard warning/danger/success/info
-  colors. Modal overlays use the same default palette instead of a separate
-  Tokyo Night background.
-- Additional built-in palettes, including Tokyo Night, are kept as theme
-  candidates. Configuration-file theme selection is a future TODO and is not
-  active in the current runtime.
+- `ratagit-ui` uses a shared `UiTheme` for panels, rows, loading text, commits,
+  file statuses, diffs, and modals. The executable loads JSON configuration once
+  before terminal setup, resolves `default` or `tokyo-night` plus semantic color
+  overrides, and passes an immutable theme through `RenderContext` alongside the
+  spinner frame. Rendering is pure: it receives `AppContext`, terminal size, and
+  explicit render inputs rather than reading configuration or environment.
+  See [Themes](THEMES.md) for discovery, JSON fields, and the complete role list.
+- The default palette uses terminal-default foreground/background, yellow focus
+  and cursor selection, blue batch selection, dark-gray muted chrome, and ANSI
+  warning/danger/success/info colors. Tokyo Night supplies a dark RGB base and
+  modal palette. Both presets share initial commit, file-status, and diff colors.
+- Cursor and batch selection apply their foreground/background to every text
+  span, overriding author/hash/status/search colors. Search-hit substrings retain
+  underline inside these highlights. Unselected rows retain semantic colors;
+  native Git ANSI history and log spans are preserved without theme recoloring.
+- Diff rows pair tinted staged/unstaged normal, marked, and cursor backgrounds
+  with explicit RGB add/remove foregrounds. Highlighted context and cursor/mark
+  gutters use `diff.context.foreground`. Validation checks these text/background
+  pairs at 4.5:1 or above; `diff.gutter` colors gutters without a highlighted
+  background. Cursor state takes precedence over marked state.
+- Overrides to cursor, batch, badge, modal-selection, and diff roles require RGB.
+  Cursor, batch, and badge pairs require both final channels to be RGB and at
+  least 4.5:1, except unchanged legacy default ANSI pairs. Base and effective
+  modal-body pairs, plus semantic accents, file statuses, hashes, authors and
+  normal diff gutters against their corresponding backgrounds, are checked at
+  4.5:1 when both channels are RGB. Identical non-reset values are rejected even
+  for ANSI colors. Muted chrome only rejects identical non-reset values.
+  Terminal-default and named/indexed ANSI colors cannot be contrast-verified;
+  validation does not guarantee their appearance in a terminal.
+- Modal scrims clear underlying selection/diff backgrounds before applying muted
+  text, so background highlights do not bleed through the overlay.
 - Modal tones are semantic and text-backed: editor modals use an info accent,
   repository reset uses a warning accent, and discard confirmation uses a danger
   accent while still rendering explicit warning text.
 - Input modal focus is border-only: the active input field uses the modal tone
-  for its border and title, while input text keeps the normal terminal
+  for its border and title, while input text keeps the effective modal
   foreground/background.
 - Confirmation modals share the `Confirm` title with the tone icon, center a
   primary question plus secondary consequence text, and render compact
   AppContext-derived details below the message.
+- Modal select lists (including reset, rebase, command palette and workflow
+  menus) use `modal.selection.foreground` and `modal.selection.background`.
+  The default pair is RGB dark text `#142238` on pale blue `#B4D7FF`; Tokyo Night
+  uses `#C0CAF5` on `#24283B`. Validation requires both channels to be RGB with
+  at least 7:1 text contrast, including custom overrides. Selection overrides
+  warning, danger and muted label colors; unselected choices retain their
+  semantic styles. Indicators and trailing row padding use the same selection
+  pair, with one full-width highlight per list.
 - Choice-menu modals reuse a shared body shape: intro text, choice list,
   description label, and description text. The shared choice list derives its
   viewport from the available choices, sizes the modal shell to fit that

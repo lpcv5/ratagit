@@ -6,40 +6,38 @@ ratagit is a Rust 2024 Git TUI built with ratatui and crossterm, aiming for lazy
 
 ## Commands
 
-Run from the workspace root with stable Rust and Git installed. Commands use the repository's `rtk` prefix; if the wrapper is unavailable, run the underlying command and report that limitation.
-
 ```bash
 # Build / compile check
-rtk cargo build --locked --workspace
-rtk cargo check --locked --workspace
+cargo build --locked --workspace
+cargo check --locked --workspace
 
 # Launch the TUI in an interactive terminal (explicit binary avoids helper binaries)
-rtk cargo run --locked --bin ratagit
+cargo run --locked --bin ratagit
 
 # Format / check formatting
-rtk cargo fmt
-rtk cargo fmt --check
+cargo fmt
+cargo fmt --check
 
 # Strict lint: production libraries and binaries; test-only lint is advisory
-rtk cargo clippy --locked --workspace --lib --bins -- -D warnings
+cargo clippy --locked --workspace --lib --bins -- -D warnings
 
 # Full test gate: unit, integration, UI snapshots, and harness
-rtk cargo test --locked --workspace
+cargo test --locked --workspace
 
 # One crate / one integration test target / one exact test
-rtk cargo test --locked -p ratagit-ui
-rtk cargo test --locked -p ratagit-ui --test details_entry
-rtk cargo test --locked -p ratagit-ui --test details_entry entry_keeps_expanded_files_and_previous_preview_until_patch_arrives -- --exact
+cargo test --locked -p ratagit-ui
+cargo test --locked -p ratagit-ui --test details_entry
+cargo test --locked -p ratagit-ui --test details_entry entry_keeps_expanded_files_and_previous_preview_until_patch_arrives -- --exact
 
 # Harness only / one mock scenario
-rtk cargo test --locked -p ratagit-harness
-rtk cargo test --locked -p ratagit-harness --test harness harness_status_refresh -- --exact
+cargo test --locked -p ratagit-harness
+cargo test --locked -p ratagit-harness --test harness harness_status_refresh -- --exact
 
 # Review pending snapshot differences (requires cargo-insta)
-rtk cargo insta review
+cargo insta review
 
 # Whitespace validation
-rtk git diff --check
+git diff --check
 ```
 
 The app discovers a repository from the process working directory and uses `HybridGitBackend`; outside a repository it displays a mock dirty-repository fixture. The executable owns keyboard mapping, terminal lifecycle, clipboard, and external editors.
@@ -50,7 +48,7 @@ Ensure a filtered test command actually runs the intended tests. CI runs formatt
 
 Follow [docs/DEVELOPMENT_LOOP.md](docs/DEVELOPMENT_LOOP.md): small documentation or bounded local changes need only a goal and validation note in the conversation. Before substantial, ambiguous, cross-layer, Git mutation, or async/runtime work, update [docs/EXEC_PLAN.md](docs/EXEC_PLAN.md) with scope, risks, acceptance criteria, and verification, preserving its required headings.
 
-For code, dependency, build, or CI changes, the final gate is formatting, strict production Clippy, and full workspace tests above. Review intended snapshot diffs rather than bulk-accepting mismatches. Documentation-only changes need content/link review and `rtk git diff --check`.
+For code, dependency, build, or CI changes, the final gate is formatting, strict production Clippy, and full workspace tests above. Review intended snapshot diffs rather than bulk-accepting mismatches. Documentation-only changes need content/link review and `git diff --check`.
 
 ## Architecture
 

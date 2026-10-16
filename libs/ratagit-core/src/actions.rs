@@ -54,6 +54,8 @@ pub enum UiAction {
     StashDropSelected,
     ConfirmRepositoryOperation,
     CancelRepositoryOperation,
+    StartPaletteSearch,
+    FinishPaletteSearch,
     PaletteInput(char),
     PaletteBackspace,
     Pull,

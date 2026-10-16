@@ -1,3 +1,4 @@
+mod config;
 mod desktop;
 mod input;
 mod workflow_input;
@@ -84,6 +85,7 @@ fn prepare_commit_editor(file: &Path) -> io::Result<EditorCommand> {
 }
 
 fn run_tui() -> Result<(), Box<dyn Error>> {
+    let theme = config::load_theme()?;
     let backend_factory = select_backend_factory()?;
     let mut terminal_session = TerminalSession::new()?;
     let mut runtime = build_initial_runtime(backend_factory);
@@ -108,7 +110,14 @@ fn run_tui() -> Result<(), Box<dyn Error>> {
             next_spinner_frame_at = now + spinner_frame_interval();
         }
         terminal_session.terminal.draw(|frame| {
-            render_terminal_with_context(frame, runtime.state(), RenderContext { spinner_frame });
+            render_terminal_with_context(
+                frame,
+                runtime.state(),
+                RenderContext {
+                    spinner_frame,
+                    theme: &theme,
+                },
+            );
         })?;
 
         if !event::poll(input_poll_interval())? {

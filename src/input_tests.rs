@@ -76,6 +76,7 @@ mod tests {
             })
         );
         state.ui.command_palette.active = true;
+        state.ui.command_palette.search_active = true;
         assert!(host_effect(&state, KeyCode::Char('e'), KeyModifiers::NONE).is_none());
         assert_eq!(
             map_key(&state, KeyCode::Char('e')),
@@ -92,6 +93,17 @@ mod tests {
             state,
             code,
             KeyModifiers::NONE,
+            TEST_DETAILS_SCROLL_LINES,
+            TEST_DETAILS_VISIBLE_LINES,
+            TEST_LEFT_PANEL_VISIBLE_LINES,
+        )
+    }
+
+    fn effect(state: &AppContext, code: KeyCode, modifiers: KeyModifiers) -> KeyEffect {
+        key_effect_for_key(
+            state,
+            code,
+            modifiers,
             TEST_DETAILS_SCROLL_LINES,
             TEST_DETAILS_VISIBLE_LINES,
             TEST_LEFT_PANEL_VISIBLE_LINES,
@@ -232,6 +244,13 @@ mod tests {
         palette.ui.search.active = true;
         palette.ui.search.scope = palette.active_search_scope();
         assert_eq!(input_mode_for_state(&palette), InputMode::CommandPalette);
+        palette.ui.command_palette.search_active = true;
+        assert_eq!(
+            input_mode_for_state(&palette),
+            InputMode::CommandPaletteSearch
+        );
+        palette.ui.command_palette.active = false;
+        assert_eq!(input_mode_for_state(&palette), InputMode::SearchInput);
     }
 
     #[test]
@@ -665,7 +684,7 @@ mod tests {
         );
         assert_eq!(
             map_key(&state, KeyCode::Char('j')),
-            Some(UiAction::PaletteInput('j'))
+            Some(UiAction::MoveCommandPaletteDown)
         );
         assert_eq!(
             map_key(&state, KeyCode::Up),
@@ -673,7 +692,7 @@ mod tests {
         );
         assert_eq!(
             map_key(&state, KeyCode::Char('k')),
-            Some(UiAction::PaletteInput('k'))
+            Some(UiAction::MoveCommandPaletteUp)
         );
         assert_eq!(
             map_key(&state, KeyCode::Enter),
@@ -687,9 +706,17 @@ mod tests {
             Some(UiAction::CloseCommandPalette)
         );
         assert_eq!(
-            map_key(&state, KeyCode::Char('d')),
-            Some(UiAction::PaletteInput('d'))
+            map_key(&state, KeyCode::Char('/')),
+            Some(UiAction::StartPaletteSearch)
         );
+        for code in [
+            KeyCode::Char('d'),
+            KeyCode::Char('e'),
+            KeyCode::Char('q'),
+            KeyCode::Backspace,
+        ] {
+            assert_eq!(map_key(&state, code), None);
+        }
 
         state.ui.command_palette.selected = state
             .command_palette_entries()
@@ -707,6 +734,159 @@ mod tests {
             ),
             KeyEffect::Quit
         );
+    }
+
+    #[test]
+    fn command_palette_search_maps_literal_text_and_finish_keys() {
+        let mut state = active_command_palette_state();
+        state.ui.command_palette.search_active = true;
+        for ch in ['j', 'k', '/', '?', 'q', 'e', 'C', '界'] {
+            assert_eq!(
+                effect(&state, KeyCode::Char(ch), KeyModifiers::NONE),
+                KeyEffect::Dispatch(UiAction::PaletteInput(ch))
+            );
+        }
+        for (code, action) in [
+            (KeyCode::Backspace, UiAction::PaletteBackspace),
+            (KeyCode::Up, UiAction::MoveCommandPaletteUp),
+            (KeyCode::Down, UiAction::MoveCommandPaletteDown),
+            (KeyCode::Enter, UiAction::FinishPaletteSearch),
+            (KeyCode::Esc, UiAction::FinishPaletteSearch),
+        ] {
+            assert_eq!(map_key(&state, code), Some(action));
+        }
+        assert_eq!(
+            effect(&state, KeyCode::Char('C'), KeyModifiers::SHIFT),
+            KeyEffect::Dispatch(UiAction::PaletteInput('C'))
+        );
+        for modifiers in [KeyModifiers::CONTROL, KeyModifiers::ALT] {
+            assert_eq!(
+                effect(&state, KeyCode::Char('o'), modifiers),
+                KeyEffect::Ignore
+            );
+        }
+    }
+
+    #[test]
+    fn command_palette_finish_keys_retain_query_and_slash_resumes_it() {
+        use ratagit_core::{Action, update};
+        for finish in [KeyCode::Enter, KeyCode::Esc] {
+            let mut state = active_command_palette_state();
+            for code in [KeyCode::Char('/'), KeyCode::Char('c'), KeyCode::Down] {
+                let KeyEffect::Dispatch(action) = effect(&state, code, KeyModifiers::NONE) else {
+                    panic!("expected palette action for {code:?}");
+                };
+                update(&mut state, Action::Ui(action));
+            }
+            assert_eq!(state.ui.command_palette.selected, 1);
+            let KeyEffect::Dispatch(action) = effect(&state, finish, KeyModifiers::NONE) else {
+                panic!("expected finish action");
+            };
+            assert_eq!(action, UiAction::FinishPaletteSearch);
+            assert!(update(&mut state, Action::Ui(action)).is_empty());
+            assert_eq!(input_mode_for_state(&state), InputMode::CommandPalette);
+            assert_eq!(state.ui.command_palette.query, "c");
+            assert_eq!(state.ui.command_palette.selected, 1);
+            assert_eq!(
+                effect(&state, KeyCode::Char('q'), KeyModifiers::NONE),
+                KeyEffect::Ignore
+            );
+            let KeyEffect::Dispatch(action) =
+                effect(&state, KeyCode::Char('/'), KeyModifiers::NONE)
+            else {
+                panic!("expected start search action");
+            };
+            update(&mut state, Action::Ui(action));
+            assert_eq!(
+                input_mode_for_state(&state),
+                InputMode::CommandPaletteSearch
+            );
+            assert_eq!(state.ui.command_palette.query, "c");
+            assert_eq!(state.ui.command_palette.selected, 1);
+        }
+    }
+
+    #[test]
+    fn palette_search_enter_cannot_execute_quit_edit_or_copy() {
+        use ratagit_core::{Action, CommandPaletteCommand as Command, GitResult, update};
+        let mut state = AppContext::default();
+        update(
+            &mut state,
+            Action::GitResult(GitResult::Refreshed(ratagit_testkit::fixture_dirty_repo())),
+        );
+        update(&mut state, Action::Ui(UiAction::OpenCommandPalette));
+        for (command, expected) in [
+            (Command::Quit, KeyEffect::Quit),
+            (
+                Command::EditFile,
+                KeyEffect::Host {
+                    edit: true,
+                    path: "README.md".into(),
+                },
+            ),
+            (
+                Command::CopyPath,
+                KeyEffect::Host {
+                    edit: false,
+                    path: "README.md".into(),
+                },
+            ),
+        ] {
+            state.ui.command_palette.selected = state
+                .command_palette_entries()
+                .iter()
+                .position(|entry| entry.command == command)
+                .expect("palette command");
+            update(&mut state, Action::Ui(UiAction::StartPaletteSearch));
+            assert_eq!(
+                effect(&state, KeyCode::Enter, KeyModifiers::NONE),
+                KeyEffect::Dispatch(UiAction::FinishPaletteSearch)
+            );
+            assert_eq!(
+                host_effect(&state, KeyCode::Enter, KeyModifiers::NONE),
+                None
+            );
+            assert!(!command_palette_selection_quits(
+                &state,
+                KeyCode::Enter,
+                KeyModifiers::NONE
+            ));
+            update(&mut state, Action::Ui(UiAction::FinishPaletteSearch));
+            assert_eq!(effect(&state, KeyCode::Enter, KeyModifiers::NONE), expected);
+        }
+    }
+
+    #[test]
+    fn palette_modes_preserve_global_scroll_and_ctrl_c_but_ignore_plain_q() {
+        for search_active in [false, true] {
+            let mut state = active_command_palette_state();
+            state.ui.command_palette.search_active = search_active;
+            assert_eq!(
+                effect(&state, KeyCode::Char('c'), KeyModifiers::CONTROL),
+                KeyEffect::Quit
+            );
+            assert_eq!(
+                effect(&state, KeyCode::Char('u'), KeyModifiers::CONTROL),
+                KeyEffect::Dispatch(UiAction::DetailsScrollUp {
+                    lines: TEST_DETAILS_SCROLL_LINES
+                })
+            );
+            assert_eq!(
+                effect(&state, KeyCode::Char('d'), KeyModifiers::CONTROL),
+                KeyEffect::Dispatch(UiAction::DetailsScrollDown {
+                    lines: TEST_DETAILS_SCROLL_LINES,
+                    visible_lines: TEST_DETAILS_VISIBLE_LINES
+                })
+            );
+            assert_eq!(
+                effect(&state, KeyCode::Char('q'), KeyModifiers::NONE),
+                if search_active {
+                    KeyEffect::Dispatch(UiAction::PaletteInput('q'))
+                } else {
+                    KeyEffect::Ignore
+                }
+            );
+        }
     }
 
     #[test]

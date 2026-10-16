@@ -34,4 +34,7 @@ pub use terminal::{
     render_terminal_text, render_terminal_text_with_context, render_terminal_with_context,
 };
 pub use text::{render, render_with_context};
-pub use theme::{batch_selected_row_style, focused_panel_style, selected_row_style};
+pub use theme::{
+    BUILT_IN_THEMES, CommitTheme, DiffTheme, FileTheme, MAIN_UI_THEME, ModalTheme,
+    TOKYO_NIGHT_THEME, UiTheme, batch_selected_row_style, focused_panel_style, selected_row_style,
+};

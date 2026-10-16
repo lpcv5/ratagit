@@ -3,8 +3,14 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 
 use crate::modal::{ConfirmBody, ModalSpec, ModalTone, render_confirm_body, render_modal};
+use crate::theme::UiTheme;
 
-pub(crate) fn render_stage_all_modal(frame: &mut Frame<'_>, state: &AppContext, area: Rect) {
+pub(crate) fn render_stage_all_modal(
+    frame: &mut Frame<'_>,
+    state: &AppContext,
+    area: Rect,
+    theme: &UiTheme,
+) {
     if !state.ui.stage_all_confirm.active {
         return;
     }
@@ -35,7 +41,8 @@ pub(crate) fn render_stage_all_modal(frame: &mut Frame<'_>, state: &AppContext, 
         area,
         ModalSpec::new("Stage All", ModalTone::Warning, 72, 10, 32, 7, 1),
         &[&[("Enter", "stage all"), ("Esc", "cancel")]],
-        |frame, area| render_confirm_body(frame, area, ModalTone::Warning, body),
+        |frame, area| render_confirm_body(frame, area, ModalTone::Warning, body, theme),
+        theme,
     );
 }
 

@@ -1,8 +1,8 @@
 //! Shared presentation for passive previews and reviewed, interactive patches.
 use super::panel_types::{PanelLine, PanelSpan};
-use crate::theme::{RowRole, current_theme};
+use crate::theme::{RowRole, UiTheme};
 use ratagit_core::patch::{PatchLineKind, PatchRow};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 
 pub(super) struct DiffRow {
     pub row: PatchRow,
@@ -24,16 +24,21 @@ impl DiffRow {
     }
 }
 
-pub(super) fn render(rows: &[DiffRow], offset: usize, max_lines: usize) -> Vec<PanelLine> {
+pub(super) fn render(
+    rows: &[DiffRow],
+    offset: usize,
+    max_lines: usize,
+    theme: &UiTheme,
+) -> Vec<PanelLine> {
     let offset = offset.min(rows.len().saturating_sub(max_lines));
     rows.iter()
         .skip(offset)
         .take(max_lines)
-        .map(render_row)
+        .map(|row| render_row(row, theme))
         .collect()
 }
 
-fn render_row(display: &DiffRow) -> PanelLine {
+fn render_row(display: &DiffRow, theme: &UiTheme) -> PanelLine {
     let row = &display.row;
     let role = match row.kind {
         PatchLineKind::Added => RowRole::DiffAdd,
@@ -45,9 +50,15 @@ fn render_row(display: &DiffRow) -> PanelLine {
         && row.new_line.is_none()
         && row.text.starts_with("@@ ");
     let style = if is_hunk_header {
-        Style::default().fg(current_theme().info)
+        Style::default().fg(theme.info)
     } else {
-        diff_style(row.kind, display.staged, display.focused, display.chosen)
+        diff_style(
+            row.kind,
+            display.staged,
+            display.focused,
+            display.chosen,
+            theme,
+        )
     };
     let prefix = match row.kind {
         PatchLineKind::Added => "+",
@@ -67,9 +78,12 @@ fn render_row(display: &DiffRow) -> PanelLine {
                     if display.marker { ">" } else { " " },
                     if display.chosen { "┃" } else { " " }
                 ),
-                style: Style::default()
-                    .fg(current_theme().accent)
-                    .add_modifier(Modifier::BOLD),
+                style: if style.bg.is_some() {
+                    style.fg(theme.diff.context_text)
+                } else {
+                    Style::default().fg(theme.diff.gutter)
+                }
+                .add_modifier(Modifier::BOLD),
             },
             PanelSpan {
                 text: expand_tabs(&format!("{prefix}{}", row.text)),
@@ -99,23 +113,21 @@ fn expand_tabs(text: &str) -> String {
     output
 }
 
-// PR #8's diff palette preserves add/remove polarity through cursor and marks.
-fn diff_style(kind: PatchLineKind, staged: bool, cursor: bool, selected: bool) -> Style {
-    let (foreground, background) = match (kind, staged, cursor, selected) {
-        (PatchLineKind::Added, true, true, _) => (Color::Green, Color::Rgb(52, 100, 70)),
-        (PatchLineKind::Added, true, false, true) => (Color::Green, Color::Rgb(44, 85, 60)),
-        (PatchLineKind::Added, true, false, false) => (Color::Green, Color::Rgb(33, 67, 48)),
-        (PatchLineKind::Added, false, true, _) => (Color::Green, Color::Rgb(40, 80, 58)),
-        (PatchLineKind::Added, false, false, true) => (Color::Green, Color::Rgb(30, 65, 47)),
-        (PatchLineKind::Added, false, false, false) => (Color::Green, Color::Rgb(24, 46, 36)),
-        (PatchLineKind::Removed, true, true, _) => (Color::Red, Color::Rgb(111, 52, 64)),
-        (PatchLineKind::Removed, true, false, true) => (Color::Red, Color::Rgb(94, 44, 55)),
-        (PatchLineKind::Removed, true, false, false) => (Color::Red, Color::Rgb(73, 36, 45)),
-        (PatchLineKind::Removed, false, true, _) => (Color::Red, Color::Rgb(88, 44, 54)),
-        (PatchLineKind::Removed, false, false, true) => (Color::Red, Color::Rgb(72, 38, 46)),
-        (PatchLineKind::Removed, false, false, false) => (Color::Red, Color::Rgb(51, 30, 37)),
-        (_, _, true, _) => (Color::Reset, Color::Rgb(37, 57, 82)),
-        (_, _, false, true) => (Color::Reset, Color::Rgb(46, 58, 86)),
+// Cursor wins over marks; worktree and index retain separate add/remove shades.
+fn diff_style(
+    kind: PatchLineKind,
+    staged: bool,
+    cursor: bool,
+    selected: bool,
+    theme: &UiTheme,
+) -> Style {
+    let state = if cursor { 2 } else { usize::from(selected) };
+    let source = usize::from(staged);
+    let (foreground, background) = match kind {
+        PatchLineKind::Added => (theme.diff.added_text, theme.diff.added[source][state]),
+        PatchLineKind::Removed => (theme.diff.removed_text, theme.diff.removed[source][state]),
+        _ if cursor => (theme.diff.context_text, theme.diff.context_cursor),
+        _ if selected => (theme.diff.context_text, theme.diff.context_marked),
         _ => return Style::default(),
     };
     Style::default().fg(foreground).bg(background)

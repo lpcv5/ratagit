@@ -34,6 +34,7 @@ pub(crate) enum InputMode {
     DiscardConfirm,
     ForcePushConfirm,
     StageAllConfirm,
+    CommandPaletteSearch,
     CommandPalette,
     SearchInput,
     SearchQuery,
@@ -71,6 +72,8 @@ pub(crate) fn input_mode_for_state(state: &AppContext) -> InputMode {
         InputMode::ForcePushConfirm
     } else if state.ui.stage_all_confirm.active {
         InputMode::StageAllConfirm
+    } else if state.ui.command_palette.active && state.ui.command_palette.search_active {
+        InputMode::CommandPaletteSearch
     } else if state.ui.command_palette.active {
         InputMode::CommandPalette
     } else if search_input_is_current(state) {
@@ -123,7 +126,12 @@ pub(crate) fn key_effect_for_key(
         return KeyEffect::Dispatch(action);
     }
 
-    if code == KeyCode::Char('q') {
+    if code == KeyCode::Char('q')
+        && !matches!(
+            input_mode_for_state(state),
+            InputMode::CommandPalette | InputMode::CommandPaletteSearch
+        )
+    {
         return KeyEffect::Quit;
     }
 
@@ -245,6 +253,9 @@ fn ui_action_for_key(
         InputMode::DiscardConfirm => return discard_confirm_action_for_key(code),
         InputMode::ForcePushConfirm => return force_push_action_for_key(code),
         InputMode::StageAllConfirm => return stage_all_action_for_key(code),
+        InputMode::CommandPaletteSearch => {
+            return command_palette_search_action_for_key(code, modifiers);
+        }
         InputMode::CommandPalette => {
             return command_palette_action_for_key(
                 code,
@@ -429,10 +440,25 @@ fn command_palette_action_for_key(
             details_visible_lines,
         }),
         KeyCode::Esc => Some(UiAction::CloseCommandPalette),
+        KeyCode::Up | KeyCode::Char('k') => Some(UiAction::MoveCommandPaletteUp),
+        KeyCode::Down | KeyCode::Char('j') => Some(UiAction::MoveCommandPaletteDown),
+        KeyCode::Char('/') => Some(UiAction::StartPaletteSearch),
+        _ => None,
+    }
+}
+
+fn command_palette_search_action_for_key(
+    code: KeyCode,
+    modifiers: KeyModifiers,
+) -> Option<UiAction> {
+    match code {
+        KeyCode::Enter | KeyCode::Esc => Some(UiAction::FinishPaletteSearch),
         KeyCode::Up => Some(UiAction::MoveCommandPaletteUp),
         KeyCode::Down => Some(UiAction::MoveCommandPaletteDown),
         KeyCode::Backspace => Some(UiAction::PaletteBackspace),
-        KeyCode::Char(ch) => Some(UiAction::PaletteInput(ch)),
+        KeyCode::Char(ch) if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => {
+            Some(UiAction::PaletteInput(ch))
+        }
         _ => None,
     }
 }

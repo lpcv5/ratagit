@@ -74,10 +74,22 @@ mod tests {
         let mut state = AppContext::default();
         state.work.refresh.refresh_pending = true;
 
-        let first = loading_indicator_for_state(&state, RenderContext { spinner_frame: 0 })
-            .expect("refresh should show loading");
-        let next = loading_indicator_for_state(&state, RenderContext { spinner_frame: 1 })
-            .expect("refresh should show loading");
+        let first = loading_indicator_for_state(
+            &state,
+            RenderContext {
+                spinner_frame: 0,
+                ..Default::default()
+            },
+        )
+        .expect("refresh should show loading");
+        let next = loading_indicator_for_state(
+            &state,
+            RenderContext {
+                spinner_frame: 1,
+                ..Default::default()
+            },
+        )
+        .expect("refresh should show loading");
 
         assert_eq!(first.text(), "/ loading: refresh");
         assert_eq!(next.text(), "| loading: refresh");

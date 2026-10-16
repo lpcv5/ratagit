@@ -3,8 +3,14 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 
 use crate::modal::{ConfirmBody, ModalSpec, ModalTone, render_confirm_body, render_modal};
+use crate::theme::UiTheme;
 
-pub(crate) fn render_discard_modal(frame: &mut Frame<'_>, state: &AppContext, area: Rect) {
+pub(crate) fn render_discard_modal(
+    frame: &mut Frame<'_>,
+    state: &AppContext,
+    area: Rect,
+    theme: &UiTheme,
+) {
     let partial = state.ui.details.patch.discard.as_ref();
     let operation = state.ui.details.repository_confirm.as_ref();
     if !state.ui.discard_confirm.active && partial.is_none() && operation.is_none() {
@@ -49,8 +55,10 @@ pub(crate) fn render_discard_modal(frame: &mut Frame<'_>, state: &AppContext, ar
                             format_discard_details(&state.ui.discard_confirm.context)
                         }),
                 ),
+                theme,
             );
         },
+        theme,
     );
 }
 
