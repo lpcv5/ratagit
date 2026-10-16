@@ -1,0 +1,34 @@
+---
+source: libs/ratagit-ui/tests/workflows.rs
+expression: "render_terminal_text(&state, SIZE)"
+---
+╭ 1  󰈙 Files ────────────────────╮╭ 5   Details ──────────────────────────────────────────────────╮
+│   ? README.md                  ││  details(commits): no diff for current selection               │
+│    src/                       ││                                                                │
+│     M lib.rs                   ││                                                                │
+│     M main.rs                  ││                                                                │
+│                                ││                                                                │
+│                   ╭ ℹ Remote branches ───────────────────────────────────────╮                   │
+│                   │ origin/branch-06                                         │                   │
+│                   │ origin/branch-07                                         │                   │
+│                   │ origin/branch-08                                         │                   │
+╰───────────────────│ origin/branch-09                                         │                   │
+╭ 2   Branches ────│ origin/branch-10                                         │                   │
+│ main             │ origin/branch-11                                         │                   │
+│  feature/mvp      │ origin/branch-12                                         │                   │
+│                   │ origin/branch-13                                         │                   │
+│                   │ origin/branch-14                                         │                   │
+│                   │ origin/branch-15                                         │                   │
+│                   │ origin/branch-16                                         │                   │
+╰───────────────────│ origin/branch-17                                         │                   │
+│ 3   Commits      │ origin/branch-18                                         │───────────────────╯
+│●  abc1234  RT  ini│ ──────────────────────────────────────────────────────── │                   │
+│●  def5678  RT  wir│ Enter confirm  Esc cancel                                │                   │
+│                   ╰──────────────────────────────────────────────────────────╯                   │
+│                                │                                                                 │
+│                                │                                                                 │
+╰────────────────────────────────╯                                                                 │
+│ 4   Stash                     │                                                                 │
+│ stash@{0} WIP on main: local t│                                                                 │
+╰────────────────────────────────╯─────────────────────────────────────────────────────────────────╯
+/ loading: details   arrows  select/cursor   Enter  confirm   Esc  cancel

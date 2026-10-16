@@ -8,6 +8,7 @@ use crate::scroll::{move_selected_index, move_selected_index_with_scroll_offset}
 pub struct FileEntry {
     pub path: String,
     pub staged: bool,
+    pub unstaged: bool,
     pub untracked: bool,
     pub status: CommitFileStatus,
     pub conflicted: bool,
@@ -89,6 +90,8 @@ pub struct TreeNavState {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct FilesUiState {
+    pub filter: crate::workflow::FileFilter,
+    pub flat: bool,
     pub nav: TreeNavState,
     pub tree_initialized: bool,
     pub lightweight_tree_projection: bool,
@@ -729,6 +732,38 @@ struct TreeProjection {
 }
 
 fn compute_tree_projection(items: &[FileEntry], state: &FilesUiState) -> TreeProjection {
+    if state.filter != crate::workflow::FileFilter::All || state.flat {
+        let filtered: Vec<_> = items
+            .iter()
+            .filter(|file| state.filter.matches(file))
+            .cloned()
+            .collect();
+        let mut view = state.clone();
+        view.filter = crate::workflow::FileFilter::All;
+        view.flat = false;
+        view.lightweight_tree_projection = false;
+        if state.flat {
+            view.expanded_dirs = collect_directories(&filtered);
+        }
+        let mut projection = compute_tree_projection(&filtered, &view);
+        if state.flat {
+            let markers: BTreeSet<_> = filtered
+                .iter()
+                .filter(|file| file.path.ends_with('/'))
+                .map(|file| file.path.trim_end_matches('/'))
+                .collect();
+            projection
+                .rows
+                .retain(|row| row.kind == FileRowKind::File || markers.contains(row.path.as_str()));
+            projection.row_index_by_path.clear();
+            for (index, row) in projection.rows.iter_mut().enumerate() {
+                row.depth = 0;
+                row.name = row.path.clone();
+                projection.row_index_by_path.insert(row.path.clone(), index);
+            }
+        }
+        return projection;
+    }
     if state.lightweight_tree_projection {
         return compute_lightweight_tree_projection(items, state);
     }
@@ -1258,6 +1293,11 @@ fn resolve_row_keys_to_diff_targets(
     }
     paths
         .into_iter()
+        .filter(|path| {
+            entries
+                .get(path.as_str())
+                .is_some_and(|entry| state.filter.matches(entry))
+        })
         .map(|path| {
             let entry = entries.get(path.as_str()).copied();
             FileDiffTarget {
@@ -1275,6 +1315,17 @@ fn resolve_single_row_to_diff_targets_bounded(
     row: &FileTreeRow,
     limit: usize,
 ) -> BoundedFileDiffTargets {
+    if state.filter != crate::workflow::FileFilter::All {
+        let filtered: Vec<_> = items
+            .iter()
+            .filter(|file| state.filter.matches(file))
+            .cloned()
+            .collect();
+        let mut view = state.clone();
+        view.filter = crate::workflow::FileFilter::All;
+        view.lightweight_tree_projection = false;
+        return resolve_single_row_to_diff_targets_bounded(&filtered, &view, row, limit);
+    }
     if limit == 0 {
         return BoundedFileDiffTargets {
             targets: Vec::new(),
@@ -1414,6 +1465,7 @@ mod tests {
             FileEntry {
                 path: "src/main.rs".to_string(),
                 staged: true,
+                unstaged: false,
                 untracked: false,
                 status: CommitFileStatus::Modified,
                 conflicted: false,
@@ -1421,6 +1473,7 @@ mod tests {
             FileEntry {
                 path: "src/ui/list.rs".to_string(),
                 staged: false,
+                unstaged: true,
                 untracked: false,
                 status: CommitFileStatus::Modified,
                 conflicted: false,
@@ -1428,6 +1481,7 @@ mod tests {
             FileEntry {
                 path: "README.md".to_string(),
                 staged: false,
+                unstaged: true,
                 untracked: true,
                 status: CommitFileStatus::Unknown,
                 conflicted: false,
@@ -1499,6 +1553,7 @@ mod tests {
         let items = vec![FileEntry {
             path: "libs/ratagit-git/tests/".to_string(),
             staged: false,
+            unstaged: true,
             untracked: true,
             status: CommitFileStatus::Unknown,
             conflicted: false,
@@ -1526,6 +1581,7 @@ mod tests {
         let items = vec![FileEntry {
             path: "src/a/b/c/file.rs".to_string(),
             staged: false,
+            unstaged: true,
             untracked: false,
             status: CommitFileStatus::Modified,
             conflicted: false,
@@ -1555,6 +1611,7 @@ mod tests {
             FileEntry {
                 path: "src/a/b/c/file.rs".to_string(),
                 staged: false,
+                unstaged: true,
                 untracked: false,
                 status: CommitFileStatus::Modified,
                 conflicted: false,
@@ -1562,6 +1619,7 @@ mod tests {
             FileEntry {
                 path: "src/other.rs".to_string(),
                 staged: false,
+                unstaged: true,
                 untracked: false,
                 status: CommitFileStatus::Modified,
                 conflicted: false,
@@ -1581,6 +1639,7 @@ mod tests {
         let items = vec![FileEntry {
             path: "src/a/b/c/file.rs".to_string(),
             staged: false,
+            unstaged: true,
             untracked: false,
             status: CommitFileStatus::Modified,
             conflicted: false,
@@ -1606,6 +1665,7 @@ mod tests {
             FileEntry {
                 path: "src/lib.rs".to_string(),
                 staged: false,
+                unstaged: true,
                 untracked: false,
                 status: CommitFileStatus::Modified,
                 conflicted: false,
@@ -1613,6 +1673,7 @@ mod tests {
             FileEntry {
                 path: "src/ui/list.rs".to_string(),
                 staged: false,
+                unstaged: true,
                 untracked: false,
                 status: CommitFileStatus::Modified,
                 conflicted: false,
@@ -1620,6 +1681,7 @@ mod tests {
             FileEntry {
                 path: "README.md".to_string(),
                 staged: false,
+                unstaged: true,
                 untracked: true,
                 status: CommitFileStatus::Unknown,
                 conflicted: false,
@@ -1673,6 +1735,7 @@ mod tests {
             .map(|index| FileEntry {
                 path: format!("src/file-{index:03}.txt"),
                 staged: false,
+                unstaged: true,
                 untracked: false,
                 status: CommitFileStatus::Modified,
                 conflicted: false,
@@ -1695,6 +1758,7 @@ mod tests {
         let items = vec![FileEntry {
             path: "vendor/".to_string(),
             staged: false,
+            unstaged: true,
             untracked: true,
             status: CommitFileStatus::Unknown,
             conflicted: false,
@@ -1784,6 +1848,7 @@ mod tests {
         let mut index = FileTreeIndex::from_sources(file_tree_sources(&[FileEntry {
             path: "src/lib.rs".to_string(),
             staged: false,
+            unstaged: true,
             untracked: false,
             status: CommitFileStatus::Modified,
             conflicted: false,
@@ -1793,6 +1858,7 @@ mod tests {
         index.sync(file_tree_sources(&[FileEntry {
             path: "src/lib.rs".to_string(),
             staged: true,
+            unstaged: false,
             untracked: false,
             status: CommitFileStatus::Modified,
             conflicted: false,

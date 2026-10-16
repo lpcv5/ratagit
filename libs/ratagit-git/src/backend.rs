@@ -65,6 +65,14 @@ impl From<std::io::Error> for GitError {
 }
 
 pub trait GitBackendRead {
+    fn commit_editor(&mut self) -> Result<Option<String>, GitError> {
+        Ok(None)
+    }
+    fn remote_branches(&mut self) -> Result<Vec<String>, GitError> {
+        Err(GitError::new(
+            "remote branches are unavailable for this backend",
+        ))
+    }
     fn load_patch(
         &mut self,
         _request: ratagit_core::patch::PatchRequest,
@@ -198,6 +206,8 @@ macro_rules! delegate_boxed_backend {
 
 impl<T: GitBackendRead + ?Sized> GitBackendRead for Box<T> {
     delegate_boxed_backend! {
+        commit_editor() -> Result<Option<String>, GitError>;
+        remote_branches() -> Result<Vec<String>, GitError>;
         load_patch(request: ratagit_core::patch::PatchRequest) -> Result<ratagit_core::patch::Patch, GitError>;
         refresh_snapshot() -> Result<RepoSnapshot, GitError>;
         refresh_files() -> Result<FilesSnapshot, GitError>;

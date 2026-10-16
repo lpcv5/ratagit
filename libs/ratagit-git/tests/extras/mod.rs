@@ -2,6 +2,18 @@ use super::*;
 use ratagit_core::extras::RepositoryOperation;
 
 #[test]
+fn configured_commit_editor_is_read_through_backend_and_boxed_dispatch() {
+    let repo = TmpGitRepo::new("configured-editor");
+    repo.run_git(&["config", "core.editor", "custom-editor --wait"]);
+    let mut backend: Box<dyn ratagit_git::GitBackend> =
+        Box::new(HybridGitBackend::open(repo.path()).unwrap());
+    assert_eq!(
+        backend.commit_editor().unwrap().as_deref(),
+        Some("custom-editor --wait")
+    );
+}
+
+#[test]
 fn test_ignore_paths_are_literal_idempotent_and_keep_unrelated_files() {
     let repo = TmpGitRepo::new("ignore-literal");
     write(repo.path().join("[new] file.txt"), "ignored\n").unwrap();

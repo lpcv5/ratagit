@@ -49,6 +49,7 @@ pub fn render_terminal_with_context(
     render_sync_modal(frame, state, root[0]);
     render_stage_all_modal(frame, state, root[0]);
     render_command_palette_modal(frame, state, root[0]);
+    crate::workflow_modal::render(frame, state, root[0]);
 }
 
 pub fn render_terminal_text(state: &AppContext, size: TerminalSize) -> String {
@@ -94,7 +95,12 @@ pub fn render_terminal_buffer_with_cursor_and_context(
     terminal
         .draw(|frame| render_terminal_with_context(frame, state, context))
         .expect("terminal render should succeed");
-    let cursor = if state.ui.editor.is_active() || state.ui.branches.create.active {
+    let cursor = if state.ui.editor.is_active()
+        || state.ui.branches.create.active
+        || matches!(
+            state.ui.workflow.dialog,
+            Some(ratagit_core::workflow::Dialog::Prompt { .. })
+        ) {
         let position = terminal
             .backend_mut()
             .get_cursor_position()

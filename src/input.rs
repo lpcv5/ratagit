@@ -9,6 +9,7 @@ use ratagit_core::{
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum KeyEffect {
+    CommitEditor,
     Host { edit: bool, path: String },
     Quit,
     Dispatch(UiAction),
@@ -17,6 +18,7 @@ pub(crate) enum KeyEffect {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum InputMode {
+    Workflow,
     RepositoryConfirm,
     PatchDiscard,
     Patch,
@@ -39,7 +41,9 @@ pub(crate) enum InputMode {
 }
 
 pub(crate) fn input_mode_for_state(state: &AppContext) -> InputMode {
-    if state.ui.details.repository_confirm.is_some() {
+    if state.ui.workflow.dialog.is_some() || state.ui.workflow.remote_request.is_some() {
+        InputMode::Workflow
+    } else if state.ui.details.repository_confirm.is_some() {
         InputMode::RepositoryConfirm
     } else if state.ui.details.patch.discard.is_some() {
         InputMode::PatchDiscard
@@ -90,6 +94,14 @@ pub(crate) fn key_effect_for_key(
 ) -> KeyEffect {
     if code == KeyCode::Char('c') && modifiers.contains(KeyModifiers::CONTROL) {
         return KeyEffect::Quit;
+    }
+
+    if matches!(
+        input_mode_for_state(state),
+        InputMode::Panel | InputMode::SearchQuery | InputMode::CommandPalette | InputMode::Workflow
+    ) && let Some(effect) = crate::workflow_input::host(state, code, modifiers)
+    {
+        return effect;
     }
 
     if let Some(effect) = host_effect(state, code, modifiers) {
@@ -174,6 +186,7 @@ fn ui_action_for_key(
     }
 
     match input_mode_for_state(state) {
+        InputMode::Workflow => return crate::workflow_input::action(state, code, modifiers),
         InputMode::RepositoryConfirm => {
             return match code {
                 KeyCode::Enter => Some(UiAction::ConfirmRepositoryOperation),
@@ -248,7 +261,8 @@ fn ui_action_for_key(
         InputMode::Panel => {}
     }
 
-    panel_action_for_key(state, code, left_panel_visible_lines)
+    crate::workflow_input::action(state, code, modifiers)
+        .or_else(|| panel_action_for_key(state, code, left_panel_visible_lines))
 }
 
 fn global_control_action_for_key(

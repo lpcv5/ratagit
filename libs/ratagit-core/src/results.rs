@@ -5,6 +5,10 @@ use crate::{
 
 pub(crate) fn update_git_result(state: &mut AppContext, result: GitResult) -> Vec<Command> {
     match result {
+        GitResult::RemoteBranches { request_id, result } => {
+            crate::workflow::remote_result(state, request_id, result);
+            Vec::new()
+        }
         GitResult::RepositoryOperation { operation, result } => {
             crate::extras::completed(state, operation, result)
         }

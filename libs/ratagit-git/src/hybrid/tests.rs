@@ -33,6 +33,7 @@ fn sort_files_is_deterministic_by_path() {
         FileEntry {
             path: "z.txt".to_string(),
             staged: false,
+            unstaged: true,
             untracked: false,
             status: CommitFileStatus::Modified,
             conflicted: false,
@@ -40,6 +41,7 @@ fn sort_files_is_deterministic_by_path() {
         FileEntry {
             path: "a.txt".to_string(),
             staged: true,
+            unstaged: false,
             untracked: false,
             status: CommitFileStatus::Modified,
             conflicted: false,
@@ -71,6 +73,7 @@ fn summarize_files_matches_app_status_summary_shape() {
         FileEntry {
             path: "staged.txt".to_string(),
             staged: true,
+            unstaged: false,
             untracked: false,
             status: CommitFileStatus::Modified,
             conflicted: false,
@@ -78,6 +81,7 @@ fn summarize_files_matches_app_status_summary_shape() {
         FileEntry {
             path: "new.txt".to_string(),
             staged: false,
+            unstaged: true,
             untracked: true,
             status: CommitFileStatus::Unknown,
             conflicted: false,

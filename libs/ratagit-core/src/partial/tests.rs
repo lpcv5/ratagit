@@ -325,6 +325,7 @@ fn test_open_retains_preview_scroll_but_requires_new_reviewed_patch_for_writes()
     state.repo.files.items = vec![crate::FileEntry {
         path: "file.txt".into(),
         staged: false,
+        unstaged: true,
         untracked: false,
         status: crate::CommitFileStatus::Modified,
         conflicted: false,

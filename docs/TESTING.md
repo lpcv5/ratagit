@@ -9,6 +9,28 @@ ratagit uses a layered testing approach:
 
 ---
 
+## Selecting coverage
+
+Choose evidence for the changed contract, not a fixed number of new tests.
+Name existing tests when they already exercise the changed case; extend them
+or add a regression when a gap remains.
+
+| Change | Required evidence |
+| --- | --- |
+| Documentation only | Content, local links and diff review; no new Rust test |
+| Pure logic or internal refactor | Focused unit/integration coverage of affected contracts |
+| Layout, wording or style only | Reviewed deterministic UI snapshots; buffer-cell assertions for styles |
+| Input flow or new interaction | Harness coverage of input to UI and backend effects (including no mutation where relevant) |
+| Git mutation semantics | Harness UI/trace/state checks plus isolated real-Git coverage of changed semantics |
+| Async/runtime ordering | Focused stale-result, mutation-barrier and scheduling regressions; scenario if flow changes |
+| Harness tooling | Focused parser/artifact/runner tests, not artificial product scenarios |
+| Build or CI | Check commands/test discovery and run the resulting gate on available platforms |
+
+During iteration use cargo test --locked -p <package> <test-filter>. Verify that
+the intended tests actually ran: a successful zero-test filter is not evidence.
+At completion use the workspace gate in [AGENTS.md](../AGENTS.md).
+Do not delete coverage or weaken assertions merely to reduce execution time.
+
 ## Test Code Quality
 
 Test code should make behavior and scenario flow easy to understand. It does not
@@ -141,9 +163,12 @@ Scenarios must:
 - assert Git operation trace
 - assert final mock Git state
 
-Every user-visible behavior change needs a harness scenario. Internal-only
-architecture changes can be covered by unit/integration tests when rendered UI
-and Git state are intentionally unchanged.
+New interaction flows and changes to Git mutation semantics require harness
+coverage. Extend an existing scenario when it proves the changed contract;
+a new scenario per feature is not required. Pure presentation changes can be
+proved by UI snapshots/style assertions. Internal architecture changes can use
+unit/integration tests when UI and Git behavior are unchanged. State the coverage
+decision and relevant test names in the plan or delivery summary.
 
 Harness infrastructure changes, such as artifact/reporting improvements or
 scenario manifest tooling, should use focused harness/unit tests. They do not

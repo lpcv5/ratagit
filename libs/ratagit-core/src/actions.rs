@@ -19,6 +19,7 @@ pub enum MenuDirection {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UiAction {
+    Workflow(crate::workflow::WorkflowAction),
     DetailsViewport {
         visible_lines: usize,
     },
@@ -186,6 +187,10 @@ pub enum UiAction {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GitResult {
+    RemoteBranches {
+        request_id: u64,
+        result: Result<Vec<String>, String>,
+    },
     RepositoryOperation {
         operation: crate::extras::RepositoryOperation,
         result: Result<(), String>,
@@ -365,6 +370,9 @@ pub enum Action {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
+    RemoteBranches {
+        request_id: u64,
+    },
     RepositoryOperation(crate::extras::RepositoryOperation),
     LoadPatch {
         request_id: u64,
@@ -536,6 +544,13 @@ impl Command {
 
     fn metadata(&self) -> CommandMetadata {
         match self {
+            Command::RemoteBranches { .. } => CommandMetadata {
+                log_label: CommandLogLabel::Static("remote_branches"),
+                mutating: false,
+                debounce_key: None,
+                refresh_key: None,
+                pending_label: PendingOperationLabel::None,
+            },
             Command::RepositoryOperation(_) => CommandMetadata {
                 log_label: CommandLogLabel::Static("repository_operation"),
                 mutating: true,
@@ -884,6 +899,7 @@ impl Command {
 impl GitResult {
     pub fn log_label(&self) -> &'static str {
         match self {
+            GitResult::RemoteBranches { .. } => "remote_branches",
             GitResult::RepositoryOperation { .. } => "repository_operation",
             GitResult::LoadedPatch { .. } => "loaded_patch",
             GitResult::AppliedPatch { .. } => "applied_patch",
@@ -938,6 +954,7 @@ impl GitResult {
 
     pub fn is_success(&self) -> bool {
         match self {
+            GitResult::RemoteBranches { result, .. } => result.is_ok(),
             GitResult::RepositoryOperation { result, .. } => result.is_ok(),
             GitResult::LoadedPatch { result, .. } => result.is_ok(),
             GitResult::AppliedPatch { result, .. } => result.is_ok(),
@@ -1000,6 +1017,9 @@ pub(crate) fn with_pending(state: &mut AppContext, commands: Vec<Command>) -> Ve
 }
 
 fn mark_command_pending(state: &mut AppContext, command: &Command) {
+    if command.is_mutating() {
+        state.ui.workflow.remote_request = None;
+    }
     match command {
         Command::RefreshAll => {
             state.work.mark_refresh_all_pending();

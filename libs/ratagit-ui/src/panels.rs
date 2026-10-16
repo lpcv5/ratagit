@@ -176,6 +176,7 @@ mod tests {
             .map(|index| FileEntry {
                 path: format!("src/match-{index:02}.txt"),
                 staged: false,
+                unstaged: true,
                 untracked: false,
                 status: CommitFileStatus::Modified,
                 conflicted: false,
@@ -369,6 +370,7 @@ mod tests {
         snapshot.files = vec![ratagit_core::FileEntry {
             path: "conflict.rs".to_string(),
             staged: true,
+            unstaged: false,
             untracked: false,
             status: ratagit_core::CommitFileStatus::Modified,
             conflicted: true,

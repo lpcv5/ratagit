@@ -2,6 +2,7 @@ use crate::{AppContext, Command, FileRowKind, PanelFocus, push_notice, with_pend
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RepositoryOperation {
+    Workflow(crate::workflow::Operation),
     Fetch,
     Ignore(String),
     StashApply(String),
@@ -23,13 +24,18 @@ pub(crate) fn toggle_stage_all(state: &mut AppContext) -> Vec<Command> {
         push_notice(state, "Resolve conflicts before staging all files");
         return Vec::new();
     }
-    let unstage = state.repo.files.items.iter().all(|file| file.staged);
+    let unstage = state
+        .repo
+        .files
+        .items
+        .iter()
+        .all(|file| file.staged && !file.unstaged);
     let paths = state
         .repo
         .files
         .items
         .iter()
-        .filter(|file| file.staged == unstage)
+        .filter(|file| if unstage { file.staged } else { file.unstaged })
         .map(|file| file.path.clone())
         .collect::<std::collections::BTreeSet<_>>()
         .into_iter()
@@ -94,14 +100,29 @@ pub(crate) fn completed(
     state.last_operation = Some(format!("{operation:?}").to_lowercase());
     match result {
         Ok(()) => {
-            push_notice(state, &format!("{operation:?} completed"));
+            if matches!(
+                operation,
+                RepositoryOperation::Workflow(crate::workflow::Operation::CherryPick(_))
+            ) {
+                state.ui.workflow.copied_commits.clear();
+            }
+            let message = match &operation {
+                RepositoryOperation::Workflow(operation) => {
+                    format!("{} completed", operation.description())
+                }
+                _ => format!("{operation:?} completed"),
+            };
+            push_notice(state, &message);
             crate::details::clear_caches(state);
             with_pending(state, Command::refresh_all_commands())
         }
         Err(error) => {
             state.repo.status.last_error = Some(error.clone());
             push_notice(state, &error);
-            Vec::new()
+            // A failed merge, cherry-pick or revert may leave a useful conflict
+            // state. Surface it instead of keeping the pre-operation snapshot.
+            crate::details::clear_caches(state);
+            with_pending(state, Command::refresh_all_commands())
         }
     }
 }

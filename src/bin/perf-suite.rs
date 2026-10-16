@@ -2257,6 +2257,7 @@ fn parse_status_porcelain(output: &[u8]) -> Result<Vec<FileEntry>, String> {
         entries.push(FileEntry {
             path,
             staged: matches!(index, b'A' | b'M' | b'D' | b'R' | b'C' | b'T' | b'U'),
+            unstaged: worktree != b' ' && worktree != b'!',
             untracked: index == b'?' && worktree == b'?',
             status: status_from_porcelain_pair(index, worktree),
             conflicted: porcelain_pair_is_conflicted(index, worktree),
@@ -3310,6 +3311,7 @@ mod tests {
         FileEntry {
             path: path.to_string(),
             staged: false,
+            unstaged: true,
             untracked: false,
             status: CommitFileStatus::Modified,
             conflicted: false,

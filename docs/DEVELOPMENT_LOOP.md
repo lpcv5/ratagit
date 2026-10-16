@@ -1,80 +1,74 @@
-# DEVELOPMENT_LOOP.md
+# Development workflow
 
-## Loop
+## Choose the verification before the implementation
 
-Each iteration must follow:
+Define the observable outcome, inspect relevant code/tests, and choose the
+smallest coherent change that satisfies it. Implement, run focused checks,
+inspect results and repair failures. Test-first reproduction is useful for bugs;
+there is no mandatory ordering of every code and test edit.
 
-1. Define goal (active exec plan before implementation edits)
-2. Implement minimal change
-3. Add tests
-4. Run:
-   - unit tests
-   - snapshot tests
-   - harness
-5. Fix all failures
-6. Commit
+Use the coverage table in [TESTING.md](TESTING.md). A task need not add unit,
+snapshot and harness tests independently if existing checks already prove the
+acceptance criteria. Identify the relevant test or assertion in the handoff.
 
----
+## Plans proportional to risk
 
-## Exec Plan Sizing
+A small documentation fix, pure presentation adjustment or bounded local bug
+can use a short goal and validation note in the conversation. No plan file is
+required solely because something is user-visible.
 
-The active plan lives in `docs/EXEC_PLAN.md`. It is the current slice contract:
-what will change, what will not change, how tests/harness are decided, and what
-validation proves completion. Replace completed slice details when starting new
-work; use Git history to retrieve previous plans and validation evidence.
+Use [EXEC_PLAN.md](EXEC_PLAN.md) before implementation for multi-step or ambiguous
+work, cross-layer changes, Git mutation semantics, async/runtime changes, and
+refactors with substantial regression risk. Include:
 
-Tiny changes do not require a standalone exec plan. Use a short goal, change
-summary, and validation note for typo fixes, comments, fixture polish, and
-internal-only test cleanup.
+- Outcome and observable acceptance criteria.
+- Scope, non-goals, affected areas, and risks.
+- Verification: existing coverage, gaps, and commands.
+- For long work: current state, decisions, remaining work, and blockers.
 
-Use a lightweight plan for one-module or one-behavior changes. Include the goal,
-acceptance criteria, test impact, harness impact, and validation commands.
+Keep the existing EXEC_PLAN headings (Active Slice, Problem, Smallest Slice,
+Non-Goals, Expected Files, Tests, Harness Decision, Validation, Completion
+Evidence) when replacing a plan; tests check this durable handoff structure.
+This structure does not require updating the file for small tasks.
 
-Use a full exec plan when the change crosses layers, changes user-visible
-behavior, changes architecture, changes Git state semantics, changes async or
-runtime behavior, or needs multiple slices.
+The plan is a living contract, not a fixed implementation recipe. Revise it as
+evidence changes. Cross-layer edits may form one coherent slice; explain the
+dependency rather than splitting changes into artificial incomplete steps.
+Replace completed plans when starting a new substantial task; Git history
+preserves earlier evidence. Routine authorized work needs no extra approval
+checkpoint just because a plan exists.
 
-Do not expand a tiny task into a full harness workflow unless risk is discovered
-while working. User-visible behavior changes still require harness coverage;
-harness infrastructure changes require targeted harness/unit tests.
+## Context and continuity
 
-Before the first code edit, fill in:
+Start with AGENTS.md, then load relevant architecture, product and test sections
+on demand. Use actual source and test output to resolve stale documentation.
+Leave enough evidence to resume long tasks: relevant files, decisions, actual
+commands/results, remaining work. Do not copy raw tool transcripts into rules
+or make a new permanent rule for every one-off failure.
 
-- problem
-- smallest slice
-- non-goals
-- expected files
-- tests
-- harness decision
-- validation commands
+Use one agent by default. A separate review or independently scoped delegation
+may be useful when requested and supported; a mandatory planner/implementer/
+reviewer pipeline is not part of this repository's workflow.
 
-When marking a slice completed, add completion evidence that names the actual
-changes and validation commands that passed.
+## Verification and delivery
 
----
+During iteration, run the affected package/test first. Run the AGENTS.md final
+gate once the code is ready. CI runs the whole workspace on Windows and Ubuntu.
+Repeat a passed check only after relevant changes or new evidence justifies it.
+Pure documentation work needs content/link review and git diff --check.
 
-## Exit Conditions
+Investigate failures rather than blindly retrying. Fix regressions introduced
+by the task; report unrelated baseline failures or unavailable environments
+with evidence. Do not describe incomplete validation as passing. Review snapshot
+changes against intended behavior, never bulk-accept unexplained differences.
 
-You CANNOT proceed if:
+Before delivery, review the diff for scope and architectural invariants. Report
+what changed, which acceptance criteria were checked, and remaining uncertainty.
+Commit/push/merge follows the user's requested delivery scope, not an automatic
+step in every iteration.
 
-- tests are failing
-- snapshot is broken
-- harness fails
-- logs indicate inconsistency
+## Improving the workflow
 
----
-
-## Allowed Failures
-
-Only allowed during development:
-
-- compile errors (temporary)
-- snapshot mismatch (must fix before commit)
-
----
-
-## Forbidden
-
-- ignoring failing tests
-- skipping harness
-- committing broken UI
+The rationale and a bounded comparison protocol are in
+[AGENT_WORKFLOW_REVIEW.md](AGENT_WORKFLOW_REVIEW.md). Revisit rules after observed
+failures or model/tool changes. Prefer evidence over additional process.

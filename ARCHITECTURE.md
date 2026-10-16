@@ -260,6 +260,10 @@ internal library packages under `libs/`.
 - Keyboard input is routed by an explicit `InputMode` derived from `AppContext`;
   global Details scrolling remains first, then modal/editor/search handlers, then
   panel handlers.
+- Shared Git workflows keep captured dialogs, copied commit IDs and remote read
+  request ownership under `ui.workflow`. Typed operations pass through the existing
+  RepositoryOperation command and exclusive worker. Remote reads use request IDs
+  and the runtime generation barrier. Editor/clipboard completions return to core.
 - `src/bin/perf-suite.rs` covers backend operations plus pure UI render hot paths
   for status render, search render, and Details scroll render.
 

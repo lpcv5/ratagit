@@ -63,6 +63,10 @@ pub fn execute_command(backend: &mut dyn GitBackend, command: Command) -> GitRes
 
 fn execute_command_inner(backend: &mut dyn GitBackend, command: Command) -> GitResult {
     match command {
+        Command::RemoteBranches { request_id } => GitResult::RemoteBranches {
+            request_id,
+            result: backend.remote_branches().map_err(|error| error.message),
+        },
         Command::RepositoryOperation(operation) => GitResult::RepositoryOperation {
             result: backend
                 .repository_operation(&operation)
@@ -459,6 +463,7 @@ mod tests {
             files: vec![FileEntry {
                 path: "a.txt".to_string(),
                 staged: false,
+                unstaged: true,
                 untracked: false,
                 status: CommitFileStatus::Modified,
                 conflicted: false,
@@ -735,6 +740,7 @@ mod tests {
             files: vec![FileEntry {
                 path: "a.txt".to_string(),
                 staged: false,
+                unstaged: true,
                 untracked: false,
                 status: CommitFileStatus::Modified,
                 conflicted: false,
@@ -879,6 +885,7 @@ mod tests {
             FileEntry {
                 path: "staged.txt".to_string(),
                 staged: true,
+                unstaged: false,
                 untracked: false,
                 status: CommitFileStatus::Modified,
                 conflicted: false,
@@ -886,6 +893,7 @@ mod tests {
             FileEntry {
                 path: "unstaged.txt".to_string(),
                 staged: false,
+                unstaged: true,
                 untracked: false,
                 status: CommitFileStatus::Modified,
                 conflicted: false,
@@ -923,6 +931,7 @@ mod tests {
         snapshot.files = vec![FileEntry {
             path: "staged.txt".to_string(),
             staged: true,
+            unstaged: false,
             untracked: false,
             status: CommitFileStatus::Modified,
             conflicted: false,
@@ -952,6 +961,7 @@ mod tests {
         commit_snapshot.files = vec![FileEntry {
             path: "dirty.txt".to_string(),
             staged: false,
+            unstaged: true,
             untracked: false,
             status: CommitFileStatus::Modified,
             conflicted: false,
@@ -986,6 +996,7 @@ mod tests {
         amend_snapshot.files = vec![FileEntry {
             path: "dirty.txt".to_string(),
             staged: false,
+            unstaged: true,
             untracked: false,
             status: CommitFileStatus::Modified,
             conflicted: false,
@@ -1172,6 +1183,7 @@ mod tests {
                 FileEntry {
                     path: "src/lib.rs".to_string(),
                     staged: false,
+                    unstaged: true,
                     untracked: false,
                     status: CommitFileStatus::Modified,
                     conflicted: false,
@@ -1179,6 +1191,7 @@ mod tests {
                 FileEntry {
                     path: "src/main.rs".to_string(),
                     staged: true,
+                    unstaged: false,
                     untracked: false,
                     status: CommitFileStatus::Modified,
                     conflicted: false,
@@ -1236,6 +1249,7 @@ mod tests {
         snapshot.files.push(FileEntry {
             path: "a.txt".to_string(),
             staged: false,
+            unstaged: true,
             untracked: false,
             status: CommitFileStatus::Modified,
             conflicted: false,
@@ -1358,6 +1372,7 @@ mod tests {
                 FileEntry {
                     path: "staged.txt".to_string(),
                     staged: true,
+                    unstaged: false,
                     untracked: false,
                     status: CommitFileStatus::Modified,
                     conflicted: false,
@@ -1365,6 +1380,7 @@ mod tests {
                 FileEntry {
                     path: "unstaged.txt".to_string(),
                     staged: false,
+                    unstaged: true,
                     untracked: false,
                     status: CommitFileStatus::Modified,
                     conflicted: false,
@@ -1372,6 +1388,7 @@ mod tests {
                 FileEntry {
                     path: "new.txt".to_string(),
                     staged: false,
+                    unstaged: true,
                     untracked: true,
                     status: CommitFileStatus::Unknown,
                     conflicted: false,

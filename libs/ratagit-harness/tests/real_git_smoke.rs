@@ -7,6 +7,8 @@ use ratagit_core::{AppContext, PanelFocus, UiAction};
 use ratagit_git::HybridGitBackend;
 use ratagit_harness::Runtime;
 use ratagit_ui::TerminalSize;
+#[path = "workflows/mod.rs"]
+mod workflows;
 
 struct TmpGitRepo {
     path: PathBuf,

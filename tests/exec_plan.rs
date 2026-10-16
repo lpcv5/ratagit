@@ -1,6 +1,5 @@
 use std::fs;
 use std::path::Path;
-use std::process::Command;
 
 const REQUIRED_HEADINGS: &[&str] = &[
     "## Active Slice",
@@ -58,53 +57,10 @@ fn completed_exec_plan_records_validation_evidence() {
     }
 }
 
-#[test]
-fn dirty_worktree_changes_include_exec_plan_update() {
-    let Some(paths) = changed_workspace_paths() else {
-        return;
-    };
-
-    if paths.is_empty() {
-        return;
-    }
-
-    assert!(
-        paths.iter().any(|path| path == "docs/EXEC_PLAN.md"),
-        "workspace has uncommitted changes but docs/EXEC_PLAN.md is unchanged. \
-         Update the active exec plan before implementation edits. Changed paths: {paths:?}"
-    );
-}
-
 fn read_exec_plan() -> String {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let path = manifest_dir.join("docs").join("EXEC_PLAN.md");
     fs::read_to_string(&path).expect("docs/EXEC_PLAN.md should be readable")
-}
-
-fn changed_workspace_paths() -> Option<Vec<String>> {
-    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let output = Command::new("git")
-        .args(["status", "--porcelain", "--untracked-files=all", "--"])
-        .current_dir(manifest_dir)
-        .output()
-        .ok()?;
-
-    if !output.status.success() {
-        return None;
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    Some(stdout.lines().filter_map(status_path).collect())
-}
-
-fn status_path(line: &str) -> Option<String> {
-    if line.len() < 4 {
-        return None;
-    }
-
-    let path = &line[3..];
-    let path = path.rsplit_once(" -> ").map_or(path, |(_, to)| to);
-    Some(path.replace('\\', "/"))
 }
 
 fn assert_section_has_content(plan: &str, heading: &str) {

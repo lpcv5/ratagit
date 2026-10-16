@@ -48,6 +48,13 @@ fn shortcut_text_for_state(state: &AppContext) -> String {
 }
 
 pub(crate) fn shortcut_line_for_state(state: &AppContext) -> ShortcutLine {
+    if state.ui.workflow.dialog.is_some() || state.ui.workflow.remote_request.is_some() {
+        return segments(&[
+            ("arrows", "select/cursor"),
+            ("Enter", "confirm"),
+            ("Esc", "cancel"),
+        ]);
+    }
     if state.ui.details.repository_confirm.is_some() {
         return segments(&[("Enter", "drop stash"), ("Esc", "cancel")]);
     }

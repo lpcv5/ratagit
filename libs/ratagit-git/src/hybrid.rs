@@ -73,6 +73,16 @@ impl fmt::Debug for HybridGitBackend {
 }
 
 impl GitBackendRead for HybridGitBackend {
+    fn commit_editor(&mut self) -> Result<Option<String>, GitError> {
+        match self.repo.config()?.get_string("core.editor") {
+            Ok(editor) => Ok(Some(editor)),
+            Err(error) if error.code() == ErrorCode::NotFound => Ok(None),
+            Err(error) => Err(error.into()),
+        }
+    }
+    fn remote_branches(&mut self) -> Result<Vec<String>, GitError> {
+        self.cli.remote_branch_names()
+    }
     fn load_patch(
         &mut self,
         request: ratagit_core::patch::PatchRequest,
@@ -887,6 +897,14 @@ fn file_entry_from_status(path: String, status: Status) -> FileEntry {
     FileEntry {
         path,
         staged,
+        unstaged: status.intersects(
+            Status::WT_NEW
+                | Status::WT_MODIFIED
+                | Status::WT_DELETED
+                | Status::WT_RENAMED
+                | Status::WT_TYPECHANGE
+                | Status::CONFLICTED,
+        ),
         untracked,
         status: file_status_from_git2(status),
         conflicted: status.contains(Status::CONFLICTED),
@@ -921,7 +939,7 @@ fn sort_files(files: &mut [FileEntry]) {
 
 fn summarize_files(files: &[FileEntry]) -> String {
     let staged = files.iter().filter(|entry| entry.staged).count();
-    let unstaged = files.len().saturating_sub(staged);
+    let unstaged = files.iter().filter(|entry| entry.unstaged).count();
     format!("staged: {staged}, unstaged: {unstaged}")
 }
 

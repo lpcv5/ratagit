@@ -19,6 +19,7 @@ mod selectors;
 mod snapshot;
 mod state;
 mod text_edit;
+pub mod workflow;
 mod worktree;
 
 pub use actions::{

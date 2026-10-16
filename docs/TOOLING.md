@@ -21,8 +21,8 @@
 
 ```bash
 cargo fmt
-cargo clippy --workspace --lib --bins -- -D warnings
-cargo test
+cargo clippy --locked --workspace --lib --bins -- -D warnings
+cargo test --locked --workspace
 ```
 
 `clippy -D warnings` is scoped to production library and binary targets. Test
