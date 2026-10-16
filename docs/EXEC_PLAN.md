@@ -4,7 +4,7 @@
 
 Name: Prepare feature/newarch promotion to main
 
-Status: validated; integration pending
+Status: completed
 
 ## Problem
 
@@ -45,7 +45,7 @@ are unchanged. Existing harness and real Git tests validate the adopted version.
 
 ## Validation
 
-Planned: cargo fmt; cargo fmt --check; cargo check --locked;
+Passed: cargo fmt; cargo fmt --check; cargo check --locked;
 cargo clippy --workspace --lib --bins -- -D warnings;
 cargo clippy --locked --all-targets --all-features -- -D warnings;
 cargo test --locked; git diff --check; merge ancestry/tree checks.
@@ -56,4 +56,6 @@ PR CI and final delivery are tracked in the pull request.
 Formatting, locked compilation, production and all-target strict Clippy passed.
 cargo test --locked passed 606 tests with zero failures or ignored tests,
 including snapshots and harness coverage. Log: tmp/promote-newarch-tests.log.
-The integration merge and its ancestry/tree checks remain pending.
+Integration merge a5248df records old main as an ancestor and retains exactly
+the validated feature tree cd488178d55b63a0d68c5cb3d665891c2e6133d3.
+The branch is ready for PR CI and delivery; no legacy files were reintroduced.
