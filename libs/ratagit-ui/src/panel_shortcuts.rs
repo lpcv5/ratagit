@@ -1,0 +1,211 @@
+use ratagit_core::{ActiveLeftView, AppContext};
+
+use crate::frame::RenderContext;
+use crate::loading_indicator::loading_indicator_for_state;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ShortcutSegment {
+    pub(crate) key: &'static str,
+    pub(crate) label: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ShortcutLine {
+    Segments(Vec<ShortcutSegment>),
+    Text(String),
+}
+
+#[cfg(test)]
+pub(crate) fn shortcuts_for_state(state: &AppContext) -> String {
+    shortcuts_for_state_with_context(state, RenderContext::default())
+}
+
+pub(crate) fn shortcuts_for_state_with_context(
+    state: &AppContext,
+    context: RenderContext,
+) -> String {
+    let shortcuts = shortcut_text_for_state(state);
+    if let Some(indicator) = loading_indicator_for_state(state, context) {
+        if shortcuts.is_empty() {
+            indicator.text()
+        } else {
+            format!("{}  {}", indicator.text(), shortcuts)
+        }
+    } else {
+        shortcuts
+    }
+}
+
+fn shortcut_text_for_state(state: &AppContext) -> String {
+    match shortcut_line_for_state(state) {
+        ShortcutLine::Segments(segments) => segments
+            .iter()
+            .map(|segment| format!("{} {}", segment.key, segment.label))
+            .collect::<Vec<_>>()
+            .join("  "),
+        ShortcutLine::Text(text) => text,
+    }
+}
+
+pub(crate) fn shortcut_line_for_state(state: &AppContext) -> ShortcutLine {
+    if state.ui.details.repository_confirm.is_some() {
+        return segments(&[("Enter", "drop stash"), ("Esc", "cancel")]);
+    }
+    if state.ui.details.patch.active
+        && state.ui.focus == ratagit_core::PanelFocus::Details
+        && state.ui.last_left_focus == ratagit_core::PanelFocus::Stash
+    {
+        return segments(&[("Ctrl+U/D", "scroll"), ("Esc", "back")]);
+    }
+    if state.ui.details.patch.discard.is_some() {
+        return segments(&[("Enter", "discard"), ("Esc", "cancel")]);
+    }
+    if state.ui.details.patch.active
+        && state.ui.focus == ratagit_core::PanelFocus::Details
+        && !state.ui.command_palette.active
+    {
+        return segments(&[
+            ("j/k", "select"),
+            ("a", "mode"),
+            ("v", "range"),
+            ("x", "mark"),
+            ("Tab", "side"),
+            ("Space", "apply"),
+            (
+                "d",
+                if state.ui.details.patch.staged {
+                    "unstage"
+                } else {
+                    "discard"
+                },
+            ),
+            ("n/N", "file"),
+            ("Esc", "clear/back"),
+        ]);
+    }
+    if let Some(editor) = &state.ui.editor.kind {
+        return match editor {
+            ratagit_core::EditorKind::Commit { .. } => segments(&[
+                ("Tab", "field"),
+                ("arrows/Home/End", "cursor"),
+                ("Ctrl+J", "newline"),
+                ("Enter", "confirm"),
+                ("Esc", "cancel"),
+            ]),
+            ratagit_core::EditorKind::Stash { .. } => segments(&[
+                ("arrows/Home/End", "cursor"),
+                ("Enter", "confirm"),
+                ("Esc", "cancel"),
+            ]),
+        };
+    }
+
+    if state.ui.branches.create.active {
+        return segments(&[
+            ("arrows/Home/End", "cursor"),
+            ("Enter", "create"),
+            ("Esc", "cancel"),
+        ]);
+    }
+
+    if state.ui.branches.delete_menu.menu.active {
+        return segments(&[("j/k", "select"), ("Enter", "delete"), ("Esc", "cancel")]);
+    }
+
+    if state.ui.branches.delete_confirm.active {
+        return segments(&[("Enter", "confirm"), ("Esc", "cancel")]);
+    }
+
+    if state.ui.branches.force_delete_confirm.active {
+        return segments(&[("Enter", "force delete"), ("Esc", "cancel")]);
+    }
+
+    if state.ui.branches.rebase_menu.menu.active {
+        return segments(&[("j/k", "select"), ("Enter", "rebase"), ("Esc", "cancel")]);
+    }
+
+    if state.ui.branches.auto_stash_confirm.active {
+        return segments(&[("Enter", "confirm"), ("Esc", "cancel")]);
+    }
+
+    if state.ui.reset_menu.menu.active {
+        return segments(&[("j/k", "select"), ("Enter", "confirm"), ("Esc", "cancel")]);
+    }
+
+    if state.ui.reset_menu.danger_confirm.is_some() {
+        return segments(&[("Enter", "confirm"), ("Esc", "cancel")]);
+    }
+
+    if state.ui.discard_confirm.active {
+        return segments(&[("Enter", "confirm"), ("Esc", "cancel")]);
+    }
+
+    if state.ui.push_force_confirm.active {
+        return segments(&[("Enter", "force push"), ("Esc", "cancel")]);
+    }
+
+    if state.ui.stage_all_confirm.active {
+        return segments(&[("Enter", "stage all"), ("Esc", "cancel")]);
+    }
+
+    if state
+        .active_search_scope()
+        .is_some_and(|scope| state.ui.search.is_input_active_for(scope))
+    {
+        return ShortcutLine::Text(format!("search: {}", state.ui.search.query));
+    }
+
+    match state.active_left_view() {
+        Some(ActiveLeftView::Files) => local_segments(&[
+            ("space", "stage/unstage"),
+            ("d", "discard"),
+            ("A", "amend"),
+            ("c", "commit"),
+            ("s", "stash"),
+            ("D", "reset"),
+            ("enter", "expand"),
+        ]),
+        Some(ActiveLeftView::BranchesList) => local_segments(&[
+            ("enter", "commits"),
+            ("space", "checkout"),
+            ("n", "new"),
+            ("d", "delete"),
+            ("r", "rebase"),
+        ]),
+        Some(ActiveLeftView::BranchCommits) => {
+            local_segments(&[("enter", "files"), ("Esc", "back")])
+        }
+        Some(ActiveLeftView::BranchCommitFiles) => {
+            local_segments(&[("enter", "expand"), ("v", "visual"), ("Esc", "back")])
+        }
+        Some(ActiveLeftView::Commits) => local_segments(&[
+            ("enter", "files"),
+            ("A", "amend"),
+            ("s", "squash"),
+            ("f", "fixup"),
+            ("r", "reword"),
+            ("d", "delete"),
+            ("space", "detach"),
+        ]),
+        Some(ActiveLeftView::CommitFiles) => {
+            local_segments(&[("enter", "expand"), ("v", "visual"), ("Esc", "back")])
+        }
+        Some(ActiveLeftView::Stash) => local_segments(&[("O", "stash pop")]),
+        None => local_segments(&[]),
+    }
+}
+
+fn local_segments(values: &[(&'static str, &'static str)]) -> ShortcutLine {
+    let mut combined = values.to_vec();
+    combined.push(("?", "commands"));
+    segments(&combined)
+}
+
+fn segments(values: &[(&'static str, &'static str)]) -> ShortcutLine {
+    ShortcutLine::Segments(
+        values
+            .iter()
+            .map(|(key, label)| ShortcutSegment { key, label })
+            .collect(),
+    )
+}

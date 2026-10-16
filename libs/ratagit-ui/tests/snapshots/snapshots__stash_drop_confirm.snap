@@ -1,0 +1,34 @@
+---
+source: libs/ratagit-ui/tests/snapshots.rs
+expression: "render_terminal_text(&state, size)"
+---
+╭ 1  󰈙 Files ────────────────────╮╭ 5   Details ──────────────────────────────────────────────────╮
+│   ? README.md                  ││   diff --git a/src/lib.rs b/src/lib.rs                         │
+│    src/                       ││   index 1111111..2222222 100644                                │
+│     M lib.rs                   ││   --- a/src/lib.rs                                             │
+│     M main.rs                  ││   +++ b/src/lib.rs                                             │
+│                                ││   @@ -1,3 +1,3 @@                                              │
+│                   ╭ ‼ Confirm ───────────────────────────────────────────────╮                   │
+│                   │                                                          │                   │
+│                   │                                                          │                   │
+╰───────────────────│                                                          │                   │
+│ 2   Branches     │                                                          │                   │
+│ main             │                   Drop selected stash?                   │                   │
+│  feature/mvp      │               This action cannot be undone.              │                   │
+│                   │                                                          │                   │
+│                   │                  StashDrop("stash@{0}")                  │                   │
+│                   │                                                          │                   │
+╰───────────────────│                                                          │                   │
+│ 3   Commits      │                                                          │                   │
+│●  abc1234  RT  ini│                                                          │                   │
+│●  def5678  RT  wir│                                                          │───────────────────╯
+│                   │ ──────────────────────────────────────────────────────── │                   │
+│                   │ Enter drop  Esc cancel                                   │                   │
+│                   ╰──────────────────────────────────────────────────────────╯                   │
+╰────────────────────────────────╯                                                                 │
+╭ 4   Stash ────────────────────╮                                                                 │
+│ stash@{0} WIP on main: local t│                                                                 │
+│                                │                                                                 │
+│                                │                                                                 │
+╰────────────────────────────────╯─────────────────────────────────────────────────────────────────╯
+ Enter  drop stash   Esc  cancel

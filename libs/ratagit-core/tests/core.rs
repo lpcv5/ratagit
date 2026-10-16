@@ -1,0 +1,4170 @@
+use ratagit_core::{
+    Action, AppContext, AutoStashOperation, BranchDeleteChoice, BranchDeleteMode, BranchEntry,
+    BranchInputMode, BranchRebaseChoice, BranchesSubview, COMMITS_PAGE_SIZE,
+    COMMITS_PREFETCH_THRESHOLD, Command, CommandPaletteCommand, CommandRefreshKey,
+    CommitEditorIntent, CommitEntry, CommitField, CommitFileDiffPath, CommitFileDiffTarget,
+    CommitFileEntry, CommitFileStatus, CommitHashStatus, CommitInputMode, DetailsRequest,
+    DetailsRequestId, DetailsRequestTarget, EditorKind, FileDiffTarget, FileEntry, FileInputMode,
+    FilesSnapshot, GitErrorKind, GitFailure, GitResult, MenuDirection, MenuKind, PanelFocus,
+    RefreshTarget, RepoSnapshot, ResetChoice, ResetMode, SearchScope, StageAllOperation,
+    StashEntry, StashScope, UiAction, debounce_key_for_command, refresh_key_for_command,
+    refresh_tree_projection, selected_commit_file_targets, selected_row, update,
+};
+
+fn commit_entry(id: &str, summary: &str) -> CommitEntry {
+    CommitEntry {
+        id: id.to_string(),
+        full_id: format!("{id}-full"),
+        summary: summary.to_string(),
+        message: summary.to_string(),
+        author_name: "ratagit-tests".to_string(),
+        graph: "●".to_string(),
+        hash_status: CommitHashStatus::Unpushed,
+        is_merge: false,
+    }
+}
+
+fn commit_entries(count: usize) -> Vec<CommitEntry> {
+    (0..count)
+        .map(|index| commit_entry(&format!("{index:07x}"), &format!("commit {index}")))
+        .collect()
+}
+
+fn file_entry(path: &str, staged: bool, untracked: bool) -> FileEntry {
+    FileEntry {
+        path: path.to_string(),
+        staged,
+        untracked,
+        status: if untracked {
+            CommitFileStatus::Unknown
+        } else {
+            CommitFileStatus::Modified
+        },
+        conflicted: false,
+    }
+}
+
+fn file_diff_target(path: &str) -> FileDiffTarget {
+    FileDiffTarget {
+        path: path.to_string(),
+        untracked: false,
+        is_directory_marker: path.ends_with('/'),
+    }
+}
+
+fn file_diff_targets(paths: impl IntoIterator<Item = impl AsRef<str>>) -> Vec<FileDiffTarget> {
+    paths
+        .into_iter()
+        .map(|path| file_diff_target(path.as_ref()))
+        .collect()
+}
+
+fn branch_entry(name: &str, is_current: bool) -> BranchEntry {
+    BranchEntry {
+        name: name.to_string(),
+        is_current,
+    }
+}
+
+fn context_with_focus(focus: PanelFocus) -> AppContext {
+    let mut state = AppContext::default();
+    state.ui.focus = focus;
+    state.ui.last_left_focus = focus;
+    state
+}
+
+fn select_palette_command(state: &mut AppContext, command: CommandPaletteCommand) {
+    state.ui.command_palette.selected = state
+        .command_palette_entries()
+        .iter()
+        .position(|entry| entry.command == command)
+        .unwrap_or_else(|| panic!("palette should contain command: {command:?}"));
+}
+
+#[test]
+fn refresh_action_emits_refresh_command() {
+    let mut state = AppContext::default();
+    let commands = update(&mut state, Action::Ui(UiAction::RefreshAll));
+    assert_eq!(commands, Command::refresh_all_commands());
+    assert!(state.work.refresh.refresh_pending);
+    assert_eq!(
+        state.work.refresh.pending_refreshes,
+        RefreshTarget::ALL.into_iter().collect()
+    );
+}
+
+#[test]
+fn refresh_work_transitions_without_touching_other_work_states() {
+    let mut state = AppContext::default();
+
+    update(&mut state, Action::Ui(UiAction::RefreshAll));
+
+    assert!(state.work.refresh.refresh_pending);
+    assert_eq!(
+        state.work.refresh.pending_refreshes,
+        RefreshTarget::ALL.into_iter().collect()
+    );
+    assert!(!state.work.details.details_pending);
+    assert!(state.work.mutation.operation_pending.is_none());
+    assert!(!state.work.pagination.commits_loading_more);
+    assert!(!state.work.commit_files.commit_files_loading);
+
+    update(
+        &mut state,
+        Action::GitResult(GitResult::RefreshFailed {
+            target: None,
+            error: "boom".to_string(),
+        }),
+    );
+
+    assert!(!state.work.refresh.refresh_pending);
+    assert!(state.work.refresh.pending_refreshes.is_empty());
+}
+
+#[test]
+fn details_work_transitions_without_touching_other_work_states() {
+    let mut state = context_with_focus(PanelFocus::Branches);
+    state.repo.files.items = vec![file_entry("src/lib.rs", false, false)];
+
+    let commands = update(
+        &mut state,
+        Action::Ui(UiAction::FocusPanel {
+            panel: PanelFocus::Files,
+        }),
+    );
+
+    assert_details_refresh_for_paths(commands, vec!["src/lib.rs".to_string()]);
+    assert!(state.work.details.details_pending);
+    assert!(state.work.details.details_request.is_some());
+    assert!(!state.work.refresh.refresh_pending);
+    assert!(state.work.mutation.operation_pending.is_none());
+    assert!(!state.work.pagination.commits_loading_more);
+    assert!(!state.work.commit_files.commit_files_loading);
+
+    let request = state.work.details.details_request.clone().unwrap();
+    let DetailsRequestTarget::FilesDiff {
+        targets,
+        truncated_from,
+    } = request.target
+    else {
+        panic!("expected files details request");
+    };
+    update(
+        &mut state,
+        Action::GitResult(GitResult::FilesDetailsDiff {
+            request_id: request.id,
+            targets,
+            truncated_from,
+            result: Ok("diff".to_string()),
+        }),
+    );
+
+    assert!(!state.work.details.details_pending);
+    assert!(state.work.details.details_request.is_none());
+}
+
+#[test]
+fn mutation_work_transitions_without_touching_read_work_states() {
+    let mut state = AppContext::default();
+
+    let commands = update(&mut state, Action::Ui(UiAction::Pull));
+
+    assert_eq!(commands, vec![Command::Pull]);
+    assert_eq!(
+        state.work.mutation.operation_pending.as_deref(),
+        Some("pull")
+    );
+    assert!(!state.work.refresh.refresh_pending);
+    assert!(!state.work.details.details_pending);
+    assert!(!state.work.pagination.commits_loading_more);
+    assert!(!state.work.commit_files.commit_files_loading);
+
+    update(
+        &mut state,
+        Action::GitResult(GitResult::Pull { result: Ok(()) }),
+    );
+
+    assert!(state.work.mutation.operation_pending.is_none());
+    assert_eq!(
+        state.work.mutation.last_completed_command.as_deref(),
+        Some("pull")
+    );
+}
+
+#[test]
+fn command_palette_opens_moves_clamps_and_closes() {
+    let mut state = AppContext::default();
+
+    assert!(!state.ui.command_palette.active);
+    assert_eq!(state.ui.command_palette.selected, 0);
+
+    assert!(update(&mut state, Action::Ui(UiAction::OpenCommandPalette)).is_empty());
+    assert!(state.ui.command_palette.active);
+    assert_eq!(
+        state
+            .selected_command_palette_entry()
+            .map(|entry| entry.command),
+        Some(CommandPaletteCommand::ToggleSelectedFileStage)
+    );
+
+    assert!(update(&mut state, Action::Ui(UiAction::MoveCommandPaletteUp)).is_empty());
+    assert_eq!(state.ui.command_palette.selected, 0);
+
+    let last = state.command_palette_entries().len() - 1;
+    for _ in 0..state.command_palette_entries().len() + 3 {
+        update(&mut state, Action::Ui(UiAction::MoveCommandPaletteDown));
+    }
+    assert_eq!(state.ui.command_palette.selected, last);
+
+    assert!(update(&mut state, Action::Ui(UiAction::CloseCommandPalette)).is_empty());
+    assert!(!state.ui.command_palette.active);
+}
+
+#[test]
+fn command_palette_executes_global_commands_and_closes() {
+    let mut state = AppContext::default();
+    update(&mut state, Action::Ui(UiAction::OpenCommandPalette));
+    select_palette_command(&mut state, CommandPaletteCommand::Pull);
+
+    let commands = update(
+        &mut state,
+        Action::Ui(UiAction::ExecuteCommandPalette {
+            details_scroll_lines: 4,
+            details_visible_lines: 10,
+        }),
+    );
+
+    assert_eq!(commands, vec![Command::Pull]);
+    assert!(!state.ui.command_palette.active);
+
+    update(&mut state, Action::Ui(UiAction::OpenCommandPalette));
+    select_palette_command(&mut state, CommandPaletteCommand::RefreshAll);
+    let commands = update(
+        &mut state,
+        Action::Ui(UiAction::ExecuteCommandPalette {
+            details_scroll_lines: 4,
+            details_visible_lines: 10,
+        }),
+    );
+    assert_eq!(commands, Command::refresh_all_commands());
+}
+
+#[test]
+fn command_palette_executes_local_commands() {
+    let mut state = AppContext::default();
+    update(&mut state, Action::Ui(UiAction::OpenCommandPalette));
+    select_palette_command(&mut state, CommandPaletteCommand::OpenResetMenu);
+
+    let commands = update(
+        &mut state,
+        Action::Ui(UiAction::ExecuteCommandPalette {
+            details_scroll_lines: 4,
+            details_visible_lines: 10,
+        }),
+    );
+
+    assert!(commands.is_empty());
+    assert!(!state.ui.command_palette.active);
+    assert!(state.ui.reset_menu.menu.active);
+}
+
+#[test]
+fn pagination_work_transitions_without_touching_other_work_states() {
+    let mut state = context_with_focus(PanelFocus::Commits);
+    state.repo.commits.items = commit_entries(COMMITS_PAGE_SIZE);
+    state.repo.commits.has_more = true;
+    state.ui.commits.selected = COMMITS_PAGE_SIZE - 1;
+
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+
+    assert!(matches!(
+        commands.first(),
+        Some(Command::LoadMoreCommits { .. })
+    ));
+    assert!(state.work.pagination.commits_loading_more);
+    assert!(state.work.pagination.commits_pending_select_after_load);
+    assert!(!state.work.refresh.refresh_pending);
+    assert!(state.work.mutation.operation_pending.is_none());
+    assert!(!state.work.commit_files.commit_files_loading);
+
+    let epoch = state.repo.commits.pagination_epoch;
+    update(
+        &mut state,
+        Action::GitResult(GitResult::CommitsPage {
+            offset: COMMITS_PAGE_SIZE,
+            limit: COMMITS_PAGE_SIZE,
+            epoch,
+            result: Ok(vec![commit_entry("next", "next")]),
+        }),
+    );
+
+    assert!(!state.work.pagination.commits_loading_more);
+    assert!(!state.work.pagination.commits_pending_select_after_load);
+}
+
+#[test]
+fn commit_files_work_transitions_without_touching_other_work_states() {
+    let mut state = context_with_focus(PanelFocus::Commits);
+    state.repo.commits.items = vec![commit_entry("abc1234", "subject")];
+
+    let commands = update(&mut state, Action::Ui(UiAction::OpenCommitFilesPanel));
+
+    assert_eq!(
+        commands,
+        vec![Command::RefreshCommitFiles {
+            commit_id: "abc1234-full".to_string(),
+        }]
+    );
+    assert!(state.work.commit_files.commit_files_loading);
+    assert!(!state.work.refresh.refresh_pending);
+    assert!(!state.work.details.details_pending);
+    assert!(state.work.mutation.operation_pending.is_none());
+    assert!(!state.work.pagination.commits_loading_more);
+
+    update(
+        &mut state,
+        Action::GitResult(GitResult::CommitFiles {
+            commit_id: "abc1234-full".to_string(),
+            result: Ok(vec![CommitFileEntry {
+                path: "src/lib.rs".to_string(),
+                old_path: None,
+                status: CommitFileStatus::Modified,
+            }]),
+        }),
+    );
+
+    assert!(!state.work.commit_files.commit_files_loading);
+}
+
+#[test]
+fn command_metadata_tracks_debounce_mutation_and_pending_labels() {
+    let commit_file_target = CommitFileDiffTarget {
+        commit_id: "abc1234".to_string(),
+        paths: vec![CommitFileDiffPath {
+            path: "src/lib.rs".to_string(),
+            old_path: None,
+        }],
+    };
+    let non_mutating = vec![
+        (Command::RefreshAll, None),
+        (Command::RefreshFiles, None),
+        (Command::RefreshBranches, None),
+        (Command::RefreshCommits, None),
+        (Command::RefreshStash, None),
+        (
+            Command::LoadMoreCommits {
+                offset: 0,
+                limit: COMMITS_PAGE_SIZE,
+                epoch: 1,
+            },
+            None,
+        ),
+        (
+            Command::RefreshFilesDetailsDiff {
+                request_id: DetailsRequestId(1),
+                targets: file_diff_targets(["src/lib.rs"]),
+                truncated_from: None,
+            },
+            Some("files_details_diff"),
+        ),
+        (
+            Command::RefreshBranchDetailsLog {
+                request_id: DetailsRequestId(1),
+                branch: "main".to_string(),
+                max_count: 50,
+            },
+            Some("branch_details_log"),
+        ),
+        (
+            Command::RefreshCommitDetailsDiff {
+                request_id: DetailsRequestId(0),
+                commit_id: "abc1234".to_string(),
+            },
+            Some("commit_details_diff"),
+        ),
+        (
+            Command::RefreshCommitFiles {
+                commit_id: "abc1234".to_string(),
+            },
+            None,
+        ),
+        (
+            Command::RefreshCommitFileDiff {
+                request_id: DetailsRequestId(0),
+                target: commit_file_target,
+            },
+            Some("commit_file_diff"),
+        ),
+    ];
+    for (command, debounce_key) in non_mutating {
+        assert_eq!(command.debounce_key(), debounce_key);
+        assert_eq!(debounce_key_for_command(&command), debounce_key);
+        assert!(!command.is_mutating());
+        assert!(command.pending_operation_label().is_none());
+    }
+
+    let mutating = vec![
+        (
+            Command::StageFiles {
+                paths: vec!["a.txt".to_string()],
+            },
+            "stage",
+        ),
+        (
+            Command::UnstageFiles {
+                paths: vec!["a.txt".to_string()],
+            },
+            "unstage",
+        ),
+        (
+            Command::StashFiles {
+                message: "savepoint".to_string(),
+                paths: vec!["a.txt".to_string()],
+            },
+            "stash_files",
+        ),
+        (
+            Command::Reset {
+                mode: ResetMode::Hard,
+            },
+            "reset_hard",
+        ),
+        (Command::Nuke, "nuke"),
+        (
+            Command::DiscardFiles {
+                paths: vec!["a.txt".to_string()],
+            },
+            "discard_files",
+        ),
+        (
+            Command::CreateCommit {
+                message: "feat: ship".to_string(),
+            },
+            "commit",
+        ),
+        (
+            Command::StageAllThenCreateCommit {
+                message: "feat: ship".to_string(),
+                paths: vec!["a.txt".to_string()],
+            },
+            "commit",
+        ),
+        (
+            Command::AmendStagedChanges {
+                commit_id: "HEAD".to_string(),
+            },
+            "amend",
+        ),
+        (
+            Command::StageAllThenAmendStagedChanges {
+                commit_id: "HEAD".to_string(),
+                paths: vec!["a.txt".to_string()],
+            },
+            "amend",
+        ),
+        (Command::Pull, "pull"),
+        (Command::Push { force: false }, "push"),
+        (Command::Push { force: true }, "force_push"),
+        (
+            Command::CreateBranch {
+                name: "feature/demo".to_string(),
+                start_point: "main".to_string(),
+            },
+            "create_branch",
+        ),
+        (
+            Command::CheckoutBranch {
+                name: "feature/demo".to_string(),
+                auto_stash: false,
+            },
+            "checkout_branch",
+        ),
+        (
+            Command::DeleteBranch {
+                name: "feature/demo".to_string(),
+                mode: BranchDeleteMode::Both,
+                force: false,
+            },
+            "delete_branch_both",
+        ),
+        (
+            Command::RebaseBranch {
+                target: "main".to_string(),
+                interactive: false,
+                auto_stash: false,
+            },
+            "rebase_branch_simple",
+        ),
+        (
+            Command::RebaseBranch {
+                target: "main".to_string(),
+                interactive: true,
+                auto_stash: false,
+            },
+            "rebase_branch_interactive",
+        ),
+        (
+            Command::SquashCommits {
+                commit_ids: vec!["abc1234".to_string()],
+            },
+            "squash_commits",
+        ),
+        (
+            Command::FixupCommits {
+                commit_ids: vec!["abc1234".to_string()],
+            },
+            "fixup_commits",
+        ),
+        (
+            Command::RewordCommit {
+                commit_id: "abc1234".to_string(),
+                message: "new subject".to_string(),
+            },
+            "reword_commit",
+        ),
+        (
+            Command::DeleteCommits {
+                commit_ids: vec!["abc1234".to_string()],
+            },
+            "delete_commits",
+        ),
+        (
+            Command::CheckoutCommitDetached {
+                commit_id: "abc1234".to_string(),
+                auto_stash: false,
+            },
+            "checkout_detached",
+        ),
+        (
+            Command::StashPush {
+                message: "savepoint".to_string(),
+            },
+            "stash_push",
+        ),
+        (
+            Command::StashPop {
+                stash_id: "stash@{0}".to_string(),
+            },
+            "stash_pop",
+        ),
+    ];
+    for (command, expected_label) in mutating {
+        assert!(command.debounce_key().is_none());
+        assert!(command.is_mutating());
+        let label = command.pending_operation_label();
+        assert_eq!(label.as_deref(), Some(expected_label));
+    }
+}
+
+#[test]
+fn command_metadata_covers_branch_drilldown_and_refresh_keys() {
+    let branch_commits = Command::RefreshBranchCommits {
+        branch: "main".to_string(),
+    };
+    let branch_commit_files = Command::RefreshBranchCommitFiles {
+        branch: "main".to_string(),
+        commit_id: "abc1234".to_string(),
+    };
+
+    for (command, log_label) in [
+        (branch_commits, "refresh_branch_commits"),
+        (branch_commit_files, "refresh_branch_commit_files"),
+    ] {
+        assert_eq!(command.log_label(), log_label);
+        assert_eq!(command.debounce_key(), None);
+        assert_eq!(debounce_key_for_command(&command), None);
+        assert_eq!(command.refresh_coalescing_key(), None);
+        assert_eq!(refresh_key_for_command(&command), None);
+        assert!(!command.is_mutating());
+        assert_eq!(command.pending_operation_label(), None);
+    }
+
+    for (command, refresh_key) in [
+        (Command::RefreshAll, Some(CommandRefreshKey::All)),
+        (
+            Command::RefreshFiles,
+            Some(CommandRefreshKey::Target(RefreshTarget::Files)),
+        ),
+        (
+            Command::RefreshBranches,
+            Some(CommandRefreshKey::Target(RefreshTarget::Branches)),
+        ),
+        (
+            Command::RefreshCommits,
+            Some(CommandRefreshKey::Target(RefreshTarget::Commits)),
+        ),
+        (
+            Command::RefreshStash,
+            Some(CommandRefreshKey::Target(RefreshTarget::Stash)),
+        ),
+    ] {
+        assert_eq!(command.refresh_coalescing_key(), refresh_key);
+        assert_eq!(refresh_key_for_command(&command), refresh_key);
+    }
+}
+
+#[test]
+fn refreshed_commit_page_tracks_pagination_state() {
+    let mut state = AppContext::default();
+
+    update(
+        &mut state,
+        Action::GitResult(GitResult::Refreshed(RepoSnapshot {
+            status_summary: "clean".to_string(),
+            current_branch: "main".to_string(),
+            detached_head: false,
+            files: Vec::new(),
+            commits: commit_entries(COMMITS_PAGE_SIZE),
+            branches: Vec::new(),
+            stashes: Vec::new(),
+        })),
+    );
+
+    assert_eq!(state.repo.commits.items.len(), COMMITS_PAGE_SIZE);
+    assert!(state.repo.commits.has_more);
+    assert!(!state.work.pagination.commits_loading_more);
+    assert!(!state.work.pagination.commits_pending_select_after_load);
+    assert_eq!(state.repo.commits.pagination_epoch, 1);
+}
+
+#[test]
+fn commits_move_down_past_loaded_page_requests_and_appends_next_page() {
+    let mut state = context_with_focus(PanelFocus::Commits);
+    update(
+        &mut state,
+        Action::GitResult(GitResult::Refreshed(RepoSnapshot {
+            status_summary: "clean".to_string(),
+            current_branch: "main".to_string(),
+            detached_head: false,
+            files: Vec::new(),
+            commits: commit_entries(COMMITS_PAGE_SIZE),
+            branches: Vec::new(),
+            stashes: Vec::new(),
+        })),
+    );
+    state.ui.commits.selected = COMMITS_PAGE_SIZE - 1;
+
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+
+    assert_eq!(
+        commands,
+        vec![
+            Command::LoadMoreCommits {
+                offset: COMMITS_PAGE_SIZE,
+                limit: COMMITS_PAGE_SIZE,
+                epoch: state.repo.commits.pagination_epoch,
+            },
+            Command::RefreshCommitDetailsDiff {
+                request_id: DetailsRequestId(1),
+                commit_id: "0000063-full".to_string(),
+            },
+        ]
+    );
+    assert!(state.work.pagination.commits_loading_more);
+    assert!(state.work.pagination.commits_pending_select_after_load);
+
+    let next_page = (COMMITS_PAGE_SIZE..COMMITS_PAGE_SIZE * 2)
+        .map(|index| commit_entry(&format!("{index:07x}"), &format!("commit {index}")))
+        .collect::<Vec<_>>();
+    let epoch = state.repo.commits.pagination_epoch;
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::CommitsPage {
+            offset: COMMITS_PAGE_SIZE,
+            limit: COMMITS_PAGE_SIZE,
+            epoch,
+            result: Ok(next_page),
+        }),
+    );
+
+    assert!(commands.is_empty());
+    assert_eq!(state.repo.commits.items.len(), COMMITS_PAGE_SIZE * 2);
+    assert_eq!(state.ui.commits.selected, COMMITS_PAGE_SIZE);
+    assert!(state.repo.commits.has_more);
+    assert!(!state.work.pagination.commits_loading_more);
+}
+
+#[test]
+fn commits_prefetch_before_loaded_tail_without_jumping_selection() {
+    let mut state = context_with_focus(PanelFocus::Commits);
+    update(
+        &mut state,
+        Action::GitResult(GitResult::Refreshed(RepoSnapshot {
+            status_summary: "clean".to_string(),
+            current_branch: "main".to_string(),
+            detached_head: false,
+            files: Vec::new(),
+            commits: commit_entries(COMMITS_PAGE_SIZE),
+            branches: Vec::new(),
+            stashes: Vec::new(),
+        })),
+    );
+    state.ui.commits.selected = COMMITS_PAGE_SIZE - COMMITS_PREFETCH_THRESHOLD - 2;
+
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+
+    assert_eq!(
+        commands,
+        vec![
+            Command::LoadMoreCommits {
+                offset: COMMITS_PAGE_SIZE,
+                limit: COMMITS_PAGE_SIZE,
+                epoch: state.repo.commits.pagination_epoch,
+            },
+            Command::RefreshCommitDetailsDiff {
+                request_id: DetailsRequestId(1),
+                commit_id: "000004f-full".to_string(),
+            },
+        ]
+    );
+    assert!(state.work.pagination.commits_loading_more);
+    assert!(!state.work.pagination.commits_pending_select_after_load);
+    assert_eq!(
+        state.ui.commits.selected,
+        COMMITS_PAGE_SIZE - COMMITS_PREFETCH_THRESHOLD - 1
+    );
+
+    let next_page = (COMMITS_PAGE_SIZE..COMMITS_PAGE_SIZE * 2)
+        .map(|index| commit_entry(&format!("{index:07x}"), &format!("commit {index}")))
+        .collect::<Vec<_>>();
+    let epoch = state.repo.commits.pagination_epoch;
+    update(
+        &mut state,
+        Action::GitResult(GitResult::CommitsPage {
+            offset: COMMITS_PAGE_SIZE,
+            limit: COMMITS_PAGE_SIZE,
+            epoch,
+            result: Ok(next_page),
+        }),
+    );
+
+    assert_eq!(state.repo.commits.items.len(), COMMITS_PAGE_SIZE * 2);
+    assert_eq!(
+        state.ui.commits.selected,
+        COMMITS_PAGE_SIZE - COMMITS_PREFETCH_THRESHOLD - 1
+    );
+    assert!(!state.work.pagination.commits_loading_more);
+}
+
+#[test]
+fn commits_prefetch_pending_advances_when_user_reaches_loaded_tail() {
+    let mut state = context_with_focus(PanelFocus::Commits);
+    update(
+        &mut state,
+        Action::GitResult(GitResult::Refreshed(RepoSnapshot {
+            status_summary: "clean".to_string(),
+            current_branch: "main".to_string(),
+            detached_head: false,
+            files: Vec::new(),
+            commits: commit_entries(COMMITS_PAGE_SIZE),
+            branches: Vec::new(),
+            stashes: Vec::new(),
+        })),
+    );
+    state.ui.commits.selected = COMMITS_PAGE_SIZE - COMMITS_PREFETCH_THRESHOLD - 2;
+    update(&mut state, Action::Ui(UiAction::MoveDown));
+    state.ui.commits.selected = COMMITS_PAGE_SIZE - 1;
+
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+
+    assert_commit_diff_refresh(commands, "0000063-full");
+    assert!(state.work.pagination.commits_loading_more);
+    assert!(state.work.pagination.commits_pending_select_after_load);
+
+    let next_page = (COMMITS_PAGE_SIZE..COMMITS_PAGE_SIZE * 2)
+        .map(|index| commit_entry(&format!("{index:07x}"), &format!("commit {index}")))
+        .collect::<Vec<_>>();
+    let epoch = state.repo.commits.pagination_epoch;
+    update(
+        &mut state,
+        Action::GitResult(GitResult::CommitsPage {
+            offset: COMMITS_PAGE_SIZE,
+            limit: COMMITS_PAGE_SIZE,
+            epoch,
+            result: Ok(next_page),
+        }),
+    );
+
+    assert_eq!(state.ui.commits.selected, COMMITS_PAGE_SIZE);
+    assert!(!state.work.pagination.commits_pending_select_after_load);
+}
+
+#[test]
+fn short_commit_page_stops_incremental_loading() {
+    let mut state = context_with_focus(PanelFocus::Commits);
+    update(
+        &mut state,
+        Action::GitResult(GitResult::Refreshed(RepoSnapshot {
+            status_summary: "clean".to_string(),
+            current_branch: "main".to_string(),
+            detached_head: false,
+            files: Vec::new(),
+            commits: commit_entries(COMMITS_PAGE_SIZE),
+            branches: Vec::new(),
+            stashes: Vec::new(),
+        })),
+    );
+    state.ui.commits.selected = COMMITS_PAGE_SIZE - 1;
+    update(&mut state, Action::Ui(UiAction::MoveDown));
+
+    let epoch = state.repo.commits.pagination_epoch;
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::CommitsPage {
+            offset: COMMITS_PAGE_SIZE,
+            limit: COMMITS_PAGE_SIZE,
+            epoch,
+            result: Ok(vec![commit_entry("page101", "last commit")]),
+        }),
+    );
+
+    assert!(commands.is_empty());
+    assert_eq!(state.repo.commits.items.len(), COMMITS_PAGE_SIZE + 1);
+    assert!(!state.repo.commits.has_more);
+    state.ui.commits.selected = COMMITS_PAGE_SIZE;
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+    assert_commit_diff_refresh(commands, "page101-full");
+}
+
+#[test]
+fn branch_create_input_confirms_from_selected_start_point() {
+    let mut state = state_with_branches_and_files(Vec::new());
+    state.ui.branches.selected = 1;
+
+    assert!(update(&mut state, Action::Ui(UiAction::OpenBranchCreateInput)).is_empty());
+    for ch in "feature/new".chars() {
+        update(&mut state, Action::Ui(UiAction::BranchCreateInputChar(ch)));
+    }
+    let commands = update(&mut state, Action::Ui(UiAction::ConfirmBranchCreate));
+
+    assert_eq!(
+        commands,
+        vec![Command::CreateBranch {
+            name: "feature/new".to_string(),
+            start_point: "feature/mvp".to_string(),
+        }]
+    );
+    assert!(!state.ui.branches.create.active);
+}
+
+#[test]
+fn branch_create_input_rejects_empty_name_and_can_cancel() {
+    let mut state = state_with_branches_and_files(Vec::new());
+
+    update(&mut state, Action::Ui(UiAction::OpenBranchCreateInput));
+    let commands = update(&mut state, Action::Ui(UiAction::ConfirmBranchCreate));
+    assert!(commands.is_empty());
+    assert!(state.ui.branches.create.active);
+    assert!(
+        state
+            .notices
+            .iter()
+            .any(|notice| notice.contains("Branch name cannot be empty"))
+    );
+
+    update(&mut state, Action::Ui(UiAction::CancelBranchCreate));
+    assert!(!state.ui.branches.create.active);
+}
+
+#[test]
+fn dirty_checkout_opens_auto_stash_confirm_then_confirms_command() {
+    let mut state = state_with_branches_and_files(vec![file_entry("dirty.txt", false, false)]);
+    state.ui.branches.selected = 1;
+
+    let commands = update(&mut state, Action::Ui(UiAction::CheckoutSelectedBranch));
+    assert!(commands.is_empty());
+    assert_eq!(
+        state.ui.branches.auto_stash_confirm.context,
+        Some(AutoStashOperation::Checkout {
+            branch: "feature/mvp".to_string()
+        })
+    );
+
+    let commands = update(&mut state, Action::Ui(UiAction::ConfirmAutoStash));
+    assert_eq!(
+        commands,
+        vec![Command::CheckoutBranch {
+            name: "feature/mvp".to_string(),
+            auto_stash: true,
+        }]
+    );
+}
+
+#[test]
+fn dirty_checkout_auto_stash_can_cancel() {
+    let mut state = state_with_branches_and_files(vec![file_entry("dirty.txt", false, false)]);
+    state.ui.branches.selected = 1;
+
+    update(&mut state, Action::Ui(UiAction::CheckoutSelectedBranch));
+    let commands = update(&mut state, Action::Ui(UiAction::CancelAutoStash));
+
+    assert!(commands.is_empty());
+    assert!(!state.ui.branches.auto_stash_confirm.active);
+}
+
+#[test]
+fn branch_delete_menu_blocks_current_local_delete() {
+    let mut state = state_with_branches_and_files(Vec::new());
+
+    update(&mut state, Action::Ui(UiAction::OpenBranchDeleteMenu));
+    let commands = update(&mut state, Action::Ui(UiAction::ConfirmBranchDeleteMenu));
+
+    assert!(commands.is_empty());
+    assert!(
+        state
+            .notices
+            .iter()
+            .any(|notice| notice.contains("Cannot delete current branch"))
+    );
+}
+
+#[test]
+fn branch_delete_menu_local_emits_command() {
+    let mut state = state_with_branches_and_files(Vec::new());
+    state.ui.branches.selected = 1;
+
+    update(&mut state, Action::Ui(UiAction::OpenBranchDeleteMenu));
+    let commands = update(&mut state, Action::Ui(UiAction::ConfirmBranchDeleteMenu));
+
+    assert_eq!(
+        commands,
+        vec![Command::DeleteBranch {
+            name: "feature/mvp".to_string(),
+            mode: BranchDeleteMode::Local,
+            force: false,
+        }]
+    );
+}
+
+#[test]
+fn branch_remote_delete_requires_confirmation() {
+    let mut state = state_with_branches_and_files(Vec::new());
+    state.ui.branches.selected = 1;
+
+    update(&mut state, Action::Ui(UiAction::OpenBranchDeleteMenu));
+    update(
+        &mut state,
+        Action::Ui(UiAction::MoveMenuSelection {
+            menu: MenuKind::BranchDelete,
+            direction: MenuDirection::Down,
+        }),
+    );
+    assert_eq!(
+        state.ui.branches.delete_menu.menu.selected,
+        BranchDeleteChoice::Remote
+    );
+    let commands = update(&mut state, Action::Ui(UiAction::ConfirmBranchDeleteMenu));
+
+    assert!(commands.is_empty());
+    assert!(state.ui.branches.delete_confirm.active);
+    assert_eq!(
+        state.ui.branches.delete_confirm.context.mode,
+        Some(BranchDeleteMode::Remote)
+    );
+
+    let commands = update(&mut state, Action::Ui(UiAction::ConfirmBranchDeleteDanger));
+
+    assert_eq!(
+        commands,
+        vec![Command::DeleteBranch {
+            name: "feature/mvp".to_string(),
+            mode: BranchDeleteMode::Remote,
+            force: false,
+        }]
+    );
+}
+
+#[test]
+fn branch_both_delete_requires_confirmation_and_can_cancel() {
+    let mut state = state_with_branches_and_files(Vec::new());
+    state.ui.branches.selected = 1;
+
+    update(&mut state, Action::Ui(UiAction::OpenBranchDeleteMenu));
+    update(
+        &mut state,
+        Action::Ui(UiAction::MoveMenuSelection {
+            menu: MenuKind::BranchDelete,
+            direction: MenuDirection::Down,
+        }),
+    );
+    update(
+        &mut state,
+        Action::Ui(UiAction::MoveMenuSelection {
+            menu: MenuKind::BranchDelete,
+            direction: MenuDirection::Down,
+        }),
+    );
+    assert_eq!(
+        state.ui.branches.delete_menu.menu.selected,
+        BranchDeleteChoice::Both
+    );
+    let commands = update(&mut state, Action::Ui(UiAction::ConfirmBranchDeleteMenu));
+
+    assert!(commands.is_empty());
+    assert!(state.ui.branches.delete_confirm.active);
+    assert_eq!(
+        state.ui.branches.delete_confirm.context.mode,
+        Some(BranchDeleteMode::Both)
+    );
+
+    let commands = update(&mut state, Action::Ui(UiAction::CancelBranchDeleteDanger));
+
+    assert!(commands.is_empty());
+    assert!(!state.ui.branches.delete_confirm.active);
+}
+
+#[test]
+fn unmerged_branch_delete_opens_force_confirm_and_can_force_delete() {
+    let mut state = state_with_branches_and_files(Vec::new());
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::DeleteBranch {
+            name: "feature/mvp".to_string(),
+            mode: BranchDeleteMode::Local,
+            force: false,
+            result: Err(GitFailure::new(
+                GitErrorKind::UnmergedBranchDelete,
+                "error: The branch 'feature/mvp' is not fully merged.",
+            )),
+        }),
+    );
+
+    assert!(commands.is_empty());
+    assert!(state.ui.branches.force_delete_confirm.active);
+    assert_eq!(state.work.mutation.operation_pending, None);
+    assert_eq!(
+        state.ui.branches.force_delete_confirm.context.target_branch,
+        "feature/mvp"
+    );
+
+    let commands = update(&mut state, Action::Ui(UiAction::ConfirmBranchForceDelete));
+    assert_eq!(
+        commands,
+        vec![Command::DeleteBranch {
+            name: "feature/mvp".to_string(),
+            mode: BranchDeleteMode::Local,
+            force: true,
+        }]
+    );
+}
+
+#[test]
+fn force_delete_confirm_can_cancel() {
+    let mut state = state_with_branches_and_files(Vec::new());
+    set_details_request(
+        &mut state,
+        DetailsRequestId(0),
+        DetailsRequestTarget::BranchLog {
+            branch: "main".to_string(),
+        },
+    );
+
+    update(
+        &mut state,
+        Action::GitResult(GitResult::DeleteBranch {
+            name: "feature/mvp".to_string(),
+            mode: BranchDeleteMode::Local,
+            force: false,
+            result: Err(GitFailure::new(
+                GitErrorKind::UnmergedBranchDelete,
+                "not fully merged",
+            )),
+        }),
+    );
+    let commands = update(&mut state, Action::Ui(UiAction::CancelBranchForceDelete));
+
+    assert!(commands.is_empty());
+    assert!(!state.ui.branches.force_delete_confirm.active);
+}
+
+#[test]
+fn pull_and_push_actions_emit_sync_commands() {
+    let mut state = AppContext::default();
+
+    let pull_commands = update(&mut state, Action::Ui(UiAction::Pull));
+    assert_eq!(pull_commands, vec![Command::Pull]);
+    assert_eq!(
+        state.work.mutation.operation_pending.as_deref(),
+        Some("pull")
+    );
+
+    let push_commands = update(&mut state, Action::Ui(UiAction::Push));
+    assert_eq!(push_commands, vec![Command::Push { force: false }]);
+    assert_eq!(
+        state.work.mutation.operation_pending.as_deref(),
+        Some("push")
+    );
+}
+
+#[test]
+fn divergent_push_opens_force_confirm_then_confirms_force_push() {
+    let mut state = AppContext::default();
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::Push {
+            force: false,
+            result: Err(GitFailure::new(
+                GitErrorKind::DivergentPush,
+                "! [rejected] main -> main (fetch first)",
+            )),
+        }),
+    );
+
+    assert!(commands.is_empty());
+    assert!(state.ui.push_force_confirm.active);
+    assert!(state.ui.push_force_confirm.context.contains("fetch first"));
+    assert_eq!(state.work.mutation.operation_pending, None);
+
+    let commands = update(&mut state, Action::Ui(UiAction::ConfirmForcePush));
+    assert_eq!(commands, vec![Command::Push { force: true }]);
+    assert!(!state.ui.push_force_confirm.active);
+    assert_eq!(
+        state.work.mutation.operation_pending.as_deref(),
+        Some("force_push")
+    );
+}
+
+#[test]
+fn force_push_confirm_can_cancel() {
+    let mut state = AppContext::default();
+    update(
+        &mut state,
+        Action::GitResult(GitResult::Push {
+            force: false,
+            result: Err(GitFailure::new(
+                GitErrorKind::DivergentPush,
+                "non-fast-forward",
+            )),
+        }),
+    );
+
+    let commands = update(&mut state, Action::Ui(UiAction::CancelForcePush));
+
+    assert!(commands.is_empty());
+    assert!(!state.ui.push_force_confirm.active);
+    assert!(state.ui.push_force_confirm.context.is_empty());
+}
+
+#[test]
+fn branch_rebase_menu_selects_mode_and_dirty_rebase_confirms_auto_stash() {
+    let mut state = state_with_branches_and_files(vec![file_entry("dirty.txt", false, false)]);
+    state.ui.branches.selected = 1;
+
+    update(&mut state, Action::Ui(UiAction::OpenBranchRebaseMenu));
+    update(
+        &mut state,
+        Action::Ui(UiAction::MoveMenuSelection {
+            menu: MenuKind::BranchRebase,
+            direction: MenuDirection::Down,
+        }),
+    );
+    assert_eq!(
+        state.ui.branches.rebase_menu.menu.selected,
+        BranchRebaseChoice::Interactive
+    );
+    let commands = update(&mut state, Action::Ui(UiAction::ConfirmBranchRebaseMenu));
+
+    assert!(commands.is_empty());
+    assert_eq!(
+        state.ui.branches.auto_stash_confirm.context,
+        Some(AutoStashOperation::Rebase {
+            target: "feature/mvp".to_string(),
+            interactive: true,
+        })
+    );
+
+    let commands = update(&mut state, Action::Ui(UiAction::ConfirmAutoStash));
+    assert_eq!(
+        commands,
+        vec![Command::RebaseBranch {
+            target: "feature/mvp".to_string(),
+            interactive: true,
+            auto_stash: true,
+        }]
+    );
+}
+
+#[test]
+fn branch_rebase_origin_main_emits_fixed_target() {
+    let mut state = state_with_branches_and_files(Vec::new());
+    state.ui.branches.selected = 1;
+
+    update(&mut state, Action::Ui(UiAction::OpenBranchRebaseMenu));
+    update(
+        &mut state,
+        Action::Ui(UiAction::MoveMenuSelection {
+            menu: MenuKind::BranchRebase,
+            direction: MenuDirection::Down,
+        }),
+    );
+    update(
+        &mut state,
+        Action::Ui(UiAction::MoveMenuSelection {
+            menu: MenuKind::BranchRebase,
+            direction: MenuDirection::Down,
+        }),
+    );
+    let commands = update(&mut state, Action::Ui(UiAction::ConfirmBranchRebaseMenu));
+
+    assert_eq!(
+        commands,
+        vec![Command::RebaseBranch {
+            target: "origin/main".to_string(),
+            interactive: false,
+            auto_stash: false,
+        }]
+    );
+}
+
+fn assert_details_refresh_for_paths(commands: Vec<Command>, expected_paths: Vec<String>) {
+    let [
+        Command::RefreshFilesDetailsDiff {
+            targets,
+            truncated_from,
+            ..
+        },
+    ] = commands.as_slice()
+    else {
+        panic!("expected files details refresh: {commands:?}");
+    };
+    assert_eq!(*targets, file_diff_targets(expected_paths.iter()));
+    assert_eq!(*truncated_from, None);
+}
+
+fn assert_branch_log_refresh(commands: Vec<Command>, expected_branch: &str) {
+    let [
+        Command::RefreshBranchDetailsLog {
+            branch, max_count, ..
+        },
+    ] = commands.as_slice()
+    else {
+        panic!("expected branch log refresh: {commands:?}");
+    };
+    assert_eq!(branch, expected_branch);
+    assert_eq!(*max_count, ratagit_core::BRANCH_DETAILS_LOG_MAX_COUNT);
+}
+
+fn assert_files_diff_refresh(commands: Vec<Command>, expected_path: &str) {
+    assert_files_diff_refresh_for_paths(commands, vec![expected_path]);
+}
+
+fn assert_files_diff_refresh_for_paths(commands: Vec<Command>, expected_paths: Vec<&str>) {
+    let [
+        Command::RefreshFilesDetailsDiff {
+            targets,
+            truncated_from,
+            ..
+        },
+    ] = commands.as_slice()
+    else {
+        panic!("expected files diff refresh: {commands:?}");
+    };
+    assert_eq!(*targets, file_diff_targets(expected_paths));
+    assert_eq!(*truncated_from, None);
+}
+
+fn assert_commit_diff_refresh(commands: Vec<Command>, expected_commit_id: &str) {
+    let [Command::RefreshCommitDetailsDiff { commit_id, .. }] = commands.as_slice() else {
+        panic!("expected commit diff refresh: {commands:?}");
+    };
+    assert_eq!(commit_id, expected_commit_id);
+}
+
+fn commit_files_fixture() -> Vec<CommitFileEntry> {
+    vec![
+        CommitFileEntry {
+            path: "README.md".to_string(),
+            old_path: None,
+            status: CommitFileStatus::Modified,
+        },
+        CommitFileEntry {
+            path: "src/lib.rs".to_string(),
+            old_path: None,
+            status: CommitFileStatus::Added,
+        },
+    ]
+}
+
+fn assert_commit_file_diff_refresh(
+    commands: Vec<Command>,
+    expected_commit_id: &str,
+    expected_path: &str,
+) {
+    assert_commit_file_diff_refresh_for_paths(commands, expected_commit_id, vec![expected_path]);
+}
+
+fn assert_commit_file_diff_refresh_for_paths(
+    commands: Vec<Command>,
+    expected_commit_id: &str,
+    expected_paths: Vec<&str>,
+) {
+    let [Command::RefreshCommitFileDiff { target, .. }] = commands.as_slice() else {
+        panic!("expected commit file diff refresh: {commands:?}");
+    };
+    assert_eq!(target.commit_id, expected_commit_id);
+    assert_eq!(
+        target.paths,
+        expected_paths
+            .into_iter()
+            .map(|path| CommitFileDiffPath {
+                path: path.to_string(),
+                old_path: None,
+            })
+            .collect::<Vec<_>>()
+    );
+}
+
+fn set_details_request(
+    state: &mut AppContext,
+    request_id: DetailsRequestId,
+    target: DetailsRequestTarget,
+) {
+    state.work.details.details_pending = true;
+    state.work.details.details_request = Some(DetailsRequest {
+        id: request_id,
+        target,
+    });
+    state.work.details.next_details_request_id = state
+        .work
+        .details
+        .next_details_request_id
+        .max(request_id.0.saturating_add(1));
+}
+
+fn state_with_branches_and_files(files: Vec<FileEntry>) -> AppContext {
+    let mut state = context_with_focus(PanelFocus::Branches);
+    state.repo.branches.items = vec![
+        branch_entry("main", true),
+        branch_entry("feature/mvp", false),
+    ];
+    state.repo.files.items = files;
+    state
+}
+
+#[test]
+fn branch_focus_requests_selected_branch_log_graph() {
+    let mut state = state_with_branches_and_files(Vec::new());
+    state.ui.focus = PanelFocus::Files;
+    state.ui.last_left_focus = PanelFocus::Files;
+
+    let commands = update(
+        &mut state,
+        Action::Ui(UiAction::FocusPanel {
+            panel: PanelFocus::Branches,
+        }),
+    );
+
+    assert_branch_log_refresh(commands, "main");
+    assert_eq!(
+        state.repo.details.branch_log_target,
+        Some("main".to_string())
+    );
+    assert!(state.work.details.details_pending);
+}
+
+#[test]
+fn branch_selection_navigation_requests_selected_branch_log_graph() {
+    let mut state = state_with_branches_and_files(Vec::new());
+
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+
+    assert_branch_log_refresh(commands, "feature/mvp");
+    assert_eq!(
+        state.repo.details.branch_log_target,
+        Some("feature/mvp".to_string())
+    );
+}
+
+#[test]
+fn branch_log_cache_serves_repeated_selection_without_git_command() {
+    let mut state = state_with_branches_and_files(Vec::new());
+    set_details_request(
+        &mut state,
+        DetailsRequestId(0),
+        DetailsRequestTarget::BranchLog {
+            branch: "main".to_string(),
+        },
+    );
+
+    update(
+        &mut state,
+        Action::GitResult(GitResult::BranchDetailsLog {
+            request_id: DetailsRequestId(0),
+            branch: "main".to_string(),
+            result: Ok("\u{1b}[33m*\u{1b}[m commit abc1234".to_string()),
+        }),
+    );
+    assert_eq!(state.repo.details.cached_branch_logs.len(), 1);
+    assert!(!state.work.details.details_pending);
+    assert!(state.work.details.details_request.is_none());
+
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+    assert_branch_log_refresh(commands, "feature/mvp");
+
+    let commands = update(&mut state, Action::Ui(UiAction::MoveUp));
+    assert!(commands.is_empty());
+    assert_eq!(
+        state.repo.details.branch_log,
+        "\u{1b}[33m*\u{1b}[m commit abc1234"
+    );
+    assert!(!state.work.details.details_pending);
+}
+
+#[test]
+fn stale_branch_log_result_is_ignored() {
+    let mut state = state_with_branches_and_files(Vec::new());
+    state.ui.branches.selected = 1;
+    state.repo.details.branch_log_target = Some("feature/mvp".to_string());
+    set_details_request(
+        &mut state,
+        DetailsRequestId(1),
+        DetailsRequestTarget::BranchLog {
+            branch: "feature/mvp".to_string(),
+        },
+    );
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::BranchDetailsLog {
+            request_id: DetailsRequestId(0),
+            branch: "main".to_string(),
+            result: Ok("stale".to_string()),
+        }),
+    );
+
+    assert!(commands.is_empty());
+    assert!(state.repo.details.branch_log.is_empty());
+    assert!(state.work.details.details_pending);
+    assert_eq!(
+        state
+            .work
+            .details
+            .details_request
+            .as_ref()
+            .map(|request| request.id),
+        Some(DetailsRequestId(1))
+    );
+}
+
+#[test]
+fn matching_branch_log_result_for_old_selection_clears_pending_without_applying() {
+    let mut state = state_with_branches_and_files(Vec::new());
+    state.ui.branches.selected = 1;
+    set_details_request(
+        &mut state,
+        DetailsRequestId(0),
+        DetailsRequestTarget::BranchLog {
+            branch: "main".to_string(),
+        },
+    );
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::BranchDetailsLog {
+            request_id: DetailsRequestId(0),
+            branch: "main".to_string(),
+            result: Ok("stale".to_string()),
+        }),
+    );
+
+    assert!(commands.is_empty());
+    assert!(state.repo.details.branch_log.is_empty());
+    assert!(!state.work.details.details_pending);
+    assert!(state.work.details.details_request.is_none());
+}
+
+#[test]
+fn commit_focus_requests_selected_commit_diff() {
+    let mut state = AppContext::default();
+    state.repo.commits.items = vec![
+        commit_entry("abc1234", "init project"),
+        commit_entry("def5678", "wire commands"),
+    ];
+
+    let commands = update(
+        &mut state,
+        Action::Ui(UiAction::FocusPanel {
+            panel: PanelFocus::Commits,
+        }),
+    );
+
+    assert_commit_diff_refresh(commands, "abc1234-full");
+    assert_eq!(
+        state.repo.details.commit_diff_target,
+        Some("abc1234-full".to_string())
+    );
+    assert!(state.work.details.details_pending);
+}
+
+#[test]
+fn commit_selection_navigation_requests_selected_commit_diff() {
+    let mut state = context_with_focus(PanelFocus::Commits);
+    state.repo.commits.items = vec![
+        commit_entry("abc1234", "init project"),
+        commit_entry("def5678", "wire commands"),
+    ];
+
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+
+    assert_commit_diff_refresh(commands, "def5678-full");
+    assert_eq!(
+        state.repo.details.commit_diff_target,
+        Some("def5678-full".to_string())
+    );
+}
+
+#[test]
+fn enter_opens_commit_files_panel_and_requests_files() {
+    let mut state = context_with_focus(PanelFocus::Commits);
+    state.repo.commits.items = vec![commit_entry("abc1234", "init project")];
+
+    let commands = update(&mut state, Action::Ui(UiAction::OpenCommitFilesPanel));
+
+    assert_eq!(
+        commands,
+        vec![Command::RefreshCommitFiles {
+            commit_id: "abc1234-full".to_string(),
+        }]
+    );
+    assert!(state.ui.commits.files.active);
+    assert_eq!(
+        state.ui.commits.files.commit_id,
+        Some("abc1234-full".to_string())
+    );
+}
+
+#[test]
+fn commit_files_result_populates_tree_and_requests_first_file_diff() {
+    let mut state = context_with_focus(PanelFocus::Commits);
+    state.repo.commits.items = vec![commit_entry("abc1234", "init project")];
+    update(&mut state, Action::Ui(UiAction::OpenCommitFilesPanel));
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::CommitFiles {
+            commit_id: "abc1234-full".to_string(),
+            result: Ok(commit_files_fixture()),
+        }),
+    );
+
+    assert_commit_file_diff_refresh(commands, "abc1234-full", "README.md");
+    assert_eq!(state.repo.commits.files.items.len(), 2);
+    assert_eq!(state.ui.commits.files.tree_rows[1].path, "src");
+    assert_eq!(state.ui.commits.files.tree_rows[2].path, "src/lib.rs");
+}
+
+#[test]
+fn stale_commit_files_result_is_ignored() {
+    let mut state = context_with_focus(PanelFocus::Commits);
+    state.repo.commits.items = vec![
+        commit_entry("abc1234", "init project"),
+        commit_entry("def5678", "wire commands"),
+    ];
+    update(&mut state, Action::Ui(UiAction::OpenCommitFilesPanel));
+    state.ui.commits.selected = 1;
+    update(&mut state, Action::Ui(UiAction::OpenCommitFilesPanel));
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::CommitFiles {
+            commit_id: "abc1234-full".to_string(),
+            result: Ok(commit_files_fixture()),
+        }),
+    );
+
+    assert!(commands.is_empty());
+    assert!(state.repo.commits.files.items.is_empty());
+    assert_eq!(
+        state.ui.commits.files.commit_id,
+        Some("def5678-full".to_string())
+    );
+}
+
+#[test]
+fn commit_files_navigation_refreshes_selected_file_diff() {
+    let mut state = context_with_focus(PanelFocus::Commits);
+    state.repo.commits.items = vec![commit_entry("abc1234", "init project")];
+    update(&mut state, Action::Ui(UiAction::OpenCommitFilesPanel));
+    update(
+        &mut state,
+        Action::GitResult(GitResult::CommitFiles {
+            commit_id: "abc1234-full".to_string(),
+            result: Ok(commit_files_fixture()),
+        }),
+    );
+
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+    assert_commit_file_diff_refresh_for_paths(commands, "abc1234-full", vec!["src"]);
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+
+    assert_commit_file_diff_refresh(commands, "abc1234-full", "src/lib.rs");
+}
+
+#[test]
+fn enter_on_branch_opens_branch_commits_subview() {
+    let mut state = context_with_focus(PanelFocus::Branches);
+    state.repo.branches.items = vec![
+        branch_entry("main", true),
+        branch_entry("feature/mvp", false),
+    ];
+    state.ui.branches.selected = 1;
+
+    let commands = update(&mut state, Action::Ui(UiAction::OpenBranchCommitsPanel));
+
+    assert_eq!(state.ui.branches.subview, BranchesSubview::Commits);
+    assert_eq!(
+        state.ui.branches.subview_branch.as_deref(),
+        Some("feature/mvp")
+    );
+    assert_eq!(
+        commands,
+        vec![Command::RefreshBranchCommits {
+            branch: "feature/mvp".to_string(),
+        }]
+    );
+}
+
+#[test]
+fn branch_commits_result_populates_isolated_commits_and_requests_diff() {
+    let mut state = context_with_focus(PanelFocus::Branches);
+    state.repo.branches.items = vec![branch_entry("feature/mvp", false)];
+    update(&mut state, Action::Ui(UiAction::OpenBranchCommitsPanel));
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::BranchCommits {
+            branch: "feature/mvp".to_string(),
+            result: Ok(vec![commit_entry("abc1234", "init project")]),
+        }),
+    );
+
+    assert_eq!(state.repo.branches.commits.len(), 1);
+    assert!(state.repo.commits.items.is_empty());
+    assert_commit_diff_refresh(commands, "abc1234-full");
+}
+
+#[test]
+fn enter_on_branch_commit_opens_branch_commit_files_subview() {
+    let mut state = context_with_focus(PanelFocus::Branches);
+    state.repo.branches.items = vec![branch_entry("feature/mvp", false)];
+    update(&mut state, Action::Ui(UiAction::OpenBranchCommitsPanel));
+    update(
+        &mut state,
+        Action::GitResult(GitResult::BranchCommits {
+            branch: "feature/mvp".to_string(),
+            result: Ok(vec![commit_entry("abc1234", "init project")]),
+        }),
+    );
+
+    let commands = update(&mut state, Action::Ui(UiAction::OpenBranchCommitFilesPanel));
+
+    assert_eq!(state.ui.branches.subview, BranchesSubview::CommitFiles);
+    assert_eq!(
+        commands,
+        vec![Command::RefreshBranchCommitFiles {
+            branch: "feature/mvp".to_string(),
+            commit_id: "abc1234-full".to_string(),
+        }]
+    );
+}
+
+#[test]
+fn branch_commit_files_result_populates_tree_and_requests_file_diff() {
+    let mut state = context_with_focus(PanelFocus::Branches);
+    state.repo.branches.items = vec![branch_entry("feature/mvp", false)];
+    update(&mut state, Action::Ui(UiAction::OpenBranchCommitsPanel));
+    update(
+        &mut state,
+        Action::GitResult(GitResult::BranchCommits {
+            branch: "feature/mvp".to_string(),
+            result: Ok(vec![commit_entry("abc1234", "init project")]),
+        }),
+    );
+    update(&mut state, Action::Ui(UiAction::OpenBranchCommitFilesPanel));
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::BranchCommitFiles {
+            branch: "feature/mvp".to_string(),
+            commit_id: "abc1234-full".to_string(),
+            result: Ok(commit_files_fixture()),
+        }),
+    );
+
+    assert_eq!(state.repo.branches.commit_files.items.len(), 2);
+    assert!(state.repo.commits.files.items.is_empty());
+    assert_commit_file_diff_refresh(commands, "abc1234-full", "README.md");
+}
+
+#[test]
+fn stale_branch_subview_results_are_ignored() {
+    let mut state = context_with_focus(PanelFocus::Branches);
+    state.repo.branches.items = vec![
+        branch_entry("main", true),
+        branch_entry("feature/mvp", false),
+    ];
+    update(&mut state, Action::Ui(UiAction::OpenBranchCommitsPanel));
+    state.ui.branches.selected = 1;
+    update(&mut state, Action::Ui(UiAction::OpenBranchCommitsPanel));
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::BranchCommits {
+            branch: "main".to_string(),
+            result: Ok(vec![commit_entry("abc1234", "init project")]),
+        }),
+    );
+
+    assert!(commands.is_empty());
+    assert!(state.repo.branches.commits.is_empty());
+    assert_eq!(
+        state.ui.branches.subview_branch.as_deref(),
+        Some("feature/mvp")
+    );
+}
+
+#[test]
+fn escape_returns_from_branch_subviews_one_level_at_a_time() {
+    let mut state = context_with_focus(PanelFocus::Branches);
+    state.repo.branches.items = vec![branch_entry("feature/mvp", false)];
+    update(&mut state, Action::Ui(UiAction::OpenBranchCommitsPanel));
+    update(
+        &mut state,
+        Action::GitResult(GitResult::BranchCommits {
+            branch: "feature/mvp".to_string(),
+            result: Ok(vec![commit_entry("abc1234", "init project")]),
+        }),
+    );
+    update(&mut state, Action::Ui(UiAction::OpenBranchCommitFilesPanel));
+
+    update(
+        &mut state,
+        Action::Ui(UiAction::CloseBranchCommitFilesPanel),
+    );
+    assert_eq!(state.ui.branches.subview, BranchesSubview::Commits);
+    update(&mut state, Action::Ui(UiAction::CloseBranchCommitsPanel));
+    assert_eq!(state.ui.branches.subview, BranchesSubview::List);
+}
+
+#[test]
+fn commit_files_visual_mode_extends_range_and_diff_uses_selected_targets() {
+    let mut state = context_with_focus(PanelFocus::Commits);
+    state.repo.commits.items = vec![commit_entry("abc1234", "init project")];
+    update(&mut state, Action::Ui(UiAction::OpenCommitFilesPanel));
+    update(
+        &mut state,
+        Action::GitResult(GitResult::CommitFiles {
+            commit_id: "abc1234-full".to_string(),
+            result: Ok(commit_files_fixture()),
+        }),
+    );
+
+    update(
+        &mut state,
+        Action::Ui(UiAction::EnterCommitFilesMultiSelect),
+    );
+    assert_eq!(state.ui.commits.files.mode, FileInputMode::MultiSelect);
+    assert_eq!(
+        state
+            .ui
+            .commits
+            .files
+            .selected_rows
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec!["README.md".to_string()]
+    );
+
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+    assert_eq!(
+        state
+            .ui
+            .commits
+            .files
+            .selected_rows
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec!["README.md".to_string(), "src".to_string()]
+    );
+    assert_commit_file_diff_refresh_for_paths(commands, "abc1234-full", vec!["README.md", "src"]);
+    assert_eq!(
+        selected_commit_file_targets(&state.repo.commits.files.items, &state.ui.commits.files)
+            .into_iter()
+            .map(|entry| entry.path)
+            .collect::<Vec<_>>(),
+        vec!["README.md".to_string(), "src".to_string()]
+    );
+}
+
+#[test]
+fn commit_files_visual_mode_exit_clears_selection() {
+    let mut state = context_with_focus(PanelFocus::Commits);
+    state.repo.commits.items = vec![commit_entry("abc1234", "init project")];
+    update(&mut state, Action::Ui(UiAction::OpenCommitFilesPanel));
+    update(
+        &mut state,
+        Action::GitResult(GitResult::CommitFiles {
+            commit_id: "abc1234-full".to_string(),
+            result: Ok(commit_files_fixture()),
+        }),
+    );
+
+    update(
+        &mut state,
+        Action::Ui(UiAction::EnterCommitFilesMultiSelect),
+    );
+    update(&mut state, Action::Ui(UiAction::MoveDown));
+    assert!(!state.ui.commits.files.selected_rows.is_empty());
+
+    update(&mut state, Action::Ui(UiAction::ExitCommitFilesMultiSelect));
+    assert_eq!(state.ui.commits.files.mode, FileInputMode::Normal);
+    assert!(state.ui.commits.files.selection_anchor.is_none());
+    assert!(state.ui.commits.files.selected_rows.is_empty());
+}
+
+#[test]
+fn search_selects_matches_across_left_panels() {
+    let mut state = context_with_focus(PanelFocus::Branches);
+    state.repo.branches.items = vec![
+        branch_entry("main", true),
+        branch_entry("feature/search", false),
+    ];
+    update(&mut state, Action::Ui(UiAction::StartSearch));
+    for ch in "feature".chars() {
+        update(&mut state, Action::Ui(UiAction::InputSearchChar(ch)));
+    }
+    assert_eq!(state.ui.search.scope, Some(SearchScope::Branches));
+    let commands = update(&mut state, Action::Ui(UiAction::ConfirmSearch));
+    assert_branch_log_refresh(commands, "feature/search");
+    assert_eq!(state.ui.branches.selected, 1);
+
+    update(
+        &mut state,
+        Action::Ui(UiAction::FocusPanel {
+            panel: PanelFocus::Commits,
+        }),
+    );
+    state.repo.commits.items = vec![
+        commit_entry("abc1234", "init project"),
+        commit_entry("def5678", "wire commands"),
+    ];
+    update(&mut state, Action::Ui(UiAction::StartSearch));
+    for ch in "wire".chars() {
+        update(&mut state, Action::Ui(UiAction::InputSearchChar(ch)));
+    }
+    let commands = update(&mut state, Action::Ui(UiAction::ConfirmSearch));
+    assert_commit_diff_refresh(commands, "def5678-full");
+    assert_eq!(state.ui.commits.selected, 1);
+
+    update(
+        &mut state,
+        Action::Ui(UiAction::FocusPanel {
+            panel: PanelFocus::Stash,
+        }),
+    );
+    state.repo.stash.items = vec![
+        StashEntry {
+            id: "stash@{0}".to_string(),
+            summary: "WIP on main".to_string(),
+        },
+        StashEntry {
+            id: "stash@{1}".to_string(),
+            summary: "checkpoint search".to_string(),
+        },
+    ];
+    update(&mut state, Action::Ui(UiAction::StartSearch));
+    for ch in "checkpoint".chars() {
+        update(&mut state, Action::Ui(UiAction::InputSearchChar(ch)));
+    }
+    let commands = update(&mut state, Action::Ui(UiAction::ConfirmSearch));
+    assert!(matches!(
+        commands.as_slice(),
+        [Command::LoadPatch {
+            request: ratagit_core::patch::PatchRequest::Stash { index: 1, .. },
+            ..
+        }]
+    ));
+    assert_eq!(state.ui.stash.selected, 1);
+}
+
+#[test]
+fn search_selects_files_and_commit_files_and_navigates() {
+    let mut state = AppContext::default();
+    state.repo.files.items = vec![
+        file_entry("README.md", false, false),
+        file_entry("src/lib.rs", false, false),
+        file_entry("src/main.rs", false, false),
+    ];
+    state.ui.files.expanded_dirs.insert("src".to_string());
+    refresh_tree_projection(&state.repo.files.items, &mut state.ui.files);
+    update(&mut state, Action::Ui(UiAction::StartSearch));
+    for ch in "src".chars() {
+        update(&mut state, Action::Ui(UiAction::InputSearchChar(ch)));
+    }
+    let commands = update(&mut state, Action::Ui(UiAction::ConfirmSearch));
+    assert_files_diff_refresh_for_paths(commands, vec!["src/lib.rs", "src/main.rs"]);
+    assert_eq!(
+        selected_row(&state.repo.files.items, &state.ui.files).map(|row| row.path),
+        Some("src".to_string())
+    );
+    let commands = update(&mut state, Action::Ui(UiAction::NextSearchMatch));
+    assert_files_diff_refresh(commands, "src/lib.rs");
+    assert_eq!(
+        selected_row(&state.repo.files.items, &state.ui.files).map(|row| row.path),
+        Some("src/lib.rs".to_string())
+    );
+
+    state.ui.focus = PanelFocus::Commits;
+    state.ui.last_left_focus = PanelFocus::Commits;
+    state.repo.commits.items = vec![commit_entry("abc1234", "init project")];
+    update(&mut state, Action::Ui(UiAction::OpenCommitFilesPanel));
+    update(
+        &mut state,
+        Action::GitResult(GitResult::CommitFiles {
+            commit_id: "abc1234-full".to_string(),
+            result: Ok(commit_files_fixture()),
+        }),
+    );
+    update(&mut state, Action::Ui(UiAction::StartSearch));
+    for ch in "lib".chars() {
+        update(&mut state, Action::Ui(UiAction::InputSearchChar(ch)));
+    }
+    let commands = update(&mut state, Action::Ui(UiAction::ConfirmSearch));
+    assert_commit_file_diff_refresh(commands, "abc1234-full", "src/lib.rs");
+    assert_eq!(state.ui.commits.files.selected, 2);
+}
+
+#[test]
+fn starting_search_exits_visual_multi_select_modes() {
+    let mut state = AppContext::default();
+    state.repo.files.items = vec![file_entry("a.txt", false, false)];
+    refresh_tree_projection(&state.repo.files.items, &mut state.ui.files);
+    update(&mut state, Action::Ui(UiAction::EnterFilesMultiSelect));
+    assert_eq!(state.ui.files.mode, FileInputMode::MultiSelect);
+    update(&mut state, Action::Ui(UiAction::StartSearch));
+    assert_eq!(state.ui.files.mode, FileInputMode::Normal);
+    assert!(state.ui.files.selected_rows.is_empty());
+
+    state.ui.focus = PanelFocus::Branches;
+    state.ui.last_left_focus = PanelFocus::Branches;
+    state.repo.branches.items = vec![
+        branch_entry("main", true),
+        branch_entry("feature/mvp", false),
+    ];
+    update(&mut state, Action::Ui(UiAction::EnterBranchesMultiSelect));
+    assert_eq!(state.ui.branches.mode, BranchInputMode::MultiSelect);
+    update(&mut state, Action::Ui(UiAction::StartSearch));
+    assert_eq!(state.ui.branches.mode, BranchInputMode::Normal);
+    assert!(state.ui.branches.selected_rows.is_empty());
+
+    state.ui.focus = PanelFocus::Commits;
+    state.ui.last_left_focus = PanelFocus::Commits;
+    state.repo.commits.items = vec![
+        commit_entry("abc1234", "init project"),
+        commit_entry("def5678", "wire commands"),
+    ];
+    update(&mut state, Action::Ui(UiAction::EnterCommitsMultiSelect));
+    assert_eq!(state.ui.commits.mode, CommitInputMode::MultiSelect);
+    update(&mut state, Action::Ui(UiAction::StartSearch));
+    assert_eq!(state.ui.commits.mode, CommitInputMode::Normal);
+    assert!(state.ui.commits.selected_rows.is_empty());
+
+    update(&mut state, Action::Ui(UiAction::OpenCommitFilesPanel));
+    update(
+        &mut state,
+        Action::GitResult(GitResult::CommitFiles {
+            commit_id: "abc1234-full".to_string(),
+            result: Ok(commit_files_fixture()),
+        }),
+    );
+    update(
+        &mut state,
+        Action::Ui(UiAction::EnterCommitFilesMultiSelect),
+    );
+    assert_eq!(state.ui.commits.files.mode, FileInputMode::MultiSelect);
+    update(&mut state, Action::Ui(UiAction::StartSearch));
+    assert_eq!(state.ui.commits.files.mode, FileInputMode::Normal);
+    assert!(state.ui.commits.files.selected_rows.is_empty());
+}
+
+#[test]
+fn commit_files_directory_selection_refreshes_directory_diff() {
+    let mut state = context_with_focus(PanelFocus::Commits);
+    state.repo.commits.items = vec![commit_entry("abc1234", "init project")];
+    update(&mut state, Action::Ui(UiAction::OpenCommitFilesPanel));
+    update(
+        &mut state,
+        Action::GitResult(GitResult::CommitFiles {
+            commit_id: "abc1234-full".to_string(),
+            result: Ok(commit_files_fixture()),
+        }),
+    );
+
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+
+    assert_commit_file_diff_refresh_for_paths(commands, "abc1234-full", vec!["src"]);
+}
+
+#[test]
+fn commit_files_enter_toggles_selected_directory() {
+    let mut state = context_with_focus(PanelFocus::Commits);
+    state.repo.commits.items = vec![commit_entry("abc1234", "init project")];
+    update(&mut state, Action::Ui(UiAction::OpenCommitFilesPanel));
+    update(
+        &mut state,
+        Action::GitResult(GitResult::CommitFiles {
+            commit_id: "abc1234-full".to_string(),
+            result: Ok(commit_files_fixture()),
+        }),
+    );
+    update(&mut state, Action::Ui(UiAction::MoveDown));
+
+    let commands = update(&mut state, Action::Ui(UiAction::ToggleCommitFilesDirectory));
+
+    assert_commit_file_diff_refresh_for_paths(commands, "abc1234-full", vec!["src"]);
+    assert!(!state.ui.commits.files.expanded_dirs.contains("src"));
+    assert_eq!(state.ui.commits.files.tree_rows.len(), 2);
+}
+
+#[test]
+fn commit_files_large_directory_selection_uses_single_pathspec() {
+    let mut state = context_with_focus(PanelFocus::Commits);
+    state.repo.commits.items = vec![commit_entry("abc1234", "large commit")];
+    update(&mut state, Action::Ui(UiAction::OpenCommitFilesPanel));
+    let files = (0..500)
+        .map(|index| CommitFileEntry {
+            path: format!("src/generated/file_{index:04}.rs"),
+            old_path: None,
+            status: CommitFileStatus::Modified,
+        })
+        .collect::<Vec<_>>();
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::CommitFiles {
+            commit_id: "abc1234-full".to_string(),
+            result: Ok(files),
+        }),
+    );
+
+    assert_commit_file_diff_refresh_for_paths(commands, "abc1234-full", vec!["src/generated"]);
+}
+
+#[test]
+fn commit_file_diff_stale_result_is_ignored() {
+    let mut state = context_with_focus(PanelFocus::Commits);
+    state.repo.commits.items = vec![commit_entry("abc1234", "init project")];
+    update(&mut state, Action::Ui(UiAction::OpenCommitFilesPanel));
+    update(
+        &mut state,
+        Action::GitResult(GitResult::CommitFiles {
+            commit_id: "abc1234-full".to_string(),
+            result: Ok(commit_files_fixture()),
+        }),
+    );
+    state.work.details.details_pending = true;
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::CommitFileDiff {
+            request_id: DetailsRequestId(0),
+            target: CommitFileDiffTarget {
+                commit_id: "abc1234-full".to_string(),
+                paths: vec![CommitFileDiffPath {
+                    path: "src/lib.rs".to_string(),
+                    old_path: None,
+                }],
+            },
+            result: Ok("stale".to_string()),
+        }),
+    );
+
+    assert!(commands.is_empty());
+    assert!(state.repo.details.commit_file_diff.is_empty());
+    assert!(state.work.details.details_pending);
+    assert!(state.work.details.details_request.is_some());
+}
+
+#[test]
+fn commit_file_diff_result_updates_state_and_clears_request() {
+    let mut state = context_with_focus(PanelFocus::Commits);
+    state.repo.commits.items = vec![commit_entry("abc1234", "init project")];
+    update(&mut state, Action::Ui(UiAction::OpenCommitFilesPanel));
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::CommitFiles {
+            commit_id: "abc1234-full".to_string(),
+            result: Ok(commit_files_fixture()),
+        }),
+    );
+    let [Command::RefreshCommitFileDiff { request_id, target }] = commands.as_slice() else {
+        panic!("expected commit file diff refresh: {commands:?}");
+    };
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::CommitFileDiff {
+            request_id: *request_id,
+            target: target.clone(),
+            result: Ok("diff --git a/README.md b/README.md".to_string()),
+        }),
+    );
+
+    assert!(commands.is_empty());
+    assert!(state.repo.details.commit_file_diff.contains("diff --git"));
+    assert!(!state.work.details.details_pending);
+    assert!(state.work.details.details_request.is_none());
+}
+
+#[test]
+fn matching_commit_file_diff_result_for_inactive_panel_clears_pending_without_applying() {
+    let mut state = context_with_focus(PanelFocus::Commits);
+    let target = CommitFileDiffTarget {
+        commit_id: "abc1234-full".to_string(),
+        paths: vec![CommitFileDiffPath {
+            path: "README.md".to_string(),
+            old_path: None,
+        }],
+    };
+    set_details_request(
+        &mut state,
+        DetailsRequestId(0),
+        DetailsRequestTarget::CommitFileDiff {
+            target: target.clone(),
+        },
+    );
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::CommitFileDiff {
+            request_id: DetailsRequestId(0),
+            target,
+            result: Ok("stale".to_string()),
+        }),
+    );
+
+    assert!(commands.is_empty());
+    assert!(state.repo.details.commit_file_diff.is_empty());
+    assert!(!state.work.details.details_pending);
+    assert!(state.work.details.details_request.is_none());
+}
+
+#[test]
+fn close_commit_files_panel_restores_commit_diff() {
+    let mut state = context_with_focus(PanelFocus::Commits);
+    state.repo.commits.items = vec![commit_entry("abc1234", "init project")];
+    update(&mut state, Action::Ui(UiAction::OpenCommitFilesPanel));
+
+    let commands = update(&mut state, Action::Ui(UiAction::CloseCommitFilesPanel));
+
+    assert_commit_diff_refresh(commands, "abc1234-full");
+    assert!(!state.ui.commits.files.active);
+}
+
+#[test]
+fn commit_details_diff_result_updates_state() {
+    let mut state = context_with_focus(PanelFocus::Commits);
+    state.repo.commits.items = vec![commit_entry("abc1234", "init project")];
+    state.repo.details.commit_diff_target = Some("abc1234-full".to_string());
+    set_details_request(
+        &mut state,
+        DetailsRequestId(0),
+        DetailsRequestTarget::CommitDiff {
+            commit_id: "abc1234-full".to_string(),
+        },
+    );
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::CommitDetailsDiff {
+            request_id: DetailsRequestId(0),
+            commit_id: "abc1234-full".to_string(),
+            result: Ok("commit abc1234\ndiff --git a/a.txt b/a.txt".to_string()),
+        }),
+    );
+
+    assert!(commands.is_empty());
+    assert!(state.repo.details.commit_diff_error.is_none());
+    assert!(state.repo.details.commit_diff.contains("diff --git"));
+    assert_eq!(state.repo.details.cached_commit_diffs.len(), 1);
+    assert!(!state.work.details.details_pending);
+    assert!(state.work.details.details_request.is_none());
+}
+
+#[test]
+fn commit_details_diff_cache_serves_repeated_selection_without_git_command() {
+    let mut state = context_with_focus(PanelFocus::Commits);
+    state.repo.commits.items = vec![
+        commit_entry("abc1234", "init project"),
+        commit_entry("def5678", "wire commands"),
+    ];
+    set_details_request(
+        &mut state,
+        DetailsRequestId(0),
+        DetailsRequestTarget::CommitDiff {
+            commit_id: "abc1234-full".to_string(),
+        },
+    );
+
+    update(
+        &mut state,
+        Action::GitResult(GitResult::CommitDetailsDiff {
+            request_id: DetailsRequestId(0),
+            commit_id: "abc1234-full".to_string(),
+            result: Ok("cached abc diff".to_string()),
+        }),
+    );
+    assert_eq!(state.repo.details.cached_commit_diffs.len(), 1);
+
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+    assert_commit_diff_refresh(commands, "def5678-full");
+    assert!(state.work.details.details_pending);
+
+    let commands = update(&mut state, Action::Ui(UiAction::MoveUp));
+    assert!(commands.is_empty());
+    assert_eq!(state.repo.details.commit_diff, "cached abc diff");
+    assert!(!state.work.details.details_pending);
+}
+
+#[test]
+fn stale_commit_details_diff_result_is_ignored() {
+    let mut state = context_with_focus(PanelFocus::Commits);
+    state.repo.commits.items = vec![
+        commit_entry("abc1234", "init project"),
+        commit_entry("def5678", "wire commands"),
+    ];
+    state.ui.commits.selected = 1;
+    state.repo.details.commit_diff_target = Some("def5678-full".to_string());
+    set_details_request(
+        &mut state,
+        DetailsRequestId(1),
+        DetailsRequestTarget::CommitDiff {
+            commit_id: "def5678-full".to_string(),
+        },
+    );
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::CommitDetailsDiff {
+            request_id: DetailsRequestId(0),
+            commit_id: "abc1234-full".to_string(),
+            result: Ok("stale".to_string()),
+        }),
+    );
+
+    assert!(commands.is_empty());
+    assert!(state.repo.details.commit_diff.is_empty());
+    assert!(state.work.details.details_pending);
+    assert_eq!(
+        state
+            .work
+            .details
+            .details_request
+            .as_ref()
+            .map(|request| request.id),
+        Some(DetailsRequestId(1))
+    );
+}
+
+#[test]
+fn matching_commit_diff_result_for_old_selection_clears_pending_without_applying() {
+    let mut state = context_with_focus(PanelFocus::Commits);
+    state.repo.commits.items = vec![
+        commit_entry("abc1234", "init project"),
+        commit_entry("def5678", "wire commands"),
+    ];
+    state.ui.commits.selected = 1;
+    set_details_request(
+        &mut state,
+        DetailsRequestId(0),
+        DetailsRequestTarget::CommitDiff {
+            commit_id: "abc1234-full".to_string(),
+        },
+    );
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::CommitDetailsDiff {
+            request_id: DetailsRequestId(0),
+            commit_id: "abc1234-full".to_string(),
+            result: Ok("stale".to_string()),
+        }),
+    );
+
+    assert!(commands.is_empty());
+    assert!(state.repo.details.commit_diff.is_empty());
+    assert!(!state.work.details.details_pending);
+    assert!(state.work.details.details_request.is_none());
+}
+
+#[test]
+fn stage_selected_file_emits_stage_command() {
+    let mut state = context_with_focus(PanelFocus::Files);
+    state.repo.files.items = vec![
+        file_entry("a.txt", false, false),
+        file_entry("b.txt", false, false),
+    ];
+    state.ui.files.selected = 1;
+    let commands = update(&mut state, Action::Ui(UiAction::StageSelectedFile));
+    assert_eq!(
+        commands,
+        vec![Command::StageFiles {
+            paths: vec!["b.txt".to_string()]
+        }]
+    );
+}
+
+#[test]
+fn toggle_selected_file_stage_stages_only_unstaged_directory_targets() {
+    let mut state = AppContext::default();
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::Refreshed(RepoSnapshot {
+            status_summary: "dirty".to_string(),
+            current_branch: "main".to_string(),
+            detached_head: false,
+            files: vec![
+                file_entry("src/main.rs", true, false),
+                file_entry("src/lib.rs", false, false),
+            ],
+            commits: Vec::new(),
+            branches: vec![branch_entry("main", true)],
+            stashes: Vec::new(),
+        })),
+    );
+    assert_details_refresh_for_paths(
+        commands,
+        vec!["src/lib.rs".to_string(), "src/main.rs".to_string()],
+    );
+    state.ui.files.selected = 0;
+    let commands = update(&mut state, Action::Ui(UiAction::ToggleSelectedFileStage));
+    assert_eq!(
+        commands,
+        vec![Command::StageFiles {
+            paths: vec!["src/lib.rs".to_string()]
+        }]
+    );
+}
+
+#[test]
+fn v_visual_mode_extends_range_with_jk_movement() {
+    let mut state = AppContext::default();
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::Refreshed(RepoSnapshot {
+            status_summary: "dirty".to_string(),
+            current_branch: "main".to_string(),
+            detached_head: false,
+            files: vec![
+                file_entry("a.txt", false, false),
+                file_entry("b.txt", false, false),
+            ],
+            commits: Vec::new(),
+            branches: Vec::new(),
+            stashes: Vec::new(),
+        })),
+    );
+    assert_details_refresh_for_paths(commands, vec!["a.txt".to_string()]);
+
+    update(&mut state, Action::Ui(UiAction::EnterFilesMultiSelect));
+    assert_eq!(state.ui.files.selection_anchor, Some("a.txt".to_string()));
+    assert_eq!(
+        state
+            .ui
+            .files
+            .selected_rows
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec!["a.txt".to_string()]
+    );
+    assert_eq!(state.ui.files.mode, FileInputMode::MultiSelect);
+
+    update(&mut state, Action::Ui(UiAction::MoveDown));
+    assert_eq!(
+        state
+            .ui
+            .files
+            .selected_rows
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec!["a.txt".to_string(), "b.txt".to_string()]
+    );
+
+    update(&mut state, Action::Ui(UiAction::MoveUp));
+    assert_eq!(
+        state
+            .ui
+            .files
+            .selected_rows
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec!["a.txt".to_string()]
+    );
+
+    update(&mut state, Action::Ui(UiAction::MoveDown));
+    let commands = update(&mut state, Action::Ui(UiAction::ToggleSelectedFileStage));
+    assert_eq!(
+        commands,
+        vec![Command::StageFiles {
+            paths: vec!["a.txt".to_string(), "b.txt".to_string()]
+        }]
+    );
+}
+
+#[test]
+fn files_visual_mode_exit_clears_selection() {
+    let mut state = AppContext::default();
+    state.repo.files.items = vec![
+        file_entry("a.txt", false, false),
+        file_entry("b.txt", false, false),
+    ];
+    refresh_tree_projection(&state.repo.files.items, &mut state.ui.files);
+
+    update(&mut state, Action::Ui(UiAction::EnterFilesMultiSelect));
+    update(&mut state, Action::Ui(UiAction::MoveDown));
+    assert_eq!(state.ui.files.mode, FileInputMode::MultiSelect);
+    assert!(!state.ui.files.selected_rows.is_empty());
+
+    update(&mut state, Action::Ui(UiAction::ExitFilesMultiSelect));
+    assert_eq!(state.ui.files.mode, FileInputMode::Normal);
+    assert!(state.ui.files.selection_anchor.is_none());
+    assert!(state.ui.files.selected_rows.is_empty());
+}
+
+#[test]
+fn branch_visual_mode_extends_range_with_jk_movement() {
+    let mut state = context_with_focus(PanelFocus::Branches);
+    state.repo.branches.items = vec![
+        branch_entry("main", true),
+        branch_entry("feature/mvp", false),
+        branch_entry("topic/ui", false),
+    ];
+
+    update(&mut state, Action::Ui(UiAction::EnterBranchesMultiSelect));
+    assert_eq!(state.ui.branches.mode, BranchInputMode::MultiSelect);
+    update(&mut state, Action::Ui(UiAction::MoveDown));
+    assert_eq!(
+        state
+            .ui
+            .branches
+            .selected_rows
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec!["feature/mvp".to_string(), "main".to_string()]
+    );
+    update(&mut state, Action::Ui(UiAction::MoveDown));
+    assert_eq!(
+        state
+            .ui
+            .branches
+            .selected_rows
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec![
+            "feature/mvp".to_string(),
+            "main".to_string(),
+            "topic/ui".to_string()
+        ]
+    );
+}
+
+#[test]
+fn branch_visual_mode_exit_clears_selection() {
+    let mut state = context_with_focus(PanelFocus::Branches);
+    state.repo.branches.items = vec![
+        branch_entry("main", true),
+        branch_entry("feature/mvp", false),
+    ];
+
+    update(&mut state, Action::Ui(UiAction::EnterBranchesMultiSelect));
+    update(&mut state, Action::Ui(UiAction::MoveDown));
+    assert_eq!(state.ui.branches.mode, BranchInputMode::MultiSelect);
+    assert!(!state.ui.branches.selected_rows.is_empty());
+
+    update(&mut state, Action::Ui(UiAction::ExitBranchesMultiSelect));
+    assert_eq!(state.ui.branches.mode, BranchInputMode::Normal);
+    assert!(state.ui.branches.selection_anchor.is_none());
+    assert!(state.ui.branches.selected_rows.is_empty());
+}
+
+#[test]
+fn commit_visual_mode_extends_range_and_squash_uses_selected_commits() {
+    let mut state = context_with_focus(PanelFocus::Commits);
+    state.repo.commits.items = vec![
+        commit_entry("aaa1111", "head"),
+        commit_entry("bbb2222", "middle"),
+        commit_entry("ccc3333", "base"),
+    ];
+
+    update(&mut state, Action::Ui(UiAction::EnterCommitsMultiSelect));
+    assert_eq!(state.ui.commits.mode, CommitInputMode::MultiSelect);
+    update(&mut state, Action::Ui(UiAction::MoveDown));
+    assert_eq!(
+        state
+            .ui
+            .commits
+            .selected_rows
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec!["aaa1111-full".to_string(), "bbb2222-full".to_string()]
+    );
+
+    let commands = update(&mut state, Action::Ui(UiAction::SquashSelectedCommits));
+    assert_eq!(
+        commands,
+        vec![Command::SquashCommits {
+            commit_ids: vec!["aaa1111-full".to_string(), "bbb2222-full".to_string()]
+        }]
+    );
+    assert_eq!(state.ui.commits.mode, CommitInputMode::Normal);
+}
+
+#[test]
+fn commit_visual_mode_exit_clears_selection() {
+    let mut state = context_with_focus(PanelFocus::Commits);
+    state.repo.commits.items = vec![
+        commit_entry("aaa1111", "head"),
+        commit_entry("bbb2222", "middle"),
+    ];
+
+    update(&mut state, Action::Ui(UiAction::EnterCommitsMultiSelect));
+    update(&mut state, Action::Ui(UiAction::MoveDown));
+    assert_eq!(state.ui.commits.mode, CommitInputMode::MultiSelect);
+    assert!(!state.ui.commits.selected_rows.is_empty());
+
+    update(&mut state, Action::Ui(UiAction::ExitCommitsMultiSelect));
+    assert_eq!(state.ui.commits.mode, CommitInputMode::Normal);
+    assert!(state.ui.commits.selection_anchor.is_none());
+    assert!(state.ui.commits.selected_rows.is_empty());
+}
+
+#[test]
+fn commit_rewrite_requires_clean_worktree() {
+    let mut state = context_with_focus(PanelFocus::Commits);
+    state.repo.commits.items = vec![commit_entry("aaa1111", "head")];
+    state.repo.files.items = vec![file_entry("dirty.txt", false, false)];
+
+    let commands = update(&mut state, Action::Ui(UiAction::DeleteSelectedCommits));
+
+    assert!(commands.is_empty());
+    assert!(
+        state
+            .notices
+            .iter()
+            .any(|notice| { notice.contains("Commit rewrite requires a clean working tree") })
+    );
+}
+
+#[test]
+fn commit_rewrite_allows_pushed_commits_and_blocks_merge_commits() {
+    let mut pushed = context_with_focus(PanelFocus::Commits);
+    let mut commit = commit_entry("aaa1111", "already public");
+    commit.hash_status = CommitHashStatus::Pushed;
+    pushed.repo.commits.items = vec![commit];
+
+    let commands = update(&mut pushed, Action::Ui(UiAction::SquashSelectedCommits));
+
+    assert_eq!(
+        commands,
+        vec![Command::SquashCommits {
+            commit_ids: vec!["aaa1111-full".to_string()],
+        }]
+    );
+
+    let mut merged = context_with_focus(PanelFocus::Commits);
+    let mut commit = commit_entry("bbb2222", "merge");
+    commit.is_merge = true;
+    merged.repo.commits.items = vec![commit];
+
+    let commands = update(&mut merged, Action::Ui(UiAction::SquashSelectedCommits));
+
+    assert!(commands.is_empty());
+    assert!(
+        merged
+            .notices
+            .iter()
+            .any(|notice| notice.contains("does not support merge commits"))
+    );
+}
+
+#[test]
+fn amend_staged_changes_targets_head_outside_commits_panel() {
+    let mut state = context_with_focus(PanelFocus::Files);
+    state.repo.files.items = vec![file_entry("staged.txt", true, false)];
+    state.repo.commits.items = vec![commit_entry("aaa1111", "head")];
+
+    let commands = update(&mut state, Action::Ui(UiAction::AmendStagedChanges));
+
+    assert_eq!(
+        commands,
+        vec![Command::AmendStagedChanges {
+            commit_id: "HEAD".to_string(),
+        }]
+    );
+    assert_eq!(
+        state.work.mutation.operation_pending.as_deref(),
+        Some("amend")
+    );
+}
+
+#[test]
+fn amend_staged_changes_targets_selected_commit_in_commits_panel() {
+    let mut state = context_with_focus(PanelFocus::Commits);
+    state.repo.files.items = vec![file_entry("staged.txt", true, false)];
+    state.repo.commits.items = vec![
+        commit_entry("aaa1111", "head"),
+        commit_entry("bbb2222", "middle"),
+        commit_entry("ccc3333", "base"),
+    ];
+    state.ui.commits.selected = 1;
+
+    let commands = update(&mut state, Action::Ui(UiAction::AmendStagedChanges));
+
+    assert_eq!(
+        commands,
+        vec![Command::AmendStagedChanges {
+            commit_id: "bbb2222-full".to_string(),
+        }]
+    );
+}
+
+#[test]
+fn staged_required_commit_opens_stage_all_confirm_when_nothing_is_staged() {
+    let mut state = context_with_focus(PanelFocus::Files);
+    state.repo.files.items = vec![
+        file_entry("b.txt", false, false),
+        file_entry("a.txt", false, false),
+    ];
+
+    let commands = update(
+        &mut state,
+        Action::Ui(UiAction::CreateCommit {
+            message: "feat: ship".to_string(),
+        }),
+    );
+
+    assert!(commands.is_empty());
+    assert!(state.ui.stage_all_confirm.active);
+    assert_eq!(
+        state.ui.stage_all_confirm.context.operation,
+        Some(StageAllOperation::CreateCommit {
+            message: "feat: ship".to_string()
+        })
+    );
+    assert_eq!(
+        state.ui.stage_all_confirm.context.paths,
+        vec!["a.txt", "b.txt"]
+    );
+
+    let commands = update(&mut state, Action::Ui(UiAction::CancelStageAll));
+    assert!(commands.is_empty());
+    assert!(!state.ui.stage_all_confirm.active);
+    assert!(state.ui.stage_all_confirm.context.paths.is_empty());
+}
+
+#[test]
+fn staged_required_operation_without_any_file_changes_shows_notice() {
+    let mut state = context_with_focus(PanelFocus::Files);
+
+    let commands = update(&mut state, Action::Ui(UiAction::AmendStagedChanges));
+
+    assert!(commands.is_empty());
+    assert!(!state.ui.stage_all_confirm.active);
+    assert!(
+        state
+            .notices
+            .iter()
+            .any(|notice| notice.contains("No file changes to stage"))
+    );
+}
+
+#[test]
+fn amend_staged_changes_requires_staged_linear_commits() {
+    let mut no_staged = context_with_focus(PanelFocus::Files);
+    no_staged.repo.files.items = vec![file_entry("dirty.txt", false, false)];
+    let commands = update(&mut no_staged, Action::Ui(UiAction::AmendStagedChanges));
+    assert!(commands.is_empty());
+    assert!(no_staged.ui.stage_all_confirm.active);
+    assert_eq!(
+        no_staged.ui.stage_all_confirm.context.operation,
+        Some(StageAllOperation::AmendStagedChanges {
+            commit_id: "HEAD".to_string()
+        })
+    );
+    assert_eq!(
+        no_staged.ui.stage_all_confirm.context.paths,
+        vec!["dirty.txt"]
+    );
+
+    let commands = update(&mut no_staged, Action::Ui(UiAction::ConfirmStageAll));
+    assert_eq!(
+        commands,
+        vec![Command::StageAllThenAmendStagedChanges {
+            commit_id: "HEAD".to_string(),
+            paths: vec!["dirty.txt".to_string()],
+        }]
+    );
+    assert!(!no_staged.ui.stage_all_confirm.active);
+
+    let mut mixed = context_with_focus(PanelFocus::Files);
+    mixed.repo.files.items = vec![
+        file_entry("staged.txt", true, false),
+        file_entry("dirty.txt", false, false),
+    ];
+    let commands = update(&mut mixed, Action::Ui(UiAction::AmendStagedChanges));
+    assert!(commands.is_empty());
+    assert!(
+        mixed
+            .notices
+            .iter()
+            .any(|notice| notice.contains("only staged changes"))
+    );
+
+    let mut pushed = context_with_focus(PanelFocus::Commits);
+    pushed.repo.files.items = vec![file_entry("staged.txt", true, false)];
+    pushed.repo.commits.items = vec![commit_entry("aaa1111", "head")];
+    pushed.repo.commits.items[0].hash_status = CommitHashStatus::Pushed;
+    let commands = update(&mut pushed, Action::Ui(UiAction::AmendStagedChanges));
+    assert_eq!(
+        commands,
+        vec![Command::AmendStagedChanges {
+            commit_id: "aaa1111-full".to_string(),
+        }]
+    );
+}
+
+#[test]
+fn commit_reword_reuses_commit_editor_modal_and_confirms_command() {
+    let mut state = context_with_focus(PanelFocus::Commits);
+    let mut commit = commit_entry("aaa1111", "feat: old");
+    commit.hash_status = CommitHashStatus::Pushed;
+    commit.message = "feat: old\n\nbody line".to_string();
+    state.repo.commits.items = vec![commit];
+
+    update(&mut state, Action::Ui(UiAction::OpenCommitRewordEditor));
+
+    assert!(matches!(
+        state.ui.editor.kind,
+        Some(EditorKind::Commit {
+            ref message,
+            ref body,
+            intent: CommitEditorIntent::Reword { ref commit_id },
+            ..
+        }) if message == "feat: old" && body == "body line" && commit_id == "aaa1111-full"
+    ));
+
+    let commands = update(&mut state, Action::Ui(UiAction::EditorConfirm));
+    assert_eq!(
+        commands,
+        vec![Command::RewordCommit {
+            commit_id: "aaa1111-full".to_string(),
+            message: "feat: old\n\nbody line".to_string(),
+        }]
+    );
+}
+
+#[test]
+fn auto_stash_operation_failure_refreshes_after_possible_partial_mutation() {
+    let mut state = AppContext::default();
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::CheckoutCommitDetached {
+            commit_id: "abc1234".to_string(),
+            auto_stash: true,
+            result: Err("stash pop failed".to_string()),
+        }),
+    );
+
+    assert_eq!(commands, Command::refresh_all_commands());
+    assert!(state.work.refresh.refresh_pending);
+    assert!(
+        state
+            .repo
+            .status
+            .last_error
+            .as_ref()
+            .expect("error should be stored")
+            .contains("stash pop failed")
+    );
+}
+
+#[test]
+fn ordinary_operation_failure_does_not_refresh_after_failure() {
+    let mut state = AppContext::default();
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::CreateCommit {
+            message: "wip".to_string(),
+            result: Err("nothing staged".to_string()),
+        }),
+    );
+
+    assert!(commands.is_empty());
+    assert!(!state.work.refresh.refresh_pending);
+    assert_eq!(state.last_operation, Some("commit".to_string()));
+    assert!(
+        state
+            .repo
+            .status
+            .last_error
+            .as_ref()
+            .expect("error should be stored")
+            .contains("nothing staged")
+    );
+}
+
+#[test]
+fn amend_staged_changes_result_reports_success_and_failure() {
+    let mut state = AppContext::default();
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::AmendStagedChanges {
+            commit_id: "HEAD".to_string(),
+            result: Ok(()),
+        }),
+    );
+
+    assert_eq!(commands, Command::refresh_all_commands());
+    assert_eq!(state.last_operation, Some("amend".to_string()));
+    assert!(
+        state
+            .notices
+            .iter()
+            .any(|notice| notice.contains("Amended staged changes into HEAD"))
+    );
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::AmendStagedChanges {
+            commit_id: "abc1234".to_string(),
+            result: Err("blocked".to_string()),
+        }),
+    );
+
+    assert!(commands.is_empty());
+    assert_eq!(state.last_operation, Some("amend".to_string()));
+    assert!(
+        state
+            .repo
+            .status
+            .last_error
+            .as_ref()
+            .is_some_and(|error| error.contains("blocked"))
+    );
+}
+
+#[test]
+fn detached_checkout_with_dirty_worktree_uses_auto_stash_confirmation() {
+    let mut state = context_with_focus(PanelFocus::Commits);
+    state.repo.commits.items = vec![commit_entry("aaa1111", "head")];
+    state.repo.files.items = vec![file_entry("dirty.txt", false, false)];
+
+    let commands = update(
+        &mut state,
+        Action::Ui(UiAction::CheckoutSelectedCommitDetached),
+    );
+    assert!(commands.is_empty());
+    assert!(matches!(
+        state.ui.branches.auto_stash_confirm.context,
+        Some(AutoStashOperation::CheckoutCommitDetached { ref commit_id })
+            if commit_id == "aaa1111-full"
+    ));
+
+    let commands = update(&mut state, Action::Ui(UiAction::ConfirmAutoStash));
+    assert_eq!(
+        commands,
+        vec![Command::CheckoutCommitDetached {
+            commit_id: "aaa1111-full".to_string(),
+            auto_stash: true,
+        }]
+    );
+}
+
+#[test]
+fn refreshed_snapshot_updates_state_and_clamps_indexes() {
+    let mut state = AppContext::default();
+    state.ui.files.selected = 99;
+    let snapshot = RepoSnapshot {
+        status_summary: "dirty".to_string(),
+        current_branch: "main".to_string(),
+        detached_head: false,
+        files: vec![file_entry("only.txt", true, false)],
+        commits: vec![],
+        branches: vec![],
+        stashes: vec![],
+    };
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::Refreshed(snapshot)),
+    );
+    assert_eq!(
+        commands,
+        vec![Command::RefreshFilesDetailsDiff {
+            request_id: DetailsRequestId(0),
+            targets: file_diff_targets(["only.txt"]),
+            truncated_from: None,
+        }]
+    );
+    assert_eq!(state.repo.status.summary, "dirty");
+    assert_eq!(state.repo.status.index_entry_count, 1);
+    assert_eq!(state.ui.files.selected, 0);
+    assert_eq!(state.repo.status.refresh_count, 1);
+}
+
+#[test]
+fn split_refreshed_preserves_large_repo_status_metadata() {
+    let mut state = AppContext::default();
+
+    update(
+        &mut state,
+        Action::GitResult(GitResult::SplitRefreshed {
+            files: FilesSnapshot {
+                status_summary: "large".to_string(),
+                current_branch: "main".to_string(),
+                detached_head: false,
+                files: vec![file_entry("src/a.txt", false, false)],
+                index_entry_count: 100_000,
+                large_repo_mode: true,
+                status_truncated: true,
+                status_scan_skipped: false,
+                untracked_scan_skipped: true,
+            },
+            branches: vec![branch_entry("main", true)],
+            commits: vec![commit_entry("abc1234", "init")],
+            stashes: vec![StashEntry {
+                id: "stash@{0}".to_string(),
+                summary: "savepoint".to_string(),
+            }],
+        }),
+    );
+
+    assert_eq!(state.repo.status.index_entry_count, 100_000);
+    assert!(state.repo.status.large_repo_mode);
+    assert!(state.repo.status.status_truncated);
+    assert!(state.repo.status.untracked_scan_skipped);
+    assert_eq!(state.repo.branches.items[0].name, "main");
+    assert_eq!(state.repo.commits.items[0].summary, "init");
+    assert_eq!(state.repo.stash.items[0].summary, "savepoint");
+    assert_eq!(state.repo.status.refresh_count, 1);
+}
+
+#[test]
+fn full_refresh_failure_clears_all_pending_refresh_targets() {
+    let mut state = AppContext::default();
+    update(&mut state, Action::Ui(UiAction::RefreshAll));
+
+    update(
+        &mut state,
+        Action::GitResult(GitResult::RefreshFailed {
+            target: None,
+            error: "branches failed".to_string(),
+        }),
+    );
+
+    assert!(!state.work.refresh.refresh_pending);
+    assert!(state.work.refresh.pending_refreshes.is_empty());
+    assert_eq!(state.repo.status.refresh_count, 0);
+    assert_eq!(
+        state.repo.status.last_error.as_deref(),
+        Some("Failed to refresh: branches failed")
+    );
+}
+
+#[test]
+fn split_refresh_results_update_panels_independently() {
+    let mut state = AppContext::default();
+    update(&mut state, Action::Ui(UiAction::RefreshAll));
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::BranchesRefreshed(vec![branch_entry(
+            "feature/mvp",
+            false,
+        )])),
+    );
+
+    assert!(commands.is_empty());
+    assert_eq!(state.repo.branches.items[0].name, "feature/mvp");
+    assert!(state.repo.files.items.is_empty());
+    assert!(state.work.refresh.refresh_pending);
+    assert_eq!(state.repo.status.refresh_count, 0);
+
+    update(
+        &mut state,
+        Action::GitResult(GitResult::FilesRefreshed(FilesSnapshot {
+            status_summary: "dirty".to_string(),
+            current_branch: "main".to_string(),
+            detached_head: false,
+            files: vec![file_entry("only.txt", false, false)],
+            index_entry_count: 1,
+            large_repo_mode: false,
+            status_truncated: false,
+            status_scan_skipped: false,
+            untracked_scan_skipped: false,
+        })),
+    );
+    update(
+        &mut state,
+        Action::GitResult(GitResult::CommitsRefreshed(vec![commit_entry(
+            "abc1234", "init",
+        )])),
+    );
+    update(
+        &mut state,
+        Action::GitResult(GitResult::StashesRefreshed(vec![StashEntry {
+            id: "stash@{0}".to_string(),
+            summary: "savepoint".to_string(),
+        }])),
+    );
+
+    assert_eq!(state.repo.files.items[0].path, "only.txt");
+    assert_eq!(state.repo.commits.items[0].summary, "init");
+    assert_eq!(state.repo.stash.items[0].summary, "savepoint");
+    assert!(!state.work.refresh.refresh_pending);
+    assert_eq!(state.repo.status.refresh_count, 1);
+}
+
+#[test]
+fn files_snapshot_records_large_repo_status_metadata() {
+    let mut state = AppContext::default();
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::FilesRefreshed(FilesSnapshot {
+            status_summary: "large".to_string(),
+            current_branch: "main".to_string(),
+            detached_head: false,
+            files: vec![file_entry("src/a.txt", false, false)],
+            index_entry_count: 100_000,
+            large_repo_mode: true,
+            status_truncated: true,
+            status_scan_skipped: false,
+            untracked_scan_skipped: true,
+        })),
+    );
+
+    assert_eq!(
+        commands,
+        vec![Command::RefreshFilesDetailsDiff {
+            request_id: DetailsRequestId(0),
+            targets: file_diff_targets(["src/a.txt"]),
+            truncated_from: None,
+        }]
+    );
+    assert_eq!(state.repo.status.index_entry_count, 100_000);
+    assert!(state.repo.status.large_repo_mode);
+    assert!(state.repo.status.status_truncated);
+    assert!(!state.repo.status.status_scan_skipped);
+    assert!(state.repo.status.untracked_scan_skipped);
+    assert!(state.ui.files.expanded_dirs.is_empty());
+    assert!(state.ui.files.lightweight_tree_projection);
+    assert!(state.ui.files.row_descendants.is_empty());
+}
+
+#[test]
+fn huge_repo_files_snapshot_skips_status_scan_without_details_diff_command() {
+    let mut state = AppContext::default();
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::FilesRefreshed(FilesSnapshot {
+            status_summary: "status scan skipped: 1000000 indexed files".to_string(),
+            current_branch: "main".to_string(),
+            detached_head: false,
+            files: Vec::new(),
+            index_entry_count: 1_000_000,
+            large_repo_mode: true,
+            status_truncated: false,
+            status_scan_skipped: true,
+            untracked_scan_skipped: true,
+        })),
+    );
+
+    assert!(commands.is_empty());
+    assert_eq!(state.repo.status.index_entry_count, 1_000_000);
+    assert!(state.repo.status.large_repo_mode);
+    assert!(state.repo.status.status_scan_skipped);
+    assert!(state.repo.status.untracked_scan_skipped);
+    assert!(state.repo.files.items.is_empty());
+    assert_eq!(
+        state.repo.details.files_diff, "",
+        "Files Details should not request a diff when no status rows were loaded"
+    );
+    assert!(!state.work.details.details_pending);
+}
+
+#[test]
+fn files_selection_navigation_requests_details_refresh() {
+    let mut state = AppContext::default();
+    state.repo.files.items = vec![
+        file_entry("a.txt", false, false),
+        file_entry("b.txt", false, false),
+    ];
+    refresh_tree_projection(&state.repo.files.items, &mut state.ui.files);
+
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+    assert_details_refresh_for_paths(commands, vec!["b.txt".to_string()]);
+}
+
+#[test]
+fn directory_files_details_diff_is_limited_to_first_hundred_targets() {
+    let mut state = AppContext::default();
+    state.repo.files.items = (0..101)
+        .map(|index| file_entry(&format!("src/file-{index:03}.txt"), false, false))
+        .collect();
+    state.ui.files.lightweight_tree_projection = true;
+    refresh_tree_projection(&state.repo.files.items, &mut state.ui.files);
+
+    let commands = update(
+        &mut state,
+        Action::Ui(UiAction::FocusPanel {
+            panel: PanelFocus::Files,
+        }),
+    );
+
+    let [
+        Command::RefreshFilesDetailsDiff {
+            targets,
+            truncated_from,
+            ..
+        },
+    ] = commands.as_slice()
+    else {
+        panic!("expected files details diff refresh: {commands:?}");
+    };
+    assert_eq!(targets.len(), 100);
+    assert_eq!(*truncated_from, Some(101));
+    assert_eq!(targets[0].path, "src/file-000.txt");
+    assert_eq!(targets[99].path, "src/file-099.txt");
+    assert!(
+        state
+            .notices
+            .iter()
+            .any(|notice| notice.contains("details diff limited to first 100 of 101 files"))
+    );
+}
+
+#[test]
+fn untracked_directory_marker_is_not_diffed_when_scan_was_skipped() {
+    let mut state = AppContext::default();
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::FilesRefreshed(FilesSnapshot {
+            status_summary: "large".to_string(),
+            current_branch: "main".to_string(),
+            detached_head: false,
+            files: vec![file_entry("generated/", false, true)],
+            index_entry_count: 100_000,
+            large_repo_mode: true,
+            status_truncated: false,
+            status_scan_skipped: false,
+            untracked_scan_skipped: true,
+        })),
+    );
+
+    assert!(commands.is_empty());
+    assert_eq!(
+        state.repo.details.files_diff,
+        "details(files): untracked directory scan skipped in large repo mode"
+    );
+    assert!(!state.work.details.details_pending);
+}
+
+#[test]
+fn non_files_navigation_does_not_request_files_details_refresh() {
+    let mut state = context_with_focus(PanelFocus::Branches);
+
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+    assert!(commands.is_empty());
+}
+
+#[test]
+fn files_details_diff_result_updates_state() {
+    let mut state = AppContext::default();
+    state.repo.files.items = vec![file_entry("src/lib.rs", false, false)];
+    state.ui.files.expanded_dirs.insert("src".to_string());
+    refresh_tree_projection(&state.repo.files.items, &mut state.ui.files);
+    set_details_request(
+        &mut state,
+        DetailsRequestId(0),
+        DetailsRequestTarget::FilesDiff {
+            targets: file_diff_targets(["src/lib.rs"]),
+            truncated_from: None,
+        },
+    );
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::FilesDetailsDiff {
+            request_id: DetailsRequestId(0),
+            targets: file_diff_targets(["src/lib.rs"]),
+            truncated_from: None,
+            result: Ok("### unstaged\ndiff --git a/src/lib.rs b/src/lib.rs".to_string()),
+        }),
+    );
+    assert!(commands.is_empty());
+    assert_eq!(
+        state.repo.details.files_targets,
+        vec!["src/lib.rs".to_string()]
+    );
+    assert!(state.repo.details.files_error.is_none());
+    assert!(state.repo.details.files_diff.contains("diff --git"));
+    assert_eq!(state.repo.details.cached_files_diffs.len(), 1);
+    assert!(!state.work.details.details_pending);
+    assert!(state.work.details.details_request.is_none());
+}
+
+#[test]
+fn details_scroll_actions_update_offset_and_clamp_to_content() {
+    let mut state = AppContext::default();
+    state.repo.details.files_diff = "line 1\nline 2\nline 3\nline 4\nline 5\nline 6".to_string();
+
+    assert!(
+        update(
+            &mut state,
+            Action::Ui(UiAction::DetailsScrollDown {
+                lines: 2,
+                visible_lines: 2,
+            })
+        )
+        .is_empty()
+    );
+    assert_eq!(state.ui.details.scroll_offset, 2);
+    update(
+        &mut state,
+        Action::Ui(UiAction::DetailsScrollDown {
+            lines: 2,
+            visible_lines: 2,
+        }),
+    );
+    update(
+        &mut state,
+        Action::Ui(UiAction::DetailsScrollDown {
+            lines: 2,
+            visible_lines: 2,
+        }),
+    );
+    assert_eq!(state.ui.details.scroll_offset, 4);
+
+    update(
+        &mut state,
+        Action::Ui(UiAction::DetailsScrollUp { lines: 2 }),
+    );
+    assert_eq!(state.ui.details.scroll_offset, 2);
+    update(
+        &mut state,
+        Action::Ui(UiAction::DetailsScrollUp { lines: 5 }),
+    );
+    assert_eq!(state.ui.details.scroll_offset, 0);
+}
+
+#[test]
+fn details_scroll_down_does_not_advance_past_last_visible_page() {
+    let mut state = AppContext::default();
+    state.repo.details.files_diff =
+        "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7".to_string();
+    state.ui.details.scroll_offset = 4;
+
+    update(
+        &mut state,
+        Action::Ui(UiAction::DetailsScrollDown {
+            lines: 3,
+            visible_lines: 3,
+        }),
+    );
+    assert_eq!(state.ui.details.scroll_offset, 4);
+
+    update(
+        &mut state,
+        Action::Ui(UiAction::DetailsScrollUp { lines: 3 }),
+    );
+    assert_eq!(state.ui.details.scroll_offset, 1);
+}
+
+#[test]
+fn details_scroll_down_clamps_to_commit_diff_content() {
+    let mut state = context_with_focus(PanelFocus::Commits);
+    state.repo.details.commit_diff =
+        "commit abc1234\nline 2\nline 3\nline 4\nline 5\nline 6".to_string();
+
+    update(
+        &mut state,
+        Action::Ui(UiAction::DetailsScrollDown {
+            lines: 10,
+            visible_lines: 2,
+        }),
+    );
+
+    assert_eq!(state.ui.details.scroll_offset, 4);
+}
+
+#[test]
+fn details_scroll_resets_when_files_details_target_changes() {
+    let mut state = AppContext::default();
+    state.repo.files.items = vec![
+        file_entry("a.txt", false, false),
+        file_entry("b.txt", false, false),
+    ];
+    refresh_tree_projection(&state.repo.files.items, &mut state.ui.files);
+    state.repo.details.files_targets = vec!["a.txt".to_string()];
+    state.repo.details.files_diff = "a1\na2".to_string();
+    state.ui.details.scroll_offset = 1;
+
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+
+    assert_details_refresh_for_paths(commands, vec!["b.txt".to_string()]);
+    assert_eq!(state.ui.details.scroll_offset, 0);
+}
+
+#[test]
+fn files_details_diff_cache_serves_repeated_selection_without_git_command() {
+    let mut state = AppContext::default();
+    state.repo.files.items = vec![
+        file_entry("a.txt", false, false),
+        file_entry("b.txt", false, false),
+    ];
+    refresh_tree_projection(&state.repo.files.items, &mut state.ui.files);
+    set_details_request(
+        &mut state,
+        DetailsRequestId(0),
+        DetailsRequestTarget::FilesDiff {
+            targets: file_diff_targets(["a.txt"]),
+            truncated_from: None,
+        },
+    );
+
+    update(
+        &mut state,
+        Action::GitResult(GitResult::FilesDetailsDiff {
+            request_id: DetailsRequestId(0),
+            targets: file_diff_targets(["a.txt"]),
+            truncated_from: None,
+            result: Ok("cached a diff".to_string()),
+        }),
+    );
+    assert_eq!(state.repo.details.cached_files_diffs.len(), 1);
+
+    let commands = update(&mut state, Action::Ui(UiAction::MoveDown));
+    assert_details_refresh_for_paths(commands, vec!["b.txt".to_string()]);
+    assert!(state.work.details.details_pending);
+
+    let commands = update(&mut state, Action::Ui(UiAction::MoveUp));
+    assert!(commands.is_empty());
+    assert_eq!(state.repo.details.files_diff, "cached a diff");
+    assert!(!state.work.details.details_pending);
+}
+
+#[test]
+fn files_details_diff_cache_is_bounded_and_cleared_by_repo_changes() {
+    let mut state = AppContext::default();
+    state.repo.files.items = (0..18)
+        .map(|index| file_entry(&format!("file-{index:02}.txt"), false, false))
+        .collect();
+    refresh_tree_projection(&state.repo.files.items, &mut state.ui.files);
+
+    for index in 0..18 {
+        state.ui.files.selected = index;
+        let path = format!("file-{index:02}.txt");
+        set_details_request(
+            &mut state,
+            DetailsRequestId(index as u64),
+            DetailsRequestTarget::FilesDiff {
+                targets: file_diff_targets([path.as_str()]),
+                truncated_from: None,
+            },
+        );
+        update(
+            &mut state,
+            Action::GitResult(GitResult::FilesDetailsDiff {
+                request_id: DetailsRequestId(index as u64),
+                targets: file_diff_targets([path.as_str()]),
+                truncated_from: None,
+                result: Ok(format!("diff {path}")),
+            }),
+        );
+    }
+
+    assert_eq!(state.repo.details.cached_files_diffs.len(), 16);
+    assert!(
+        !state
+            .repo
+            .details
+            .cached_files_diffs
+            .iter()
+            .any(|entry| entry.paths == vec!["file-00.txt".to_string()])
+    );
+
+    update(
+        &mut state,
+        Action::GitResult(GitResult::StageFiles {
+            paths: vec!["file-17.txt".to_string()],
+            result: Ok(()),
+        }),
+    );
+    assert!(state.repo.details.cached_files_diffs.is_empty());
+
+    state
+        .repo
+        .details
+        .cached_files_diffs
+        .push(ratagit_core::CachedFilesDiff {
+            paths: vec!["file-17.txt".to_string()],
+            diff: "diff".to_string(),
+        });
+    update(
+        &mut state,
+        Action::GitResult(GitResult::Refreshed(RepoSnapshot {
+            status_summary: "clean".to_string(),
+            current_branch: "main".to_string(),
+            detached_head: false,
+            files: Vec::new(),
+            commits: Vec::new(),
+            branches: Vec::new(),
+            stashes: Vec::new(),
+        })),
+    );
+    assert!(state.repo.details.cached_files_diffs.is_empty());
+}
+
+#[test]
+fn stale_files_details_diff_result_is_ignored() {
+    let mut state = AppContext::default();
+    state.repo.files.items = vec![
+        file_entry("a.txt", false, false),
+        file_entry("b.txt", false, false),
+    ];
+    refresh_tree_projection(&state.repo.files.items, &mut state.ui.files);
+    state.ui.files.selected = 1;
+    state.repo.details.files_targets = vec!["b.txt".to_string()];
+    set_details_request(
+        &mut state,
+        DetailsRequestId(1),
+        DetailsRequestTarget::FilesDiff {
+            targets: file_diff_targets(["b.txt"]),
+            truncated_from: None,
+        },
+    );
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::FilesDetailsDiff {
+            request_id: DetailsRequestId(0),
+            targets: file_diff_targets(["a.txt"]),
+            truncated_from: None,
+            result: Ok("stale".to_string()),
+        }),
+    );
+
+    assert!(commands.is_empty());
+    assert!(state.repo.details.files_diff.is_empty());
+    assert!(state.work.details.details_pending);
+    assert_eq!(
+        state
+            .work
+            .details
+            .details_request
+            .as_ref()
+            .map(|request| request.id),
+        Some(DetailsRequestId(1))
+    );
+}
+
+#[test]
+fn matching_files_diff_result_for_old_focus_clears_pending_without_applying() {
+    let mut state = AppContext::default();
+    state.repo.files.items = vec![file_entry("a.txt", false, false)];
+    refresh_tree_projection(&state.repo.files.items, &mut state.ui.files);
+    state.ui.last_left_focus = PanelFocus::Branches;
+    set_details_request(
+        &mut state,
+        DetailsRequestId(0),
+        DetailsRequestTarget::FilesDiff {
+            targets: file_diff_targets(["a.txt"]),
+            truncated_from: None,
+        },
+    );
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::FilesDetailsDiff {
+            request_id: DetailsRequestId(0),
+            targets: file_diff_targets(["a.txt"]),
+            truncated_from: None,
+            result: Ok("stale".to_string()),
+        }),
+    );
+
+    assert!(commands.is_empty());
+    assert!(state.repo.details.files_diff.is_empty());
+    assert!(!state.work.details.details_pending);
+    assert!(state.work.details.details_request.is_none());
+}
+
+#[test]
+fn files_snapshot_clears_pending_details_request_when_no_replacement_starts() {
+    let mut state = context_with_focus(PanelFocus::Branches);
+    set_details_request(
+        &mut state,
+        DetailsRequestId(0),
+        DetailsRequestTarget::FilesDiff {
+            targets: file_diff_targets(["old.txt"]),
+            truncated_from: None,
+        },
+    );
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::FilesRefreshed(FilesSnapshot {
+            status_summary: "clean".to_string(),
+            current_branch: "main".to_string(),
+            detached_head: false,
+            files: vec![file_entry("new.txt", false, false)],
+            index_entry_count: 1,
+            large_repo_mode: false,
+            status_truncated: false,
+            status_scan_skipped: false,
+            untracked_scan_skipped: false,
+        })),
+    );
+
+    assert!(commands.is_empty());
+    assert!(!state.work.details.details_pending);
+    assert!(state.work.details.details_request.is_none());
+}
+
+#[test]
+fn split_branch_and_commit_snapshots_do_not_clear_pending_files_details_request() {
+    let mut state = AppContext::default();
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::FilesRefreshed(FilesSnapshot {
+            status_summary: "dirty".to_string(),
+            current_branch: "main".to_string(),
+            detached_head: false,
+            files: vec![file_entry("src/lib.rs", false, false)],
+            index_entry_count: 1,
+            large_repo_mode: false,
+            status_truncated: false,
+            status_scan_skipped: false,
+            untracked_scan_skipped: false,
+        })),
+    );
+    let [Command::RefreshFilesDetailsDiff { request_id, .. }] = commands.as_slice() else {
+        panic!("expected files details refresh: {commands:?}");
+    };
+
+    update(
+        &mut state,
+        Action::GitResult(GitResult::BranchesRefreshed(vec![branch_entry(
+            "main", true,
+        )])),
+    );
+    assert!(state.work.details.details_pending);
+    assert_eq!(
+        state
+            .work
+            .details
+            .details_request
+            .as_ref()
+            .map(|request| request.id),
+        Some(*request_id)
+    );
+
+    update(
+        &mut state,
+        Action::GitResult(GitResult::CommitsRefreshed(vec![commit_entry(
+            "abc1234", "init",
+        )])),
+    );
+    assert!(state.work.details.details_pending);
+    assert_eq!(
+        state
+            .work
+            .details
+            .details_request
+            .as_ref()
+            .map(|request| request.id),
+        Some(*request_id)
+    );
+}
+
+#[test]
+fn tree_projection_cache_tracks_rows_and_directory_descendants() {
+    let mut state = AppContext::default();
+    state.repo.files.items = vec![
+        file_entry("src/lib.rs", false, false),
+        file_entry("src/main.rs", true, false),
+    ];
+    state.ui.files.expanded_dirs.insert("src".to_string());
+    refresh_tree_projection(&state.repo.files.items, &mut state.ui.files);
+
+    assert_eq!(
+        state
+            .ui
+            .files
+            .tree_rows
+            .iter()
+            .map(|row| row.path.as_str())
+            .collect::<Vec<_>>(),
+        vec!["src", "src/lib.rs", "src/main.rs"]
+    );
+    assert_eq!(
+        state.ui.files.row_descendants.get("src"),
+        Some(&vec!["src/lib.rs".to_string(), "src/main.rs".to_string()])
+    );
+}
+
+#[test]
+fn failed_git_result_is_visible_in_state() {
+    let mut state = AppContext::default();
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::CreateCommit {
+            message: "wip".to_string(),
+            result: Err("nothing staged".to_string()),
+        }),
+    );
+    assert!(commands.is_empty());
+    assert!(
+        state
+            .repo
+            .status
+            .last_error
+            .as_ref()
+            .expect("error should be stored")
+            .contains("nothing staged")
+    );
+}
+
+#[test]
+fn focus_next_and_prev_cycle_only_left_panels() {
+    let mut state = AppContext::default();
+    assert_eq!(state.ui.focus, PanelFocus::Files);
+    assert_eq!(state.ui.last_left_focus, PanelFocus::Files);
+
+    update(&mut state, Action::Ui(UiAction::FocusNext));
+    assert_eq!(state.ui.focus, PanelFocus::Branches);
+    assert_eq!(state.ui.last_left_focus, PanelFocus::Branches);
+
+    update(&mut state, Action::Ui(UiAction::FocusNext));
+    assert_eq!(state.ui.focus, PanelFocus::Commits);
+    assert_eq!(state.ui.last_left_focus, PanelFocus::Commits);
+
+    update(&mut state, Action::Ui(UiAction::FocusPrev));
+    assert_eq!(state.ui.focus, PanelFocus::Branches);
+    assert_eq!(state.ui.last_left_focus, PanelFocus::Branches);
+}
+
+#[test]
+fn focus_panel_allows_right_focus_and_preserves_last_left() {
+    let mut state = AppContext::default();
+    update(
+        &mut state,
+        Action::Ui(UiAction::FocusPanel {
+            panel: PanelFocus::Stash,
+        }),
+    );
+    assert_eq!(state.ui.focus, PanelFocus::Stash);
+    assert_eq!(state.ui.last_left_focus, PanelFocus::Stash);
+
+    update(
+        &mut state,
+        Action::Ui(UiAction::FocusPanel {
+            panel: PanelFocus::Details,
+        }),
+    );
+    assert_eq!(state.ui.focus, PanelFocus::Details);
+    assert_eq!(state.ui.last_left_focus, PanelFocus::Stash);
+}
+
+#[test]
+fn move_selection_does_not_change_left_indexes_when_focus_is_right_panel() {
+    let mut state = AppContext::default();
+    state.repo.files.items = vec![file_entry("a", false, false), file_entry("b", false, false)];
+    state.ui.files.selected = 1;
+    update(
+        &mut state,
+        Action::Ui(UiAction::FocusPanel {
+            panel: PanelFocus::Details,
+        }),
+    );
+    update(&mut state, Action::Ui(UiAction::MoveUp));
+    assert_eq!(state.ui.files.selected, 1);
+}
+
+#[test]
+fn commit_editor_confirms_subject_and_multiline_body() {
+    let mut state = AppContext::default();
+    state.repo.files.items = vec![file_entry("staged.txt", true, false)];
+    assert!(update(&mut state, Action::Ui(UiAction::OpenCommitEditor)).is_empty());
+    assert_eq!(
+        state.ui.editor.kind,
+        Some(EditorKind::Commit {
+            message: String::new(),
+            message_cursor: 0,
+            body: String::new(),
+            body_cursor: 0,
+            active_field: CommitField::Message,
+            intent: CommitEditorIntent::Create,
+        })
+    );
+
+    for ch in "feat: ship".chars() {
+        update(&mut state, Action::Ui(UiAction::EditorInputChar(ch)));
+    }
+    update(&mut state, Action::Ui(UiAction::EditorNextField));
+    for ch in "line one".chars() {
+        update(&mut state, Action::Ui(UiAction::EditorInputChar(ch)));
+    }
+    update(&mut state, Action::Ui(UiAction::EditorInsertNewline));
+    for ch in "line two".chars() {
+        update(&mut state, Action::Ui(UiAction::EditorInputChar(ch)));
+    }
+
+    let commands = update(&mut state, Action::Ui(UiAction::EditorConfirm));
+    assert_eq!(
+        commands,
+        vec![Command::CreateCommit {
+            message: "feat: ship\n\nline one\nline two".to_string()
+        }]
+    );
+    assert_eq!(state.ui.commits.draft_message, "feat: ship");
+    assert!(state.ui.editor.kind.is_none());
+}
+
+#[test]
+fn commit_editor_blocks_empty_subject_and_keeps_editor_open() {
+    let mut state = AppContext::default();
+    update(&mut state, Action::Ui(UiAction::OpenCommitEditor));
+    update(&mut state, Action::Ui(UiAction::EditorNextField));
+    update(&mut state, Action::Ui(UiAction::EditorInputChar('x')));
+
+    let commands = update(&mut state, Action::Ui(UiAction::EditorConfirm));
+    assert!(commands.is_empty());
+    assert!(matches!(
+        state.ui.editor.kind,
+        Some(EditorKind::Commit {
+            active_field: CommitField::Body,
+            ..
+        })
+    ));
+    assert!(
+        state
+            .notices
+            .iter()
+            .any(|notice| notice.contains("Commit message cannot be empty"))
+    );
+}
+
+#[test]
+fn stash_editor_confirms_all_scope_outside_multiselect() {
+    let mut state = AppContext::default();
+    update(&mut state, Action::Ui(UiAction::OpenStashEditor));
+    assert_eq!(
+        state.ui.editor.kind,
+        Some(EditorKind::Stash {
+            title: String::new(),
+            title_cursor: 0,
+            scope: StashScope::All,
+        })
+    );
+    for ch in "checkpoint".chars() {
+        update(&mut state, Action::Ui(UiAction::EditorInputChar(ch)));
+    }
+
+    let commands = update(&mut state, Action::Ui(UiAction::EditorConfirm));
+    assert_eq!(
+        commands,
+        vec![Command::StashPush {
+            message: "checkpoint".to_string()
+        }]
+    );
+    assert!(state.ui.editor.kind.is_none());
+}
+
+#[test]
+fn stash_editor_confirms_selected_paths_scope_in_multiselect_mode() {
+    let mut state = AppContext::default();
+    state.repo.files.items = vec![
+        file_entry("a.txt", false, false),
+        file_entry("b.txt", false, false),
+    ];
+    state.ui.files.mode = FileInputMode::MultiSelect;
+    state.ui.files.selected_rows.insert("a.txt".to_string());
+    update(&mut state, Action::Ui(UiAction::OpenStashEditor));
+    assert_eq!(
+        state.ui.editor.kind,
+        Some(EditorKind::Stash {
+            title: String::new(),
+            title_cursor: 0,
+            scope: StashScope::SelectedPaths(vec!["a.txt".to_string()]),
+        })
+    );
+    for ch in "pick".chars() {
+        update(&mut state, Action::Ui(UiAction::EditorInputChar(ch)));
+    }
+
+    let commands = update(&mut state, Action::Ui(UiAction::EditorConfirm));
+    assert_eq!(
+        commands,
+        vec![Command::StashFiles {
+            message: "pick".to_string(),
+            paths: vec!["a.txt".to_string()],
+        }]
+    );
+    assert!(state.ui.editor.kind.is_none());
+}
+
+#[test]
+fn reset_menu_opens_moves_and_cancels() {
+    let mut state = AppContext::default();
+    assert!(update(&mut state, Action::Ui(UiAction::OpenResetMenu)).is_empty());
+    assert!(state.ui.reset_menu.menu.active);
+    assert_eq!(state.ui.reset_menu.menu.selected, ResetChoice::Mixed);
+
+    update(
+        &mut state,
+        Action::Ui(UiAction::MoveMenuSelection {
+            menu: MenuKind::Reset,
+            direction: MenuDirection::Down,
+        }),
+    );
+    assert_eq!(state.ui.reset_menu.menu.selected, ResetChoice::Soft);
+    update(
+        &mut state,
+        Action::Ui(UiAction::MoveMenuSelection {
+            menu: MenuKind::Reset,
+            direction: MenuDirection::Down,
+        }),
+    );
+    assert_eq!(state.ui.reset_menu.menu.selected, ResetChoice::Hard);
+    update(
+        &mut state,
+        Action::Ui(UiAction::MoveMenuSelection {
+            menu: MenuKind::Reset,
+            direction: MenuDirection::Down,
+        }),
+    );
+    assert_eq!(state.ui.reset_menu.menu.selected, ResetChoice::Nuke);
+    update(
+        &mut state,
+        Action::Ui(UiAction::MoveMenuSelection {
+            menu: MenuKind::Reset,
+            direction: MenuDirection::Down,
+        }),
+    );
+    assert_eq!(state.ui.reset_menu.menu.selected, ResetChoice::Nuke);
+    update(
+        &mut state,
+        Action::Ui(UiAction::MoveMenuSelection {
+            menu: MenuKind::Reset,
+            direction: MenuDirection::Up,
+        }),
+    );
+    assert_eq!(state.ui.reset_menu.menu.selected, ResetChoice::Hard);
+
+    assert!(update(&mut state, Action::Ui(UiAction::CancelResetMenu)).is_empty());
+    assert!(!state.ui.reset_menu.menu.active);
+}
+
+#[test]
+fn reset_menu_confirm_emits_recoverable_reset_commands() {
+    let cases = [
+        (
+            ResetChoice::Mixed,
+            Command::Reset {
+                mode: ResetMode::Mixed,
+            },
+        ),
+        (
+            ResetChoice::Soft,
+            Command::Reset {
+                mode: ResetMode::Soft,
+            },
+        ),
+    ];
+
+    for (choice, expected_command) in cases {
+        let mut state = AppContext::default();
+        update(&mut state, Action::Ui(UiAction::OpenResetMenu));
+        state.ui.reset_menu.menu.selected = choice;
+
+        let commands = update(&mut state, Action::Ui(UiAction::ConfirmResetMenu));
+
+        assert_eq!(commands, vec![expected_command]);
+        assert!(!state.ui.reset_menu.menu.active);
+    }
+}
+
+#[test]
+fn reset_menu_hard_and_nuke_require_confirmation() {
+    let cases = [
+        (
+            ResetChoice::Hard,
+            Command::Reset {
+                mode: ResetMode::Hard,
+            },
+        ),
+        (ResetChoice::Nuke, Command::Nuke),
+    ];
+
+    for (choice, expected_command) in cases {
+        let mut state = AppContext::default();
+        update(&mut state, Action::Ui(UiAction::OpenResetMenu));
+        state.ui.reset_menu.menu.selected = choice;
+
+        let commands = update(&mut state, Action::Ui(UiAction::ConfirmResetMenu));
+
+        assert!(commands.is_empty());
+        assert!(!state.ui.reset_menu.menu.active);
+        assert_eq!(state.ui.reset_menu.danger_confirm, Some(choice));
+
+        let commands = update(&mut state, Action::Ui(UiAction::ConfirmResetDanger));
+
+        assert_eq!(commands, vec![expected_command]);
+        assert!(state.ui.reset_menu.danger_confirm.is_none());
+    }
+}
+
+#[test]
+fn reset_danger_confirmation_can_cancel() {
+    let mut state = AppContext::default();
+    update(&mut state, Action::Ui(UiAction::OpenResetMenu));
+    state.ui.reset_menu.menu.selected = ResetChoice::Hard;
+    update(&mut state, Action::Ui(UiAction::ConfirmResetMenu));
+
+    let commands = update(&mut state, Action::Ui(UiAction::CancelResetDanger));
+
+    assert!(commands.is_empty());
+    assert!(state.ui.reset_menu.danger_confirm.is_none());
+}
+
+#[test]
+fn reset_git_result_reports_success_and_failure() {
+    let mut state = AppContext::default();
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::Reset {
+            mode: ResetMode::Mixed,
+            result: Ok(()),
+        }),
+    );
+    assert_eq!(commands, Command::refresh_all_commands());
+    assert_eq!(state.last_operation, Some("reset_mixed".to_string()));
+    assert!(
+        state
+            .notices
+            .iter()
+            .any(|notice| notice.contains("Reset mixed to HEAD"))
+    );
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::Nuke {
+            result: Err("blocked".to_string()),
+        }),
+    );
+    assert!(commands.is_empty());
+    assert_eq!(state.last_operation, Some("nuke".to_string()));
+    assert!(
+        state
+            .repo
+            .status
+            .last_error
+            .as_ref()
+            .is_some_and(|error| error.contains("blocked"))
+    );
+}
+
+#[test]
+fn discard_confirm_opens_for_current_file_and_confirms_command() {
+    let mut state = AppContext::default();
+    state.repo.files.items = vec![file_entry("a.txt", false, false)];
+
+    assert!(update(&mut state, Action::Ui(UiAction::OpenDiscardConfirm)).is_empty());
+    assert!(state.ui.discard_confirm.active);
+    assert_eq!(state.ui.discard_confirm.context, vec!["a.txt".to_string()]);
+
+    let commands = update(&mut state, Action::Ui(UiAction::ConfirmDiscard));
+
+    assert_eq!(
+        commands,
+        vec![Command::DiscardFiles {
+            paths: vec!["a.txt".to_string()]
+        }]
+    );
+    assert!(!state.ui.discard_confirm.active);
+    assert!(state.ui.discard_confirm.context.is_empty());
+}
+
+#[test]
+fn discard_confirm_uses_visual_selected_targets_and_can_cancel() {
+    let mut state = AppContext::default();
+    state.repo.files.items = vec![
+        file_entry("a.txt", false, false),
+        file_entry("b.txt", true, false),
+    ];
+    state.ui.files.mode = FileInputMode::MultiSelect;
+    state.ui.files.selected_rows.insert("a.txt".to_string());
+    state.ui.files.selected_rows.insert("b.txt".to_string());
+
+    update(&mut state, Action::Ui(UiAction::OpenDiscardConfirm));
+    assert_eq!(
+        state.ui.discard_confirm.context,
+        vec!["a.txt".to_string(), "b.txt".to_string()]
+    );
+
+    assert!(update(&mut state, Action::Ui(UiAction::CancelDiscard)).is_empty());
+    assert!(!state.ui.discard_confirm.active);
+    assert!(state.ui.discard_confirm.context.is_empty());
+}
+
+#[test]
+fn discard_confirm_without_selection_reports_notice() {
+    let mut state = AppContext::default();
+
+    let commands = update(&mut state, Action::Ui(UiAction::OpenDiscardConfirm));
+
+    assert!(commands.is_empty());
+    assert!(!state.ui.discard_confirm.active);
+    assert!(
+        state
+            .notices
+            .iter()
+            .any(|notice| notice.contains("No file selected"))
+    );
+}
+
+#[test]
+fn commit_editor_edits_subject_at_cursor() {
+    let mut state = AppContext::default();
+    update(&mut state, Action::Ui(UiAction::OpenCommitEditor));
+    for ch in "feat ship".chars() {
+        update(&mut state, Action::Ui(UiAction::EditorInputChar(ch)));
+    }
+    for _ in 0..5 {
+        update(&mut state, Action::Ui(UiAction::EditorMoveCursorLeft));
+    }
+    update(&mut state, Action::Ui(UiAction::EditorInputChar(':')));
+    update(&mut state, Action::Ui(UiAction::EditorMoveCursorHome));
+    update(&mut state, Action::Ui(UiAction::EditorBackspace));
+    update(&mut state, Action::Ui(UiAction::EditorMoveCursorEnd));
+    update(&mut state, Action::Ui(UiAction::EditorInputChar('!')));
+
+    assert_eq!(
+        state.ui.editor.kind,
+        Some(EditorKind::Commit {
+            message: "feat: ship!".to_string(),
+            message_cursor: "feat: ship!".len(),
+            body: String::new(),
+            body_cursor: 0,
+            active_field: CommitField::Message,
+            intent: CommitEditorIntent::Create,
+        })
+    );
+}
+
+#[test]
+fn commit_editor_edits_multiline_body_at_cursor() {
+    let mut state = AppContext::default();
+    update(&mut state, Action::Ui(UiAction::OpenCommitEditor));
+    update(&mut state, Action::Ui(UiAction::EditorNextField));
+    for ch in "ab".chars() {
+        update(&mut state, Action::Ui(UiAction::EditorInputChar(ch)));
+    }
+    update(&mut state, Action::Ui(UiAction::EditorMoveCursorLeft));
+    update(&mut state, Action::Ui(UiAction::EditorInsertNewline));
+
+    assert!(matches!(
+        state.ui.editor.kind,
+        Some(EditorKind::Commit {
+            body,
+            body_cursor: 2,
+            active_field: CommitField::Body,
+            ..
+        }) if body == "a\nb"
+    ));
+}
+
+#[test]
+fn stash_editor_edits_title_at_cursor() {
+    let mut state = AppContext::default();
+    update(&mut state, Action::Ui(UiAction::OpenStashEditor));
+    for ch in "save point".chars() {
+        update(&mut state, Action::Ui(UiAction::EditorInputChar(ch)));
+    }
+    for _ in 0..5 {
+        update(&mut state, Action::Ui(UiAction::EditorMoveCursorLeft));
+    }
+    update(&mut state, Action::Ui(UiAction::EditorBackspace));
+    update(&mut state, Action::Ui(UiAction::EditorInputChar('-')));
+
+    assert_eq!(
+        state.ui.editor.kind,
+        Some(EditorKind::Stash {
+            title: "save-point".to_string(),
+            title_cursor: "save-".len(),
+            scope: StashScope::All,
+        })
+    );
+}
+
+#[test]
+fn editor_cursor_respects_unicode_boundaries() {
+    let mut state = AppContext::default();
+    update(&mut state, Action::Ui(UiAction::OpenCommitEditor));
+    for ch in "修复".chars() {
+        update(&mut state, Action::Ui(UiAction::EditorInputChar(ch)));
+    }
+    update(&mut state, Action::Ui(UiAction::EditorMoveCursorLeft));
+    update(&mut state, Action::Ui(UiAction::EditorBackspace));
+    update(&mut state, Action::Ui(UiAction::EditorInputChar('改')));
+
+    assert_eq!(
+        state.ui.editor.kind,
+        Some(EditorKind::Commit {
+            message: "改复".to_string(),
+            message_cursor: "改".len(),
+            body: String::new(),
+            body_cursor: 0,
+            active_field: CommitField::Message,
+            intent: CommitEditorIntent::Create,
+        })
+    );
+}
+#[test]
+fn test_palette_filter_executes_matches_and_handles_unicode_no_matches() {
+    let mut state = AppContext::default();
+    update(&mut state, Action::Ui(UiAction::OpenCommandPalette));
+    for ch in "FETCH".chars() {
+        update(&mut state, Action::Ui(UiAction::PaletteInput(ch)));
+    }
+    assert_eq!(state.command_palette_entries().len(), 1);
+    let commands = update(
+        &mut state,
+        Action::Ui(UiAction::ExecuteCommandPalette {
+            details_scroll_lines: 8,
+            details_visible_lines: 18,
+        }),
+    );
+    assert!(matches!(
+        commands.as_slice(),
+        [Command::RepositoryOperation(
+            ratagit_core::extras::RepositoryOperation::Fetch
+        )]
+    ));
+    assert!(!state.ui.command_palette.active);
+    update(&mut state, Action::Ui(UiAction::OpenCommandPalette));
+    update(&mut state, Action::Ui(UiAction::PaletteInput('界')));
+    assert!(state.command_palette_entries().is_empty());
+    update(&mut state, Action::Ui(UiAction::PaletteBackspace));
+    assert!(!state.command_palette_entries().is_empty());
+}

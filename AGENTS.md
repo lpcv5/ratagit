@@ -1,38 +1,117 @@
-# Repository Guidelines
+## Purpose
 
-## Project Structure & Module Organization
+This repository is designed for iterative development by Codex.
 
-Ratagit is a Rust 2021 Git terminal UI using `ratatui`, `crossterm`, and Tokio. `src/main.rs` is the entry point. Application state and runtime helpers live in `src/app/`; actions, dispatching, reducers, and effects live in `src/flux/`. `src/git/repository.rs` defines the Git backend abstraction. Terminal components, panels, widgets, and themes live in `src/ui/`; keymap configuration lives in `src/config/`.
+The system is spec-driven and harness-validated.
 
-Unit tests sit alongside implementation code, including dedicated `update_tests.rs` and `highlight_tests.rs` modules. Binary process tests live in `tests/terminal_lifecycle.rs`; `tests/support/` supplies isolated subprocess fixtures shared with `src/process_tests.rs`. CI is defined in `.github/workflows/ci.yml` and runs on Ubuntu and Windows.
+---
 
-## Build, Test, and Development Commands
+## Required Loop
 
-Use the stable Rust toolchain and Cargo:
+For every feature:
 
-- `cargo build`: build the development binary.
-- `cargo run`: launch the TUI from a Git repository in an interactive terminal.
-- `cargo build --release`: build the optimized release binary.
-- `cargo fmt`: apply standard Rust formatting.
-- `cargo fmt --check`: verify formatting without modifying files.
-- `cargo check`: check compilation.
-- `cargo test`: run all tests; use `cargo test test_stage_unstage_roundtrip` to filter.
-- `cargo clippy --all-targets --all-features -- -D warnings`: lint with warnings treated as errors.
+1. Create or update the active exec plan before the first implementation edit
+2. Implement smallest vertical slice
+3. Add unit tests
+4. Add snapshot tests (if UI changes)
+5. Add or update harness scenario
+6. Run all checks
+7. Fix failures before continuing
 
-Run the four CI checks (format, check, test, Clippy) before submitting.
+The active plan lives in `docs/EXEC_PLAN.md`. It is a scope contract for the
+current slice, not a completion log. Cross-layer changes, user-visible behavior,
+Git state semantics, UI rendering, runtime behavior, harness infrastructure, and
+multi-step refactors must fill in the active-slice fields before code changes.
 
-## Coding Style & Architecture
+Tiny/internal changes can use a short active plan and may explicitly say why no
+new harness scenario is needed. Do not expand a typo, comment, fixture cleanup,
+or narrow test-only change into a broad feature workflow unless new risk is
+discovered.
 
-Follow rustfmt defaults, including four-space indentation. Use `snake_case` for modules and functions, `PascalCase` for types and traits, and `SCREAMING_SNAKE_CASE` for constants. Write comments and documentation in English; use `thiserror` for custom errors.
+---
 
-Preserve Flux flow: actions pass through the dispatcher and stores; reducers remain pure. Access state through `StateAccess`, perform Git I/O through effects and `GitRepository`, and render immutable snapshots. Avoid direct `git2` calls in stores or UI components.
+## You MUST
 
-## Testing Guidelines
+- Follow ARCHITECTURE.md strictly
+- Keep rendering pure
+- Use AppContext as the only source of truth
+- Add tests before expanding scope
+- Update docs when behavior changes
+- Use the `apply_patch` tool for code edits instead of command-line file writes
 
-Use Rust's built-in `#[test]` framework within `#[cfg(test)]` modules. Name tests `test_<behavior>` and use `tempfile` repositories for Git operations. Exercise input and actions through existing test dispatch/runtime helpers. Add regression tests for changed behavior. Existing guidance describes milestone coverage goals, but CI currently enforces no numeric coverage threshold.
+---
 
-Use `ProcessFixture` for process tests so each child has its own Git config, home/config directories, temporary files, and bounded lifetime. Never mutate the parent test process's environment or libgit2 search paths in parallel tests. Configuration scenarios inject a file path because Windows Known Folders do not follow an `APPDATA` environment override. Keep Unix PTY tests Unix-only; they do not verify Windows console cleanup. Golden regeneration remains a reviewed local action.
+## You MUST NOT
 
-## Commit & Pull Request Guidelines
+- Bypass GitBackend
+- Access external state in UI
+- Introduce hidden state
+- Modify multiple layers in one step without justification
+- Skip tests
 
-Follow the observed commit pattern: `refactor: ...`, `perf: ...`, `docs: ...`, or `chore: ...`, with concise imperative summaries. Keep changes focused. PRs should explain the problem, resulting behavior, reproduction steps, and verification; link relevant issues and include terminal screenshots for visible UI changes. CI runs for PRs targeting `dev` and `main`.
+---
+
+## UI Rules
+
+- All UI must be snapshot-tested
+- Every panel must have a fixture
+- Rendering must be deterministic
+
+---
+
+## Harness Rules
+
+- Every user-visible feature requires a scenario
+- Scenarios must assert:
+  - UI
+  - Git state
+- Failures must produce artifacts
+- Harness infrastructure changes require focused harness/unit tests, not broad
+  product-flow scenarios unless rendered behavior, input handling, or Git state
+  semantics change
+
+---
+
+## Code Quality
+
+Before finishing:
+
+- cargo fmt
+- cargo clippy --workspace --lib --bins -- -D warnings
+- cargo test
+
+Strict clippy is required for production library and binary targets. Test code is
+validated by `cargo test`, UI snapshots, and harness scenarios; clippy findings
+inside test-only targets are advisory unless they indicate a broken test flow,
+nondeterminism, or invalid assertions.
+
+---
+
+## Git Commit Rules
+
+Commit messages must use Conventional Commits:
+
+```text
+type(scope): summary
+```
+
+- `type` must be one of: `feat`, `fix`, `refactor`, `test`, `docs`,
+  `chore`, `style`, `perf`, `build`, `ci`, or `revert`
+- `scope` is required and should name the package or subsystem, such as
+  `ui`, `core`, `git`, `harness`, `docs`, or `repo`
+- `summary` must be concise, imperative, lowercase after the scope, and must
+  not end with a period
+- commit body is optional
+
+Examples:
+
+- `refactor(ui): add reusable modal system`
+- `docs(repo): add commit message rules`
+
+---
+
+## Documentation
+
+- Behavior changes → update PRODUCT.md
+- Design changes → update DESIGN.md
+- Architecture changes → update ARCHITECTURE.md

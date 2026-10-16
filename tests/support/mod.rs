@@ -1,4 +1,5 @@
 //! Per-child environment isolation shared by binary and re-executed unit tests.
+#![allow(dead_code)] // Shared support exposes APIs used by different test binaries.
 use std::ffi::OsStr;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -149,13 +150,7 @@ impl ProcessFixture {
     pub fn normalize(&self, bytes: &[u8]) -> String {
         let root = self.root.path().to_string_lossy();
         let text = String::from_utf8_lossy(bytes).replace("\r\n", "\n");
-        // color-eyre can emit SGR styles even to redirected stderr. Strip only
-        // those styles; console controls such as alternate-screen/mouse escape
-        // sequences must remain visible to lifecycle assertions.
-        let text = regex::Regex::new(r"\x1b\[[0-9;]*m")
-            .unwrap()
-            .replace_all(&text, "")
-            .into_owned();
+        // Preserve terminal controls so lifecycle assertions can detect leaks.
         // Relative filenames, native separators and diagnostic codes survive.
         text.replace(&format!("\\\\?\\{root}"), "<ROOT>")
             .replace(root.as_ref(), "<ROOT>")

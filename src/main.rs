@@ -1,45 +1,408 @@
-mod app;
-mod background;
-mod config;
 mod desktop;
-mod file_tree;
-mod flux;
-mod git;
-mod latency;
-#[cfg(test)]
-mod process_tests;
-mod runtime;
-mod shared;
-mod terminal;
-mod ui;
+mod input;
 
-use app::App;
-use color_eyre::Result;
-use terminal::TerminalSession;
-use tracing::info;
+use std::error::Error;
+use std::io::{self, IsTerminal, Stdout};
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() -> Result<()> {
-    color_eyre::install()?;
-    let debug_mode = std::env::args().any(|arg| arg == "--debug");
-    let latency = if std::env::args().any(|arg| arg == "--profile-latency") {
-        Some(latency::Recorder::open("ratagit-latency.jsonl")?)
+use crossterm::event::{self, Event, KeyEventKind};
+use crossterm::execute;
+use crossterm::terminal::{
+    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
+};
+use desktop::{Desktop, EditorCommand, SystemDesktop};
+use input::{KeyEffect, key_effect_for_key};
+use ratagit_core::{AppContext, UiAction};
+use ratagit_git::{GitBackend, HybridGitBackend, SharedMockGitBackend, is_git_repo};
+use ratagit_harness::AsyncRuntime;
+use ratagit_observe::{ObserveConfig, init_observability};
+use ratagit_testkit::fixture_dirty_repo;
+use ratagit_ui::{
+    RenderContext, TerminalSize, details_content_lines_for_terminal_size,
+    details_scroll_lines_for_terminal_size, focused_left_panel_content_lines_for_terminal_size,
+    render_terminal_with_context,
+};
+use ratatui::Terminal;
+use ratatui::backend::CrosstermBackend;
+
+fn main() -> Result<(), Box<dyn Error>> {
+    let observe_config = ObserveConfig::from_env();
+    let _observe_guard = init_observability(&observe_config).ok();
+    run_tui()
+}
+
+fn prepare_editor(path: &str) -> io::Result<EditorCommand> {
+    let cwd = std::env::current_dir()?;
+    let root = ratagit_git::repository_workdir(&cwd).map_err(io::Error::other)?;
+    let relative = Path::new(path);
+    if relative.is_absolute()
+        || relative
+            .components()
+            .any(|part| !matches!(part, std::path::Component::Normal(_)))
+    {
+        return Err(io::Error::other(
+            "editor path must stay inside the repository",
+        ));
+    }
+    let editor = std::env::var("VISUAL")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| {
+            std::env::var("EDITOR")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+        })
+        .unwrap_or_else(|| {
+            if cfg!(windows) {
+                "notepad".into()
+            } else {
+                "vi".into()
+            }
+        });
+    let file = root.join(relative);
+    EditorCommand::new(&editor, root, file)
+}
+
+fn run_tui() -> Result<(), Box<dyn Error>> {
+    let backend_factory = select_backend_factory()?;
+    let mut terminal_session = TerminalSession::new()?;
+    let mut runtime = build_initial_runtime(backend_factory);
+    let mut spinner_frame = 0usize;
+    let desktop = SystemDesktop::default();
+    let mut next_spinner_frame_at = Instant::now() + spinner_frame_interval();
+    runtime.dispatch_ui(UiAction::RefreshAll);
+
+    loop {
+        runtime.tick();
+        let terminal_size = terminal_session.terminal.size()?;
+        let visible_lines = details_content_lines_for_terminal_size(TerminalSize {
+            width: terminal_size.width as usize,
+            height: terminal_size.height as usize,
+        });
+        if runtime.state().ui.details.viewport_lines != visible_lines {
+            runtime.dispatch_ui(UiAction::DetailsViewport { visible_lines });
+        }
+        let now = Instant::now();
+        if now >= next_spinner_frame_at {
+            spinner_frame = spinner_frame.wrapping_add(1);
+            next_spinner_frame_at = now + spinner_frame_interval();
+        }
+        terminal_session.terminal.draw(|frame| {
+            render_terminal_with_context(frame, runtime.state(), RenderContext { spinner_frame });
+        })?;
+
+        if !event::poll(input_poll_interval())? {
+            runtime.tick();
+            continue;
+        }
+
+        let Event::Key(key) = event::read()? else {
+            continue;
+        };
+        if key.kind != KeyEventKind::Press {
+            continue;
+        }
+
+        let terminal_size = terminal_session.terminal.size()?;
+        let size = TerminalSize {
+            width: terminal_size.width as usize,
+            height: terminal_size.height as usize,
+        };
+        let details_scroll_lines = details_scroll_lines_for_terminal_size(size);
+        let details_visible_lines = details_content_lines_for_terminal_size(size);
+        let left_panel_visible_lines =
+            focused_left_panel_content_lines_for_terminal_size(runtime.state(), size);
+
+        match key_effect_for_key(
+            runtime.state(),
+            key.code,
+            key.modifiers,
+            details_scroll_lines,
+            details_visible_lines,
+            left_panel_visible_lines,
+        ) {
+            KeyEffect::Host { edit, path } => {
+                let result = if edit {
+                    match prepare_editor(&path) {
+                        Ok(command) => {
+                            terminal_session.restore()?;
+                            let result = command.run();
+                            terminal_session.resume()?;
+                            result
+                        }
+                        Err(error) => Err(error),
+                    }
+                } else {
+                    desktop.copy_text(&path)
+                };
+                runtime.dispatch_ui(UiAction::HostFinished {
+                    message: match result {
+                        Ok(()) => {
+                            if edit {
+                                "Editor finished".into()
+                            } else {
+                                format!("Copied {path}")
+                            }
+                        }
+                        Err(error) => error.to_string(),
+                    },
+                    refresh: edit,
+                });
+            }
+            KeyEffect::Quit => break,
+            KeyEffect::Dispatch(action) => {
+                runtime.dispatch_ui(action);
+                runtime.tick();
+            }
+            KeyEffect::Ignore => {}
+        }
+    }
+
+    terminal_session.restore()?;
+    Ok(())
+}
+
+struct TerminalSession {
+    terminal: Terminal<CrosstermBackend<Stdout>>,
+    restored: bool,
+}
+
+impl TerminalSession {
+    fn new() -> Result<Self, io::Error> {
+        if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
+            return Err(io::Error::other("ratagit requires an interactive terminal"));
+        }
+        let previous_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            let _ = disable_raw_mode();
+            let _ = execute!(io::stdout(), LeaveAlternateScreen, crossterm::cursor::Show);
+            previous_hook(info);
+        }));
+        enable_raw_mode()?;
+        let mut stdout = io::stdout();
+        if let Err(err) = execute!(stdout, EnterAlternateScreen) {
+            let _ = disable_raw_mode();
+            return Err(err);
+        }
+        let backend = CrosstermBackend::new(stdout);
+        let terminal = match Terminal::new(backend) {
+            Ok(terminal) => terminal,
+            Err(err) => {
+                let mut stdout = io::stdout();
+                let _ = execute!(stdout, LeaveAlternateScreen);
+                let _ = disable_raw_mode();
+                return Err(err);
+            }
+        };
+        Ok(Self {
+            terminal,
+            restored: false,
+        })
+    }
+
+    fn restore(&mut self) -> Result<(), io::Error> {
+        if self.restored {
+            return Ok(());
+        }
+        restore_terminal(&mut self.terminal)?;
+        self.restored = true;
+        Ok(())
+    }
+
+    fn resume(&mut self) -> Result<(), io::Error> {
+        enable_raw_mode()?;
+        self.restored = false;
+        execute!(self.terminal.backend_mut(), EnterAlternateScreen)?;
+        self.terminal.clear()?;
+        Ok(())
+    }
+}
+
+impl Drop for TerminalSession {
+    fn drop(&mut self) {
+        let _ = self.restore();
+    }
+}
+
+fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<(), io::Error> {
+    let mut first_error = disable_raw_mode().err();
+    if let Err(err) = execute!(terminal.backend_mut(), LeaveAlternateScreen)
+        && first_error.is_none()
+    {
+        first_error = Some(err);
+    }
+    if let Err(err) = terminal.show_cursor()
+        && first_error.is_none()
+    {
+        first_error = Some(err);
+    }
+    if let Some(err) = first_error {
+        return Err(err);
+    }
+    Ok(())
+}
+
+type BackendFactory = Box<dyn Fn() -> Box<dyn GitBackend + Send> + Send + Sync>;
+
+fn build_initial_runtime(
+    backend_factory: BackendFactory,
+) -> AsyncRuntime<Box<dyn GitBackend + Send>> {
+    AsyncRuntime::new(
+        AppContext::default(),
+        backend_factory,
+        initial_terminal_size(),
+    )
+    .with_debounce_window(runtime_debounce_window())
+}
+
+fn initial_terminal_size() -> TerminalSize {
+    TerminalSize {
+        width: 100,
+        height: 30,
+    }
+}
+
+fn input_poll_interval() -> Duration {
+    Duration::from_millis(16)
+}
+
+fn runtime_debounce_window() -> Duration {
+    Duration::from_millis(80)
+}
+
+fn spinner_frame_interval() -> Duration {
+    Duration::from_millis(80)
+}
+
+fn select_backend_factory() -> Result<BackendFactory, Box<dyn Error>> {
+    let cwd = std::env::current_dir()?;
+    select_backend_factory_for(cwd)
+}
+
+fn select_backend_factory_for(cwd: PathBuf) -> Result<BackendFactory, Box<dyn Error>> {
+    if is_git_repo(Path::new(&cwd)) || cwd.ancestors().any(|dir| dir.join(".git").exists()) {
+        HybridGitBackend::open(Path::new(&cwd))?;
+        Ok(Box::new(move || {
+            Box::new(
+                HybridGitBackend::open(Path::new(&cwd))
+                    .expect("validated git repository should remain openable"),
+            )
+        }))
     } else {
-        None
-    };
-    runtime::init_logging(debug_mode);
-    info!("app_start debug={}", debug_mode);
-    if debug_mode {
-        git::enable_git_job_log("ratagit-git-jobs.log");
+        let shared_backend = SharedMockGitBackend::new(fixture_dirty_repo());
+        Ok(Box::new(move || Box::new(shared_backend.clone())))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs::{create_dir_all, remove_dir_all};
+    use std::process::Command;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use ratagit_git::execute_command;
+
+    use super::*;
+
+    #[test]
+    fn startup_constants_are_intentional_regression_points() {
+        assert_eq!(
+            initial_terminal_size(),
+            TerminalSize {
+                width: 100,
+                height: 30
+            }
+        );
+        assert_eq!(input_poll_interval(), Duration::from_millis(16));
+        assert_eq!(runtime_debounce_window(), Duration::from_millis(80));
+        assert_eq!(spinner_frame_interval(), Duration::from_millis(80));
     }
 
-    // Repository/configuration errors must precede terminal initialization.
-    let app = App::new()?;
-    let mut session = TerminalSession::new()?;
-    let result = async {
-        session.enable_mouse()?;
-        runtime::run(&mut session, app, latency).await
+    #[test]
+    fn non_git_backend_factory_builds_shared_mock_runtime_that_can_render() {
+        let root = unique_temp_dir("main-non-git");
+        create_dir_all(&root).expect("temp dir should be creatable");
+
+        let factory =
+            select_backend_factory_for(root.clone()).expect("non-git backend should be selected");
+        let mut runtime = build_initial_runtime(factory);
+        runtime.dispatch_ui(UiAction::RefreshAll);
+        wait_for_refresh(&mut runtime);
+
+        let screen = runtime.render_terminal_text();
+        assert!(screen.contains("README.md"));
+        assert!(screen.contains("󰈙 Files"));
+        let _ = remove_dir_all(root);
     }
-    .await;
-    session.finish(result)
+
+    #[test]
+    fn git_backend_factory_opens_isolated_repository() {
+        if !git_available() {
+            eprintln!("git is unavailable, skipping git_backend_factory_opens_isolated_repository");
+            return;
+        }
+
+        let root = unique_temp_dir("main-git");
+        create_dir_all(&root).expect("temp dir should be creatable");
+        run_git(&root, &["init"]);
+        run_git(&root, &["config", "user.name", "ratagit-tests"]);
+        run_git(
+            &root,
+            &["config", "user.email", "ratagit-tests@example.com"],
+        );
+
+        let factory =
+            select_backend_factory_for(root.clone()).expect("git backend should be selected");
+        let mut backend = factory();
+        let result = execute_command(&mut backend, ratagit_core::Command::RefreshAll);
+        assert!(matches!(
+            result,
+            ratagit_core::GitResult::SplitRefreshed { .. }
+        ));
+        let _ = remove_dir_all(root);
+    }
+
+    fn wait_for_refresh(runtime: &mut AsyncRuntime<Box<dyn GitBackend + Send>>) {
+        for _ in 0..100 {
+            runtime.tick();
+            if runtime.state().repo.status.refresh_count > 0 {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        panic!("timed out waiting for startup refresh");
+    }
+
+    fn unique_temp_dir(case_name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "ratagit-{case_name}-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system time should be after epoch")
+                .as_nanos()
+        ))
+    }
+
+    fn git_available() -> bool {
+        Command::new("git")
+            .arg("--version")
+            .output()
+            .is_ok_and(|output| output.status.success())
+    }
+
+    fn run_git(repo_path: &Path, args: &[&str]) {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(repo_path)
+            .output()
+            .expect("git command should run");
+        assert!(
+            output.status.success(),
+            "git {:?} failed: {}",
+            args,
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
 }

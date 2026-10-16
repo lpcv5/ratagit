@@ -1,0 +1,39 @@
+---
+source: libs/ratagit-ui/tests/details_entry.rs
+expression: "render_terminal_text(&state, SIZE)"
+---
+╭ 1  󰈙 Files ───────────────────────────╮╭ 5   Details ───────────────────────────────────────────────────────────────╮
+│   M file-00.txt                       ││   diff --git a/file-00.txt b/file-00.txt                                    │
+│   M file-01.txt                       ││   index 1111111..2222222 100644                                             │
+│   M file-02.txt                       ││   --- a/file-00.txt                                                         │
+│   M file-03.txt                       ││   +++ b/file-00.txt                                                         │
+│   M file-04.txt                       ││   @@ -1,3 +1,3 @@                                                           │
+│   M file-05.txt                       ││   -old first                                                                │
+│   M file-06.txt                       ││   +new first                                                                │
+│   M file-07.txt                       ││    unchanged                                                                │
+│   M file-08.txt                       ││   -old last                                                                 │
+│   M file-09.txt                       ││   +new last                                                                 │
+│   M file-10.txt                       ││                                                                             │
+│   M file-11.txt                       ││                                                                             │
+│   M file-12.txt                       ││                                                                             │
+│   M file-13.txt                       ││                                                                             │
+│   M file-14.txt                       ││                                                                             │
+│   M file-15.txt                       ││                                                                             │
+│   M file-16.txt                       ││                                                                             │
+│   M file-17.txt                       ││                                                                             │
+│   M file-18.txt                       ││                                                                             │
+│   M file-19.txt                       ││                                                                             │
+│   M file-20.txt                       ││                                                                             │
+│   M file-21.txt                       ││                                                                             │
+│   M file-22.txt                       │╰─────────────────────────────────────────────────────────────────────────────╯
+╰───────────────────────────────────────╯ 6  󰌱 Log                                                                     │
+│ 2   Branches                         │  notice=Ready                                                                │
+│ main                                 │                                                                              │
+╰───────────────────────────────────────╯                                                                              │
+│ 3   Commits                          │                                                                              │
+│●  abc1234  RT  init project           │                                                                              │
+╰───────────────────────────────────────╯                                                                              │
+│ 4   Stash                            │                                                                              │
+│ stash@{0} WIP on main: local test    │                                                                              │
+╰───────────────────────────────────────╯──────────────────────────────────────────────────────────────────────────────╯
+/ loading: details   space  stage/unstage   d  discard   A  amend   c  commit   s  stash   D  reset   enter  expand   ?

@@ -1,0 +1,373 @@
+use std::collections::VecDeque;
+use std::marker::PhantomData;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
+use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
+
+use ratagit_core::{Action, AppContext, Command, GitResult, UiAction, update};
+use ratagit_git::{GitBackend, execute_command};
+use ratagit_ui::{
+    RenderedFrame, TerminalBuffer, TerminalSize, render, render_terminal_buffer,
+    render_terminal_text,
+};
+
+use crate::scheduler::{CommandScheduler, enqueue_coalesced_command};
+
+pub const DEFAULT_READ_WORKER_COUNT: usize = 4;
+
+#[derive(Debug)]
+pub struct AsyncRuntime<B: GitBackend + Send + 'static> {
+    state: AppContext,
+    read_command_txs: Vec<Sender<WorkerMessage>>,
+    write_command_tx: Sender<WorkerMessage>,
+    result_rx: Receiver<WorkerResult>,
+    workers: Vec<JoinHandle<()>>,
+    stopping: Arc<AtomicBool>,
+    terminal_size: TerminalSize,
+    scheduler: CommandScheduler,
+    deferred_reads: VecDeque<Command>,
+    next_read_worker: usize,
+    repo_generation: u64,
+    write_commands_in_flight: usize,
+    _backend_type: PhantomData<B>,
+}
+
+#[derive(Debug, Clone)]
+enum WorkerMessage {
+    Run {
+        generation: u64,
+        command: Command,
+        enqueued_at: Instant,
+    },
+    Stop,
+}
+
+#[derive(Debug)]
+struct WorkerResult {
+    generation: u64,
+    kind: WorkerKind,
+    result: GitResult,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WorkerKind {
+    Read,
+    Write,
+}
+
+impl WorkerKind {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Read => "read",
+            Self::Write => "write",
+        }
+    }
+}
+
+impl<B: GitBackend + Send + 'static> AsyncRuntime<B> {
+    pub fn new<F>(state: AppContext, backend_factory: F, terminal_size: TerminalSize) -> Self
+    where
+        F: Fn() -> B + Send + Sync + 'static,
+    {
+        let backend_factory = Arc::new(backend_factory);
+        let (result_tx, result_rx) = mpsc::channel::<WorkerResult>();
+        let mut read_command_txs = Vec::with_capacity(DEFAULT_READ_WORKER_COUNT);
+        let mut workers = Vec::with_capacity(DEFAULT_READ_WORKER_COUNT + 1);
+        let stopping = Arc::new(AtomicBool::new(false));
+
+        for _ in 0..DEFAULT_READ_WORKER_COUNT {
+            let (command_tx, worker) = spawn_worker(
+                Arc::clone(&backend_factory),
+                result_tx.clone(),
+                WorkerKind::Read,
+                Arc::clone(&stopping),
+            );
+            read_command_txs.push(command_tx);
+            workers.push(worker);
+        }
+
+        let (write_command_tx, write_worker) = spawn_worker(
+            backend_factory,
+            result_tx,
+            WorkerKind::Write,
+            Arc::clone(&stopping),
+        );
+        workers.push(write_worker);
+
+        Self {
+            state,
+            read_command_txs,
+            write_command_tx,
+            result_rx,
+            workers,
+            stopping,
+            terminal_size,
+            scheduler: CommandScheduler::default(),
+            deferred_reads: VecDeque::new(),
+            next_read_worker: 0,
+            repo_generation: 0,
+            write_commands_in_flight: 0,
+            _backend_type: PhantomData,
+        }
+    }
+
+    pub fn with_debounce_window(mut self, debounce_window: Duration) -> Self {
+        self.scheduler.set_debounce_window(debounce_window);
+        self
+    }
+
+    pub fn state(&self) -> &AppContext {
+        &self.state
+    }
+
+    pub fn dispatch_ui(&mut self, action: UiAction) {
+        let initial_commands = update(&mut self.state, Action::Ui(action));
+        self.process_commands(initial_commands);
+    }
+
+    pub fn tick(&mut self) {
+        self.drain_results();
+        self.flush_due_debounced();
+        self.drain_results();
+    }
+
+    pub fn render(&self) -> RenderedFrame {
+        render(&self.state, self.terminal_size)
+    }
+
+    pub fn render_terminal_text(&self) -> String {
+        render_terminal_text(&self.state, self.terminal_size)
+    }
+
+    pub fn render_terminal_buffer(&self) -> TerminalBuffer {
+        render_terminal_buffer(&self.state, self.terminal_size)
+    }
+
+    fn process_commands(&mut self, initial: Vec<Command>) {
+        let mut queue = VecDeque::new();
+        let now = Instant::now();
+        for command in initial {
+            self.scheduler.enqueue_at(command, &mut queue, now);
+        }
+        self.dispatch_queue(queue);
+    }
+
+    fn dispatch_queue(&mut self, mut queue: VecDeque<Command>) {
+        while let Some(command) = queue.pop_front() {
+            self.dispatch_command(command);
+        }
+    }
+
+    fn dispatch_command(&mut self, command: Command) {
+        if command.is_mutating() {
+            self.dispatch_write_command(command);
+        } else if self.write_commands_in_flight == 0 {
+            self.dispatch_read_command(command);
+        } else {
+            enqueue_coalesced_command(&mut self.deferred_reads, command);
+        }
+    }
+
+    fn dispatch_read_command(&mut self, command: Command) {
+        let Some(worker_count) = NonZeroWorkerCount::new(self.read_command_txs.len()) else {
+            self.process_worker_failure("async git read worker pool is empty");
+            return;
+        };
+        let worker_index = self.next_read_worker % worker_count.get();
+        self.next_read_worker = (self.next_read_worker + 1) % worker_count.get();
+        let message = WorkerMessage::Run {
+            generation: self.repo_generation,
+            command,
+            enqueued_at: Instant::now(),
+        };
+        if self.read_command_txs[worker_index].send(message).is_err() {
+            self.process_worker_failure("async git read worker stopped");
+        }
+    }
+
+    fn dispatch_write_command(&mut self, command: Command) {
+        self.repo_generation = self.repo_generation.wrapping_add(1);
+        self.write_commands_in_flight = self.write_commands_in_flight.saturating_add(1);
+        let message = WorkerMessage::Run {
+            generation: self.repo_generation,
+            command,
+            enqueued_at: Instant::now(),
+        };
+        if self.write_command_tx.send(message).is_err() {
+            self.write_commands_in_flight = self.write_commands_in_flight.saturating_sub(1);
+            self.process_worker_failure("async git write worker stopped");
+            self.flush_deferred_reads_if_unblocked();
+        }
+    }
+
+    fn flush_due_debounced(&mut self) {
+        let queue = self.scheduler.flush_due_at(Instant::now());
+        self.dispatch_queue(queue);
+    }
+
+    #[cfg(test)]
+    fn flush_all_debounced_for_test(&mut self) {
+        let queue = self.scheduler.flush_all_for_test();
+        self.dispatch_queue(queue);
+    }
+
+    fn drain_results(&mut self) {
+        loop {
+            match self.result_rx.try_recv() {
+                Ok(worker_result) => self.process_worker_result(worker_result),
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => {
+                    self.process_worker_failure("async git worker pool disconnected");
+                    break;
+                }
+            }
+        }
+    }
+
+    fn process_worker_result(&mut self, worker_result: WorkerResult) {
+        match worker_result.kind {
+            WorkerKind::Read => {
+                if worker_result.generation == self.repo_generation {
+                    self.process_git_result(worker_result.result);
+                }
+            }
+            WorkerKind::Write => {
+                self.write_commands_in_flight = self.write_commands_in_flight.saturating_sub(1);
+                self.process_git_result(worker_result.result);
+                self.flush_deferred_reads_if_unblocked();
+            }
+        }
+    }
+
+    fn process_git_result(&mut self, git_result: GitResult) {
+        let follow_up = update(&mut self.state, Action::GitResult(git_result));
+        self.process_commands(follow_up);
+    }
+
+    fn process_worker_failure(&mut self, error: &str) {
+        self.process_git_result(GitResult::RefreshFailed {
+            target: None,
+            error: error.to_string(),
+        });
+    }
+
+    fn flush_deferred_reads_if_unblocked(&mut self) {
+        if self.write_commands_in_flight > 0 || self.deferred_reads.is_empty() {
+            return;
+        }
+
+        let queue = std::mem::take(&mut self.deferred_reads);
+        self.dispatch_queue(queue);
+    }
+}
+
+impl<B: GitBackend + Send + 'static> Drop for AsyncRuntime<B> {
+    fn drop(&mut self) {
+        self.stopping.store(true, Ordering::Release);
+        for command_tx in &self.read_command_txs {
+            let _ = command_tx.send(WorkerMessage::Stop);
+        }
+        let _ = self.write_command_tx.send(WorkerMessage::Stop);
+        let deadline = Instant::now() + Duration::from_millis(100);
+        while self.workers.iter().any(|worker| !worker.is_finished()) && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(1));
+        }
+        for worker in self.workers.drain(..) {
+            if worker.is_finished() {
+                let _ = worker.join();
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct NonZeroWorkerCount(usize);
+
+impl NonZeroWorkerCount {
+    fn new(value: usize) -> Option<Self> {
+        (value > 0).then_some(Self(value))
+    }
+
+    fn get(self) -> usize {
+        self.0
+    }
+}
+
+fn spawn_worker<B, F>(
+    backend_factory: Arc<F>,
+    result_tx: Sender<WorkerResult>,
+    kind: WorkerKind,
+    stopping: Arc<AtomicBool>,
+) -> (Sender<WorkerMessage>, JoinHandle<()>)
+where
+    B: GitBackend + Send + 'static,
+    F: Fn() -> B + Send + Sync + 'static,
+{
+    let (command_tx, command_rx) = mpsc::channel::<WorkerMessage>();
+    let mut backend = backend_factory();
+    let worker = thread::spawn(move || {
+        run_worker(&mut backend, command_rx, result_tx, kind, &stopping);
+    });
+    (command_tx, worker)
+}
+
+fn run_worker(
+    backend: &mut dyn GitBackend,
+    command_rx: Receiver<WorkerMessage>,
+    result_tx: Sender<WorkerResult>,
+    kind: WorkerKind,
+    stopping: &AtomicBool,
+) {
+    while let Ok(message) = command_rx.recv() {
+        if stopping.load(Ordering::Acquire) {
+            break;
+        }
+        match message {
+            WorkerMessage::Run {
+                generation,
+                command,
+                enqueued_at,
+            } => {
+                let command_label = command.log_label();
+                let queue_delay_ms = enqueued_at.elapsed().as_millis();
+                let started = Instant::now();
+                tracing::debug!(
+                    target: "ratagit.runtime",
+                    worker = kind.label(),
+                    generation,
+                    command = command_label,
+                    queue_delay_ms,
+                    "async git worker command started"
+                );
+                let result = execute_command(backend, command);
+                tracing::debug!(
+                    target: "ratagit.runtime",
+                    worker = kind.label(),
+                    generation,
+                    command = command_label,
+                    result = result.log_label(),
+                    success = result.is_success(),
+                    queue_delay_ms,
+                    elapsed_ms = started.elapsed().as_millis(),
+                    "async git worker command completed"
+                );
+                if result_tx
+                    .send(WorkerResult {
+                        generation,
+                        kind,
+                        result,
+                    })
+                    .is_err()
+                {
+                    return;
+                }
+            }
+            WorkerMessage::Stop => break,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests;

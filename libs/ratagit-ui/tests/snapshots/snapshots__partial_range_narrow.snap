@@ -1,0 +1,24 @@
+---
+source: libs/ratagit-ui/tests/snapshots.rs
+expression: text
+---
+╭ 1  󰈙 Files ────────╮╭ 5   Details ───────────────────────────╮
+│   ? README.md      ││   +new last                             │
+│    src/           ││   diff --git a/src/lib.rs b/src/lib.rs  │
+│     M lib.rs       ││   index 1111111..2222222 100644         │
+│     M main.rs      ││   --- a/src/lib.rs                      │
+╰────────────────────╯│   +++ b/src/lib.rs                      │
+│ 2   Branches      ││   @@ -1,3 +1,3 @@                       │
+│ main              ││ ┃ -old first                            │
+│  feature/mvp       ││ ┃ +new first                            │
+│                    ││    unchanged                            │
+╰────────────────────╯│>┃ -old last                             │
+│ 3   Commits       ││ ┃ +new last                             │
+│●  abc1234  RT  init│╰─────────────────────────────────────────╯
+│●  def5678  RT  wire│ 6  󰌱 Log                                 │
+│                    │  notice=Ready                            │
+╰────────────────────╯                                          │
+│ 4   Stash         │                                          │
+│ stash@{0} WIP on m│                                          │
+╰────────────────────╯──────────────────────────────────────────╯
+ j/k  select   a  mode   v  range   x  mark   Tab  side   Space

@@ -1,0 +1,34 @@
+---
+source: libs/ratagit-ui/tests/snapshots.rs
+expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30, },)"
+---
+╭ 1  󰈙 Files ────────────────────╮╭ 5   Details ──────────────────────────────────────────────────╮
+│   ? README.md                  ││  details(files): no diff for current selection                 │
+│    src/                       ││                                                                │
+│     M lib.rs                   ││                                                                │
+│     M main.rs                  ││                                                                │
+│                                ││                                                                │
+│                                ││                                                                │
+│                                ││                                                                │
+│                                ││                                                                │
+│                                ││                                                                │
+╰────────────────────────────────╯│                                                                │
+│ 2   Branches                  ││                                                                │
+│ main                          ││                                                                │
+│  feature/mvp                   ││                                                                │
+│                                ││                                                                │
+│                                ││                                                                │
+│                                ││                                                                │
+│                                ││                                                                │
+╰────────────────────────────────╯│                                                                │
+│ 3   Commits                   │╰────────────────────────────────────────────────────────────────╯
+│●  abc1234  RT  init project    │ 6  󰌱 Log                                                        │
+│●  def5678  RT  wire commands   │  notice=Ready                                                   │
+│                                │                                                                 │
+│                                │                                                                 │
+│                                │                                                                 │
+╰────────────────────────────────╯                                                                 │
+│ 4   Stash                     │                                                                 │
+│ stash@{0} WIP on main: local t│                                                                 │
+╰────────────────────────────────╯─────────────────────────────────────────────────────────────────╯
+/ loading: details   space  stage/unstage   d  discard   A  amend   c  commit   s  stash   D  reset

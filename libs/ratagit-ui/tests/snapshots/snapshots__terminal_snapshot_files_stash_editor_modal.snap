@@ -1,0 +1,34 @@
+---
+source: libs/ratagit-ui/tests/snapshots.rs
+expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30, },)"
+---
+╭ 1  󰈙 Files ────────────────────╮╭ 5   Details ──────────────────────────────────────────────────╮
+│✓  ? README.md                  ││   diff --git a/README.md b/README.md                           │
+│✓   src/                       ││   @@ -1 +1 @@                                                  │
+│     M lib.rs                   ││   -old README.md                                               │
+│     M main.rs                  ││   +new README.md                                               │
+│                                ││                                                                │
+│                   ╭ ✎ Stash Message ─────────────────────────────────────────╮                   │
+│                   │ Name the stash before saving                             │                   │
+│                   │ ╭ Title ───────────────────────────────────────────────╮ │                   │
+│                   │ │pick files                                            │ │                   │
+╰───────────────────│ ╰──────────────────────────────────────────────────────╯ │                   │
+│ 2   Branches     │ Scope: selected files (3)                                │                   │
+│ main             │                                                          │                   │
+│  feature/mvp      │                                                          │                   │
+│                   │                                                          │                   │
+│                   │                                                          │                   │
+│                   │                                                          │                   │
+│                   │                                                          │                   │
+╰───────────────────│                                                          │                   │
+│ 3   Commits      │ ──────────────────────────────────────────────────────── │───────────────────╯
+│●  abc1234  RT  ini│ Left/Right/Home/End cursor                               │                   │
+│●  def5678  RT  wir│ Enter confirm  Esc cancel                                │                   │
+│                   ╰──────────────────────────────────────────────────────────╯                   │
+│                                │                                                                 │
+│                                │                                                                 │
+╰────────────────────────────────╯                                                                 │
+│ 4   Stash                     │                                                                 │
+│ stash@{0} WIP on main: local t│                                                                 │
+╰────────────────────────────────╯─────────────────────────────────────────────────────────────────╯
+/ loading: details   arrows/Home/End  cursor   Enter  confirm   Esc  cancel
