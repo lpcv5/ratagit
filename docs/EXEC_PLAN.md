@@ -2,72 +2,73 @@
 
 ## Active Slice
 
-Name: Make agent workflow proportional to risk
+Name: Audit Git execution efficiency
 Status: completed
 
 ## Problem
 
-Agent instructions prescribe work independent of risk, duplicate policies across
-documents, and CI reruns snapshot/harness subsets after the complete suite.
+Measure Git read latency and inspect repeated work in status, commit pagination,
+and diff loading. Commit reachability classification may scan all of main history
+when a page contains commits that are not reachable from main.
 
 ## Smallest Slice
 
-Research current primary sources and adopt an outcome-driven, risk-based workflow.
-Update AGENTS.md, development/testing/CI/tooling guidance and CI commands together
-so contributors receive one consistent contract. Record research and an evaluation
-protocol in docs/AGENT_WORKFLOW_REVIEW.md.
+Run the release performance suite on smoke, small, and medium isolated fixtures.
+Supplement it with packed histories (1k/10k/50k/250k commits) and synthetic indexes
+(1k/10k/100k/500k entries). Apply the user's 150 ms tolerance: leave small costs
+alone and identify material delays with evidence. Keep this delivery an audit;
+the exploratory index optimization and its test were withdrawn after that scope
+clarification. Historical patches also load Git attributes through libgit2, so
+removing just the explicit index refresh does not remove every index dependency.
+Record timings, limitations, and follow-up findings in docs/GIT_PERFORMANCE.md.
 
 ## Non-Goals
 
-No application behavior, architecture, runtime, dependencies, product assertions,
-snapshot baselines, model configuration, or remote repository changes.
+No mutations in the workspace repository, network benchmarks, UI behavior changes,
+new caches outside AppContext, or changes to async ownership/mutation barriers.
+Do not generate million-file fixtures for this audit.
 
 ## Expected Files
 
-AGENTS.md, docs/DEVELOPMENT_LOOP.md, docs/TESTING.md, docs/CI.md,
-docs/TOOLING.md, docs/AGENT_WORKFLOW_REVIEW.md, docs/EXEC_PLAN.md,
-.github/workflows/ci.yml, tests/exec_plan.rs. The discovered working-tree gate
-requires a narrow test-infrastructure update to implement optional small plans.
+docs/EXEC_PLAN.md and docs/GIT_PERFORMANCE.md. Disposable measurement source and
+raw reports stay under ignored workspace tmp/; production code stays unchanged.
 
 ## Acceptance criteria
 
-- Short tasks need no plan file; complex/high-risk tasks retain a durable plan.
-- Changed behavior has relevant evidence; new tests follow coverage gaps.
-- UI snapshots, real-Git isolation, async regressions and failure artifacts remain.
-- Full workspace tests run once per CI platform; strict production lint matches
-  repository policy. Ubuntu and Windows remain required.
-- Research distinguishes vendor evidence from project-specific hypotheses.
+- Reproducible release measurements compare raw CLI and backend read latency.
+- Distinguish measured regressions from static risks and benchmark limitations.
+- Rank material delays using the user's tolerance; do not optimize small costs.
+- Preserve application behavior and working-tree changes.
 
 ## Tests
 
-Retain plan structure/completion tests; remove the obsolete test requiring every
-dirty worktree to edit its plan. This rule cannot classify risk and is bypassed
-by a clean CI checkout. Product assertions are unchanged.
-Validate CI test selection against Cargo's test inventory, review workflow and
-documentation consistency, and run the complete existing suite. Existing harness
-tests verify artifact generation and scenario manifest consistency.
+Inspect existing real-Git commit classification and pagination tests. Use isolated
+repositories under tmp/ for synthetic fixtures. Prefer deterministic result
+assertions over wall-clock test thresholds. Specialized measurements assert
+commit counts, classifications, and native patch file count.
 
 ## Harness Decision
 
-No new product scenario: only workflow, CI and plan-test infrastructure changes.
-Run focused plan tests and existing manifest/artifact tests in the full suite.
+No code or interaction/mutation semantics change remains. Backend timings and
+source inspection suffice for the audit; no new product harness scenario.
 
 ## Validation
 
-cargo fmt; cargo fmt --check;
-cargo clippy --locked --workspace --lib --bins -- -D warnings;
-cargo check --locked --workspace; cargo test --locked --workspace;
-git diff --check. Record actual results after execution.
+Release perf-suite and specialized measurements; check reports for failed records;
+content/link review and git diff --check. No Rust rebuild gate for the final
+documentation-only diff (cargo fmt and cargo test --workspace are not required).
+Run the focused execution-plan structure tests for the updated handoff document.
 
 ## Completion Evidence
 
-Windows validation passed: cargo fmt, cargo fmt --check, production Clippy,
-cargo check --locked --workspace, and cargo test --locked --workspace (605 tests,
-zero failures or ignored tests). Focused plan tests passed. Cargo test inventory
-confirmed snapshot, harness, manifest and failure-artifact coverage in the full
-workspace command. Local documentation links and git diff --check passed.
+Release suite completed: 315 measurements and 450 profiles, zero failed records.
+Current workspace reads were below 80 ms median. Supplemental final measurements:
+250k-history feature refresh 223.733 ms versus raw log 40.435 ms; 500k-index native
+Commit patch 260.129 ms versus 0.994 ms at 1k index entries. Supplemental result
+assertions passed. Details and local artifact paths are in docs/GIT_PERFORMANCE.md.
 
-The first run exposed the old plan-shape requirement and working-tree policy;
-the plan retains its structured headings and only the obsolete dirty-worktree
-test was removed. Product tests and assertions remain intact. Ubuntu CI and
-agent A/B efficiency measurements have not been run locally.
+The user's 150 ms tolerance changed the task to a focused audit. The exploratory
+index change/test were removed, and the final diff contains documentation only.
+Final content/local-link review and git diff --check passed. The focused command
+`cargo test --locked --test exec_plan` passed both tests. No production source,
+test, dependency, or design changes remain in the working tree.
