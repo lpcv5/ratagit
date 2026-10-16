@@ -45,7 +45,7 @@ pub(crate) fn create_commit(state: &mut AppContext, message: String) -> Vec<Comm
 
 pub(crate) fn amend_staged_changes(state: &mut AppContext) -> Vec<Command> {
     if repository_has_staged_changes(state)
-        && state.repo.files.items.iter().any(|entry| !entry.staged)
+        && state.repo.files.items.iter().any(|entry| entry.unstaged)
     {
         push_notice(state, "Amend requires only staged changes");
         return Vec::new();

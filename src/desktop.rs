@@ -38,7 +38,59 @@ pub struct EditorCommand {
     pub cwd: PathBuf,
 }
 
+pub struct CommitMessageFile {
+    path: PathBuf,
+}
+
+impl CommitMessageFile {
+    pub fn new() -> io::Result<Self> {
+        use std::io::Write;
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(io::Error::other)?
+            .as_nanos();
+        let path =
+            std::env::temp_dir().join(format!("ratagit-commit-{}-{nonce}.txt", std::process::id()));
+        let mut file = std::fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&path)?;
+        file.write_all(b"\n# Enter the commit message. Empty message cancels.\n")?;
+        Ok(Self { path })
+    }
+    pub fn path(&self) -> &std::path::Path {
+        &self.path
+    }
+    pub fn message(&self) -> io::Result<String> {
+        Ok(std::fs::read_to_string(&self.path)?
+            .lines()
+            .filter(|line| !line.starts_with('#'))
+            .collect::<Vec<_>>()
+            .join("\n")
+            .trim()
+            .to_string())
+    }
+}
+impl Drop for CommitMessageFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
 impl EditorCommand {
+    pub fn from_preferences(
+        cwd: PathBuf,
+        file: PathBuf,
+        preferences: &[Option<String>],
+    ) -> io::Result<Self> {
+        let editor = preferences
+            .iter()
+            .filter_map(Option::as_deref)
+            .find(|value| !value.trim().is_empty())
+            .unwrap_or(if cfg!(windows) { "notepad" } else { "vi" });
+        Self::new(editor, cwd, file)
+    }
+
     pub fn new(editor: &str, cwd: PathBuf, file: PathBuf) -> io::Result<Self> {
         let mut words = if std::path::Path::new(editor).is_file() {
             vec![editor.to_string()]
@@ -78,6 +130,48 @@ impl EditorCommand {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn editor_precedence_selects_before_parsing_invalid_fallbacks() {
+        let root = PathBuf::from("/repo");
+        let file = root.join("message.txt");
+        let command = EditorCommand::from_preferences(
+            root.clone(),
+            file.clone(),
+            &[
+                Some("git-editor --wait".into()),
+                Some("configured-editor".into()),
+                Some("'invalid visual".into()),
+            ],
+        )
+        .unwrap();
+        assert_eq!(command.program, "git-editor");
+        assert_eq!(
+            command.args,
+            vec!["--wait".to_string(), file.to_string_lossy().to_string()]
+        );
+        let command = EditorCommand::from_preferences(
+            root,
+            file,
+            &[
+                Some(" ".into()),
+                Some("configured-editor".into()),
+                Some("'invalid visual".into()),
+            ],
+        )
+        .unwrap();
+        assert_eq!(command.program, "configured-editor");
+    }
+
+    #[test]
+    fn commit_editor_message_strips_comments_keeps_unicode_body_and_cleans_up() {
+        let message_file = CommitMessageFile::new().unwrap();
+        let path = message_file.path().to_path_buf();
+        std::fs::write(&path, "# comment\n标题\n\n正文\n# tail\n").unwrap();
+        assert_eq!(message_file.message().unwrap(), "标题\n\n正文");
+        drop(message_file);
+        assert!(!path.exists());
+    }
 
     #[test]
     fn test_editor_arguments_preserve_spaces_unicode_and_shell_metacharacters() {

@@ -35,6 +35,7 @@ pub(crate) fn parse_porcelain_v1_z_limited(
         files.push(FileEntry {
             path,
             staged: status.is_staged(),
+            unstaged: status.worktree != b' ' && !status.is_ignored(),
             untracked: status.is_untracked(),
             status: status.file_status(),
             conflicted: status.is_conflicted(),
@@ -134,6 +135,7 @@ mod tests {
                 FileEntry {
                     path: "src/lib.rs".to_string(),
                     staged: false,
+                    unstaged: true,
                     untracked: false,
                     status: CommitFileStatus::Modified,
                     conflicted: false,
@@ -141,6 +143,7 @@ mod tests {
                 FileEntry {
                     path: "staged.txt".to_string(),
                     staged: true,
+                    unstaged: false,
                     untracked: false,
                     status: CommitFileStatus::Added,
                     conflicted: false,
@@ -148,6 +151,7 @@ mod tests {
                 FileEntry {
                     path: "nested/new.txt".to_string(),
                     staged: false,
+                    unstaged: true,
                     untracked: true,
                     status: CommitFileStatus::Unknown,
                     conflicted: false,
@@ -155,6 +159,7 @@ mod tests {
                 FileEntry {
                     path: "conflict.txt".to_string(),
                     staged: true,
+                    unstaged: true,
                     untracked: false,
                     status: CommitFileStatus::Modified,
                     conflicted: true,
@@ -162,6 +167,7 @@ mod tests {
                 FileEntry {
                     path: "docs/你好.md".to_string(),
                     staged: false,
+                    unstaged: true,
                     untracked: false,
                     status: CommitFileStatus::Modified,
                     conflicted: false,
@@ -180,6 +186,7 @@ mod tests {
                 FileEntry {
                     path: "new-name.txt".to_string(),
                     staged: true,
+                    unstaged: false,
                     untracked: false,
                     status: CommitFileStatus::Renamed,
                     conflicted: false,
@@ -187,6 +194,7 @@ mod tests {
                 FileEntry {
                     path: "copy.txt".to_string(),
                     staged: true,
+                    unstaged: false,
                     untracked: false,
                     status: CommitFileStatus::Copied,
                     conflicted: false,

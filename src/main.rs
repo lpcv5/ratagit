@@ -1,5 +1,8 @@
 mod desktop;
 mod input;
+mod workflow_input;
+#[cfg(test)]
+mod workflow_input_tests;
 
 use std::error::Error;
 use std::io::{self, IsTerminal, Stdout};
@@ -14,7 +17,9 @@ use crossterm::terminal::{
 use desktop::{Desktop, EditorCommand, SystemDesktop};
 use input::{KeyEffect, key_effect_for_key};
 use ratagit_core::{AppContext, UiAction};
-use ratagit_git::{GitBackend, HybridGitBackend, SharedMockGitBackend, is_git_repo};
+use ratagit_git::{
+    GitBackend, GitBackendRead, HybridGitBackend, SharedMockGitBackend, is_git_repo,
+};
 use ratagit_harness::AsyncRuntime;
 use ratagit_observe::{ObserveConfig, init_observability};
 use ratagit_testkit::fixture_dirty_repo;
@@ -45,23 +50,37 @@ fn prepare_editor(path: &str) -> io::Result<EditorCommand> {
             "editor path must stay inside the repository",
         ));
     }
-    let editor = std::env::var("VISUAL")
-        .ok()
-        .filter(|value| !value.trim().is_empty())
-        .or_else(|| {
-            std::env::var("EDITOR")
-                .ok()
-                .filter(|value| !value.trim().is_empty())
-        })
-        .unwrap_or_else(|| {
-            if cfg!(windows) {
-                "notepad".into()
-            } else {
-                "vi".into()
-            }
-        });
     let file = root.join(relative);
-    EditorCommand::new(&editor, root, file)
+    EditorCommand::from_preferences(
+        root,
+        file,
+        &[std::env::var("VISUAL").ok(), std::env::var("EDITOR").ok()],
+    )
+}
+
+fn prepare_commit_editor(file: &Path) -> io::Result<EditorCommand> {
+    let root =
+        ratagit_git::repository_workdir(&std::env::current_dir()?).map_err(io::Error::other)?;
+    let editor_override = std::env::var("GIT_EDITOR")
+        .ok()
+        .filter(|value| !value.trim().is_empty());
+    let configured = if editor_override.is_none() {
+        HybridGitBackend::open(&root)
+            .and_then(|mut backend| backend.commit_editor())
+            .map_err(io::Error::other)?
+    } else {
+        None
+    };
+    EditorCommand::from_preferences(
+        root,
+        file.to_path_buf(),
+        &[
+            editor_override,
+            configured,
+            std::env::var("VISUAL").ok(),
+            std::env::var("EDITOR").ok(),
+        ],
+    )
 }
 
 fn run_tui() -> Result<(), Box<dyn Error>> {
@@ -122,6 +141,26 @@ fn run_tui() -> Result<(), Box<dyn Error>> {
             details_visible_lines,
             left_panel_visible_lines,
         ) {
+            KeyEffect::CommitEditor => {
+                let result = desktop::CommitMessageFile::new().and_then(|message_file| {
+                    let command = prepare_commit_editor(message_file.path())?;
+                    terminal_session.restore()?;
+                    let result = command.run();
+                    terminal_session.resume()?;
+                    result?;
+                    message_file.message()
+                });
+                runtime.dispatch_ui(UiAction::CloseCommandPalette);
+                match result {
+                    Ok(message) => runtime.dispatch_ui(UiAction::Workflow(
+                        ratagit_core::workflow::WorkflowAction::ExternalCommit(message),
+                    )),
+                    Err(error) => runtime.dispatch_ui(UiAction::HostFinished {
+                        message: error.to_string(),
+                        refresh: false,
+                    }),
+                }
+            }
             KeyEffect::Host { edit, path } => {
                 let result = if edit {
                     match prepare_editor(&path) {

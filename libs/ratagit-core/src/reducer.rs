@@ -19,6 +19,7 @@ pub fn update(state: &mut AppContext, action: Action) -> Vec<Command> {
 
 fn update_ui(state: &mut AppContext, action: UiAction) -> Vec<Command> {
     match action {
+        UiAction::Workflow(action) => crate::workflow::update(state, action),
         UiAction::DetailsViewport { visible_lines } => {
             state.ui.details.viewport_lines = visible_lines;
             crate::partial::ensure_visible(state);
@@ -26,6 +27,7 @@ fn update_ui(state: &mut AppContext, action: UiAction) -> Vec<Command> {
         }
         UiAction::HostFinished { message, refresh } => {
             state.ui.command_palette.active = false;
+            state.ui.workflow.dialog = None;
             push_notice(state, &message);
             if refresh {
                 details::clear_caches(state);
@@ -588,6 +590,9 @@ fn command_palette_action(
     details_visible_lines: usize,
 ) -> Option<UiAction> {
     match command {
+        CommandPaletteCommand::Workflow(feature) => Some(UiAction::Workflow(
+            crate::workflow::WorkflowAction::Open(feature),
+        )),
         CommandPaletteCommand::EditFile | CommandPaletteCommand::CopyPath => None,
         CommandPaletteCommand::ToggleStageAll => Some(UiAction::ToggleStageAll),
         CommandPaletteCommand::Fetch => Some(UiAction::Fetch),

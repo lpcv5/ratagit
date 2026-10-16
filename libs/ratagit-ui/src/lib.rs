@@ -14,6 +14,7 @@ mod sync_modal;
 mod terminal;
 mod text;
 mod theme;
+mod workflow_modal;
 
 pub use frame::{
     RenderContext, RenderedFrame, TerminalBuffer, TerminalCursor, TerminalSize,

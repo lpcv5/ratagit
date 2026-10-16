@@ -51,6 +51,7 @@ macro_rules! delegate_shared_backend {
 
 impl GitBackendRead for SharedMockGitBackend {
     delegate_shared_backend! {
+        remote_branches() -> Result<Vec<String>, GitError>;
         load_patch(request: ratagit_core::patch::PatchRequest) -> Result<ratagit_core::patch::Patch, GitError>;
         refresh_snapshot() -> Result<RepoSnapshot, GitError>;
         refresh_files() -> Result<FilesSnapshot, GitError>;
@@ -118,6 +119,7 @@ mod tests {
             files: vec![FileEntry {
                 path: "a.txt".to_string(),
                 staged: false,
+                unstaged: true,
                 untracked: false,
                 status: CommitFileStatus::Modified,
                 conflicted: false,

@@ -12,6 +12,7 @@ use ratagit_core::{
 
 use crate::status_cli::parse_porcelain_v1_z_limited;
 use crate::{GitError, validate_repo_relative_path};
+mod workflow;
 
 pub(crate) const STATUS_ENTRY_LIMIT: usize = 50_000;
 pub(crate) const STATUS_OUTPUT_LIMIT_BYTES: usize = 64 * 1024 * 1024;
@@ -642,12 +643,15 @@ impl GitCli {
     }
 
     pub(crate) fn checkout_branch(&mut self, name: &str, auto_stash: bool) -> Result<(), GitError> {
+        if name != "-" {
+            self.run_git(&["check-ref-format", "--branch", name])?;
+        }
         if auto_stash {
             return self.with_auto_stash("ratagit auto-stash before checkout", |cli| {
-                cli.run_git(&["checkout", name]).map(|_| ())
+                cli.run_git(&["switch", "--", name]).map(|_| ())
             });
         }
-        self.run_git(&["checkout", name]).map(|_| ())
+        self.run_git(&["switch", "--", name]).map(|_| ())
     }
 
     pub(crate) fn delete_branch(
@@ -704,6 +708,7 @@ impl GitCli {
     ) -> Result<(), GitError> {
         use ratagit_core::extras::RepositoryOperation;
         match operation {
+            RepositoryOperation::Workflow(operation) => self.workflow(operation),
             RepositoryOperation::Fetch => self.run_git(&["fetch", "--all", "--prune"]).map(|_| ()),
             RepositoryOperation::StashApply(id) => {
                 self.run_git(&["stash", "apply", id]).map(|_| ())
@@ -902,7 +907,12 @@ impl GitCli {
     fn resolve_commit(&self, commit_id: &str) -> Result<String, GitError> {
         let spec = format!("{commit_id}^{{commit}}");
         Ok(self
-            .run_git_owned(vec!["rev-parse".to_string(), "--verify".to_string(), spec])?
+            .run_git_owned(vec![
+                "rev-parse".to_string(),
+                "--verify".to_string(),
+                "--end-of-options".to_string(),
+                spec,
+            ])?
             .trim()
             .to_string())
     }
@@ -953,14 +963,25 @@ impl GitCli {
         let created_stash = after.is_some() && after != before;
         let result = operation(self);
         if created_stash {
-            let stash_id = after.unwrap_or_else(|| "stash@{0}".to_string());
-            let pop_result = self.stash_pop(&stash_id);
-            if let Err(pop_error) = pop_result {
+            let stash_id = after.expect("created stash has an object ID");
+            let restore_result = self
+                .run_git(&["stash", "apply", "--index", &stash_id])
+                .and_then(|_| {
+                    // Restore the exact object, and never drop a different stash
+                    // if another Git client has changed the stash list meanwhile.
+                    if self.stash_top()?.as_deref() != Some(&stash_id) {
+                        return Err(GitError::new(
+                            "Auto-stash restored, but the stash list changed; kept the stash entry",
+                        ));
+                    }
+                    self.run_git(&["stash", "drop", "stash@{0}"])
+                });
+            if let Err(restore_error) = restore_result {
                 return match result {
-                    Ok(()) => Err(pop_error),
+                    Ok(()) => Err(restore_error),
                     Err(operation_error) => Err(GitError::new(format!(
                         "{}; additionally failed to restore auto-stash: {}",
-                        operation_error.message, pop_error.message
+                        operation_error.message, restore_error.message
                     ))),
                 };
             }
@@ -969,7 +990,7 @@ impl GitCli {
     }
 
     fn stash_top(&self) -> Result<Option<String>, GitError> {
-        let output = self.run_git(&["stash", "list", "--format=%gd"])?;
+        let output = self.run_git(&["stash", "list", "--format=%H"])?;
         Ok(output.lines().next().map(str::to_string))
     }
 

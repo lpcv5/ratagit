@@ -20,6 +20,7 @@ pub fn fixture_file(path: &str, staged: bool, untracked: bool) -> FileEntry {
     FileEntry {
         path: path.to_string(),
         staged,
+        unstaged: !staged,
         untracked,
         status: if untracked {
             CommitFileStatus::Unknown

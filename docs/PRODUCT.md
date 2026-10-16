@@ -18,7 +18,9 @@ Command workflows:
 - `?` opens the command modal, accepts text to filter keys/labels, uses
   arrow keys to select, `Enter` to execute, and `Esc` to close. Empty results are
   explicit. `j/k` are filter text inside this modal.
-- `F` fetches all remotes with pruning; lowercase `f` retains commit fixup.
+- `F` fetches all remotes with pruning outside commit lists. In main/branch
+  commit lists, `F` creates a fixup commit; fetch remains in the command palette.
+  Lowercase `f` retains direct commit fixup.
 - Stash focus previews the selected stash; `Enter` focuses its read-only diff,
   `a` applies it without removal, `O` pops it, and `d` opens a drop confirmation.
 
@@ -62,6 +64,44 @@ MVP v0 includes a left-nav workspace layout with six panels:
 - Global sync: `p` runs `git pull`, `P` runs `git push`; if normal push is
   rejected because the remote branch has diverged, a confirmation modal asks
   whether to retry with force push using `--force-with-lease`
+
+Common panel workflows (also available from `?`):
+
+| Context | Keys | Behavior |
+| --- | --- | --- |
+| Normal mode | `m` | Continue, abort, or skip the active merge/rebase/cherry-pick/revert; abort requires confirmation. Merge does not support skip. From interactive Details, return with `Esc` or use `?`. |
+| Files | `M` | Resolve selected conflicted files using Git's ours/theirs, or mark resolved after external editing with `e`. Replacing files requires confirmation; mark-resolved refuses remaining conflict markers, including configured `conflict-marker-size`. Modify/delete conflicts can resolve to deletion. |
+| Files | `S` | Stash all (including untracked), only staged, or stash with `--keep-index`. Keep-index leaves staged changes in place and does not include untracked files; its stash also records the index snapshot according to Git semantics. |
+| Files | `Ctrl+B` | Choose all/staged/unstaged/untracked/conflicted status filter. Filters change projection and folder targets, preserve complete repository data, and remain active across refresh. `a` continues to stage/unstage all repository status targets. |
+| Files | backtick, `-`, `=` | Toggle flat/tree layout, collapse all, expand all. Flat mode displays full paths and preserves unknown untracked directory markers. |
+| Files | `g` | Soft/mixed/hard reset of current branch to its upstream. Hard requires confirmation. |
+| Files | `w` | Enter a message and commit staged changes with `--no-verify`; stage changes first. |
+| Files | `C` | Edit a commit message externally, using `GIT_EDITOR`, `core.editor`, then `VISUAL`/`EDITOR`/platform fallback. Empty message cancels. The TUI suspends/restores around the editor; normal stage-all fallback applies. |
+| Branches | `M` | Merge selected branch into current branch, or squash merge and leave changes staged for a separate commit. A clean worktree is required. |
+| Branches | `R` | Rename selected local branch. |
+| Branches | `u` | Set/unset selected branch upstream, fast-forward it, or confirm resetting current branch to its own upstream. |
+| Branches | `f` | Fast-forward selected branch from its locally recorded upstream; fetch first for newer remote commits. Non-current updates preserve the checked-out worktree and refuse divergence. |
+| Branches | `c`, `-` | Checkout by name or switch to previous branch; dirty worktrees use the existing auto-stash confirmation. |
+| Branches | `Ctrl+O` | Copy selected branch name. |
+| Branches | `]` / `Tab` | Browse fetched remote branches in a scrollable menu; choose a remote, enter a new local name, and checkout with tracking. Requires a clean worktree. `Esc` returns to local branches. |
+| Main/branch commits | `C`, `V`, `Ctrl+R` | Copy selected commit(s), cherry-pick oldest first onto current branch, or clear copied selection. Failed picks retain the selection and expose conflicts. |
+| Main/branch commits | `t` | Create a revert commit; a clean worktree is required. |
+| Main/branch commits | `g` | Soft/mixed/hard reset current branch to selected commit; hard requires confirmation. |
+| Main/branch commits | `n` | Create a branch from selected commit. Confirmed text search keeps `n` as next-match until cleared. |
+| Main/branch commits | `Ctrl+O`, `y` | Copy full hash directly, or choose full/short hash, message, or author name. |
+| Main/branch commits | `Ctrl+K/J` / `Alt+Up/Down` | Move one commit up/down in newest-first list using interactive rebase; confirmation and a clean linear history are required. |
+| Main/branch commits | `F`, `S` | Create a `fixup!` commit from staged changes; confirm autosquashing fixups from selected base through HEAD. |
+| Main/branch commits | `T` | Create a lightweight tag at selected commit. |
+
+New workflow menus capture their target when opened. Arrows select menu choices;
+prompts support Unicode and Left/Right/Home/End cursor editing. `Esc` cancels
+without Git mutation. Failed conflict-producing operations refresh status and
+remain recoverable with `M` and `m`. History moves/autosquash reject root/merge
+boundaries rather than flattening merges. Conflict resolution operates on whole
+files, with external editing available for finer decisions.
+Automatic stash restores both staged and unstaged changes after checkout/rebase,
+preserves existing stash entries, and keeps its temporary stash if restoration
+fails. Confirmation dialogs show consequences before bounded target previews.
 
 Navigation rules:
 
@@ -233,7 +273,7 @@ Files panel rules:
 
 Branches panel rules:
 
-- the Branches panel lists local branches only in this slice
+- the Branches list shows local branches; `]` / `Tab` opens fetched remote branches
 - `space` checks out the selected branch
   - if the working tree has uncommitted changes, an auto-stash confirmation
     modal opens first

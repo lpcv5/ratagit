@@ -1,5 +1,5 @@
 use crate::actions::with_pending;
-use crate::selectors::{file_staged, selected_targets_are_all_staged};
+use crate::selectors::{file_staged, file_unstaged, selected_targets_are_all_staged};
 use crate::{
     AppContext, Command, FileInputMode, ResetChoice, StashScope, branches, enter_multi_select,
     leave_multi_select, push_notice, selected_target_paths, toggle_current_row_selection,
@@ -16,7 +16,7 @@ pub(crate) fn toggle_selected_file_stage(state: &mut AppContext) -> Vec<Command>
     } else {
         let unstaged_paths = paths
             .into_iter()
-            .filter(|path| file_staged(state, path) == Some(false))
+            .filter(|path| file_unstaged(state, path))
             .collect::<Vec<_>>();
         with_pending(
             state,
@@ -42,7 +42,7 @@ pub(crate) fn toggle_current_file_selection(state: &mut AppContext) {
 pub(crate) fn stage_selected_file(state: &mut AppContext) -> Vec<Command> {
     let paths = selected_target_paths(&state.repo.files.items, &state.ui.files)
         .into_iter()
-        .filter(|path| file_staged(state, path) == Some(false))
+        .filter(|path| file_unstaged(state, path))
         .collect::<Vec<_>>();
     if !paths.is_empty() {
         with_pending(state, vec![Command::StageFiles { paths }])

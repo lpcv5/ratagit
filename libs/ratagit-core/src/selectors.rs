@@ -22,7 +22,17 @@ pub(crate) fn selected_targets_are_all_staged(state: &AppContext, paths: &[Strin
     !paths.is_empty()
         && paths
             .iter()
-            .all(|path| file_staged(state, path).unwrap_or(false))
+            .all(|path| file_staged(state, path).unwrap_or(false) && !file_unstaged(state, path))
+}
+
+pub(crate) fn file_unstaged(state: &AppContext, path: &str) -> bool {
+    state
+        .repo
+        .files
+        .items
+        .iter()
+        .find(|entry| entry.path == path)
+        .is_some_and(|entry| entry.unstaged)
 }
 
 pub(crate) fn file_staged(state: &AppContext, path: &str) -> Option<bool> {

@@ -1,4 +1,7 @@
 use std::collections::BTreeMap;
+#[cfg(test)]
+#[path = "mock/review_tests.rs"]
+mod review_tests;
 
 use ratagit_core::{
     BranchDeleteMode, BranchEntry, COMMITS_PAGE_SIZE, CommitEntry, CommitFileDiffTarget,
@@ -24,6 +27,22 @@ pub struct MockGitBackend {
 }
 
 impl MockGitBackend {
+    fn consume_staged_changes(&mut self) {
+        self.snapshot.files.retain_mut(|entry| {
+            if !entry.staged {
+                return true;
+            }
+            if !entry.unstaged {
+                return false;
+            }
+            entry.staged = false;
+            entry.untracked = false;
+            entry.status = CommitFileStatus::Modified;
+            true
+        });
+        refresh_status_summary(&mut self.snapshot);
+    }
+
     pub fn new(snapshot: RepoSnapshot) -> Self {
         let index_entry_count = snapshot.files.len();
         Self {
@@ -176,6 +195,10 @@ fn commit_matches(commit: &CommitEntry, id: &str) -> bool {
 }
 
 impl GitBackendRead for MockGitBackend {
+    fn remote_branches(&mut self) -> Result<Vec<String>, GitError> {
+        self.operations.push("remote-branches".into());
+        Ok(Vec::new())
+    }
     fn load_patch(
         &mut self,
         request: ratagit_core::patch::PatchRequest,
@@ -338,10 +361,19 @@ impl GitBackendRead for MockGitBackend {
                 format!("@@ -1 +1 @@\n-old {}\n+new {}", entry.path, entry.path)
             };
             let block = format!("diff --git a/{0} b/{0}\n{1}", entry.path, hunk_body);
+            if entry.unstaged {
+                let worktree = if entry.staged {
+                    format!(
+                        "diff --git a/{0} b/{0}\n@@ -1 +1 @@\n-old {0}\n+new {0}",
+                        entry.path
+                    )
+                } else {
+                    block.clone()
+                };
+                unstaged.push(worktree);
+            }
             if entry.staged {
                 staged.push(block);
-            } else {
-                unstaged.push(block);
             }
         }
 
@@ -471,6 +503,7 @@ impl GitBackendWrite for MockGitBackend {
             .find(|entry| entry.path == path)
             .ok_or_else(|| GitError::new(format!("file not found: {path}")))?;
         entry.staged = true;
+        entry.unstaged = false;
         if entry.untracked {
             entry.status = CommitFileStatus::Added;
         }
@@ -486,6 +519,7 @@ impl GitBackendWrite for MockGitBackend {
             .find(|entry| entry.path == path)
             .ok_or_else(|| GitError::new(format!("file not found: {path}")))?;
         entry.staged = false;
+        entry.unstaged = true;
         if entry.untracked {
             entry.status = CommitFileStatus::Unknown;
         }
@@ -503,6 +537,7 @@ impl GitBackendWrite for MockGitBackend {
                 .find(|entry| entry.path == *path)
                 .ok_or_else(|| GitError::new(format!("file not found: {path}")))?;
             entry.staged = true;
+            entry.unstaged = false;
             if entry.untracked {
                 entry.status = CommitFileStatus::Added;
             }
@@ -521,6 +556,7 @@ impl GitBackendWrite for MockGitBackend {
                 .find(|entry| entry.path == *path)
                 .ok_or_else(|| GitError::new(format!("file not found: {path}")))?;
             entry.staged = false;
+            entry.unstaged = true;
             if entry.untracked {
                 entry.status = CommitFileStatus::Unknown;
             }
@@ -548,7 +584,7 @@ impl GitBackendWrite for MockGitBackend {
             },
         );
         self.commit_sequence = self.commit_sequence.saturating_add(1);
-        self.snapshot.files.retain(|entry| !entry.staged);
+        self.consume_staged_changes();
         Ok(())
     }
 
@@ -710,6 +746,7 @@ impl GitBackendWrite for MockGitBackend {
                 for entry in &mut self.snapshot.files {
                     if !entry.untracked {
                         entry.staged = false;
+                        entry.unstaged = true;
                     }
                 }
             }
@@ -806,8 +843,7 @@ impl GitBackendHistoryRewrite for MockGitBackend {
         if commit.is_merge {
             return Err(GitError::new("merge commits are not supported"));
         }
-        self.snapshot.files.retain(|entry| !entry.staged);
-        refresh_status_summary(&mut self.snapshot);
+        self.consume_staged_changes();
         Ok(())
     }
 
@@ -882,15 +918,7 @@ fn reset_mode_name(mode: ResetMode) -> &'static str {
 }
 
 fn refresh_status_summary(snapshot: &mut RepoSnapshot) {
-    let staged = snapshot
-        .files
-        .iter()
-        .filter(|entry| entry.staged && !entry.untracked)
-        .count();
-    let unstaged = snapshot
-        .files
-        .iter()
-        .filter(|entry| !entry.staged || entry.untracked)
-        .count();
+    let staged = snapshot.files.iter().filter(|entry| entry.staged).count();
+    let unstaged = snapshot.files.iter().filter(|entry| entry.unstaged).count();
     snapshot.status_summary = format!("staged: {staged}, unstaged: {unstaged}");
 }

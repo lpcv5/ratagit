@@ -119,7 +119,7 @@ pub(crate) fn handle_pull_result(
     state: &mut AppContext,
     result: Result<(), String>,
 ) -> Vec<Command> {
-    handle_operation_result(
+    handle_operation_result_refreshing_after_failure(
         state,
         result,
         "pull",
@@ -264,23 +264,13 @@ pub(crate) fn handle_rebase_branch_result(
         format!("Rebased ({mode}) onto {target}")
     };
     let failure_prefix = format!("Failed to rebase onto {target}");
-    if auto_stash {
-        handle_operation_result_refreshing_after_failure(
-            state,
-            result,
-            operation_key,
-            success_message,
-            failure_prefix,
-        )
-    } else {
-        handle_operation_result(
-            state,
-            result,
-            operation_key,
-            success_message,
-            failure_prefix,
-        )
-    }
+    handle_operation_result_refreshing_after_failure(
+        state,
+        result,
+        operation_key,
+        success_message,
+        failure_prefix,
+    )
 }
 
 pub(crate) fn handle_squash_commits_result(

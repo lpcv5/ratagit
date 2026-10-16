@@ -131,6 +131,7 @@ pub enum CommandPaletteSection {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommandPaletteCommand {
+    Workflow(crate::workflow::Feature),
     EditFile,
     CopyPath,
     ToggleStageAll,
@@ -994,6 +995,7 @@ impl Default for RepoState {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UiState {
+    pub workflow: crate::workflow::WorkflowState,
     pub focus: PanelFocus,
     pub last_left_focus: PanelFocus,
     pub search: SearchState,
@@ -1013,6 +1015,7 @@ pub struct UiState {
 impl Default for UiState {
     fn default() -> Self {
         Self {
+            workflow: crate::workflow::WorkflowState::default(),
             focus: PanelFocus::Files,
             last_left_focus: PanelFocus::Files,
             search: SearchState::default(),
@@ -1091,7 +1094,19 @@ impl AppContext {
 
     pub fn command_palette_entries(&self) -> Vec<CommandPaletteEntry> {
         let mut entries = local_command_palette_entries(self);
+        let workflow_entries = crate::workflow::palette_entries(self);
+        entries.extend(
+            workflow_entries
+                .iter()
+                .filter(|entry| entry.section == CommandPaletteSection::Local)
+                .copied(),
+        );
         entries.extend(global_command_palette_entries());
+        entries.extend(
+            workflow_entries
+                .into_iter()
+                .filter(|entry| entry.section == CommandPaletteSection::Global),
+        );
         let query = self.ui.command_palette.query.to_lowercase();
         if !query.is_empty() {
             entries.retain(|entry| {

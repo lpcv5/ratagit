@@ -1,5 +1,37 @@
 # DESIGN.md
 
+## Common Git workflows
+
+`ui.workflow` owns typed menu/prompt/confirmation state and copied commit IDs.
+Menus capture operations/targets instead of looking up a changed cursor when
+confirmed. Input translates keys into WorkflowAction; reducers handle contextual
+intent, Unicode edits and confirmations. The pure workflow modal shares existing
+geometry and styles. Clipboard and editors remain host effects; completion is
+dispatched to core. External message files use unique create-new paths and RAII
+cleanup. Git commits still run through GitBackend on the exclusive worker.
+Modal and palette input own typed characters before host shortcuts. Editor
+preferences are selected before parsing the winning command. Confirmations keep
+consequence text ahead of bounded path previews, including for large selections.
+
+Typed operations reuse RepositoryOperation metadata, results and mutation barrier.
+Conflict-producing failures refresh without automatically aborting. `m` detects
+the active Git sequence in the backend. Abort, hard reset, conflict replacement,
+reorder and autosquash have captured confirmations. Reorder uses deterministic
+rebase scripts and rejects root/merge boundaries. Cherry-pick reverses newest-first
+selection to oldest-first application and retains copied IDs on failure.
+
+Filters/flat layout change the cached Files projection, not repository rows.
+FileEntry records staged and unstaged independently, so partially staged paths
+appear in both filters and stage-all stages their remaining worktree changes.
+Folder previews and writes resolve filtered descendants, including in large-repo
+mode. Expand/collapse uses the existing tree. Remote browsing uses a read command,
+request ID and cancel/focus checks; runtime generations reject stale reads crossing
+mutations. Tracking checkout validates names and requires a clean worktree.
+Non-current fast-forward uses Git's local fetch ref-update protections.
+Automatic stash compares object IDs, restores the exact stash with `--index`,
+and drops it only after successful restoration with a matching top entry.
+Conflict-marker validation follows the path's `conflict-marker-size` attribute.
+
 ## Details and runtime design
 
 The Details diff uses stable unnumbered diff content, `>` cursor and `┃` mark
