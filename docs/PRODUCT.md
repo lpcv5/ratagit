@@ -23,6 +23,7 @@ Command workflows:
   Lowercase `f` retains direct commit fixup.
 - Stash focus previews the selected stash; `Enter` focuses its read-only diff,
   `a` applies it without removal, `O` pops it, and `d` opens a drop confirmation.
+  A conflicting pop refreshes Files to expose conflicts and keeps the stash.
 
 ---
 
@@ -58,7 +59,8 @@ MVP v0 includes a left-nav workspace layout with six panels:
   - Branches focus projection: show the selected branch's native `git log --graph` output with Git's ASCII graph and ANSI colors preserved, limited to 50 commits
   - Commits focus projection: show the selected commit's header and a bounded patch diff preview
   - Commit Files subpanel projection: show the selected file or folder's patch within the selected commit
-  - Stash projection: the selected stash's reviewed, read-only native patch
+  - Stash projection: the selected stash's reviewed, read-only native patch,
+    including saved untracked files within the shared preview limits
   - `Ctrl+U` / `Ctrl+D` scroll Details content up/down globally by 2/5 of the Details content height without changing the focused panel
 - Log: show latest error, recent notices, and pending refresh/operation state
 - Global sync: `p` runs `git pull`, `P` runs `git push`; if normal push is
@@ -181,7 +183,9 @@ Files panel rules:
   to the letter only and file names stay in the default foreground
 - repeated file-detail diffs are cached in `AppContext` and reused when the same
   target path list is selected again
-- `space` stages unstaged targets or unstages targets when all selected targets are staged
+- `space` stages unstaged targets or unstages targets when all selected targets are staged.
+  Unstaging a staged rename restores both the old and new index paths while
+  preserving the renamed worktree file and any later edits.
 - `a` stages all visible status targets, or unstages all when every target is staged
 - `Enter` expands directories or opens a reviewed file patch in Details
 - In Details, `j/k` navigates contiguous changes (Hunk mode), `a`
@@ -216,7 +220,8 @@ Files panel rules:
     creates the commit, while `Esc` cancels the fallback
 - `s` opens a stash editor modal from Files focus
   - normal mode stashes all current changes, including untracked files
-  - visual multi-select mode stashes only selected target paths
+  - visual multi-select mode stashes only selected target paths, treating names
+    literally and excluding unrelated staged files from both saved snapshots
   - the title field shows a real terminal cursor
   - the title field is highlighted by its border, not by changing the text
     background
@@ -234,6 +239,8 @@ Files panel rules:
   - normal mode targets the current file row or all descendant files for the current directory row
   - visual multi-select mode targets the selected visual range
   - `Enter` discards tracked changes and removes selected untracked targets, `Esc` cancels
+  - discard and unstage targets are literal paths; Git wildcard characters in a
+    filename do not select other files
 - `v` enters visual multi-select at the current row; `j` / `k` extends or shrinks the selected range, and `Esc` exits multi-select
 - `/` opens search input in the bottom bar; Enter confirms, Esc cancels or clears, `n` / `N` navigate matches
 - the same search model applies to Branches, Commits, Stash, and Commit Files,

@@ -730,14 +730,66 @@ impl GitCli {
         if paths.is_empty() {
             return Ok(());
         }
-        let mut args = vec!["stash".to_string(), "push".to_string(), "-u".to_string()];
+        let pathspecs = paths
+            .iter()
+            .map(|path| literal_pathspec(path))
+            .collect::<Result<Vec<_>, _>>()?;
+        let index_path =
+            self.run_git(&["rev-parse", "--path-format=absolute", "--git-path", "index"])?;
+        let indexes = SelectedStashIndexes::prepare(Path::new(index_path.trim()))?;
+
+        // Git's pathspec limits worktree changes, but its stash index parent is
+        // always the entire index. Remove unselected staged changes only from
+        // the alternate index so neither stash tree can resurrect them later.
+        // All index copies may share split-index bases with the real index.
+        // Prevent these commands and stash's children from expiring those bases.
+        let mut scope_args = vec![
+            "-c".to_string(),
+            "splitIndex.sharedIndexExpire=never".to_string(),
+            "reset".to_string(),
+            "--quiet".to_string(),
+            "HEAD".to_string(),
+            "--".to_string(),
+            ".".to_string(),
+        ];
+        for path in paths {
+            scope_args.push(format!(":(exclude,literal){path}"));
+        }
+        self.run_git_owned_with_env(scope_args, indexes.stash_env()?)?;
+
+        // Prepare the successful real-index result before stash can touch the
+        // worktree. Its unrelated entries remain exactly as they were.
+        let mut reset_args = vec![
+            "-c".to_string(),
+            "splitIndex.sharedIndexExpire=never".to_string(),
+            "reset".to_string(),
+            "--quiet".to_string(),
+            "HEAD".to_string(),
+            "--".to_string(),
+        ];
+        reset_args.extend(pathspecs.iter().cloned());
+        self.run_git_owned_with_env(reset_args, indexes.updated_env()?)?;
+
+        let mut args = vec![
+            "-c".to_string(),
+            "splitIndex.sharedIndexExpire=never".to_string(),
+            "stash".to_string(),
+            "push".to_string(),
+            "-u".to_string(),
+        ];
         if !message.trim().is_empty() {
             args.push("-m".to_string());
             args.push(message.to_string());
         }
         args.push("--".to_string());
-        args.extend(paths.iter().cloned());
-        self.run_git_owned(args).map(|_| ())
+        args.extend(pathspecs);
+        self.run_git_owned_with_env(args, indexes.stash_env()?)?;
+        indexes.install().map_err(|error| {
+            GitError::io(format!(
+                "selected stash completed, but failed to update the index; the stash was kept: {}",
+                error.message
+            ))
+        })
     }
 
     pub(crate) fn stash_pop(&mut self, stash_id: &str) -> Result<(), GitError> {
@@ -759,12 +811,16 @@ impl GitCli {
     }
 
     pub(crate) fn discard_files(&mut self, paths: &[String]) -> Result<(), GitError> {
-        for path in paths {
+        let pathspecs = paths
+            .iter()
+            .map(|path| literal_pathspec(path))
+            .collect::<Result<Vec<_>, _>>()?;
+        for (path, pathspec) in paths.iter().zip(&pathspecs) {
             if self
-                .run_git(&["ls-files", "--error-unmatch", "--", path])
+                .run_git(&["ls-files", "--error-unmatch", "--", pathspec])
                 .is_ok()
             {
-                self.run_git(&["restore", "--staged", "--worktree", "--", path])?;
+                self.run_git(&["restore", "--staged", "--worktree", "--", pathspec])?;
             } else {
                 remove_untracked_path(&self.repo_path, path)?;
             }
@@ -1090,6 +1146,93 @@ fn parse_commit_file_line(line: &str) -> Result<CommitFileEntry, GitError> {
         old_path,
         status,
     })
+}
+
+// Hold Git's real index lock while stash operates on a separate index. The
+// lock itself holds the prepared replacement, so installation is one rename.
+struct SelectedStashIndexes {
+    index_path: PathBuf,
+    lock_path: PathBuf,
+    dir: PathBuf,
+    lock_held: bool,
+}
+
+impl SelectedStashIndexes {
+    fn prepare(index_path: &Path) -> Result<Self, GitError> {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|err| GitError::io(format!("failed to read system time: {err}")))?
+            .as_nanos();
+        let parent = index_path
+            .parent()
+            .ok_or_else(|| GitError::io("Git index has no parent directory"))?;
+        let dir = parent.join(format!(
+            "ratagit-selected-stash-{}-{nonce}",
+            std::process::id()
+        ));
+        fs::create_dir(&dir).map_err(|err| {
+            GitError::io(format!(
+                "failed to create selected stash index directory: {err}"
+            ))
+        })?;
+        let mut lock_name = index_path.as_os_str().to_os_string();
+        lock_name.push(".lock");
+        let mut indexes = Self {
+            index_path: index_path.to_path_buf(),
+            lock_path: PathBuf::from(lock_name),
+            dir,
+            lock_held: false,
+        };
+        let lock = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&indexes.lock_path)
+            .map_err(|err| {
+                GitError::io(format!(
+                    "failed to lock Git index for selected stash: {err}"
+                ))
+            })?;
+        indexes.lock_held = true;
+        drop(lock);
+        fs::copy(index_path, &indexes.lock_path)
+            .and_then(|_| fs::copy(index_path, indexes.dir.join("index")))
+            .map_err(|err| {
+                GitError::io(format!("failed to copy index for selected stash: {err}"))
+            })?;
+        Ok(indexes)
+    }
+
+    fn stash_env(&self) -> Result<Vec<(String, String)>, GitError> {
+        Self::index_env(&self.dir.join("index"))
+    }
+
+    fn updated_env(&self) -> Result<Vec<(String, String)>, GitError> {
+        Self::index_env(&self.lock_path)
+    }
+
+    fn index_env(path: &Path) -> Result<Vec<(String, String)>, GitError> {
+        Ok(vec![(
+            "GIT_INDEX_FILE".to_string(),
+            path_to_env_value(path)?,
+        )])
+    }
+
+    fn install(mut self) -> Result<(), GitError> {
+        fs::rename(&self.lock_path, &self.index_path).map_err(|err| {
+            GitError::io(format!("failed to replace selected stash index: {err}"))
+        })?;
+        self.lock_held = false;
+        Ok(())
+    }
+}
+
+impl Drop for SelectedStashIndexes {
+    fn drop(&mut self) {
+        if self.lock_held {
+            let _ = fs::remove_file(&self.lock_path);
+        }
+        let _ = fs::remove_dir_all(&self.dir);
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

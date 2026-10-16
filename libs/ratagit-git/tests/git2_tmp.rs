@@ -693,6 +693,408 @@ fn git2_stage_and_unstage_files_preserves_worktree_changes() {
 }
 
 #[test]
+fn git2_unstage_rename_destination_restores_both_index_paths() {
+    if !git_available() {
+        eprintln!(
+            "git is unavailable, skipping git2_unstage_rename_destination_restores_both_index_paths"
+        );
+        return;
+    }
+
+    let repo = seeded_repo_with_two_files("unstage-rename");
+    repo.run_git(&["mv", "--", "a.txt", "renamed.txt"]);
+    let mut backend = HybridGitBackend::open(repo.path()).expect("hybrid backend should open");
+    let files = backend.refresh_files().expect("files should refresh").files;
+    assert!(files.iter().any(|file| {
+        file.path == "renamed.txt" && file.staged && file.status == CommitFileStatus::Renamed
+    }));
+
+    backend
+        .unstage_file("renamed.txt")
+        .expect("unstaging the destination should unstage the whole rename");
+
+    assert_eq!(
+        repo.run_git_capture(&["diff", "--cached", "--name-only"]),
+        ""
+    );
+    assert_eq!(repo.run_git_capture(&["show", ":a.txt"]), "a1\n");
+    assert_eq!(
+        repo.run_git_capture(&["status", "--short", "--untracked-files=all"]),
+        " D a.txt\n?? renamed.txt\n"
+    );
+    assert!(!repo.path().join("a.txt").exists());
+    assert_eq!(
+        std::fs::read_to_string(repo.path().join("renamed.txt")).unwrap(),
+        "a1\n"
+    );
+}
+
+#[test]
+fn git2_unstage_modified_rename_preserves_other_staged_and_worktree_changes() {
+    if !git_available() {
+        eprintln!(
+            "git is unavailable, skipping git2_unstage_modified_rename_preserves_other_staged_and_worktree_changes"
+        );
+        return;
+    }
+
+    let repo = seeded_repo_with_two_files("unstage-modified-rename");
+    let original = (0..20)
+        .map(|line| format!("original content line {line}\n"))
+        .collect::<String>();
+    for (path, content) in [
+        ("source[abc].txt", original.as_str()),
+        ("sourcea.txt", "unrelated source\n"),
+        ("renameda.txt", "unrelated destination\n"),
+    ] {
+        write(repo.path().join(path), content).unwrap();
+    }
+    repo.run_git(&["add", "."]);
+    repo.run_git(&["commit", "-m", "seed literal paths"]);
+    repo.run_git(&["mv", "--", "source[abc].txt", "renamed[abc].txt"]);
+    let staged_content = format!("{original}staged edit\n");
+    write(repo.path().join("renamed[abc].txt"), &staged_content).unwrap();
+    write(repo.path().join("sourcea.txt"), "unrelated staged source\n").unwrap();
+    write(
+        repo.path().join("renameda.txt"),
+        "unrelated staged destination\n",
+    )
+    .unwrap();
+    repo.run_git(&["add", "."]);
+    repo.run_git(&["mv", "--", "a.txt", "other.txt"]);
+    let worktree_content = format!("{staged_content}unstaged edit\n");
+    write(repo.path().join("renamed[abc].txt"), &worktree_content).unwrap();
+    write(
+        repo.path().join("sourcea.txt"),
+        "unrelated unstaged source\n",
+    )
+    .unwrap();
+    write(repo.path().join("b.txt"), "unrelated unstaged file\n").unwrap();
+    let unrelated_diff = repo.run_git_capture(&[
+        "diff",
+        "--cached",
+        "--binary",
+        "--",
+        "a.txt",
+        "other.txt",
+        "sourcea.txt",
+        "renameda.txt",
+    ]);
+    let mut backend = HybridGitBackend::open(repo.path()).expect("hybrid backend should open");
+    let files = backend.refresh_files().expect("files should refresh").files;
+    assert!(files.iter().any(|file| {
+        file.path == "renamed[abc].txt"
+            && file.staged
+            && file.unstaged
+            && file.status == CommitFileStatus::Renamed
+    }));
+
+    backend
+        .unstage_files(&[
+            "renamed[abc].txt".to_string(),
+            "renamed[abc].txt".to_string(),
+        ])
+        .expect("modified rename should unstage once even with duplicate selections");
+
+    assert_eq!(
+        repo.run_git_capture(&[
+            "diff",
+            "--cached",
+            "--binary",
+            "--",
+            "a.txt",
+            "other.txt",
+            "sourcea.txt",
+            "renameda.txt",
+        ]),
+        unrelated_diff
+    );
+    let index = git2::Repository::open(repo.path())
+        .unwrap()
+        .index()
+        .unwrap();
+    assert!(index.get_path(Path::new("renamed[abc].txt"), 0).is_none());
+    let source = index.get_path(Path::new("source[abc].txt"), 0).unwrap();
+    assert_eq!(
+        git2::Repository::open(repo.path())
+            .unwrap()
+            .find_blob(source.id)
+            .unwrap()
+            .content(),
+        original.as_bytes()
+    );
+    for (path, expected) in [
+        ("renamed[abc].txt", worktree_content.as_str()),
+        ("sourcea.txt", "unrelated unstaged source\n"),
+        ("renameda.txt", "unrelated staged destination\n"),
+        ("b.txt", "unrelated unstaged file\n"),
+        ("other.txt", "a1\n"),
+    ] {
+        assert_eq!(
+            std::fs::read_to_string(repo.path().join(path)).unwrap(),
+            expected
+        );
+    }
+    assert!(!repo.path().join("source[abc].txt").exists());
+    assert!(!repo.path().join("a.txt").exists());
+}
+
+#[test]
+fn git2_unstage_case_only_renames_restores_original_index_spelling() {
+    if !git_available() {
+        eprintln!(
+            "git is unavailable, skipping git2_unstage_case_only_renames_restores_original_index_spelling"
+        );
+        return;
+    }
+
+    let repo = seeded_repo_with_two_files("unstage-case-only-renames");
+    repo.run_git(&["config", "core.ignorecase", "true"]);
+    // Multiple pairs exercise both HashSet orders without depending on its seed.
+    for number in 0..16 {
+        write(
+            repo.path().join(format!("lower{number}.txt")),
+            format!("content {number}\n"),
+        )
+        .unwrap();
+    }
+    repo.run_git(&["add", "."]);
+    repo.run_git(&["commit", "-m", "seed case-only renames"]);
+    let mut selected = Vec::new();
+    for number in 0..16 {
+        let source = format!("lower{number}.txt");
+        let destination = format!("LOWER{number}.txt");
+        repo.run_git(&["mv", "--", &source, &destination]);
+        selected.push(destination);
+    }
+    write(repo.path().join("b.txt"), "unrelated staged\n").unwrap();
+    repo.run_git(&["add", "--", "b.txt"]);
+    let mut backend = HybridGitBackend::open(repo.path()).expect("hybrid backend should open");
+
+    backend
+        .unstage_files(&selected)
+        .expect("case-only renames should unstage regardless of removal order");
+
+    assert_eq!(
+        repo.run_git_capture(&["diff", "--cached", "--name-only"]),
+        "b.txt\n"
+    );
+    let index = git2::Repository::open(repo.path())
+        .unwrap()
+        .index()
+        .unwrap();
+    for number in 0..16 {
+        let source = format!("lower{number}.txt");
+        let destination = format!("LOWER{number}.txt");
+        assert!(index.iter().any(|entry| entry.path == source.as_bytes()));
+        assert!(
+            !index
+                .iter()
+                .any(|entry| entry.path == destination.as_bytes())
+        );
+        assert_eq!(
+            std::fs::read_to_string(repo.path().join(destination)).unwrap(),
+            format!("content {number}\n")
+        );
+    }
+    assert_eq!(
+        repo.run_git_capture(&["show", ":b.txt"]),
+        "unrelated staged\n"
+    );
+}
+
+#[test]
+fn git2_unstage_symlink_rename_restores_link_mode_and_preserves_worktree() {
+    if !git_available() {
+        eprintln!(
+            "git is unavailable, skipping git2_unstage_symlink_rename_restores_link_mode_and_preserves_worktree"
+        );
+        return;
+    }
+
+    let repo = seeded_repo_with_two_files("unstage-symlink-rename");
+    // Git's symlink emulation exercises real link-mode entries without requiring
+    // Windows symlink privileges; the worktree contains the literal link target.
+    repo.run_git(&["config", "core.symlinks", "false"]);
+    write(repo.path().join("source-link"), "a.txt").unwrap();
+    repo.run_git(&["add", "--", "source-link"]);
+    let oid = repo.run_git_capture(&["rev-parse", ":source-link"]);
+    repo.run_git(&[
+        "update-index",
+        "--cacheinfo",
+        "120000",
+        oid.trim(),
+        "source-link",
+    ]);
+    repo.run_git(&["commit", "-m", "seed symlink"]);
+    repo.run_git(&["mv", "--", "source-link", "renamed-link"]);
+    write(repo.path().join("renamed-link"), "b.txt").unwrap();
+    write(repo.path().join("b.txt"), "unrelated staged\n").unwrap();
+    repo.run_git(&["add", "--", "b.txt"]);
+    let mut backend = HybridGitBackend::open(repo.path()).expect("hybrid backend should open");
+    assert!(backend.refresh_files().unwrap().files.iter().any(|file| {
+        file.path == "renamed-link" && file.staged && file.status == CommitFileStatus::Renamed
+    }));
+
+    backend
+        .unstage_file("renamed-link")
+        .expect("symlink rename should restore both paths");
+
+    assert_eq!(
+        repo.run_git_capture(&["diff", "--cached", "--name-only"]),
+        "b.txt\n"
+    );
+    let index = git2::Repository::open(repo.path())
+        .unwrap()
+        .index()
+        .unwrap();
+    let source = index.get_path(Path::new("source-link"), 0).unwrap();
+    assert_eq!(source.mode, 0o120000);
+    assert_eq!(source.id.to_string(), oid.trim());
+    assert!(index.get_path(Path::new("renamed-link"), 0).is_none());
+    assert!(!repo.path().join("source-link").exists());
+    assert_eq!(
+        std::fs::read_to_string(repo.path().join("renamed-link")).unwrap(),
+        "b.txt"
+    );
+    assert_eq!(
+        repo.run_git_capture(&["show", ":b.txt"]),
+        "unrelated staged\n"
+    );
+}
+
+#[test]
+fn git2_unstage_symlink_rename_pairs_identical_targets_like_git() {
+    if !git_available() {
+        eprintln!(
+            "git is unavailable, skipping git2_unstage_symlink_rename_pairs_identical_targets_like_git"
+        );
+        return;
+    }
+
+    let repo = seeded_repo_with_two_files("unstage-identical-symlink-renames");
+    repo.run_git(&["config", "core.symlinks", "false"]);
+    for directory in ["alpha", "beta", "new"] {
+        create_dir_all(repo.path().join(directory)).unwrap();
+    }
+    for path in ["alpha/source", "beta/other"] {
+        write(repo.path().join(path), "../a.txt").unwrap();
+        repo.run_git(&["add", "--", path]);
+        let oid = repo.run_git_capture(&["rev-parse", &format!(":{path}")]);
+        repo.run_git(&["update-index", "--cacheinfo", "120000", oid.trim(), path]);
+    }
+    repo.run_git(&["commit", "-m", "seed identical symlink targets"]);
+    // Git pairs identical blobs by basename, regardless of how they were moved.
+    repo.run_git(&["mv", "--", "alpha/source", "new/other"]);
+    repo.run_git(&["mv", "--", "beta/other", "new/source"]);
+    assert_eq!(
+        repo.run_git_capture(&["diff", "--cached", "--name-status", "--find-renames"]),
+        "R100\tbeta/other\tnew/other\nR100\talpha/source\tnew/source\n"
+    );
+    let mut backend = HybridGitBackend::open(repo.path()).expect("hybrid backend should open");
+
+    backend
+        .unstage_file("new/other")
+        .expect("only the displayed rename pair should unstage");
+
+    assert_eq!(
+        repo.run_git_capture(&["diff", "--cached", "--name-status", "--find-renames"]),
+        "R100\talpha/source\tnew/source\n"
+    );
+    let index = git2::Repository::open(repo.path())
+        .unwrap()
+        .index()
+        .unwrap();
+    assert!(index.get_path(Path::new("beta/other"), 0).is_some());
+    assert!(index.get_path(Path::new("alpha/source"), 0).is_none());
+    for path in ["new/other", "new/source"] {
+        assert_eq!(
+            std::fs::read_to_string(repo.path().join(path)).unwrap(),
+            "../a.txt"
+        );
+    }
+}
+
+#[test]
+fn git2_unstage_files_treats_selected_paths_as_literals() {
+    if !git_available() {
+        eprintln!(
+            "git is unavailable, skipping git2_unstage_files_treats_selected_paths_as_literals"
+        );
+        return;
+    }
+
+    let repo = seeded_repo_with_two_files("unstage-literal-paths");
+    for path in ["literal[abc].txt", "literala.txt"] {
+        write(repo.path().join(path), "original\n").unwrap();
+    }
+    repo.run_git(&["add", "."]);
+    repo.run_git(&["commit", "-m", "seed literal paths"]);
+    for path in [
+        "literal[abc].txt",
+        "literala.txt",
+        "new[abc].txt",
+        "newa.txt",
+    ] {
+        write(repo.path().join(path), "staged\n").unwrap();
+    }
+    repo.run_git(&["add", "."]);
+    write(repo.path().join("literal[abc].txt"), "later edit\n").unwrap();
+    let mut backend = HybridGitBackend::open(repo.path()).expect("hybrid backend should open");
+
+    backend
+        .unstage_files(&["literal[abc].txt".to_string(), "new[abc].txt".to_string()])
+        .expect("literal paths should unstage without matching other files");
+
+    assert_eq!(
+        repo.run_git_capture(&["diff", "--cached", "--name-only"]),
+        "literala.txt\nnewa.txt\n"
+    );
+    assert_eq!(
+        repo.run_git_capture(&["show", ":literal[abc].txt"]),
+        "original\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(repo.path().join("literal[abc].txt")).unwrap(),
+        "later edit\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(repo.path().join("new[abc].txt")).unwrap(),
+        "staged\n"
+    );
+}
+
+#[test]
+fn git2_unstage_files_before_first_commit_preserves_unselected_entries() {
+    if !git_available() {
+        eprintln!(
+            "git is unavailable, skipping git2_unstage_files_before_first_commit_preserves_unselected_entries"
+        );
+        return;
+    }
+
+    let repo = TmpGitRepo::new("unstage-unborn");
+    for path in ["new[abc].txt", "newa.txt"] {
+        write(repo.path().join(path), "staged\n").unwrap();
+    }
+    repo.run_git(&["add", "."]);
+    let mut backend = HybridGitBackend::open(repo.path()).expect("hybrid backend should open");
+
+    backend
+        .unstage_files(&["new[abc].txt".to_string(), "missing.txt".to_string()])
+        .expect("unstaging before the first commit should remove only selected entries");
+    backend
+        .unstage_file("new[abc].txt")
+        .expect("unstaging again should be harmless");
+
+    assert_eq!(repo.run_git_capture(&["ls-files"]), "newa.txt\n");
+    assert_eq!(
+        std::fs::read_to_string(repo.path().join("new[abc].txt")).unwrap(),
+        "staged\n"
+    );
+}
+
+#[test]
 fn hybrid_backend_uses_cli_executor_for_commit_creation() {
     if !git_available() {
         eprintln!(

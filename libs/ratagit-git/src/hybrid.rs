@@ -341,23 +341,107 @@ impl GitBackendWrite for HybridGitBackend {
             return Ok(());
         }
 
-        let validated = paths
+        let mut selected = paths
             .iter()
-            .map(|path| {
-                validate_repo_relative_path(path)?;
-                Ok(path.as_str())
-            })
-            .collect::<Result<Vec<_>, GitError>>()?;
+            .map(|path| validate_repo_relative_path(path).map(Path::to_path_buf))
+            .collect::<Result<HashSet<_>, GitError>>()?;
+        let mut index = self.repo.index()?;
+        let mut head_index = git2::Index::new()?;
 
         if let Some(head) = self.head_object()? {
-            self.repo
-                .reset_default(Some(&head), validated.iter().copied())?;
-            return Ok(());
+            let tree = head.peel_to_tree()?;
+            head_index.read_tree(&tree)?;
+
+            // A staged rename is displayed by its destination. Detect renames
+            // before filtering paths so its deleted source is restored too.
+            // Ordinary modifications need no repository-wide rename search.
+            if selected.iter().any(|path| {
+                head_index.get_path(path, 0).is_none() && index.get_path(path, 0).is_some()
+            }) {
+                let mut diff = self
+                    .repo
+                    .diff_tree_to_index(Some(&tree), Some(&index), None)?;
+                let mut options = git2::DiffFindOptions::new();
+                options.renames(true);
+                diff.find_similar(Some(&mut options))?;
+                for delta in diff
+                    .deltas()
+                    .filter(|delta| delta.status() == git2::Delta::Renamed)
+                {
+                    if let Some(destination) = delta.new_file().path()
+                        && selected.contains(destination)
+                        && let Some(source) = delta.old_file().path()
+                    {
+                        selected.insert(source.to_path_buf());
+                    }
+                }
+
+                // libgit2's similarity search excludes symlinks. Git recognizes
+                // their renames only when the link target blob is unchanged.
+                let mut deleted_links: HashMap<Oid, Vec<PathBuf>> = HashMap::new();
+                for delta in diff.deltas().filter(|delta| {
+                    delta.status() == git2::Delta::Deleted
+                        && delta.old_file().mode() == git2::FileMode::Link
+                }) {
+                    if let Some(path) = delta.old_file().path() {
+                        deleted_links
+                            .entry(delta.old_file().id())
+                            .or_default()
+                            .push(path.to_path_buf());
+                    }
+                }
+                for sources in deleted_links.values_mut() {
+                    sources.sort();
+                }
+                let mut added_links = diff
+                    .deltas()
+                    .filter(|delta| {
+                        delta.status() == git2::Delta::Added
+                            && delta.new_file().mode() == git2::FileMode::Link
+                    })
+                    .filter_map(|delta| {
+                        delta
+                            .new_file()
+                            .path()
+                            .map(|path| (path.to_path_buf(), delta.new_file().id()))
+                    })
+                    .collect::<Vec<_>>();
+                added_links.sort_by(|left, right| left.0.cmp(&right.0));
+                for (destination, oid) in added_links {
+                    if let Some(sources) = deleted_links.get_mut(&oid)
+                        && !sources.is_empty()
+                    {
+                        // Git prefers matching basenames among identical blobs,
+                        // then the first source in pathname order. Consume pairs
+                        // for unselected destinations too to avoid reusing them.
+                        let matching = sources
+                            .iter()
+                            .position(|source| source.file_name() == destination.file_name())
+                            .unwrap_or(0);
+                        let source = sources.remove(matching);
+                        if selected.contains(&destination) {
+                            selected.insert(source);
+                        }
+                    }
+                }
+            }
         }
 
-        let mut index = self.repo.index()?;
-        for path in validated {
-            index.remove_path(Path::new(path))?;
+        // Update exact entries instead of reset_default's glob pathspecs. Only
+        // the index changes; renamed destinations and later edits stay on disk.
+        // Remove everything first: on a case-insensitive index, removing A.txt
+        // after restoring a.txt would remove the restored entry again.
+        for path in &selected {
+            match index.remove_path(path) {
+                Ok(()) => {}
+                Err(error) if error.code() == ErrorCode::NotFound => {}
+                Err(error) => return Err(error.into()),
+            }
+        }
+        for path in selected {
+            if let Some(entry) = head_index.get_path(&path, 0) {
+                index.add(&entry)?;
+            }
         }
         index.write()?;
         Ok(())
