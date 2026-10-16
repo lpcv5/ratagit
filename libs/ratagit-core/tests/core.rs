@@ -2800,6 +2800,47 @@ fn auto_stash_operation_failure_refreshes_after_possible_partial_mutation() {
 }
 
 #[test]
+fn stash_pop_failure_refreshes_after_possible_conflict_and_keeps_stash() {
+    let mut state = context_with_focus(PanelFocus::Stash);
+    let stash = StashEntry {
+        id: "stash@{0}".to_string(),
+        summary: "saved changes".to_string(),
+    };
+    state.repo.stash.items = vec![stash.clone()];
+    assert_eq!(
+        update(&mut state, Action::Ui(UiAction::StashPopSelected)),
+        vec![Command::StashPop {
+            stash_id: stash.id.clone(),
+        }]
+    );
+    assert_eq!(
+        state.work.mutation.operation_pending.as_deref(),
+        Some("stash_pop")
+    );
+
+    let commands = update(
+        &mut state,
+        Action::GitResult(GitResult::StashPop {
+            stash_id: stash.id.clone(),
+            result: Err("CONFLICT (content): Merge conflict in a.txt".to_string()),
+        }),
+    );
+
+    assert_eq!(commands, Command::refresh_all_commands());
+    assert!(state.work.refresh.refresh_pending);
+    assert_eq!(
+        state.work.refresh.pending_refreshes,
+        RefreshTarget::ALL.into_iter().collect()
+    );
+    assert!(state.work.mutation.operation_pending.is_none());
+    assert_eq!(state.last_operation.as_deref(), Some("stash_pop"));
+    assert_eq!(state.repo.stash.items, vec![stash]);
+    let error = "Failed to stash pop: stash@{0}: CONFLICT (content): Merge conflict in a.txt";
+    assert_eq!(state.repo.status.last_error.as_deref(), Some(error));
+    assert!(state.notices.iter().any(|notice| notice == error));
+}
+
+#[test]
 fn ordinary_operation_failure_does_not_refresh_after_failure() {
     let mut state = AppContext::default();
 

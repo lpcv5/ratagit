@@ -207,6 +207,97 @@ fn real_git_smoke_stage_and_unstage_selected_file() {
 }
 
 #[test]
+fn real_git_smoke_unstage_rename_restores_both_index_paths() {
+    if !git_available() {
+        return;
+    }
+    let repo = seeded_repo("harness-unstage-rename");
+    repo.run_git(&["mv", "a.txt", "renamed.txt"]);
+    write(repo.path().join("b.txt"), "unrelated staged\n").unwrap();
+    repo.run_git(&["add", "--", "b.txt"]);
+    let mut runtime = runtime_for(&repo);
+    with_case_artifacts(&repo, &mut runtime, |runtime| {
+        runtime.dispatch_ui(UiAction::RefreshAll);
+        runtime.dispatch_ui(UiAction::MoveDown);
+        assert!(runtime.render_terminal_text().contains("R renamed.txt"));
+        let commands = ratagit_core::update(
+            &mut runtime.state().clone(),
+            ratagit_core::Action::Ui(UiAction::ToggleSelectedFileStage),
+        );
+        assert_eq!(
+            commands,
+            vec![ratagit_core::Command::UnstageFiles {
+                paths: vec!["renamed.txt".to_string()],
+            }]
+        );
+        runtime.dispatch_ui(UiAction::ToggleSelectedFileStage);
+        assert_eq!(
+            repo.run_git_capture(&["diff", "--cached", "--name-only"])
+                .trim(),
+            "b.txt"
+        );
+        assert_eq!(repo.run_git_capture(&["show", ":a.txt"]), "a1\n");
+        assert!(!repo.path().join("a.txt").exists());
+        assert_eq!(
+            std::fs::read_to_string(repo.path().join("renamed.txt")).unwrap(),
+            "a1\n"
+        );
+        assert!(runtime.render_terminal_text().contains("? renamed.txt"));
+        assert_eq!(runtime.state().last_operation.as_deref(), Some("unstage"));
+    });
+}
+
+#[test]
+fn real_git_smoke_discard_literal_path_preserves_unselected_changes() {
+    if !git_available() {
+        return;
+    }
+    let repo = seeded_repo("harness-discard-literal-path");
+    write(repo.path().join("[ab].txt"), "selected untracked\n").unwrap();
+    write(repo.path().join("a.txt"), "unselected staged\n").unwrap();
+    repo.run_git(&["add", "--", "a.txt"]);
+    write(repo.path().join("a.txt"), "unselected worktree\n").unwrap();
+    let mut runtime = runtime_for(&repo);
+    with_case_artifacts(&repo, &mut runtime, |runtime| {
+        runtime.dispatch_ui(UiAction::RefreshAll);
+        assert!(runtime.render_terminal_text().contains("[ab].txt"));
+        runtime.dispatch_ui(UiAction::OpenDiscardConfirm);
+        assert!(runtime.render_terminal_text().contains("- [ab].txt"));
+        let commands = ratagit_core::update(
+            &mut runtime.state().clone(),
+            ratagit_core::Action::Ui(UiAction::ConfirmDiscard),
+        );
+        assert_eq!(
+            commands,
+            vec![ratagit_core::Command::DiscardFiles {
+                paths: vec!["[ab].txt".to_string()],
+            }]
+        );
+        runtime.dispatch_ui(UiAction::ConfirmDiscard);
+        assert!(!repo.path().join("[ab].txt").exists());
+        assert_eq!(
+            repo.run_git_capture(&["show", ":a.txt"]),
+            "unselected staged\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(repo.path().join("a.txt")).unwrap(),
+            "unselected worktree\n"
+        );
+        assert!(
+            runtime
+                .render_terminal_text()
+                .contains("notice=Discarded [ab].txt")
+        );
+        assert_eq!(runtime.state().repo.files.items.len(), 1);
+        assert_eq!(runtime.state().repo.files.items[0].path, "a.txt");
+        assert_eq!(
+            runtime.state().last_operation.as_deref(),
+            Some("discard_files")
+        );
+    });
+}
+
+#[test]
 fn real_git_smoke_stash_push_and_pop_including_untracked() {
     if !git_available() {
         eprintln!(
@@ -242,6 +333,12 @@ fn real_git_smoke_stash_push_and_pop_including_untracked() {
             .any(|stash| stash.summary.contains("real smoke stash"))
     );
 
+    runtime.dispatch_ui(UiAction::FocusPanel {
+        panel: PanelFocus::Stash,
+    });
+    let preview = runtime.render_terminal_text();
+    assert!(preview.contains("diff --git a/new.txt b/new.txt"));
+    assert!(preview.contains("+new"));
     runtime.dispatch_ui(UiAction::StashPopSelected);
 
     let dirty_status = repo.run_git_capture(&["status", "--short", "--untracked-files=all"]);
@@ -375,6 +472,10 @@ fn real_git_smoke_dirty_branch_checkout_uses_auto_stash() {
 }
 #[path = "real_git/native_diff.rs"]
 mod native_diff;
+#[path = "real_git/stash_conflict.rs"]
+mod stash_conflict;
+#[path = "real_git/stash_scope.rs"]
+mod stash_scope;
 #[test]
 fn test_real_git_stage_all_ignore_and_stash_confirmation() {
     let repo = seeded_repo("harness-file-extras");

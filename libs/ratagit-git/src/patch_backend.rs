@@ -92,6 +92,18 @@ pub(super) fn load(repo: &mut Repository, request: PatchRequest) -> Result<Patch
                 &mut patch,
                 &mut remaining,
             )?;
+            // Stashes made with --include-untracked keep those files in a
+            // separate third parent, absent from the tracked worktree tree.
+            if commit.parent_count() > 2 {
+                let untracked = commit.parent(2)?.tree()?;
+                let diff = repo.diff_tree_to_tree(None, Some(&untracked), Some(&mut opts))?;
+                append(
+                    &diff,
+                    PatchSource::Stash(*index),
+                    &mut patch,
+                    &mut remaining,
+                )?;
+            }
         }
     }
     protect_staged_renames(repo, &mut patch)?;

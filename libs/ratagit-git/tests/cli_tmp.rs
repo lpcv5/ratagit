@@ -241,6 +241,395 @@ fn cli_stash_files_limits_stash_to_selected_paths() {
 }
 
 #[test]
+fn cli_stash_files_payload_excludes_unrelated_staged_changes_after_pop() {
+    if !git_available() {
+        return;
+    }
+
+    let repo = seeded_repo_with_two_files("cli-stash-selected-payload");
+    write(repo.path().join("a.txt"), "STAGED\n").unwrap();
+    repo.run_git(&["add", "--", "a.txt"]);
+    write(repo.path().join("a.txt"), "unrelated worktree\n").unwrap();
+    write(repo.path().join("b.txt"), "selected worktree\n").unwrap();
+    write(repo.path().join("new.txt"), "selected untracked\n").unwrap();
+    write(repo.path().join("keep.txt"), "unrelated untracked\n").unwrap();
+
+    let mut backend = HybridGitBackend::open(repo.path()).unwrap();
+    backend
+        .stash_files("selected payload", &["b.txt".into(), "new.txt".into()])
+        .unwrap();
+
+    assert_eq!(
+        repo.run_git_capture(&["stash", "show", "--include-untracked", "--name-only"]),
+        "b.txt\nnew.txt\n"
+    );
+    assert_eq!(
+        repo.run_git_capture(&["diff", "--name-only", "stash@{0}^1", "stash@{0}^2"]),
+        ""
+    );
+    assert_eq!(repo.run_git_capture(&["show", ":a.txt"]), "STAGED\n");
+    assert_eq!(
+        std::fs::read_to_string(repo.path().join("a.txt")).unwrap(),
+        "unrelated worktree\n"
+    );
+    assert_eq!(
+        repo.run_git_capture(&["status", "--short", "--untracked-files=all"]),
+        "MM a.txt\n?? keep.txt\n"
+    );
+
+    backend.discard_files(&["a.txt".into()]).unwrap();
+    backend.stash_pop("stash@{0}").unwrap();
+
+    assert_eq!(repo.run_git_capture(&["show", ":a.txt"]), "a1\n");
+    assert_eq!(
+        std::fs::read_to_string(repo.path().join("a.txt")).unwrap(),
+        "a1\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(repo.path().join("b.txt")).unwrap(),
+        "selected worktree\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(repo.path().join("new.txt")).unwrap(),
+        "selected untracked\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(repo.path().join("keep.txt")).unwrap(),
+        "unrelated untracked\n"
+    );
+    assert!(repo.run_git_capture(&["stash", "list"]).is_empty());
+}
+
+#[test]
+fn cli_stash_files_preserves_selected_index_and_worktree_layers() {
+    if !git_available() {
+        return;
+    }
+
+    let repo = seeded_repo_with_two_files("cli-stash-selected-layers");
+    write(repo.path().join("a.txt"), "unrelated index\n").unwrap();
+    write(repo.path().join("b.txt"), "selected index\n").unwrap();
+    write(repo.path().join("added.txt"), "selected added index\n").unwrap();
+    repo.run_git(&["add", "--", "a.txt", "b.txt", "added.txt"]);
+    write(repo.path().join("a.txt"), "unrelated worktree\n").unwrap();
+    write(repo.path().join("b.txt"), "selected worktree\n").unwrap();
+    write(repo.path().join("added.txt"), "selected added worktree\n").unwrap();
+    write(repo.path().join("new.txt"), "selected untracked\n").unwrap();
+
+    let mut backend = HybridGitBackend::open(repo.path()).unwrap();
+    backend
+        .stash_files(
+            "selected layers",
+            &["b.txt".into(), "added.txt".into(), "new.txt".into()],
+        )
+        .unwrap();
+
+    assert_eq!(
+        repo.run_git_capture(&["stash", "show", "--include-untracked", "--name-only"]),
+        "added.txt\nb.txt\nnew.txt\n"
+    );
+    assert_eq!(
+        repo.run_git_capture(&["diff", "--name-only", "stash@{0}^1", "stash@{0}^2"]),
+        "added.txt\nb.txt\n"
+    );
+    assert_eq!(
+        repo.run_git_capture(&["show", "stash@{0}^2:b.txt"]),
+        "selected index\n"
+    );
+    assert_eq!(
+        repo.run_git_capture(&["show", "stash@{0}:b.txt"]),
+        "selected worktree\n"
+    );
+    assert_eq!(repo.run_git_capture(&["show", ":b.txt"]), "b1\n");
+    assert!(!repo.path().join("added.txt").exists());
+    assert_eq!(repo.run_git_capture(&["status", "--short"]), "MM a.txt\n");
+
+    assert_eq!(
+        repo.run_git_capture(&["show", ":a.txt"]),
+        "unrelated index\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(repo.path().join("a.txt")).unwrap(),
+        "unrelated worktree\n"
+    );
+    // Git cannot apply --index onto an unrelated staged + unstaged edit.
+    // The payload still keeps both selected layers for a later clean apply.
+    backend.discard_files(&["a.txt".into()]).unwrap();
+    repo.run_git(&["stash", "pop", "--index"]);
+
+    assert_eq!(
+        repo.run_git_capture(&["show", ":b.txt"]),
+        "selected index\n"
+    );
+    assert_eq!(
+        repo.run_git_capture(&["show", ":added.txt"]),
+        "selected added index\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(repo.path().join("added.txt")).unwrap(),
+        "selected added worktree\n"
+    );
+    assert_eq!(repo.run_git_capture(&["show", ":a.txt"]), "a1\n");
+    assert_eq!(
+        std::fs::read_to_string(repo.path().join("a.txt")).unwrap(),
+        "a1\n"
+    );
+}
+
+#[test]
+fn cli_stash_files_treats_glob_characters_as_literal_paths() {
+    if !git_available() {
+        return;
+    }
+
+    for tracked in [false, true] {
+        let repo = seeded_repo_with_two_files("cli-stash-selected-literal");
+        let selected = "[ab].txt";
+        if tracked {
+            write(repo.path().join(selected), "literal base\n").unwrap();
+            repo.run_git(&["add", "--", ":(literal)[ab].txt"]);
+            repo.run_git(&["commit", "-m", "track literal filename"]);
+        }
+        write(repo.path().join(selected), "literal change\n").unwrap();
+        write(repo.path().join("a.txt"), "unrelated staged\n").unwrap();
+        repo.run_git(&["add", "--", "a.txt"]);
+        write(repo.path().join("a.txt"), "unrelated worktree\n").unwrap();
+        write(repo.path().join("b.txt"), "unrelated dirty\n").unwrap();
+
+        let mut backend = HybridGitBackend::open(repo.path()).unwrap();
+        backend
+            .stash_files("literal stash", &[selected.into()])
+            .unwrap();
+
+        assert_eq!(
+            repo.run_git_capture(&["stash", "show", "--include-untracked", "--name-only"]),
+            "[ab].txt\n"
+        );
+        assert_eq!(
+            repo.run_git_capture(&["show", ":a.txt"]),
+            "unrelated staged\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(repo.path().join("a.txt")).unwrap(),
+            "unrelated worktree\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(repo.path().join("b.txt")).unwrap(),
+            "unrelated dirty\n"
+        );
+        if tracked {
+            assert_eq!(
+                std::fs::read_to_string(repo.path().join(selected)).unwrap(),
+                "literal base\n"
+            );
+        } else {
+            assert!(!repo.path().join(selected).exists());
+            assert!(
+                repo.run_git_capture(&["diff", "--name-only", "stash@{0}^1", "stash@{0}^2"])
+                    .is_empty()
+            );
+        }
+        backend.stash_pop("stash@{0}").unwrap();
+        assert_eq!(
+            std::fs::read_to_string(repo.path().join(selected)).unwrap(),
+            "literal change\n"
+        );
+    }
+}
+
+#[test]
+fn cli_stash_files_clean_selection_preserves_existing_stash_or_no_stash() {
+    if !git_available() {
+        return;
+    }
+
+    for existing_stash in [false, true] {
+        let repo = seeded_repo_with_two_files("cli-stash-selected-clean");
+        if existing_stash {
+            write(repo.path().join("b.txt"), "older stash\n").unwrap();
+            repo.run_git(&["stash", "push", "-m", "older stash"]);
+        }
+        let before = repo.run_git_capture(&["stash", "list", "--format=%H"]);
+        write(repo.path().join("a.txt"), "unrelated staged\n").unwrap();
+        repo.run_git(&["add", "--", "a.txt"]);
+        write(repo.path().join("a.txt"), "unrelated worktree\n").unwrap();
+        write(repo.path().join("keep.txt"), "unrelated untracked\n").unwrap();
+        let mut backend = HybridGitBackend::open(repo.path()).unwrap();
+
+        backend
+            .stash_files("no changes", &["b.txt".into()])
+            .unwrap();
+        assert_eq!(
+            repo.run_git_capture(&["stash", "list", "--format=%H"]),
+            before
+        );
+        assert_eq!(
+            repo.run_git_capture(&["show", ":a.txt"]),
+            "unrelated staged\n"
+        );
+        assert_eq!(
+            repo.run_git_capture(&["status", "--short", "--untracked-files=all"]),
+            "MM a.txt\n?? keep.txt\n"
+        );
+
+        write(repo.path().join("b.txt"), "new selected stash\n").unwrap();
+        backend.stash_files("new stash", &["b.txt".into()]).unwrap();
+        backend.stash_pop("stash@{0}").unwrap();
+        assert_eq!(
+            repo.run_git_capture(&["stash", "list", "--format=%H"]),
+            before
+        );
+    }
+}
+
+#[test]
+fn cli_stash_files_failure_keeps_index_worktree_and_existing_stash() {
+    if !git_available() {
+        return;
+    }
+
+    for lock_index in [false, true] {
+        let repo = seeded_repo_with_two_files("cli-stash-selected-failure");
+        write(repo.path().join("b.txt"), "older stash\n").unwrap();
+        repo.run_git(&["stash", "push", "-m", "older stash"]);
+        let before_stashes = repo.run_git_capture(&["stash", "list", "--format=%H"]);
+        write(repo.path().join("a.txt"), "unrelated staged\n").unwrap();
+        write(repo.path().join("b.txt"), "selected staged\n").unwrap();
+        repo.run_git(&["add", "--", "a.txt", "b.txt"]);
+        write(repo.path().join("a.txt"), "unrelated worktree\n").unwrap();
+        write(repo.path().join("b.txt"), "selected worktree\n").unwrap();
+        write(repo.path().join("new.txt"), "selected untracked\n").unwrap();
+        let before_index = std::fs::read(repo.path().join(".git/index")).unwrap();
+        let lock = if lock_index {
+            ".git/index.lock"
+        } else {
+            ".git/refs/stash.lock"
+        };
+        write(repo.path().join(lock), "other Git operation\n").unwrap();
+        let mut backend = HybridGitBackend::open(repo.path()).unwrap();
+
+        backend
+            .stash_files("must fail", &["b.txt".into(), "new.txt".into()])
+            .expect_err("a held Git lock must prevent the stash");
+
+        assert_eq!(
+            std::fs::read(repo.path().join(".git/index")).unwrap(),
+            before_index
+        );
+        assert_eq!(
+            repo.run_git_capture(&["stash", "list", "--format=%H"]),
+            before_stashes
+        );
+        assert_eq!(
+            std::fs::read_to_string(repo.path().join("a.txt")).unwrap(),
+            "unrelated worktree\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(repo.path().join("b.txt")).unwrap(),
+            "selected worktree\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(repo.path().join("new.txt")).unwrap(),
+            "selected untracked\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(repo.path().join(lock)).unwrap(),
+            "other Git operation\n"
+        );
+        if !lock_index {
+            assert!(!repo.path().join(".git/index.lock").exists());
+        }
+    }
+}
+
+#[test]
+fn cli_stash_files_keeps_shared_index_bases_with_aggressive_expiration() {
+    if !git_available() {
+        return;
+    }
+
+    for fail_stash in [false, true] {
+        let repo = seeded_repo_with_two_files("cli-stash-selected-split-expiration");
+        write(repo.path().join("a.txt"), "unrelated staged\n").unwrap();
+        write(repo.path().join("b.txt"), "selected staged\n").unwrap();
+        repo.run_git(&["add", "--", "a.txt", "b.txt"]);
+        write(repo.path().join("a.txt"), "unrelated worktree\n").unwrap();
+        write(repo.path().join("b.txt"), "selected worktree\n").unwrap();
+        write(repo.path().join("new.txt"), "selected untracked\n").unwrap();
+        repo.run_git(&["config", "core.splitIndex", "true"]);
+        repo.run_git(&["config", "splitIndex.maxPercentChange", "0"]);
+        repo.run_git(&["update-index", "--split-index"]);
+        let shared_path = repo.run_git_capture(&["rev-parse", "--shared-index-path"]);
+        assert!(!shared_path.trim().is_empty());
+        let shared_path = repo.path().join(shared_path.trim());
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&shared_path)
+            .unwrap()
+            .set_modified(UNIX_EPOCH)
+            .unwrap();
+        repo.run_git(&["config", "splitIndex.sharedIndexExpire", "now"]);
+        let before_config = std::fs::read(repo.path().join(".git/config")).unwrap();
+        let before_index = std::fs::read(repo.path().join(".git/index")).unwrap();
+        if fail_stash {
+            write(
+                repo.path().join(".git/refs/stash.lock"),
+                "other Git operation\n",
+            )
+            .unwrap();
+        }
+        let mut backend = HybridGitBackend::open(repo.path()).unwrap();
+
+        let result = backend.stash_files("split index", &["b.txt".into(), "new.txt".into()]);
+
+        assert!(
+            shared_path.exists(),
+            "alternate index must not expire the real index base"
+        );
+        assert_eq!(
+            std::fs::read(repo.path().join(".git/config")).unwrap(),
+            before_config
+        );
+        assert_eq!(
+            repo.run_git_capture(&["show", ":a.txt"]),
+            "unrelated staged\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(repo.path().join("a.txt")).unwrap(),
+            "unrelated worktree\n"
+        );
+        if fail_stash {
+            result.expect_err("a held stash lock must prevent the stash");
+            assert_eq!(
+                std::fs::read(repo.path().join(".git/index")).unwrap(),
+                before_index
+            );
+            assert_eq!(
+                repo.run_git_capture(&["show", ":b.txt"]),
+                "selected staged\n"
+            );
+            assert_eq!(
+                std::fs::read_to_string(repo.path().join("b.txt")).unwrap(),
+                "selected worktree\n"
+            );
+            assert!(repo.path().join("new.txt").exists());
+            assert!(repo.run_git_capture(&["stash", "list"]).is_empty());
+        } else {
+            result.expect("selected stash should work with split index expiration enabled");
+            assert_eq!(repo.run_git_capture(&["show", ":b.txt"]), "b1\n");
+            assert_eq!(
+                repo.run_git_capture(&["stash", "show", "--include-untracked", "--name-only"]),
+                "b.txt\nnew.txt\n"
+            );
+            assert_eq!(
+                repo.run_git_capture(&["show", "stash@{0}^2:b.txt"]),
+                "selected staged\n"
+            );
+        }
+    }
+}
+
+#[test]
 fn cli_reset_hard_clears_tracked_changes_but_keeps_untracked() {
     if !git_available() {
         eprintln!(
@@ -336,6 +725,57 @@ fn cli_discard_files_restores_tracked_and_removes_untracked_targets() {
     assert!(!status.contains("a.txt"));
     assert!(!status.contains("new.txt"));
     assert!(status.contains("?? keep.txt"));
+}
+
+#[test]
+fn cli_discard_files_treats_glob_characters_as_literal_paths() {
+    if !git_available() {
+        return;
+    }
+
+    for tracked in [false, true] {
+        let repo = seeded_repo_with_two_files("cli-discard-literal-path");
+        let selected = "[ab].txt";
+        if tracked {
+            write(repo.path().join(selected), "selected base\n").unwrap();
+            repo.run_git(&["add", "--", ":(literal)[ab].txt"]);
+            repo.run_git(&["commit", "-m", "track literal filename"]);
+        }
+        write(repo.path().join(selected), "selected change\n").unwrap();
+        write(repo.path().join("a.txt"), "unrelated staged\n").unwrap();
+        repo.run_git(&["add", "--", "a.txt"]);
+        write(repo.path().join("a.txt"), "unrelated worktree\n").unwrap();
+        write(repo.path().join("b.txt"), "another unrelated change\n").unwrap();
+
+        let mut backend = HybridGitBackend::open(repo.path()).unwrap();
+        backend.discard_files(&[selected.to_string()]).unwrap();
+
+        if tracked {
+            assert_eq!(
+                std::fs::read_to_string(repo.path().join(selected)).unwrap(),
+                "selected base\n"
+            );
+        } else {
+            assert!(!repo.path().join(selected).exists());
+        }
+        assert_eq!(
+            repo.run_git_capture(&["show", ":a.txt"]),
+            "unrelated staged\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(repo.path().join("a.txt")).unwrap(),
+            "unrelated worktree\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(repo.path().join("b.txt")).unwrap(),
+            "another unrelated change\n"
+        );
+        assert_eq!(
+            repo.run_git_capture(&["diff", "--cached", "--name-only"])
+                .trim(),
+            "a.txt"
+        );
+    }
 }
 
 #[test]

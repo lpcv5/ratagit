@@ -1,5 +1,5 @@
 use super::*;
-use ratagit_core::patch::{PatchDirection, PatchLineKind, PatchRequest};
+use ratagit_core::patch::{PatchChange, PatchDirection, PatchLineKind, PatchRequest, PatchSource};
 
 fn tracked_repo(name: &str, content: &[u8]) -> TmpGitRepo {
     let repo = TmpGitRepo::new(name);
@@ -8,6 +8,235 @@ fn tracked_repo(name: &str, content: &[u8]) -> TmpGitRepo {
     repo.run_git(&["add", "--", "file.txt"]);
     repo.run_git(&["commit", "-m", "initial"]);
     repo
+}
+
+#[test]
+fn test_stash_patch_includes_tracked_and_untracked_files_read_only() {
+    let repo = tracked_repo("stash-patch-mixed", b"before\n");
+    write(repo.path().join("file.txt"), "after\n").unwrap();
+    write(repo.path().join("new.txt"), "untracked content\n").unwrap();
+    repo.run_git(&["stash", "push", "--include-untracked", "-m", "mixed"]);
+    let before = (
+        repo.run_git_capture(&["status", "--porcelain=v1"]),
+        repo.run_git_capture(&["ls-files", "--stage"]),
+        repo.run_git_capture(&["rev-parse", "stash@{0}"]),
+    );
+    let mut backend = HybridGitBackend::open(repo.path()).unwrap();
+    let patch = backend
+        .load_patch(PatchRequest::Stash {
+            index: 0,
+            path: None,
+        })
+        .unwrap();
+    assert!(!patch.truncated);
+    assert_eq!(patch.files.len(), 2);
+    assert!(
+        patch
+            .files
+            .iter()
+            .all(|file| file.source == PatchSource::Stash(0))
+    );
+    assert_eq!(
+        patch.files[0].new.path.as_deref(),
+        Some(Path::new("file.txt"))
+    );
+    let added = &patch.files[1];
+    assert_eq!(added.new.path.as_deref(), Some(Path::new("new.txt")));
+    assert_eq!(added.change, PatchChange::Added);
+    assert!(added.old.path.is_none());
+    assert_eq!(added.new.mode, 0o100644);
+    let header = String::from_utf8_lossy(&added.header);
+    assert!(header.starts_with("diff --git a/new.txt b/new.txt\n"));
+    assert!(header.contains("new file mode 100644\n"));
+    assert!(header.contains("--- /dev/null\n+++ b/new.txt\n"));
+    assert_eq!(added.hunks[0].lines[0].kind, PatchLineKind::Added);
+    assert_eq!(added.hunks[0].lines[0].content, b"untracked content\n");
+    let ids = patch.line_ids();
+    for direction in [
+        PatchDirection::Stage,
+        PatchDirection::Unstage,
+        PatchDirection::Discard,
+    ] {
+        assert!(backend.apply_patch_lines(&patch, &ids, direction).is_err());
+    }
+    assert_eq!(
+        before,
+        (
+            repo.run_git_capture(&["status", "--porcelain=v1"]),
+            repo.run_git_capture(&["ls-files", "--stage"]),
+            repo.run_git_capture(&["rev-parse", "stash@{0}"]),
+        )
+    );
+    assert!(!repo.path().join("new.txt").exists());
+    assert_eq!(
+        std::fs::read(repo.path().join("file.txt")).unwrap(),
+        b"before\n"
+    );
+}
+
+#[test]
+fn test_stash_patch_includes_untracked_only_stash() {
+    let repo = tracked_repo("stash-patch-untracked-only", b"base\n");
+    write(repo.path().join("new.txt"), "untracked only\n").unwrap();
+    repo.run_git(&["stash", "push", "--include-untracked"]);
+    let mut backend = HybridGitBackend::open(repo.path()).unwrap();
+    let patch = backend
+        .load_patch(PatchRequest::Stash {
+            index: 0,
+            path: None,
+        })
+        .unwrap();
+    assert!(!patch.truncated);
+    assert_eq!(patch.files.len(), 1);
+    assert_eq!(
+        patch.files[0].new.path.as_deref(),
+        Some(Path::new("new.txt"))
+    );
+    assert_eq!(patch.files[0].source, PatchSource::Stash(0));
+    assert_eq!(
+        patch.files[0].hunks[0].lines[0].content,
+        b"untracked only\n"
+    );
+}
+
+#[test]
+fn test_stash_patch_filters_tracked_and_untracked_paths_literally() {
+    let repo = tracked_repo("stash-patch-paths", b"before\n");
+    write(repo.path().join("file.txt"), "after\n").unwrap();
+    write(repo.path().join("[new].txt"), "literal path\n").unwrap();
+    write(repo.path().join("n.txt"), "glob lookalike\n").unwrap();
+    create_dir_all(repo.path().join("nested")).unwrap();
+    write(repo.path().join("nested/new.txt"), "nested content\n").unwrap();
+    repo.run_git(&["stash", "push", "--include-untracked"]);
+    let mut backend = HybridGitBackend::open(repo.path()).unwrap();
+    for (path, expected_path, expected_content) in [
+        ("file.txt", "file.txt", b"after\n".as_slice()),
+        ("[new].txt", "[new].txt", b"literal path\n".as_slice()),
+        ("nested", "nested/new.txt", b"nested content\n".as_slice()),
+    ] {
+        let patch = backend
+            .load_patch(PatchRequest::Stash {
+                index: 0,
+                path: Some(path.into()),
+            })
+            .unwrap();
+        assert_eq!(patch.files.len(), 1, "filter {path}");
+        let file = &patch.files[0];
+        assert_eq!(file.new.path.as_deref(), Some(Path::new(expected_path)));
+        assert_eq!(file.source, PatchSource::Stash(0));
+        assert!(
+            file.hunks.iter().flat_map(|hunk| &hunk.lines).any(|line| {
+                line.kind == PatchLineKind::Added && line.content == expected_content
+            })
+        );
+    }
+    let patch = backend
+        .load_patch(PatchRequest::Stash {
+            index: 0,
+            path: Some("absent.txt".into()),
+        })
+        .unwrap();
+    assert!(patch.files.is_empty());
+}
+
+#[test]
+fn test_stash_patch_preserves_two_parent_stash() {
+    let repo = tracked_repo("stash-patch-two-parents", b"before\n");
+    write(repo.path().join("file.txt"), "after\n").unwrap();
+    write(repo.path().join("left-untracked.txt"), "outside stash\n").unwrap();
+    repo.run_git(&["stash", "push"]);
+    assert_eq!(
+        repo.run_git_capture(&["rev-list", "--parents", "-n", "1", "stash@{0}"])
+            .split_whitespace()
+            .count(),
+        3
+    );
+    let mut backend = HybridGitBackend::open(repo.path()).unwrap();
+    let patch = backend
+        .load_patch(PatchRequest::Stash {
+            index: 0,
+            path: None,
+        })
+        .unwrap();
+    assert!(!patch.truncated);
+    assert_eq!(patch.files.len(), 1);
+    let file = &patch.files[0];
+    assert_eq!(file.source, PatchSource::Stash(0));
+    assert_eq!(file.change, PatchChange::Modified);
+    assert_eq!(file.new.path.as_deref(), Some(Path::new("file.txt")));
+    assert_eq!(file.hunks[0].lines[0].content, b"before\n");
+    assert_eq!(file.hunks[0].lines[1].content, b"after\n");
+    assert!(repo.path().join("left-untracked.txt").exists());
+}
+
+#[test]
+fn test_stash_untracked_patch_shares_line_budget_and_binary_limits() {
+    let repo = tracked_repo("stash-patch-limits", b"before\n");
+    write(repo.path().join("file.txt"), "tracked\n".repeat(1000)).unwrap();
+    write(repo.path().join("new-binary.bin"), b"binary\0content").unwrap();
+    write(
+        repo.path().join("new-large.txt"),
+        "untracked\n".repeat(6000),
+    )
+    .unwrap();
+    write(
+        repo.path().join("new-oversized.txt"),
+        vec![b'x'; 1024 * 1024 + 1],
+    )
+    .unwrap();
+    repo.run_git(&["stash", "push", "--include-untracked"]);
+    let mut backend = HybridGitBackend::open(repo.path()).unwrap();
+    let patch = backend
+        .load_patch(PatchRequest::Stash {
+            index: 0,
+            path: None,
+        })
+        .unwrap();
+    assert!(patch.truncated);
+    assert_eq!(patch.files.len(), 3);
+    assert_eq!(
+        patch.files[0].new.path.as_deref(),
+        Some(Path::new("file.txt"))
+    );
+    let binary = &patch.files[1];
+    assert_eq!(
+        binary.new.path.as_deref(),
+        Some(Path::new("new-binary.bin"))
+    );
+    assert!(binary.binary);
+    assert!(binary.hunks.is_empty());
+    assert!(binary.encoded.is_none());
+    assert!(String::from_utf8_lossy(&binary.header).contains("Binary files"));
+    let large = &patch.files[2];
+    assert_eq!(large.new.path.as_deref(), Some(Path::new("new-large.txt")));
+    assert!(large.encoded.is_none());
+    let line_count = patch
+        .files
+        .iter()
+        .map(|file| {
+            file.header
+                .split_inclusive(|byte| *byte == b'\n')
+                .count()
+                .max(1)
+                + file
+                    .hunks
+                    .iter()
+                    .map(|hunk| hunk.lines.len())
+                    .sum::<usize>()
+        })
+        .sum::<usize>();
+    assert_eq!(line_count, 5000);
+    let oversized = backend
+        .load_patch(PatchRequest::Stash {
+            index: 0,
+            path: Some("new-oversized.txt".into()),
+        })
+        .unwrap();
+    assert_eq!(oversized.files.len(), 1);
+    assert!(oversized.files[0].binary);
+    assert!(oversized.files[0].hunks.is_empty());
+    assert!(oversized.files[0].encoded.is_none());
+    assert_eq!(oversized.files[0].source, PatchSource::Stash(0));
 }
 
 #[test]
