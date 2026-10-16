@@ -1471,6 +1471,8 @@ dependencies = [
  "ratagit-testkit",
  "ratagit-ui",
  "ratatui",
+ "serde",
+ "serde_json",
  "shell-words",
  "tempfile",
 ]

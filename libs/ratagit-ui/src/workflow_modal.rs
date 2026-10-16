@@ -1,5 +1,5 @@
-use crate::modal::{ModalSpec, ModalTone, render_modal};
-use crate::theme::{modal_selected_row_style, modal_text_style};
+use crate::modal::{ModalSpec, ModalTone, render_menu_lines, render_modal};
+use crate::theme::UiTheme;
 use ratagit_core::AppContext;
 use ratagit_core::workflow::{Dialog, Operation, prompt_title};
 use ratatui::{
@@ -10,7 +10,7 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthStr;
 
-pub(crate) fn render(frame: &mut Frame<'_>, state: &AppContext, area: Rect) {
+pub(crate) fn render(frame: &mut Frame<'_>, state: &AppContext, area: Rect, theme: &UiTheme) {
     if state.ui.workflow.remote_request.is_some() {
         render_modal(
             frame,
@@ -19,10 +19,11 @@ pub(crate) fn render(frame: &mut Frame<'_>, state: &AppContext, area: Rect) {
             &[&[("Esc", "cancel")]],
             |frame, content| {
                 frame.render_widget(
-                    Paragraph::new("Loading remote branches...").style(modal_text_style()),
+                    Paragraph::new("Loading remote branches...").style(theme.modal_text_style()),
                     content,
                 );
             },
+            theme,
         );
         return;
     }
@@ -56,14 +57,14 @@ pub(crate) fn render(frame: &mut Frame<'_>, state: &AppContext, area: Rect) {
                         Line::styled(
                             choice.label.clone(),
                             if index == *selected {
-                                modal_selected_row_style()
+                                theme.modal_selected_row_style()
                             } else {
-                                modal_text_style()
+                                theme.modal_text_style()
                             },
                         )
                     })
                     .collect();
-                frame.render_widget(Paragraph::new(lines), content);
+                render_menu_lines(frame, content, lines, theme);
             }
             Dialog::Prompt {
                 target,
@@ -85,7 +86,10 @@ pub(crate) fn render(frame: &mut Frame<'_>, state: &AppContext, area: Rect) {
                     Paragraph::new(vec![
                         Line::from(format!("Target: {target}")),
                         Line::from(""),
-                        Line::from(Span::styled(text[start..].to_string(), modal_text_style())),
+                        Line::from(Span::styled(
+                            text[start..].to_string(),
+                            theme.modal_text_style(),
+                        )),
                     ]),
                     content,
                 );
@@ -117,11 +121,12 @@ pub(crate) fn render(frame: &mut Frame<'_>, state: &AppContext, area: Rect) {
                 }
                 frame.render_widget(
                     Paragraph::new(text)
-                        .style(modal_text_style())
+                        .style(theme.modal_text_style())
                         .wrap(Wrap { trim: false }),
                     content,
                 );
             }
         },
+        theme,
     );
 }

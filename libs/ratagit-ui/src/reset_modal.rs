@@ -7,11 +7,16 @@ use crate::modal::{
     ChoiceMenuBody, ConfirmBody, ModalSpec, ModalTone, choice_menu_modal_height, choice_menu_rows,
     render_choice_menu_body, render_confirm_body, render_modal,
 };
-use crate::theme::{modal_danger_style, modal_muted_style};
+use crate::theme::UiTheme;
 
-pub(crate) fn render_reset_modal(frame: &mut Frame<'_>, state: &AppContext, area: Rect) {
+pub(crate) fn render_reset_modal(
+    frame: &mut Frame<'_>,
+    state: &AppContext,
+    area: Rect,
+    theme: &UiTheme,
+) {
     if state.ui.reset_menu.danger_confirm.is_some() {
-        render_reset_danger_modal(frame, state, area);
+        render_reset_danger_modal(frame, state, area, theme);
         return;
     }
 
@@ -19,7 +24,7 @@ pub(crate) fn render_reset_modal(frame: &mut Frame<'_>, state: &AppContext, area
         return;
     }
 
-    let choices = reset_choices();
+    let choices = reset_choices(theme);
     render_modal(
         frame,
         area,
@@ -47,12 +52,19 @@ pub(crate) fn render_reset_modal(frame: &mut Frame<'_>, state: &AppContext, area
                     description: reset_choice_description(state.ui.reset_menu.menu.selected)
                         .to_string(),
                 },
+                theme,
             );
         },
+        theme,
     );
 }
 
-fn render_reset_danger_modal(frame: &mut Frame<'_>, state: &AppContext, area: Rect) {
+fn render_reset_danger_modal(
+    frame: &mut Frame<'_>,
+    state: &AppContext,
+    area: Rect,
+    theme: &UiTheme,
+) {
     let choice = state
         .ui
         .reset_menu
@@ -71,13 +83,17 @@ fn render_reset_danger_modal(frame: &mut Frame<'_>, state: &AppContext, area: Re
                 ConfirmBody::new(reset_confirm_question(choice))
                     .secondary("This can discard uncommitted work that reflog cannot restore.")
                     .details(reset_confirm_details(choice)),
+                theme,
             );
         },
+        theme,
     );
 }
 
-fn reset_choices() -> Vec<(ResetChoice, &'static str, Style)> {
-    choice_menu_rows(&ResetChoice::ALL, reset_choice_label, reset_choice_style)
+fn reset_choices(theme: &UiTheme) -> Vec<(ResetChoice, &'static str, Style)> {
+    choice_menu_rows(&ResetChoice::ALL, reset_choice_label, |choice| {
+        reset_choice_style(choice, theme)
+    })
 }
 
 fn reset_choice_label(choice: ResetChoice) -> &'static str {
@@ -89,11 +105,11 @@ fn reset_choice_label(choice: ResetChoice) -> &'static str {
     }
 }
 
-fn reset_choice_style(choice: ResetChoice) -> Style {
+fn reset_choice_style(choice: ResetChoice, theme: &UiTheme) -> Style {
     if choice == ResetChoice::Nuke {
-        modal_danger_style()
+        theme.modal_danger_style()
     } else {
-        modal_muted_style()
+        theme.modal_muted_style()
     }
 }
 

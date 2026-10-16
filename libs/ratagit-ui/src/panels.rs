@@ -12,14 +12,24 @@ mod panel_shortcuts;
 mod panel_types;
 
 #[cfg(test)]
-use crate::theme::{RowRole, row_style};
-pub(crate) use panel_details::{render_details_lines, render_log_lines};
+use crate::theme::{MAIN_UI_THEME, RowRole};
+#[cfg(test)]
+fn row_style(role: RowRole) -> ratatui::style::Style {
+    MAIN_UI_THEME.row_style(role)
+}
+#[cfg(test)]
+pub(crate) use panel_details::render_details_lines;
+pub(crate) use panel_details::{render_details_lines_with_theme, render_log_lines};
 pub use panel_format::{
     format_branch_entry, format_commit_entry, format_file_tree_row, format_stash_entry,
 };
 pub(crate) use panel_left::{
-    left_panel_content_len, panel_title, panel_title_label, render_branches_lines,
-    render_commits_lines, render_files_lines, render_stash_lines,
+    left_panel_content_len, panel_title, panel_title_label, render_branches_lines_with_theme,
+    render_commits_lines_with_theme, render_files_lines_with_theme, render_stash_lines_with_theme,
+};
+#[cfg(test)]
+pub(crate) use panel_left::{
+    render_branches_lines, render_commits_lines, render_files_lines, render_stash_lines,
 };
 #[cfg(test)]
 use panel_scroll::scroll_window_start;
@@ -121,6 +131,55 @@ mod tests {
                     == row_style(RowRole::SearchMatch)
                         .add_modifier(ratatui::style::Modifier::UNDERLINED)
         })
+    }
+
+    #[test]
+    fn configured_panel_colors_reach_files_commits_and_search() {
+        use ratatui::style::Color;
+        let mut theme = MAIN_UI_THEME;
+        theme.files.modified = Color::Rgb(11, 22, 33);
+        theme.files.staged = Color::Rgb(44, 55, 66);
+        theme.commit.graph = Color::Rgb(77, 88, 99);
+        theme.commit.hash_unpushed = Color::Rgb(100, 110, 120);
+        theme.commit.authors = [Color::Rgb(130, 140, 150); 8];
+        theme.warning = Color::Rgb(160, 170, 180);
+        let mut state = state_with_dirty_repo();
+
+        let files = render_files_lines_with_theme(&state, 4, &theme);
+        let staged = files
+            .iter()
+            .find(|line| line.text().contains("M main.rs"))
+            .unwrap();
+        assert_eq!(staged.spans[1].style.fg, Some(theme.files.modified));
+        assert_eq!(staged.spans[2].style.fg, Some(theme.files.staged));
+
+        state.repo.commits.items[0].hash_status = ratagit_core::CommitHashStatus::Unpushed;
+        let commits = render_commits_lines_with_theme(&state, 1, &theme);
+        assert_eq!(commits[0].spans[0].style.fg, Some(theme.commit.graph));
+        assert_eq!(
+            commits[0].spans[2].style.fg,
+            Some(theme.commit.hash_unpushed)
+        );
+        assert_eq!(commits[0].spans[4].style.fg, Some(theme.commit.authors[0]));
+
+        update(&mut state, Action::Ui(UiAction::StartSearch));
+        for ch in "main".chars() {
+            update(&mut state, Action::Ui(UiAction::InputSearchChar(ch)));
+        }
+        let files = render_files_lines_with_theme(&state, 4, &theme);
+        assert!(files.iter().flat_map(|line| &line.spans).any(|span| {
+            span.text == "main"
+                && span.style
+                    == theme
+                        .row_style(RowRole::SearchMatch)
+                        .add_modifier(ratatui::style::Modifier::UNDERLINED)
+        }));
+        let defaults = render_files_lines(&state, 4);
+        assert!(
+            defaults.iter().flat_map(|line| &line.spans).any(|span| {
+                span.text == "main" && span.style.fg == Some(MAIN_UI_THEME.warning)
+            })
+        );
     }
 
     #[test]
@@ -892,7 +951,10 @@ mod tests {
         assert_eq!(
             shortcuts_for_state_with_context(
                 &state,
-                crate::frame::RenderContext { spinner_frame: 2 },
+                crate::frame::RenderContext {
+                    spinner_frame: 2,
+                    ..Default::default()
+                },
             ),
             "\\ loading: refresh  space stage/unstage  d discard  A amend  c commit  s stash  D reset  enter expand  ? commands"
         );

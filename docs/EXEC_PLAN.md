@@ -2,102 +2,107 @@
 
 ## Active Slice
 
-Name: Improve panel separation, compressed height, and color readability
+Name: Refactor UI colors into a configurable, validated theme
 Status: completed and verified
 
 ## Problem
 
-The user requests independent panel borders, readable foreground/background
-combinations throughout the UI, and at least three visible content rows in
-compressed panels. Current documentation describes shared inactive borders and
-an unfocused Stash with only one content row. Semantic foreground spans can
-interact poorly with selected-row backgrounds.
+Rebase, reset and command palette selection remains difficult to read because
+modal selection uses terminal-dependent ANSI colors. Palette/workflow menus
+also highlight only their text width. The user expanded scope to inspect and
+refactor the color system so configuration can control the colors and prevent
+unreadable foreground/background combinations.
 
 ## Smallest Slice
 
-Keep rendering pure and change presentation in ratagit-ui. Give each panel its
-own full rounded border; reserve three content rows plus both border rows for
-compressed left panels whenever terminal dimensions permit. Audit all active
-palette roles, row-span composition, native ANSI text, diff rows, and modal
-selections. Use consistent readable selection treatments while retaining useful
-semantic colors on ordinary rows. Inspect the allocator before selecting a
-bounded fallback for terminals too short to fit all panels.
+Centralize semantic UI colors, including existing scattered diff and commit
+colors, in an immutable UiTheme. Load a user JSON configuration before terminal
+initialization; allow a built-in base theme plus named semantic color overrides.
+Use RATAGIT_CONFIG for an explicit path and platform user config directories for
+the default. Pass the theme explicitly through RenderContext and rendering
+helpers; no mutable global theme, filesystem or environment access in rendering.
+Retain default convenience APIs for existing consumers/tests.
 
-Acceptance criteria:
-- Every panel owns all four border edges without sharing or overwriting an edge.
-- Every compressed left panel has at least three content rows when height permits;
-  focused panels can borrow only height above that reserve.
-- Small terminal layouts stay within bounds, without overlapping panels or panic.
-- Cursor, batch, search, diff, commit metadata and modal selections have readable
-  foreground/background combinations, including explicitly styled spans.
-- Deterministic snapshots cover the changed geometry; buffer styles separately
-  prove readability across panels and modal selections.
+Use explicit dark RGB text on pale blue for modal selection and full-row painting
+for palette/workflow lists. Validate configured foreground/background pairs for
+selection, modal selection and diff highlights, reject malformed colors/unknown
+roles/low contrast with actionable startup errors. Preserve unselected semantic
+colors and native Git ANSI history output.
+
+Acceptance:
+- User config selects default or Tokyo Night base and overrides documented roles.
+- All application-owned colors come from one theme (native Git ANSI is preserved).
+- Same state/size/context yields deterministic output with no global mutation.
+- Invalid or unreadable paired overrides report the field and error before raw mode.
+- Selected modal labels, indicator and padding use one pair with contrast >=7:1;
+  other enforced pairs meet >=4.5:1.
+- Tests prove custom colors in real rendered cells across panels, modals and diffs,
+  parsing/path/error behavior, and independence of two simultaneous themes.
+- Existing text snapshots and navigation/Git behavior remain unchanged.
 
 ## Non-Goals
 
-No Git/backend/runtime behavior changes, theme selector, dependency changes,
-commit, push, or external publication. Preserve unrelated working-tree changes.
+No Git/backend changes, live config watching, theme editor, remote writes,
+automatic commit/push, or application state ownership changes.
 
 ## Expected Files
 
-- libs/ratagit-ui/src/layout.rs and terminal.rs: sizing and panel frames.
-- libs/ratagit-ui/src/theme.rs and relevant row renderers: semantic colors and
-  selection composition as identified by the audit.
-- libs/ratagit-ui/tests and snapshots: geometry and cell-style regressions.
-- docs/DESIGN.md and docs/PRODUCT.md: updated rendering contracts.
-- docs/EXEC_PLAN.md: scope, decisions and completion evidence.
+- libs/ratagit-ui/src/theme.rs: public immutable model, defaults, validation.
+- UI render helpers, projections, modal and diff formatters: explicit theme inputs.
+- src/config.rs and main.rs: startup config discovery/loading/errors.
+- Cargo manifests/lockfile as required for existing serde/serde_json dependencies.
+- UI/config regression tests and existing style expectations.
+- docs/THEMES.md with runnable example config, DESIGN/PRODUCT/ARCHITECTURE updates.
 
 ## Tests
 
-Run focused UI tests, inspect each changed snapshot against intended geometry,
-and add meaningful buffer-style assertions where existing coverage misses
-explicit foreground spans over selected-row backgrounds. Exercise each panel
-focus and small terminal sizes. Where feasible, capture the rebuilt actual
-Windows TUI through the existing local ConPTY driver to inspect borders/colors.
+Exact rendered cells across reset/rebase/palette/workflow, panel selections,
+commit/status colors and diff states; contrast table; parsed custom config and
+invalid fields/pairs; platform path precedence tests with injected inputs. Run
+actual Windows executable with default and custom RATAGIT_CONFIG in isolated
+fixtures using existing ConPTY tools. Review any snapshot differences; color-only
+changes should not change text snapshots.
 
 ## Harness Decision
 
-This is a presentation change. UI snapshots and cell assertions provide primary
-regression coverage. Existing full workspace harness scenarios must continue to
-pass; no new Git interaction scenario is required.
+Presentation/configuration change: focused UI and executable config tests plus
+live terminal evidence. Existing harness coverage remains in the workspace gate.
 
 ## Validation
 
-Run cargo fmt --check, cargo clippy --locked --workspace --lib --bins -- -D
-warnings, cargo test --locked --workspace, and git diff --check after focused
-verification. The rtk wrapper and apply_patch command are unavailable in this
-session; use underlying Cargo/Git commands and available file editing tools.
-Use native Windows Rust tools through PowerShell.
+cargo fmt --check; cargo clippy --locked --workspace --lib --bins -- -D warnings;
+cargo test --locked --workspace; git diff --check. Native Windows tools through
+PowerShell. Stop live executable before rebuilding workspace targets.
 
 ## Completion Evidence
 
-Implemented independent rounded borders for all six panels; initial allocation
-and focus borrowing now preserve three content rows per left panel at terminal
-heights >=21. Details/Log share a minimum-aware allocator with the viewport helper.
-Smaller terminals conserve height and reduce the common reserve deterministically.
+Implemented immutable UiTheme/RenderContext propagation through all panel,
+projection, modal and diff render paths. File/commit/diff application colors now
+come from theme roles. Native Git ANSI output remains intentionally unchanged.
+63 semantic override keys and two built-in presets are documented in THEMES.md.
+The executable loads JSON before terminal setup; missing default config uses
+built-ins, explicit missing/invalid files return path-bearing startup errors.
 
-Batch foreground/background now overlays every semantic span and padding, while
-search substrings retain underline. Ordinary author blue is brighter RGB. Diff
-text/gutter pairs have tested contrast >4.5:1; modal scrims reset old backgrounds.
-Native history ANSI semantics remain covered by existing tests.
+Modal selections use RGB dark-on-pale-blue at >=7:1, full-row including palette
+and workflow padding. Configured selection/batch/badge pairs and all native diff
+pairs validate their resolved contrast. RGB semantic text is checked against its
+base/modal surface. Known identical ANSI/index colors are rejected; inherited
+legacy ANSI/default colors retain documented validation limitations. Removed the
+unused modal.success role after independent review.
 
-Coverage: allocator conservation/minimum tests over heights 0..100, actual buffer
-edges across all six focuses and seven sizes, exact marked commit/branch commit,
-file/status/search and Commit Files glyph/padding styles. Reviewed snapshots
-cover panels, Details entry, partial staging and dialogs. All 66 changed snapshot
-baselines were reviewed, including twelve workflow dialogs with unchanged modal
-rectangles/text and three additional partial staging snapshots.
+Tests include 14 parser/path/error cases, invalid configuration before terminal
+setup, exact default modal selections across choices, per-context custom-theme
+isolation, custom panels/status/commit/diff/modal colors and padding. Existing
+text snapshots passed without any artifact changes. No .snap.new files remain.
 
-The rebuilt actual Windows TUI passed navigation, visual commit selection,
-white-on-blue glyph assertions, search underline, modal and resize verification
-at 120x40, 80x24, 100x21 and 80x14. Evidence: tmp/ui-readability/live-ui.html,
-results.json, per-screen text and cell-color JSON, plus ConPTY raw/keys in
- tmp/git-workflow-audit/screens/ui-readability/. The terminal process exited.
+Actual Windows TUI captures passed for default fix and a custom JSON loaded via
+RATAGIT_CONFIG. Custom foreground/background and >=50 full-row selection cells
+were checked in reset/rebase/palette before and after moving selection.
+Evidence tmp/ui-readability/select-lists/{before,after,custom}/captures.html,
+per-screen text/color JSON and results.json. Live executable exited normally.
 
-Final cargo fmt --check, strict production workspace Clippy, full locked
-workspace tests (671 passed, zero failed/ignored), and git diff --check passed.
-Full gate log: b5su6k9dw.output under the session task directory. An earlier
-attempt encountered the live Windows executable file lock; the successful gate
-ran after process exit. No pending .snap.new artifacts remain.
-Concurrent AGENTS.md/CLAUDE.md edits were observed and preserved, not authored
-as part of this UI change. No commit or push.
+Final cargo fmt --check, strict production workspace Clippy, full locked workspace
+tests (699 passed, zero failed/ignored), and git diff --check passed. Final full
+suite log: bsgrq2s7e.output in the session task directory. Earlier full gate also
+passed; validation strengthening was followed by a complete successful rerun.
+No snapshot baseline changes. No commit or push.

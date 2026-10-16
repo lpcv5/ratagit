@@ -1,11 +1,10 @@
 use ratagit_core::{AppContext, CommandPaletteSection};
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::text::{Line, Span};
-use ratatui::widgets::Paragraph;
+use ratatui::text::Line;
 
-use crate::modal::{ModalSpec, ModalTone, render_modal};
-use crate::theme::{modal_muted_style, modal_selected_row_style, modal_text_style};
+use crate::modal::{ModalSpec, ModalTone, render_menu_lines, render_modal};
+use crate::theme::UiTheme;
 
 enum PaletteRow {
     Header(&'static str),
@@ -16,7 +15,12 @@ enum PaletteRow {
     },
 }
 
-pub(crate) fn render_command_palette_modal(frame: &mut Frame<'_>, state: &AppContext, area: Rect) {
+pub(crate) fn render_command_palette_modal(
+    frame: &mut Frame<'_>,
+    state: &AppContext,
+    area: Rect,
+    theme: &UiTheme,
+) {
     if !state.ui.command_palette.active {
         return;
     }
@@ -32,15 +36,18 @@ pub(crate) fn render_command_palette_modal(frame: &mut Frame<'_>, state: &AppCon
             ("Esc", "close"),
         ]],
         |frame, content| {
-            frame.render_widget(
-                Paragraph::new(palette_lines(state, content.height as usize)),
+            render_menu_lines(
+                frame,
                 content,
+                palette_lines(state, content.height as usize, theme),
+                theme,
             );
         },
+        theme,
     );
 }
 
-fn palette_lines(state: &AppContext, visible_rows: usize) -> Vec<Line<'static>> {
+fn palette_lines(state: &AppContext, visible_rows: usize, theme: &UiTheme) -> Vec<Line<'static>> {
     let filtering = !state.ui.command_palette.query.is_empty();
     let visible_rows = visible_rows.saturating_sub(usize::from(filtering));
     let rows = palette_rows(state);
@@ -62,7 +69,7 @@ fn palette_lines(state: &AppContext, visible_rows: usize) -> Vec<Line<'static>> 
         .skip(start)
         .take(visible_rows)
         .map(|row| match row {
-            PaletteRow::Header(label) => Line::styled(label, modal_muted_style()),
+            PaletteRow::Header(label) => Line::styled(label, theme.modal_muted_style()),
             PaletteRow::Command {
                 command_index,
                 key,
@@ -71,6 +78,7 @@ fn palette_lines(state: &AppContext, visible_rows: usize) -> Vec<Line<'static>> 
                 key,
                 label,
                 command_index == state.ui.command_palette.selected,
+                theme,
             ),
         })
         .collect();
@@ -79,12 +87,15 @@ fn palette_lines(state: &AppContext, visible_rows: usize) -> Vec<Line<'static>> 
             0,
             Line::styled(
                 format!("Filter: {}", state.ui.command_palette.query),
-                modal_text_style(),
+                theme.modal_text_style(),
             ),
         );
     }
     if no_matches && visible_rows > 0 {
-        lines.push(Line::styled("No matching commands", modal_muted_style()));
+        lines.push(Line::styled(
+            "No matching commands",
+            theme.modal_muted_style(),
+        ));
     }
     lines
 }
@@ -108,13 +119,18 @@ fn palette_rows(state: &AppContext) -> Vec<PaletteRow> {
     rows
 }
 
-fn command_line(key: &'static str, label: &'static str, selected: bool) -> Line<'static> {
+fn command_line(
+    key: &'static str,
+    label: &'static str,
+    selected: bool,
+    theme: &UiTheme,
+) -> Line<'static> {
     let style = if selected {
-        modal_selected_row_style()
+        theme.modal_selected_row_style()
     } else {
-        modal_text_style()
+        theme.modal_text_style()
     };
-    Line::from(vec![Span::styled(format!("  {key:<8} {label}"), style)])
+    Line::styled(format!("  {key:<8} {label}"), style)
 }
 
 fn section_label(section: CommandPaletteSection) -> &'static str {

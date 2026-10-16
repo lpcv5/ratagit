@@ -385,6 +385,22 @@ status rows use a compact semantic icon set while preserving deterministic text
 layout. Every terminal panel uses rounded corners and its own complete border;
 adjacent panels do not share edges.
 
+Themes are selected by a JSON configuration loaded once before terminal setup.
+The `default` and `tokyo-night` presets support partial semantic color overrides
+for panels, selections, badges, commits, files, diffs, and modals. Cursor and
+batch selection replace all text colors within selected rows; modal lists,
+including the command palette, share a full-width selection pair. Native Git
+ANSI history and log colors remain intact.
+
+`RATAGIT_CONFIG` selects an explicit file, which must exist. Otherwise the app
+uses `%APPDATA%\ratagit\config.json` on Windows, or
+`$XDG_CONFIG_HOME/ratagit/config.json` on Unix with a
+`$HOME/.config/ratagit/config.json` fallback. A missing implicit file uses the
+default theme; invalid configuration stops startup with a path-bearing error.
+Fixed RGB selection and diff pairs are contrast-validated; terminal-defined
+colors are not guaranteed by that validation. See [Themes](THEMES.md) for the
+exact JSON shape, role reference, contrast constraints, and a runnable example.
+
 ---
 
 ## UX Rules

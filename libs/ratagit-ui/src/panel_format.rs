@@ -1,20 +1,20 @@
 use ratagit_core::{
     BranchEntry, CommitEntry, CommitHashStatus, FileRowKind, FileTreeRow, StashEntry,
 };
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use unicode_width::UnicodeWidthChar;
 
 use super::panel_types::{PanelSpan, plain_text};
 use crate::theme::{
     ICON_BATCH_SELECTED, ICON_BRANCH, ICON_DIRECTORY_CLOSED, ICON_DIRECTORY_OPEN,
-    ICON_SEARCH_MATCH, ICON_STASH, RowRole, row_style,
+    ICON_SEARCH_MATCH, ICON_STASH, MAIN_UI_THEME, RowRole, UiTheme,
 };
 
 pub fn format_file_tree_row(row: &FileTreeRow) -> String {
-    plain_text(&file_tree_row_spans(row))
+    plain_text(&file_tree_row_spans(row, &MAIN_UI_THEME))
 }
 
-pub(crate) fn file_tree_row_spans(row: &FileTreeRow) -> Vec<PanelSpan> {
+pub(crate) fn file_tree_row_spans(row: &FileTreeRow, theme: &UiTheme) -> Vec<PanelSpan> {
     let indent = "  ".repeat(row.depth);
     let batch = if row.selected_for_batch {
         ICON_BATCH_SELECTED
@@ -41,34 +41,34 @@ pub(crate) fn file_tree_row_spans(row: &FileTreeRow) -> Vec<PanelSpan> {
         },
         PanelSpan {
             text: marker.trim_end_matches('U').to_string(),
-            style: file_tree_marker_style(row),
+            style: file_tree_marker_style(row, theme),
         },
     ];
     if row.kind == FileRowKind::File && row.conflicted {
         spans.push(PanelSpan {
             text: "U".to_string(),
-            style: row_style(RowRole::DiffRemove),
+            style: Style::default().fg(theme.files.conflict),
         });
     }
     spans.push(PanelSpan {
         text: suffix,
-        style: file_tree_name_style(row),
+        style: file_tree_name_style(row, theme),
     });
     spans
 }
 
 pub fn format_commit_entry(entry: &CommitEntry) -> String {
-    plain_text(&commit_entry_spans(entry))
+    plain_text(&commit_entry_spans(entry, &MAIN_UI_THEME))
 }
 
-pub(crate) fn commit_entry_spans(entry: &CommitEntry) -> Vec<PanelSpan> {
+pub(crate) fn commit_entry_spans(entry: &CommitEntry, theme: &UiTheme) -> Vec<PanelSpan> {
     let graph = fixed_width(commit_graph(entry), 1);
     let hash = fixed_width(&entry.id, 7);
     let author = fixed_width(&author_initials(&entry.author_name), 2);
     vec![
         PanelSpan {
             text: graph,
-            style: Style::default().fg(Color::DarkGray),
+            style: Style::default().fg(theme.commit.graph),
         },
         PanelSpan {
             text: "  ".to_string(),
@@ -76,7 +76,7 @@ pub(crate) fn commit_entry_spans(entry: &CommitEntry) -> Vec<PanelSpan> {
         },
         PanelSpan {
             text: hash,
-            style: commit_hash_style(entry.hash_status),
+            style: commit_hash_style(entry.hash_status, theme),
         },
         PanelSpan {
             text: "  ".to_string(),
@@ -84,7 +84,7 @@ pub(crate) fn commit_entry_spans(entry: &CommitEntry) -> Vec<PanelSpan> {
         },
         PanelSpan {
             text: author,
-            style: author_style(&entry.author_name),
+            style: author_style(&entry.author_name, theme),
         },
         PanelSpan {
             text: "  ".to_string(),
@@ -137,21 +137,21 @@ fn commit_file_status_marker(status: ratagit_core::CommitFileStatus) -> &'static
     }
 }
 
-fn file_tree_marker_style(row: &FileTreeRow) -> Style {
+fn file_tree_marker_style(row: &FileTreeRow, theme: &UiTheme) -> Style {
     if let Some(status) = row.commit_status {
-        commit_file_status_style(status)
+        commit_file_status_style(status, theme)
     } else if row.untracked {
-        row_style(RowRole::FileUntracked)
+        Style::default().fg(theme.files.unknown)
     } else if row.staged {
-        row_style(RowRole::FileStaged)
+        Style::default().fg(theme.files.staged)
     } else {
         Style::default()
     }
 }
 
-fn file_tree_name_style(row: &FileTreeRow) -> Style {
+fn file_tree_name_style(row: &FileTreeRow, theme: &UiTheme) -> Style {
     if row.kind == FileRowKind::File && row.staged {
-        row_style(RowRole::FileStaged)
+        Style::default().fg(theme.files.staged)
     } else {
         Style::default()
     }
@@ -206,30 +206,21 @@ fn commit_message_summary(entry: &CommitEntry) -> String {
     }
 }
 
-fn commit_hash_style(status: CommitHashStatus) -> Style {
-    match status {
-        CommitHashStatus::MergedToMain => Style::default().fg(Color::Green),
-        CommitHashStatus::Pushed => Style::default().fg(Color::Yellow),
-        CommitHashStatus::Unpushed => Style::default().fg(Color::Red),
-    }
+fn commit_hash_style(status: CommitHashStatus, theme: &UiTheme) -> Style {
+    let color = match status {
+        CommitHashStatus::MergedToMain => theme.commit.hash_merged,
+        CommitHashStatus::Pushed => theme.commit.hash_pushed,
+        CommitHashStatus::Unpushed => theme.commit.hash_unpushed,
+    };
+    Style::default().fg(color)
 }
 
-fn author_style(author_name: &str) -> Style {
-    const PALETTE: [Color; 8] = [
-        Color::Cyan,
-        Color::Magenta,
-        Color::Rgb(138, 180, 248),
-        Color::LightGreen,
-        Color::LightBlue,
-        Color::LightMagenta,
-        Color::LightCyan,
-        Color::White,
-    ];
+fn author_style(author_name: &str, theme: &UiTheme) -> Style {
     let hash = author_name.bytes().fold(0usize, |accumulator, byte| {
         accumulator.wrapping_mul(31).wrapping_add(byte as usize)
     });
     Style::default()
-        .fg(PALETTE[hash % PALETTE.len()])
+        .fg(theme.commit.authors[hash % theme.commit.authors.len()])
         .add_modifier(Modifier::BOLD)
 }
 
@@ -261,16 +252,24 @@ fn author_initials(author_name: &str) -> String {
         .collect()
 }
 
-fn commit_file_status_style(status: ratagit_core::CommitFileStatus) -> Style {
-    match status {
-        ratagit_core::CommitFileStatus::Added => row_style(RowRole::DiffAdd),
-        ratagit_core::CommitFileStatus::Deleted => row_style(RowRole::DiffRemove),
-        ratagit_core::CommitFileStatus::Renamed | ratagit_core::CommitFileStatus::Copied => {
-            row_style(RowRole::DiffMeta)
-        }
-        ratagit_core::CommitFileStatus::Modified | ratagit_core::CommitFileStatus::TypeChanged => {
-            row_style(RowRole::SearchMatch)
-        }
-        ratagit_core::CommitFileStatus::Unknown => row_style(RowRole::FileUntracked),
+fn commit_file_status_style(status: ratagit_core::CommitFileStatus, theme: &UiTheme) -> Style {
+    use ratagit_core::CommitFileStatus;
+    let color = match status {
+        CommitFileStatus::Added => theme.files.added,
+        CommitFileStatus::Modified => theme.files.modified,
+        CommitFileStatus::Deleted => theme.files.deleted,
+        CommitFileStatus::Renamed => theme.files.renamed,
+        CommitFileStatus::Copied => theme.files.copied,
+        CommitFileStatus::TypeChanged => theme.files.type_changed,
+        CommitFileStatus::Unknown => theme.files.unknown,
+    };
+    let style = Style::default().fg(color);
+    if matches!(
+        status,
+        CommitFileStatus::Modified | CommitFileStatus::TypeChanged
+    ) {
+        style.add_modifier(Modifier::BOLD)
+    } else {
+        style
     }
 }

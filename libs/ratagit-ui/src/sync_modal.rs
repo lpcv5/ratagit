@@ -3,8 +3,14 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 
 use crate::modal::{ConfirmBody, ModalSpec, ModalTone, render_confirm_body, render_modal};
+use crate::theme::UiTheme;
 
-pub(crate) fn render_sync_modal(frame: &mut Frame<'_>, state: &AppContext, area: Rect) {
+pub(crate) fn render_sync_modal(
+    frame: &mut Frame<'_>,
+    state: &AppContext,
+    area: Rect,
+    theme: &UiTheme,
+) {
     if !state.ui.push_force_confirm.active {
         return;
     }
@@ -25,7 +31,9 @@ pub(crate) fn render_sync_modal(frame: &mut Frame<'_>, state: &AppContext, area:
                         "Git refused normal push:\n{}",
                         state.ui.push_force_confirm.context
                     )),
+                theme,
             );
         },
+        theme,
     );
 }

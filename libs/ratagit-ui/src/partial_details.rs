@@ -1,13 +1,13 @@
 use super::diff_rows::{self, DiffRow};
 use super::panel_types::PanelLine;
-use crate::theme::RowRole;
+use crate::theme::{RowRole, UiTheme};
 use ratagit_core::{
     AppContext, PanelFocus,
     partial::{SelectionMode, cursor_ids, marked_ids, patch_rows},
     patch::{PatchLineKind, PatchSource},
 };
 
-pub(crate) fn render(state: &AppContext, max_lines: usize) -> Vec<PanelLine> {
+pub(crate) fn render(state: &AppContext, max_lines: usize, theme: &UiTheme) -> Vec<PanelLine> {
     if max_lines == 0 {
         return Vec::new();
     }
@@ -50,6 +50,7 @@ pub(crate) fn render(state: &AppContext, max_lines: usize) -> Vec<PanelLine> {
             &rows,
             state.ui.details.scroll_offset,
             max_lines.saturating_sub(lines.len()),
+            theme,
         ));
     } else if state.work.details.patch_request.is_some() {
         lines.push(PanelLine::new("Loading reviewed patch...", RowRole::Notice));

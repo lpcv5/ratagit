@@ -6,11 +6,7 @@ use ratatui::widgets::{
     Block, BorderType, Borders, Clear, HighlightSpacing, List, ListItem, ListState, Paragraph, Wrap,
 };
 
-use crate::theme::{
-    modal_background_style, modal_border_style, modal_danger_style, modal_footer_style,
-    modal_info_style, modal_muted_style, modal_scrim_style, modal_selected_row_style,
-    modal_text_style, modal_warning_style,
-};
+use crate::theme::UiTheme;
 
 pub(crate) type ModalAction = (&'static str, &'static str);
 
@@ -140,30 +136,39 @@ pub(crate) fn render_modal(
     spec: ModalSpec,
     action_rows: &[&[ModalAction]],
     render_content: impl FnOnce(&mut Frame<'_>, Rect),
+    theme: &UiTheme,
 ) -> Option<ModalFrame> {
-    let modal = render_modal_frame(frame, area, spec)?;
+    let modal = render_modal_frame(frame, area, spec, theme)?;
     render_content(frame, modal.content);
-    render_action_rows(frame, modal.footer, modal.tone, action_rows);
+    render_action_rows(frame, modal.footer, modal.tone, action_rows, theme);
     Some(modal)
 }
 
-fn render_modal_frame(frame: &mut Frame<'_>, area: Rect, spec: ModalSpec) -> Option<ModalFrame> {
+fn render_modal_frame(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    spec: ModalSpec,
+    theme: &UiTheme,
+) -> Option<ModalFrame> {
     let outer = modal_rect(area, spec)?;
-    let tone_style = modal_tone_style(spec.tone);
+    let tone_style = modal_tone_style(spec.tone, theme);
     let block = Block::default()
-        .title(modal_title(spec))
+        .title(modal_title(spec, theme))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(tone_style);
     let content_area = inset_rect(block.inner(outer), 1, 0);
     let sections = split_footer(content_area, spec.footer_height)?;
 
-    frame.render_widget(Block::default().style(modal_scrim_style()), area);
+    frame.render_widget(Block::default().style(theme.modal_scrim_style()), area);
     frame.render_widget(Clear, outer);
-    frame.render_widget(Block::default().style(modal_background_style()), outer);
+    frame.render_widget(
+        Block::default().style(theme.modal_background_style()),
+        outer,
+    );
     frame.render_widget(block, outer);
     if let Some(separator) = sections.separator {
-        render_footer_separator(frame, separator);
+        render_footer_separator(frame, separator, theme);
     }
 
     Some(ModalFrame {
@@ -179,6 +184,7 @@ fn render_action_rows(
     footer: Option<Rect>,
     tone: ModalTone,
     action_rows: &[&[ModalAction]],
+    theme: &UiTheme,
 ) {
     let Some(footer) = footer else {
         return;
@@ -188,7 +194,7 @@ fn render_action_rows(
     }
 
     if action_rows.len() == 1 {
-        render_action_footer(frame, footer, tone, action_rows[0]);
+        render_action_footer(frame, footer, tone, action_rows[0], theme);
         return;
     }
 
@@ -201,7 +207,7 @@ fn render_action_rows(
         .constraints(constraints)
         .split(footer);
     for (area, actions) in rows.iter().zip(action_rows.iter()) {
-        render_action_footer(frame, *area, tone, actions);
+        render_action_footer(frame, *area, tone, actions, theme);
     }
 }
 
@@ -210,6 +216,7 @@ pub(crate) fn render_confirm_body(
     area: Rect,
     tone: ModalTone,
     body: ConfirmBody,
+    theme: &UiTheme,
 ) {
     let secondary_height = u16::from(body.secondary.is_some());
     let details_height = body
@@ -241,7 +248,7 @@ pub(crate) fn render_confirm_body(
 
     frame.render_widget(
         Paragraph::new(body.primary)
-            .style(modal_tone_style(tone))
+            .style(modal_tone_style(tone, theme))
             .alignment(Alignment::Center)
             .wrap(Wrap { trim: false }),
         rows[0],
@@ -250,7 +257,7 @@ pub(crate) fn render_confirm_body(
     if let Some(secondary) = body.secondary {
         frame.render_widget(
             Paragraph::new(secondary)
-                .style(modal_text_style())
+                .style(theme.modal_text_style())
                 .alignment(Alignment::Center)
                 .wrap(Wrap { trim: false }),
             rows[1],
@@ -266,7 +273,7 @@ pub(crate) fn render_confirm_body(
         );
         frame.render_widget(
             Paragraph::new(details)
-                .style(modal_muted_style())
+                .style(theme.modal_muted_style())
                 .alignment(Alignment::Center)
                 .wrap(Wrap { trim: false }),
             detail_area,
@@ -279,6 +286,7 @@ pub(crate) fn render_choice_menu_body<T: Copy + PartialEq>(
     area: Rect,
     tone: ModalTone,
     body: ChoiceMenuBody<'_, T>,
+    theme: &UiTheme,
 ) {
     let list_height = choice_list_height(body.choices, body.list_height);
     let rows = Layout::default()
@@ -290,7 +298,7 @@ pub(crate) fn render_choice_menu_body<T: Copy + PartialEq>(
             Constraint::Min(CHOICE_MENU_DESCRIPTION_MIN_ROWS),
         ])
         .split(area);
-    render_text(frame, rows[0], body.intro);
+    render_text(frame, rows[0], body.intro, theme);
     render_choice_list(
         frame,
         rows[1],
@@ -298,9 +306,10 @@ pub(crate) fn render_choice_menu_body<T: Copy + PartialEq>(
         body.choices,
         body.selected,
         tone,
+        theme,
     );
-    render_section_label(frame, rows[2], "Description");
-    render_text(frame, rows[3], body.description);
+    render_section_label(frame, rows[2], "Description", theme);
+    render_text(frame, rows[3], body.description, theme);
 }
 
 pub(crate) fn modal_content_rect(area: Rect, spec: ModalSpec) -> Option<Rect> {
@@ -324,17 +333,27 @@ pub(crate) fn choice_menu_modal_height(choice_count: usize, footer_height: u16) 
         .saturating_add(2)
 }
 
-pub(crate) fn render_section_label(frame: &mut Frame<'_>, area: Rect, label: impl Into<String>) {
+pub(crate) fn render_section_label(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    label: impl Into<String>,
+    theme: &UiTheme,
+) {
     frame.render_widget(
-        Paragraph::new(label.into()).style(modal_muted_style()),
+        Paragraph::new(label.into()).style(theme.modal_muted_style()),
         area,
     );
 }
 
-pub(crate) fn render_text(frame: &mut Frame<'_>, area: Rect, text: impl Into<String>) {
+pub(crate) fn render_text(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    text: impl Into<String>,
+    theme: &UiTheme,
+) {
     frame.render_widget(
         Paragraph::new(text.into())
-            .style(modal_text_style())
+            .style(theme.modal_text_style())
             .wrap(Wrap { trim: false }),
         area,
     );
@@ -345,16 +364,36 @@ fn render_action_footer(
     area: Rect,
     tone: ModalTone,
     actions: &[(&'static str, &'static str)],
+    theme: &UiTheme,
 ) {
     let mut spans = Vec::new();
     for (index, (key, label)) in actions.iter().enumerate() {
         if index > 0 {
-            spans.push(Span::styled("  ", modal_footer_style()));
+            spans.push(Span::styled("  ", theme.modal_footer_style()));
         }
-        spans.push(Span::styled(*key, modal_tone_style(tone)));
-        spans.push(Span::styled(format!(" {label}"), modal_footer_style()));
+        spans.push(Span::styled(*key, modal_tone_style(tone, theme)));
+        spans.push(Span::styled(
+            format!(" {label}"),
+            theme.modal_footer_style(),
+        ));
     }
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
+}
+
+pub(crate) fn render_menu_lines(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    lines: Vec<Line<'static>>,
+    theme: &UiTheme,
+) {
+    for (offset, line) in lines.into_iter().take(area.height as usize).enumerate() {
+        let style = line.style;
+        let row = Rect::new(area.x, area.y + offset as u16, area.width, 1);
+        frame.render_widget(
+            Paragraph::new(line).style(theme.modal_text_style().patch(style)),
+            row,
+        );
+    }
 }
 
 pub(crate) fn render_choice_list<T: Copy + PartialEq>(
@@ -364,12 +403,13 @@ pub(crate) fn render_choice_list<T: Copy + PartialEq>(
     choices: &[(T, &'static str, Style)],
     selected: T,
     tone: ModalTone,
+    theme: &UiTheme,
 ) {
     let items = choices
         .iter()
         .map(|(choice, label, style)| {
             let row_style = if *choice == selected {
-                modal_selected_row_style()
+                theme.modal_selected_row_style()
             } else {
                 *style
             };
@@ -383,15 +423,18 @@ pub(crate) fn render_choice_list<T: Copy + PartialEq>(
     let mut list_state = ListState::default();
     list_state.select(Some(selected_index));
     let list = List::new(items)
-        .highlight_style(modal_selected_row_style())
+        .highlight_style(theme.modal_selected_row_style())
         .highlight_symbol("▌ ")
         .highlight_spacing(HighlightSpacing::Always)
         .block(
             Block::default()
-                .title(Line::styled(format!(" {title} "), modal_tone_style(tone)))
+                .title(Line::styled(
+                    format!(" {title} "),
+                    modal_tone_style(tone, theme),
+                ))
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
-                .border_style(modal_border_style()),
+                .border_style(theme.modal_border_style()),
         );
     frame.render_stateful_widget(list, area, &mut list_state);
 }
@@ -403,11 +446,12 @@ pub(crate) fn render_input_block(
     lines: Vec<Line<'static>>,
     active: bool,
     tone: ModalTone,
+    theme: &UiTheme,
 ) {
     let border_style = if active {
-        modal_tone_style(tone)
+        modal_tone_style(tone, theme)
     } else {
-        modal_border_style()
+        theme.modal_border_style()
     };
     let content = if lines.is_empty() {
         vec![Line::from(" ")]
@@ -416,7 +460,7 @@ pub(crate) fn render_input_block(
     };
     frame.render_widget(
         Paragraph::new(content)
-            .style(modal_text_style())
+            .style(theme.modal_text_style())
             .wrap(Wrap { trim: false })
             .block(
                 Block::default()
@@ -429,11 +473,11 @@ pub(crate) fn render_input_block(
     );
 }
 
-pub(crate) fn modal_tone_style(tone: ModalTone) -> Style {
+pub(crate) fn modal_tone_style(tone: ModalTone, theme: &UiTheme) -> Style {
     match tone {
-        ModalTone::Info => modal_info_style(),
-        ModalTone::Warning => modal_warning_style(),
-        ModalTone::Danger => modal_danger_style(),
+        ModalTone::Info => theme.modal_info_style(),
+        ModalTone::Warning => theme.modal_warning_style(),
+        ModalTone::Danger => theme.modal_danger_style(),
     }
 }
 
@@ -510,16 +554,16 @@ fn default_icon_for_tone(tone: ModalTone) -> &'static str {
     }
 }
 
-fn modal_title(spec: ModalSpec) -> Line<'static> {
+fn modal_title(spec: ModalSpec, theme: &UiTheme) -> Line<'static> {
     Line::styled(
         format!(" {} {} ", spec.icon, spec.title),
-        modal_tone_style(spec.tone),
+        modal_tone_style(spec.tone, theme),
     )
 }
 
-fn render_footer_separator(frame: &mut Frame<'_>, area: Rect) {
+fn render_footer_separator(frame: &mut Frame<'_>, area: Rect, theme: &UiTheme) {
     frame.render_widget(
-        Paragraph::new("─".repeat(area.width as usize)).style(modal_border_style()),
+        Paragraph::new("─".repeat(area.width as usize)).style(theme.modal_border_style()),
         area,
     );
 }

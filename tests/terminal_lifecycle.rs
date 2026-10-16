@@ -21,6 +21,32 @@ fn test_invalid_git_directory_fails_before_terminal_setup() {
 }
 
 #[test]
+fn invalid_theme_configuration_fails_before_terminal_setup() {
+    let fixture = ProcessFixture::new();
+    let config = fixture.work.join("invalid-theme.json");
+    std::fs::write(
+        &config,
+        r##"{"theme":{"colors":{"modal.selection.foreground":"#B4D7FF"}}}"##,
+    )
+    .unwrap();
+    let output = fixture.run(
+        fixture
+            .command(env!("CARGO_BIN_EXE_ratagit"))
+            .env("RATAGIT_CONFIG", &config),
+    );
+    let stderr = fixture.normalize(&output.stderr);
+    assert!(!output.status.success());
+    assert!(
+        stderr.contains("invalid-theme.json")
+            && stderr.contains("modal.selection")
+            && stderr.contains("contrast"),
+        "{stderr}"
+    );
+    assert!(output.stdout.is_empty());
+    assert!(!stderr.contains('\x1b'));
+}
+
+#[test]
 fn test_redirected_terminal_failure_has_no_alternate_screen_output() {
     let fixture = ProcessFixture::new();
     let output = fixture.run(&mut fixture.command(env!("CARGO_BIN_EXE_ratagit")));

@@ -1,13 +1,8 @@
 //! Shared presentation for passive previews and reviewed, interactive patches.
 use super::panel_types::{PanelLine, PanelSpan};
-use crate::theme::{RowRole, current_theme};
+use crate::theme::{RowRole, UiTheme};
 use ratagit_core::patch::{PatchLineKind, PatchRow};
-use ratatui::style::{Color, Modifier, Style};
-
-// Explicit RGB text keeps contrast independent of the terminal's ANSI palette.
-const ADD_FOREGROUND: Color = Color::Rgb(174, 239, 190);
-const REMOVE_FOREGROUND: Color = Color::Rgb(255, 190, 198);
-const CONTEXT_FOREGROUND: Color = Color::Rgb(224, 230, 240);
+use ratatui::style::{Modifier, Style};
 
 pub(super) struct DiffRow {
     pub row: PatchRow,
@@ -29,16 +24,21 @@ impl DiffRow {
     }
 }
 
-pub(super) fn render(rows: &[DiffRow], offset: usize, max_lines: usize) -> Vec<PanelLine> {
+pub(super) fn render(
+    rows: &[DiffRow],
+    offset: usize,
+    max_lines: usize,
+    theme: &UiTheme,
+) -> Vec<PanelLine> {
     let offset = offset.min(rows.len().saturating_sub(max_lines));
     rows.iter()
         .skip(offset)
         .take(max_lines)
-        .map(render_row)
+        .map(|row| render_row(row, theme))
         .collect()
 }
 
-fn render_row(display: &DiffRow) -> PanelLine {
+fn render_row(display: &DiffRow, theme: &UiTheme) -> PanelLine {
     let row = &display.row;
     let role = match row.kind {
         PatchLineKind::Added => RowRole::DiffAdd,
@@ -50,9 +50,15 @@ fn render_row(display: &DiffRow) -> PanelLine {
         && row.new_line.is_none()
         && row.text.starts_with("@@ ");
     let style = if is_hunk_header {
-        Style::default().fg(current_theme().info)
+        Style::default().fg(theme.info)
     } else {
-        diff_style(row.kind, display.staged, display.focused, display.chosen)
+        diff_style(
+            row.kind,
+            display.staged,
+            display.focused,
+            display.chosen,
+            theme,
+        )
     };
     let prefix = match row.kind {
         PatchLineKind::Added => "+",
@@ -73,9 +79,9 @@ fn render_row(display: &DiffRow) -> PanelLine {
                     if display.chosen { "┃" } else { " " }
                 ),
                 style: if style.bg.is_some() {
-                    style.fg(CONTEXT_FOREGROUND)
+                    style.fg(theme.diff.context_text)
                 } else {
-                    Style::default().fg(current_theme().accent)
+                    Style::default().fg(theme.diff.gutter)
                 }
                 .add_modifier(Modifier::BOLD),
             },
@@ -107,25 +113,21 @@ fn expand_tabs(text: &str) -> String {
     output
 }
 
-// PR #8's diff palette preserves add/remove polarity through cursor and marks.
-fn diff_style(kind: PatchLineKind, staged: bool, cursor: bool, selected: bool) -> Style {
-    let (foreground, background) = match (kind, staged, cursor, selected) {
-        (PatchLineKind::Added, true, true, _) => (ADD_FOREGROUND, Color::Rgb(52, 100, 70)),
-        (PatchLineKind::Added, true, false, true) => (ADD_FOREGROUND, Color::Rgb(44, 85, 60)),
-        (PatchLineKind::Added, true, false, false) => (ADD_FOREGROUND, Color::Rgb(33, 67, 48)),
-        (PatchLineKind::Added, false, true, _) => (ADD_FOREGROUND, Color::Rgb(40, 80, 58)),
-        (PatchLineKind::Added, false, false, true) => (ADD_FOREGROUND, Color::Rgb(30, 65, 47)),
-        (PatchLineKind::Added, false, false, false) => (ADD_FOREGROUND, Color::Rgb(24, 46, 36)),
-        (PatchLineKind::Removed, true, true, _) => (REMOVE_FOREGROUND, Color::Rgb(111, 52, 64)),
-        (PatchLineKind::Removed, true, false, true) => (REMOVE_FOREGROUND, Color::Rgb(94, 44, 55)),
-        (PatchLineKind::Removed, true, false, false) => (REMOVE_FOREGROUND, Color::Rgb(73, 36, 45)),
-        (PatchLineKind::Removed, false, true, _) => (REMOVE_FOREGROUND, Color::Rgb(88, 44, 54)),
-        (PatchLineKind::Removed, false, false, true) => (REMOVE_FOREGROUND, Color::Rgb(72, 38, 46)),
-        (PatchLineKind::Removed, false, false, false) => {
-            (REMOVE_FOREGROUND, Color::Rgb(51, 30, 37))
-        }
-        (_, _, true, _) => (CONTEXT_FOREGROUND, Color::Rgb(37, 57, 82)),
-        (_, _, false, true) => (CONTEXT_FOREGROUND, Color::Rgb(46, 58, 86)),
+// Cursor wins over marks; worktree and index retain separate add/remove shades.
+fn diff_style(
+    kind: PatchLineKind,
+    staged: bool,
+    cursor: bool,
+    selected: bool,
+    theme: &UiTheme,
+) -> Style {
+    let state = if cursor { 2 } else { usize::from(selected) };
+    let source = usize::from(staged);
+    let (foreground, background) = match kind {
+        PatchLineKind::Added => (theme.diff.added_text, theme.diff.added[source][state]),
+        PatchLineKind::Removed => (theme.diff.removed_text, theme.diff.removed[source][state]),
+        _ if cursor => (theme.diff.context_text, theme.diff.context_cursor),
+        _ if selected => (theme.diff.context_text, theme.diff.context_marked),
         _ => return Style::default(),
     };
     Style::default().fg(foreground).bg(background)

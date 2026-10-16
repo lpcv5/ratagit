@@ -198,7 +198,8 @@ Focus model:
   uses `Command` metadata for mutating barriers, debounce keys, and refresh
   coalescing keys instead of duplicating command matches in each runtime.
 - Backend output re-enters `update()` as `GitResult`.
-- UI rendering reads only `AppContext`.
+- UI rendering reads immutable `AppContext`, terminal size, and explicit
+  `RenderContext` inputs, including the resolved theme and spinner frame.
 - High-frequency side effects use runtime command debouncing keyed by
   `ratagit_core::debounce_key_for_command`, so rapid navigation can collapse to
   the latest command while keeping state transitions deterministic.
@@ -496,33 +497,54 @@ Panel projection and row source:
   the terminal width up to the shared modal maximum. Modal outer frames target
   three fifths of the terminal height while preserving small-terminal minimum
   and maximum clamps.
-- `ratagit-ui` uses a shared semantic theme for panels, rows, loading text, and
-  modals. The current default follows the main terminal UI palette: terminal
-  default foreground/background, yellow focus and cursor selection, blue batch
-  selection, dark-gray muted chrome, and standard warning/danger/success/info
-  colors. Modal overlays use the same default palette instead of a separate
-  Tokyo Night background. Batch selection applies its foreground/background to
-  every text span, overriding author/hash/status/search colors so marked rows
-  remain readable. Search-hit substrings also use underline, preserving their
-  distinction inside cursor/batch highlights. Unselected rows retain semantic
-  colors and native Git ANSI history colors remain intact.
-- Diff rows pair their tinted backgrounds with explicit bright RGB foregrounds,
-  including highlighted context and line-number gutters. These pairs retain at
-  least 4.5:1 contrast across staged, cursor and marked states.
+- `ratagit-ui` uses a shared `UiTheme` for panels, rows, loading text, commits,
+  file statuses, diffs, and modals. The executable loads JSON configuration once
+  before terminal setup, resolves `default` or `tokyo-night` plus semantic color
+  overrides, and passes an immutable theme through `RenderContext` alongside the
+  spinner frame. Rendering is pure: it receives `AppContext`, terminal size, and
+  explicit render inputs rather than reading configuration or environment.
+  See [Themes](THEMES.md) for discovery, JSON fields, and the complete role list.
+- The default palette uses terminal-default foreground/background, yellow focus
+  and cursor selection, blue batch selection, dark-gray muted chrome, and ANSI
+  warning/danger/success/info colors. Tokyo Night supplies a dark RGB base and
+  modal palette. Both presets share initial commit, file-status, and diff colors.
+- Cursor and batch selection apply their foreground/background to every text
+  span, overriding author/hash/status/search colors. Search-hit substrings retain
+  underline inside these highlights. Unselected rows retain semantic colors;
+  native Git ANSI history and log spans are preserved without theme recoloring.
+- Diff rows pair tinted staged/unstaged normal, marked, and cursor backgrounds
+  with explicit RGB add/remove foregrounds. Highlighted context and cursor/mark
+  gutters use `diff.context.foreground`. Validation checks these text/background
+  pairs at 4.5:1 or above; `diff.gutter` colors gutters without a highlighted
+  background. Cursor state takes precedence over marked state.
+- Overrides to cursor, batch, badge, modal-selection, and diff roles require RGB.
+  Cursor, batch, and badge pairs require both final channels to be RGB and at
+  least 4.5:1, except unchanged legacy default ANSI pairs. Base and effective
+  modal-body pairs, plus semantic accents, file statuses, hashes, authors and
+  normal diff gutters against their corresponding backgrounds, are checked at
+  4.5:1 when both channels are RGB. Identical non-reset values are rejected even
+  for ANSI colors. Muted chrome only rejects identical non-reset values.
+  Terminal-default and named/indexed ANSI colors cannot be contrast-verified;
+  validation does not guarantee their appearance in a terminal.
 - Modal scrims clear underlying selection/diff backgrounds before applying muted
   text, so background highlights do not bleed through the overlay.
-- Additional built-in palettes, including Tokyo Night, are kept as theme
-  candidates. Configuration-file theme selection is a future TODO and is not
-  active in the current runtime.
 - Modal tones are semantic and text-backed: editor modals use an info accent,
   repository reset uses a warning accent, and discard confirmation uses a danger
   accent while still rendering explicit warning text.
 - Input modal focus is border-only: the active input field uses the modal tone
-  for its border and title, while input text keeps the normal terminal
+  for its border and title, while input text keeps the effective modal
   foreground/background.
 - Confirmation modals share the `Confirm` title with the tone icon, center a
   primary question plus secondary consequence text, and render compact
   AppContext-derived details below the message.
+- Modal select lists (including reset, rebase, command palette and workflow
+  menus) use `modal.selection.foreground` and `modal.selection.background`.
+  The default pair is RGB dark text `#142238` on pale blue `#B4D7FF`; Tokyo Night
+  uses `#C0CAF5` on `#24283B`. Validation requires both channels to be RGB with
+  at least 7:1 text contrast, including custom overrides. Selection overrides
+  warning, danger and muted label colors; unselected choices retain their
+  semantic styles. Indicators and trailing row padding use the same selection
+  pair, with one full-width highlight per list.
 - Choice-menu modals reuse a shared body shape: intro text, choice list,
   description label, and description text. The shared choice list derives its
   viewport from the available choices, sizes the modal shell to fit that

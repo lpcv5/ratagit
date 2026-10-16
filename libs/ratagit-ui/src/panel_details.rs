@@ -4,18 +4,27 @@ use ratagit_core::{AppContext, BranchesSubview, PanelFocus};
 use ratatui::style::{Color, Modifier, Style};
 
 use super::panel_types::{PanelLine, PanelSpan};
-use crate::theme::RowRole;
+use crate::theme::{RowRole, UiTheme};
 
+#[cfg(test)]
 pub(crate) fn render_details_lines(state: &AppContext, max_lines: usize) -> Vec<PanelLine> {
+    render_details_lines_with_theme(state, max_lines, &crate::theme::MAIN_UI_THEME)
+}
+
+pub(crate) fn render_details_lines_with_theme(
+    state: &AppContext,
+    max_lines: usize,
+    theme: &UiTheme,
+) -> Vec<PanelLine> {
     let keep_file_preview = state.ui.last_left_focus == PanelFocus::Files
         && state.repo.details.patch.is_none()
         && state.work.details.patch_request.is_some()
         && !state.repo.details.files_diff.trim().is_empty();
     if state.ui.details.patch.active && !keep_file_preview {
-        return super::partial_details::render(state, max_lines);
+        return super::partial_details::render(state, max_lines, theme);
     }
     match state.ui.last_left_focus {
-        PanelFocus::Files => render_files_details_lines(state, max_lines),
+        PanelFocus::Files => render_files_details_lines(state, max_lines, theme),
         PanelFocus::Branches => render_branch_details_lines(state, max_lines),
         PanelFocus::Commits => render_commit_details_lines(state, max_lines),
         PanelFocus::Stash => {
@@ -87,7 +96,11 @@ pub(crate) fn render_log_lines(state: &AppContext, max_lines: usize) -> Vec<Pane
     lines.into_iter().take(max_lines).collect()
 }
 
-fn render_files_details_lines(state: &AppContext, max_lines: usize) -> Vec<PanelLine> {
+fn render_files_details_lines(
+    state: &AppContext,
+    max_lines: usize,
+    theme: &UiTheme,
+) -> Vec<PanelLine> {
     if max_lines == 0 {
         return Vec::new();
     }
@@ -117,6 +130,7 @@ fn render_files_details_lines(state: &AppContext, max_lines: usize) -> Vec<Panel
             .collect::<Vec<_>>(),
         state.ui.details.scroll_offset,
         max_lines.saturating_sub(rendered.len()),
+        theme,
     ));
     rendered
 }
@@ -352,6 +366,7 @@ fn apply_sgr_codes(mut style: Style, code: &str) -> Style {
     style
 }
 
+// Native Git SGR payloads deliberately retain their ANSI palette, independently of UiTheme.
 fn ansi_color(index: u8, bright: bool) -> Color {
     match (index, bright) {
         (0, false) => Color::Black,

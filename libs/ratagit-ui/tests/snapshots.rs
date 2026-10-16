@@ -19,10 +19,10 @@ use ratagit_ui::{
 use ratatui::style::{Color, Modifier, Style};
 
 const MODAL_ACTIVE: Color = Color::Cyan;
-const MODAL_TEXT: Color = Color::White;
+const MODAL_TEXT: Color = Color::Rgb(20, 34, 56);
 const MODAL_DIM: Color = Color::DarkGray;
 const MODAL_BORDER: Color = Color::DarkGray;
-const MODAL_SURFACE: Color = Color::Blue;
+const MODAL_SURFACE: Color = Color::Rgb(180, 215, 255);
 const MODAL_DANGER: Color = Color::Red;
 const MODAL_WARNING: Color = Color::Yellow;
 
@@ -342,7 +342,10 @@ fn bottom_keys_show_loading_indicator_before_shortcuts() {
             width: 100,
             height: 30,
         },
-        RenderContext { spinner_frame: 3 },
+        RenderContext {
+            spinner_frame: 3,
+            ..Default::default()
+        },
     );
 
     assert!(screen.contains("- loading: refresh"));
@@ -364,12 +367,18 @@ fn bottom_loading_indicator_sweeps_spotlight_across_text_without_background() {
     let first_frame = render_terminal_buffer_with_render_context(
         &state,
         size,
-        RenderContext { spinner_frame: 0 },
+        RenderContext {
+            spinner_frame: 0,
+            ..Default::default()
+        },
     );
     let next_frame = render_terminal_buffer_with_render_context(
         &state,
         size,
-        RenderContext { spinner_frame: 1 },
+        RenderContext {
+            spinner_frame: 1,
+            ..Default::default()
+        },
     );
 
     let first_cells = loading_text_cells(&first_frame, "loading: refresh");
