@@ -380,7 +380,7 @@ pub(crate) fn handle_stash_pop_result(
     stash_id: String,
     result: Result<(), String>,
 ) -> Vec<Command> {
-    handle_operation_result(
+    handle_operation_result_refreshing_after_failure(
         state,
         result,
         "stash_pop",
