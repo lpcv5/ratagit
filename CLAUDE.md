@@ -1,71 +1,40 @@
-# CLAUDE.md
+# ratagit
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
-ratagit is a Rust 2024 Git TUI built with ratatui and crossterm, aiming for lazygit-style workflows. Read [AGENTS.md](AGENTS.md) for repository invariants and delivery rules; behavior is documented in [docs/PRODUCT.md](docs/PRODUCT.md).
+Rust 2024 Git TUI built with ratatui and crossterm, aiming for lazygit-style
+workflows. Follow [AGENTS.md](AGENTS.md) for repository rules and validation.
 
 ## Commands
 
-```bash
-# Build / compile check
-cargo build --locked --workspace
-cargo check --locked --workspace
-
-# Launch the TUI in an interactive terminal (explicit binary avoids helper binaries)
+```sh
 cargo run --locked --bin ratagit
-
-# Format / check formatting
-cargo fmt
+cargo check --locked --workspace
 cargo fmt --check
-
-# Strict lint: production libraries and binaries; test-only lint is advisory
 cargo clippy --locked --workspace --lib --bins -- -D warnings
-
-# Full test gate: unit, integration, UI snapshots, and harness
 cargo test --locked --workspace
-
-# One crate / one integration test target / one exact test
-cargo test --locked -p ratagit-ui
-cargo test --locked -p ratagit-ui --test details_entry
-cargo test --locked -p ratagit-ui --test details_entry entry_keeps_expanded_files_and_previous_preview_until_patch_arrives -- --exact
-
-# Harness only / one mock scenario
-cargo test --locked -p ratagit-harness
-cargo test --locked -p ratagit-harness --test harness harness_status_refresh -- --exact
-
-# Review pending snapshot differences (requires cargo-insta)
-cargo insta review
-
-# Whitespace validation
-git diff --check
 ```
 
-The app discovers a repository from the process working directory and uses `HybridGitBackend`; outside a repository it displays a mock dirty-repository fixture. The executable owns keyboard mapping, terminal lifecycle, clipboard, and external editors.
+Run `cargo fmt` to fix formatting. During iteration, target the affected package
+or integration test, for example:
 
-Ensure a filtered test command actually runs the intended tests. CI runs formatting, strict production Clippy, compile checks, and the full workspace tests on Ubuntu and Windows; a full test run already includes snapshots and harness tests.
+```sh
+cargo test --locked -p ratagit-ui --test details_entry
+cargo test --locked -p ratagit-harness --test harness harness_status_refresh -- --exact
+```
 
-## Development workflow
+Verify filtered commands actually run the intended tests. Full workspace tests
+already include snapshots and harness tests. Review intended snapshot changes;
+use `cargo insta review` if cargo-insta is installed.
 
-Follow [docs/DEVELOPMENT_LOOP.md](docs/DEVELOPMENT_LOOP.md): small documentation or bounded local changes need only a goal and validation note in the conversation. Before substantial, ambiguous, cross-layer, Git mutation, or async/runtime work, update [docs/EXEC_PLAN.md](docs/EXEC_PLAN.md) with scope, risks, acceptance criteria, and verification, preserving its required headings.
+The app discovers a repository from the working directory and uses
+`HybridGitBackend`; outside a repository it displays a mock fixture. Launch the
+TUI in an interactive terminal. For runtime diagnostics, see
+[observability](docs/OBSERVABILITY.md).
 
-For code, dependency, build, or CI changes, the final gate is formatting, strict production Clippy, and full workspace tests above. Review intended snapshot diffs rather than bulk-accepting mismatches. Documentation-only changes need content/link review and `git diff --check`.
+## Documentation
 
-## Architecture
+Read relevant sections on demand:
 
-The executable composes six workspace libraries under `libs/`. The dependency boundaries and state ownership are specified in [ARCHITECTURE.md](ARCHITECTURE.md); rendering and interaction design are in [docs/DESIGN.md](docs/DESIGN.md).
-
-- **ratagit-core** owns the pure state machine and shared Git models, with no external dependencies. `AppContext` separates Git-derived `repo` data, `ui` state/projections, and pending/loading `work` state. Inputs become `UiAction`; `update(&mut state, Action)` emits `Command` values. Backend `GitResult` values re-enter the same reducer and can emit follow-up commands such as refreshes after mutations.
-- **ratagit-git** depends on core and exposes `GitBackend`, composed of read, write, and history-rewrite traits. `HybridGitBackend` combines libgit2 operations with a private `GitCli` helper; `MockGitBackend` and `SharedMockGitBackend` support tests/demo state. Git access stays behind this boundary.
-- **ratagit-harness** depends on core, git, and ui and supplies both the synchronous `Runtime` for deterministic scenarios and the production `AsyncRuntime`. The latter uses standard threads/channels, a read worker pool, and a serial mutation worker. A shared scheduler coalesces refreshes and debounces Details requests. Mutations advance a generation so stale reads are dropped; new reads defer until mutations finish. Already-running reads may overlap writes. Details results must also match their request id, target, and current selection.
-- **ratagit-ui** depends on core and projects immutable `&AppContext` into ratatui output, without state mutation or Git access. Files, Branches, Commits, and Stash occupy the left column; Details and Log occupy the right. The focused left panel borrows height from others, and Stash collapses when unfocused. Files previews and reviewed native patches share a diff-row renderer; history/log text uses ANSI-to-span projection. Core owns tree projections and bounded detail text caches; rendering contracts belong in DESIGN.md.
-- **ratagit-observe** configures file-based tracing. Use `RATAGIT_LOG=debug` or `RATAGIT_LOG_PATH` when diagnosing runtime behavior; see [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md).
-- **ratagit-testkit** depends on core and supplies shared deterministic fixtures for tests and the application's demo state.
-
-## Testing contracts
-
-See [docs/TESTING.md](docs/TESTING.md) for coverage selection and failure artifacts.
-
-- UI tests render the real terminal renderer with `ratatui::TestBackend` and deterministic fixtures. Insta snapshots live under `libs/ratagit-ui/tests/snapshots/`; assert selection/cursor styles separately because text snapshots do not encode colors.
-- Interaction flows and Git mutations need harness coverage of rendered UI, operation trace, and resulting Git state. The mock scenario index [docs/harness/SCENARIOS.md](docs/harness/SCENARIOS.md) must track `fn harness_*` definitions in `libs/ratagit-harness/tests/harness.rs`; real-Git smoke tests are separate.
-- Real-Git tests use isolated repositories under workspace `tmp/git-tests/`, never the checkout itself. Scheduler tests use injected time; async tests use explicit wait helpers or channel barriers instead of bare sleeps.
-- Large synthetic repositories and performance suites are manual tools, outside normal tests/CI. Commands and report locations are in [docs/TOOLING.md](docs/TOOLING.md).
+- [Architecture and ownership](ARCHITECTURE.md)
+- [Product behavior](docs/PRODUCT.md) and [rendering design](docs/DESIGN.md)
+- [Development workflow](docs/DEVELOPMENT_LOOP.md) and [testing](docs/TESTING.md)
+- [Manual tooling and performance](docs/TOOLING.md)

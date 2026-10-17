@@ -121,11 +121,9 @@ Forbidden:
 
 ### 3. Layer Separation
 
-```text
-CLI → Core → UI
-        ↓
-      Git
-```
+The executable composes the libraries. Core has no external dependencies;
+UI and Git depend on core; the harness composes core, Git and UI. Reducers
+emit Commands, runtimes execute backend work, and results return as Actions.
 
 Rules:
 
@@ -334,18 +332,22 @@ drain GitResult channel
 
 - UI directly mutates state
 - UI calls Git
-- logic inside render()
-- branching based on terminal state outside AppContext
+- business state transitions or side effects inside render()
+- reading implicit external inputs during rendering
 - hidden caches not in AppContext
+
+Rendering may compute layout, formatting and conditional presentation from
+AppContext, terminal size and RenderContext.
 
 ---
 
 ## Code Structure Rules
 
-### File Size
+### Module Size
 
-- max 500 lines per file
-- split when growing
+Keep modules cohesive and easy to navigate. Split when distinct responsibilities
+or change patterns justify it; file length alone does not require a refactor.
+Keep unrelated restructuring outside the task scope.
 
 ### Module Rules
 
@@ -363,8 +365,7 @@ drain GitResult channel
 
 AppContext must:
 
-- be serializable (for debugging)
-- be inspectable
+- be inspectable through Debug and deterministic test assertions
 - keep Git-derived data in `repo`
 - keep interaction state and render caches in `ui`
 - keep pending-work state in `work`

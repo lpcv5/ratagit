@@ -22,25 +22,34 @@ package manager are not required. Cargo manages libraries such as `ratatui`,
 
 ---
 
-## Commands
+## Validation
 
-```bash
-cargo fmt
-cargo clippy --locked --workspace --lib --bins -- -D warnings
-cargo test --locked --workspace
-```
-
-`clippy -D warnings` is scoped to production library and binary targets. Test
-code is allowed to favor readable fixtures and scenario flow over strict lint
-polish, provided `cargo test`, snapshots, and harness scenarios pass.
+Use the final gate in [AGENTS.md](../AGENTS.md) and the coverage guidance in
+[TESTING.md](TESTING.md). Run `cargo fmt` when formatting needs correction.
+Clippy and workspace tests compile the affected targets; a separate
+`cargo check --locked --workspace` is useful during iteration but is not an
+additional final-gate step.
 
 ---
 
-## Snapshot
+## Snapshot review
 
-```bash
+Run the affected UI test, inspect any `.snap.new` against the intended behavior,
+and review changes with cargo-insta if installed:
+
+```sh
 cargo insta review
 ```
+
+Rerun the affected test after accepting intended changes. Do not bulk-accept
+unexplained differences. Text snapshots do not prove cursor/selection colors;
+use buffer-cell style assertions as described in [TESTING.md](TESTING.md).
+
+Harness failures write diagnostic bundles under
+`target/harness-artifacts/` (or `$CARGO_TARGET_DIR/harness-artifacts/`); some
+specialized tests use `tmp/harness-artifacts/`. Inspect the screen, state,
+operation trace and `failure_report.json` before retrying. CI uploads failure
+artifacts from both OS jobs.
 
 ---
 
