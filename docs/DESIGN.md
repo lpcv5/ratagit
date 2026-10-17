@@ -1,5 +1,25 @@
 # DESIGN.md
 
+## Left-panel tabs
+
+The Files, Branches and Commits physical panels contain sibling repository tabs;
+Stash stays single-view. Core owns the active tab and independent linear
+selection/scroll for each list. ActiveLeftView and details_left_view resolve the
+tab before any original list subview. New lists use typed RepositoryItem data,
+loaded on demand through GitBackendRead, and synchronous metadata Details
+projections. Pending list reads own monotonic request IDs; refresh and mutation
+scheduling invalidate them, while runtime generations reject reads crossing a
+write. A completed read may populate an inactive tab but cannot replace another
+tab's Details. Search is scoped to a tab and cleared on switching.
+
+Headers retain focus badges and distinguish the active tab with bold underline.
+At widths that cannot fit all siblings, render the active title. Lists show
+loading, errors and empty states explicitly; their caption states the read-only
+1000-entry bound. The keyboard and reducer both exclude original-list actions
+on metadata tabs. Arrows and brackets cycle siblings with wrap in normal input;
+modal/editor/search/patch input retains precedence. Tab keeps its existing
+tracking-checkout and commit-patch meanings.
+
 ## Common Git workflows
 
 `ui.workflow` owns typed menu/prompt/confirmation state and copied commit IDs.

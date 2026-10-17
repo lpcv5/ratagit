@@ -5,6 +5,11 @@ use crate::{
 
 pub(crate) fn update_git_result(state: &mut AppContext, result: GitResult) -> Vec<Command> {
     match result {
+        GitResult::RepositoryTabLoaded {
+            tab,
+            request_id,
+            result,
+        } => crate::tabs::loaded(state, tab, request_id, result),
         GitResult::LoadedCustomPatch {
             request_id,
             request,

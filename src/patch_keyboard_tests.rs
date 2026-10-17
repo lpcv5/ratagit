@@ -61,7 +61,7 @@ impl Keys {
 
     pub(super) fn save(&self, repo: &Path, case: &str) {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tmp/pr8-details-keyboard")
+            .join("tmp/details-keyboard")
             .join(case);
         fs::create_dir_all(&path).unwrap();
         fs::write(path.join("screen.txt"), self.screen()).unwrap();
@@ -196,7 +196,7 @@ fn scenario(selection: &str, operation: &str) {
         assert!(keys.runtime.state().ui.details.patch.anchor.is_none());
         assert_eq!(keys.runtime.state().ui.focus, PanelFocus::Details);
         if operation != "discard" {
-            // PR #8 follows the applied cursor to the destination side.
+            // Follow the applied cursor to the destination side.
             assert_eq!(
                 keys.runtime.state().ui.details.patch.staged,
                 operation == "stage"

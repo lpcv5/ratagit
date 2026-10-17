@@ -3,18 +3,18 @@ source: libs/ratagit-ui/tests/partial_details.rs
 assertion_line: 96
 expression: text
 ---
-╭ 1  󰈙 File╮╭ 5   Details ───────╮
+╭ 1  󰈙 F ──╮╭ 5   Details ───────╮
 │          ││   diff --git a/src/l│
 │          ││   index 1111111..222│
 │          ││   --- a/src/lib.rs  │
 │          ││   +++ b/src/lib.rs  │
 ╰──────────╯│   @@ -1,3 +1,3 @@   │
-╭ 2   Bran╮│ ┃ -old first        │
+╭ 2   B ──╮│ ┃ -old first        │
 │          ││ ┃ +new first        │
 │          ││    unchanged        │
 │          ││>┃ -old last         │
 ╰──────────╯│ ┃ +new last         │
-╭ 3   Comm╮│                     │
+╭ 3   C ──╮│                     │
 │          │╰─────────────────────╯
 │          │╭ 6  󰌱 Log ───────────╮
 ╰──────────╯│  notice=Ready       │

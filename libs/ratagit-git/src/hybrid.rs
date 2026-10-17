@@ -13,6 +13,7 @@ use ratagit_core::{
     StashEntry, StatusMode,
 };
 
+mod tabs;
 use crate::cli::GitCli;
 use crate::untracked_diff::format_untracked_diffs;
 use crate::{
@@ -73,6 +74,12 @@ impl fmt::Debug for HybridGitBackend {
 }
 
 impl GitBackendRead for HybridGitBackend {
+    fn repository_tab(
+        &mut self,
+        tab: ratagit_core::RepositoryTab,
+    ) -> Result<Vec<ratagit_core::RepositoryItem>, GitError> {
+        self.read_repository_tab(tab)
+    }
     fn load_custom_patch(
         &mut self,
         request: ratagit_core::patch::PatchRequest,

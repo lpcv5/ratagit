@@ -51,6 +51,7 @@ macro_rules! delegate_shared_backend {
 
 impl GitBackendRead for SharedMockGitBackend {
     delegate_shared_backend! {
+        repository_tab(tab: ratagit_core::RepositoryTab) -> Result<Vec<ratagit_core::RepositoryItem>, GitError>;
         load_custom_patch(request: ratagit_core::patch::PatchRequest) -> Result<ratagit_core::patch::Patch, GitError>;
         render_custom_patch(patch: &ratagit_core::custom_patch::CustomPatch) -> Result<Vec<u8>, GitError>;
         remote_branches() -> Result<Vec<String>, GitError>;

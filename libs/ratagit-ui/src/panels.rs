@@ -3,7 +3,7 @@ mod panel_details;
 #[path = "panel_format.rs"]
 mod panel_format;
 #[path = "panel_left.rs"]
-mod panel_left;
+pub(crate) mod panel_left;
 #[path = "panel_scroll.rs"]
 mod panel_scroll;
 #[path = "panel_shortcuts.rs"]

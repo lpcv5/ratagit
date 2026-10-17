@@ -2,15 +2,20 @@
 
 ## Required Tools
 
-- rustfmt
-- clippy
-- insta (snapshots)
-- tracing
+- Stable Rust with Cargo and support for the 2024 edition
+- rustfmt and Clippy components for the selected Rust toolchain
+- Git, available on PATH for backend operations and real-Git tests
+
+The application and test suite build through Cargo; Node.js and a JavaScript
+package manager are not required. Cargo manages libraries such as `ratatui`,
+`insta` (snapshot assertions), and `tracing` through the workspace manifests and
+`Cargo.lock`; they are not separate tools to install.
 
 ---
 
 ## Optional
 
+- cargo-insta (provides `cargo insta review` for snapshot review)
 - cargo-nextest
 - cargo-udeps
 - cargo-audit

@@ -20,7 +20,7 @@ expression: text
 │                   │ src/large-directory/file-000.rs                          │                   │
 │                   │ src/large-directory/file-001.rs                          │                   │
 ╰───────────────────│ … and 98 more                                            │                   │
-╭ 3   Commits ─────│                                                          │                   │
+╭ 3   Commits │ Ref│                                                          │                   │
 │●  abc1234  RT  ini│                                                          │                   │
 │●  def5678  RT  wir│                                                          │───────────────────╯
 │                   │ ──────────────────────────────────────────────────────── │───────────────────╮

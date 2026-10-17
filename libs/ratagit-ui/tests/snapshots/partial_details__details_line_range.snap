@@ -1,7 +1,7 @@
 ---
 source: libs/ratagit-ui/tests/partial_details.rs
-assertion_line: 57
-expression: text
+assertion_line: 61
+expression: "render_terminal_text(&state, SIZE)"
 ---
 ╭ 1  󰈙 Files ───────────────────────────╮╭ 5   Details ───────────────────────────────────────────────────────────────╮
 │                                       ││   diff --git a/src/lib.rs b/src/lib.rs                                      │
@@ -9,13 +9,13 @@ expression: text
 │                                       ││   --- a/src/lib.rs                                                          │
 │                                       ││   +++ b/src/lib.rs                                                          │
 │                                       ││   @@ -1,3 +1,3 @@                                                           │
-│                                       ││ ┃ -old first                                                                │
-│                                       ││ ┃ +new first                                                                │
+│                                       ││   -old first                                                                │
+│                                       ││   +new first                                                                │
 │                                       ││    unchanged                                                                │
-│                                       ││>  -old last                                                                 │
-│                                       ││   +new last                                                                 │
+│                                       ││ ┃ -old last                                                                 │
+│                                       ││>┃ +new last                                                                 │
 ╰───────────────────────────────────────╯│                                                                             │
-╭ 2   Branches ────────────────────────╮│                                                                             │
+╭ 2   Branches │ Remotes │ Tags │──────╮│                                                                             │
 │                                       ││                                                                             │
 │                                       ││                                                                             │
 │                                       ││                                                                             │
@@ -24,7 +24,7 @@ expression: text
 │                                       ││                                                                             │
 │                                       ││                                                                             │
 ╰───────────────────────────────────────╯│                                                                             │
-╭ 3   Commits ─────────────────────────╮│                                                                             │
+╭ 3   Commits │ Reflog │───────────────╮│                                                                             │
 │                                       ││                                                                             │
 │                                       │╰─────────────────────────────────────────────────────────────────────────────╯
 │                                       │╭ 6  󰌱 Log ───────────────────────────────────────────────────────────────────╮

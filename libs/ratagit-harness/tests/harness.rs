@@ -28,6 +28,130 @@ use tracing::Level;
 mod commit_files_scenarios;
 
 #[test]
+fn harness_repository_tabs_preserve_git_state_and_active_details() {
+    use ratagit_core::RepositoryTab as T;
+    let fixture = fixture_dirty_repo();
+    let mut runtime = Runtime::new(
+        AppContext::default(),
+        MockGitBackend::new(fixture.clone()),
+        TerminalSize {
+            width: 120,
+            height: 30,
+        },
+    )
+    .with_debounce_window(Duration::ZERO);
+    runtime.dispatch_ui(UiAction::RefreshAll);
+    assert!(
+        !runtime
+            .backend()
+            .operations()
+            .iter()
+            .any(|op| op.starts_with("repository-tab:"))
+    );
+    runtime.dispatch_ui(UiAction::CyclePanelTab { previous: true });
+    assert_eq!(runtime.state().ui.tabs.files, Some(T::Worktrees));
+    assert!(runtime.render_terminal_text().contains("mock-worktree"));
+    assert!(
+        runtime
+            .backend()
+            .operations()
+            .contains(&"repository-tab:Worktrees".into())
+    );
+    runtime.dispatch_ui(UiAction::ToggleStageAll);
+    runtime.dispatch_ui(UiAction::FocusPanel {
+        panel: PanelFocus::Branches,
+    });
+    runtime.dispatch_ui(UiAction::CyclePanelTab { previous: false });
+    assert!(runtime.render_terminal_text().contains("No remotes"));
+    runtime.dispatch_ui(UiAction::CheckoutSelectedBranch);
+    runtime.dispatch_ui(UiAction::FocusPanel {
+        panel: PanelFocus::Commits,
+    });
+    runtime.dispatch_ui(UiAction::CyclePanelTab { previous: false });
+    assert!(runtime.render_terminal_text().contains("HEAD@{0}"));
+    runtime.dispatch_ui(UiAction::MoveDown);
+    let selection = runtime.state().ui.tabs.selections[&T::Reflog].selected;
+    assert_eq!(selection, 1);
+    runtime.dispatch_ui(UiAction::CheckoutSelectedCommitDetached);
+    runtime.dispatch_ui(UiAction::CyclePanelTab { previous: false });
+    runtime.dispatch_ui(UiAction::CyclePanelTab { previous: false });
+    assert_eq!(
+        runtime.state().ui.tabs.selections[&T::Reflog].selected,
+        selection
+    );
+    runtime.dispatch_ui(UiAction::FocusPanel {
+        panel: PanelFocus::Details,
+    });
+    assert!(runtime.render_terminal_text().contains("Reflog: HEAD@{1}"));
+    assert_eq!(runtime.backend().snapshot(), &fixture);
+    assert!(
+        !runtime
+            .backend()
+            .operations()
+            .iter()
+            .any(|op| op.starts_with("stage:") || op.starts_with("checkout"))
+    );
+}
+
+#[test]
+fn harness_repository_tabs_async_reads_keep_current_preview() {
+    use ratagit_core::RepositoryTab as T;
+    let fixture = fixture_dirty_repo();
+    let backend = ratagit_git::SharedMockGitBackend::new(fixture.clone());
+    let observer = backend.clone();
+    let mut runtime = AsyncRuntime::new(
+        AppContext::default(),
+        move || backend.clone(),
+        TerminalSize {
+            width: 120,
+            height: 30,
+        },
+    )
+    .with_debounce_window(Duration::ZERO);
+    runtime.dispatch_ui(UiAction::CyclePanelTab { previous: false });
+    runtime.dispatch_ui(UiAction::CyclePanelTab { previous: false });
+    wait_for_runtime_state(&mut runtime, "repository tab reads", |runtime| {
+        runtime.state().work.tabs.pending.is_empty()
+    });
+    assert_eq!(runtime.state().ui.tabs.files, Some(T::Worktrees));
+    assert!(
+        runtime
+            .render_terminal_text()
+            .contains("Worktree: mock-worktree")
+    );
+    assert!(!runtime.render_terminal_text().contains("No submodules"));
+    runtime.dispatch_ui(UiAction::FocusPanel {
+        panel: PanelFocus::Commits,
+    });
+    runtime.dispatch_ui(UiAction::CyclePanelTab { previous: false });
+    wait_for_runtime_state(&mut runtime, "reflog after worktree read", |runtime| {
+        runtime
+            .state()
+            .repo
+            .tabs
+            .get(&T::Reflog)
+            .is_some_and(|list| list.loaded)
+    });
+    assert!(runtime.render_terminal_text().contains("Reflog:"));
+    assert!(
+        !runtime
+            .render_terminal_text()
+            .contains("Worktree: mock-worktree")
+    );
+    assert_eq!(observer.snapshot(), fixture);
+    assert!(
+        observer
+            .operations()
+            .contains(&"repository-tab:Submodules".into())
+    );
+    assert!(
+        observer
+            .operations()
+            .contains(&"repository-tab:Worktrees".into())
+    );
+}
+
+#[test]
 fn harness_commit_files_operations_and_hunks() {
     commit_files_scenarios::operations_and_hunks();
 }

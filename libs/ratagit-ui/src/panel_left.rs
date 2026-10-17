@@ -17,6 +17,86 @@ use super::panel_types::{PanelLine, PanelSpan};
 use crate::theme::MAIN_UI_THEME;
 use crate::theme::{PanelLabel, RowRole, UiTheme, panel_label};
 
+pub(crate) fn tab_labels(state: &AppContext, panel: PanelFocus) -> Vec<(&'static str, bool)> {
+    use ratagit_core::RepositoryTab as T;
+    let active = state.ui.tabs.active(panel);
+    let (base, siblings): (&str, &[T]) = match panel {
+        PanelFocus::Files => ("󰈙 Files", &[T::Submodules, T::Worktrees]),
+        PanelFocus::Branches => (
+            if state.ui.branches.subview == BranchesSubview::Commits {
+                " Branch Commits"
+            } else if state.ui.branches.subview == BranchesSubview::CommitFiles {
+                " Branch Commit Files"
+            } else {
+                " Branches"
+            },
+            &[T::Remotes, T::Tags],
+        ),
+        PanelFocus::Commits => (
+            if state.ui.commits.files.active {
+                " Commit Files"
+            } else {
+                " Commits"
+            },
+            &[T::Reflog],
+        ),
+        _ => return Vec::new(),
+    };
+    std::iter::once((base, active.is_none()))
+        .chain(
+            siblings
+                .iter()
+                .map(|tab| (tab.title(), active == Some(*tab))),
+        )
+        .collect()
+}
+
+pub(crate) fn render_tab_lines(
+    state: &AppContext,
+    tab: ratagit_core::RepositoryTab,
+    max_lines: usize,
+    theme: &UiTheme,
+) -> Vec<PanelLine> {
+    if max_lines == 0 {
+        return Vec::new();
+    }
+    if state.work.tabs.pending.contains_key(&tab) {
+        return vec![PanelLine::new(
+            format!("  Loading {}…", tab.title()),
+            RowRole::Notice,
+        )];
+    }
+    let Some(list) = state.repo.tabs.get(&tab) else {
+        return vec![PanelLine::new("  Not loaded", RowRole::Muted)];
+    };
+    if let Some(error) = &list.error {
+        return vec![PanelLine::new(format!("  {error}"), RowRole::Error)];
+    }
+    if list.items.is_empty() {
+        return vec![PanelLine::new(
+            format!("  No {}", tab.title().to_lowercase()),
+            RowRole::Muted,
+        )];
+    }
+    let selected = state
+        .ui
+        .tabs
+        .selections
+        .get(&tab)
+        .map_or(0, |selection| selection.selected);
+    let scroll = state
+        .ui
+        .tabs
+        .selections
+        .get(&tab)
+        .map_or(0, |selection| selection.scroll_offset);
+    render_indexed_entries_window_with(&list.items, selected, scroll, max_lines, |index, item| {
+        let line = PanelLine::new(format!("  {}", item.label()), RowRole::Normal)
+            .selected(index == selected);
+        highlight_search_query(line, state, SearchScope::RepositoryTab(tab), theme)
+    })
+}
+
 pub(crate) fn panel_title(state: &AppContext, panel: PanelFocus) -> &'static str {
     if panel == PanelFocus::Details && state.ui.custom_patch.preview_return_focus.is_some() {
         "[5]  Custom Patch"
@@ -71,6 +151,13 @@ pub(crate) fn panel_title_label(state: &AppContext, panel: PanelFocus) -> PanelL
 }
 
 pub(crate) fn left_panel_content_len(state: &AppContext, panel: PanelFocus) -> usize {
+    if let Some(tab) = state.ui.tabs.active(panel) {
+        return state
+            .repo
+            .tabs
+            .get(&tab)
+            .map_or(1, |list| list.items.len().max(1));
+    }
     match panel {
         PanelFocus::Files => {
             if file_tree_rows(&state.ui.files).is_empty() && !state.repo.files.items.is_empty() {

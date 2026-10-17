@@ -2,95 +2,98 @@
 
 ## Active Slice
 
-Name: Real terminal review of historical patch views
-Status: completed and verified
+Name: Left-panel tabs for repository navigation
+Status: complete; final regression gate passed
+
+The pre-existing repository cleanup edits remain in the working tree. Preserve
+those edits, including renamed Details snapshots and verification tooling.
 
 ## Problem
 
-Run the actual native Windows TUI against an isolated real Git repository and
-check Commit Files, hunk/line/range selection, aggregate preview and options at
-120x36 and 80x24. Native PTY captures revealed that passive Commit Files diffs
-still use raw Git ANSI colors and two-space indentation, while hunk and custom
-preview use themed backgrounds and a three-column gutter. Historical selection
-also gives no visible indication when a cycles hunk/line/block modes.
+The left panels expose Files, local Branches, Commits and Stash but lack the
+related repository views available through lazygit's panel tabs. Users need
+within-panel navigation to submodules, worktrees, remotes, tags and reflog,
+with useful repository data and a matching Details preview.
 
 ## Smallest Slice
 
-Route passive main/Branch Commit Files diffs through the existing read-only
-preview row parser and shared diff renderer, preserving metadata, source text,
-scrolling and error/loading fallbacks. Display current historical selection mode
-and file in the Details bottom border using the existing caption projection.
-Match workflow-menu footer hints to the menu's own j/k and arrow navigation.
-Retain all input/Git/state ownership semantics and prior uncommitted work.
+Add the lazygit panel groups: Files / Submodules / Worktrees;
+Branches / Remotes / Tags; Commits / Reflog. Stash remains a single view.
+Inspect current keyboard/tree/modal contracts before choosing final mappings.
+Use reducer-owned tab and selection state, backend-owned repository reads,
+and immutable rendering. Preserve independent selection/scroll per tab.
 
-Acceptance: passive file preview, hunk view and custom preview share stable
-content columns and themed add/remove/hunk styles; mode changes are visible;
-selection/inclusion/search retain precedence. Inspect the rebuilt executable
-again, including narrow windows, preview scroll/return and patch options.
+Acceptance: tabs cycle in both directions and wrap; inactive tabs retain their
+selection; repository-backed lists and empty/error/loading states render;
+Details follows the active tab without applying stale results; existing local
+file/branch/commit workflows still work. Narrow terminals remain usable.
+Document actual shortcuts and available operations, and cover real repository
+reads plus keyboard/reducer/rendered harness behavior.
 
 ## Non-Goals
 
-No new Git operations, dependencies, state model or input changes; no workspace
-Git mutations, commits/pushes, OS settings or Windows terminal UI automation.
+Do not add unrelated Git mutations, dependencies, or rewrite history. Tab
+navigation must not invoke hidden local Files/Branches/Commits mutations.
+Do not discard or commit pre-existing working-tree changes.
 
 ## Expected Files
 
-Pure UI Details projection, historical border captions and regression fixtures;
-PRODUCT/DESIGN/architecture wording for unified historical previews; this plan.
-Runtime inspection scripts, isolated repository and output remain under tmp/.
+Core state/actions/reducers/selectors; Git read traits and implementations;
+harness command execution/scheduling and fixtures; UI panel titles/list/details
+projections; executable key mapping and command palette; focused tests and
+snapshots; PRODUCT/DESIGN and scenario documentation as appropriate.
 
 ## Tests
 
-Focused UI snapshots and exact buffer-cell assertions comparing passive,
-interactive and aggregate previews under a configured theme. Verify mode captions
-for hunk/line/block plus Branch Commit Files; retain real keyboard and harness
-coverage. Review native PTY text/color captures and PNG renderings of that output.
+Extend meaningful keyboard, core, UI and harness tests for tab cycling,
+selection retention, empty/loading/error states, active-tab Details and
+mutation isolation. Use isolated repositories under tmp/git-tests for Git
+backend coverage. Review each intended snapshot change.
 
 ## Harness Decision
 
-Presentation-only changes use deterministic UI/style regressions. Existing
-cross-file harness and real-Git keyboard tests cover unchanged operations.
-Native binary inspection supplements them and checks HEAD/index/worktree remain
-unchanged. Temporary Python PTY/emulator/image dependencies stay outside product.
+New navigation is an interaction flow. Add rendered harness scenarios that
+assert active tabs, repository read traces and preserved Git state. Add async
+ownership coverage where new reads participate in the runtime.
 
 ## Validation
 
-Build and inspect the real executable; focused UI/keyboard/harness tests;
-cargo fmt --check; cargo clippy --locked --workspace --lib --bins -- -D warnings;
-cargo test --locked --workspace; git diff --check. Preserve failure artifacts.
+Baseline workspace tests; focused checks during implementation; cargo fmt
+--check; cargo clippy --locked --workspace --lib --bins -- -D warnings;
+cargo test --locked --workspace; git diff --check. Use PowerShell for native
+Windows commands. Review the final diff and preserve existing cleanup edits.
 
 ## Completion Evidence
 
-Before captures: tmp/patch-ui-live/20261016-170320/03-commit-files.png,
-07-hunk-selection.png, 12-preview.png, 14-options-narrow.png and terminal.ansi.
-Initial monochrome run inherited the tool shell's NO_COLOR=1; the controlled
-color run removes that variable only from the child process and uses installed
-Maple Mono Nerd Font for rendering captured terminal output. Actual process,
-ConPTY input, native Git data and async loading are exercised.
+Implemented Files/Submodules/Worktrees, Branches/Remotes/Tags and
+Commits/Reflog groups. Left/Right and brackets wrap sibling tabs; h/l retains
+panel navigation. Tab keeps tracking-checkout and custom-patch precedence.
+Typed metadata lists load on demand, retain independent selection/scroll and
+project Details synchronously. Explicit refresh reloads every displayed auxiliary
+list, including while Details has focus; mutation completion does the same.
+Request IDs and existing runtime generations reject superseded reads.
 
-Repaired passive diff colors/alignment, historical mode/file captions and menu
-footer hints. Focused UI suite passes, including two new regressions comparing
-all three diff views' exact columns and custom-theme cell styles, native ANSI
-override, main/Branch projection, mode cycling and preview caption ownership.
-Affected snapshots reviewed, with no pending .snap.new files. Existing source
-file/range/preview fixtures retain selection and inclusion style assertions.
+Added core tests for wrap, retention, search scroll reset, request ownership,
+mutation isolation, global dialog interaction and preserved drilldown state;
+keyboard tests; deterministic UI gallery/style/narrow/loading/error tests;
+synchronous and async rendered harness scenarios; isolated real Git tests for
+worktrees, submodules, remotes, lightweight/annotated tags, reflog and empty HEAD.
+Annotated tag messages, symbolic remote HEAD, overlapping remote names and
+truncated worktree records have explicit regressions. Pending custom-patch
+Options can complete after switching tabs and remain dismissable.
+Adversarial regressions also cover delayed unmerged-branch delete confirmation
+on Remotes (both cancel and captured force retry), variant-qualified remote vs
+remote-branch identities during search/refresh, and Details scroll resetting
+when focus changes between cached metadata tabs.
 
-Rebuilt executable inspected under native ConPTY at 120x36 and 80x24. Evidence:
-tmp/patch-ui-live/20261016-170956/{03-commit-files,07-hunk-selection,
-11-line-range-extend,12-preview,14-preview-narrow,16-options-narrow,
-19-block-mode-narrow,20-file-list-narrow,23-branch-commit-files,
-26-branch-preview-return}.png. Corresponding .txt files, terminal.ansi,
-input.jsonl and verification.json retain exact output, keys and Git state.
-Verified cross-file whole+partial inclusion, hunk/line/range/block selection,
-preview scroll, menu and Tab returns in main and Branch Commit Files. Native
-inspection left HEAD, index entries and clean worktree unchanged; its process
-was closed. The user's pre-existing ratagit process remains running. Build and
-gate use isolated target directories under tmp/patch-ui-live to avoid its exe
-lock. Native Windows final gate passed on 2026-10-16: cargo fmt --check;
-cargo clippy --locked --workspace --lib --bins -- -D warnings;
-cargo test --locked --workspace (748 passed, zero failed/ignored);
-git diff --check. Logs: tmp/patch-ui-live-final-{fmt,clippy,tests}.log.
-Both prior real-keyboard flows, main/Branch commit-file harness flows and the
-cross-file accumulation UI/trace/state scenario passed. No new product
-dependencies, input/state transitions or Git behavior; prior uncommitted work
-is preserved. No commit or push.
+Reviewed the new tab gallery. Existing snapshot changes are panel headers,
+plus palette rows for the new tab commands; renamed Details snapshots and
+pre-existing cleanup edits remain preserved. Focused tests and all final gates
+pass: cargo fmt --check; cargo check --locked --workspace; strict production
+Clippy; cargo test --locked --workspace (including the three adversarial
+regressions); git diff --check. Final native test log is
+`tmp/tabs-adversarial-final.log`; no pending snapshot files remain.
+Verified native Cargo/Rust 1.99.0; no dependencies or management mutations added.
+Before committing, the staged whitespace check identified terminal-padding spaces
+in the new gallery snapshot. The gallery now trims line-end padding; reviewed
+snapshot differences contain only that padding removal. Focused tab UI tests pass.

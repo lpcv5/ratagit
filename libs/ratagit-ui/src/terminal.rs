@@ -213,7 +213,43 @@ fn render_block_panel(
     } else {
         theme.inactive_panel_style()
     };
-    let title = panel_title_line(&projection, border_style, theme);
+    let title = if projection.tabs.is_empty() {
+        panel_title_line(&projection, border_style, theme)
+    } else {
+        let available = area.width.saturating_sub(7) as usize;
+        let total = projection
+            .tabs
+            .iter()
+            .map(|(label, _)| label.chars().count() + 3)
+            .sum::<usize>();
+        let mut spans = vec![Span::styled(
+            format!(" {} ", projection.title.badge),
+            theme.title_badge_style(projection.focused),
+        )];
+        for (label, active) in &projection.tabs {
+            if total > available && !active {
+                continue;
+            }
+            let label = label
+                .chars()
+                .take(available.saturating_sub(2))
+                .collect::<String>();
+            spans.push(Span::styled(
+                format!(" {label} "),
+                if *active {
+                    border_style.add_modifier(
+                        ratatui::style::Modifier::BOLD | ratatui::style::Modifier::UNDERLINED,
+                    )
+                } else {
+                    ratatui::style::Style::default().fg(theme.muted)
+                },
+            ));
+            if total <= available {
+                spans.push(Span::styled("│", border_style));
+            }
+        }
+        Line::from(spans)
+    };
     let items = projection
         .lines
         .iter()

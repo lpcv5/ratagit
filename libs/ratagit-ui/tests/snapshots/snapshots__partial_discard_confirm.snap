@@ -1,6 +1,6 @@
 ---
 source: libs/ratagit-ui/tests/snapshots.rs
-assertion_line: 2717
+assertion_line: 2755
 expression: "render_terminal_text(&state, size)"
 ---
 ╭ 1  󰈙 Files ───────────────────────────╮╭ 5   Details ───────────────────────────────────────────────────────────────╮
@@ -15,7 +15,7 @@ expression: "render_terminal_text(&state, size)"
 │                 │                                                                                  │                 │
 │                 │                                                                                  │                 │
 ╰─────────────────│                                                                                  │                 │
-╭ 2   Branches ──│                                                                                  │                 │
+╭ 2   Branches │ │                                                                                  │                 │
 │ main           │                                                                                  │                 │
 │  feature/mvp    │                              Discard selected lines?                             │                 │
 │                 │                           This action cannot be undone.                          │                 │
@@ -24,7 +24,7 @@ expression: "render_terminal_text(&state, size)"
 │                 │                                                                                  │                 │
 │                 │                                                                                  │                 │
 ╰─────────────────│                                                                                  │                 │
-╭ 3   Commits ───│                                                                                  │                 │
+╭ 3   Commits │ R│                                                                                  │                 │
 │●  abc1234  RT  i│                                                                                  │                 │
 │●  def5678  RT  w│                                                                                  │─────────────────╯
 │                 │ ──────────────────────────────────────────────────────────────────────────────── │─────────────────╮

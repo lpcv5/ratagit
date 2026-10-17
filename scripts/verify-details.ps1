@@ -2,7 +2,7 @@
 # perform the printed keys, then q. Exact index/worktree checks run on exit.
 param(
     [Parameter(Mandatory = $true)][string]$Binary,
-    [string]$OutputDirectory = (Join-Path $PSScriptRoot "../tmp/pr8-details-terminal"),
+    [string]$OutputDirectory = (Join-Path $PSScriptRoot "../tmp/details-terminal"),
     [switch]$UseStagedDiscardKey
 )
 $ErrorActionPreference = 'Stop'

@@ -3,7 +3,7 @@
 This file is generated from `libs/ratagit-harness/tests/harness.rs`.
 Detailed assertions live in the Rust scenario definitions.
 
-Total scenarios: 85
+Total scenarios: 87
 
 ## Global (1)
 
@@ -110,8 +110,10 @@ Total scenarios: 85
 
 - `harness_error_visible_without_crash`
 
-## Other (7)
+## Other (9)
 
+- `harness_repository_tabs_preserve_git_state_and_active_details`
+- `harness_repository_tabs_async_reads_keep_current_preview`
 - `harness_status_refresh`
 - `harness_command_palette_executes_global_pull`
 - `harness_large_directory_details_limits_diff_targets`

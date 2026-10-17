@@ -2,7 +2,7 @@
 
 ## Required checks
 
-Every PR runs on Ubuntu and Windows:
+Every PR and push to `main` or `develop` runs on Ubuntu and Windows:
 
 - cargo fmt --check
 - cargo clippy --locked --workspace --lib --bins -- -D warnings

@@ -305,6 +305,56 @@ mod tests {
     }
 
     #[test]
+    fn sibling_tab_keys_preserve_remote_menu_and_modal_precedence() {
+        let mut state = AppContext::default();
+        for (key, previous) in [
+            (KeyCode::Left, true),
+            (KeyCode::Char('['), true),
+            (KeyCode::Right, false),
+            (KeyCode::Char(']'), false),
+        ] {
+            assert_eq!(
+                map_key(&state, key),
+                Some(UiAction::CyclePanelTab { previous })
+            );
+        }
+        state.ui.focus = PanelFocus::Branches;
+        assert_eq!(
+            map_key(&state, KeyCode::Tab),
+            Some(UiAction::Workflow(
+                ratagit_core::workflow::WorkflowAction::Open(
+                    ratagit_core::workflow::Feature::RemoteBranches
+                )
+            ))
+        );
+        state.ui.tabs.branches = Some(ratagit_core::RepositoryTab::Remotes);
+        assert_eq!(map_key(&state, KeyCode::Enter), None);
+        assert_eq!(map_key(&state, KeyCode::Tab), None);
+        for key in [' ', 'd', 'A', 'c', 'v'] {
+            assert_eq!(map_key(&state, KeyCode::Char(key)), None);
+        }
+        state.ui.focus = PanelFocus::Details;
+        state.ui.last_left_focus = PanelFocus::Branches;
+        for key in ['c', 'A', 'O'] {
+            assert_eq!(map_key(&state, KeyCode::Char(key)), None);
+        }
+        state.ui.focus = PanelFocus::Branches;
+        state.ui.search.active = true;
+        state.ui.search.scope = state.active_search_scope();
+        assert_eq!(
+            map_key(&state, KeyCode::Char(']')),
+            Some(UiAction::InputSearchChar(']'))
+        );
+        assert_eq!(map_key(&state, KeyCode::Right), None);
+        state.ui.search.clear();
+        state.ui.branches.create.active = true;
+        assert_eq!(
+            map_key(&state, KeyCode::Right),
+            Some(UiAction::BranchCreateMoveCursorRight)
+        );
+    }
+
+    #[test]
     fn panel_navigation_uses_h_and_l_not_tab() {
         let state = AppContext::default();
         assert_eq!(

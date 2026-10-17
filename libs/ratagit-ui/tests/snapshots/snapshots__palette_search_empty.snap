@@ -20,7 +20,7 @@ expression: text
 │                   │   D        reset                                         │                   │
 │                   │   enter    expand / partial stage                        │                   │
 ╰───────────────────│   v        visual select                                 │                   │
-╭ 3   Commits ─────│   a        stage/unstage all                             │                   │
+╭ 3   Commits │ Ref│   a        stage/unstage all                             │                   │
 │●  abc1234  RT  ini│   i        ignore untracked path                         │                   │
 │●  def5678  RT  wir│   e        edit file                                     │───────────────────╯
 │                   │ ──────────────────────────────────────────────────────── │───────────────────╮

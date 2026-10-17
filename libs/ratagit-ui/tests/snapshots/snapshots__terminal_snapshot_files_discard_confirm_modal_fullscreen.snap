@@ -1,9 +1,9 @@
 ---
 source: libs/ratagit-ui/tests/snapshots.rs
-assertion_line: 836
+assertion_line: 874
 expression: "render_terminal_text(&state, TerminalSize { width: 160, height: 50, },)"
 ---
-╭ 1  󰈙 Files ────────────────────────────────────────╮╭ 5   Details ──────────────────────────────────────────────────────────────────────────────────────────╮
+╭ 1  󰈙 Files │ Submodules │ Worktrees │──────────────╮╭ 5   Details ──────────────────────────────────────────────────────────────────────────────────────────╮
 │   ? README.md                                      ││   diff --git a/README.md b/README.md                                                                   │
 │    src/                                           ││   @@ -1 +1 @@                                                                                          │
 │     M lib.rs                                       ││   -old README.md                                                                                       │
@@ -21,7 +21,7 @@ expression: "render_terminal_text(&state, TerminalSize { width: 160, height: 50,
 │                       │                                                                                                              │                       │
 │                       │                                                                                                              │                       │
 ╰───────────────────────│                                                                                                              │                       │
-╭ 2   Branches ────────│                                                                                                              │                       │
+╭ 2   Branches │ Remote│                                                                                                              │                       │
 │ main                 │                                                                                                              │                       │
 │  feature/mvp          │                                                                                                              │                       │
 │                       │                                        Discard selected file changes?                                        │                       │
@@ -34,7 +34,7 @@ expression: "render_terminal_text(&state, TerminalSize { width: 160, height: 50,
 │                       │                                                                                                              │                       │
 │                       │                                                                                                              │                       │
 ╰───────────────────────│                                                                                                              │                       │
-╭ 3   Commits ─────────│                                                                                                              │                       │
+╭ 3   Commits │ Reflog │                                                                                                              │                       │
 │●  abc1234  RT  init pr│                                                                                                              │                       │
 │●  def5678  RT  wire co│                                                                                                              │───────────────────────╯
 │                       │                                                                                                              │───────────────────────╮

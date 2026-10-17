@@ -1,5 +1,6 @@
 ---
 source: libs/ratagit-ui/tests/commit_files.rs
+assertion_line: 181
 expression: "render_terminal_text(&state, SIZE)"
 ---
 ╭ 1  󰈙 Files ───────────────────────────╮╭ 5   Details ───────────────────────────────────────────────────────────────╮
@@ -14,7 +15,7 @@ expression: "render_terminal_text(&state, SIZE)"
 │                 │   a        Apply patch to working tree                                           │                 │
 │                 │   r        Apply patch in reverse                                                │                 │
 ╰─────────────────│   d        Remove patch from original commit                                     │                 │
-╭ 2   Branches ──│   p        Preview accumulated patch                                             │                 │
+╭ 2   Branches │ │   p        Preview accumulated patch                                             │                 │
 │ main           │   y        Copy patch to clipboard                                               │                 │
 │  feature/mvp    │                                                                                  │                 │
 │                 │                                                                                  │                 │

@@ -190,6 +190,12 @@ pub(crate) fn shortcut_line_for_state(state: &AppContext) -> ShortcutLine {
     }
 
     match state.active_left_view() {
+        Some(ActiveLeftView::RepositoryTab(_)) => local_segments(&[
+            ("←/→ [/]", "tabs"),
+            ("j/k", "select"),
+            ("/", "search"),
+            ("r", "refresh"),
+        ]),
         Some(ActiveLeftView::Files) => local_segments(&[
             ("space", "stage/unstage"),
             ("d", "discard"),

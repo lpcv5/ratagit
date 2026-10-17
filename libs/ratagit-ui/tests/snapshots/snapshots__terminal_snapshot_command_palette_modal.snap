@@ -20,7 +20,7 @@ expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30,
 │                   │   enter    expand / partial stage                        │                   │
 │                   │   v        visual select                                 │                   │
 ╰───────────────────│   a        stage/unstage all                             │                   │
-╭ 3   Commits ─────│   i        ignore untracked path                         │                   │
+╭ 3   Commits │ Ref│   i        ignore untracked path                         │                   │
 │●  abc1234  RT  ini│   e        edit file                                     │                   │
 │●  def5678  RT  wir│   Ctrl+o   copy path                                     │───────────────────╯
 │                   │ ──────────────────────────────────────────────────────── │───────────────────╮

@@ -376,7 +376,7 @@ pub fn palette_entries(state: &AppContext) -> Vec<CommandPaletteEntry> {
             ("c", "checkout by name", F::CheckoutByName),
             ("-", "previous branch", F::CheckoutPrevious),
             (
-                "]",
+                "Tab",
                 "remote branches / tracking checkout",
                 F::RemoteBranches,
             ),

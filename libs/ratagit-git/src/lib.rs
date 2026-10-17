@@ -63,6 +63,11 @@ pub fn execute_command(backend: &mut dyn GitBackend, command: Command) -> GitRes
 
 fn execute_command_inner(backend: &mut dyn GitBackend, command: Command) -> GitResult {
     match command {
+        Command::LoadRepositoryTab { tab, request_id } => GitResult::RepositoryTabLoaded {
+            tab,
+            request_id,
+            result: backend.repository_tab(tab).map_err(|error| error.message),
+        },
         Command::LoadCustomPatch {
             request_id,
             request,

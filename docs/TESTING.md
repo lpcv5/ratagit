@@ -113,13 +113,13 @@ final repository state.
 ### Manual Windows Terminal Verification
 
 After building the application, run
-`scripts/verify-pr8-details.ps1 -Binary target/debug/ratagit.exe` in PowerShell.
+`scripts/verify-details.ps1 -Binary target/debug/ratagit.exe` in PowerShell.
 Use an interactive Windows terminal and perform the keys printed for each case,
 then quit with `q`. The runner covers stage, unstage, and discard with a single
 hunk, nonadjacent hunks, and a visual hunk range. It checks exact index and
 worktree contents, including unselected changes and a staged sentinel.
 Results, verification reports, and retained fixtures are written under
-`tmp/pr8-details-terminal/<run-id>/`.
+`tmp/details-terminal/<run-id>/`.
 
 ---
 

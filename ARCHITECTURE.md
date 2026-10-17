@@ -37,6 +37,14 @@ every source file and apply the combined native bytes through one GitBackend
 mutation, retaining whole-file metadata and partial-line guards. Preview/copy
 are backend projections of the same selection; rendering remains pure.
 
+Repository navigation tabs keep backend-derived typed lists in `repo.tabs`,
+active siblings and independent selection/scroll in `ui.tabs`, and per-tab
+request ownership in `work.tabs`. `LoadRepositoryTab` is an ordinary read command
+in both runtimes. Mutation scheduling invalidates tab requests and cached lists;
+the runtime generation barrier continues to reject overlapping stale reads.
+Metadata Details are pure projections of the selected entry, and active view
+resolution prevents commands from targeting hidden Files/Branches/Commits lists.
+
 ratagit is a lazygit-like Git TUI built with Rust and ratatui.
 
 The system follows a strict unidirectional data flow:

@@ -32,6 +32,14 @@ pub(crate) fn render_details_lines_with_theme(
             .collect::<Vec<_>>();
         return super::diff_rows::render(&rows, state.ui.custom_patch.scroll, max_lines, theme);
     }
+    if let Some(ratagit_core::ActiveLeftView::RepositoryTab(tab)) = state.details_left_view() {
+        return ratagit_core::tabs::details_text(state, tab)
+            .lines()
+            .skip(state.ui.details.scroll_offset)
+            .take(max_lines)
+            .map(|line| PanelLine::new(format!("  {line}"), RowRole::Normal))
+            .collect();
+    }
     let keep_file_preview = state.ui.last_left_focus == PanelFocus::Files
         && state.repo.details.patch.is_none()
         && state.work.details.patch_request.is_some()

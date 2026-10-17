@@ -2282,7 +2282,11 @@ fn assert_panel_edges(buffer: &ratagit_ui::TerminalBuffer, title: &str) -> ratat
         );
     }
     let (title_x, _) = needle_position(buffer, title);
-    for x in title_x + title.chars().count() as u16 + 1..right {
+    let title_end = (title_x + title.chars().count() as u16 + 1..right)
+        .filter(|x| buffer[(*x, rect.y)].symbol() == "│")
+        .next_back()
+        .map_or(title_x + title.chars().count() as u16 + 1, |x| x + 1);
+    for x in title_end..right {
         assert_eq!(
             buffer[(x, rect.y)].symbol(),
             "─",

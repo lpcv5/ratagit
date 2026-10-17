@@ -56,6 +56,45 @@ fn patch(oid: &str, path: &str) -> Box<Patch> {
         preview: None,
     })
 }
+#[test]
+fn pending_options_can_finish_after_switching_tabs_and_remain_dismissable() {
+    let mut state = state();
+    action(&mut state, CustomPatchAction::ToggleLines);
+    let commands = action(&mut state, CustomPatchAction::Options);
+    let Command::RenderCustomPatch { request_id, patch } = commands[0].clone() else {
+        panic!()
+    };
+    reduce(
+        &mut state,
+        Action::Ui(UiAction::FocusPanel {
+            panel: PanelFocus::Commits,
+        }),
+    );
+    reduce(
+        &mut state,
+        Action::Ui(UiAction::CyclePanelTab { previous: false }),
+    );
+    assert_eq!(state.ui.tabs.commits, Some(crate::RepositoryTab::Reflog));
+    reduce(
+        &mut state,
+        Action::GitResult(crate::GitResult::RenderedCustomPatch {
+            request_id,
+            patch,
+            result: Ok(b"patch".to_vec()),
+        }),
+    );
+    assert!(state.ui.workflow.dialog.is_some());
+    reduce(
+        &mut state,
+        Action::Ui(UiAction::Workflow(WorkflowAction::Down)),
+    );
+    reduce(
+        &mut state,
+        Action::Ui(UiAction::Workflow(WorkflowAction::Cancel)),
+    );
+    assert!(state.ui.workflow.dialog.is_none());
+}
+
 fn state() -> AppContext {
     let mut state = AppContext::default();
     state.ui.focus = PanelFocus::Details;

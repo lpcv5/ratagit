@@ -1,5 +1,6 @@
 ---
 source: libs/ratagit-ui/tests/commit_files.rs
+assertion_line: 199
 expression: "render_terminal_text(&state, SIZE)"
 ---
 ╭ 1  󰈙 Files ───────────────────────────╮╭ 5   Details ───────────────────────────────────────────────────────────────╮
@@ -14,7 +15,7 @@ expression: "render_terminal_text(&state, SIZE)"
 │                 │   Space    toggle selection in custom patch                                      │                 │
 │                 │   d        remove selection from original commit                                 │                 │
 ╰─────────────────│   a        hunk/block/line mode                                                  │                 │
-╭ 2   Branches ──│   v        select range                                                          │                 │
+╭ 2   Branches │ │   v        select range                                                          │                 │
 │ main           │   x        mark hunk or line                                                     │                 │
 │  feature/mvp    │   Esc      clear selection                                                       │                 │
 │                 │   Esc      back to commit files                                                  │                 │

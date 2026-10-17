@@ -154,7 +154,16 @@ fn render_panel(width: usize, height: usize, projection: PanelProjection) -> Vec
     }
 
     let mut lines = Vec::with_capacity(height);
-    let header = format!("  {}", projection.legacy_text_title);
+    let header = if projection.tabs.is_empty() {
+        format!("  {}", projection.legacy_text_title)
+    } else {
+        let active = projection
+            .tabs
+            .iter()
+            .find(|(_, active)| *active)
+            .map_or("", |(label, _)| *label);
+        format!("  [{}] {active}", projection.title.badge)
+    };
     lines.push(pad_and_truncate(header, width));
 
     for line in projection.lines.into_iter().take(height.saturating_sub(1)) {

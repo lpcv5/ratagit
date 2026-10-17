@@ -65,6 +65,7 @@ pub enum PanelFocus {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SearchScope {
+    RepositoryTab(crate::RepositoryTab),
     Files,
     Branches,
     Commits,
@@ -74,6 +75,7 @@ pub enum SearchScope {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActiveLeftView {
+    RepositoryTab(crate::RepositoryTab),
     Files,
     BranchesList,
     BranchCommits,
@@ -86,6 +88,7 @@ pub enum ActiveLeftView {
 impl ActiveLeftView {
     pub fn search_scope(self) -> SearchScope {
         match self {
+            Self::RepositoryTab(tab) => SearchScope::RepositoryTab(tab),
             Self::Files => SearchScope::Files,
             Self::BranchesList => SearchScope::Branches,
             Self::BranchCommits | Self::Commits => SearchScope::Commits,
@@ -131,6 +134,8 @@ pub enum CommandPaletteSection {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommandPaletteCommand {
+    CyclePanelTab { previous: bool },
+    StartSearch,
     Workflow(crate::workflow::Feature),
     EditFile,
     CopyPath,
@@ -620,6 +625,7 @@ pub struct CommitFilesWork {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct WorkStatusState {
+    pub tabs: crate::tabs::TabWork,
     pub custom_patch: crate::custom_patch::Work,
     pub refresh: RefreshWork,
     pub details: DetailsWork,
@@ -964,6 +970,7 @@ pub struct CachedCommitDiff {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RepoState {
+    pub tabs: std::collections::BTreeMap<crate::RepositoryTab, crate::tabs::RepositoryList>,
     pub custom_patch: crate::custom_patch::Data,
     pub status: StatusPanelState,
     pub files: FilesRepoState,
@@ -976,6 +983,7 @@ pub struct RepoState {
 impl Default for RepoState {
     fn default() -> Self {
         Self {
+            tabs: Default::default(),
             custom_patch: crate::custom_patch::Data::default(),
             status: StatusPanelState {
                 summary: "No data yet".to_string(),
@@ -1000,6 +1008,7 @@ impl Default for RepoState {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UiState {
+    pub tabs: crate::tabs::TabUiState,
     pub custom_patch: crate::custom_patch::Ui,
     pub workflow: crate::workflow::WorkflowState,
     pub focus: PanelFocus,
@@ -1021,6 +1030,7 @@ pub struct UiState {
 impl Default for UiState {
     fn default() -> Self {
         Self {
+            tabs: Default::default(),
             custom_patch: crate::custom_patch::Ui::default(),
             workflow: crate::workflow::WorkflowState::default(),
             focus: PanelFocus::Files,
@@ -1064,6 +1074,9 @@ impl Default for AppContext {
 
 impl AppContext {
     pub fn active_left_view(&self) -> Option<ActiveLeftView> {
+        if let Some(tab) = self.ui.tabs.active(self.ui.focus) {
+            return Some(ActiveLeftView::RepositoryTab(tab));
+        }
         left_view_for_focus(
             self.ui.focus,
             self.ui.branches.subview,
@@ -1072,6 +1085,9 @@ impl AppContext {
     }
 
     pub fn details_left_view(&self) -> Option<ActiveLeftView> {
+        if let Some(tab) = self.ui.tabs.active(self.ui.last_left_focus) {
+            return Some(ActiveLeftView::RepositoryTab(tab));
+        }
         left_view_for_focus(
             self.ui.last_left_focus,
             self.ui.branches.subview,
@@ -1101,6 +1117,23 @@ impl AppContext {
 
     pub fn command_palette_entries(&self) -> Vec<CommandPaletteEntry> {
         let mut entries = local_command_palette_entries(self);
+        if matches!(
+            self.ui.focus,
+            PanelFocus::Files | PanelFocus::Branches | PanelFocus::Commits
+        ) {
+            entries.extend([
+                CommandPaletteEntry::local(
+                    "← / [",
+                    "previous tab",
+                    CommandPaletteCommand::CyclePanelTab { previous: true },
+                ),
+                CommandPaletteEntry::local(
+                    "→ / ]",
+                    "next tab",
+                    CommandPaletteCommand::CyclePanelTab { previous: false },
+                ),
+            ]);
+        }
         let workflow_entries = crate::workflow::palette_entries(self);
         entries.extend(
             workflow_entries
@@ -1252,6 +1285,11 @@ fn local_command_palette_entries(state: &AppContext) -> Vec<CommandPaletteEntry>
     use CommandPaletteEntry as Entry;
 
     match state.active_left_view() {
+        Some(ActiveLeftView::RepositoryTab(_)) => vec![Entry::local(
+            "/",
+            "search current tab",
+            Command::StartSearch,
+        )],
         Some(ActiveLeftView::Files) => vec![
             Entry::local("space", "stage/unstage", Command::ToggleSelectedFileStage),
             Entry::local("d", "discard", Command::OpenDiscardConfirm),

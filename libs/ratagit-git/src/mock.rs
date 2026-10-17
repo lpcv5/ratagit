@@ -196,6 +196,43 @@ fn commit_matches(commit: &CommitEntry, id: &str) -> bool {
 }
 
 impl GitBackendRead for MockGitBackend {
+    fn repository_tab(
+        &mut self,
+        tab: ratagit_core::RepositoryTab,
+    ) -> Result<Vec<ratagit_core::RepositoryItem>, GitError> {
+        use ratagit_core::{RepositoryItem as I, RepositoryTab as T};
+        self.operations.push(format!("repository-tab:{tab:?}"));
+        let target = self
+            .snapshot
+            .commits
+            .first()
+            .map(|commit| commit.full_id.clone())
+            .unwrap_or_default();
+        Ok(match tab {
+            T::Worktrees => vec![I::Worktree {
+                path: "mock-worktree".into(),
+                head: target,
+                branch: self.snapshot.current_branch.clone(),
+                detached: self.snapshot.detached_head,
+                locked: None,
+                prunable: None,
+                main: true,
+            }],
+            T::Reflog => self
+                .snapshot
+                .commits
+                .iter()
+                .take(ratagit_core::tabs::REPOSITORY_LIST_LIMIT)
+                .enumerate()
+                .map(|(index, commit)| I::Reflog {
+                    selector: format!("HEAD@{{{index}}}"),
+                    target: commit.full_id.clone(),
+                    message: commit.summary.clone(),
+                })
+                .collect(),
+            _ => Vec::new(),
+        })
+    }
     fn render_custom_patch(
         &mut self,
         patch: &ratagit_core::custom_patch::CustomPatch,

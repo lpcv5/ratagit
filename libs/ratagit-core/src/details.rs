@@ -213,6 +213,7 @@ pub(crate) fn apply_commit_file_diff_result(
 
 pub(crate) fn refresh_for_focus(state: &mut AppContext) -> Vec<Command> {
     match state.active_left_view() {
+        Some(ActiveLeftView::RepositoryTab(tab)) => crate::tabs::load(state, tab, false),
         Some(ActiveLeftView::Files) => refresh_files_details(state),
         Some(ActiveLeftView::BranchesList) => refresh_branch_log(state),
         Some(ActiveLeftView::BranchCommits | ActiveLeftView::Commits) => refresh_commit_diff(state),
@@ -544,6 +545,10 @@ fn scroll_max_offset(state: &AppContext, visible_lines: usize) -> usize {
         });
     }
     match state.details_left_view() {
+        Some(ActiveLeftView::RepositoryTab(tab)) => crate::tabs::details_text(state, tab)
+            .lines()
+            .count()
+            .saturating_sub(visible_lines),
         Some(ActiveLeftView::Files) => crate::partial::preview_rows(&state.repo.details.files_diff)
             .len()
             .saturating_sub(visible_lines),

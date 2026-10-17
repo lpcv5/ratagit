@@ -10,6 +10,7 @@ use ratagit_git::{
 };
 
 mod commit_files;
+mod tabs;
 
 struct TmpGitRepo {
     path: PathBuf,

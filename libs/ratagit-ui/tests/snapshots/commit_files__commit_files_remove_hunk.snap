@@ -1,5 +1,6 @@
 ---
 source: libs/ratagit-ui/tests/commit_files.rs
+assertion_line: 192
 expression: "render_terminal_text(&state, SIZE)"
 ---
 ╭ 1  󰈙 Files ───────────────────────────╮╭ 5   Details ───────────────────────────────────────────────────────────────╮
@@ -14,7 +15,7 @@ expression: "render_terminal_text(&state, SIZE)"
 │                 │                                                                                  │                 │
 │                 │ The original commit and its descendants will be rewritten. Success clears any    │                 │
 ╰─────────────────│ accumulated custom patch. Requires a clean worktree and linear current-branch    │                 │
-╭ 2   Branches ──│ history; replay conflicts leave HEAD unchanged.                                  │                 │
+╭ 2   Branches │ │ history; replay conflicts leave HEAD unchanged.                                  │                 │
 │ main           │ Esc leaves the repository unchanged.                                             │                 │
 │  feature/mvp    │                                                                                  │                 │
 │                 │                                                                                  │                 │

@@ -1,5 +1,6 @@
 ---
 source: libs/ratagit-ui/tests/commit_files.rs
+assertion_line: 104
 expression: "render_terminal_text(&state, SIZE)"
 ---
 ╭ 1  󰈙 Files ───────────────────────────╮╭ 5   Details ───────────────────────────────────────────────────────────────╮
@@ -14,7 +15,7 @@ expression: "render_terminal_text(&state, SIZE)"
 │                 │                                                                                  │                 │
 │                 │ Selected worktree files will be replaced. The index is preserved; locally        │                 │
 ╰─────────────────│ modified paths are rejected.                                                     │                 │
-╭ 2   Branches ──│ Esc leaves the repository unchanged.                                             │                 │
+╭ 2   Branches │ │ Esc leaves the repository unchanged.                                             │                 │
 │ main           │                                                                                  │                 │
 │  feature/mvp    │                                                                                  │                 │
 │                 │                                                                                  │                 │

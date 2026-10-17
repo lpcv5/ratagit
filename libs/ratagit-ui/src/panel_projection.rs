@@ -14,6 +14,7 @@ pub(crate) struct PanelProjection {
     pub(crate) title: PanelLabel,
     pub(crate) legacy_text_title: &'static str,
     pub(crate) caption: Option<String>,
+    pub(crate) tabs: Vec<(&'static str, bool)>,
     pub(crate) lines: Vec<PanelLine>,
 }
 
@@ -38,11 +39,15 @@ pub(crate) fn project_panel_with_theme(
         title: panel_title_label(state, panel),
         legacy_text_title: panel_title(state, panel),
         caption: patch_caption(state, panel),
+        tabs: crate::panels::panel_left::tab_labels(state, panel),
         lines: panel_lines(state, panel, visible_lines, theme),
     }
 }
 
 fn patch_caption(state: &AppContext, panel: PanelFocus) -> Option<String> {
+    if state.ui.tabs.active(panel).is_some() {
+        return Some("read-only · first 1000 entries".into());
+    }
     let patch = &state.ui.custom_patch;
     let files = format!(
         "{} {}",
@@ -99,6 +104,9 @@ fn panel_lines(
     visible_lines: usize,
     theme: &UiTheme,
 ) -> Vec<PanelLine> {
+    if let Some(tab) = state.ui.tabs.active(panel) {
+        return crate::panels::panel_left::render_tab_lines(state, tab, visible_lines, theme);
+    }
     match panel {
         PanelFocus::Files => render_files_lines_with_theme(state, visible_lines, theme),
         PanelFocus::Branches => render_branches_lines_with_theme(state, visible_lines, theme),

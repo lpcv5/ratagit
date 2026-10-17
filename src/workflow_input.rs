@@ -80,7 +80,7 @@ pub(crate) fn action(
                 KeyCode::Char('f') => F::FastForward,
                 KeyCode::Char('c') => F::CheckoutByName,
                 KeyCode::Char('-') => F::CheckoutPrevious,
-                KeyCode::Char(']') | KeyCode::Tab => F::RemoteBranches,
+                KeyCode::Tab => F::RemoteBranches,
                 _ => return None,
             },
             ActiveLeftView::Commits | ActiveLeftView::BranchCommits => match code {

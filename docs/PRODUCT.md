@@ -13,6 +13,24 @@ ratagit aims to replicate lazygit UX with a Rust + ratatui implementation.
 - details view
 - log view
 
+Left panels have sibling tabs: **Files / Submodules / Worktrees**,
+**Branches / Remotes / Tags**, and **Commits / Reflog**. Stash has one view.
+In normal left-panel navigation, `Left` / `Right` and `[` / `]` cycle tabs and
+wrap; `h` / `l` continue to change panel focus. Each tab keeps its selection and
+scroll position. Switching tabs clears the previous text search; `/` searches the
+active list. Editors, search input, modals and interactive patches retain their
+existing key precedence.
+
+New repository tabs are read-only: Submodules shows configured path, URL and
+initialization/HEAD status; Worktrees includes main/linked trees, detached HEAD,
+lock and prunable metadata; Remotes groups configured URLs with remote-tracking
+branches; Tags shows names, ref targets and annotation/commit summaries; Reflog
+shows HEAD selectors, hashes and messages. Details follows the selected entry.
+Lists load on first use, retain at most 1000 entries, and show loading, empty and
+error states. `r` refreshes their data. Existing file, branch and commit actions
+apply only in their original tabs. Tracking checkout remains in the local
+Branches tab's `Tab` menu.
+
 Command workflows:
 
 - `?` opens the command modal in navigation mode: `j/k` or arrows select,
@@ -87,7 +105,7 @@ Common panel workflows (also available from `?`):
 | Branches | `f` | Fast-forward selected branch from its locally recorded upstream; fetch first for newer remote commits. Non-current updates preserve the checked-out worktree and refuse divergence. |
 | Branches | `c`, `-` | Checkout by name or switch to previous branch; dirty worktrees use the existing auto-stash confirmation. |
 | Branches | `Ctrl+O` | Copy selected branch name. |
-| Branches | `]` / `Tab` | Browse fetched remote branches in a scrollable menu; choose a remote, enter a new local name, and checkout with tracking. Requires a clean worktree. `Esc` returns to local branches. |
+| Branches | `Tab` | Browse fetched remote branches in a scrollable menu; choose a remote, enter a new local name, and checkout with tracking. Requires a clean worktree. `Esc` returns to local branches. |
 | Main/branch commits | `C`, `V`, `Ctrl+R` | Copy selected commit(s), cherry-pick oldest first onto current branch, or clear copied selection. Failed picks retain the selection and expose conflicts. |
 | Main/branch commits | `t` | Create a revert commit; a clean worktree is required. |
 | Main/branch commits | `g` | Soft/mixed/hard reset current branch to selected commit; hard requires confirmation. |

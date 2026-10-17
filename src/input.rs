@@ -181,6 +181,9 @@ fn host_effect(state: &AppContext, code: KeyCode, modifiers: KeyModifiers) -> Op
         };
         return (!path.is_empty()).then_some(KeyEffect::Host { edit, path });
     }
+    if state.ui.tabs.active(state.ui.focus).is_some() {
+        return None;
+    }
     if state.ui.focus != PanelFocus::Files
         && !(state.ui.details.patch.active && state.ui.last_left_focus == PanelFocus::Files)
     {
@@ -559,6 +562,60 @@ fn panel_action_for_key(
         KeyCode::Char('F') => return Some(UiAction::Fetch),
         KeyCode::Char('P') => return Some(UiAction::Push),
         _ => {}
+    }
+
+    if state.ui.focus.is_left_panel() {
+        match code {
+            KeyCode::Left | KeyCode::Char('[') => {
+                return Some(UiAction::CyclePanelTab { previous: true });
+            }
+            KeyCode::Right | KeyCode::Char(']') => {
+                return Some(UiAction::CyclePanelTab { previous: false });
+            }
+            _ => {}
+        }
+    }
+
+    if state
+        .ui
+        .tabs
+        .active(if state.ui.focus.is_left_panel() {
+            state.ui.focus
+        } else {
+            state.ui.last_left_focus
+        })
+        .is_some()
+    {
+        return match code {
+            KeyCode::Char('r') => Some(UiAction::RefreshAll),
+            KeyCode::Char('h') => Some(UiAction::FocusPrev),
+            KeyCode::Char('l') => Some(UiAction::FocusNext),
+            KeyCode::Down | KeyCode::Char('j') => Some(UiAction::MoveDownInViewport {
+                visible_lines: left_panel_visible_lines,
+            }),
+            KeyCode::Up | KeyCode::Char('k') => Some(UiAction::MoveUpInViewport {
+                visible_lines: left_panel_visible_lines,
+            }),
+            KeyCode::Char('1') => Some(UiAction::FocusPanel {
+                panel: PanelFocus::Files,
+            }),
+            KeyCode::Char('2') => Some(UiAction::FocusPanel {
+                panel: PanelFocus::Branches,
+            }),
+            KeyCode::Char('3') => Some(UiAction::FocusPanel {
+                panel: PanelFocus::Commits,
+            }),
+            KeyCode::Char('4') => Some(UiAction::FocusPanel {
+                panel: PanelFocus::Stash,
+            }),
+            KeyCode::Char('5') => Some(UiAction::FocusPanel {
+                panel: PanelFocus::Details,
+            }),
+            KeyCode::Char('6') => Some(UiAction::FocusPanel {
+                panel: PanelFocus::Log,
+            }),
+            _ => None,
+        };
     }
 
     if state.ui.focus == PanelFocus::Files {
