@@ -45,6 +45,15 @@ pub struct CommitFileEntry {
     pub status: CommitFileStatus,
 }
 
+impl CommitFileEntry {
+    /// A rename removes its source path; a copy leaves the source untouched.
+    pub fn renamed_from(&self) -> Option<&str> {
+        (self.status == CommitFileStatus::Renamed)
+            .then_some(self.old_path.as_deref())
+            .flatten()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FileRowKind {
     Directory,
@@ -360,6 +369,7 @@ pub fn initialize_tree_with_initial_expansion(
 }
 
 pub fn initialize_commit_files_tree(items: &[CommitFileEntry], state: &mut CommitFilesUiState) {
+    state.tree_initialized = true;
     state.expanded_dirs = collect_directories_from_paths(items.iter().map(|item| &item.path));
     state.item_index_by_path = items
         .iter()
@@ -369,6 +379,36 @@ pub fn initialize_commit_files_tree(items: &[CommitFileEntry], state: &mut Commi
     state.tree_index.sync(commit_file_tree_sources(items));
     refresh_commit_files_tree_projection(items, state);
     clamp_commit_file_selected(items, state);
+}
+
+pub(crate) fn reconcile_commit_files(items: &[CommitFileEntry], state: &mut CommitFilesUiState) {
+    if !state.tree_initialized {
+        initialize_commit_files_tree(items, state);
+        return;
+    }
+    let selected_path = state
+        .tree_rows
+        .get(state.selected)
+        .map(|row| row.path.clone());
+    state.item_index_by_path = items
+        .iter()
+        .enumerate()
+        .map(|(index, item)| (item.path.clone(), index))
+        .collect();
+    refresh_commit_files_tree_projection(items, state);
+    let valid_rows = state
+        .row_index_by_path
+        .keys()
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    state.selected_rows.retain(|path| valid_rows.contains(path));
+    refresh_commit_files_tree_projection(items, state);
+    if let Some(index) = selected_path.and_then(|path| state.row_index_by_path.get(&path).copied())
+    {
+        state.selected = index;
+    }
+    state.selected = state.selected.min(state.tree_rows.len().saturating_sub(1));
+    state.scroll_offset = state.scroll_offset.min(state.selected);
 }
 
 pub fn reconcile_after_items_changed(items: &[FileEntry], state: &mut FilesUiState) {

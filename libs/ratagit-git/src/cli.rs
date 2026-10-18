@@ -537,16 +537,27 @@ impl GitCli {
         &mut self,
         commit_id: &str,
     ) -> Result<Vec<CommitFileEntry>, GitError> {
-        let output = self.run_git_read_owned(vec![
+        let oid = self.resolve_commit(commit_id)?;
+        let repo = git2::Repository::open(&self.repo_path)?;
+        let commit = repo.find_commit(git2::Oid::from_str(&oid)?)?;
+        let mut args = vec![
             "diff-tree".to_string(),
             "--root".to_string(),
             "--no-commit-id".to_string(),
             "--name-status".to_string(),
+            "-z".to_string(),
             "-r".to_string(),
             "-M".to_string(),
             "-C".to_string(),
-            commit_id.to_string(),
-        ])?;
+        ];
+        // Explicit tree endpoints also list merge changes relative to parent 0,
+        // matching the native CommitFiles patch loader.
+        if commit.parent_count() > 0 {
+            args.push(commit.parent_id(0)?.to_string());
+        }
+        args.push(oid);
+        args.push("--".to_string());
+        let output = self.run_git_output_with_options(args, true)?;
         parse_commit_files(&output)
     }
 
@@ -554,19 +565,34 @@ impl GitCli {
         &mut self,
         target: &CommitFileDiffTarget,
     ) -> Result<String, GitError> {
+        let oid = self.resolve_commit(&target.commit_id)?;
+        let renames = if target.paths.iter().any(|path| path.old_path.is_some()) {
+            self.commit_files(&oid)?
+                .into_iter()
+                .filter(|file| file.status == CommitFileStatus::Renamed)
+                .map(|file| (file.path, file.old_path))
+                .collect::<BTreeSet<_>>()
+        } else {
+            BTreeSet::new()
+        };
         let mut args = vec![
             "show".to_string(),
             "--color=always".to_string(),
             "--format=".to_string(),
             "--patch".to_string(),
+            "--root".to_string(),
+            "--diff-merges=first-parent".to_string(),
+            "--no-ext-diff".to_string(),
+            "--no-textconv".to_string(),
             "--find-renames".to_string(),
             "--find-copies".to_string(),
-            target.commit_id.clone(),
+            oid,
             "--".to_string(),
         ];
         let mut pushed = BTreeSet::new();
         for path in &target.paths {
             if let Some(old_path) = &path.old_path
+                && renames.contains(&(path.path.clone(), path.old_path.clone()))
                 && pushed.insert(old_path.clone())
             {
                 args.push(literal_pathspec(old_path)?);
@@ -1094,12 +1120,45 @@ fn is_unmerged_branch_delete_stderr(lower_stderr: &str) -> bool {
     lower_stderr.contains("not fully merged") || lower_stderr.contains("not merged")
 }
 
-fn parse_commit_files(output: &str) -> Result<Vec<CommitFileEntry>, GitError> {
-    output
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .map(parse_commit_file_line)
-        .collect()
+fn parse_commit_files(output: &[u8]) -> Result<Vec<CommitFileEntry>, GitError> {
+    if output.is_empty() {
+        return Ok(Vec::new());
+    }
+    let output = output
+        .strip_suffix(&[0])
+        .ok_or_else(|| GitError::new("unterminated commit file output"))?;
+    let mut fields = output.split(|byte| *byte == 0);
+    let mut files = Vec::new();
+    while let Some(raw_status) = fields.next() {
+        let status = match raw_status.first() {
+            Some(b'A') => CommitFileStatus::Added,
+            Some(b'M') => CommitFileStatus::Modified,
+            Some(b'D') => CommitFileStatus::Deleted,
+            Some(b'R') => CommitFileStatus::Renamed,
+            Some(b'C') => CommitFileStatus::Copied,
+            Some(b'T') => CommitFileStatus::TypeChanged,
+            _ => CommitFileStatus::Unknown,
+        };
+        let mut next_path = || {
+            let bytes = fields
+                .next()
+                .filter(|bytes| !bytes.is_empty())
+                .ok_or_else(|| GitError::new("missing NUL-delimited commit file path"))?;
+            std::str::from_utf8(bytes)
+                .map(str::to_string)
+                .map_err(|_| GitError::new("non-UTF-8 commit file paths are unsupported"))
+        };
+        let old_path = matches!(status, CommitFileStatus::Renamed | CommitFileStatus::Copied)
+            .then(&mut next_path)
+            .transpose()?;
+        let path = next_path()?;
+        files.push(CommitFileEntry {
+            path,
+            old_path,
+            status,
+        });
+    }
+    Ok(files)
 }
 
 fn append_diff_truncation_notice(diff: &mut String, label: &str, limit_bytes: usize) {
@@ -1113,41 +1172,6 @@ fn append_diff_truncation_notice(diff: &mut String, label: &str, limit_bytes: us
 fn literal_pathspec(path: &str) -> Result<String, GitError> {
     validate_repo_relative_path(path)?;
     Ok(format!(":(literal){path}"))
-}
-
-fn parse_commit_file_line(line: &str) -> Result<CommitFileEntry, GitError> {
-    let parts = line.split('\t').collect::<Vec<_>>();
-    let Some(raw_status) = parts.first() else {
-        return Err(GitError::new("missing commit file status"));
-    };
-    let status = match raw_status.chars().next().unwrap_or('?') {
-        'A' => CommitFileStatus::Added,
-        'M' => CommitFileStatus::Modified,
-        'D' => CommitFileStatus::Deleted,
-        'R' => CommitFileStatus::Renamed,
-        'C' => CommitFileStatus::Copied,
-        'T' => CommitFileStatus::TypeChanged,
-        _ => CommitFileStatus::Unknown,
-    };
-    let (old_path, path) = match status {
-        CommitFileStatus::Renamed | CommitFileStatus::Copied => {
-            if parts.len() < 3 {
-                return Err(GitError::new(format!("invalid commit file line: {line}")));
-            }
-            (Some(parts[1].to_string()), parts[2].to_string())
-        }
-        _ => {
-            if parts.len() < 2 {
-                return Err(GitError::new(format!("invalid commit file line: {line}")));
-            }
-            (None, parts[1].to_string())
-        }
-    };
-    Ok(CommitFileEntry {
-        path,
-        old_path,
-        status,
-    })
 }
 
 // Hold Git's real index lock while stash operates on a separate index. The
@@ -1542,6 +1566,27 @@ fn remove_untracked_path(repo_path: &Path, relative_path: &str) -> Result<(), Gi
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn commit_files_parser_preserves_raw_path_fields() {
+        let files = parse_commit_files(
+            "A\0文件\twith\nnewline\0R100\0 old\nname \0new\tname\0C075\0source\0copy\0".as_bytes(),
+        )
+        .unwrap();
+        assert_eq!(files.len(), 3);
+        assert_eq!(files[0].path, "文件\twith\nnewline");
+        assert_eq!(files[1].status, CommitFileStatus::Renamed);
+        assert_eq!(files[1].old_path.as_deref(), Some(" old\nname "));
+        assert_eq!(files[1].path, "new\tname");
+        assert_eq!(files[2].status, CommitFileStatus::Copied);
+        assert_eq!(files[2].old_path.as_deref(), Some("source"));
+        assert_eq!(files[2].path, "copy");
+        assert!(parse_commit_files(b"").unwrap().is_empty());
+        assert!(parse_commit_files(b"R100\0missing destination\0").is_err());
+        assert!(parse_commit_files(b"A\0unterminated").is_err());
+        assert!(parse_commit_files(b"A\0\xff\0").is_err());
+        assert!(parse_commit_files(b"A\0\0").is_err());
+    }
 
     #[test]
     fn status_args_follow_status_mode() {

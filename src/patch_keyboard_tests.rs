@@ -237,6 +237,142 @@ case!(test_keyboard_visual_hunks_discard, "visual", "discard");
 case!(test_keyboard_staged_d_unstages, "single", "unstage-d");
 
 #[test]
+fn test_commit_files_searched_hosts_preserve_typing_and_modal_precedence() {
+    for branch in [false, true] {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tmp/commit-files-keyboard");
+        fs::create_dir_all(&root).unwrap();
+        let temp = tempfile::tempdir_in(&root).unwrap();
+        let repo = temp.path();
+        git(repo, &["init", "-b", "main"]);
+        for (key, value) in [
+            ("user.name", "ratagit-tests"),
+            ("user.email", "tests@example.com"),
+            ("core.autocrlf", "false"),
+            ("commit.gpgsign", "false"),
+        ] {
+            git(repo, &["config", key, value]);
+        }
+        let path = "界 file.txt";
+        fs::write(repo.join("a.txt"), "sentinel\n").unwrap();
+        fs::write(repo.join(path), "historical unicode\n").unwrap();
+        git(repo, &["add", "."]);
+        git(repo, &["commit", "-m", "unicode source"]);
+        let head = git(repo, &["rev-parse", "HEAD"]);
+        let index = git(repo, &["ls-files", "--stage"]);
+        let mut keys = Keys {
+            runtime: Runtime::new(
+                AppContext::default(),
+                HybridGitBackend::open(repo).unwrap(),
+                TerminalSize {
+                    width: 140,
+                    height: 40,
+                },
+            ),
+            sequence: Vec::new(),
+        };
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            keys.runtime.dispatch_ui(UiAction::RefreshAll);
+            keys.key(KeyCode::Char(if branch { '2' } else { '3' }));
+            if branch {
+                keys.key(KeyCode::Enter);
+            }
+            keys.key(KeyCode::Enter);
+            keys.key(KeyCode::Char('/'));
+            for ch in path.chars() {
+                keys.key(KeyCode::Char(ch));
+            }
+            assert_eq!(
+                input_mode_for_state(keys.runtime.state()),
+                InputMode::SearchInput
+            );
+            assert_eq!(
+                key_effect_for_key(
+                    keys.runtime.state(),
+                    KeyCode::Char('e'),
+                    KeyModifiers::NONE,
+                    8,
+                    18,
+                    10
+                ),
+                KeyEffect::Dispatch(UiAction::InputSearchChar('e')),
+            );
+            assert!(!matches!(
+                key_effect_for_key(
+                    keys.runtime.state(),
+                    KeyCode::Char('o'),
+                    KeyModifiers::CONTROL,
+                    8,
+                    18,
+                    10
+                ),
+                KeyEffect::Host { .. }
+            ));
+            keys.key(KeyCode::Enter);
+            assert_eq!(
+                input_mode_for_state(keys.runtime.state()),
+                InputMode::SearchQuery
+            );
+            // Terminal buffer text includes a continuation cell after the wide character.
+            assert!(keys.screen().contains("界  file.txt"));
+            assert!(keys.screen().contains("historical unicode"));
+            for (code, modifiers, edit) in [
+                (KeyCode::Char('e'), KeyModifiers::NONE, true),
+                (KeyCode::Char('o'), KeyModifiers::CONTROL, false),
+            ] {
+                assert_eq!(
+                    key_effect_for_key(keys.runtime.state(), code, modifiers, 8, 18, 10),
+                    KeyEffect::Host {
+                        edit,
+                        path: path.into()
+                    },
+                );
+            }
+            keys.key(KeyCode::Char('c'));
+            assert!(keys.runtime.state().ui.workflow.dialog.is_some());
+            assert!(!matches!(
+                key_effect_for_key(
+                    keys.runtime.state(),
+                    KeyCode::Char('e'),
+                    KeyModifiers::NONE,
+                    8,
+                    18,
+                    10
+                ),
+                KeyEffect::Host { .. }
+            ));
+            assert!(!matches!(
+                key_effect_for_key(
+                    keys.runtime.state(),
+                    KeyCode::Char('o'),
+                    KeyModifiers::CONTROL,
+                    8,
+                    18,
+                    10
+                ),
+                KeyEffect::Host { .. }
+            ));
+            keys.key(KeyCode::Esc);
+            assert_eq!(git(repo, &["rev-parse", "HEAD"]), head);
+            assert_eq!(git(repo, &["ls-files", "--stage"]), index);
+            assert!(git(repo, &["status", "--porcelain=v1"]).is_empty());
+        }));
+        keys.save(
+            repo,
+            if branch {
+                "branch-searched-hosts"
+            } else {
+                "main-searched-hosts"
+            },
+        );
+        if let Err(error) = result {
+            let kept = temp.keep();
+            eprintln!("retained Git fixture: {}", kept.display());
+            std::panic::resume_unwind(error);
+        }
+    }
+}
+
+#[test]
 fn test_commit_files_keyboard_enter_hunks_apply_reverse_and_remove_original_hunk() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tmp/commit-files-keyboard");
     fs::create_dir_all(&root).unwrap();

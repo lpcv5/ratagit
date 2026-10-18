@@ -11,6 +11,9 @@ pub enum PatchAction {
 }
 
 pub fn selection(state: &AppContext) -> Option<(&str, &[CommitFileEntry], &CommitFilesUiState)> {
+    if state.work.commit_files.commit_files_loading {
+        return None;
+    }
     let (items, ui) = match state.details_commit_files_target()? {
         CommitFilesTarget::Main => (&state.repo.commits.files.items, &state.ui.commits.files),
         CommitFilesTarget::Branch => (
@@ -47,7 +50,7 @@ pub(crate) fn selected_paths(state: &AppContext, include_old: bool) -> Vec<Strin
             [
                 Some(item.path.clone()),
                 if include_old {
-                    item.old_path.clone()
+                    item.renamed_from().map(str::to_owned)
                 } else {
                     None
                 },
@@ -120,10 +123,8 @@ pub(crate) fn enter(state: &mut AppContext) -> Vec<Command> {
             };
             return crate::update(state, crate::Action::Ui(action));
         };
-        [Some(file.path), file.old_path]
-            .into_iter()
-            .flatten()
-            .collect()
+        let old_path = file.renamed_from().map(str::to_owned);
+        [Some(file.path), old_path].into_iter().flatten().collect()
     };
     if paths.is_empty() {
         return Vec::new();
@@ -202,7 +203,56 @@ pub(crate) fn discard_hunks(state: &mut AppContext) {
     }));
 }
 
+pub(crate) fn refresh(state: &mut AppContext) -> Vec<Command> {
+    if state.work.commit_files.commit_files_loading
+        || state.work.mutation.operation_pending.is_some()
+    {
+        return Vec::new();
+    }
+    let command = match state.details_commit_files_target() {
+        Some(CommitFilesTarget::Main) => state
+            .ui
+            .commits
+            .files
+            .commit_id
+            .clone()
+            .map(|commit_id| Command::RefreshCommitFiles { commit_id }),
+        Some(CommitFilesTarget::Branch) => state
+            .ui
+            .branches
+            .subview_branch
+            .clone()
+            .zip(state.ui.branches.commit_files.commit_id.clone())
+            .map(|(branch, commit_id)| Command::RefreshBranchCommitFiles { branch, commit_id }),
+        None => None,
+    };
+    let Some(command) = command else {
+        return Vec::new();
+    };
+    if state.ui.details.patch.active {
+        crate::partial::close(state);
+    }
+    crate::details::clear_details_pending(state);
+    state.repo.details.commit_file_diff.clear();
+    state.repo.details.commit_file_diff_target = None;
+    state.repo.details.commit_file_diff_error = None;
+    crate::actions::with_pending(state, vec![command])
+}
+
 pub(crate) fn next_file(state: &mut AppContext, up: bool) -> Vec<Command> {
+    next_file_in_viewport(state, up, usize::MAX)
+}
+
+pub(crate) fn next_file_in_viewport(
+    state: &mut AppContext,
+    up: bool,
+    visible_lines: usize,
+) -> Vec<Command> {
+    if state.work.commit_files.commit_files_loading
+        || state.work.mutation.operation_pending.is_some()
+    {
+        return Vec::new();
+    }
     crate::partial::close(state);
     let branch = state.details_commit_files_target() == Some(CommitFilesTarget::Branch);
     let (items, ui) = if branch {
@@ -213,12 +263,13 @@ pub(crate) fn next_file(state: &mut AppContext, up: bool) -> Vec<Command> {
     } else {
         (&state.repo.commits.files.items, &mut state.ui.commits.files)
     };
-    let original = ui.selected;
+    let original = (ui.selected, ui.scroll_offset);
     loop {
         let before = ui.selected;
-        crate::move_commit_file_selected(ui, up);
+        crate::move_commit_file_selected_in_viewport(ui, up, visible_lines);
         if ui.selected == before {
-            ui.selected = original;
+            ui.selected = original.0;
+            ui.scroll_offset = original.1;
             break;
         }
         if crate::selected_commit_file(items, ui).is_some() {

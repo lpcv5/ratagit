@@ -411,7 +411,18 @@ Commits panel rules:
     range in a custom patch. Partially included files become wholly included;
     toggling a wholly included selection removes it. `a` toggles all files
   - `Ctrl+o` copies selected file paths; `y` opens a path-copy menu; `e` edits
-    the current worktree file. `?` lists the available local commands
+    the current worktree file. These shortcuts remain available after confirming
+    a path search in both main and Branch Commit Files; while typing a search,
+    character keys continue editing the query. `?` lists the available local commands
+  - `r` reloads the current Commit Files list and selected Details from its
+    captured commit, retaining file navigation and expanded directories. From
+    historical hunk selection it returns to the refreshed file list
+  - Unicode paths retain their literal file identities. Copy entries target
+    their destination independently of an otherwise modified source file;
+    rename operations include the old path where required
+  - merge commits list and preview changes against their first parent, including
+    individual historical hunks. History removal requires linear history and
+    rejects merge rewrites without changing HEAD, index or worktree
   - `Enter` on a file opens its native historical patch in hunk selection mode.
     `j/k` selects hunks; `a` cycles hunk/block/line selection, `v` selects a
     range and `x` marks independent selections. `Space` toggles those changes

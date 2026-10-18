@@ -335,7 +335,7 @@ pub(crate) fn refresh_commit_diff(state: &mut AppContext) -> Vec<Command> {
 }
 
 pub(crate) fn refresh_commit_file_diff(state: &mut AppContext) -> Vec<Command> {
-    if !detail_commit_files_active(state) {
+    if !detail_commit_files_active(state) || state.work.commit_files.commit_files_loading {
         return Vec::new();
     }
     let Some(commit_id) = detail_commit_files_commit_id(state) else {
@@ -351,9 +351,12 @@ pub(crate) fn refresh_commit_file_diff(state: &mut AppContext) -> Vec<Command> {
         commit_id,
         paths: files
             .into_iter()
-            .map(|file| CommitFileDiffPath {
-                path: file.path,
-                old_path: file.old_path,
+            .map(|file| {
+                let old_path = file.renamed_from().map(str::to_owned);
+                CommitFileDiffPath {
+                    path: file.path,
+                    old_path,
+                }
             })
             .collect(),
     };
@@ -491,9 +494,12 @@ fn commit_file_diff_target_matches_selection(
     }
     let selected = selected_detail_commit_file_targets(state)
         .into_iter()
-        .map(|file| CommitFileDiffPath {
-            path: file.path,
-            old_path: file.old_path,
+        .map(|file| {
+            let old_path = file.renamed_from().map(str::to_owned);
+            CommitFileDiffPath {
+                path: file.path,
+                old_path,
+            }
         })
         .collect::<Vec<_>>();
     selected == target.paths

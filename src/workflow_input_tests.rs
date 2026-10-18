@@ -106,6 +106,10 @@ fn commit_files_keys_and_host_actions_respect_current_view_and_dialogs() {
         KeyEffect::Dispatch(UiAction::OpenCommitFilePatch)
     );
     assert_eq!(
+        effect(&ctx, K::Char('r'), M::NONE),
+        KeyEffect::Dispatch(UiAction::RefreshCommitFiles)
+    );
+    assert_eq!(
         effect(&ctx, K::Char('p'), M::CONTROL),
         KeyEffect::Dispatch(UiAction::CustomPatch(
             ratagit_core::custom_patch::CustomPatchAction::Options
@@ -129,6 +133,46 @@ fn commit_files_keys_and_host_actions_respect_current_view_and_dialogs() {
             path: "a.txt".into()
         }
     );
+    for code in [K::Char('/'), K::Char('a')] {
+        let KeyEffect::Dispatch(action) = effect(&ctx, code, M::NONE) else {
+            panic!("expected search input");
+        };
+        update(&mut ctx, Action::Ui(action));
+    }
+    assert_eq!(
+        effect(&ctx, K::Char('e'), M::NONE),
+        KeyEffect::Dispatch(UiAction::InputSearchChar('e'))
+    );
+    assert!(!matches!(
+        effect(&ctx, K::Char('o'), M::CONTROL),
+        KeyEffect::Host { .. }
+    ));
+    let KeyEffect::Dispatch(action) = effect(&ctx, K::Enter, M::NONE) else {
+        panic!("expected search confirmation");
+    };
+    update(&mut ctx, Action::Ui(action));
+    for (code, modifiers, edit) in [
+        (K::Char('e'), M::NONE, true),
+        (K::Char('o'), M::CONTROL, false),
+    ] {
+        assert_eq!(
+            effect(&ctx, code, modifiers),
+            KeyEffect::Host {
+                edit,
+                path: "a.txt".into()
+            }
+        );
+    }
+    ctx.work.mutation.operation_pending = Some("pending".into());
+    assert!(!matches!(
+        effect(&ctx, K::Char('e'), M::NONE),
+        KeyEffect::Host { .. }
+    ));
+    assert!(matches!(
+        effect(&ctx, K::Char('o'), M::CONTROL),
+        KeyEffect::Host { edit: false, .. }
+    ));
+    ctx.work.mutation.operation_pending = None;
     update(
         &mut ctx,
         Action::Ui(UiAction::Workflow(A::Open(F::CommitFileCheckout))),

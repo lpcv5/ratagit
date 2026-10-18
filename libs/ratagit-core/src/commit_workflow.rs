@@ -4,10 +4,10 @@ use crate::selectors::{repository_has_uncommitted_changes, selected_commit_id};
 use crate::{
     AppContext, AutoStashOperation, Command, CommitEntry, CommitFilesUiState, CommitInputMode,
     PanelFocus, SearchScope, StageAllOperation, branches, commit_key, details,
-    initialize_commit_files_tree, leave_commit_multi_select, mark_commit_file_items_changed,
-    move_commit_file_selected, move_commit_file_selected_in_viewport, move_commit_selected,
-    move_commit_selected_in_viewport, operations, push_notice,
-    reconcile_commits_after_items_appended, selected_commit, selected_commit_ids, selected_commits,
+    leave_commit_multi_select, mark_commit_file_items_changed, move_commit_file_selected,
+    move_commit_file_selected_in_viewport, move_commit_selected, move_commit_selected_in_viewport,
+    operations, push_notice, reconcile_commits_after_items_appended, selected_commit,
+    selected_commit_ids, selected_commits,
 };
 use std::collections::BTreeSet;
 
@@ -256,6 +256,7 @@ pub(crate) fn open_commit_files_panel(state: &mut AppContext) -> Vec<Command> {
         commit_id: Some(commit_id.clone()),
         ..CommitFilesUiState::default()
     };
+    state.repo.commits.files.items.clear();
     clear_search_if_incompatible(state);
     state.repo.details.commit_file_diff.clear();
     state.repo.details.commit_file_diff_target = None;
@@ -298,9 +299,7 @@ pub(crate) fn handle_commit_files_result(
                 &state.repo.commits.files.items,
                 &mut state.ui.commits.files,
             );
-            state.ui.commits.files.selected = 0;
-            state.ui.commits.files.scroll_offset = 0;
-            initialize_commit_files_tree(
+            crate::files::reconcile_commit_files(
                 &state.repo.commits.files.items,
                 &mut state.ui.commits.files,
             );
