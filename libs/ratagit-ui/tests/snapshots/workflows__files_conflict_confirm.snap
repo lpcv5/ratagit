@@ -12,24 +12,24 @@ expression: "render_terminal_text(&state, SIZE)"
 │                   ╭ ‼ Confirm repository change ─────────────────────────────╮                   │
 │                   │ Resolve 1 conflicted file(s) using Ours                  │                   │
 │                   │                                                          │                   │
-╰───────────────────│ Selected files will be replaced and staged; manual       │                   │
-╭ 2   Branches ────│ conflict edits will be lost.                             │                   │
-│ main             │ Esc leaves the repository unchanged.                     │                   │
-│  feature/mvp      │                                                          │                   │
-│                   │ Targets:                                                 │                   │
+│                   │ Selected files will be replaced and staged; manual       │                   │
+╰───────────────────│ conflict edits will be lost.                             │                   │
+╭ 2   Branches ────│ Esc leaves the repository unchanged.                     │                   │
+│ main             │                                                          │                   │
+│  feature/mvp      │ Targets:                                                 │                   │
 │                   │ Cargo.toml (both modified)                               │                   │
 │                   │                                                          │                   │
+│                   │                                                          │                   │
+│                   │                                                          │                   │
 ╰───────────────────│                                                          │                   │
-╭ 3   Commits ─────│                                                          │                   │
-│●  abc1234  RT  ini│                                                          │                   │
-│●  def5678  RT  wir│                                                          │───────────────────╯
-│                   │ ──────────────────────────────────────────────────────── │───────────────────╮
-│                   │ Enter confirm  Esc cancel                                │                   │
+╭ 3   Commits │ Ref│                                                          │───────────────────╯
+│●  abc1234  RT  ini│ ──────────────────────────────────────────────────────── │───────────────────╮
+│●  def5678  RT  wir│ Enter confirm  Esc cancel                                │                   │
 │                   ╰──────────────────────────────────────────────────────────╯                   │
+│                                ││                                                                │
+│                                ││                                                                │
 ╰────────────────────────────────╯│                                                                │
 ╭ 4   Stash ────────────────────╮│                                                                │
 │ stash@{0} WIP on main: local t││                                                                │
-│                                ││                                                                │
-│                                ││                                                                │
 ╰────────────────────────────────╯╰────────────────────────────────────────────────────────────────╯
 / loading: details   arrows  select/cursor   Enter  confirm   Esc  cancel

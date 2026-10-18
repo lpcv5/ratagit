@@ -3,7 +3,8 @@
 A keyboard-driven Git TUI built with Rust and ratatui, aiming for lazygit-style
 workflows.
 
-Run from a Git working directory with stable Rust and Git installed:
+Build and run from a Git working directory with stable Rust (2024 edition),
+Cargo and Git installed. No Node.js or JavaScript package manager is required.
 
 ```sh
 cargo run --locked --bin ratagit

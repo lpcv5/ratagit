@@ -5,6 +5,21 @@ use crate::{
 
 pub(crate) fn update_git_result(state: &mut AppContext, result: GitResult) -> Vec<Command> {
     match result {
+        GitResult::RepositoryTabLoaded {
+            tab,
+            request_id,
+            result,
+        } => crate::tabs::loaded(state, tab, request_id, result),
+        GitResult::LoadedCustomPatch {
+            request_id,
+            request,
+            result,
+        } => crate::custom_patch::loaded(state, request_id, request, result),
+        GitResult::RenderedCustomPatch {
+            request_id,
+            patch,
+            result,
+        } => crate::custom_patch::rendered(state, request_id, patch, result),
         GitResult::RemoteBranches { request_id, result } => {
             crate::workflow::remote_result(state, request_id, result);
             Vec::new()

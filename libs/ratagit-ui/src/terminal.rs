@@ -39,6 +39,9 @@ pub fn render_terminal_with_context(
 
     render_panel_grid(frame, state, root[0], context.theme);
     render_shortcuts(frame, state, context, root[1]);
+    if crate::modal_viewport::render_modal_viewport_warning(frame, state, root[0], context.theme) {
+        return;
+    }
     render_editor_modal(frame, state, root[0], context.theme);
     render_branch_modals(frame, state, root[0], context.theme);
     render_reset_modal(frame, state, root[0], context.theme);
@@ -213,7 +216,43 @@ fn render_block_panel(
     } else {
         theme.inactive_panel_style()
     };
-    let title = panel_title_line(&projection, border_style, theme);
+    let title = if projection.tabs.is_empty() {
+        panel_title_line(&projection, border_style, theme)
+    } else {
+        let available = area.width.saturating_sub(7) as usize;
+        let total = projection
+            .tabs
+            .iter()
+            .map(|(label, _)| label.chars().count() + 3)
+            .sum::<usize>();
+        let mut spans = vec![Span::styled(
+            format!(" {} ", projection.title.badge),
+            theme.title_badge_style(projection.focused),
+        )];
+        for (label, active) in &projection.tabs {
+            if total > available && !active {
+                continue;
+            }
+            let label = label
+                .chars()
+                .take(available.saturating_sub(2))
+                .collect::<String>();
+            spans.push(Span::styled(
+                format!(" {label} "),
+                if *active {
+                    border_style.add_modifier(
+                        ratatui::style::Modifier::BOLD | ratatui::style::Modifier::UNDERLINED,
+                    )
+                } else {
+                    ratatui::style::Style::default().fg(theme.muted)
+                },
+            ));
+            if total <= available {
+                spans.push(Span::styled("│", border_style));
+            }
+        }
+        Line::from(spans)
+    };
     let items = projection
         .lines
         .iter()
@@ -236,16 +275,21 @@ fn render_block_panel(
     } else {
         theme.selected_row_style()
     };
+    let mut block = Block::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(border_style);
+    if let Some(caption) = &projection.caption {
+        block = block.title_bottom(Line::styled(
+            format!(" {caption} "),
+            ratatui::style::Style::default().fg(theme.muted),
+        ));
+    }
     let widget = List::new(items)
         .highlight_style(highlight_style)
         .highlight_spacing(HighlightSpacing::Never)
-        .block(
-            Block::default()
-                .title(title)
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(border_style),
-        );
+        .block(block);
     frame.render_stateful_widget(widget, area, &mut list_state);
 }
 
@@ -281,7 +325,7 @@ fn render_shortcuts(frame: &mut Frame<'_>, state: &AppContext, context: RenderCo
     let widget = Paragraph::new(shortcut_line_to_ratatui_line(
         state,
         context,
-        shortcut_line_for_state(state),
+        area.width as usize,
     ));
     frame.render_widget(widget, area);
 }
@@ -289,10 +333,17 @@ fn render_shortcuts(frame: &mut Frame<'_>, state: &AppContext, context: RenderCo
 fn shortcut_line_to_ratatui_line(
     state: &AppContext,
     context: RenderContext,
-    line: ShortcutLine,
+    width: usize,
 ) -> Line<'static> {
-    let mut prefix =
-        loading_indicator_for_state(state, context).map_or_else(Vec::new, |indicator| {
+    let line = shortcut_line_for_state(state).for_width(state, width);
+    let mut spans = Vec::new();
+    let mut remaining = width;
+    // Search feedback owns the bar. For other modes loading may use only the
+    // space left after reserving help/back, plus a useful local action.
+    if let ShortcutLine::Segments(segments) = &line
+        && let Some(indicator) = loading_indicator_for_state(state, context)
+    {
+        let loading = Line::from({
             let mut spans = vec![
                 Span::styled(indicator.spinner, context.theme.loading_spinner_style()),
                 Span::raw(" "),
@@ -305,26 +356,57 @@ fn shortcut_line_to_ratatui_line(
             spans.push(Span::raw("  "));
             spans
         });
-    match line {
-        ShortcutLine::Text(text) => {
-            prefix.push(Span::raw(text));
-            Line::from(prefix)
-        }
-        ShortcutLine::Segments(segments) => {
-            let mut spans = prefix;
-            for (index, segment) in segments.iter().enumerate() {
-                if index > 0 {
-                    spans.push(Span::raw("  "));
-                }
-                spans.push(Span::styled(
-                    format!(" {} ", segment.key),
-                    context.theme.title_badge_style(true),
-                ));
-                spans.push(Span::raw(format!(" {}", segment.label)));
-            }
-            Line::from(spans)
+        let minimum = ShortcutLine::minimum_width(state);
+        let local = segments
+            .iter()
+            .find(|s| s.key != "?" && !s.key.contains("Esc"));
+        let local_width = local.map_or(0, |s| s.width() + usize::from(minimum > 0) * 2);
+        if loading.width() + minimum + local_width <= width {
+            remaining = width - loading.width();
+            spans.extend(loading.spans);
         }
     }
+    let line = if remaining < width {
+        shortcut_line_for_state(state).for_width(state, remaining)
+    } else {
+        line
+    };
+    let segments = match line {
+        ShortcutLine::Text(text) => {
+            spans.push(Span::raw(text));
+            Vec::new()
+        }
+        ShortcutLine::Segments(segments) => segments,
+        ShortcutLine::Search {
+            text,
+            no_matches,
+            hints,
+        } => {
+            spans.push(Span::styled(
+                text,
+                if no_matches {
+                    ratatui::style::Style::default().fg(context.theme.warning)
+                } else {
+                    ratatui::style::Style::default().fg(context.theme.info)
+                },
+            ));
+            if !hints.is_empty() {
+                spans.push(Span::raw("  "));
+            }
+            hints
+        }
+    };
+    for (index, segment) in segments.iter().enumerate() {
+        if index > 0 {
+            spans.push(Span::raw("  "));
+        }
+        spans.push(Span::styled(
+            format!(" {} ", segment.key),
+            context.theme.title_badge_style(true),
+        ));
+        spans.push(Span::raw(format!(" {}", segment.label)));
+    }
+    Line::from(spans)
 }
 
 fn loading_text_spans(text: &str, spotlight_index: usize, theme: &UiTheme) -> Vec<Span<'static>> {

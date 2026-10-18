@@ -1,6 +1,6 @@
 ---
 source: libs/ratagit-ui/tests/snapshots.rs
-assertion_line: 716
+assertion_line: 754
 expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30, },)"
 ---
 ╭ 1  󰈙 Files ────────────────────╮╭ 5   Details ──────────────────────────────────────────────────╮
@@ -12,24 +12,24 @@ expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30,
 │                                ││  diff --git a/commit.txt b/commit.txt                          │
 │                                ││  @@ -1 +1 @@                                                   │
 │                                ││  -old abc1234                                                  │
-╰────────────────────────────────╯│  +new abc1234                                                  │
+│                                ││  +new abc1234                                                  │
+╰────────────────────────────────╯│                                                                │
 ╭ 2   Branch Commits ───────────╮│                                                                │
 │●  abc1234  RT  init project    ││                                                                │
 │●  def5678  RT  wire commands   ││                                                                │
 │                                ││                                                                │
 │                                ││                                                                │
 │                                ││                                                                │
+│                                ││                                                                │
 ╰────────────────────────────────╯│                                                                │
-╭ 3   Commits ──────────────────╮│                                                                │
-│●  abc1234  RT  init project    ││                                                                │
-│●  def5678  RT  wire commands   │╰────────────────────────────────────────────────────────────────╯
-│                                │╭ 6  󰌱 Log ──────────────────────────────────────────────────────╮
-│                                ││  notice=Ready                                                  │
+╭ 3   Commits │ Reflog │────────╮╰────────────────────────────────────────────────────────────────╯
+│●  abc1234  RT  init project    │╭ 6  󰌱 Log ──────────────────────────────────────────────────────╮
+│●  def5678  RT  wire commands   ││  notice=Ready                                                  │
+│                                ││                                                                │
+│                                ││                                                                │
 │                                ││                                                                │
 ╰────────────────────────────────╯│                                                                │
 ╭ 4   Stash ────────────────────╮│                                                                │
 │ stash@{0} WIP on main: local t││                                                                │
-│                                ││                                                                │
-│                                ││                                                                │
 ╰────────────────────────────────╯╰────────────────────────────────────────────────────────────────╯
  enter  files   Esc  back   ?  commands

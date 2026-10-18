@@ -10,6 +10,14 @@ pub(crate) fn action(
 ) -> Option<UiAction> {
     let control = modifiers.contains(KeyModifiers::CONTROL);
     if state.ui.workflow.dialog.is_some() || state.ui.workflow.remote_request.is_some() {
+        if matches!(&state.ui.workflow.dialog, Some(ratagit_core::workflow::Dialog::Menu { title, .. }) if *title == ratagit_core::custom_patch::OPTIONS_TITLE)
+            && let KeyCode::Char(key @ ('c' | 'a' | 'r' | 'd' | 'p' | 'y')) = code
+            && !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
+        {
+            return Some(UiAction::CustomPatch(
+                ratagit_core::custom_patch::CustomPatchAction::MenuKey(key),
+            ));
+        }
         let prompt = matches!(
             state.ui.workflow.dialog,
             Some(ratagit_core::workflow::Dialog::Prompt { .. })
@@ -72,7 +80,7 @@ pub(crate) fn action(
                 KeyCode::Char('f') => F::FastForward,
                 KeyCode::Char('c') => F::CheckoutByName,
                 KeyCode::Char('-') => F::CheckoutPrevious,
-                KeyCode::Char(']') | KeyCode::Tab => F::RemoteBranches,
+                KeyCode::Tab => F::RemoteBranches,
                 _ => return None,
             },
             ActiveLeftView::Commits | ActiveLeftView::BranchCommits => match code {
@@ -92,6 +100,15 @@ pub(crate) fn action(
                 KeyCode::Char('y') => F::CopyAttributes,
                 _ => return None,
             },
+            ActiveLeftView::CommitFiles | ActiveLeftView::BranchCommitFiles => match code {
+                KeyCode::Char('c') => F::CommitFileCheckout,
+                KeyCode::Char('d') => F::CommitFileDiscard,
+                KeyCode::Char(' ') => F::CommitFilePatch,
+                KeyCode::Char('a') => F::CommitFilePatchAll,
+                KeyCode::Tab => F::CustomPatchPreview,
+                KeyCode::Char('y') => F::CommitFileCopy,
+                _ => return None,
+            },
             _ => return None,
         }
     };
@@ -103,14 +120,21 @@ pub(crate) fn host(
     code: KeyCode,
     modifiers: KeyModifiers,
 ) -> Option<KeyEffect> {
-    if code == KeyCode::Enter
+    if (code == KeyCode::Enter
+        || (code == KeyCode::Char('y')
+            && modifiers.is_empty()
+            && matches!(&state.ui.workflow.dialog, Some(ratagit_core::workflow::Dialog::Menu { title, .. }) if *title == ratagit_core::custom_patch::OPTIONS_TITLE)))
         && let Some(ratagit_core::workflow::Dialog::Menu {
             choices, selected, ..
         }) = &state.ui.workflow.dialog
         && let Some(ratagit_core::workflow::Choice {
             action: ratagit_core::workflow::ChoiceAction::Copy(text),
             ..
-        }) = choices.get(*selected)
+        }) = choices.get(if code == KeyCode::Char('y') {
+            5
+        } else {
+            *selected
+        })
     {
         return Some(KeyEffect::Host {
             edit: false,

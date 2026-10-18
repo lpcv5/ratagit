@@ -13,6 +13,7 @@ use ratagit_core::{
     StashEntry, StatusMode,
 };
 
+mod tabs;
 use crate::cli::GitCli;
 use crate::untracked_diff::format_untracked_diffs;
 use crate::{
@@ -73,6 +74,24 @@ impl fmt::Debug for HybridGitBackend {
 }
 
 impl GitBackendRead for HybridGitBackend {
+    fn repository_tab(
+        &mut self,
+        tab: ratagit_core::RepositoryTab,
+    ) -> Result<Vec<ratagit_core::RepositoryItem>, GitError> {
+        self.read_repository_tab(tab)
+    }
+    fn load_custom_patch(
+        &mut self,
+        request: ratagit_core::patch::PatchRequest,
+    ) -> Result<ratagit_core::patch::Patch, GitError> {
+        crate::patch_backend::custom::load(&mut self.repo, request)
+    }
+    fn render_custom_patch(
+        &mut self,
+        patch: &ratagit_core::custom_patch::CustomPatch,
+    ) -> Result<Vec<u8>, GitError> {
+        crate::patch_backend::custom::bytes(patch, false)
+    }
     fn commit_editor(&mut self) -> Result<Option<String>, GitError> {
         match self.repo.config()?.get_string("core.editor") {
             Ok(editor) => Ok(Some(editor)),

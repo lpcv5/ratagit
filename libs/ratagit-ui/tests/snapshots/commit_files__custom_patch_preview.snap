@@ -1,0 +1,41 @@
+---
+source: libs/ratagit-ui/tests/commit_files.rs
+assertion_line: 205
+expression: "render_terminal_text(&state, SIZE)"
+---
+╭ 1  󰈙 Files ───────────────────────────╮╭ 5   Custom Patch ──────────────────────────────────────────────────────────╮
+│   ? README.md                         ││   diff --git a/src/lib.rs b/src/lib.rs                                      │
+│    src/                              ││   --- a/src/lib.rs                                                          │
+│     M lib.rs                          ││   +++ b/src/lib.rs                                                          │
+│     M main.rs                         ││   @@ -1,2 +1,2 @@                                                           │
+│                                       ││   -old first                                                                │
+│                                       ││   +new first                                                                │
+│                                       ││    unchanged                                                                │
+│                                       ││                                                                             │
+│                                       ││                                                                             │
+│                                       ││                                                                             │
+│                                       ││                                                                             │
+╰───────────────────────────────────────╯│                                                                             │
+╭ 2   Branches │ Remotes │ Tags │──────╮│                                                                             │
+│ main                                 ││                                                                             │
+│  feature/mvp                          ││                                                                             │
+│                                       ││                                                                             │
+│                                       ││                                                                             │
+│                                       ││                                                                             │
+│                                       ││                                                                             │
+│                                       ││                                                                             │
+│                                       ││                                                                             │
+╰───────────────────────────────────────╯│                                                                             │
+╭ 3   Commit Files │ Reflog │──────────╮│                                                                             │
+│  ╎ src/                              │╰ 1 file · abc1234 · read-only ───────────────────────────────────────────────╯
+│  ╎  M lib.rs                          │╭ 6  󰌱 Log ───────────────────────────────────────────────────────────────────╮
+│                                       ││  notice=Ready                                                               │
+│                                       ││                                                                             │
+│                                       ││                                                                             │
+│                                       ││                                                                             │
+│                                       ││                                                                             │
+╰ patch: 1 file ────────────────────────╯│                                                                             │
+╭ 4   Stash ───────────────────────────╮│                                                                             │
+│ stash@{0} WIP on main: local test    ││                                                                             │
+╰───────────────────────────────────────╯╰─────────────────────────────────────────────────────────────────────────────╯
+ j/k  scroll   Ctrl+P  patch options   Tab/Esc  source   ?  commands

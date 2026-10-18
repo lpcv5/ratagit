@@ -1,6 +1,6 @@
 ---
 source: libs/ratagit-ui/tests/snapshots.rs
-assertion_line: 2299
+assertion_line: 2790
 expression: "render_terminal_text(&state, size)"
 ---
 ╭ 1  󰈙 Files ────────────────────╮╭ 5   Details ──────────────────────────────────────────────────╮
@@ -19,7 +19,7 @@ expression: "render_terminal_text(&state, size)"
 │                                ││   --- a/src/lib.rs                                             │
 │                                ││   +++ b/src/lib.rs                                             │
 ╰────────────────────────────────╯│   @@ -1,3 +1,3 @@                                              │
-╭ 3   Commits ──────────────────╮│   -old first                                                   │
+╭ 3   Commits │ Reflog │────────╮│   -old first                                                   │
 │●  abc1234  RT  init project    ││   +new first                                                   │
 │●  def5678  RT  wire commands   ││    unchanged                                                   │
 │                                │╰────────────────────────────────────────────────────────────────╯

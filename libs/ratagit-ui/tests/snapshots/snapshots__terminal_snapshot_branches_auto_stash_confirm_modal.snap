@@ -1,6 +1,6 @@
 ---
 source: libs/ratagit-ui/tests/snapshots.rs
-assertion_line: 1105
+assertion_line: 1143
 expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30, },)"
 ---
 ╭ 1  󰈙 Files ────────────────────╮╭ 5   Details ──────────────────────────────────────────────────╮
@@ -12,24 +12,24 @@ expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30,
 │                   ╭ ⚠ Confirm ───────────────────────────────────────────────╮                   │
 │                   │                                                          │                   │
 │                   │                                                          │                   │
-╰───────────────────│                                                          │                   │
-╭ 2   Branches ────│                                                          │                   │
-│ main             │          Auto stash before checkout feature/mvp?         │                   │
-│  feature/mvp      │      The stash will be restored after the operation.     │                   │
 │                   │                                                          │                   │
+╰───────────────────│                                                          │                   │
+╭ 2   Branches ────│          Auto stash before checkout feature/mvp?         │                   │
+│ main             │      The stash will be restored after the operation.     │                   │
+│  feature/mvp      │                                                          │                   │
 │                   │              Operation: checkout feature/mvp             │                   │
 │                   │                                                          │                   │
+│                   │                                                          │                   │
+│                   │                                                          │                   │
 ╰───────────────────│                                                          │                   │
-╭ 3   Commits ─────│                                                          │                   │
-│●  abc1234  RT  ini│                                                          │                   │
-│●  def5678  RT  wir│                                                          │───────────────────╯
-│                   │ ──────────────────────────────────────────────────────── │───────────────────╮
-│                   │ Enter auto stash  Esc cancel                             │                   │
+╭ 3   Commits │ Ref│                                                          │───────────────────╯
+│●  abc1234  RT  ini│ ──────────────────────────────────────────────────────── │───────────────────╮
+│●  def5678  RT  wir│ Enter auto stash  Esc cancel                             │                   │
 │                   ╰──────────────────────────────────────────────────────────╯                   │
+│                                ││                                                                │
+│                                ││                                                                │
 ╰────────────────────────────────╯│                                                                │
 ╭ 4   Stash ────────────────────╮│                                                                │
 │ stash@{0} WIP on main: local t││                                                                │
-│                                ││                                                                │
-│                                ││                                                                │
 ╰────────────────────────────────╯╰────────────────────────────────────────────────────────────────╯
  Enter  confirm   Esc  cancel

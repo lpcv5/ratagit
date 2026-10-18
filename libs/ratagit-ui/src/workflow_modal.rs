@@ -1,4 +1,4 @@
-use crate::modal::{ModalSpec, ModalTone, render_menu_lines, render_modal};
+use crate::modal::{ModalSpec, ModalTone, command_menu_line, render_menu_lines, render_modal};
 use crate::theme::UiTheme;
 use ratagit_core::AppContext;
 use ratagit_core::workflow::{Dialog, Operation, prompt_title};
@@ -41,10 +41,20 @@ pub(crate) fn render(frame: &mut Frame<'_>, state: &AppContext, area: Rect, them
         frame,
         area,
         ModalSpec::new(title, tone, 88, height, 20, 7, 1),
-        &[&[("Enter", "confirm"), ("Esc", "cancel")]],
+        &[if matches!(dialog, Dialog::Menu { .. }) {
+            &[
+                ("j/k ↑/↓", "select"),
+                ("Enter", "confirm"),
+                ("Esc", "cancel"),
+            ]
+        } else {
+            &[("Enter", "confirm"), ("Esc", "cancel")]
+        }],
         |frame, content| match dialog {
             Dialog::Menu {
-                choices, selected, ..
+                title,
+                choices,
+                selected,
             } => {
                 let visible = content.height as usize;
                 let start = selected.saturating_sub(visible.saturating_sub(1));
@@ -54,6 +64,16 @@ pub(crate) fn render(frame: &mut Frame<'_>, state: &AppContext, area: Rect, them
                     .skip(start)
                     .take(visible)
                     .map(|(index, choice)| {
+                        if *title == ratagit_core::custom_patch::OPTIONS_TITLE
+                            && let Some((key, label)) = choice.label.split_once("  ")
+                        {
+                            return command_menu_line(
+                                key,
+                                label.trim_end_matches(" (Tab returns)"),
+                                index == *selected,
+                                theme,
+                            );
+                        }
                         Line::styled(
                             choice.label.clone(),
                             if index == *selected {

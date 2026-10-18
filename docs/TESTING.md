@@ -58,16 +58,16 @@ test flow, nondeterminism, or an assertion that no longer verifies behavior.
 - Cursor/selection color is asserted through `ratatui::TestBackend` buffer cell
   styles because text snapshots intentionally do not encode terminal colors.
 - Text snapshots must not rely on visible cursor markers such as `>`.
-- Fixed sizes:
-  - 80x24
-  - 100x30
-  - 120x40
+- Use fixed terminal sizes. Baselines are 80x24, 100x30 and 120x40; select
+  sizes relevant to the change, and add narrow/edge cases when needed. Every
+  change need not test every size.
 
 ---
 
 ## Fixtures
 
-All UI tests must use fixtures:
+Use deterministic fixtures. Reuse or extend these baselines as relevant to the
+changed behavior; a test does not need every fixture:
 
 - empty_repo
 - dirty_repo
@@ -82,7 +82,8 @@ All UI tests must use fixtures:
 - Any test that executes a real Git backend or the real `git` binary must create
   and use an isolated repository under workspace `tmp/`.
 - Standard root: `<workspace>/tmp/git-tests/<unique-case>`.
-- Tests must clean up their temporary repositories on completion.
+- Use RAII cleanup for temporary repositories. Capture diagnostic state before
+  cleanup when a test fails; retain failure artifacts for investigation.
 - Never run real-git mutation tests directly in the workspace repository.
 - For manual performance validation, generate synthetic repositories under
   `tmp/perf/` with `cargo run --bin make-large-repo -- --scale large --path
@@ -112,18 +113,22 @@ final repository state.
 
 ### Manual Windows Terminal Verification
 
-After building the application, run
-`scripts/verify-pr8-details.ps1 -Binary target/debug/ratagit.exe` in PowerShell.
+For changes to Details/hunk interactions that need real terminal verification,
+or manual release checks, build the application and run
+`scripts/verify-details.ps1 -Binary target/debug/ratagit.exe` in PowerShell.
 Use an interactive Windows terminal and perform the keys printed for each case,
 then quit with `q`. The runner covers stage, unstage, and discard with a single
 hunk, nonadjacent hunks, and a visual hunk range. It checks exact index and
 worktree contents, including unselected changes and a staged sentinel.
 Results, verification reports, and retained fixtures are written under
-`tmp/pr8-details-terminal/<run-id>/`.
+`tmp/details-terminal/<run-id>/`.
 
 ---
 
 ## Core And Runtime Testing
+
+Maintain these subsystem contracts when the relevant behavior changes; they
+are not separate test suites to add or rerun for every task.
 
 - Command metadata tests must cover every `Command` variant for log labels,
   mutating classification, pending labels, debounce keys, and refresh coalescing
@@ -168,7 +173,7 @@ coverage. Extend an existing scenario when it proves the changed contract;
 a new scenario per feature is not required. Pure presentation changes can be
 proved by UI snapshots/style assertions. Internal architecture changes can use
 unit/integration tests when UI and Git behavior are unchanged. State the coverage
-decision and relevant test names in the plan or delivery summary.
+decision and relevant test names in the delivery summary.
 
 Harness infrastructure changes, such as artifact/reporting improvements or
 scenario manifest tooling, should use focused harness/unit tests. They do not

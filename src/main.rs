@@ -1,6 +1,8 @@
 mod config;
 mod desktop;
 mod input;
+#[cfg(test)]
+mod modal_viewport_tests;
 mod workflow_input;
 #[cfg(test)]
 mod workflow_input_tests;
@@ -16,7 +18,7 @@ use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
 use desktop::{Desktop, EditorCommand, SystemDesktop};
-use input::{KeyEffect, key_effect_for_key};
+use input::{KeyEffect, key_effect_for_key_in_viewport};
 use ratagit_core::{AppContext, UiAction};
 use ratagit_git::{
     GitBackend, GitBackendRead, HybridGitBackend, SharedMockGitBackend, is_git_repo,
@@ -142,10 +144,11 @@ fn run_tui() -> Result<(), Box<dyn Error>> {
         let left_panel_visible_lines =
             focused_left_panel_content_lines_for_terminal_size(runtime.state(), size);
 
-        match key_effect_for_key(
+        match key_effect_for_key_in_viewport(
             runtime.state(),
             key.code,
             key.modifiers,
+            size,
             details_scroll_lines,
             details_visible_lines,
             left_panel_visible_lines,

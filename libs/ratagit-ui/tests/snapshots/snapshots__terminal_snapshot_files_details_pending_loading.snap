@@ -1,6 +1,6 @@
 ---
 source: libs/ratagit-ui/tests/snapshots.rs
-assertion_line: 544
+assertion_line: 582
 expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30, },)"
 ---
 ╭ 1  󰈙 Files ────────────────────╮╭ 5   Details ──────────────────────────────────────────────────╮
@@ -12,6 +12,7 @@ expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30,
 │                                ││                                                                │
 │                                ││                                                                │
 │                                ││                                                                │
+│                                ││                                                                │
 ╰────────────────────────────────╯│                                                                │
 ╭ 2   Branches ─────────────────╮│                                                                │
 │ main                          ││                                                                │
@@ -19,17 +20,16 @@ expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30,
 │                                ││                                                                │
 │                                ││                                                                │
 │                                ││                                                                │
+│                                ││                                                                │
 ╰────────────────────────────────╯│                                                                │
-╭ 3   Commits ──────────────────╮│                                                                │
-│●  abc1234  RT  init project    ││                                                                │
-│●  def5678  RT  wire commands   │╰────────────────────────────────────────────────────────────────╯
-│                                │╭ 6  󰌱 Log ──────────────────────────────────────────────────────╮
-│                                ││  notice=Ready                                                  │
+╭ 3   Commits │ Reflog │────────╮╰────────────────────────────────────────────────────────────────╯
+│●  abc1234  RT  init project    │╭ 6  󰌱 Log ──────────────────────────────────────────────────────╮
+│●  def5678  RT  wire commands   ││  notice=Ready                                                  │
+│                                ││                                                                │
+│                                ││                                                                │
 │                                ││                                                                │
 ╰────────────────────────────────╯│                                                                │
 ╭ 4   Stash ────────────────────╮│                                                                │
 │ stash@{0} WIP on main: local t││                                                                │
-│                                ││                                                                │
-│                                ││                                                                │
 ╰────────────────────────────────╯╰────────────────────────────────────────────────────────────────╯
-/ loading: details   space  stage/unstage   d  discard   A  amend   c  commit   s  stash   D  reset
+/ loading: details   space  stage/unstage   d  discard   A  amend   c  commit   ?  commands

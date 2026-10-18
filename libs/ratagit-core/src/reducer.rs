@@ -18,7 +18,80 @@ pub fn update(state: &mut AppContext, action: Action) -> Vec<Command> {
 }
 
 fn update_ui(state: &mut AppContext, action: UiAction) -> Vec<Command> {
+    let auxiliary = state
+        .ui
+        .tabs
+        .active(if state.ui.focus.is_left_panel() {
+            state.ui.focus
+        } else {
+            state.ui.last_left_focus
+        })
+        .is_some();
+    let global_workflow = match &action {
+        UiAction::Workflow(crate::workflow::WorkflowAction::Open(feature)) => matches!(
+            feature,
+            crate::workflow::Feature::Sequence
+                | crate::workflow::Feature::CustomPatchOptions
+                | crate::workflow::Feature::CustomPatchPreview
+        ),
+        UiAction::Workflow(_) => state.ui.workflow.dialog.is_some(),
+        UiAction::CustomPatch(action) => !matches!(
+            action,
+            crate::custom_patch::CustomPatchAction::ToggleFiles { .. }
+                | crate::custom_patch::CustomPatchAction::ToggleLines
+        ),
+        _ => false,
+    };
+    let captured_confirmation = matches!(
+        &action,
+        UiAction::ConfirmBranchForceDelete | UiAction::CancelBranchForceDelete
+    ) && state.ui.branches.force_delete_confirm.active;
+    if auxiliary
+        && !captured_confirmation
+        && !global_workflow
+        && !matches!(
+            &action,
+            UiAction::CyclePanelTab { .. }
+                | UiAction::RefreshAll
+                | UiAction::Fetch
+                | UiAction::Pull
+                | UiAction::Push
+                | UiAction::FocusNext
+                | UiAction::FocusPrev
+                | UiAction::FocusPanel { .. }
+                | UiAction::MoveUp
+                | UiAction::MoveDown
+                | UiAction::MoveUpInViewport { .. }
+                | UiAction::MoveDownInViewport { .. }
+                | UiAction::DetailsScrollUp { .. }
+                | UiAction::DetailsScrollDown { .. }
+                | UiAction::DetailsViewport { .. }
+                | UiAction::StartSearch
+                | UiAction::InputSearchChar(_)
+                | UiAction::BackspaceSearch
+                | UiAction::ConfirmSearch
+                | UiAction::CancelSearch
+                | UiAction::NextSearchMatch
+                | UiAction::PrevSearchMatch
+                | UiAction::OpenCommandPalette
+                | UiAction::CloseCommandPalette
+                | UiAction::MoveCommandPaletteUp
+                | UiAction::MoveCommandPaletteDown
+                | UiAction::ExecuteCommandPalette { .. }
+                | UiAction::StartPaletteSearch
+                | UiAction::FinishPaletteSearch
+                | UiAction::PaletteInput(_)
+                | UiAction::PaletteBackspace
+                | UiAction::HostFinished { .. }
+                | UiAction::CancelForcePush
+                | UiAction::ConfirmForcePush
+        )
+    {
+        return Vec::new();
+    }
     match action {
+        UiAction::CyclePanelTab { previous } => crate::tabs::cycle(state, previous),
+        UiAction::CustomPatch(action) => crate::custom_patch::update(state, action),
         UiAction::Workflow(action) => crate::workflow::update(state, action),
         UiAction::DetailsViewport { visible_lines } => {
             state.ui.details.viewport_lines = visible_lines;
@@ -32,6 +105,9 @@ fn update_ui(state: &mut AppContext, action: UiAction) -> Vec<Command> {
             push_notice(state, &message);
             if refresh {
                 details::clear_caches(state);
+                if crate::workflow::commit_files::selection(state).is_some() {
+                    return with_pending(state, vec![Command::RefreshFiles]);
+                }
                 with_pending(state, Command::refresh_all_commands())
             } else {
                 Vec::new()
@@ -78,6 +154,7 @@ fn update_ui(state: &mut AppContext, action: UiAction) -> Vec<Command> {
             Vec::new()
         }
         UiAction::OpenFilePatch => crate::partial::open(state),
+        UiAction::OpenCommitFilePatch => crate::workflow::commit_files::enter(state),
         UiAction::OpenStashPatch => crate::partial::open_stash(state),
         UiAction::NextPatchFile { up } => crate::partial::next_file(state, up),
         UiAction::CloseFilePatch => {
@@ -118,7 +195,12 @@ fn update_ui(state: &mut AppContext, action: UiAction) -> Vec<Command> {
             state.ui.details.patch.discard = None;
             Vec::new()
         }
-        UiAction::RefreshAll => with_pending(state, Command::refresh_all_commands()),
+        UiAction::RefreshAll => {
+            crate::tabs::invalidate(state);
+            let mut commands = with_pending(state, Command::refresh_all_commands());
+            commands.extend(crate::tabs::load_visible(state));
+            commands
+        }
         UiAction::Pull => with_pending(state, vec![Command::Pull]),
         UiAction::Push => with_pending(state, vec![Command::Push { force: false }]),
         UiAction::ConfirmForcePush => {
@@ -298,6 +380,7 @@ fn update_ui(state: &mut AppContext, action: UiAction) -> Vec<Command> {
             Vec::new()
         }
         UiAction::FocusNext => {
+            state.ui.details.scroll_offset = 0;
             if state.ui.details.patch.active {
                 crate::partial::close(state);
             }
@@ -307,6 +390,7 @@ fn update_ui(state: &mut AppContext, action: UiAction) -> Vec<Command> {
             details::refresh_on_focus(state)
         }
         UiAction::FocusPrev => {
+            state.ui.details.scroll_offset = 0;
             if state.ui.details.patch.active {
                 crate::partial::close(state);
             }
@@ -316,6 +400,9 @@ fn update_ui(state: &mut AppContext, action: UiAction) -> Vec<Command> {
             details::refresh_on_focus(state)
         }
         UiAction::FocusPanel { panel } => {
+            if panel.is_left_panel() && panel != state.ui.last_left_focus {
+                state.ui.details.scroll_offset = 0;
+            }
             if panel != crate::PanelFocus::Details && state.ui.details.patch.active {
                 crate::partial::close(state);
             }
@@ -561,7 +648,11 @@ fn move_menu_choice<T: crate::MenuChoice>(selected: T, direction: MenuDirection)
 }
 
 fn update_git_result(state: &mut AppContext, result: GitResult) -> Vec<Command> {
-    results::update_git_result(state, result)
+    let mut commands = results::update_git_result(state, result);
+    if state.work.mutation.operation_pending.is_none() {
+        commands.extend(crate::tabs::load_visible(state));
+    }
+    commands
 }
 
 fn move_selection_and_refresh_details(state: &mut AppContext, move_up: bool) -> Vec<Command> {
@@ -611,6 +702,10 @@ fn command_palette_action(
     details_visible_lines: usize,
 ) -> Option<UiAction> {
     match command {
+        CommandPaletteCommand::CyclePanelTab { previous } => {
+            Some(UiAction::CyclePanelTab { previous })
+        }
+        CommandPaletteCommand::StartSearch => Some(UiAction::StartSearch),
         CommandPaletteCommand::Workflow(feature) => Some(UiAction::Workflow(
             crate::workflow::WorkflowAction::Open(feature),
         )),
@@ -621,6 +716,7 @@ fn command_palette_action(
         CommandPaletteCommand::StashApplySelected => Some(UiAction::StashApplySelected),
         CommandPaletteCommand::StashDropSelected => Some(UiAction::StashDropSelected),
         CommandPaletteCommand::OpenFilePatch => Some(UiAction::OpenFilePatch),
+        CommandPaletteCommand::OpenCommitFilePatch => Some(UiAction::OpenCommitFilePatch),
         CommandPaletteCommand::ApplyPatchSelection => Some(UiAction::ApplyPatchSelection),
         CommandPaletteCommand::RequestPatchDiscard => Some(UiAction::RequestPatchDiscard),
         CommandPaletteCommand::CyclePatchSelection => Some(UiAction::CyclePatchSelection),

@@ -1,6 +1,6 @@
 ---
 source: libs/ratagit-ui/tests/snapshots.rs
-assertion_line: 789
+assertion_line: 827
 expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30, },)"
 ---
 ╭ 1  󰈙 Files ────────────────────╮╭ 5   Details ──────────────────────────────────────────────────╮
@@ -12,24 +12,24 @@ expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30,
 │                   ╭ ‼ Confirm ───────────────────────────────────────────────╮                   │
 │                   │                                                          │                   │
 │                   │                                                          │                   │
+│                   │                                                          │                   │
 ╰───────────────────│                                                          │                   │
-╭ 2   Branches ────│                                                          │                   │
-│ main             │             Hard reset working tree to HEAD?             │                   │
-│  feature/mvp      │   This can discard uncommitted work that reflog cannot   │                   │
+╭ 2   Branches ────│             Hard reset working tree to HEAD?             │                   │
+│ main             │   This can discard uncommitted work that reflog cannot   │                   │
+│  feature/mvp      │                         restore.                         │                   │
 │                   │                                                          │                   │
 │                   │               Runs `git reset --hard HEAD`.              │                   │
 │                   │                                                          │                   │
+│                   │                                                          │                   │
 ╰───────────────────│                                                          │                   │
-╭ 3   Commits ─────│                                                          │                   │
-│●  abc1234  RT  ini│                                                          │                   │
-│●  def5678  RT  wir│                                                          │───────────────────╯
-│                   │ ──────────────────────────────────────────────────────── │───────────────────╮
-│                   │ Enter reset hard  Esc cancel                             │                   │
+╭ 3   Commits │ Ref│                                                          │───────────────────╯
+│●  abc1234  RT  ini│ ──────────────────────────────────────────────────────── │───────────────────╮
+│●  def5678  RT  wir│ Enter reset hard  Esc cancel                             │                   │
 │                   ╰──────────────────────────────────────────────────────────╯                   │
+│                                ││                                                                │
+│                                ││                                                                │
 ╰────────────────────────────────╯│                                                                │
 ╭ 4   Stash ────────────────────╮│                                                                │
 │ stash@{0} WIP on main: local t││                                                                │
-│                                ││                                                                │
-│                                ││                                                                │
 ╰────────────────────────────────╯╰────────────────────────────────────────────────────────────────╯
  Enter  confirm   Esc  cancel

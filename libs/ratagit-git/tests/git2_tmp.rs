@@ -9,6 +9,9 @@ use ratagit_git::{
     GitBackendHistoryRewrite, GitBackendRead, GitBackendWrite, HybridGitBackend, is_git_repo,
 };
 
+mod commit_files;
+mod tabs;
+
 struct TmpGitRepo {
     path: PathBuf,
 }
@@ -72,6 +75,10 @@ impl TmpGitRepo {
 
 impl Drop for TmpGitRepo {
     fn drop(&mut self) {
+        if std::thread::panicking() {
+            eprintln!("retained failing Git fixture: {}", self.path.display());
+            return;
+        }
         let _ = remove_dir_all(&self.path);
     }
 }

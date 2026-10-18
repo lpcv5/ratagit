@@ -2,11 +2,10 @@
 
 ## Required checks
 
-Every PR runs on Ubuntu and Windows:
+Every PR and push to `main` or `develop` runs on Ubuntu and Windows:
 
 - cargo fmt --check
 - cargo clippy --locked --workspace --lib --bins -- -D warnings
-- cargo check --locked --workspace
 - cargo test --locked --workspace
 
 The workspace test command includes unit tests, integration tests, UI snapshots,

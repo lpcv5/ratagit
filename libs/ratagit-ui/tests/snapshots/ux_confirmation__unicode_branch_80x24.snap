@@ -1,0 +1,29 @@
+---
+source: libs/ratagit-ui/tests/ux_confirmation.rs
+assertion_line: 125
+expression: buffer_text(&buffer)
+---
+╭ 1  󰈙 Files ─────────────╮╭ 5   Details ─────────────────────────────────────╮
+│   ? README.md           ││  details(files): no diff for current selection    │
+│    src/                ││                                                   │
+│     M lib.rs            ││                                                   │
+│     M main.rs           ││                                                   │
+│               ╭ ‼ Confirm ───────────────────────────────────╮               │
+│               │             Force delete branch:             │               │
+╰───────────────│ feature/确 认 删 除 /组 合 字 符 -é/界 面 交 互 优 化 /ver │               │
+╭ 2   Branches │         y-long-unbroken-target-name?         │               │
+│ main         │         This action cannot be undone.        │               │
+│  feature/mvp  │                                              │               │
+│               │          Git refused safe deletion:          │               │
+│               │  Git refused because the branch is not fully │               │
+│               │                    merged.                   │               │
+╰───────────────│                                              │               │
+╭ 3   Commits ─│ ──────────────────────────────────────────── │───────────────╯
+│●  abc1234  RT │ Enter force delete  Esc cancel               │───────────────╮
+│●  def5678  RT ╰──────────────────────────────────────────────╯               │
+│                         ││                                                   │
+╰─────────────────────────╯│                                                   │
+╭ 4   Stash ─────────────╮│                                                   │
+│ stash@{0} WIP on main: ││                                                   │
+╰─────────────────────────╯╰───────────────────────────────────────────────────╯
+/ loading: details   Enter  force delete   Esc  cancel

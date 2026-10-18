@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+mod commit_files;
 #[cfg(test)]
 #[path = "mock/review_tests.rs"]
 mod review_tests;
@@ -195,6 +196,54 @@ fn commit_matches(commit: &CommitEntry, id: &str) -> bool {
 }
 
 impl GitBackendRead for MockGitBackend {
+    fn repository_tab(
+        &mut self,
+        tab: ratagit_core::RepositoryTab,
+    ) -> Result<Vec<ratagit_core::RepositoryItem>, GitError> {
+        use ratagit_core::{RepositoryItem as I, RepositoryTab as T};
+        self.operations.push(format!("repository-tab:{tab:?}"));
+        let target = self
+            .snapshot
+            .commits
+            .first()
+            .map(|commit| commit.full_id.clone())
+            .unwrap_or_default();
+        Ok(match tab {
+            T::Worktrees => vec![I::Worktree {
+                path: "mock-worktree".into(),
+                head: target,
+                branch: self.snapshot.current_branch.clone(),
+                detached: self.snapshot.detached_head,
+                locked: None,
+                prunable: None,
+                main: true,
+            }],
+            T::Reflog => self
+                .snapshot
+                .commits
+                .iter()
+                .take(ratagit_core::tabs::REPOSITORY_LIST_LIMIT)
+                .enumerate()
+                .map(|(index, commit)| I::Reflog {
+                    selector: format!("HEAD@{{{index}}}"),
+                    target: commit.full_id.clone(),
+                    message: commit.summary.clone(),
+                })
+                .collect(),
+            _ => Vec::new(),
+        })
+    }
+    fn render_custom_patch(
+        &mut self,
+        patch: &ratagit_core::custom_patch::CustomPatch,
+    ) -> Result<Vec<u8>, GitError> {
+        self.operations.push(format!(
+            "render-custom-patch:{}:{}",
+            patch.oid,
+            patch.files.len()
+        ));
+        crate::patch_backend::custom::bytes(patch, false)
+    }
     fn remote_branches(&mut self) -> Result<Vec<String>, GitError> {
         self.operations.push("remote-branches".into());
         Ok(Vec::new())
@@ -204,6 +253,9 @@ impl GitBackendRead for MockGitBackend {
         request: ratagit_core::patch::PatchRequest,
     ) -> Result<ratagit_core::patch::Patch, GitError> {
         use ratagit_core::patch::*;
+        if let PatchRequest::CommitFiles { oid, paths } = &request {
+            return self.commit_files_patch(oid.clone(), paths.clone(), request.clone());
+        }
         let (path, source) = match &request {
             PatchRequest::File(path)
             | PatchRequest::Worktree(path)
@@ -214,6 +266,7 @@ impl GitBackendRead for MockGitBackend {
             PatchRequest::Commit { oid, .. } => {
                 ("mock.txt".into(), PatchSource::Commit(oid.clone()))
             }
+            PatchRequest::CommitFiles { .. } => unreachable!(),
         };
         let side = PatchSide {
             path: Some(path),
@@ -494,6 +547,12 @@ impl GitBackendRead for MockGitBackend {
 }
 
 impl GitBackendWrite for MockGitBackend {
+    fn repository_operation(
+        &mut self,
+        operation: &ratagit_core::extras::RepositoryOperation,
+    ) -> Result<(), GitError> {
+        self.commit_file_operation(operation)
+    }
     fn stage_file(&mut self, path: &str) -> Result<(), GitError> {
         self.operations.push(format!("stage:{path}"));
         let entry = self

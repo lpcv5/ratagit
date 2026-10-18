@@ -12,12 +12,8 @@ GitBackend. Keep async request ownership and mutation barriers intact.
 ## Workflow
 
 - Inspect the affected code and existing tests before choosing a solution.
-- Define acceptance criteria. Small, bounded changes can keep the goal and
-  validation in the conversation; they do not require a plan file.
-- Use [docs/EXEC_PLAN.md](docs/EXEC_PLAN.md) for multi-step, ambiguous,
-  cross-layer, Git mutation, or async/runtime changes. Record scope, risks,
-  acceptance criteria and validation before implementation; update when scope
-  changes. A coherent cross-layer change is allowed when needed for the outcome.
+- Keep the goal, acceptance criteria and validation in the conversation.
+  No plan file is required.
 - Implement and verify in useful increments. Reuse or extend existing tests;
   add regression coverage for new behavior or uncovered bugs. Do not generate
   redundant tests just to complete a checklist.
@@ -25,7 +21,7 @@ GitBackend. Keep async request ownership and mutation barriers intact.
   and snapshot diffs; do not weaken assertions to make a change pass.
 - Report the outcome, actual checks, and any unresolved limitations.
 
-See [development workflow](docs/DEVELOPMENT_LOOP.md) for planning and handoffs,
+See [development workflow](docs/DEVELOPMENT_LOOP.md) for implementation and handoffs,
 and [testing guidance](docs/TESTING.md) when selecting coverage.
 
 ## Validation

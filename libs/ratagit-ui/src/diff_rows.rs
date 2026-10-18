@@ -9,6 +9,7 @@ pub(super) struct DiffRow {
     pub staged: bool,
     pub focused: bool,
     pub chosen: bool,
+    pub included: bool,
     pub marker: bool,
 }
 
@@ -19,6 +20,7 @@ impl DiffRow {
             staged,
             focused: false,
             chosen: false,
+            included: false,
             marker: false,
         }
     }
@@ -56,7 +58,7 @@ fn render_row(display: &DiffRow, theme: &UiTheme) -> PanelLine {
             row.kind,
             display.staged,
             display.focused,
-            display.chosen,
+            display.chosen || display.included,
             theme,
         )
     };
@@ -76,7 +78,13 @@ fn render_row(display: &DiffRow, theme: &UiTheme) -> PanelLine {
                 text: format!(
                     "{}{} ",
                     if display.marker { ">" } else { " " },
-                    if display.chosen { "┃" } else { " " }
+                    if display.chosen {
+                        "┃"
+                    } else if display.included {
+                        "│"
+                    } else {
+                        " "
+                    }
                 ),
                 style: if style.bg.is_some() {
                     style.fg(theme.diff.context_text)

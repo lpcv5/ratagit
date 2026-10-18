@@ -69,7 +69,7 @@ pub(crate) fn compute_left_panel_heights(
         split_by_weights(extra, &LEFT_PANEL_WEIGHTS).map(|lines| lines + minimum_readable);
 
     if state.ui.focus != PanelFocus::Stash {
-        collapse_stash_when_unfocused(&mut content, minimum_readable);
+        collapse_stash_when_unfocused(&mut content, 1);
     }
 
     let layout_focus =
@@ -257,11 +257,22 @@ mod tests {
     }
 
     #[test]
-    fn stash_collapses_to_three_content_lines_when_unfocused() {
-        let state = AppContext::default();
-        let heights = compute_left_panel_heights(&state, 40, 2);
-
-        assert_eq!(heights.stash.saturating_sub(2), 3);
+    fn stash_collapses_to_one_content_line_whenever_unfocused() {
+        let mut state = state_with_many_files();
+        for focus in [
+            PanelFocus::Files,
+            PanelFocus::Branches,
+            PanelFocus::Commits,
+            PanelFocus::Details,
+            PanelFocus::Log,
+        ] {
+            state.ui.focus = focus;
+            for height in [13, 19, 20, 23, 29, 39, 79] {
+                let heights = compute_left_panel_heights(&state, height, 2);
+                assert_eq!(heights.stash, 3, "{focus:?}, height={height}");
+                assert_eq!(heights.as_array().iter().sum::<usize>(), height);
+            }
+        }
     }
 
     #[test]
@@ -359,10 +370,18 @@ mod tests {
                         if height >= chrome * LEFT_PANEL_COUNT {
                             let minimum = MIN_PANEL_CONTENT_LINES
                                 .min((height - chrome * LEFT_PANEL_COUNT) / LEFT_PANEL_COUNT);
-                            assert!(
-                                heights.iter().all(|value| *value >= chrome + minimum),
-                                "focus={focus:?}, height={height}, chrome={chrome}: {heights:?}"
-                            );
+                            for (index, value) in heights.iter().enumerate() {
+                                let minimum = if index == STASH_INDEX && focus != PanelFocus::Stash
+                                {
+                                    minimum.min(1)
+                                } else {
+                                    minimum
+                                };
+                                assert!(
+                                    *value >= chrome + minimum,
+                                    "focus={focus:?}, height={height}, chrome={chrome}: {heights:?}"
+                                );
+                            }
                         }
                     }
                 }

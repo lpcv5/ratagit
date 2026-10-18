@@ -1,0 +1,29 @@
+---
+source: libs/ratagit-ui/tests/snapshots.rs
+assertion_line: 2442
+expression: "render_terminal_text(&state, size)"
+---
+╭ 1  󰈙 Files ─────────────╮╭ 5   Details ─────────────────────────────────────╮
+│   ? README.md           ││Loading reviewed patch...                          │
+│    src/                ││                                                   │
+│     M lib.rs            ││                                                   │
+│     M main.rs           ││                                                   │
+│                         ││                                                   │
+╰─────────────────────────╯│                                                   │
+╭ 2   Branches ──────────╮│                                                   │
+│ main                   ││                                                   │
+│  feature/mvp            ││                                                   │
+│                         ││                                                   │
+│                         ││                                                   │
+╰─────────────────────────╯│                                                   │
+╭ 3   Commits ───────────╮│                                                   │
+│●  abc1234  RT  init proj││                                                   │
+│●  def5678  RT  wire comm│╰───────────────────────────────────────────────────╯
+│                         │╭ 6  󰌱 Log ─────────────────────────────────────────╮
+╰─────────────────────────╯│  notice=Ready                                     │
+╭ 4   Stash ─────────────╮│                                                   │
+│ stash@{6} saved changes││                                                   │
+│ stash@{7} saved changes││                                                   │
+│ stash@{8} saved changes││                                                   │
+╰─────────────────────────╯╰───────────────────────────────────────────────────╯
+ O  stash pop   ?  commands

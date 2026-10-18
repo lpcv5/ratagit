@@ -3,7 +3,7 @@ mod panel_details;
 #[path = "panel_format.rs"]
 mod panel_format;
 #[path = "panel_left.rs"]
-mod panel_left;
+pub(crate) mod panel_left;
 #[path = "panel_scroll.rs"]
 mod panel_scroll;
 #[path = "panel_shortcuts.rs"]
@@ -864,8 +864,8 @@ mod tests {
             lines.iter().map(|line| line.text()).collect::<Vec<_>>(),
             vec![
                 "  status=huge repo metadata-only; file scan skipped",
-                "  tip=focus Commits/Branches or narrow Git outside ratagit",
                 "  notice=Ready",
+                "  tip=focus Commits/Branches or narrow Git outside ratagit",
             ]
         );
     }

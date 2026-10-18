@@ -2,6 +2,19 @@ use super::*;
 
 pub(super) fn open(state: &mut AppContext, feature: Feature) -> Vec<Command> {
     use Feature as F;
+    if feature == F::CustomPatchPreview {
+        return crate::custom_patch::update(
+            state,
+            if state.ui.custom_patch.preview_return_focus.is_some() {
+                crate::custom_patch::CustomPatchAction::ClosePreview
+            } else {
+                crate::custom_patch::CustomPatchAction::Preview
+            },
+        );
+    }
+    if feature == F::CustomPatchOptions {
+        return crate::custom_patch::update(state, crate::custom_patch::CustomPatchAction::Options);
+    }
     if feature == F::Sequence {
         menu(
             state,
@@ -16,6 +29,12 @@ pub(super) fn open(state: &mut AppContext, feature: Feature) -> Vec<Command> {
             .collect(),
         );
         return Vec::new();
+    }
+    if matches!(
+        state.active_left_view(),
+        Some(crate::ActiveLeftView::CommitFiles | crate::ActiveLeftView::BranchCommitFiles)
+    ) {
+        return commit_files::open(state, feature);
     }
     if state.active_left_view() == Some(crate::ActiveLeftView::Files) {
         return files::open(state, feature);

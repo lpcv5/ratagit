@@ -10,12 +10,40 @@ native source LineIds. Marks and visual anchors are pure UI state; operations
 resolve them to changed source lines before returning GitBackend commands.
 Native file-header bytes live in PatchFile.header independently of writable body
 bytes, so read-only/truncated patches preserve Git metadata too. Passive Files
-text projects into read-only rows in core; interactive native rows and passive
-rows share one pure UI renderer. Source prefixes and indentation are preserved,
+and Commit Files text projects into read-only rows in core; interactive native
+rows and passive rows share one pure UI renderer. Source prefixes and indentation are preserved,
 and core scroll bounds use the same visible preview rows as the UI.
 Runtime teardown stops queued jobs and bounds worker joining to 100 ms. In-flight
 native calls cannot be forcibly cancelled; a detached worker exits after its
 current call and never starts queued work.
+
+Historical Commit Files reuse native patch loading and AppContext-owned hunk
+selection, with captured `CommitFiles` requests and request-ID ownership.
+Historical mutations are typed workflow operations through GitBackend's
+exclusive mutation worker; they never fall through to staging. Whole-file
+history edits restore parent tree entries, and partial edits use reviewed bytes
+in a temporary index. Descendant commits are replayed in memory before moving
+the branch; conflicting/unsupported histories and checkout obstructions are
+rejected first. Worktree-only operations refresh Files while retaining the
+Commit Files context; successful history rewrites close it and refresh panels.
+
+The custom patch builder retains immutable native source files in
+`repo.custom_patch`, source identity and accumulated whole/line inclusion in
+`ui.custom_patch`, and a serial intent queue with independent read ownership in
+`work.custom_patch`. Its load/render commands do not share Details debounce
+ownership. Reset/replacement and mutation scheduling invalidate pending reads;
+navigation preserves completed inclusion. Captured aggregate operations validate
+every source file and apply the combined native bytes through one GitBackend
+mutation, retaining whole-file metadata and partial-line guards. Preview/copy
+are backend projections of the same selection; rendering remains pure.
+
+Repository navigation tabs keep backend-derived typed lists in `repo.tabs`,
+active siblings and independent selection/scroll in `ui.tabs`, and per-tab
+request ownership in `work.tabs`. `LoadRepositoryTab` is an ordinary read command
+in both runtimes. Mutation scheduling invalidates tab requests and cached lists;
+the runtime generation barrier continues to reject overlapping stale reads.
+Metadata Details are pure projections of the selected entry, and active view
+resolution prevents commands from targeting hidden Files/Branches/Commits lists.
 
 ratagit is a lazygit-like Git TUI built with Rust and ratatui.
 
@@ -93,11 +121,9 @@ Forbidden:
 
 ### 3. Layer Separation
 
-```text
-CLI → Core → UI
-        ↓
-      Git
-```
+The executable composes the libraries. Core has no external dependencies;
+UI and Git depend on core; the harness composes core, Git and UI. Reducers
+emit Commands, runtimes execute backend work, and results return as Actions.
 
 Rules:
 
@@ -306,18 +332,22 @@ drain GitResult channel
 
 - UI directly mutates state
 - UI calls Git
-- logic inside render()
-- branching based on terminal state outside AppContext
+- business state transitions or side effects inside render()
+- reading implicit external inputs during rendering
 - hidden caches not in AppContext
+
+Rendering may compute layout, formatting and conditional presentation from
+AppContext, terminal size and RenderContext.
 
 ---
 
 ## Code Structure Rules
 
-### File Size
+### Module Size
 
-- max 500 lines per file
-- split when growing
+Keep modules cohesive and easy to navigate. Split when distinct responsibilities
+or change patterns justify it; file length alone does not require a refactor.
+Keep unrelated restructuring outside the task scope.
 
 ### Module Rules
 
@@ -335,8 +365,7 @@ drain GitResult channel
 
 AppContext must:
 
-- be serializable (for debugging)
-- be inspectable
+- be inspectable through Debug and deterministic test assertions
 - keep Git-derived data in `repo`
 - keep interaction state and render caches in `ui`
 - keep pending-work state in `work`

@@ -5,6 +5,10 @@ use crate::{
 };
 
 pub(crate) fn move_selection(state: &mut AppContext, move_up: bool) -> Vec<Command> {
+    if let Some(tab) = state.ui.tabs.active(state.ui.focus) {
+        crate::tabs::move_selection(state, tab, move_up, usize::MAX);
+        return Vec::new();
+    }
     match state.ui.focus {
         PanelFocus::Files => {
             move_selected(&mut state.ui.files, move_up);
@@ -32,6 +36,10 @@ pub(crate) fn move_selection_in_viewport(
     move_up: bool,
     visible_lines: usize,
 ) -> Vec<Command> {
+    if let Some(tab) = state.ui.tabs.active(state.ui.focus) {
+        crate::tabs::move_selection(state, tab, move_up, visible_lines);
+        return Vec::new();
+    }
     match state.ui.focus {
         PanelFocus::Files => {
             crate::move_selected_in_viewport(&mut state.ui.files, move_up, visible_lines);

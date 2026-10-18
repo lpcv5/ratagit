@@ -5,8 +5,7 @@ on:
   push:
     branches:
       - main
-      - dev
-      - feature/newarch
+      - develop
 
 jobs:
   quality:
@@ -31,9 +30,6 @@ jobs:
 
       - name: Clippy
         run: cargo clippy --locked --workspace --lib --bins -- -D warnings
-
-      - name: Compile check
-        run: cargo check --locked --workspace
 
       - name: Workspace tests (unit, integration, snapshots, harness)
         run: cargo test --locked --workspace

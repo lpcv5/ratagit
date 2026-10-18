@@ -113,6 +113,7 @@ fn diff_text_and_gutters_are_readable_for_every_highlight_combination() {
                         staged,
                         focused: cursor,
                         chosen: marked,
+                        included: false,
                         marker: cursor,
                     };
                     let line = render_row(&display, &MAIN_UI_THEME);
@@ -238,6 +239,7 @@ fn custom_diff_palette_reaches_every_source_and_selection_state() {
                         staged,
                         focused: cursor,
                         chosen: marked,
+                        included: false,
                         marker: cursor,
                     };
                     let default_before = render_row(&display, &MAIN_UI_THEME);

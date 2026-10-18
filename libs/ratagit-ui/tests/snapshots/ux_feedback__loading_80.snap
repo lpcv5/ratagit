@@ -1,0 +1,29 @@
+---
+source: libs/ratagit-ui/tests/ux_feedback.rs
+assertion_line: 106
+expression: screen
+---
+╭ 1  󰈙 Files ─────────────╮╭ 5   Details ─────────────────────────────────────╮
+│   ? README.md           ││   diff --git a/README.md b/README.md              │
+│    src/                ││   @@ -1 +1 @@                                     │
+│     M lib.rs            ││   -old                                            │
+│     M main.rs           ││   +new                                            │
+│                         ││                                                   │
+│                         ││                                                   │
+╰─────────────────────────╯│                                                   │
+╭ 2   Branches ──────────╮│                                                   │
+│ main                   ││                                                   │
+│  feature/mvp            ││                                                   │
+│                         ││                                                   │
+│                         ││                                                   │
+│                         ││                                                   │
+╰─────────────────────────╯│                                                   │
+╭ 3   Commits ───────────╮╰───────────────────────────────────────────────────╯
+│●  abc1234  RT  init proj│╭ 6  󰌱 Log ─────────────────────────────────────────╮
+│●  def5678  RT  wire comm││  work=running push changes to remote              │
+│                         ││  work=refreshing repository                       │
+╰─────────────────────────╯│  notice=Ready                                     │
+╭ 4   Stash ─────────────╮│                                                   │
+│ stash@{0} WIP on main: ││                                                   │
+╰─────────────────────────╯╰───────────────────────────────────────────────────╯
+/ loading: push changes to remote   space  stage/unstage   ?  commands

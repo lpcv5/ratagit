@@ -1,5 +1,8 @@
 use crossterm::event::{KeyCode, KeyModifiers};
 #[cfg(test)]
+#[path = "custom_patch_keyboard_tests.rs"]
+mod custom_patch_keyboard_tests;
+#[cfg(test)]
 #[path = "patch_keyboard_tests.rs"]
 mod patch_keyboard_tests;
 use ratagit_core::{
@@ -22,6 +25,7 @@ pub(crate) enum InputMode {
     RepositoryConfirm,
     PatchDiscard,
     Patch,
+    CustomPatchPreview,
     Editor,
     BranchCreate,
     BranchDeleteMenu,
@@ -76,6 +80,8 @@ pub(crate) fn input_mode_for_state(state: &AppContext) -> InputMode {
         InputMode::CommandPaletteSearch
     } else if state.ui.command_palette.active {
         InputMode::CommandPalette
+    } else if state.ui.custom_patch.preview_return_focus.is_some() {
+        InputMode::CustomPatchPreview
     } else if search_input_is_current(state) {
         InputMode::SearchInput
     } else if search_query_is_current(state) {
@@ -85,6 +91,35 @@ pub(crate) fn input_mode_for_state(state: &AppContext) -> InputMode {
     } else {
         InputMode::Panel
     }
+}
+
+pub(crate) fn key_effect_for_key_in_viewport(
+    state: &AppContext,
+    code: KeyCode,
+    modifiers: KeyModifiers,
+    size: ratagit_ui::TerminalSize,
+    details_scroll_lines: usize,
+    details_visible_lines: usize,
+    left_panel_visible_lines: usize,
+) -> KeyEffect {
+    if ratagit_ui::modal_viewport_too_small(state, size) {
+        if code == KeyCode::Esc && state.ui.command_palette.active {
+            return KeyEffect::Dispatch(UiAction::CloseCommandPalette);
+        }
+        if code != KeyCode::Esc
+            && !(code == KeyCode::Char('c') && modifiers.contains(KeyModifiers::CONTROL))
+        {
+            return KeyEffect::Ignore;
+        }
+    }
+    key_effect_for_key(
+        state,
+        code,
+        modifiers,
+        details_scroll_lines,
+        details_visible_lines,
+        left_panel_visible_lines,
+    )
 }
 
 pub(crate) fn key_effect_for_key(
@@ -161,6 +196,23 @@ fn host_effect(state: &AppContext, code: KeyCode, modifiers: KeyModifiers) -> Op
     } else {
         return None;
     };
+    if let Some((_, items, ui)) = ratagit_core::workflow::commit_files::selection(state)
+        && (state.active_commit_files_target().is_some()
+            || ratagit_core::workflow::commit_files::is_patch(state))
+    {
+        if edit && state.work.mutation.operation_pending.is_some() {
+            return None;
+        }
+        let path = if edit {
+            ratagit_core::selected_commit_file(items, ui)?.path
+        } else {
+            ratagit_core::workflow::commit_files::paths(state).join("\n")
+        };
+        return (!path.is_empty()).then_some(KeyEffect::Host { edit, path });
+    }
+    if state.ui.tabs.active(state.ui.focus).is_some() {
+        return None;
+    }
     if state.ui.focus != PanelFocus::Files
         && !(state.ui.details.patch.active && state.ui.last_left_focus == PanelFocus::Files)
     {
@@ -187,6 +239,28 @@ fn ui_action_for_key(
     details_visible_lines: usize,
     left_panel_visible_lines: usize,
 ) -> Option<UiAction> {
+    use ratagit_core::custom_patch::CustomPatchAction as C;
+    let mode = input_mode_for_state(state);
+    if mode == InputMode::CustomPatchPreview
+        && modifiers.contains(KeyModifiers::CONTROL)
+        && matches!(code, KeyCode::Char('u' | 'd'))
+    {
+        return Some(UiAction::CustomPatch(C::Scroll {
+            up: code == KeyCode::Char('u'),
+            lines: details_scroll_lines,
+        }));
+    }
+    if matches!(
+        mode,
+        InputMode::Panel
+            | InputMode::SearchQuery
+            | InputMode::Patch
+            | InputMode::CustomPatchPreview
+    ) && code == KeyCode::Char('p')
+        && modifiers.contains(KeyModifiers::CONTROL)
+    {
+        return Some(UiAction::CustomPatch(C::Options));
+    }
     if let Some(action) =
         global_control_action_for_key(code, modifiers, details_scroll_lines, details_visible_lines)
     {
@@ -194,6 +268,20 @@ fn ui_action_for_key(
     }
 
     match input_mode_for_state(state) {
+        InputMode::CustomPatchPreview => {
+            return match code {
+                KeyCode::Esc | KeyCode::Tab => Some(UiAction::CustomPatch(C::ClosePreview)),
+                KeyCode::Down | KeyCode::Char('j') => Some(UiAction::CustomPatch(C::Scroll {
+                    up: false,
+                    lines: 1,
+                })),
+                KeyCode::Up | KeyCode::Char('k') => {
+                    Some(UiAction::CustomPatch(C::Scroll { up: true, lines: 1 }))
+                }
+                KeyCode::Char('?') => Some(UiAction::OpenCommandPalette),
+                _ => None,
+            };
+        }
         InputMode::Workflow => return crate::workflow_input::action(state, code, modifiers),
         InputMode::RepositoryConfirm => {
             return match code {
@@ -229,6 +317,9 @@ fn ui_action_for_key(
                 KeyCode::Char('a') => Some(UiAction::CyclePatchSelection),
                 KeyCode::Char('v') => Some(UiAction::TogglePatchRange),
                 KeyCode::Char('x') => Some(UiAction::TogglePatchMark),
+                KeyCode::Tab if ratagit_core::workflow::commit_files::is_patch(state) => {
+                    Some(UiAction::CustomPatch(C::Preview))
+                }
                 KeyCode::Tab => Some(UiAction::SwitchPatchSource),
                 KeyCode::Char(' ') => Some(UiAction::ApplyPatchSelection),
                 KeyCode::Char('d') if state.ui.details.patch.staged => {
@@ -502,6 +593,60 @@ fn panel_action_for_key(
         _ => {}
     }
 
+    if state.ui.focus.is_left_panel() {
+        match code {
+            KeyCode::Left | KeyCode::Char('[') => {
+                return Some(UiAction::CyclePanelTab { previous: true });
+            }
+            KeyCode::Right | KeyCode::Char(']') => {
+                return Some(UiAction::CyclePanelTab { previous: false });
+            }
+            _ => {}
+        }
+    }
+
+    if state
+        .ui
+        .tabs
+        .active(if state.ui.focus.is_left_panel() {
+            state.ui.focus
+        } else {
+            state.ui.last_left_focus
+        })
+        .is_some()
+    {
+        return match code {
+            KeyCode::Char('r') => Some(UiAction::RefreshAll),
+            KeyCode::Char('h') => Some(UiAction::FocusPrev),
+            KeyCode::Char('l') => Some(UiAction::FocusNext),
+            KeyCode::Down | KeyCode::Char('j') => Some(UiAction::MoveDownInViewport {
+                visible_lines: left_panel_visible_lines,
+            }),
+            KeyCode::Up | KeyCode::Char('k') => Some(UiAction::MoveUpInViewport {
+                visible_lines: left_panel_visible_lines,
+            }),
+            KeyCode::Char('1') => Some(UiAction::FocusPanel {
+                panel: PanelFocus::Files,
+            }),
+            KeyCode::Char('2') => Some(UiAction::FocusPanel {
+                panel: PanelFocus::Branches,
+            }),
+            KeyCode::Char('3') => Some(UiAction::FocusPanel {
+                panel: PanelFocus::Commits,
+            }),
+            KeyCode::Char('4') => Some(UiAction::FocusPanel {
+                panel: PanelFocus::Stash,
+            }),
+            KeyCode::Char('5') => Some(UiAction::FocusPanel {
+                panel: PanelFocus::Details,
+            }),
+            KeyCode::Char('6') => Some(UiAction::FocusPanel {
+                panel: PanelFocus::Log,
+            }),
+            _ => None,
+        };
+    }
+
     if state.ui.focus == PanelFocus::Files {
         if state.ui.files.mode == FileInputMode::MultiSelect && code == KeyCode::Esc {
             return Some(UiAction::ExitFilesMultiSelect);
@@ -549,7 +694,7 @@ fn panel_action_for_key(
                     return Some(UiAction::EnterCommitFilesMultiSelect);
                 }
                 if code == KeyCode::Enter {
-                    return Some(UiAction::ToggleBranchCommitFilesDirectory);
+                    return Some(UiAction::OpenCommitFilePatch);
                 }
             }
             BranchesSubview::Commits => {
@@ -601,9 +746,8 @@ fn panel_action_for_key(
             return Some(UiAction::EnterCommitFilesMultiSelect);
         }
         if code == KeyCode::Enter {
-            return Some(UiAction::ToggleCommitFilesDirectory);
+            return Some(UiAction::OpenCommitFilePatch);
         }
-        // TODO(commit-files-shortcuts): add more commit-files local file actions in a later slice.
     } else if state.ui.focus == PanelFocus::Commits {
         if state.ui.commits.mode == CommitInputMode::MultiSelect && code == KeyCode::Esc {
             return Some(UiAction::ExitCommitsMultiSelect);

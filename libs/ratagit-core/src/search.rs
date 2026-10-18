@@ -132,6 +132,16 @@ pub(crate) fn recompute_search_matches(state: &mut AppContext) {
     };
     let query = state.ui.search.query.to_lowercase();
     state.ui.search.matches = match scope {
+        SearchScope::RepositoryTab(tab) => {
+            state.repo.tabs.get(&tab).map_or_else(Vec::new, |list| {
+                collect_matches(
+                    list.items.iter(),
+                    &query,
+                    |item| item.key(),
+                    |item| format!("{} {}", item.label(), item.details()),
+                )
+            })
+        }
         SearchScope::Files => {
             let rows = file_tree_rows_for_read(&state.repo.files.items, &state.ui.files);
             collect_matches(
@@ -227,6 +237,25 @@ fn select_current_search_match(state: &mut AppContext) -> bool {
         return false;
     };
     match scope {
+        SearchScope::RepositoryTab(tab) => {
+            let selection = state.ui.tabs.selections.entry(tab).or_default();
+            let found = select_index_by_key(
+                &mut selection.selected,
+                state
+                    .repo
+                    .tabs
+                    .get(&tab)
+                    .into_iter()
+                    .flat_map(|list| list.items.iter())
+                    .map(|item| item.key()),
+                &key,
+            );
+            if found {
+                selection.scroll_offset = selection.selected;
+                state.ui.details.scroll_offset = 0;
+            }
+            found
+        }
         SearchScope::Files => {
             select_file_tree_path(&state.repo.files.items, &mut state.ui.files, &key)
         }

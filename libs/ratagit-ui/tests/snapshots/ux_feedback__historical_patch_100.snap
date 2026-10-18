@@ -1,0 +1,29 @@
+---
+source: libs/ratagit-ui/tests/ux_feedback.rs
+assertion_line: 141
+expression: screen
+---
+╭ 1  󰈙 Files ────────────────────╮╭ 5   Details ──────────────────────────────────────────────────╮
+│   ? README.md                  ││   diff --git a/src/lib.rs b/src/lib.rs                         │
+│    src/                       ││   index 1111111..2222222 100644                                │
+│     M lib.rs                   ││   --- a/src/lib.rs                                             │
+│     M main.rs                  ││   +++ b/src/lib.rs                                             │
+│                                ││   @@ -1,3 +1,3 @@                                              │
+│                                ││>  -old first                                                   │
+╰────────────────────────────────╯│   +new first                                                   │
+╭ 2   Branches ─────────────────╮│    unchanged                                                   │
+│ main                          ││   -old last                                                    │
+│  feature/mvp                   ││   +new last                                                    │
+│                                ││   diff --git a/src/lib.rs b/src/lib.rs                         │
+│                                ││   index 1111111..2222222 100644                                │
+│                                ││   --- a/src/lib.rs                                             │
+╰────────────────────────────────╯│   +++ b/src/lib.rs                                             │
+╭ 3   Commit Files │ Reflog │───╮╰ block · src/lib.rs ────────────────────────────────────────────╯
+│                                │╭ 6  󰌱 Log ──────────────────────────────────────────────────────╮
+│                                ││  notice=Ready                                                  │
+│                                ││                                                                │
+╰────────────────────────────────╯│                                                                │
+╭ 4   Stash ────────────────────╮│                                                                │
+│ stash@{0} WIP on main: local t││                                                                │
+╰────────────────────────────────╯╰────────────────────────────────────────────────────────────────╯
+ space  patch   a  mode   d  remove   n/N  file   Ctrl+P  menu   ?  commands   Esc  clear/back

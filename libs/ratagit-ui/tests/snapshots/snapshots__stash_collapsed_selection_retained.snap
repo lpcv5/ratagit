@@ -1,0 +1,29 @@
+---
+source: libs/ratagit-ui/tests/snapshots.rs
+assertion_line: 2442
+expression: "render_terminal_text(&state, size)"
+---
+╭ 1  󰈙 Files ─────────────╮╭ 5   Details ─────────────────────────────────────╮
+│   ? README.md           ││   diff --git a/README.md b/README.md              │
+│    src/                ││   @@ -1 +1 @@                                     │
+│     M lib.rs            ││   -old README.md                                  │
+│     M main.rs           ││   +new README.md                                  │
+│                         ││                                                   │
+│                         ││                                                   │
+╰─────────────────────────╯│                                                   │
+╭ 2   Branches ──────────╮│                                                   │
+│ main                   ││                                                   │
+│  feature/mvp            ││                                                   │
+│                         ││                                                   │
+│                         ││                                                   │
+│                         ││                                                   │
+╰─────────────────────────╯│                                                   │
+╭ 3   Commits ───────────╮╰───────────────────────────────────────────────────╯
+│●  abc1234  RT  init proj│╭ 6  󰌱 Log ─────────────────────────────────────────╮
+│●  def5678  RT  wire comm││  notice=Ready                                     │
+│                         ││                                                   │
+╰─────────────────────────╯│                                                   │
+╭ 4   Stash ─────────────╮│                                                   │
+│ stash@{7} saved changes││                                                   │
+╰─────────────────────────╯╰───────────────────────────────────────────────────╯
+ space  stage/unstage   d  discard   A  amend   c  commit   ?  commands

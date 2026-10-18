@@ -13,6 +13,24 @@ ratagit aims to replicate lazygit UX with a Rust + ratatui implementation.
 - details view
 - log view
 
+Left panels have sibling tabs: **Files / Submodules / Worktrees**,
+**Branches / Remotes / Tags**, and **Commits / Reflog**. Stash has one view.
+In normal left-panel navigation, `Left` / `Right` and `[` / `]` cycle tabs and
+wrap; `h` / `l` continue to change panel focus. Each tab keeps its selection and
+scroll position. Switching tabs clears the previous text search; `/` searches the
+active list. Editors, search input, modals and interactive patches retain their
+existing key precedence.
+
+New repository tabs are read-only: Submodules shows configured path, URL and
+initialization/HEAD status; Worktrees includes main/linked trees, detached HEAD,
+lock and prunable metadata; Remotes groups configured URLs with remote-tracking
+branches; Tags shows names, ref targets and annotation/commit summaries; Reflog
+shows HEAD selectors, hashes and messages. Details follows the selected entry.
+Lists load on first use, retain at most 1000 entries, and show loading, empty and
+error states. `r` refreshes their data. Existing file, branch and commit actions
+apply only in their original tabs. Tracking checkout remains in the local
+Branches tab's `Tab` menu.
+
 Command workflows:
 
 - `?` opens the command modal in navigation mode: `j/k` or arrows select,
@@ -64,7 +82,12 @@ MVP v0 includes a left-nav workspace layout with six panels:
   - Stash projection: the selected stash's reviewed, read-only native patch,
     including saved untracked files within the shared preview limits
   - `Ctrl+U` / `Ctrl+D` scroll Details content up/down globally by 2/5 of the Details content height without changing the focused panel
-- Log: show latest error, recent notices, and pending refresh/operation state
+- Log: prioritize the latest error, then pending operation/refresh, skipped-scan
+  and truncation warnings, recent notices, and tuning tips. Routine notices
+  cannot hide a failure or silently make incomplete repository data look complete.
+- Bottom shortcuts fit complete key/label pairs to the terminal width, retaining
+  `? commands` and contextual escape actions before less common actions. Active
+  searches keep their query and result count visible after confirmation.
 - Global sync: `p` runs `git pull`, `P` runs `git push`; if normal push is
   rejected because the remote branch has diverged, a confirmation modal asks
   whether to retry with force push using `--force-with-lease`
@@ -87,7 +110,7 @@ Common panel workflows (also available from `?`):
 | Branches | `f` | Fast-forward selected branch from its locally recorded upstream; fetch first for newer remote commits. Non-current updates preserve the checked-out worktree and refuse divergence. |
 | Branches | `c`, `-` | Checkout by name or switch to previous branch; dirty worktrees use the existing auto-stash confirmation. |
 | Branches | `Ctrl+O` | Copy selected branch name. |
-| Branches | `]` / `Tab` | Browse fetched remote branches in a scrollable menu; choose a remote, enter a new local name, and checkout with tracking. Requires a clean worktree. `Esc` returns to local branches. |
+| Branches | `Tab` | Browse fetched remote branches in a scrollable menu; choose a remote, enter a new local name, and checkout with tracking. Requires a clean worktree. `Esc` returns to local branches. |
 | Main/branch commits | `C`, `V`, `Ctrl+R` | Copy selected commit(s), cherry-pick oldest first onto current branch, or clear copied selection. Failed picks retain the selection and expose conflicts. |
 | Main/branch commits | `t` | Create a revert commit; a clean worktree is required. |
 | Main/branch commits | `g` | Soft/mixed/hard reset current branch to selected commit; hard requires confirmation. |
@@ -96,6 +119,14 @@ Common panel workflows (also available from `?`):
 | Main/branch commits | `Ctrl+K/J` / `Alt+Up/Down` | Move one commit up/down in newest-first list using interactive rebase; confirmation and a clean linear history are required. |
 | Main/branch commits | `F`, `S` | Create a `fixup!` commit from staged changes; confirm autosquashing fixups from selected base through HEAD. |
 | Main/branch commits | `T` | Create a lightweight tag at selected commit. |
+
+Confirmation dialogs wrap their question and consequences to the available
+width, giving them priority over target previews. Commit/stash title fields
+scroll horizontally with the cursor; the multiline commit body follows visual
+terminal rows, including wide characters. When an open modal has less than
+40 columns or 14 rows available in the terminal, a resize prompt replaces it;
+confirmation/execution is paused, `Esc` cancels and `Ctrl+C` quits. Resizing back
+restores the dialog and its contents.
 
 New workflow menus capture their target when opened. Arrows select menu choices;
 prompts support Unicode and Left/Right/Home/End cursor editing. `Esc` cancels
@@ -151,11 +182,11 @@ Navigation rules:
   fragment uses the selection foreground, including authors, hashes, file statuses
   and search matches, to preserve readability
 - empty panels render blank content lines instead of `<empty>` / `<none>` placeholders
-- Stash panel keeps three content rows when unfocused and restores its weighted
-  height when focused
+- Stash panel keeps one content row plus its borders when unfocused and restores
+  its weighted height when focused; leaving Stash collapses it again
 - focused Files/Branches/Commits panels can grow dynamically when content overflows
   by borrowing height evenly from other left panels, preserving three content rows
-  plus each panel's own borders
+  in expanded panels, the single collapsed Stash row, and each panel's own borders
 - the three-row reserve fits all left panels at terminal heights of 21 rows or
   more, including shortcuts; smaller terminals reduce the reserve evenly within
   the available height; Details and Log also keep three content rows when possible
@@ -369,7 +400,57 @@ Commits panel rules:
     `k` updates the selected range, Details follows the selected file/folder
     pathspecs, and `Esc` exits multi-select before closing the subpanel
   - `Esc` returns to the parent Commits panel and restores the selected commit diff
-  - additional commit-files local shortcuts are deferred
+  - `c` checks out the selected file, directory descendants, or visual range
+    from that commit into the worktree, preserving the index; locally changed
+    selected paths and untracked/ignored obstructions are rejected
+  - `d` removes the selection's changes from the original commit after
+    confirmation. The commit and descendants are rewritten on the current
+    branch. A clean worktree and linear history are required; replay conflicts
+    leave HEAD, index and worktree unchanged. Other branches are not rewritten
+  - `Space` adds/removes the selected files, directory descendants or visual
+    range in a custom patch. Partially included files become wholly included;
+    toggling a wholly included selection removes it. `a` toggles all files
+  - `Ctrl+o` copies selected file paths; `y` opens a path-copy menu; `e` edits
+    the current worktree file. `?` lists the available local commands
+  - `Enter` on a file opens its native historical patch in hunk selection mode.
+    `j/k` selects hunks; `a` cycles hunk/block/line selection, `v` selects a
+    range and `x` marks independent selections. `Space` toggles those changes
+    in the accumulated custom patch; `d` removes selected changes from the original commit, with
+    confirmation. `n/N` switches files; `Esc` clears selections before returning
+    to Commit Files. Historical patches never stage or unstage working changes
+    The Details bottom border shows the current hunk/block/line mode and file.
+    File previews, interactive hunks and custom patch previews use the same
+    content alignment and theme colors, including add/remove backgrounds
+  - inclusion survives file switching, leaving the subpanel, panel navigation
+    and refreshes. One patch belongs to one source commit; selecting another
+    source asks before replacing it. Nothing is saved across application runs
+  - a thin `│` rail marks whole files and included source lines; a dotted `╎`
+    rail marks partially included files/directories. File rails occupy the
+    existing gutter, preserving tree/status alignment and batch/search markers.
+    Temporary diff ranges/marks retain their heavier `┃` rail
+  - `Ctrl+P` opens custom-patch options: `c` clear, `a` apply to worktree, `r`
+    apply in reverse, `d` remove the accumulated patch from its original commit,
+    `y` copy to clipboard, and `p` preview. Arrow/j/k navigation and Enter also
+    work. `Tab` previews from the file/diff view; Tab/Esc returns to the source
+  - preview is read-only and limited to 5000 lines; copy and operations use the
+    entire accumulated patch. Copy is offered for UTF-8 patch output. Worktree
+    apply/reverse preserve the index/history and check the entire patch before
+    writing. Successful history removal clears the selection; apply/reverse
+    retain it for reuse. Clearing performs no Git mutation
+  - file/diff shortcuts use the same key badges and `? commands` entry as other
+    panels, with the full command list available through `?`. Patch counts sit
+    in the Commit Files border. Preview uses the Details panel's normal diff
+    styling with a Custom Patch title and a border caption for count, short
+    source ID, read-only status and any display limit. Options use the same
+    aligned key/label rows and selected-row style as the command palette
+  - whole-file selections support binary, rename, type/mode, added/deleted and
+    empty-file metadata. Partial selections require complete native text patches
+    without rename/type/mode changes. The builder is bounded to 1024 files and
+    16 MiB of native source data; incomplete/oversized loads are rejected as a
+    unit. A source load is also bounded to 5000 native lines
+  - these operations also work in Branch Commit Files. Keys follow lazygit's
+    patch-builder conventions; moving patches into other/new commits or the
+    index and external diff-tool/default-app launching are outside this slice
 - `/` searches loaded commit rows by visible row identity: short hash, author
   initials, and summary/message first line; confirming or navigating matches
   refreshes Commits Details
@@ -392,8 +473,9 @@ Themes are selected by a JSON configuration loaded once before terminal setup.
 The `default` and `tokyo-night` presets support partial semantic color overrides
 for panels, selections, badges, commits, files, diffs, and modals. Cursor and
 batch selection replace all text colors within selected rows; modal lists,
-including the command palette, share a full-width selection pair. Native Git
-ANSI history and log colors remain intact.
+including the command palette, share a full-width selection pair. Full-commit
+history and branch logs retain Git ANSI colors; Commit Files previews share the
+themed diff backgrounds and gutter used by hunk selection and custom patches.
 
 `RATAGIT_CONFIG` selects an explicit file, which must exist. Otherwise the app
 uses `%APPDATA%\ratagit\config.json` on Windows, or

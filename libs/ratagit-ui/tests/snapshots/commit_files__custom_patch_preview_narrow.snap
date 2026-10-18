@@ -1,0 +1,29 @@
+---
+source: libs/ratagit-ui/tests/commit_files.rs
+assertion_line: 206
+expression: "render_terminal_text(&state, TerminalSize { width: 80, height: 24 })"
+---
+╭ 1  󰈙 Files ─────────────╮╭ 5   Custom Patch ────────────────────────────────╮
+│   ? README.md           ││   diff --git a/src/lib.rs b/src/lib.rs            │
+│    src/                ││   --- a/src/lib.rs                                │
+│     M lib.rs            ││   +++ b/src/lib.rs                                │
+│     M main.rs           ││   @@ -1,2 +1,2 @@                                 │
+│                         ││   -old first                                      │
+│                         ││   +new first                                      │
+╰─────────────────────────╯│    unchanged                                      │
+╭ 2   Branches ──────────╮│                                                   │
+│ main                   ││                                                   │
+│  feature/mvp            ││                                                   │
+│                         ││                                                   │
+│                         ││                                                   │
+│                         ││                                                   │
+╰─────────────────────────╯│                                                   │
+╭ 3   Commit Files ──────╮╰ 1 file · abc1234 · read-only ─────────────────────╯
+│  ╎ src/                │╭ 6  󰌱 Log ─────────────────────────────────────────╮
+│  ╎  M lib.rs            ││  notice=Ready                                     │
+│                         ││                                                   │
+╰ patch: 1 file ──────────╯│                                                   │
+╭ 4   Stash ─────────────╮│                                                   │
+│ stash@{0} WIP on main: ││                                                   │
+╰─────────────────────────╯╰───────────────────────────────────────────────────╯
+ j/k  scroll   Ctrl+P  patch options   Tab/Esc  source   ?  commands

@@ -1,10 +1,11 @@
 ---
 source: libs/ratagit-ui/tests/snapshots.rs
-assertion_line: 523
+assertion_line: 561
 expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30, },)"
 ---
 ╭ 1  󰈙 Files ────────────────────╮╭ 5   Details ──────────────────────────────────────────────────╮
 │                                ││  details(files): no diff for current selection                 │
+│                                ││                                                                │
 │                                ││                                                                │
 │                                ││                                                                │
 │                                ││                                                                │
@@ -19,17 +20,16 @@ expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30,
 │                                ││                                                                │
 │                                ││                                                                │
 │                                ││                                                                │
-╰────────────────────────────────╯│                                                                │
-╭ 3   Commits ──────────────────╮│                                                                │
 │                                ││                                                                │
-│                                │╰────────────────────────────────────────────────────────────────╯
+╰────────────────────────────────╯│                                                                │
+╭ 3   Commits │ Reflog │────────╮╰────────────────────────────────────────────────────────────────╯
 │                                │╭ 6  󰌱 Log ──────────────────────────────────────────────────────╮
 │                                ││  work=refreshing repository                                    │
 │                                ││  notice=Ready                                                  │
+│                                ││                                                                │
+│                                ││                                                                │
 ╰────────────────────────────────╯│                                                                │
 ╭ 4   Stash ────────────────────╮│                                                                │
 │                                ││                                                                │
-│                                ││                                                                │
-│                                ││                                                                │
 ╰────────────────────────────────╯╰────────────────────────────────────────────────────────────────╯
-/ loading: refresh   space  stage/unstage   d  discard   A  amend   c  commit   s  stash   D  reset
+/ loading: refresh   space  stage/unstage   d  discard   A  amend   c  commit   ?  commands

@@ -1,14 +1,14 @@
 use ratagit_core::{AppContext, CommitField, EditorKind, StashScope};
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
-use ratatui::text::Line;
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::style::Style;
+use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+use unicode_width::UnicodeWidthStr;
 
 use crate::frame::TerminalCursor;
 use crate::modal::{
-    ModalSpec, ModalTone, modal_content_rect, render_input_block, render_modal,
-    render_section_label, render_text,
+    ModalSpec, ModalTone, render_input_block, render_modal, render_section_label, render_text,
 };
 use crate::theme::UiTheme;
 
@@ -22,10 +22,11 @@ pub(crate) fn render_editor_modal(
         return;
     };
 
-    let rendered = match editor {
+    let mut cursor = None;
+    match editor {
         EditorKind::Commit {
             message,
-            message_cursor: _,
+            message_cursor,
             body,
             body_cursor,
             active_field,
@@ -46,11 +47,12 @@ pub(crate) fn render_editor_modal(
                 ],
             ],
             |frame, content| {
-                render_commit_editor(
+                cursor = render_commit_editor(
                     frame,
                     content,
                     CommitEditorContent {
                         message,
+                        message_cursor: *message_cursor,
                         body,
                         body_cursor: *body_cursor,
                         active_field: *active_field,
@@ -73,23 +75,21 @@ pub(crate) fn render_editor_modal(
                 &[("Enter", "confirm"), ("Esc", "cancel")],
             ],
             |frame, content| {
-                render_stash_editor(frame, content, title, *title_cursor, scope, theme);
+                cursor = render_stash_editor(frame, content, title, *title_cursor, scope, theme);
             },
             theme,
         ),
     };
 
-    if rendered.is_some()
-        && let Some(cursor) = editor_cursor_position(state, area)
-    {
-        frame.set_cursor_position(Position::new(cursor.x, cursor.y));
+    if let Some(cursor) = cursor {
+        frame.set_cursor_position((cursor.x, cursor.y));
     }
 }
 
 fn editor_modal_spec(editor: &EditorKind) -> ModalSpec {
-    let target_height = match editor {
-        EditorKind::Commit { .. } => 15,
-        EditorKind::Stash { .. } => 11,
+    let (target_height, min_height) = match editor {
+        EditorKind::Commit { .. } => (15, 13),
+        EditorKind::Stash { .. } => (11, 10),
     };
     ModalSpec::new(
         editor_modal_title(editor),
@@ -97,7 +97,7 @@ fn editor_modal_spec(editor: &EditorKind) -> ModalSpec {
         76,
         target_height,
         20,
-        6,
+        min_height,
         2,
     )
     .with_icon("✎")
@@ -112,6 +112,7 @@ fn editor_modal_title(editor: &EditorKind) -> &'static str {
 
 struct CommitEditorContent<'a> {
     message: &'a str,
+    message_cursor: usize,
     body: &'a str,
     body_cursor: usize,
     active_field: CommitField,
@@ -122,7 +123,7 @@ fn render_commit_editor(
     area: Rect,
     content: CommitEditorContent<'_>,
     theme: &UiTheme,
-) {
+) -> Option<TerminalCursor> {
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -137,39 +138,39 @@ fn render_commit_editor(
         "Edit commit subject and optional body",
         theme,
     );
-    render_input_block(
+    let subject = single_line_viewport(content.message, content.message_cursor, rows[1]);
+    let body = body_viewport(content.body, content.body_cursor, rows[2]);
+    let cursor = match content.active_field {
+        CommitField::Message => subject.cursor,
+        CommitField::Body => body.cursor,
+    };
+    render_editor_input(
         frame,
         rows[1],
         "Subject",
-        vec![Line::from(content.message.to_string())],
+        subject,
         content.active_field == CommitField::Message,
-        ModalTone::Info,
         theme,
     );
-    let body_lines = body_visible_lines(
-        content.body,
-        content.body_cursor,
-        rows[2].height.saturating_sub(2),
-    );
-    render_input_block(
+    render_editor_input(
         frame,
         rows[2],
         "Body",
-        body_lines,
+        body,
         content.active_field == CommitField::Body,
-        ModalTone::Info,
         theme,
     );
+    cursor
 }
 
 fn render_stash_editor(
     frame: &mut Frame<'_>,
     area: Rect,
     title: &str,
-    _title_cursor: usize,
+    title_cursor: usize,
     scope: &StashScope,
     theme: &UiTheme,
-) {
+) -> Option<TerminalCursor> {
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -180,15 +181,9 @@ fn render_stash_editor(
         ])
         .split(area);
     render_section_label(frame, rows[0], "Name the stash before saving", theme);
-    render_input_block(
-        frame,
-        rows[1],
-        "Title",
-        vec![Line::from(title.to_string())],
-        true,
-        ModalTone::Info,
-        theme,
-    );
+    let title = single_line_viewport(title, title_cursor, rows[1]);
+    let cursor = title.cursor;
+    render_editor_input(frame, rows[1], "Title", title, true, theme);
     let scope_text = match scope {
         StashScope::All => "all changes".to_string(),
         StashScope::SelectedPaths(paths) => format!("selected files ({})", paths.len()),
@@ -197,163 +192,298 @@ fn render_stash_editor(
     if rows.len() > 3 {
         frame.render_widget(Paragraph::new(""), rows[3]);
     }
+    cursor
 }
 
-fn body_visible_lines(body: &str, cursor: usize, visible_height: u16) -> Vec<Line<'static>> {
-    let visible_height = visible_height.max(1) as usize;
-    let lines = body_lines(body);
-    let cursor_line = line_index_at_cursor(body, cursor);
-    let start = cursor_line.saturating_add(1).saturating_sub(visible_height);
-    lines
-        .into_iter()
-        .skip(start)
-        .take(visible_height)
-        .map(Line::from)
+struct EditorViewport {
+    lines: Vec<Line<'static>>,
+    cursor: Option<TerminalCursor>,
+}
+
+fn render_editor_input(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    title: &'static str,
+    viewport: EditorViewport,
+    active: bool,
+    theme: &UiTheme,
+) {
+    render_input_block(
+        frame,
+        area,
+        title,
+        Vec::new(),
+        active,
+        ModalTone::Info,
+        theme,
+    );
+    // The projection already wraps and scrolls in terminal cells. A second word
+    // wrap would move spaces and words away from their computed cursor positions.
+    frame.render_widget(
+        Paragraph::new(viewport.lines).style(theme.modal_text_style()),
+        input_interior(area),
+    );
+}
+
+fn input_interior(area: Rect) -> Rect {
+    Rect::new(
+        area.x.saturating_add(1),
+        area.y.saturating_add(1),
+        area.width.saturating_sub(2),
+        area.height.saturating_sub(2),
+    )
+}
+
+fn single_line_viewport(text: &str, cursor: usize, area: Rect) -> EditorViewport {
+    let interior = input_interior(area);
+    let width = interior.width as usize;
+    let cursor = char_boundary(text, cursor);
+    let graphemes = display_graphemes(text);
+    let mut column = graphemes
+        .iter()
+        .take_while(|grapheme| grapheme.start < cursor)
+        .map(|grapheme| {
+            let prefix_len = cursor
+                .saturating_sub(grapheme.start)
+                .min(grapheme.symbol.len());
+            UnicodeWidthStr::width(&grapheme.symbol[..prefix_len]).min(grapheme.width)
+        })
+        .sum::<usize>();
+    let mut start = 0;
+    // Leave an interior cell for the insertion cursor, as in workflow prompts.
+    while column >= width.max(1) && start < graphemes.len() {
+        column = column.saturating_sub(graphemes[start].width);
+        start += 1;
+    }
+    let mut visible = Vec::new();
+    let mut used = 0;
+    for grapheme in &graphemes[start..] {
+        if used + grapheme.width > width {
+            break;
+        }
+        visible.push(Span::raw(grapheme.symbol.to_string()));
+        used += grapheme.width;
+    }
+    EditorViewport {
+        lines: vec![Line::from(visible)],
+        cursor: (interior.width > 0 && interior.height > 0).then_some(TerminalCursor {
+            x: interior.x.saturating_add(column as u16),
+            y: interior.y,
+        }),
+    }
+}
+
+fn body_viewport(text: &str, cursor: usize, area: Rect) -> EditorViewport {
+    let interior = input_interior(area);
+    let width = (interior.width as usize).max(1);
+    let height = (interior.height as usize).max(1);
+    let cursor = char_boundary(text, cursor);
+    let mut lines: Vec<Vec<Span<'static>>> = vec![Vec::new()];
+    let mut column = 0;
+    let mut cursor_row = 0;
+    let mut cursor_column = 0;
+    let mut line_start = 0;
+    let mut logical_lines = text.split('\n').peekable();
+    while let Some(line) = logical_lines.next() {
+        let mut wrapped_at_end = false;
+        let mut last_end = line_start;
+        for grapheme in display_graphemes(line) {
+            // A glyph wider than the entire field cannot be displayed there.
+            // Use one replacement cell in that degenerate viewport only.
+            let (symbol, glyph_width) = if grapheme.width > width {
+                ("�", 1)
+            } else {
+                (grapheme.symbol, grapheme.width)
+            };
+            if column + glyph_width > width {
+                lines.push(Vec::new());
+                column = 0;
+            }
+            let start = line_start + grapheme.start;
+            let end = start + grapheme.symbol.len();
+            if (last_end..end).contains(&cursor) {
+                let prefix_len = cursor.saturating_sub(start).min(grapheme.symbol.len());
+                let prefix_width =
+                    UnicodeWidthStr::width(&grapheme.symbol[..prefix_len]).min(glyph_width);
+                cursor_row = lines.len() - 1 + (column + prefix_width) / width;
+                cursor_column = (column + prefix_width) % width;
+            }
+            lines
+                .last_mut()
+                .expect("at least one visual row")
+                .push(Span::raw(symbol.to_string()));
+            column += glyph_width;
+            wrapped_at_end = column == width;
+            if wrapped_at_end {
+                lines.push(Vec::new());
+                column = 0;
+            }
+            last_end = end;
+        }
+        let line_end = line_start + line.len();
+        if (last_end..=line_end).contains(&cursor) {
+            cursor_row = lines.len() - 1;
+            cursor_column = column;
+        }
+        // A full row already has its continuation row. An explicit newline
+        // uses that row rather than introducing a second, phantom blank line.
+        if logical_lines.peek().is_some() && !wrapped_at_end {
+            lines.push(Vec::new());
+            column = 0;
+        }
+        line_start = line_end.saturating_add(1);
+    }
+    let start = cursor_row.saturating_add(1).saturating_sub(height);
+    EditorViewport {
+        lines: lines
+            .into_iter()
+            .skip(start)
+            .take(height)
+            .map(Line::from)
+            .collect(),
+        cursor: (interior.width > 0 && interior.height > 0).then_some(TerminalCursor {
+            x: interior.x.saturating_add(cursor_column as u16),
+            y: interior.y.saturating_add((cursor_row - start) as u16),
+        }),
+    }
+}
+
+fn char_boundary(text: &str, cursor: usize) -> usize {
+    let mut cursor = cursor.min(text.len());
+    while !text.is_char_boundary(cursor) {
+        cursor -= 1;
+    }
+    cursor
+}
+
+struct EditorGrapheme<'a> {
+    symbol: &'a str,
+    start: usize,
+    width: usize,
+}
+
+fn display_graphemes(text: &str) -> Vec<EditorGrapheme<'_>> {
+    let line = Line::from(text);
+    let mut offset = 0;
+    line.styled_graphemes(Style::default())
+        .map(|grapheme| {
+            // Ratatui filters control characters. Keep source byte positions
+            // even when such characters occur between displayed graphemes.
+            let start = offset + text[offset..].find(grapheme.symbol).unwrap_or(0);
+            offset = start + grapheme.symbol.len();
+            EditorGrapheme {
+                symbol: &text[start..offset],
+                start,
+                width: UnicodeWidthStr::width(grapheme.symbol),
+            }
+        })
         .collect()
 }
 
-fn body_lines(body: &str) -> Vec<String> {
-    if body.is_empty() {
-        return vec![String::new()];
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn body(text: &str, cursor: usize, width: u16, height: u16) -> (Vec<String>, (u16, u16)) {
+        let viewport = body_viewport(text, cursor, Rect::new(0, 0, width + 2, height + 2));
+        let cursor = viewport.cursor.expect("input has an interior");
+        (
+            viewport.lines.iter().map(ToString::to_string).collect(),
+            (cursor.x - 1, cursor.y - 1),
+        )
     }
-    body.split('\n').map(str::to_string).collect()
-}
 
-fn editor_cursor_position(state: &AppContext, area: Rect) -> Option<TerminalCursor> {
-    let editor = state.ui.editor.kind.as_ref()?;
-    let content = modal_content_rect(area, editor_modal_spec(editor))?;
-    match editor {
-        EditorKind::Commit {
-            message,
-            message_cursor,
-            body,
-            body_cursor,
-            active_field,
-            ..
-        } => {
-            let rows = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(1),
-                    Constraint::Length(3),
-                    Constraint::Min(3),
-                ])
-                .split(content);
-            match active_field {
-                CommitField::Message => {
-                    single_line_cursor_position(rows[1], message, *message_cursor)
-                }
-                CommitField::Body => multiline_cursor_position(rows[2], body, *body_cursor),
-            }
-        }
-        EditorKind::Stash {
-            title,
-            title_cursor,
-            ..
-        } => {
-            let rows = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(1),
-                    Constraint::Length(3),
-                    Constraint::Length(1),
-                    Constraint::Min(1),
-                ])
-                .split(content);
-            single_line_cursor_position(rows[1], title, *title_cursor)
-        }
+    #[test]
+    fn body_preserves_spaces_instead_of_rewrapping_words() {
+        let (lines, cursor) = body("ab  cdef gh", 8, 5, 3);
+        assert_eq!(lines, ["ab  c", "def g", "h"]);
+        assert_eq!(cursor, (3, 1));
     }
-}
 
-fn single_line_cursor_position(area: Rect, text: &str, cursor: usize) -> Option<TerminalCursor> {
-    if area.width < 3 || area.height < 3 {
-        return None;
+    #[test]
+    fn body_wraps_whole_wide_glyphs_and_maps_utf8_cursor_boundaries() {
+        let text = "ab中文界";
+        let (lines, cursor) = body(text, "ab中".len(), 5, 4);
+        assert_eq!(lines, ["ab中", "文界"]);
+        assert_eq!(cursor, (0, 1));
+        assert_eq!(body(text, text.len(), 5, 4).1, (4, 1));
+        // Invalid byte offsets are clamped to the same character boundary as core.
+        assert_eq!(body(text, 3, 5, 4).1, (2, 0));
     }
-    let cursor = cursor.min(text.len());
-    let before_cursor = text.get(..cursor).unwrap_or(text);
-    let (visual_line, visual_column) =
-        wrapped_line_cursor_offset(before_cursor, content_width(area));
-    let x = content_cursor_x(area, visual_column);
-    Some(TerminalCursor {
-        x,
-        y: area.y.saturating_add(1 + visual_line as u16),
-    })
-}
 
-fn multiline_cursor_position(area: Rect, text: &str, cursor: usize) -> Option<TerminalCursor> {
-    if area.width < 3 || area.height < 3 {
-        return None;
+    #[test]
+    fn body_newlines_and_full_rows_do_not_introduce_phantom_blank_lines() {
+        assert_eq!(
+            body("abcd\ne", 6, 4, 4),
+            (vec!["abcd".into(), "e".into()], (1, 1))
+        );
+        assert_eq!(
+            body("abcd\n\ne", 7, 4, 4),
+            (vec!["abcd".into(), "".into(), "e".into()], (1, 2))
+        );
+        assert_eq!(
+            body("abcd", 4, 4, 4),
+            (vec!["abcd".into(), "".into()], (0, 1))
+        );
+        assert_eq!(
+            body("ab\n", 3, 4, 4),
+            (vec!["ab".into(), "".into()], (0, 1))
+        );
+        assert_eq!(body("", 0, 4, 4), (vec!["".into()], (0, 0)));
     }
-    let cursor = cursor.min(text.len());
-    let visible_height = area.height.saturating_sub(2).max(1) as usize;
-    let content_width = content_width(area);
-    let lines = body_lines(text);
-    let cursor_line = line_index_at_cursor(text, cursor);
-    let start = cursor_line.saturating_add(1).saturating_sub(visible_height);
-    let visible_line = lines
-        .iter()
-        .skip(start)
-        .take(cursor_line.saturating_sub(start))
-        .map(|line| wrapped_line_count(line, content_width))
-        .sum::<usize>();
-    let before_cursor = text.get(..cursor).unwrap_or(text);
-    let line_before_cursor = before_cursor.rsplit('\n').next().unwrap_or("");
-    let (wrapped_line, visual_column) =
-        wrapped_line_cursor_offset(line_before_cursor, content_width);
-    let x = content_cursor_x(area, visual_column);
-    Some(TerminalCursor {
-        x,
-        y: area
-            .y
-            .saturating_add(1 + visible_line.saturating_add(wrapped_line) as u16),
-    })
-}
 
-fn content_width(area: Rect) -> usize {
-    area.width.saturating_sub(2).max(1) as usize
-}
+    #[test]
+    fn body_cursor_at_soft_wrap_boundary_is_on_the_next_glyph() {
+        let (lines, cursor) = body("abcdeZ", 5, 5, 3);
+        assert_eq!(lines, ["abcde", "Z"]);
+        assert_eq!(cursor, (0, 1));
+    }
 
-fn content_cursor_x(area: Rect, text_width: usize) -> u16 {
-    let content_width = content_width(area);
-    let offset = text_width.min(content_width.saturating_sub(1)) as u16;
-    area.x.saturating_add(1).saturating_add(offset)
-}
+    #[test]
+    fn body_retains_combining_sequences_and_emoji_graphemes() {
+        let text = "e\u{301}👨‍👩‍👧‍👦中";
+        let (lines, cursor) = body(text, "e\u{301}👨‍👩‍👧‍👦".len(), 4, 3);
+        assert_eq!(lines, ["e\u{301}👨‍👩‍👧‍👦", "中"]);
+        assert_eq!(cursor, (0, 1));
+    }
 
-fn wrapped_line_cursor_offset(text: &str, content_width: usize) -> (usize, usize) {
-    let content_width = content_width.max(1);
-    let mut visual_line: usize = 0;
-    let mut visual_column: usize = 0;
+    #[test]
+    fn single_line_scrolls_at_grapheme_boundaries_and_uses_cell_width() {
+        let text = "甲乙丙丁戊";
+        let viewport = single_line_viewport(text, text.len(), Rect::new(0, 0, 7, 3));
+        assert_eq!(viewport.lines[0].to_string(), "丁戊");
+        assert_eq!(viewport.cursor, Some(TerminalCursor { x: 5, y: 1 }));
+        let viewport = single_line_viewport(text, "甲乙".len(), Rect::new(0, 0, 7, 3));
+        assert_eq!(viewport.lines[0].to_string(), "甲乙");
+        assert_eq!(viewport.cursor, Some(TerminalCursor { x: 5, y: 1 }));
+    }
 
-    for ch in text.chars() {
-        let char_width = UnicodeWidthChar::width(ch).unwrap_or(0);
-        if visual_column > 0 && visual_column.saturating_add(char_width) > content_width {
-            visual_line += 1;
-            visual_column = 0;
-        }
-        visual_column = visual_column.saturating_add(char_width);
-        if visual_column >= content_width {
-            visual_line += 1;
-            visual_column = 0;
+    #[test]
+    fn body_scrolls_visual_rows_and_recomputes_on_home_end_and_resize() {
+        let text = "0123456789abcdefghijklmnop";
+        assert_eq!(
+            body(text, text.len(), 6, 2),
+            (vec!["ijklmn".into(), "op".into()], (2, 1))
+        );
+        assert_eq!(
+            body(text, 0, 6, 2),
+            (vec!["012345".into(), "6789ab".into()], (0, 0))
+        );
+        assert_eq!(
+            body(text, text.len(), 10, 2),
+            (vec!["abcdefghij".into(), "klmnop".into()], (6, 1))
+        );
+    }
+
+    #[test]
+    fn inputs_without_an_interior_do_not_set_a_cursor() {
+        for area in [
+            Rect::new(0, 0, 2, 3),
+            Rect::new(0, 0, 3, 2),
+            Rect::default(),
+        ] {
+            assert_eq!(single_line_viewport("长标题", 6, area).cursor, None);
+            assert_eq!(body_viewport("长正文", 6, area).cursor, None);
         }
     }
-
-    (visual_line, visual_column)
-}
-
-fn wrapped_line_count(text: &str, content_width: usize) -> usize {
-    let content_width = content_width.max(1);
-    UnicodeWidthStr::width(text)
-        .saturating_add(content_width.saturating_sub(1))
-        .checked_div(content_width)
-        .unwrap_or(0)
-        .max(1)
-}
-
-fn line_index_at_cursor(text: &str, cursor: usize) -> usize {
-    let cursor = cursor.min(text.len());
-    text.get(..cursor)
-        .unwrap_or(text)
-        .chars()
-        .filter(|ch| *ch == '\n')
-        .count()
 }

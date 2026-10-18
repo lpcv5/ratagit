@@ -1,0 +1,41 @@
+---
+source: libs/ratagit-ui/tests/commit_files/presentation.rs
+assertion_line: 51
+expression: "render_terminal_text(&state, SIZE)"
+---
+╭ 1  󰈙 Files ───────────────────────────╮╭ 5   Details ───────────────────────────────────────────────────────────────╮
+│   ? README.md                         ││   diff --git a/src/lib.rs b/src/lib.rs                                      │
+│    src/                              ││   index 1111111..2222222 100644                                             │
+│     M lib.rs                          ││   --- a/src/lib.rs                                                          │
+│     M main.rs                         ││   +++ b/src/lib.rs                                                          │
+│                                       ││   @@ -1,3 +1,3 @@                                                           │
+│                                       ││   -old first                                                                │
+│                                       ││   +new first                                                                │
+│                                       ││    unchanged                                                                │
+│                                       ││   -old last                                                                 │
+│                                       ││   +new last                                                                 │
+│                                       ││                                                                             │
+╰───────────────────────────────────────╯│                                                                             │
+╭ 2   Branches │ Remotes │ Tags │──────╮│                                                                             │
+│ main                                 ││                                                                             │
+│  feature/mvp                          ││                                                                             │
+│                                       ││                                                                             │
+│                                       ││                                                                             │
+│                                       ││                                                                             │
+│                                       ││                                                                             │
+│                                       ││                                                                             │
+│                                       ││                                                                             │
+╰───────────────────────────────────────╯│                                                                             │
+╭ 3   Commit Files │ Reflog │──────────╮│                                                                             │
+│    src/                              │╰─────────────────────────────────────────────────────────────────────────────╯
+│     M lib.rs                          │╭ 6  󰌱 Log ───────────────────────────────────────────────────────────────────╮
+│                                       ││  notice=Ready                                                               │
+│                                       ││                                                                             │
+│                                       ││                                                                             │
+│                                       ││                                                                             │
+│                                       ││                                                                             │
+╰───────────────────────────────────────╯│                                                                             │
+╭ 4   Stash ───────────────────────────╮│                                                                             │
+│ stash@{0} WIP on main: local test    ││                                                                             │
+╰───────────────────────────────────────╯╰─────────────────────────────────────────────────────────────────────────────╯
+ enter  hunk   space  patch   a  all   Ctrl+P  menu   Tab  preview   ?  commands

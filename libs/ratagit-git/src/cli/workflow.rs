@@ -20,6 +20,10 @@ impl GitCli {
     pub(crate) fn workflow(&mut self, operation: &Operation) -> Result<(), GitError> {
         use Operation as O;
         match operation {
+            O::CustomPatch { patch, action } => self.custom_patch(patch, *action),
+            O::CommitFileCheckout { oid, paths } => self.checkout_commit_files(oid, paths),
+            O::CommitFileDiscard { oid, paths } => self.discard_commit_files(oid, paths),
+            O::CommitPatch { patch, ids, action } => self.commit_patch(patch, ids, *action),
             O::Stash(mode) => {
                 let flag = match mode {
                     StashMode::All => "--include-untracked",

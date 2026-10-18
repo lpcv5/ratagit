@@ -57,7 +57,7 @@ pub(crate) fn open(state: &mut AppContext) -> Vec<Command> {
     load(state, PatchRequest::File(row.path.into()))
 }
 
-fn load(state: &mut AppContext, request: PatchRequest) -> Vec<Command> {
+pub(crate) fn load(state: &mut AppContext, request: PatchRequest) -> Vec<Command> {
     let id = state.work.details.next_patch_request_id;
     state.work.details.next_patch_request_id = id.wrapping_add(1);
     state.work.details.patch_request = Some((id, request.clone()));
@@ -132,7 +132,10 @@ pub(crate) fn loaded(
                 let selected = &mut state.ui.details.patch.selected[usize::from(staged)];
                 *selected = (*selected).min(len.saturating_sub(1));
             }
-            if first_load && selected_ids(state).is_empty() {
+            if first_load
+                && selected_ids(state).is_empty()
+                && !crate::workflow::commit_files::is_patch(state)
+            {
                 state.ui.details.patch.staged = !state.ui.details.patch.staged;
             }
             let rows = patch_rows(state.repo.details.patch.as_ref().unwrap()).len();
@@ -176,6 +179,15 @@ pub(crate) fn move_selection(state: &mut AppContext, up: bool, visible_lines: us
 }
 
 pub(crate) fn cycle_mode(state: &mut AppContext) {
+    if crate::workflow::commit_files::is_patch(state) {
+        let mode = match state.ui.details.patch.mode {
+            SelectionMode::Hunk => SelectionMode::Line,
+            SelectionMode::Line => SelectionMode::Block,
+            SelectionMode::Block => SelectionMode::Hunk,
+        };
+        set_mode(state, mode);
+        return;
+    }
     let mode = match state.ui.details.patch.mode {
         SelectionMode::Block => SelectionMode::Line,
         SelectionMode::Hunk => SelectionMode::Line,
@@ -207,6 +219,9 @@ fn set_mode(state: &mut AppContext, mode: SelectionMode) {
 }
 
 pub(crate) fn switch_source(state: &mut AppContext) {
+    if crate::workflow::commit_files::is_patch(state) {
+        return;
+    }
     let ui = &mut state.ui.details.patch;
     ui.write_position = None;
     ui.scroll_offsets[usize::from(ui.staged)] = state.ui.details.scroll_offset;
@@ -226,6 +241,9 @@ pub(crate) fn ensure_visible(state: &mut AppContext) {
 }
 
 pub(crate) fn next_file(state: &mut AppContext, up: bool) -> Vec<Command> {
+    if crate::workflow::commit_files::is_patch(state) {
+        return crate::workflow::commit_files::next_file(state, up);
+    }
     if state.ui.last_left_focus != PanelFocus::Files {
         return Vec::new();
     }
@@ -258,6 +276,10 @@ pub(crate) fn reload(state: &mut AppContext) -> Vec<Command> {
 }
 
 pub(crate) fn request_discard(state: &mut AppContext) {
+    if crate::workflow::commit_files::is_patch(state) {
+        crate::workflow::commit_files::discard_hunks(state);
+        return;
+    }
     if state.ui.details.patch.staged
         || state.work.details.patch_request.is_some()
         || state.work.mutation.operation_pending.is_some()
@@ -275,6 +297,12 @@ pub(crate) fn request_discard(state: &mut AppContext) {
 }
 
 pub(crate) fn apply(state: &mut AppContext, discard: bool) -> Vec<Command> {
+    if !discard && crate::workflow::commit_files::is_patch(state) {
+        return crate::custom_patch::update(
+            state,
+            crate::custom_patch::CustomPatchAction::ToggleLines,
+        );
+    }
     if !state.ui.details.patch.active
         || state.work.details.patch_request.is_some()
         || state.work.mutation.operation_pending.is_some()

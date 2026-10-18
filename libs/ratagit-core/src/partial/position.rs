@@ -1,4 +1,4 @@
-//! PR #8 cursor relocation: source-local hunk IDs change after index writes.
+//! Cursor relocation: source-local hunk IDs change after index writes.
 use super::*;
 use crate::patch::PatchHunk;
 use std::path::PathBuf;

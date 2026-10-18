@@ -16,6 +16,30 @@ pub(crate) fn render_details_lines_with_theme(
     max_lines: usize,
     theme: &UiTheme,
 ) -> Vec<PanelLine> {
+    if state.ui.custom_patch.preview_return_focus.is_some() {
+        if max_lines == 0 {
+            return Vec::new();
+        }
+        let text = String::from_utf8_lossy(&state.repo.custom_patch.preview);
+        let mut text_lines = text.split_inclusive('\n');
+        let bounded = text_lines
+            .by_ref()
+            .take(ratagit_core::custom_patch::PREVIEW_LINES)
+            .collect::<String>();
+        let rows = ratagit_core::partial::preview_rows(&bounded)
+            .into_iter()
+            .map(|r| super::diff_rows::DiffRow::preview(r.row, false))
+            .collect::<Vec<_>>();
+        return super::diff_rows::render(&rows, state.ui.custom_patch.scroll, max_lines, theme);
+    }
+    if let Some(ratagit_core::ActiveLeftView::RepositoryTab(tab)) = state.details_left_view() {
+        return ratagit_core::tabs::details_text(state, tab)
+            .lines()
+            .skip(state.ui.details.scroll_offset)
+            .take(max_lines)
+            .map(|line| PanelLine::new(format!("  {line}"), RowRole::Normal))
+            .collect();
+    }
     let keep_file_preview = state.ui.last_left_focus == PanelFocus::Files
         && state.repo.details.patch.is_none()
         && state.work.details.patch_request.is_some()
@@ -25,8 +49,8 @@ pub(crate) fn render_details_lines_with_theme(
     }
     match state.ui.last_left_focus {
         PanelFocus::Files => render_files_details_lines(state, max_lines, theme),
-        PanelFocus::Branches => render_branch_details_lines(state, max_lines),
-        PanelFocus::Commits => render_commit_details_lines(state, max_lines),
+        PanelFocus::Branches => render_branch_details_lines(state, max_lines, theme),
+        PanelFocus::Commits => render_commit_details_lines(state, max_lines, theme),
         PanelFocus::Stash => {
             render_placeholder_details_lines("  details(stash): no stash selected", max_lines)
         }
@@ -36,6 +60,15 @@ pub(crate) fn render_details_lines_with_theme(
 
 pub(crate) fn render_log_lines(state: &AppContext, max_lines: usize) -> Vec<PanelLine> {
     let mut lines = Vec::new();
+    if let Some(error) = &state.repo.status.last_error {
+        lines.push(PanelLine::new(format!("  error={error}"), RowRole::Error));
+    }
+    if let Some(operation) = &state.work.mutation.operation_pending {
+        lines.push(PanelLine::new(
+            format!("  work=running {operation}"),
+            RowRole::Notice,
+        ));
+    }
     if state.work.refresh.refresh_pending {
         lines.push(PanelLine::new(
             "  work=refreshing repository",
@@ -47,17 +80,9 @@ pub(crate) fn render_log_lines(state: &AppContext, max_lines: usize) -> Vec<Pane
             "  status=huge repo metadata-only; file scan skipped",
             RowRole::Notice,
         ));
-        lines.push(PanelLine::new(
-            "  tip=focus Commits/Branches or narrow Git outside ratagit",
-            RowRole::Notice,
-        ));
     } else if state.repo.status.large_repo_mode {
         lines.push(PanelLine::new(
             "  status=large repo fast mode; untracked scan skipped",
-            RowRole::Notice,
-        ));
-        lines.push(PanelLine::new(
-            "  tip=consider git untrackedCache/fsmonitor/splitIndex",
             RowRole::Notice,
         ));
     }
@@ -73,25 +98,26 @@ pub(crate) fn render_log_lines(state: &AppContext, max_lines: usize) -> Vec<Pane
             RowRole::Notice,
         ));
     }
-    if let Some(operation) = &state.work.mutation.operation_pending {
+    // Incomplete repository data must remain visible even after notice history
+    // fills up. Routine tuning tips yield to the newest user-facing events.
+    lines.extend(
+        state
+            .notices
+            .iter()
+            .rev()
+            .take(max_lines.saturating_sub(lines.len()))
+            .map(|notice| PanelLine::new(format!("  notice={notice}"), RowRole::Notice)),
+    );
+    if state.repo.status.status_scan_skipped {
         lines.push(PanelLine::new(
-            format!("  work=running {operation}"),
+            "  tip=focus Commits/Branches or narrow Git outside ratagit",
             RowRole::Notice,
         ));
-    }
-    if let Some(error) = &state.repo.status.last_error {
-        lines.push(PanelLine::new(format!("  error={error}"), RowRole::Error));
-    }
-
-    let keep = max_lines.saturating_sub(lines.len());
-    if keep > 0 {
-        let start = state.notices.len().saturating_sub(keep);
-        for notice in &state.notices[start..] {
-            lines.push(PanelLine::new(
-                format!("  notice={notice}"),
-                RowRole::Notice,
-            ));
-        }
+    } else if state.repo.status.large_repo_mode {
+        lines.push(PanelLine::new(
+            "  tip=consider git untrackedCache/fsmonitor/splitIndex",
+            RowRole::Notice,
+        ));
     }
     lines.into_iter().take(max_lines).collect()
 }
@@ -135,12 +161,16 @@ fn render_files_details_lines(
     rendered
 }
 
-fn render_branch_details_lines(state: &AppContext, max_lines: usize) -> Vec<PanelLine> {
+fn render_branch_details_lines(
+    state: &AppContext,
+    max_lines: usize,
+    theme: &UiTheme,
+) -> Vec<PanelLine> {
     if state.ui.branches.subview == BranchesSubview::CommitFiles {
-        return render_commit_file_details_lines(state, max_lines);
+        return render_commit_file_details_lines(state, max_lines, theme);
     }
     if state.ui.branches.subview == BranchesSubview::Commits {
-        return render_commit_details_lines(state, max_lines);
+        return render_commit_details_lines(state, max_lines, theme);
     }
     if max_lines == 0 {
         return Vec::new();
@@ -171,9 +201,13 @@ fn render_branch_details_lines(state: &AppContext, max_lines: usize) -> Vec<Pane
     )
 }
 
-fn render_commit_details_lines(state: &AppContext, max_lines: usize) -> Vec<PanelLine> {
+fn render_commit_details_lines(
+    state: &AppContext,
+    max_lines: usize,
+    theme: &UiTheme,
+) -> Vec<PanelLine> {
     if state.ui.commits.files.active {
-        return render_commit_file_details_lines(state, max_lines);
+        return render_commit_file_details_lines(state, max_lines, theme);
     }
     if max_lines == 0 {
         return Vec::new();
@@ -204,7 +238,11 @@ fn render_commit_details_lines(state: &AppContext, max_lines: usize) -> Vec<Pane
     )
 }
 
-fn render_commit_file_details_lines(state: &AppContext, max_lines: usize) -> Vec<PanelLine> {
+fn render_commit_file_details_lines(
+    state: &AppContext,
+    max_lines: usize,
+    theme: &UiTheme,
+) -> Vec<PanelLine> {
     if max_lines == 0 {
         return Vec::new();
     }
@@ -236,10 +274,14 @@ fn render_commit_file_details_lines(state: &AppContext, max_lines: usize) -> Vec
         )];
     }
 
-    render_ansi_details_text(
-        &state.repo.details.commit_file_diff,
+    super::diff_rows::render(
+        &ratagit_core::partial::preview_rows(&state.repo.details.commit_file_diff)
+            .into_iter()
+            .map(|row| super::diff_rows::DiffRow::preview(row.row, false))
+            .collect::<Vec<_>>(),
         state.ui.details.scroll_offset,
         max_lines,
+        theme,
     )
 }
 
@@ -394,6 +436,48 @@ mod tests {
     use ratagit_core::{CommitFileDiffPath, CommitFileDiffTarget};
 
     use super::*;
+
+    #[test]
+    fn log_keeps_errors_work_and_newest_events_ahead_of_repository_advice() {
+        let mut state = AppContext::default();
+        state.repo.status.last_error = Some("failed".to_string());
+        state.work.mutation.operation_pending = Some("push".to_string());
+        state.work.refresh.refresh_pending = true;
+        state.repo.status.status_scan_skipped = true;
+        state.repo.status.status_truncated = true;
+        state.notices = vec!["older".to_string(), "newest".to_string()];
+        assert!(render_log_lines(&state, 0).is_empty());
+        assert_eq!(
+            render_log_lines(&state, 1),
+            vec![PanelLine::new("  error=failed", RowRole::Error)]
+        );
+        assert_eq!(
+            render_log_lines(&state, 5)
+                .iter()
+                .map(PanelLine::text)
+                .collect::<Vec<_>>(),
+            [
+                "  error=failed",
+                "  work=running push",
+                "  work=refreshing repository",
+                "  status=huge repo metadata-only; file scan skipped",
+                "  status=truncated at 50000 file entries or 64 MiB output"
+            ]
+        );
+        assert!(
+            render_log_lines(&state, 6)[5]
+                .text()
+                .contains("notice=newest")
+        );
+        state.repo.status.last_error = None;
+        state.work.mutation.operation_pending = None;
+        state.work.refresh.refresh_pending = false;
+        state.notices = (0..10).map(|i| format!("event {i}")).collect();
+        let lines = render_log_lines(&state, 3);
+        assert!(lines[0].text().contains("file scan skipped"));
+        assert!(lines[1].text().contains("truncated"));
+        assert!(lines[2].text().contains("event 9"));
+    }
 
     #[test]
     fn ansi_sgr_parser_handles_reset_bright_indexed_and_rgb_colors() {

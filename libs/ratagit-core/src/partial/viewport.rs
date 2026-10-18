@@ -1,4 +1,4 @@
-//! Keep a complete PR #8 change block visible before reserving context.
+//! Keep a complete change block visible before reserving context.
 use super::*;
 
 pub(super) fn scroll_to_cursor(state: &mut AppContext, visible_lines: usize) {

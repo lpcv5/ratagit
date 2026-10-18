@@ -51,6 +51,14 @@ fn loading_kind_for_state(state: &AppContext) -> Option<String> {
     if state.work.refresh.refresh_pending {
         return Some("refresh".to_string());
     }
+    if state.work.custom_patch.pending.is_some() {
+        return Some("custom patch".to_string());
+    }
+    if let Some(tab) = state.ui.tabs.active(state.ui.last_left_focus)
+        && state.work.tabs.pending.contains_key(&tab)
+    {
+        return Some(tab.title().to_lowercase());
+    }
     if state.work.details.details_pending {
         return Some("details".to_string());
     }

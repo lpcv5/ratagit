@@ -1,4 +1,5 @@
 //! Reducer-owned workflows shared by the three Git panels.
+pub mod commit_files;
 mod description;
 mod files;
 mod open;
@@ -43,6 +44,13 @@ pub enum Feature {
     Autosquash,
     Tag,
     CopyAttributes,
+    CommitFileCheckout,
+    CommitFileDiscard,
+    CommitFilePatch,
+    CommitFileCopy,
+    CommitFilePatchAll,
+    CustomPatchOptions,
+    CustomPatchPreview,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -66,6 +74,23 @@ pub enum SequenceAction {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Operation {
+    CustomPatch {
+        patch: Box<crate::custom_patch::CustomPatch>,
+        action: commit_files::PatchAction,
+    },
+    CommitFileCheckout {
+        oid: String,
+        paths: Vec<String>,
+    },
+    CommitFileDiscard {
+        oid: String,
+        paths: Vec<String>,
+    },
+    CommitPatch {
+        patch: Box<crate::patch::Patch>,
+        ids: Vec<crate::patch::LineId>,
+        action: commit_files::PatchAction,
+    },
     Stash(StashMode),
     Resolve {
         paths: Vec<String>,
@@ -128,6 +153,7 @@ pub enum PromptKind {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChoiceAction {
+    CustomPatch(crate::custom_patch::CustomPatchAction),
     Copy(String),
     Run(Operation),
     Prompt { kind: PromptKind, target: String },
@@ -228,6 +254,7 @@ fn confirm(state: &mut AppContext) -> Vec<Command> {
             }
             Some(ChoiceAction::Filter(filter)) => files::filter(state, filter),
             Some(ChoiceAction::Copy(_)) => Vec::new(),
+            Some(ChoiceAction::CustomPatch(action)) => crate::custom_patch::update(state, action),
             None => Vec::new(),
         },
         Dialog::Prompt {
@@ -252,6 +279,10 @@ fn request(state: &mut AppContext, operation: Operation) -> Vec<Command> {
         } | Operation::Sequence(SequenceAction::Abort)
             | Operation::MoveCommit { .. }
             | Operation::Autosquash(_)
+            | Operation::CommitFileCheckout { .. }
+            | Operation::CommitFileDiscard { .. }
+            | Operation::CommitPatch { .. }
+            | Operation::CustomPatch { .. }
     );
     if dangerous {
         state.ui.workflow.dialog = Some(Dialog::Confirm(operation));
@@ -321,7 +352,10 @@ pub fn selected_commit_ids(state: &AppContext) -> Vec<String> {
 
 pub fn palette_entries(state: &AppContext) -> Vec<CommandPaletteEntry> {
     use Feature as F;
-    let mut commands = vec![("m", "merge/rebase continue, abort, skip", F::Sequence)];
+    let mut commands = vec![
+        ("m", "merge/rebase continue, abort, skip", F::Sequence),
+        ("Ctrl+p", "custom patch options", F::CustomPatchOptions),
+    ];
     match state.active_left_view() {
         Some(crate::ActiveLeftView::Files) => commands.extend([
             ("M", "resolve conflicts", F::Conflict),
@@ -342,7 +376,7 @@ pub fn palette_entries(state: &AppContext) -> Vec<CommandPaletteEntry> {
             ("c", "checkout by name", F::CheckoutByName),
             ("-", "previous branch", F::CheckoutPrevious),
             (
-                "]",
+                "Tab",
                 "remote branches / tracking checkout",
                 F::RemoteBranches,
             ),
@@ -364,12 +398,37 @@ pub fn palette_entries(state: &AppContext) -> Vec<CommandPaletteEntry> {
                 ("S", "autosquash fixup commits", F::Autosquash),
                 ("T", "tag commit", F::Tag),
             ]),
+        Some(crate::ActiveLeftView::CommitFiles | crate::ActiveLeftView::BranchCommitFiles) => {
+            commands.extend([
+                (
+                    "c",
+                    "checkout selected file versions",
+                    F::CommitFileCheckout,
+                ),
+                (
+                    "d",
+                    "remove file changes from original commit",
+                    F::CommitFileDiscard,
+                ),
+                (
+                    "Space",
+                    "toggle selected files in custom patch",
+                    F::CommitFilePatch,
+                ),
+                ("y", "copy selected paths", F::CommitFileCopy),
+                (
+                    "a",
+                    "toggle all files in custom patch",
+                    F::CommitFilePatchAll,
+                ),
+            ])
+        }
         _ => {}
     }
     commands
         .into_iter()
         .map(|(key, label, feature)| CommandPaletteEntry {
-            section: if feature == F::Sequence {
+            section: if matches!(feature, F::Sequence | F::CustomPatchOptions) {
                 CommandPaletteSection::Global
             } else {
                 CommandPaletteSection::Local

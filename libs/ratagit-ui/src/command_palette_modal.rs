@@ -3,7 +3,7 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::text::Line;
 
-use crate::modal::{ModalSpec, ModalTone, render_menu_lines, render_modal};
+use crate::modal::{ModalSpec, ModalTone, command_menu_line, render_menu_lines, render_modal};
 use crate::theme::UiTheme;
 
 enum PaletteRow {
@@ -80,7 +80,7 @@ fn palette_lines(state: &AppContext, visible_rows: usize, theme: &UiTheme) -> Ve
                 command_index,
                 key,
                 label,
-            } => command_line(
+            } => command_menu_line(
                 key,
                 label,
                 command_index == state.ui.command_palette.selected,
@@ -123,20 +123,6 @@ fn palette_rows(state: &AppContext) -> Vec<PaletteRow> {
     }
 
     rows
-}
-
-fn command_line(
-    key: &'static str,
-    label: &'static str,
-    selected: bool,
-    theme: &UiTheme,
-) -> Line<'static> {
-    let style = if selected {
-        theme.modal_selected_row_style()
-    } else {
-        theme.modal_text_style()
-    };
-    Line::styled(format!("  {key:<8} {label}"), style)
 }
 
 fn section_label(section: CommandPaletteSection) -> &'static str {

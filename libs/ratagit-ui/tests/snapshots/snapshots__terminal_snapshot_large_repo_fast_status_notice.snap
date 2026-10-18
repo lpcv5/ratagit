@@ -1,6 +1,6 @@
 ---
 source: libs/ratagit-ui/tests/snapshots.rs
-assertion_line: 1303
+assertion_line: 1341
 expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30, },)"
 ---
 ╭ 1  󰈙 Files ────────────────────╮╭ 5   Details ──────────────────────────────────────────────────╮
@@ -12,6 +12,7 @@ expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30,
 │                                ││   @@ -1 +1 @@                                                  │
 │                                ││   -old src/main.rs                                             │
 │                                ││   +new src/main.rs                                             │
+│                                ││                                                                │
 ╰────────────────────────────────╯│                                                                │
 ╭ 2   Branches ─────────────────╮│                                                                │
 │                                ││                                                                │
@@ -19,17 +20,16 @@ expression: "render_terminal_text(&state, TerminalSize { width: 100, height: 30,
 │                                ││                                                                │
 │                                ││                                                                │
 │                                ││                                                                │
-╰────────────────────────────────╯│                                                                │
-╭ 3   Commits ──────────────────╮│                                                                │
 │                                ││                                                                │
-│                                │╰────────────────────────────────────────────────────────────────╯
+╰────────────────────────────────╯│                                                                │
+╭ 3   Commits │ Reflog │────────╮╰────────────────────────────────────────────────────────────────╯
 │                                │╭ 6  󰌱 Log ──────────────────────────────────────────────────────╮
 │                                ││  status=large repo fast mode; untracked scan skipped           │
+│                                ││  status=truncated at 50000 file entries or 64 MiB output       │
+│                                ││  notice=Ready                                                  │
 │                                ││  tip=consider git untrackedCache/fsmonitor/splitIndex          │
-╰────────────────────────────────╯│  status=truncated at 50000 file entries or 64 MiB output       │
-╭ 4   Stash ────────────────────╮│  notice=Ready                                                  │
-│                                ││                                                                │
-│                                ││                                                                │
+╰────────────────────────────────╯│                                                                │
+╭ 4   Stash ────────────────────╮│                                                                │
 │                                ││                                                                │
 ╰────────────────────────────────╯╰────────────────────────────────────────────────────────────────╯
- space  stage/unstage   d  discard   A  amend   c  commit   s  stash   D  reset   enter  expand   ?
+ space  stage/unstage   d  discard   A  amend   c  commit   s  stash   D  reset   ?  commands

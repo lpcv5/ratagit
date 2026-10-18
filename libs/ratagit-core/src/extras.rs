@@ -97,6 +97,53 @@ pub(crate) fn completed(
     state
         .work
         .record_operation_completed("repository_operation");
+    if let RepositoryOperation::Workflow(ref op) = operation {
+        use crate::workflow::{Operation as O, commit_files::PatchAction};
+        let historical = matches!(
+            op,
+            O::CommitFileCheckout { .. }
+                | O::CommitFileDiscard { .. }
+                | O::CommitPatch { .. }
+                | O::CustomPatch { .. }
+        );
+        if historical {
+            state.last_operation = Some(op.description().to_lowercase());
+            crate::details::clear_caches(state);
+            let rewrite = matches!(
+                op,
+                O::CommitFileDiscard { .. }
+                    | O::CommitPatch {
+                        action: PatchAction::Discard,
+                        ..
+                    }
+                    | O::CustomPatch {
+                        action: PatchAction::Discard,
+                        ..
+                    }
+            );
+            match result {
+                Ok(()) => {
+                    state.repo.status.last_error = None;
+                    push_notice(state, &format!("{} completed", op.description()));
+                    if rewrite {
+                        crate::custom_patch::update(
+                            state,
+                            crate::custom_patch::CustomPatchAction::Reset,
+                        );
+                        if state.ui.details.patch.active {
+                            crate::partial::close(state);
+                        }
+                        return with_pending(state, Command::refresh_all_commands());
+                    }
+                }
+                Err(error) => {
+                    state.repo.status.last_error = Some(error.clone());
+                    push_notice(state, &error);
+                }
+            }
+            return with_pending(state, vec![Command::RefreshFiles]);
+        }
+    }
     state.last_operation = Some(format!("{operation:?}").to_lowercase());
     match result {
         Ok(()) => {

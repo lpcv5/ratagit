@@ -63,6 +63,27 @@ pub fn execute_command(backend: &mut dyn GitBackend, command: Command) -> GitRes
 
 fn execute_command_inner(backend: &mut dyn GitBackend, command: Command) -> GitResult {
     match command {
+        Command::LoadRepositoryTab { tab, request_id } => GitResult::RepositoryTabLoaded {
+            tab,
+            request_id,
+            result: backend.repository_tab(tab).map_err(|error| error.message),
+        },
+        Command::LoadCustomPatch {
+            request_id,
+            request,
+        } => GitResult::LoadedCustomPatch {
+            request_id,
+            request: request.clone(),
+            result: backend
+                .load_custom_patch(request)
+                .map(Box::new)
+                .map_err(|e| e.message),
+        },
+        Command::RenderCustomPatch { request_id, patch } => GitResult::RenderedCustomPatch {
+            request_id,
+            result: backend.render_custom_patch(&patch).map_err(|e| e.message),
+            patch,
+        },
         Command::RemoteBranches { request_id } => GitResult::RemoteBranches {
             request_id,
             result: backend.remote_branches().map_err(|error| error.message),

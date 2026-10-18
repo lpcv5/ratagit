@@ -1,0 +1,29 @@
+---
+source: libs/ratagit-ui/tests/ux_feedback.rs
+assertion_line: 241
+expression: screen
+---
+╭ 1  󰈙 Files ────────╮╭ 5   Details ───────────────────────────╮
+│   ? README.md      ││   diff --git a/README.md b/README.md    │
+│    src/           ││   @@ -1 +1 @@                           │
+│     M lib.rs       ││   -old                                  │
+│     M main.rs      ││   +new                                  │
+│                    ││                                         │
+│                    ││                                         │
+╰────────────────────╯│                                         │
+╭ 2   Branches ─────╮│                                         │
+│ main              ││                                         │
+│  feature/mvp       ││                                         │
+│                    ││                                         │
+│                    ││                                         │
+│                    ││                                         │
+╰────────────────────╯│                                         │
+╭ 3   Commits ──────╮╰─────────────────────────────────────────╯
+│●  abc1234  RT  init│╭ 6  󰌱 Log ───────────────────────────────╮
+│●  def5678  RT  wire││  error=push rejected                    │
+│                    ││  work=running fetch                     │
+╰────────────────────╯│  work=refreshing repository             │
+╭ 4   Stash ────────╮│  status=huge repo metadata-only; file sc│
+│ stash@{0} WIP on m││  status=truncated at 50000 file entries │
+╰────────────────────╯╰─────────────────────────────────────────╯
+/ loading: fetch   space  stage/unstage   A  amend   ?  commands
