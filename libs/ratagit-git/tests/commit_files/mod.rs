@@ -1,6 +1,7 @@
 use super::*;
 mod checkout;
 mod custom;
+mod listing;
 use ratagit_core::extras::RepositoryOperation;
 use ratagit_core::patch::{Patch, PatchRequest};
 use ratagit_core::workflow::{Operation, commit_files::PatchAction};

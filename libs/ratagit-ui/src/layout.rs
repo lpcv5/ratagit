@@ -152,7 +152,12 @@ pub fn focused_left_panel_content_lines_for_terminal_size(
 ) -> usize {
     let body_height = size.height.max(1).saturating_sub(1);
     let heights = compute_left_panel_heights(state, body_height, 2);
-    match state.ui.focus {
+    let focus = if state.ui.focus.is_left_panel() {
+        state.ui.focus
+    } else {
+        state.ui.last_left_focus
+    };
+    match focus {
         PanelFocus::Files => heights.files,
         PanelFocus::Branches => heights.branches,
         PanelFocus::Commits => heights.commits,

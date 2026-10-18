@@ -157,6 +157,14 @@ fn update_ui(state: &mut AppContext, action: UiAction) -> Vec<Command> {
         UiAction::OpenCommitFilePatch => crate::workflow::commit_files::enter(state),
         UiAction::OpenStashPatch => crate::partial::open_stash(state),
         UiAction::NextPatchFile { up } => crate::partial::next_file(state, up),
+        UiAction::NextPatchFileInViewport { up, visible_lines } => {
+            if crate::workflow::commit_files::is_patch(state) {
+                crate::workflow::commit_files::next_file_in_viewport(state, up, visible_lines)
+            } else {
+                crate::partial::next_file(state, up)
+            }
+        }
+        UiAction::RefreshCommitFiles => crate::workflow::commit_files::refresh(state),
         UiAction::CloseFilePatch => {
             crate::partial::close(state);
             Vec::new()

@@ -1,5 +1,8 @@
 use crossterm::event::{KeyCode, KeyModifiers};
 #[cfg(test)]
+#[path = "commit_files_keyboard_tests.rs"]
+mod commit_files_keyboard_tests;
+#[cfg(test)]
 #[path = "custom_patch_keyboard_tests.rs"]
 mod custom_patch_keyboard_tests;
 #[cfg(test)]
@@ -184,7 +187,7 @@ fn host_effect(state: &AppContext, code: KeyCode, modifiers: KeyModifiers) -> Op
         }
     } else if matches!(
         input_mode_for_state(state),
-        InputMode::Panel | InputMode::Patch
+        InputMode::Panel | InputMode::SearchQuery | InputMode::Patch
     ) {
         if code == KeyCode::Char('e') && modifiers.is_empty() {
             true
@@ -326,8 +329,13 @@ fn ui_action_for_key(
                     Some(UiAction::ApplyPatchSelection)
                 }
                 KeyCode::Char('d') => Some(UiAction::RequestPatchDiscard),
-                KeyCode::Char('n') => Some(UiAction::NextPatchFile { up: false }),
-                KeyCode::Char('N') => Some(UiAction::NextPatchFile { up: true }),
+                KeyCode::Char('n' | 'N') => Some(UiAction::NextPatchFileInViewport {
+                    up: code == KeyCode::Char('N'),
+                    visible_lines: left_panel_visible_lines,
+                }),
+                KeyCode::Char('r') if ratagit_core::workflow::commit_files::is_patch(state) => {
+                    Some(UiAction::RefreshCommitFiles)
+                }
                 KeyCode::Char('?') => Some(UiAction::OpenCommandPalette),
                 _ => None,
             };
@@ -578,6 +586,9 @@ fn panel_action_for_key(
     code: KeyCode,
     left_panel_visible_lines: usize,
 ) -> Option<UiAction> {
+    if state.active_commit_files_target().is_some() && code == KeyCode::Char('r') {
+        return Some(UiAction::RefreshCommitFiles);
+    }
     if state.active_search_scope().is_some() && code == KeyCode::Char('/') {
         return Some(UiAction::StartSearch);
     }

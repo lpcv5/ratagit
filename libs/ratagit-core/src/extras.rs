@@ -133,6 +133,12 @@ pub(crate) fn completed(
                         if state.ui.details.patch.active {
                             crate::partial::close(state);
                         }
+                        if state.ui.commits.files.active {
+                            crate::commit_workflow::close_commit_files_panel(state);
+                        }
+                        if state.ui.branches.subview == crate::BranchesSubview::CommitFiles {
+                            crate::branches::close_commit_files_panel(state);
+                        }
                         return with_pending(state, Command::refresh_all_commands());
                     }
                 }

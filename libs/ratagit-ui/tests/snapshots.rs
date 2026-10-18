@@ -1201,6 +1201,37 @@ fn snapshots_files_list_scrolls_to_keep_selection_visible() {
 }
 
 #[test]
+fn details_uses_owning_commit_files_panel_viewport() {
+    let size = TerminalSize {
+        width: 100,
+        height: 30,
+    };
+    for branch in [false, true] {
+        let mut state = AppContext::default();
+        apply_refreshed_with_mock_details(&mut state, fixture_many_files());
+        let focus = if branch {
+            PanelFocus::Branches
+        } else {
+            PanelFocus::Commits
+        };
+        state.ui.focus = focus;
+        state.ui.last_left_focus = focus;
+        if branch {
+            state.ui.branches.subview = ratagit_core::BranchesSubview::CommitFiles;
+        } else {
+            state.ui.commits.files.active = true;
+        }
+        let visible = focused_left_panel_content_lines_for_terminal_size(&state, size);
+        assert!(visible > 0);
+        state.ui.focus = PanelFocus::Details;
+        assert_eq!(
+            focused_left_panel_content_lines_for_terminal_size(&state, size),
+            visible
+        );
+    }
+}
+
+#[test]
 fn snapshots_files_list_reversing_up_does_not_jump_to_top_reserve() {
     let mut state = AppContext::default();
     let size = TerminalSize {

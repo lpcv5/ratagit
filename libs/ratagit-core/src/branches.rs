@@ -9,8 +9,7 @@ use crate::text_edit::{
 use crate::{
     AppContext, AutoStashOperation, BranchDeleteMode, BranchEntry, BranchInputMode,
     BranchRebaseChoice, BranchesSubview, BranchesUiState, Command, CommitFilesUiState, SearchScope,
-    details, initialize_commit_files_tree, mark_commit_file_items_changed, push_notice,
-    selected_branch_commit_id, with_pending,
+    details, mark_commit_file_items_changed, push_notice, selected_branch_commit_id, with_pending,
 };
 
 pub(crate) fn move_selected_branch(
@@ -214,9 +213,7 @@ pub(crate) fn handle_branch_commit_files_result(
                 &state.repo.branches.commit_files.items,
                 &mut state.ui.branches.commit_files,
             );
-            state.ui.branches.commit_files.selected = 0;
-            state.ui.branches.commit_files.scroll_offset = 0;
-            initialize_commit_files_tree(
+            crate::files::reconcile_commit_files(
                 &state.repo.branches.commit_files.items,
                 &mut state.ui.branches.commit_files,
             );

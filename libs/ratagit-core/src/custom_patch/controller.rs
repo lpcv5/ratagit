@@ -16,7 +16,12 @@ pub fn update(state: &mut AppContext, action: CustomPatchAction) -> Vec<Command>
             let paths = if all {
                 items
                     .iter()
-                    .flat_map(|file| [Some(file.path.clone()), file.old_path.clone()])
+                    .flat_map(|file| {
+                        [
+                            Some(file.path.clone()),
+                            file.renamed_from().map(str::to_owned),
+                        ]
+                    })
                     .flatten()
                     .collect::<BTreeSet<_>>()
                     .into_iter()

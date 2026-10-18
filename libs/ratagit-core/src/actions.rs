@@ -38,6 +38,11 @@ pub enum UiAction {
     NextPatchFile {
         up: bool,
     },
+    NextPatchFileInViewport {
+        up: bool,
+        visible_lines: usize,
+    },
+    RefreshCommitFiles,
     MovePatchSelection {
         up: bool,
         visible_lines: usize,
