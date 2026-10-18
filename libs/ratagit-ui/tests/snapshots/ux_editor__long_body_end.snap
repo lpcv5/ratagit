@@ -1,0 +1,29 @@
+---
+source: libs/ratagit-ui/tests/ux_editor.rs
+assertion_line: 183
+expression: screen(&buffer)
+---
+╭ 1  󰈙 Files ─────────────╮╭ 5   Details ─────────────────────────────────────╮
+│   ? README.md           ││  details(files): no diff for current selection    │
+│    src/                ││                                                   │
+│     M lib.rs            ││                                                   │
+│     M main.rs           ││                                                   │
+│               ╭ ✎ Commit Message ────────────────────────────╮               │
+│               │ Edit commit subject and optional body        │               │
+╰───────────────│ ╭ Subject ─────────────────────────────────╮ │               │
+╭ 2   Branches │ │feat: visual body viewport                │ │               │
+│ main         │ ╰──────────────────────────────────────────╯ │               │
+│  feature/mvp  │ ╭ Body ────────────────────────────────────╮ │               │
+│               │ │890123456789012345678901234567890123456789│ │               │
+│               │ │01234567890123456789FINISH                │ │               │
+│               │ ╰──────────────────────────────────────────╯ │               │
+╰───────────────│ ──────────────────────────────────────────── │               │
+╭ 3   Commits ─│ Tab/Shift+Tab field                          │───────────────╯
+│●  abc1234  RT │ Ctrl+J newline  Enter confirm  Esc cancel    │───────────────╮
+│●  def5678  RT ╰──────────────────────────────────────────────╯               │
+│                         ││                                                   │
+╰─────────────────────────╯│                                                   │
+╭ 4   Stash ─────────────╮│                                                   │
+│ stash@{0} WIP on main: ││                                                   │
+╰─────────────────────────╯╰───────────────────────────────────────────────────╯
+ Tab  field   arrows/Home/End  cursor   Ctrl+J  newline   Esc  cancel

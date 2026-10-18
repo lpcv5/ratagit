@@ -21,20 +21,20 @@ expression: "render_terminal_text(&state, SIZE)"
 │   M file-14.txt                       ││                                                                             │
 │   M file-15.txt                       ││                                                                             │
 │   M file-16.txt                       ││                                                                             │
+│   M file-17.txt                       ││                                                                             │
+│   M file-18.txt                       ││                                                                             │
 ╰───────────────────────────────────────╯│                                                                             │
 ╭ 2   Branches │ Remotes │ Tags │──────╮│                                                                             │
 │ main                                 ││                                                                             │
-│  feature/mvp                          ││                                                                             │
-│                                       ││                                                                             │
-╰───────────────────────────────────────╯╰─────────────────────────────────────────────────────────────────────────────╯
-╭ 3   Commits │ Reflog │───────────────╮╭ 6  󰌱 Log ───────────────────────────────────────────────────────────────────╮
-│●  abc1234  RT  init project           ││  notice=Ready                                                               │
+│  feature/mvp                          │╰─────────────────────────────────────────────────────────────────────────────╯
+│                                       │╭ 6  󰌱 Log ───────────────────────────────────────────────────────────────────╮
+╰───────────────────────────────────────╯│  notice=Ready                                                               │
+╭ 3   Commits │ Reflog │───────────────╮│                                                                             │
+│●  abc1234  RT  init project           ││                                                                             │
 │●  def5678  RT  wire commands          ││                                                                             │
 │                                       ││                                                                             │
 ╰───────────────────────────────────────╯│                                                                             │
 ╭ 4   Stash ───────────────────────────╮│                                                                             │
 │ stash@{0} WIP on main: local test    ││                                                                             │
-│                                       ││                                                                             │
-│                                       ││                                                                             │
 ╰───────────────────────────────────────╯╰─────────────────────────────────────────────────────────────────────────────╯
- j/k  select   a  mode   v  range   x  mark   Tab  side   Space  apply   d  discard   n/N  file   Esc  clear/back
+ j/k  select   a  mode   v  range   x  mark   Tab  side   Space  apply   d  discard   Esc  clear/back   ?  commands

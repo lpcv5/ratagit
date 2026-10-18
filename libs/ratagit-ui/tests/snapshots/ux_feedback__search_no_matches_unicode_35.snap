@@ -1,0 +1,29 @@
+---
+source: libs/ratagit-ui/tests/ux_feedback.rs
+assertion_line: 188
+expression: screen
+---
+╭ 1  󰈙 F ──╮╭ 5   Details ───────╮
+│   ? READM││   diff --git a/READM│
+│    src/ ││   @@ -1 +1 @@       │
+│     M lib││   -old              │
+│     M mai││   +new              │
+│          ││                     │
+│          ││                     │
+╰──────────╯│                     │
+╭ 2   B ──╮│                     │
+│ main    ││                     │
+│  feature/││                     │
+│          ││                     │
+│          ││                     │
+│          ││                     │
+╰──────────╯│                     │
+╭ 3   C ──╮╰─────────────────────╯
+│●  abc1234│╭ 6  󰌱 Log ───────────╮
+│●  def5678││  work=refreshing rep│
+│          ││  notice=Ready       │
+╰──────────╯│                     │
+╭ 4   Stas╮│                     │
+│ stash@{0││                     │
+╰──────────╯╰─────────────────────╯
+search: 修 复 界 面 é与 搜 …  no matches

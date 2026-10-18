@@ -14,8 +14,9 @@ expression: "render_terminal_text(&state, SIZE)"
 │                 │ Checkout 1 file(s) from abc1234                                                  │                 │
 │                 │                                                                                  │                 │
 │                 │ Selected worktree files will be replaced. The index is preserved; locally        │                 │
-╰─────────────────│ modified paths are rejected.                                                     │                 │
-╭ 2   Branches │ │ Esc leaves the repository unchanged.                                             │                 │
+│                 │ modified paths are rejected.                                                     │                 │
+╰─────────────────│ Esc leaves the repository unchanged.                                             │                 │
+╭ 2   Branches │ │                                                                                  │                 │
 │ main           │                                                                                  │                 │
 │  feature/mvp    │                                                                                  │                 │
 │                 │                                                                                  │                 │
@@ -26,16 +27,15 @@ expression: "render_terminal_text(&state, SIZE)"
 │                 │                                                                                  │                 │
 ╰─────────────────│                                                                                  │                 │
 ╭ 3   Commit File│                                                                                  │                 │
-│    src/        │                                                                                  │                 │
-│     M lib.rs    │                                                                                  │─────────────────╯
-│                 │ ──────────────────────────────────────────────────────────────────────────────── │─────────────────╮
+│    src/        │                                                                                  │─────────────────╯
+│     M lib.rs    │ ──────────────────────────────────────────────────────────────────────────────── │─────────────────╮
 │                 │ Enter confirm  Esc cancel                                                        │                 │
 │                 ╰──────────────────────────────────────────────────────────────────────────────────╯                 │
+│                                       ││                                                                             │
+│                                       ││                                                                             │
 │                                       ││                                                                             │
 ╰───────────────────────────────────────╯│                                                                             │
 ╭ 4   Stash ───────────────────────────╮│                                                                             │
 │ stash@{0} WIP on main: local test    ││                                                                             │
-│                                       ││                                                                             │
-│                                       ││                                                                             │
 ╰───────────────────────────────────────╯╰─────────────────────────────────────────────────────────────────────────────╯
  arrows  select/cursor   Enter  confirm   Esc  cancel

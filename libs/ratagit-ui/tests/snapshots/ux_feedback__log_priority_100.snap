@@ -1,0 +1,29 @@
+---
+source: libs/ratagit-ui/tests/ux_feedback.rs
+assertion_line: 241
+expression: screen
+---
+╭ 1  󰈙 Files ────────────────────╮╭ 5   Details ──────────────────────────────────────────────────╮
+│   ? README.md                  ││   diff --git a/README.md b/README.md                           │
+│    src/                       ││   @@ -1 +1 @@                                                  │
+│     M lib.rs                   ││   -old                                                         │
+│     M main.rs                  ││   +new                                                         │
+│                                ││                                                                │
+│                                ││                                                                │
+╰────────────────────────────────╯│                                                                │
+╭ 2   Branches ─────────────────╮│                                                                │
+│ main                          ││                                                                │
+│  feature/mvp                   ││                                                                │
+│                                ││                                                                │
+│                                ││                                                                │
+│                                ││                                                                │
+╰────────────────────────────────╯│                                                                │
+╭ 3   Commits │ Reflog │────────╮╰────────────────────────────────────────────────────────────────╯
+│●  abc1234  RT  init project    │╭ 6  󰌱 Log ──────────────────────────────────────────────────────╮
+│●  def5678  RT  wire commands   ││  error=push rejected                                           │
+│                                ││  work=running fetch                                            │
+╰────────────────────────────────╯│  work=refreshing repository                                    │
+╭ 4   Stash ────────────────────╮│  status=huge repo metadata-only; file scan skipped             │
+│ stash@{0} WIP on main: local t││  status=truncated at 50000 file entries or 64 MiB output       │
+╰────────────────────────────────╯╰────────────────────────────────────────────────────────────────╯
+/ loading: fetch   space  stage/unstage   d  discard   A  amend   c  commit   s  stash   ?  commands

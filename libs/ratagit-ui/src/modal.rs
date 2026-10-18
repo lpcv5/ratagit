@@ -232,66 +232,51 @@ pub(crate) fn render_confirm_body(
     body: ConfirmBody,
     theme: &UiTheme,
 ) {
-    let secondary_height = u16::from(body.secondary.is_some());
-    let details_height = body
-        .details
-        .as_ref()
-        .map(|details| {
-            details
-                .lines()
-                .count()
-                .try_into()
-                .unwrap_or(u16::MAX)
-                .saturating_add(1)
-        })
-        .unwrap_or(0);
-    let total_height = 1u16
-        .saturating_add(secondary_height)
-        .saturating_add(details_height)
-        .min(area.height);
-    let start_y = area.y + area.height.saturating_sub(total_height) / 2;
-    let centered = Rect::new(area.x, start_y, area.width, total_height);
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Length(secondary_height),
-            Constraint::Min(0),
-        ])
-        .split(centered);
-
-    frame.render_widget(
-        Paragraph::new(body.primary)
-            .style(modal_tone_style(tone, theme))
+    let paragraph = |text, style| {
+        Paragraph::new(text)
+            .style(style)
             .alignment(Alignment::Center)
-            .wrap(Wrap { trim: false }),
-        rows[0],
-    );
+            .wrap(Wrap { trim: false })
+    };
+    let primary = paragraph(body.primary, modal_tone_style(tone, theme));
+    let secondary = body
+        .secondary
+        .map(|text| paragraph(text, theme.modal_text_style()));
+    let details = body
+        .details
+        .map(|text| paragraph(text, theme.modal_muted_style()));
+    // Measure the actual widgets: character counts and explicit newlines do not
+    // account for word wrapping, wide glyphs, or combining characters.
+    let height =
+        |text: &Paragraph<'_>| u16::try_from(text.line_count(area.width)).unwrap_or(u16::MAX);
+    let primary_needed = height(&primary);
+    let secondary_needed = secondary.as_ref().map(height).unwrap_or(0);
+    let details_needed = details.as_ref().map(height).unwrap_or(0);
 
-    if let Some(secondary) = body.secondary {
+    // Keep the consequence visible even when a long target fills the question.
+    // Target previews and their spacer only use space left after both messages.
+    let secondary_height = secondary_needed.min(area.height.saturating_sub(primary_needed.min(1)));
+    let primary_height = primary_needed.min(area.height.saturating_sub(secondary_height));
+    let remaining = area
+        .height
+        .saturating_sub(primary_height)
+        .saturating_sub(secondary_height);
+    let details_height = details_needed.min(remaining);
+    let gap = u16::from(details_height > 0 && remaining > details_height);
+    let total_height = primary_height + secondary_height + gap + details_height;
+    let mut y = area.y + area.height.saturating_sub(total_height) / 2;
+
+    frame.render_widget(primary, Rect::new(area.x, y, area.width, primary_height));
+    y += primary_height;
+    if let Some(secondary) = secondary {
         frame.render_widget(
-            Paragraph::new(secondary)
-                .style(theme.modal_text_style())
-                .alignment(Alignment::Center)
-                .wrap(Wrap { trim: false }),
-            rows[1],
+            secondary,
+            Rect::new(area.x, y, area.width, secondary_height),
         );
     }
-
-    if let Some(details) = body.details {
-        let detail_area = Rect::new(
-            rows[2].x,
-            rows[2].y.saturating_add(1),
-            rows[2].width,
-            rows[2].height.saturating_sub(1),
-        );
-        frame.render_widget(
-            Paragraph::new(details)
-                .style(theme.modal_muted_style())
-                .alignment(Alignment::Center)
-                .wrap(Wrap { trim: false }),
-            detail_area,
-        );
+    y += secondary_height + gap;
+    if let Some(details) = details {
+        frame.render_widget(details, Rect::new(area.x, y, area.width, details_height));
     }
 }
 
@@ -380,9 +365,26 @@ fn render_action_footer(
     actions: &[(&'static str, &'static str)],
     theme: &UiTheme,
 ) {
+    let mut selected = vec![false; actions.len()];
+    let mut used = 0;
+    for essential in [true, false] {
+        for (index, (key, label)) in actions.iter().enumerate() {
+            if (key.contains("Enter") || key.contains("Esc")) != essential {
+                continue;
+            }
+            let width = Line::from(format!("{key} {label}")).width() + usize::from(used > 0) * 2;
+            if used + width <= area.width as usize {
+                selected[index] = true;
+                used += width;
+            }
+        }
+    }
     let mut spans = Vec::new();
-    for (index, (key, label)) in actions.iter().enumerate() {
-        if index > 0 {
+    for ((key, label), included) in actions.iter().zip(selected) {
+        if !included {
+            continue;
+        }
+        if !spans.is_empty() {
             spans.push(Span::styled("  ", theme.modal_footer_style()));
         }
         spans.push(Span::styled(*key, modal_tone_style(tone, theme)));
@@ -609,6 +611,102 @@ fn choice_list_height_for_count(choice_count: usize) -> u16 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn confirmation_text(body: ConfirmBody, width: u16, height: u16) -> String {
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height))
+                .expect("test terminal should initialize");
+        terminal
+            .draw(|frame| {
+                render_confirm_body(
+                    frame,
+                    frame.area(),
+                    ModalTone::Danger,
+                    body,
+                    &crate::MAIN_UI_THEME,
+                );
+            })
+            .expect("confirmation should render");
+        crate::frame::buffer_to_text(terminal.backend().buffer())
+    }
+
+    #[test]
+    fn confirmation_measures_word_wrapping_and_explicit_newlines() {
+        let text = confirmation_text(
+            ConfirmBody::new("Delete this branch?")
+                .secondary("This action cannot be undone.")
+                .details("First target\nSecond target"),
+            20,
+            6,
+        );
+
+        let lines = text.lines().map(str::trim).collect::<Vec<_>>();
+        assert_eq!(
+            lines,
+            [
+                "Delete this branch?",
+                "This action cannot",
+                "be undone.",
+                "",
+                "First target",
+                "Second target"
+            ]
+        );
+    }
+
+    #[test]
+    fn confirmation_uses_remaining_row_for_details_before_whitespace() {
+        let text = confirmation_text(
+            ConfirmBody::new("Delete?")
+                .secondary("Cannot undo.")
+                .details("Target"),
+            20,
+            3,
+        );
+
+        assert_eq!(
+            text.lines().map(str::trim).collect::<Vec<_>>(),
+            ["Delete?", "Cannot undo.", "Target"]
+        );
+    }
+
+    #[test]
+    fn confirmation_keeps_consequence_ahead_of_long_target_and_preview() {
+        let text = confirmation_text(
+            ConfirmBody::new("Force delete a very long branch target with many words?")
+                .secondary("Cannot be undone.")
+                .details("Optional target preview"),
+            20,
+            3,
+        );
+
+        assert!(text.contains("Cannot be undone."));
+        assert!(!text.contains("Optional"));
+    }
+
+    #[test]
+    fn confirmation_wraps_unicode_using_paragraph_graphemes_and_cell_width() {
+        let text = confirmation_text(
+            ConfirmBody::new("确认删除分支？")
+                .secondary("不能恢复。")
+                .details("e\u{301}e\u{301}e\u{301}e\u{301}e\u{301}e\u{301}e\u{301}e\u{301}界"),
+            8,
+            6,
+        );
+
+        let lines = text.lines().map(str::trim).collect::<Vec<_>>();
+        assert_eq!(
+            lines,
+            [
+                "确 认 删 除",
+                "分 支 ？",
+                "不 能 恢 复",
+                "。",
+                "e\u{301}e\u{301}e\u{301}e\u{301}e\u{301}e\u{301}e\u{301}e\u{301}",
+                "界"
+            ]
+        );
+    }
 
     #[test]
     fn choice_list_height_caps_visible_items_at_ten() {

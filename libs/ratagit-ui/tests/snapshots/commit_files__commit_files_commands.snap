@@ -14,28 +14,28 @@ expression: "render_terminal_text(&state, SIZE)"
 │                 │ Local commands                                                                   │                 │
 │                 │   Esc      back                                                                  │                 │
 │                 │   enter    expand / hunks                                                        │                 │
-╰─────────────────│   e        edit worktree file                                                    │                 │
-╭ 2   Branches │ │   Ctrl+o   copy selected paths                                                   │                 │
-│ main           │   v        visual select                                                         │                 │
-│  feature/mvp    │   ← / [    previous tab                                                          │                 │
-│                 │   → / ]    next tab                                                              │                 │
+│                 │   e        edit worktree file                                                    │                 │
+╰─────────────────│   Ctrl+o   copy selected paths                                                   │                 │
+╭ 2   Branches │ │   v        visual select                                                         │                 │
+│ main           │   ← / [    previous tab                                                          │                 │
+│  feature/mvp    │   → / ]    next tab                                                              │                 │
 │                 │   c        checkout selected file versions                                       │                 │
 │                 │   d        remove file changes from original commit                              │                 │
 │                 │   Space    toggle selected files in custom patch                                 │                 │
 │                 │   y        copy selected paths                                                   │                 │
 │                 │   a        toggle all files in custom patch                                      │                 │
-╰─────────────────│ Global commands                                                                  │                 │
-╭ 3   Commit File│   p        pull                                                                  │                 │
-│    src/        │   F        fetch                                                                 │                 │
-│     M lib.rs    │   P        push                                                                  │─────────────────╯
-│                 │ ──────────────────────────────────────────────────────────────────────────────── │─────────────────╮
+│                 │ Global commands                                                                  │                 │
+╰─────────────────│   p        pull                                                                  │                 │
+╭ 3   Commit File│   F        fetch                                                                 │                 │
+│    src/        │   P        push                                                                  │─────────────────╯
+│     M lib.rs    │ ──────────────────────────────────────────────────────────────────────────────── │─────────────────╮
 │                 │ j/k ↑/↓ select  / search  Enter run  Esc close                                   │                 │
 │                 ╰──────────────────────────────────────────────────────────────────────────────────╯                 │
+│                                       ││                                                                             │
+│                                       ││                                                                             │
 │                                       ││                                                                             │
 ╰───────────────────────────────────────╯│                                                                             │
 ╭ 4   Stash ───────────────────────────╮│                                                                             │
 │ stash@{0} WIP on main: local test    ││                                                                             │
-│                                       ││                                                                             │
-│                                       ││                                                                             │
 ╰───────────────────────────────────────╯╰─────────────────────────────────────────────────────────────────────────────╯
  enter  hunk   space  patch   a  all   Ctrl+P  menu   Tab  preview   ?  commands

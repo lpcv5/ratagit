@@ -14,9 +14,10 @@ expression: "render_terminal_text(&state, SIZE)"
 │                 │   c        Clear custom patch                                                    │                 │
 │                 │   a        Apply patch to working tree                                           │                 │
 │                 │   r        Apply patch in reverse                                                │                 │
-╰─────────────────│   d        Remove patch from original commit                                     │                 │
-╭ 2   Branches │ │   p        Preview accumulated patch                                             │                 │
-│ main           │   y        Copy patch to clipboard                                               │                 │
+│                 │   d        Remove patch from original commit                                     │                 │
+╰─────────────────│   p        Preview accumulated patch                                             │                 │
+╭ 2   Branches │ │   y        Copy patch to clipboard                                               │                 │
+│ main           │                                                                                  │                 │
 │  feature/mvp    │                                                                                  │                 │
 │                 │                                                                                  │                 │
 │                 │                                                                                  │                 │
@@ -26,16 +27,15 @@ expression: "render_terminal_text(&state, SIZE)"
 │                 │                                                                                  │                 │
 ╰─────────────────│                                                                                  │                 │
 ╭ 3   Commit File│                                                                                  │                 │
-│  ╎ src/        │                                                                                  │                 │
-│  ╎  M lib.rs    │                                                                                  │─────────────────╯
-│                 │ ──────────────────────────────────────────────────────────────────────────────── │─────────────────╮
+│  ╎ src/        │                                                                                  │─────────────────╯
+│  ╎  M lib.rs    │ ──────────────────────────────────────────────────────────────────────────────── │─────────────────╮
 │                 │ j/k ↑/↓ select  Enter confirm  Esc cancel                                        │                 │
 │                 ╰──────────────────────────────────────────────────────────────────────────────────╯                 │
+│                                       ││                                                                             │
+│                                       ││                                                                             │
 │                                       ││                                                                             │
 ╰ patch: 1 file ────────────────────────╯│                                                                             │
 ╭ 4   Stash ───────────────────────────╮│                                                                             │
 │ stash@{0} WIP on main: local test    ││                                                                             │
-│                                       ││                                                                             │
-│                                       ││                                                                             │
 ╰───────────────────────────────────────╯╰─────────────────────────────────────────────────────────────────────────────╯
  j/k ↑/↓  select   Enter  confirm   Esc  cancel

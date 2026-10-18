@@ -14,9 +14,10 @@ expression: "render_terminal_text(&state, SIZE)"
 │                 │ Discard 1 selected changed line(s)                                               │                 │
 │                 │                                                                                  │                 │
 │                 │ The original commit and its descendants will be rewritten. Success clears any    │                 │
-╰─────────────────│ accumulated custom patch. Requires a clean worktree and linear current-branch    │                 │
-╭ 2   Branches │ │ history; replay conflicts leave HEAD unchanged.                                  │                 │
-│ main           │ Esc leaves the repository unchanged.                                             │                 │
+│                 │ accumulated custom patch. Requires a clean worktree and linear current-branch    │                 │
+╰─────────────────│ history; replay conflicts leave HEAD unchanged.                                  │                 │
+╭ 2   Branches │ │ Esc leaves the repository unchanged.                                             │                 │
+│ main           │                                                                                  │                 │
 │  feature/mvp    │                                                                                  │                 │
 │                 │                                                                                  │                 │
 │                 │                                                                                  │                 │
@@ -26,16 +27,15 @@ expression: "render_terminal_text(&state, SIZE)"
 │                 │                                                                                  │                 │
 ╰─────────────────│                                                                                  │                 │
 ╭ 3   Commit File│                                                                                  │                 │
-│  ╎ src/        │                                                                                  │                 │
-│  ╎  M lib.rs    │                                                                                  │─────────────────╯
-│                 │ ──────────────────────────────────────────────────────────────────────────────── │─────────────────╮
+│  ╎ src/        │                                                                                  │─────────────────╯
+│  ╎  M lib.rs    │ ──────────────────────────────────────────────────────────────────────────────── │─────────────────╮
 │                 │ Enter confirm  Esc cancel                                                        │                 │
 │                 ╰──────────────────────────────────────────────────────────────────────────────────╯                 │
+│                                       ││                                                                             │
+│                                       ││                                                                             │
 │                                       ││                                                                             │
 ╰ patch: 1 file ────────────────────────╯│                                                                             │
 ╭ 4   Stash ───────────────────────────╮│                                                                             │
 │ stash@{0} WIP on main: local test    ││                                                                             │
-│                                       ││                                                                             │
-│                                       ││                                                                             │
 ╰───────────────────────────────────────╯╰─────────────────────────────────────────────────────────────────────────────╯
  arrows  select/cursor   Enter  confirm   Esc  cancel

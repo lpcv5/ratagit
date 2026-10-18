@@ -1,0 +1,29 @@
+---
+source: libs/ratagit-ui/tests/ux_confirmation.rs
+assertion_line: 98
+expression: buffer_text(&buffer)
+---
+╭ 1  󰈙 Files ─────────────╮╭ 5   Details ─────────────────────────────────────╮
+│   ? README.md           ││  details(files): no diff for current selection    │
+│    src/                ││                                                   │
+│     M lib.rs            ││                                                   │
+│     M main.rs           ││                                                   │
+│               ╭ ‼ Confirm ───────────────────────────────────╮               │
+│               │                                              │               │
+╰───────────────│                                              │               │
+╭ 2   Branches │       Hard reset working tree to HEAD?       │               │
+│ main         │    This can discard uncommitted work that    │               │
+│  feature/mvp  │            reflog cannot restore.            │               │
+│               │                                              │               │
+│               │         Runs `git reset --hard HEAD`.        │               │
+│               │                                              │               │
+╰───────────────│                                              │               │
+╭ 3   Commits ─│ ──────────────────────────────────────────── │───────────────╯
+│●  abc1234  RT │ Enter reset hard  Esc cancel                 │───────────────╮
+│●  def5678  RT ╰──────────────────────────────────────────────╯               │
+│                         ││                                                   │
+╰─────────────────────────╯│                                                   │
+╭ 4   Stash ─────────────╮│                                                   │
+│ stash@{0} WIP on main: ││                                                   │
+╰─────────────────────────╯╰───────────────────────────────────────────────────╯
+/ loading: details   Enter  confirm   Esc  cancel

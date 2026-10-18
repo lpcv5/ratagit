@@ -93,6 +93,35 @@ pub(crate) fn input_mode_for_state(state: &AppContext) -> InputMode {
     }
 }
 
+pub(crate) fn key_effect_for_key_in_viewport(
+    state: &AppContext,
+    code: KeyCode,
+    modifiers: KeyModifiers,
+    size: ratagit_ui::TerminalSize,
+    details_scroll_lines: usize,
+    details_visible_lines: usize,
+    left_panel_visible_lines: usize,
+) -> KeyEffect {
+    if ratagit_ui::modal_viewport_too_small(state, size) {
+        if code == KeyCode::Esc && state.ui.command_palette.active {
+            return KeyEffect::Dispatch(UiAction::CloseCommandPalette);
+        }
+        if code != KeyCode::Esc
+            && !(code == KeyCode::Char('c') && modifiers.contains(KeyModifiers::CONTROL))
+        {
+            return KeyEffect::Ignore;
+        }
+    }
+    key_effect_for_key(
+        state,
+        code,
+        modifiers,
+        details_scroll_lines,
+        details_visible_lines,
+        left_panel_visible_lines,
+    )
+}
+
 pub(crate) fn key_effect_for_key(
     state: &AppContext,
     code: KeyCode,

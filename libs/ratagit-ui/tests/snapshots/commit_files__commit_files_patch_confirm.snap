@@ -14,9 +14,10 @@ expression: "render_terminal_text(&state, SIZE)"
 │                 │ Apply custom patch: 1 file(s) from abc1234                                       │                 │
 │                 │                                                                                  │                 │
 │                 │ The entire accumulated patch will be applied to the worktree. The index and      │                 │
-╰─────────────────│ commit history are preserved; conflicting patches are rejected without partial   │                 │
-╭ 2   Branches │ │ application.                                                                     │                 │
-│ main           │ Esc leaves the repository unchanged.                                             │                 │
+│                 │ commit history are preserved; conflicting patches are rejected without partial   │                 │
+╰─────────────────│ application.                                                                     │                 │
+╭ 2   Branches │ │ Esc leaves the repository unchanged.                                             │                 │
+│ main           │                                                                                  │                 │
 │  feature/mvp    │                                                                                  │                 │
 │                 │                                                                                  │                 │
 │                 │                                                                                  │                 │
@@ -26,16 +27,15 @@ expression: "render_terminal_text(&state, SIZE)"
 │                 │                                                                                  │                 │
 ╰─────────────────│                                                                                  │                 │
 ╭ 3   Commit File│                                                                                  │                 │
-│  ╎ src/        │                                                                                  │                 │
-│  ╎  M lib.rs    │                                                                                  │─────────────────╯
-│                 │ ──────────────────────────────────────────────────────────────────────────────── │─────────────────╮
+│  ╎ src/        │                                                                                  │─────────────────╯
+│  ╎  M lib.rs    │ ──────────────────────────────────────────────────────────────────────────────── │─────────────────╮
 │                 │ Enter confirm  Esc cancel                                                        │                 │
 │                 ╰──────────────────────────────────────────────────────────────────────────────────╯                 │
+│                                       ││                                                                             │
+│                                       ││                                                                             │
 │                                       ││                                                                             │
 ╰ patch: 1 file ────────────────────────╯│                                                                             │
 ╭ 4   Stash ───────────────────────────╮│                                                                             │
 │ stash@{0} WIP on main: local test    ││                                                                             │
-│                                       ││                                                                             │
-│                                       ││                                                                             │
 ╰───────────────────────────────────────╯╰─────────────────────────────────────────────────────────────────────────────╯
  arrows  select/cursor   Enter  confirm   Esc  cancel

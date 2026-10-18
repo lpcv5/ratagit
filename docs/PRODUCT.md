@@ -82,7 +82,12 @@ MVP v0 includes a left-nav workspace layout with six panels:
   - Stash projection: the selected stash's reviewed, read-only native patch,
     including saved untracked files within the shared preview limits
   - `Ctrl+U` / `Ctrl+D` scroll Details content up/down globally by 2/5 of the Details content height without changing the focused panel
-- Log: show latest error, recent notices, and pending refresh/operation state
+- Log: prioritize the latest error, then pending operation/refresh, skipped-scan
+  and truncation warnings, recent notices, and tuning tips. Routine notices
+  cannot hide a failure or silently make incomplete repository data look complete.
+- Bottom shortcuts fit complete key/label pairs to the terminal width, retaining
+  `? commands` and contextual escape actions before less common actions. Active
+  searches keep their query and result count visible after confirmation.
 - Global sync: `p` runs `git pull`, `P` runs `git push`; if normal push is
   rejected because the remote branch has diverged, a confirmation modal asks
   whether to retry with force push using `--force-with-lease`
@@ -114,6 +119,14 @@ Common panel workflows (also available from `?`):
 | Main/branch commits | `Ctrl+K/J` / `Alt+Up/Down` | Move one commit up/down in newest-first list using interactive rebase; confirmation and a clean linear history are required. |
 | Main/branch commits | `F`, `S` | Create a `fixup!` commit from staged changes; confirm autosquashing fixups from selected base through HEAD. |
 | Main/branch commits | `T` | Create a lightweight tag at selected commit. |
+
+Confirmation dialogs wrap their question and consequences to the available
+width, giving them priority over target previews. Commit/stash title fields
+scroll horizontally with the cursor; the multiline commit body follows visual
+terminal rows, including wide characters. When an open modal has less than
+40 columns or 14 rows available in the terminal, a resize prompt replaces it;
+confirmation/execution is paused, `Esc` cancels and `Ctrl+C` quits. Resizing back
+restores the dialog and its contents.
 
 New workflow menus capture their target when opened. Arrows select menu choices;
 prompts support Unicode and Left/Right/Home/End cursor editing. `Esc` cancels
@@ -169,11 +182,11 @@ Navigation rules:
   fragment uses the selection foreground, including authors, hashes, file statuses
   and search matches, to preserve readability
 - empty panels render blank content lines instead of `<empty>` / `<none>` placeholders
-- Stash panel keeps three content rows when unfocused and restores its weighted
-  height when focused
+- Stash panel keeps one content row plus its borders when unfocused and restores
+  its weighted height when focused; leaving Stash collapses it again
 - focused Files/Branches/Commits panels can grow dynamically when content overflows
   by borrowing height evenly from other left panels, preserving three content rows
-  plus each panel's own borders
+  in expanded panels, the single collapsed Stash row, and each panel's own borders
 - the three-row reserve fits all left panels at terminal heights of 21 rows or
   more, including shortcuts; smaller terminals reduce the reserve evenly within
   the available height; Details and Log also keep three content rows when possible

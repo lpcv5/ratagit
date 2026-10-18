@@ -864,8 +864,8 @@ mod tests {
             lines.iter().map(|line| line.text()).collect::<Vec<_>>(),
             vec![
                 "  status=huge repo metadata-only; file scan skipped",
-                "  tip=focus Commits/Branches or narrow Git outside ratagit",
                 "  notice=Ready",
+                "  tip=focus Commits/Branches or narrow Git outside ratagit",
             ]
         );
     }

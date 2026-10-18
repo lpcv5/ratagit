@@ -14,28 +14,28 @@ expression: "render_terminal_text(&state, SIZE)"
 │                 │ Local commands                                                                   │                 │
 │                 │   Space    toggle selection in custom patch                                      │                 │
 │                 │   d        remove selection from original commit                                 │                 │
-╰─────────────────│   a        hunk/block/line mode                                                  │                 │
-╭ 2   Branches │ │   v        select range                                                          │                 │
-│ main           │   x        mark hunk or line                                                     │                 │
-│  feature/mvp    │   Esc      clear selection                                                       │                 │
-│                 │   Esc      back to commit files                                                  │                 │
+│                 │   a        hunk/block/line mode                                                  │                 │
+╰─────────────────│   v        select range                                                          │                 │
+╭ 2   Branches │ │   x        mark hunk or line                                                     │                 │
+│ main           │   Esc      clear selection                                                       │                 │
+│  feature/mvp    │   Esc      back to commit files                                                  │                 │
 │                 │   e        edit worktree file                                                    │                 │
 │                 │   Ctrl+o   copy selected paths                                                   │                 │
 │                 │   Tab      preview accumulated patch                                             │                 │
 │                 │ Global commands                                                                  │                 │
 │                 │   p        pull                                                                  │                 │
-╰─────────────────│   F        fetch                                                                 │                 │
-╭ 3   Commit File│   P        push                                                                  │                 │
-│  ╎ src/        │   r        refresh                                                               │                 │
-│  ╎  M lib.rs    │   h        focus previous                                                        │─────────────────╯
-│                 │ ──────────────────────────────────────────────────────────────────────────────── │─────────────────╮
+│                 │   F        fetch                                                                 │                 │
+╰─────────────────│   P        push                                                                  │                 │
+╭ 3   Commit File│   r        refresh                                                               │                 │
+│  ╎ src/        │   h        focus previous                                                        │─────────────────╯
+│  ╎  M lib.rs    │ ──────────────────────────────────────────────────────────────────────────────── │─────────────────╮
 │                 │ j/k ↑/↓ select  / search  Enter run  Esc close                                   │                 │
 │                 ╰──────────────────────────────────────────────────────────────────────────────────╯                 │
+│                                       ││                                                                             │
+│                                       ││                                                                             │
 │                                       ││                                                                             │
 ╰ patch: 1 file ────────────────────────╯│                                                                             │
 ╭ 4   Stash ───────────────────────────╮│                                                                             │
 │ stash@{0} WIP on main: local test    ││                                                                             │
-│                                       ││                                                                             │
-│                                       ││                                                                             │
 ╰───────────────────────────────────────╯╰─────────────────────────────────────────────────────────────────────────────╯
  ?  commands

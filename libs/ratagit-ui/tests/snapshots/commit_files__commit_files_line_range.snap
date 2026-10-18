@@ -14,6 +14,7 @@ expression: "render_terminal_text(&state, SIZE)"
 │                                       ││    unchanged                                                                │
 │                                       ││   -old last                                                                 │
 │                                       ││   +new last                                                                 │
+│                                       ││                                                                             │
 ╰───────────────────────────────────────╯│                                                                             │
 ╭ 2   Branches │ Remotes │ Tags │──────╮│                                                                             │
 │ main                                 ││                                                                             │
@@ -26,16 +27,15 @@ expression: "render_terminal_text(&state, SIZE)"
 │                                       ││                                                                             │
 ╰───────────────────────────────────────╯│                                                                             │
 ╭ 3   Commit Files │ Reflog │──────────╮│                                                                             │
-│    src/                              ││                                                                             │
-│     M lib.rs                          │╰ line · src/lib.rs ──────────────────────────────────────────────────────────╯
-│                                       │╭ 6  󰌱 Log ───────────────────────────────────────────────────────────────────╮
+│    src/                              │╰ line · src/lib.rs ──────────────────────────────────────────────────────────╯
+│     M lib.rs                          │╭ 6  󰌱 Log ───────────────────────────────────────────────────────────────────╮
 │                                       ││  notice=Ready                                                               │
+│                                       ││                                                                             │
+│                                       ││                                                                             │
 │                                       ││                                                                             │
 │                                       ││                                                                             │
 ╰───────────────────────────────────────╯│                                                                             │
 ╭ 4   Stash ───────────────────────────╮│                                                                             │
 │ stash@{0} WIP on main: local test    ││                                                                             │
-│                                       ││                                                                             │
-│                                       ││                                                                             │
 ╰───────────────────────────────────────╯╰─────────────────────────────────────────────────────────────────────────────╯
- space  patch   a  mode   d  remove   n/N  file   Ctrl+P  menu   ?  commands
+ space  patch   a  mode   d  remove   n/N  file   Ctrl+P  menu   ?  commands   Esc  clear/back

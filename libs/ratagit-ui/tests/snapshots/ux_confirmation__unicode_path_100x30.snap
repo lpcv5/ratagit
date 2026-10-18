@@ -1,0 +1,35 @@
+---
+source: libs/ratagit-ui/tests/ux_confirmation.rs
+assertion_line: 154
+expression: buffer_text(&buffer)
+---
+╭ 1  󰈙 Files ────────────────────╮╭ 5   Details ──────────────────────────────────────────────────╮
+│   ? README.md                  ││  details(files): no diff for current selection                 │
+│    src/                       ││                                                                │
+│     M lib.rs                   ││                                                                │
+│     M main.rs                  ││                                                                │
+│                                ││                                                                │
+│                   ╭ ‼ Confirm ───────────────────────────────────────────────╮                   │
+│                   │                                                          │                   │
+│                   │                                                          │                   │
+│                   │                                                          │                   │
+╰───────────────────│              Discard selected file changes?              │                   │
+╭ 2   Branches ────│               This action cannot be undone.              │                   │
+│ main             │                                                          │                   │
+│  feature/mvp      │                      Targets: 1 file                     │                   │
+│                   │                             -                            │                   │
+│                   │ src/界 面 /确 认 删 除 /组 合 字 符 -é/a-very-long-unbroken-filena │                   │
+│                   │                  me-to-check-wrapping.rs                 │                   │
+│                   │                                                          │                   │
+╰───────────────────│                                                          │                   │
+╭ 3   Commits │ Ref│                                                          │───────────────────╯
+│●  abc1234  RT  ini│ ──────────────────────────────────────────────────────── │───────────────────╮
+│●  def5678  RT  wir│ Enter discard  Esc cancel                                │                   │
+│                   ╰──────────────────────────────────────────────────────────╯                   │
+│                                ││                                                                │
+│                                ││                                                                │
+╰────────────────────────────────╯│                                                                │
+╭ 4   Stash ────────────────────╮│                                                                │
+│ stash@{0} WIP on main: local t││                                                                │
+╰────────────────────────────────╯╰────────────────────────────────────────────────────────────────╯
+/ loading: details   Enter  confirm   Esc  cancel

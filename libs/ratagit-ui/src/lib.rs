@@ -6,6 +6,9 @@ mod frame;
 mod layout;
 mod loading_indicator;
 mod modal;
+mod modal_viewport;
+
+pub use modal_viewport::modal_viewport_too_small;
 mod panel_projection;
 mod panels;
 mod reset_modal;

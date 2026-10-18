@@ -170,11 +170,12 @@ Focus model:
   when Files Details diff output is limited to the first 100 targets
 - left-panel height baseline follows the Files/Branches/Commits/Stash ratio
 - reserve three content rows per left panel before distributing remaining height
-  by ratio; when `Stash` is unfocused it keeps those three rows and freed height
-  is redistributed by ratio to Files/Branches/Commits
+  by ratio; when `Stash` is unfocused it collapses to one content row plus its
+  borders, and freed height is redistributed by ratio to Files/Branches/Commits;
+  focusing Stash restores its weighted height
 - when focus is in Files/Branches/Commits and content overflows, the focused
   panel borrows height from other left panels in round-robin order, preserving
-  at least three content rows in every donor
+  at least three content rows in expanded donors and the collapsed Stash row
 - complete left-panel frames with this reserve need 20 body rows (21 terminal
   rows including shortcuts); smaller terminals reduce the common content reserve
   evenly, conserving available height without overlap
@@ -233,13 +234,19 @@ Search interaction:
 
 - `/` activates `AppContext.ui.search` for the current Files, Branches, Commits,
   Stash, or Commit Files scope.
-- Search input replaces the bottom shortcuts with `search: <query>` until
-  `Enter` confirms or `Esc` cancels.
+- Search input replaces the bottom shortcuts with `search: <query>` and a
+  result count (`type to search` for an empty query, `no matches` for a miss).
+  A confirmed query retains its query/count feedback until cleared. Search hints
+  use the same shortcut badges and shrink by available terminal columns; long
+  queries receive a Unicode-width-aware ellipsis.
 - Normal bottom shortcuts list only panel-specific common actions; baseline
   navigation/search keys and global sync keys are omitted, including the generic
   `v` visual-mode entry key. The final normal shortcut is always `? commands`.
 - Bottom shortcut keys render as reverse-video badges, omit the old
-  `keys(panel):` prefix, and use spaces instead of pipe separators.
+  `keys(panel):` prefix, and use spaces instead of pipe separators. Terminal
+  rendering budgets whole key/label segments by display-column width, retaining
+  `? commands` and contextual escape actions before optional shortcuts. Loading
+  text compacts when needed so it cannot displace these essential actions.
 - The command palette renders as an executable modal with `Local commands` and
   `Global commands` sections. Section labels are not selectable; command rows
   are selectable, viewported around the selected command when the list is taller
@@ -538,7 +545,10 @@ Panel projection and row source:
 
 - Git failures never crash the app.
 - Errors are stored in `AppContext.repo.status.last_error`.
-- The `Log` panel displays the latest error.
+- The `Log` panel orders the latest error before pending operations/refreshes,
+  incomplete-data warnings, newest notices and routine tuning tips. Scan-skip and
+  truncation warnings precede retained notice history so incomplete repository
+  data remains visible; failures retain first priority in short panels.
 - Git failures carry typed failure kinds plus user-facing messages. Reducers use
   the kind for semantic recovery flows such as force-push and force-delete
   confirmations while preserving the displayed message.
@@ -583,6 +593,16 @@ Panel projection and row source:
 - Business modal renderers call the shared modal shell with a `ModalSpec`,
   action rows, and an AppContext-derived content renderer; the shell owns the
   title, scrim, content area, footer separator, and action row rendering.
+- Modal rendering and production keyboard routing share a 40-column, 14-row
+  terminal minimum. Below it, a resize prompt replaces the modal and only cancel
+  or quit keys are routed, preventing invisible confirmations. Dialog state stays
+  intact across resizing. Commit editors reserve enough shell height for both
+  bordered input fields. Subject/title use a cursor-following single-line
+  viewport; body rendering and cursor placement share visual cell wrapping.
+- Confirmation questions and consequences are measured through the same
+  Paragraph wrapping used for rendering; target previews use the remaining rows.
+  Modal footer hints also fit complete key/label pairs, reserving confirmation
+  and cancellation before optional navigation/editing hints.
 - Modal overlays render above a deterministic scrim, use rounded borders,
   centered placement, a shared footer separator, and responsive width clamping.
   Standard terminals keep compact 60% sizing; wide terminals use roughly 70% of

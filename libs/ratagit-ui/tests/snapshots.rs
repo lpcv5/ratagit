@@ -1640,7 +1640,7 @@ fn terminal_commit_editor_cursor_follows_subject_field() {
 }
 
 #[test]
-fn terminal_commit_editor_cursor_wraps_long_subject() {
+fn terminal_commit_editor_cursor_scrolls_long_subject() {
     let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     update(&mut state, Action::Ui(UiAction::OpenCommitEditor));
@@ -1657,7 +1657,7 @@ fn terminal_commit_editor_cursor_wraps_long_subject() {
     );
     let cursor = cursor.expect("editor cursor should render");
 
-    assert_eq!((cursor.x, cursor.y), (44, 10));
+    assert_eq!((cursor.x, cursor.y), (76, 9));
 }
 
 #[test]
@@ -1701,7 +1701,7 @@ fn terminal_stash_editor_cursor_follows_title() {
 }
 
 #[test]
-fn terminal_stash_editor_cursor_wraps_long_title() {
+fn terminal_stash_editor_cursor_scrolls_long_title() {
     let mut state = AppContext::default();
     apply_refreshed_with_mock_details(&mut state, fixture_dirty_repo());
     update(&mut state, Action::Ui(UiAction::OpenStashEditor));
@@ -1718,7 +1718,7 @@ fn terminal_stash_editor_cursor_wraps_long_title() {
     );
     let cursor = cursor.expect("editor cursor should render");
 
-    assert_eq!((cursor.x, cursor.y), (44, 10));
+    assert_eq!((cursor.x, cursor.y), (76, 9));
 }
 
 #[test]
@@ -2340,9 +2340,14 @@ fn terminal_buffer_all_six_panels_keep_independent_borders_and_readable_content(
                     .map(|title| assert_panel_edges(&buffer, title));
                 let right = [" Details", "󰌱 Log"].map(|title| assert_panel_edges(&buffer, title));
                 let left_minimum = 3.min((height - 1 - 8) / 4) as u16;
-                for rect in left {
+                for (index, rect) in left.iter().enumerate() {
+                    let minimum = if index == 3 && focus != PanelFocus::Stash {
+                        left_minimum.min(1)
+                    } else {
+                        left_minimum
+                    };
                     assert!(
-                        rect.height - 2 >= left_minimum,
+                        rect.height - 2 >= minimum,
                         "{focus:?}, {width}x{height}: {rect:?}"
                     );
                     assert_eq!(rect.x, 0);
@@ -2375,13 +2380,68 @@ fn terminal_buffer_all_six_panels_keep_independent_borders_and_readable_content(
                 if focus != PanelFocus::Stash {
                     assert_eq!(
                         left[3].height - 2,
-                        left_minimum,
-                        "unfocused stash stays at the content floor"
+                        1,
+                        "unfocused stash keeps exactly one content row"
                     );
                 }
             }
         }
     }
+}
+
+#[test]
+fn terminal_stash_expands_on_focus_and_collapses_around_selected_entry() {
+    let mut snapshot = fixture_dirty_repo();
+    snapshot.stashes = (0..12)
+        .map(|index| ratagit_core::StashEntry {
+            id: format!("stash@{{{index}}}"),
+            summary: format!("saved changes {index}"),
+        })
+        .collect();
+    let mut state = AppContext::default();
+    apply_refreshed_with_mock_details(&mut state, snapshot);
+    let size = TerminalSize {
+        width: 80,
+        height: 24,
+    };
+    for (focus, name) in [
+        (PanelFocus::Files, "stash_collapsed"),
+        (PanelFocus::Stash, "stash_focused_expanded"),
+        (PanelFocus::Files, "stash_collapsed_selection_retained"),
+    ] {
+        update(
+            &mut state,
+            Action::Ui(UiAction::FocusPanel { panel: focus }),
+        );
+        if focus == PanelFocus::Stash {
+            for _ in 0..7 {
+                update(&mut state, Action::Ui(UiAction::MoveDown));
+            }
+        }
+        let before = state.clone();
+        let buffer = render_terminal_buffer(&state, size);
+        let area = assert_panel_edges(&buffer, " Stash");
+        if focus == PanelFocus::Stash {
+            assert!(area.height > 3);
+        } else {
+            assert_eq!(area.height, 3);
+        }
+        let stash_rows = (area.y + 1..area.bottom() - 1)
+            .map(|y| {
+                (area.x + 1..area.right() - 1)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            stash_rows
+                .iter()
+                .any(|row| { row.contains(&format!("stash@{{{}}}", state.ui.stash.selected)) })
+        );
+        assert_eq!(state, before, "render preserves selection and scroll state");
+        insta::assert_snapshot!(name, render_terminal_text(&state, size));
+    }
+    assert_eq!(state.ui.stash.selected, 7);
 }
 
 #[test]

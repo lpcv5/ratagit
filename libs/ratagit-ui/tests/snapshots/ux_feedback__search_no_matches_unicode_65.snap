@@ -1,0 +1,29 @@
+---
+source: libs/ratagit-ui/tests/ux_feedback.rs
+assertion_line: 188
+expression: screen
+---
+╭ 1  󰈙 Files ────────╮╭ 5   Details ───────────────────────────╮
+│   ? README.md      ││   diff --git a/README.md b/README.md    │
+│    src/           ││   @@ -1 +1 @@                           │
+│     M lib.rs       ││   -old                                  │
+│     M main.rs      ││   +new                                  │
+│                    ││                                         │
+│                    ││                                         │
+╰────────────────────╯│                                         │
+╭ 2   Branches ─────╮│                                         │
+│ main              ││                                         │
+│  feature/mvp       ││                                         │
+│                    ││                                         │
+│                    ││                                         │
+│                    ││                                         │
+╰────────────────────╯│                                         │
+╭ 3   Commits ──────╮╰─────────────────────────────────────────╯
+│●  abc1234  RT  init│╭ 6  󰌱 Log ───────────────────────────────╮
+│●  def5678  RT  wire││  work=refreshing repository             │
+│                    ││  notice=Ready                           │
+╰────────────────────╯│                                         │
+╭ 4   Stash ────────╮│                                         │
+│ stash@{0} WIP on m││                                         │
+╰────────────────────╯╰─────────────────────────────────────────╯
+search: 修 复 界 面 é与 搜 …  no matches   Enter  confirm   Esc  cancel

@@ -16,6 +16,7 @@ expression: "render_terminal_text(&state, TerminalSize { width: 120, height: 40,
 │                                       ││                                                                             │
 │                                       ││                                                                             │
 │                                       ││                                                                             │
+│                                       ││                                                                             │
 ╰───────────────────────────────────────╯│                                                                             │
 ╭ 2   Branches │ Remotes │ Tags │──────╮│                                                                             │
 │ main                                 ││                                                                             │
@@ -28,10 +29,11 @@ expression: "render_terminal_text(&state, TerminalSize { width: 120, height: 40,
 │                                       ││                                                                             │
 │                                       ││                                                                             │
 ╰───────────────────────────────────────╯│                                                                             │
-╭ 3   Commits │ Reflog │───────────────╮│                                                                             │
-│●  abc1234  RT  init project           │╰─────────────────────────────────────────────────────────────────────────────╯
-│●  def5678  RT  wire commands          │╭ 6  󰌱 Log ───────────────────────────────────────────────────────────────────╮
-│                                       ││  notice=Ready                                                               │
+╭ 3   Commits │ Reflog │───────────────╮╰─────────────────────────────────────────────────────────────────────────────╯
+│●  abc1234  RT  init project           │╭ 6  󰌱 Log ───────────────────────────────────────────────────────────────────╮
+│●  def5678  RT  wire commands          ││  notice=Ready                                                               │
+│                                       ││                                                                             │
+│                                       ││                                                                             │
 │                                       ││                                                                             │
 │                                       ││                                                                             │
 │                                       ││                                                                             │
@@ -39,7 +41,5 @@ expression: "render_terminal_text(&state, TerminalSize { width: 120, height: 40,
 ╰───────────────────────────────────────╯│                                                                             │
 ╭ 4   Stash ───────────────────────────╮│                                                                             │
 │ stash@{0} WIP on main: local test    ││                                                                             │
-│                                       ││                                                                             │
-│                                       ││                                                                             │
 ╰───────────────────────────────────────╯╰─────────────────────────────────────────────────────────────────────────────╯
  space  stage/unstage   d  discard   A  amend   c  commit   s  stash   D  reset   enter  expand   ?  commands
